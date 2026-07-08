@@ -10,8 +10,10 @@ it every ``/projects/...``, ``/games/...`` and ``/channels/...`` link would 404.
 """
 
 import os
+from urllib import error as urlerror
+from urllib import request as urlrequest
 
-from flask import Flask, redirect, send_from_directory, abort
+from flask import Flask, Response, redirect, request, send_from_directory, abort
 from werkzeug.utils import safe_join
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -21,7 +23,47 @@ SITE_DIR = os.path.join(BASE_DIR, "site")
 # own service (the ``ttr/`` git submodule); set TTR_URL to wherever it is reachable.
 TTR_URL = os.environ.get("TTR_URL", "http://52.54.184.133")
 
+# The roll game's NPC dialog talks to Google's Gemini API. The key MUST stay
+# server-side — a key shipped in client JS is world-readable — so the browser
+# hits /api/roll/gemini here and this process adds the key. Set GEMINI_API_KEY in
+# .env (empty by default; the feature just degrades gracefully when unset).
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_API_URL = (
+    "https://generativelanguage.googleapis.com/v1beta/models/"
+    "gemini-2.5-flash:generateContent"
+)
+MAX_GEMINI_BODY = 16 * 1024  # generous for a line of dialog; caps proxy abuse
+
 app = Flask(__name__)
+
+
+@app.route("/api/roll/gemini", methods=["POST"])
+def roll_gemini():
+    """Proxy the roll game's dialog request to Gemini, injecting the API key.
+
+    Keeps the key out of the browser. Forwards the client's JSON body verbatim
+    and relays Gemini's response (and error) straight back.
+    """
+    if not GEMINI_API_KEY:
+        return {"error": "Gemini API key not configured on the server."}, 503
+
+    body = request.get_data()
+    if len(body) > MAX_GEMINI_BODY:
+        return {"error": "Request too large."}, 413
+
+    proxied = urlrequest.Request(
+        GEMINI_API_URL + "?key=" + GEMINI_API_KEY,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlrequest.urlopen(proxied, timeout=30) as resp:
+            return Response(resp.read(), status=resp.status, mimetype="application/json")
+    except urlerror.HTTPError as exc:
+        return Response(exc.read(), status=exc.code, mimetype="application/json")
+    except urlerror.URLError:
+        return {"error": "Could not reach the Gemini API."}, 502
 
 
 @app.route("/ttr")

@@ -14,9 +14,10 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.153.0/build/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.153.0/examples/js/controls/PointerLockControls.js"></script>
   <script>
-    // Gemini API key (replace with your actual key)
-    const GEMINI_API_KEY = "AIzaSyAhA3-NkCvCeAFKUZYkz12Jc9k3dpTBQNE";
-    const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+    // NPC dialog is proxied through this site's Flask server, which adds the
+    // Gemini API key server-side. Never put an API key in client-side JS — it is
+    // world-readable. See app.py's /api/roll/gemini route.
+    const GEMINI_PROXY_URL = "/api/roll/gemini";
 
     let scene = new THREE.Scene();
     scene.background = new THREE.Color(0x222233);
@@ -240,7 +241,7 @@
             }
             let payload = { contents };
             try {
-              let res = await fetch(GEMINI_API_URL + '?key=' + GEMINI_API_KEY, {
+              let res = await fetch(GEMINI_PROXY_URL, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json'
@@ -396,7 +397,7 @@
       // Last message is from user
       let payload = { contents };
       try {
-        let res = await fetch(GEMINI_API_URL + '?key=' + GEMINI_API_KEY, {
+        let res = await fetch(GEMINI_PROXY_URL, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
