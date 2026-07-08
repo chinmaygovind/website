@@ -1,0 +1,3 @@
+[submodule "ttr"]
+	path = ttr
+	url = https://github.com/chinmaygovind/TicketToRide

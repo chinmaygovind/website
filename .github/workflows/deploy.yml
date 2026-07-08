@@ -1,0 +1,56 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+# One deploy at a time; a newer push cancels an in-progress run.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Import check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - name: Import the app
+        run: python -c "import app; print('app imports OK')"
+
+  deploy:
+    name: SSH deploy
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+
+            APP=/home/ubuntu/website
+
+            echo "==> Pulling latest from main (with submodules)"
+            cd "$APP"
+            git fetch origin main
+            git checkout main 2>/dev/null || true
+            git reset --hard origin/main
+            git submodule sync --recursive
+            git submodule update --init --recursive
+
+            echo "==> Installing/upgrading Python dependencies"
+            "$APP/venv/bin/pip" install -q -r requirements.txt
+
+            echo "==> Restarting website"
+            sudo systemctl restart website
+
+            echo "==> Deploy complete"

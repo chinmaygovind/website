@@ -1,0 +1,16 @@
+[Unit]
+Description=Chinmay Govind personal website (Flask)
+After=network.target
+
+[Service]
+User={{USER}}
+WorkingDirectory={{APP_DIR}}
+EnvironmentFile={{APP_DIR}}/.env
+ExecStart={{VENV}}/bin/gunicorn -w 2 --bind 127.0.0.1:5002 app:app
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

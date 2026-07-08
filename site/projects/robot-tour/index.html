@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot Tour</title>
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@700&family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background: #232323 url('https://www.transparenttextures.com/patterns/asfalt-light.png');
+            color: #f3f3f3;
+            font-family: 'Roboto Mono', monospace;
+            margin: 0;
+            padding: 0;
+            position: relative;
+        }
+        body::before {
+            content: "";
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            pointer-events: none;
+            z-index: 0;
+            opacity: 0.25;
+            background: url('https://www.transparenttextures.com/patterns/grunge-wall.png') repeat;
+        }
+        .header {
+            background: #232323;
+            color: #fff;
+            padding: 2.5rem 1rem 1.5rem 1rem;
+            text-align: center;
+            border-bottom: 8px solid #ff6600;
+            letter-spacing: 2px;
+            box-shadow: 0 6px 32px 0 #000a;
+        }
+        .main-title {
+            font-family: 'Oswald', Impact, Arial, sans-serif;
+            font-size: 3.2rem;
+            color: #fff;
+            text-shadow: 2px 2px 0 #ff6600, 4px 4px 0 #232323;
+            margin-bottom: 0.5rem;
+        }
+        .subtitle {
+            font-size: 1.3rem;
+            color: #ffae42;
+            font-family: 'Roboto Mono', monospace;
+            margin-bottom: 0.5rem;
+        }
+        .hero-banner {
+            background: #232323;
+            border-top: 6px solid #ff6600;
+            border-bottom: 6px solid #ff6600;
+            padding: 2rem 1rem 2rem 1rem;
+            text-align: center;
+        }
+        .hero-text {
+            font-size: 1.5rem;
+            color: #fff;
+            max-width: 700px;
+            margin: 0 auto;
+            font-family: 'Roboto Mono', monospace;
+        }
+        .container {
+            max-width: 900px;
+            margin: 2rem auto 0 auto;
+            background: rgba(30, 30, 30, 0.97);
+            border-radius: 12px;
+            box-shadow: 0 8px 32px 0 #0008;
+            padding: 2.5rem 2rem 2rem 2rem;
+            border: 2px dashed #ff6600;
+            position: relative;
+            overflow: hidden;
+        }
+        .container::before {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 0;
+            opacity: 0.13;
+            background: repeating-linear-gradient(135deg, #fff2 0 2px, transparent 2px 20px);
+            pointer-events: none;
+        }
+        .container > * {
+            position: relative;
+            z-index: 1;
+        }
+        h2 {
+            color: #ff6600;
+            font-family: 'Oswald', Impact, Arial, sans-serif;
+            font-size: 2rem;
+            margin-top: 2.5rem;
+            margin-bottom: 1.2rem;
+            letter-spacing: 1px;
+            text-shadow: 1px 1px 0 #232323;
+        }
+        .section-label {
+            display: inline-block;
+            background: #ff6600;
+            color: #232323;
+            font-family: 'Oswald', Impact, Arial, sans-serif;
+            font-size: 1.1rem;
+            padding: 0.2rem 1rem;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+            letter-spacing: 1px;
+        }
+        ul {
+            margin: 1rem 0;
+            padding-left: 1.2rem;
+        }
+        .danger {
+            color: #ffae42;
+            font-weight: bold;
+            font-family: 'Oswald', Impact, Arial, sans-serif;
+        }
+        .footer {
+            text-align: center;
+            margin: 3rem 0 1.2rem 0;
+            color: #888;
+            font-size: 1.05rem;
+            letter-spacing: 0.5px;
+        }
+        .cta-btn {
+            background: #ff6600;
+            color: #fff;
+            font-family: 'Oswald', Impact, Arial, sans-serif;
+            font-size: 1.1rem;
+            border: none;
+            border-radius: 6px;
+            padding: 0.8rem 2.2rem;
+            cursor: pointer;
+            box-shadow: 0 2px 8px #ff660044;
+            transition: background 0.2s, color 0.2s, transform 0.2s;
+            margin-top: 1.5rem;
+        }
+        .cta-btn:hover {
+            background: #fff;
+            color: #ff6600;
+            transform: scale(1.05);
+        }
+        
+        /* Media Gallery Styles */
+        .media-gallery {
+            margin-top: 2rem;
+        }
+        
+        /* Meet the Robot Section */
+        .robot-intro {
+            display: flex;
+            gap: 2rem;
+            align-items: flex-start;
+            margin: 1rem 0;
+        }
+        .robot-info {
+            flex: 1;
+        }
+        .robot-image {
+            flex: 1;
+            text-align: center;
+        }
+        .robot-image img {
+            width: 100%;
+            max-width: 400px;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        
+        .photo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+        .photo-item {
+            position: relative;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .photo-item:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 20px rgba(255,102,0,0.3);
+        }
+        .photo-item img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            display: block;
+        }
+        .video-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin: 1rem 0;
+        }
+        .video-item {
+            position: relative;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            background: #1a1a1a;
+        }
+        .video-item video {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            display: block;
+        }
+        .media-caption {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(transparent, rgba(0,0,0,0.8));
+            color: white;
+            padding: 1rem 0.5rem 0.5rem;
+            font-size: 0.9rem;
+            text-align: center;
+        }
+        
+        @media (max-width: 600px) {
+            .container {
+                padding: 1rem;
+            }
+            .main-title {
+                font-size: 2rem;
+            }
+            .robot-intro {
+                flex-direction: column;
+                gap: 1rem;
+            }
+            .photo-grid {
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                gap: 0.5rem;
+            }
+            .video-grid {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+            .photo-item img, .video-item video {
+                height: 150px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="main-title">ROBOT TOUR</div>
+        <div class="subtitle">Science Olympiad Autonomous Robotics Project</div>
+    </div>
+    <div class="container">
+        <div class="section-label">BUILD</div>
+        <div class="robot-intro">
+            <div class="robot-info">
+        <h2>Meet the Robot</h2>
+                <ul>
+                <li><strong>Chassis:</strong> Custom 3D Printed for durability and modularity.</li>
+                <li><strong>Brains:</strong> Arduino-based, programmed in C++.</li>
+                <li><strong>Sensors:</strong> Motor Encoders + MPU6050 Gyroscope.</li>
+                <li><strong>Power:</strong> 6 AA+ Batteries.</li>
+                <li><strong>Performance:</strong> The robot can navigate 10+ meter-long paths in mazes, avoiding barriers and getting within inches of the target.</li>
+                </ul>
+            </div>
+            <div class="robot-image">
+                <img src="images/IMG_7876.jpg" alt="Robot Build Process">
+            </div>
+        </div>
+        <div class="section-label">EVENT</div>
+        <h2>What is <a href="https://www.soinc.org/robot-tour-c">Robot Tour?</a></h2>
+        <p>
+            In this event, teams design, build, program, and test one Robotic Vehicle to navigate a track to reach a target at a set amount of time as accurately and efficiently as possible.
+        </p>
+        <div class="section-label">GALLERY</div>
+        <h2>Robot Photos</h2>
+        <div class="media-gallery">
+            <div class="photo-grid">
+                <div class="photo-item">
+                    <img src="images/IMG_7876.jpg" alt="Robot Build Process">
+                    <div class="media-caption">Robot Assembly</div>
+                </div>
+                <div class="photo-item">
+                    <img src="images/IMG_8182.jpg" alt="Robot Components">
+                    <div class="media-caption">Circuit Board & Sensors</div>
+                </div>
+                <div class="photo-item">
+                    <img src="images/IMG_8783.jpg" alt="Robot Testing">
+                    <div class="media-caption">Field Testing</div>
+                </div>
+                <div class="photo-item">
+                    <img src="images/IMG_8784.jpg" alt="Robot Competition">
+                    <div class="media-caption">Competition Ready</div>
+                </div>
+                <div class="photo-item">
+                    <img src="images/IMG_8785.JPG" alt="Robot Details">
+                    <div class="media-caption">Close-up Details</div>
+                </div>
+                <div class="photo-item">
+                    <img src="images/IMG_8787.JPG" alt="Robot Setup">
+                    <div class="media-caption">Pre-Competition Setup</div>
+                </div>
+                <div class="photo-item">
+                    <img src="images/IMG_8788.JPG" alt="Robot Final">
+                    <div class="media-caption">Final Configuration</div>
+                </div>
+                <div class="photo-item">
+                    <img src="images/73388521182__826C2FF9-9480-410B-9DC7-410A267E0BC9.jpg" alt="Robot Action">
+                    <div class="media-caption">Robot in Action</div>
+                </div>
+            </div>
+        </div>
+        
+        <h2>Robot Videos</h2>
+        <div class="media-gallery">
+            <div class="video-grid">
+                <div class="video-item">
+                    <video controls>
+                        <source src="images/IMG_7778.MOV" type="video/quicktime">
+                        <source src="images/IMG_7778.MOV" type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                    <div class="media-caption">Initial Testing</div>
+                </div>
+                <div class="video-item">
+                    <video controls>
+                        <source src="images/IMG_8185.MOV" type="video/quicktime">
+                        <source src="images/IMG_8185.MOV" type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                    <div class="media-caption">Navigation Test</div>
+                </div>
+                <div class="video-item">
+                    <video controls>
+                        <source src="images/IMG_8186.MOV" type="video/quicktime">
+                        <source src="images/IMG_8186.MOV" type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                    <div class="media-caption">Obstacle Course</div>
+                </div>
+                <div class="video-item">
+                    <video controls>
+                        <source src="images/IMG_8187.MOV" type="video/quicktime">
+                        <source src="images/IMG_8187.MOV" type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                    <div class="media-caption">Final Run</div>
+                </div>
+                <div class="video-item">
+                    <video controls>
+                        <source src="images/IMG_8188.MOV" type="video/quicktime">
+                        <source src="images/IMG_8188.MOV" type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                    <div class="media-caption">Competition Demo</div>
+                </div>
+                <div class="video-item">
+                    <video controls>
+                        <source src="images/72627611682__C9E62906-69A0-4716-80D2-B74138B12C0B.MOV" type="video/quicktime">
+                        <source src="images/72627611682__C9E62906-69A0-4716-80D2-B74138B12C0B.MOV" type="video/mp4">
+                        Your browser does not support the video tag.
+                    </video>
+                    <div class="media-caption">Behind the Scenes</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="footer">
+        &copy; 2025 Chinmay Govind.<br>
+        <span style="font-size:0.95em;">Questions? <a href="mailto:cgovind@seas.upenn.edu" style="color:#ff6600;">Email me!</a></span>
+    </div>
+</body>
+</html>

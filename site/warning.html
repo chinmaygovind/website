@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="description" content="Chinmay Govind — personal site" />
+    <title>Warning</title>
+    <style>
+      #warning {
+        height: 100%; 
+        width: 100%;
+      }
+      .fade-in {
+        opacity: 0;
+        transition: opacity 2s ease-in-out;
+      }
+      .fade-in.active {
+        opacity: 1;
+      }
+      .fade-out.active {
+        opacity: 0;
+        transition: opacity 1s ease-in-out;
+      }
+    </style>
+  </head>
+  <body style = "background-color: black" class="fade-out">
+    <img id = "warning" class="fade-in fade-out" src = "images/warning.png" onclick="goToMenu()"></img>
+    <script>
+      var warningLoaded = false;
+      window.addEventListener('DOMContentLoaded', (event) => {
+        const image = document.querySelector('.fade-in');
+        image.classList.add('active');
+        setTimeout(() => warningLoaded = true, 2000);
+      });
+
+      function goToMenu() {
+        if (warningLoaded) {
+          var audio = new Audio("audio/warning.wav");
+          audio.play();
+          const image = document.querySelector('.fade-out');
+          image.classList.add('active');
+          setTimeout(() => window.location.href = "index.html", 1500);
+        }
+      }
+    </script>
+
+  </body>
+</html>

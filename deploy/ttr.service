@@ -1,0 +1,22 @@
+# OPTIONAL: run Ticket to Ride from the bundled submodule (website/ttr) on this box,
+# so the whole site is served from one repo. Skip this unit if TTR keeps its own
+# deployment elsewhere (just point TTR_URL at wherever it already runs).
+#
+# TTR needs its own .env (SECRET_KEY, etc.) in {{APP_DIR}}/ttr/.env and its own
+# virtualenv at {{APP_DIR}}/ttr/venv (see ttr/deploy/setup.sh).
+[Unit]
+Description=Ticket to Ride (from website submodule)
+After=network.target
+
+[Service]
+User={{USER}}
+WorkingDirectory={{APP_DIR}}/ttr
+EnvironmentFile={{APP_DIR}}/ttr/.env
+ExecStart={{APP_DIR}}/ttr/venv/bin/gunicorn --worker-class eventlet -w 1 --bind 127.0.0.1:5001 app:app
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
