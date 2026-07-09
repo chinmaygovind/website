@@ -225,8 +225,8 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
 .seat { position:absolute; transform: translate(-50%,-50%); text-align:center; width: 128px; z-index: 5; }
 .seat .pdot { display:block; margin:0 auto .35rem; width:30px; height:30px; border-width:3px; }
 .seat .pname { font-family:"xkcd"; font-size:1.1rem; line-height:1.05; text-shadow:0 2px 3px rgba(0,0,0,.6); }
-.seat .count { display:inline-flex; align-items:center; gap:4px; margin-top:2px;
-  background: rgba(0,0,0,.4); border:1px solid rgba(242,201,76,.4); color: var(--gold-soft);
+.seat .count { display:inline-flex; align-items:center; gap:4px; margin: 0 auto 5px;
+  background: rgba(0,0,0,.55); border:1px solid rgba(242,201,76,.4); color: var(--gold-soft);
   border-radius: 20px; padding: 1px 9px; font-size:.85rem; }
 .seat .count .mini { display:inline-block; width:11px; height:15px; border-radius:2px;
   background: linear-gradient(135deg,#c98,#7a4a28); border:1px solid #3f2311; }

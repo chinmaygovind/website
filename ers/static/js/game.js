@@ -53,9 +53,9 @@ function seatInner(pid, s) {
   const you = pid === MY_PID ? ' <span class="you-tag">(you)</span>' : "";
   return {
     cls: `${isTurn ? "turn" : ""} ${out ? "out" : ""}`,
-    html: `<span class="pdot lg" style="background:${pcolor(pid)}"></span>
+    html: `<div class="count"><span class="mini"></span>${cnt}</div>
+      <span class="pdot lg" style="background:${pcolor(pid)}"></span>
       <div class="pname" style="color:${isTurn ? "" : pcolor(pid)}">${esc(pname(pid))}${you}</div>
-      <div class="count"><span class="mini"></span>${cnt}</div>
       ${out && st ? `<span class="tag">OUT · #${st.place} · lasted ${st.turns_lasted}</span>` : ""}`,
   };
 }
