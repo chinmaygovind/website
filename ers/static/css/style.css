@@ -391,7 +391,9 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
 /* topbar in game */
 .game-top { position:absolute; top:0; left:0; right:0; z-index: 22; display:flex; justify-content:space-between;
   align-items:center; padding:.5rem .8rem; }
+.game-top .topleft { display: flex; flex-direction: column; line-height: 1.15; }
 .game-top .code { font-family:"xkcd"; color: var(--gold); font-size:1.1rem; }
+.game-top .ping { font-family:"xkcd"; color: var(--gold); font-size:.95rem; opacity:.8; }
 .game-top .rulechips { display:flex; gap:.3rem; flex-wrap:wrap; }
 .chip { background: rgba(0,0,0,.4); border:1px solid rgba(242,201,76,.3); color: var(--gold-soft);
   border-radius: 20px; padding:1px 9px; font-size:.72rem; }

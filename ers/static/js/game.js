@@ -19,6 +19,16 @@ sndFlip.volume = 0.5; sndSlap.volume = 0.85;
 function playSafe(a) { try { a.currentTime = 0; a.play().catch(() => {}); } catch (e) {} }
 
 socket.on("connect", () => socket.emit("join_game", { code: GAME_CODE }));
+
+function measurePing() {
+  const el = document.getElementById("ping");
+  if (!el) return;
+  if (!socket.connected) { el.textContent = "Ping: --"; return; }
+  const t0 = performance.now();
+  socket.emit("cping", () => { el.textContent = "Ping: " + Math.round(performance.now() - t0) + "ms"; });
+}
+setInterval(measurePing, 3000);
+setTimeout(measurePing, 600);
 socket.on("game_state", (d) => {
   STATE = d.state;
   if (d.roster) ROSTER = d.roster;
