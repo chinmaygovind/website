@@ -301,6 +301,26 @@ def award_pile(state, pid, via=None, rank=None):
     return events
 
 
+def resign(state, pid):
+    """A player leaves an in-progress game: their cards leave play and they are out."""
+    events = []
+    if state["phase"] != "playing" or pid not in state["players"] or pid in state["eliminated"]:
+        return events
+    state["hands"][pid] = []
+    if state.get("challenge") and state["challenge"].get("beneficiary") == pid:
+        state["challenge"] = None
+    if state.get("pending_win") and state["pending_win"].get("pid") == pid:
+        state["pending_win"] = None
+    ev = _eliminate(state, pid)
+    if ev:
+        ev["left"] = True
+        events.append(ev)
+    if state["current"] == pid:
+        _advance_turn(state)
+    _check_win(state)
+    return events
+
+
 def resolve_pending(state):
     """Resolve a failed-tribute collection once the grace window elapses."""
     pw = state.get("pending_win")

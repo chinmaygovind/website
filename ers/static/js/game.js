@@ -206,7 +206,9 @@ function entryHTML(e) {
   if (e.kind === "pile")
     return `<b style="color:${e.color}">${esc(e.name)}</b> takes the pile${e.on ? " on a " + e.on : ""}, +${e.cards} cards`;
   if (e.kind === "out")
-    return `<b style="color:${e.color}">${esc(e.name)}</b> is out · #${e.place}, lasted ${e.turns_lasted} turns`;
+    return e.left
+      ? `<b style="color:${e.color}">${esc(e.name)}</b> left the game · #${e.place}`
+      : `<b style="color:${e.color}">${esc(e.name)}</b> is out · #${e.place}, lasted ${e.turns_lasted} turns`;
   return "";
 }
 
@@ -270,8 +272,14 @@ function doSlap() {
   if (Date.now() < slapCooldownUntil) return;   // frozen out after a wrong slap
   socket.emit("slap", { code: GAME_CODE });
 }
+function leaveGame() {
+  if (!confirm("Leave this game?")) return;
+  socket.emit("leave_game", { code: GAME_CODE });
+  location.href = "/lobbies";
+}
 window.doFlip = doFlip;
 window.doSlap = doSlap;
+window.leaveGame = leaveGame;
 
 document.addEventListener("keydown", (e) => {
   if (e.repeat) return;

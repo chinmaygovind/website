@@ -421,7 +421,11 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
 .game-top .topleft { display: flex; flex-direction: column; line-height: 1.15; }
 .game-top .code { font-family:"xkcd"; color: var(--gold); font-size:1.1rem; }
 .game-top .ping { font-family:"xkcd"; color: var(--gold); font-size:.95rem; opacity:.8; }
+.game-top .topright { display:flex; align-items:center; gap:.5rem; }
 .game-top .rulechips { display:flex; gap:.3rem; flex-wrap:wrap; }
+.leave-btn { font-family:"xkcd"; font-size:.9rem; color:#f0b6b0; background:rgba(120,20,20,.45);
+  border:1px solid rgba(240,120,110,.5); border-radius:8px; padding:.25rem .7rem; cursor:pointer; }
+.leave-btn:hover { background:rgba(176,48,48,.7); color:#fff; }
 .chip { background: rgba(0,0,0,.4); border:1px solid rgba(242,201,76,.3); color: var(--gold-soft);
   border-radius: 20px; padding:1px 9px; font-size:.72rem; }
 

@@ -588,6 +588,27 @@ def on_slap(data):
     _kick(code)
 
 
+@socketio.on("leave_game")
+def on_leave_game(data):
+    code = (data or {}).get("code", "").upper()
+    with _lock(code):
+        game = ErsGame.query.filter_by(code=code).first()
+        if not game:
+            return
+        me = ErsPlayer.query.filter_by(game_id=game.id, session_key=get_session_key()).first()
+        if not me or game.status != "playing":
+            return
+        state = game.state
+        events = gl.resign(state, me.pid)
+        if events:
+            _record_wins(game, state, events)
+            game.state = state
+            game.last_activity_at = datetime.utcnow()
+            db.session.commit()
+            _broadcast(game)
+    _kick(code)
+
+
 # ---------------------------------------------------------------------------
 # Applying engine actions + recording per-game stats / the slap feed
 # ---------------------------------------------------------------------------
@@ -677,9 +698,10 @@ def _record_wins(game, state, events):
         elif ev["type"] == "eliminated":
             name, color = _name(game, ev["pid"])
             _push_log(state, {"kind": "out", "name": name, "color": color,
-                              "place": ev["place"], "turns_lasted": ev["turns_lasted"]})
+                              "place": ev["place"], "turns_lasted": ev["turns_lasted"],
+                              "left": ev.get("left", False)})
             _log_event(game, {"type": "out", "pid": ev["pid"], "place": ev["place"],
-                              "turns_lasted": ev["turns_lasted"]})
+                              "turns_lasted": ev["turns_lasted"], "left": ev.get("left", False)})
     if state["phase"] == "ended":
         _log_event(game, {"type": "end", "winner": state.get("winner")})
         _finalize(game, state)
