@@ -1,7 +1,7 @@
 /* Service worker: cache static assets so the app is installable and loads fast.
    It deliberately never intercepts pages, POSTs, or socket.io traffic, so live
    gameplay always goes straight to the network. */
-const CACHE = "ers-v1";
+const CACHE = "ers-v2";
 const ASSETS = [
   "/static/css/style.css",
   "/static/js/game.js",
@@ -27,14 +27,12 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(req.url);
   if (url.origin !== location.origin) return;
   if (!url.pathname.startsWith("/static/")) return;   // only static assets
+  // Network-first: always try fresh (so updates ship), fall back to cache offline.
   e.respondWith(
-    caches.match(req).then((cached) =>
-      cached ||
-      fetch(req).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(req, copy));
-        return res;
-      }).catch(() => cached)
-    )
+    fetch(req).then((res) => {
+      const copy = res.clone();
+      caches.open(CACHE).then((c) => c.put(req, copy));
+      return res;
+    }).catch(() => caches.match(req))
   );
 });

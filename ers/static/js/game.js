@@ -58,7 +58,7 @@ function render() {
     const st = (s.standings || []).find((x) => x.pid === pid);
     const cnt = s.counts[pid] || 0;
     return `<div class="seat ${isTurn ? "turn" : ""} ${out ? "out" : ""}" id="seat-${pid}">
-      <div class="avatar" style="background:${pcolor(pid)}">${esc((pname(pid)[0] || "?").toUpperCase())}</div>
+      <span class="pdot lg" style="background:${pcolor(pid)}"></span>
       <div class="pname" style="color:${isTurn ? "" : pcolor(pid)}">${esc(pname(pid))}</div>
       <div class="count"><span class="mini"></span>${cnt}</div>
       ${out && st ? `<span class="tag">OUT · #${st.place} · lasted ${st.turns_lasted}</span>` : ""}
@@ -101,7 +101,7 @@ function render() {
   stackEl.innerHTML = Array.from({ length: Math.max(backs, myCnt ? 1 : 0) }, (_, i) =>
     `<div class="card-back" style="transform:translate(${i * 2}px,${-i * 2}px)"></div>`).join("");
   const nameEl = document.getElementById("myName");
-  nameEl.textContent = pname(MY_PID) + (meOut ? " (out)" : "");
+  nameEl.innerHTML = `<span class="pdot" style="background:${pcolor(MY_PID)}"></span> ${esc(pname(MY_PID))}${meOut ? " (out)" : ""}`;
   nameEl.style.color = (s.current === MY_PID && s.phase === "playing") ? "" : pcolor(MY_PID);
   nameEl.classList.toggle("turn", s.current === MY_PID && s.phase === "playing");
   document.getElementById("myLbl").textContent =
