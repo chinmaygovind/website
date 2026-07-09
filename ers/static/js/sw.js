@@ -1,7 +1,7 @@
 /* Service worker: cache static assets so the app is installable and loads fast.
    It deliberately never intercepts pages, POSTs, or socket.io traffic, so live
    gameplay always goes straight to the network. */
-const CACHE = "ers-v2";
+const CACHE = "ers-v3";
 const ASSETS = [
   "/static/css/style.css",
   "/static/js/game.js",

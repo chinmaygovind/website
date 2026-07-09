@@ -271,9 +271,50 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
 .card .corner .r { font-size: 1.25rem; } .card .corner .s { font-size: 1.05rem; display:block; }
 .card .pip { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); font-size: 3.2rem; }
 .card.red { color: var(--red); }
-@keyframes deal { from { transform: translate(-50%,-50%) translateY(-40px) rotate(-8deg); opacity:0; }
-  to { transform: translate(-50%,-50%) rotate(var(--rot,0deg)); opacity:1; } }
-.pile .pcard.new { animation: deal .18s ease-out; }
+/* the just-flipped card stays hidden until the flying card arrives (~.3s), then settles in */
+.pile .pcard.landing { opacity: 0; animation: land .12s ease-out .3s forwards; }
+@keyframes land {
+  from { opacity: 0; transform: translate(-50%,-50%) rotate(var(--rot,0deg)) scale(.92); }
+  to   { opacity: 1; transform: translate(-50%,-50%) rotate(var(--rot,0deg)) scale(1); }
+}
+
+/* a face-down card flying from a seat to the pile, flipping face-up on arrival */
+.fly-card { position: fixed; z-index: 30; pointer-events: none; transform: translate(0,0);
+  transition: transform .3s cubic-bezier(.3,.7,.4,1); }
+.fly-card.go { transform: translate(var(--dx), var(--dy)); }
+.fly-inner { position: absolute; left: -50px; top: -70px; width: 100px; height: 140px;
+  transform-style: preserve-3d; transition: transform .18s ease-in .28s; }
+.fly-card.go .fly-inner { transform: rotateY(180deg); }
+.fly-face { position: absolute; inset: 0; backface-visibility: hidden; border-radius: 10px; overflow: hidden; }
+.fly-back { border: 2px solid #2a1710;
+  background: repeating-linear-gradient(45deg, rgba(255,220,150,.14) 0 6px, rgba(0,0,0,.05) 6px 12px),
+    linear-gradient(160deg, #7a4a28, #4a2c17); }
+.fly-front { transform: rotateY(180deg); display: flex; align-items: center; justify-content: center; }
+.fly-front .card { width: 100px; height: 140px; }
+
+/* burned card slides in under the lifted pile, face-up */
+.pile { transition: transform .2s ease-out; }
+.pile.lifted { transform: translate(-50%, -50%) translateY(-52px); }
+.burn-card { position: fixed; z-index: 6; pointer-events: none; transform: translate(0,0);
+  transition: transform .34s cubic-bezier(.3,.7,.4,1); }
+.burn-card.go { transform: translate(var(--dx), var(--dy)); }
+.burn-card .card { position: absolute; left: -50px; top: -70px; width: 100px; height: 140px;
+  box-shadow: 0 8px 18px rgba(0,0,0,.5); }
+
+/* a colored slapping hand shooting in from a player's seat */
+.slap-hand { position: fixed; z-index: 33; pointer-events: none;
+  animation: slap-in .5s ease-out forwards; filter: drop-shadow(0 6px 10px rgba(0,0,0,.5)); }
+@keyframes slap-in {
+  0%   { transform: translate(-50%,-50%) scale(.5); opacity: 0; }
+  35%  { opacity: 1; }
+  60%  { transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(1.2); opacity: 1; }
+  72%  { transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(.92); opacity: 1; }
+  100% { transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(1.05); opacity: 0; }
+}
+
+/* "flip" label under your pile */
+.flip-lbl { margin-top: .45rem; font-family: "xkcd"; font-size: 1.05rem; color: var(--cream); opacity: .55; }
+.flip-lbl.hot { color: var(--gold-soft); opacity: 1; text-shadow: 0 0 10px var(--gold); }
 
 /* challenge badge */
 .challenge { position:absolute; left:50%; top: calc(47% - 128px); transform:translate(-50%,-50%);
@@ -306,7 +347,10 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
 .standings .st { display:flex; justify-content:space-between; gap:.5rem; padding:.22rem 0; font-size:.9rem; }
 .standings .st .pl { font-family:"xkcd"; color: var(--gold); }
 .slog { position:absolute; right: 12px; bottom: 92px; z-index: 18; width: 320px; max-width: 46vw;
-  max-height: 32vh; overflow: hidden; display:flex; flex-direction: column-reverse; }
+  max-height: 32vh; overflow-y: auto; display:flex; flex-direction: column; gap: .35rem;
+  scrollbar-width: thin; scrollbar-color: rgba(242,201,76,.4) transparent; }
+.slog::-webkit-scrollbar { width: 6px; }
+.slog::-webkit-scrollbar-thumb { background: rgba(242,201,76,.4); border-radius: 3px; }
 
 /* controls legend, bottom-right corner */
 .controls { position:absolute; right: 12px; bottom: 12px; z-index: 19; line-height: 1.7;
@@ -316,11 +360,13 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
   font-family:"xkcd"; color: var(--gold); background: rgba(0,0,0,.4);
   border:1px solid rgba(242,201,76,.3); border-radius: 5px; padding: 0 6px; }
 .slog .entry { background: rgba(20,12,7,.78); border:1px solid rgba(242,201,76,.2);
-  border-left: 3px solid var(--gold); border-radius: 8px; padding:.4rem .55rem; margin-top:.35rem;
-  font-size:.86rem; color: var(--cream); animation: slin .2s ease-out; }
+  border-left: 3px solid var(--gold); border-radius: 8px; padding:.4rem .55rem; flex: 0 0 auto;
+  font-size:.86rem; color: var(--cream); animation: slin .2s ease-out, entryfade 7s ease-out forwards; }
 .slog .entry.false { border-left-color: var(--red); }
 .slog .entry.out { border-left-color: #b98; }
+.slog .entry:hover { opacity: 1 !important; }
 @keyframes slin { from { transform: translateX(20px); opacity:0; } }
+@keyframes entryfade { 0%,55% { opacity: 1; } 100% { opacity: .35; } }
 .slog b { font-family:"xkcd"; }
 
 /* topbar in game */
@@ -382,12 +428,16 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
   .mystack .lbl { font-size: .8rem; }
 
   .slap-btn { width: 98px; height: 98px; font-size: 1.4rem; bottom: 12px; }
-  .slog { right: 8px; bottom: 70px; width: 54vw; max-width: 58vw; max-height: 20vh; }
+  /* messages bar up in the top-right; standings top-left; no key hints on mobile */
+  .slog { top: 44px; bottom: auto; right: 6px; left: auto; width: 52vw; max-width: 56vw; max-height: 26vh; }
   .slog .entry { font-size: .74rem; padding: .3rem .42rem; }
-  .controls { right: 8px; bottom: 10px; font-size: .72rem; padding: .32rem .5rem; line-height: 1.5; }
-  .controls b { min-width: 40px; margin-right: 5px; }
-  .side.right { top: 48px; right: 8px; width: 126px; }
+  .controls { display: none; }
+  .side.right { top: 44px; left: 6px; right: auto; width: 42vw; }
   .standings .st { font-size: .78rem; }
+  .fly-inner { width: 74px; height: 104px; left: -37px; top: -52px; }
+  .fly-front .card { width: 74px; height: 104px; }
+  .slap-hand svg { width: 66px; height: 80px; }
+  .flip-lbl { font-size: .9rem; }
   .challenge { top: calc(47% - 104px); padding: .3rem .7rem; }
   .challenge .big { font-size: 1.3rem; }
   .game-top .rulechips { display: none; }

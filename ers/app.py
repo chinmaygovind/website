@@ -88,9 +88,15 @@ ERS_COLORS = ["#f2c94c", "#eb5757", "#56ccf2", "#6fcf78", "#bb6bd9",
 # Bot slap reaction is drawn from Exponential(mean = this many seconds).
 BOT_SLAP_MEAN_SEC = 5.0
 
+# After a wrong slap a player is frozen out for this long before they can slap again
+# (long enough to cover the burn animation).
+FALSE_SLAP_COOLDOWN = 2.0
+ROYALTY_NAMES = {11: "Jack", 12: "Queen", 13: "King", 14: "Ace"}
+
 # In-memory per-game locks + bot scheduling guards (single eventlet worker).
 _locks = {}
 _sched = {}
+_slap_cooldown = {}   # (code, pid) -> wall-clock time the player is allowed to slap again
 
 
 def _lock(code):
@@ -375,6 +381,8 @@ def _broadcast_lobby(game):
 
 
 def _push_log(state, entry):
+    state["log_seq"] = state.get("log_seq", 0) + 1
+    entry["id"] = state["log_seq"]        # stable id so the client chat can reconcile
     entry["t"] = int(time.time() * 1000)
     state.setdefault("log", []).append(entry)
     state["log"] = state["log"][-60:]
@@ -521,8 +529,10 @@ def on_slap(data):
         me = ErsPlayer.query.filter_by(game_id=game.id, session_key=get_session_key()).first()
         if not me:
             return
+        if time.time() < _slap_cooldown.get((code, me.pid), 0):
+            return                               # still frozen out after a wrong slap
         state = game.state
-        changed = _do_slap(game, state, me.pid)
+        changed = _do_slap(game, state, me.pid, code)
         if changed:
             game.state = state
             game.last_activity_at = datetime.utcnow()
@@ -558,7 +568,7 @@ def _do_flip(game, state, pid):
     return events
 
 
-def _do_slap(game, state, pid):
+def _do_slap(game, state, pid, code):
     reasons = gl.slap_reasons(state["pile"], state["rules"])
     now = time.time()
     events = gl.slap(state, pid, state["rules"])
@@ -578,7 +588,7 @@ def _do_slap(game, state, pid):
                 pg["reaction_samples"] += 1
                 if pg["fastest_slap_ms"] is None or reaction < pg["fastest_slap_ms"]:
                     pg["fastest_slap_ms"] = reaction
-            _push_log(state, {"kind": "slap", "name": name, "color": color,
+            _push_log(state, {"kind": "slap", "pid": pid, "name": name, "color": color,
                               "reaction_ms": reaction, "reasons": ev["reasons"]})
             _log_event(game, {"type": "slap", "pid": pid, "valid": True,
                               "reasons": ev["reasons"], "reaction_ms": reaction,
@@ -589,7 +599,8 @@ def _do_slap(game, state, pid):
             state["slappable_at"] = None
         elif ev["type"] == "false_slap":
             _pg(state, pid)["false_slaps"] += 1
-            _push_log(state, {"kind": "false", "name": name, "color": color,
+            _slap_cooldown[(code, pid)] = now + FALSE_SLAP_COOLDOWN
+            _push_log(state, {"kind": "false", "pid": pid, "name": name, "color": color,
                               "burned": ev.get("burned", 0)})
             _log_event(game, {"type": "slap", "pid": pid, "valid": False,
                               "burned": ev.get("burned", 0)})
@@ -613,7 +624,8 @@ def _record_wins(game, state, events):
                 state["log"][-1]["cards"] = ev["count"]
             else:
                 _push_log(state, {"kind": "pile", "name": name, "color": color,
-                                  "cards": ev["count"]})
+                                  "cards": ev["count"],
+                                  "on": ROYALTY_NAMES.get(ev.get("rank"))})
             _log_event(game, {"type": "win", "pid": ev["pid"], "count": ev["count"]})
         elif ev["type"] == "eliminated":
             name, color = _name(game, ev["pid"])
@@ -705,7 +717,7 @@ def _bot_slap(code, seq, pid):
                 return
             if not gl.slap_reasons(state["pile"], state["rules"]):
                 return          # no longer slappable; bot never false-slaps
-            _do_slap(game, state, pid)
+            _do_slap(game, state, pid, code)
             game.state = state
             game.last_activity_at = datetime.utcnow()
             db.session.commit()

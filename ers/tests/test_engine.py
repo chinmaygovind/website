@@ -91,11 +91,12 @@ def test_valid_slap_wins_pile():
 def test_false_slap_burns_and_locks():
     s = mk({"A": [C(2), C(3), C(4)]}, pile=[C(7), C(9)])
     ev = slap(s, "A")
-    assert ev[0]["type"] == "false_slap"
-    assert s["hands"]["A"] == [C(4)]          # top two burned
-    assert s["pile"][:2] == [C(2), C(3)]      # burned to the bottom
+    assert ev[0]["type"] == "false_slap" and ev[0]["burned"] == 1
+    assert s["hands"]["A"] == [C(3), C(4)]     # one card burned off the top
+    assert s["pile"][0] == C(2)                # burned to the bottom of the pile
+    assert s["last_burn"]["card"] == C(2) and s["last_burn"]["pid"] == "A"
     assert "A" in s["slap_locked"]
-    assert slap(s, "A") == []                 # locked out until next flip
+    assert slap(s, "A") == []                  # locked out until next flip
 
 
 def test_slap_back_in_from_zero_cards():

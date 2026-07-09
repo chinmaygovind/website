@@ -6,6 +6,10 @@ const socket = io();
 let STATE = null;
 let prevPile = 0;
 let lastLogT = 0;
+let lastFlipSeq = 0;       // gates the fly-in animation so a card never re-animates
+let lastBurnSeq = 0;       // gates the burn (lift + slide-under) animation
+let lastLogId = 0;         // highest chat entry id seen (for fresh-entry effects)
+let slapCooldownUntil = 0; // local echo of the freeze after your wrong slap
 
 // sound effects (unlocked after the first user gesture by browser policy)
 const sndFlip = new Audio("/static/sounds/flip.wav");
@@ -61,20 +65,21 @@ function render() {
   if (!STATE) return;
   const s = STATE;
 
-  // opponents fan around the top of the table; you are your own pile bottom-left.
+  // everyone sits around the table; you are at the bottom, same seat style as all.
   const order = s.players.slice();
   const mi = order.indexOf(MY_PID);
   const rot = mi >= 0 ? order.slice(mi).concat(order.slice(0, mi)) : order;
-  const others = rot.filter((pid) => pid !== MY_PID);
 
   const seatsEl = document.getElementById("seats");
-  seatsEl.innerHTML = others.map((pid) => {
+  seatsEl.innerHTML = rot.map((pid) => {
     const si = seatInner(pid, s);
     return `<div class="seat ${si.cls}" id="seat-${pid}">${si.html}</div>`;
   }).join("");
-  positionSeats(others);
+  positionSeats(rot);
 
-  // pile - fan the last few cards, newest on top
+  // pile - fan the last few cards, newest on top. Gate the "just flipped" card on
+  // the flip's seq so it never re-animates (fixes the double-drop on mobile).
+  const newFlip = s.last_flip && s.last_flip.seq > lastFlipSeq;
   const pileEl = document.getElementById("pile");
   const pile = s.pile || [];
   const show = pile.slice(-6);
@@ -82,35 +87,43 @@ function render() {
     const n = show.length;
     const rotDeg = (i - (n - 1) / 2) * 7 + ((c.rank * 13 + i) % 5 - 2);
     const isTop = i === n - 1;
-    const grew = pile.length > prevPile && isTop;
-    return `<div class="pcard ${grew ? "new" : ""}" style="--rot:${rotDeg}deg;
+    const landing = newFlip && isTop;
+    return `<div class="pcard ${landing ? "landing" : ""}" style="--rot:${rotDeg}deg;
       transform:translate(-50%,-50%) rotate(${rotDeg}deg); z-index:${i}">
-      ${cardFace(c, isTop ? "" : "")}</div>`;
+      ${cardFace(c)}</div>`;
   }).join("");
-  if (pile.length === prevPile + 1) playSafe(sndFlip);   // a card was placed
   prevPile = pile.length;
   document.getElementById("pileCount").textContent =
     pile.length ? `${pile.length} card${pile.length > 1 ? "s" : ""} in the pile` : "";
+  if (newFlip) {                       // a card was just flipped: fly it in and flip it
+    flyCard(s.last_flip.pid, s.last_flip.card);
+    playSafe(sndFlip);
+    lastFlipSeq = s.last_flip.seq;
+  }
+  if (s.last_burn && s.last_burn.seq > lastBurnSeq && s.last_burn.card) {
+    burnCard(s.last_burn.pid, s.last_burn.card);   // lift pile, slide burned card under, drop
+    lastBurnSeq = s.last_burn.seq;
+  }
 
-  // challenge badge
+  // challenge badge - shows the royalty card, how many are left, and who owes it
   const chEl = document.getElementById("challenge");
   if (s.challenge) {
     chEl.className = "challenge";
-    chEl.innerHTML = `<div class="big">${s.challenge.label || ""}</div>${s.challenge.chances_left} to beat`;
+    chEl.innerHTML = `<div class="big">${s.challenge.label || ""}</div>` +
+      `${s.challenge.chances_left} left for <b>${esc(pname(s.current))}</b>`;
   } else chEl.className = "";
 
-  // your own seat (rendered exactly like the others) plus your clickable pile
+  // your clickable face-down pile (bottom-left), labelled "flip"
   const myCnt = s.counts[MY_PID] || 0;
   const canFlip = s.phase === "playing" && s.current === MY_PID && !s.pending_win && myCnt > 0;
-  const mine = seatInner(MY_PID, s);
-  const mySeatEl = document.getElementById("mySeat");
-  mySeatEl.className = "seat me " + mine.cls;
-  mySeatEl.innerHTML = mine.html;
   const stackEl = document.getElementById("myStack");
   const backs = Math.min(myCnt, 4);
   stackEl.className = "stack-cards" + (canFlip ? " can-flip" : "");
   stackEl.innerHTML = Array.from({ length: Math.max(backs, myCnt ? 1 : 0) }, (_, i) =>
     `<div class="card-back" style="transform:translate(${i * 2}px,${-i * 2}px)"></div>`).join("");
+  const flipLbl = document.getElementById("flipLbl");
+  flipLbl.textContent = myCnt ? "flip" : "out";
+  flipLbl.classList.toggle("hot", canFlip);
 
   // turn message
   const tm = document.getElementById("turnMsg");
@@ -148,55 +161,74 @@ function render() {
   }
 }
 
-function positionSeats(others) {
+function positionSeats(all) {
   const oval = document.querySelector(".table-oval").getBoundingClientRect();
   const cx = oval.left + oval.width / 2;
   const cy = oval.top + oval.height / 2;
   const rx = oval.width / 2 + 26;
   const ry = oval.height / 2 + 20;
-  const n = others.length;
-  others.forEach((pid, k) => {
+  const n = all.length;
+  all.forEach((pid, k) => {
     const el = document.getElementById("seat-" + pid);
     if (!el) return;
-    // spread opponents across the top of the table (bottom is your own pile)
-    const frac = n === 1 ? 0.5 : (k + 0.5) / n;
-    const theta = Math.PI * (170 + 200 * frac) / 180;
+    // you (k = 0) sit at the bottom; everyone else spreads evenly around the table
+    const theta = Math.PI / 2 + (2 * Math.PI * k) / n;
     el.style.left = cx + rx * Math.cos(theta) + "px";
     el.style.top = cy + ry * Math.sin(theta) + "px";
   });
 }
 window.addEventListener("resize", () => { if (STATE) render(); });
 
+function entryHTML(e) {
+  if (e.kind === "slap") {
+    const rt = e.reaction_ms != null ? ` in ${(e.reaction_ms / 1000).toFixed(2)}s` : "";
+    const rs = (e.reasons || []).map((r) => REASON[r] || r).join(" + ");
+    const cards = e.cards != null ? `, +${e.cards} cards` : "";
+    return `<b style="color:${e.color}">SLAP by ${esc(e.name)}</b>${rt} (${rs})${cards}`;
+  }
+  if (e.kind === "false")
+    return `<b style="color:${e.color}">${esc(e.name)}</b> slapped early - burned ${e.burned}`;
+  if (e.kind === "pile")
+    return `<b style="color:${e.color}">${esc(e.name)}</b> takes the pile${e.on ? " on a " + e.on : ""}, +${e.cards} cards`;
+  if (e.kind === "out")
+    return `<b style="color:${e.color}">${esc(e.name)}</b> is out · #${e.place}, lasted ${e.turns_lasted} turns`;
+  return "";
+}
+
 function renderLog(log) {
   const el = document.getElementById("slog");
-  el.innerHTML = log.slice(-14).map((e) => {
-    if (e.kind === "slap") {
-      const rt = e.reaction_ms != null ? ` in ${(e.reaction_ms / 1000).toFixed(2)}s` : "";
-      const rs = (e.reasons || []).map((r) => REASON[r] || r).join(" + ");
-      const cards = e.cards != null ? `, +${e.cards} cards` : "";
-      return `<div class="entry"><b style="color:${e.color}">SLAP by ${esc(e.name)}</b>${rt} (${rs})${cards}</div>`;
-    }
-    if (e.kind === "false")
-      return `<div class="entry false"><b style="color:${e.color}">${esc(e.name)}</b> slapped early - burned ${e.burned}</div>`;
-    if (e.kind === "pile")
-      return `<div class="entry"><b style="color:${e.color}">${esc(e.name)}</b> takes the pile, +${e.cards} cards</div>`;
-    if (e.kind === "out")
-      return `<div class="entry out"><b style="color:${e.color}">${esc(e.name)}</b> is out · #${e.place}, lasted ${e.turns_lasted} turns</div>`;
-    return "";
-  }).join("");
+  const recent = log.slice(-40);
+  // autoscroll only when the reader is already at the bottom (so scrolling up to
+  // read history is not yanked away).
+  const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  const have = {};
+  Array.from(el.children).forEach((c) => { have[c.dataset.id] = true; });
+  const want = new Set(recent.map((e) => String(e.id)));
+  Array.from(el.children).forEach((c) => { if (!want.has(c.dataset.id)) c.remove(); });
 
-  // flash + toast on the newest slap
-  const fresh = log.filter((e) => (e.t || 0) > lastLogT);
-  if (fresh.length && lastLogT) {
+  const fresh = [];
+  recent.forEach((e) => {
+    if (have[String(e.id)]) return;
+    const div = document.createElement("div");
+    div.dataset.id = e.id;
+    div.className = "entry" + (e.kind === "false" ? " false" : e.kind === "out" ? " out" : "");
+    div.innerHTML = entryHTML(e);
+    el.appendChild(div);
+    if (e.id > lastLogId) fresh.push(e);
+  });
+  if (atBottom) el.scrollTop = el.scrollHeight;
+
+  if (fresh.length && lastLogId) {
     if (fresh.some((e) => e.kind === "slap" || e.kind === "false")) playSafe(sndSlap);
+    fresh.forEach((e) => {
+      if (e.kind === "slap") slapHand(e.pid, e.color);
+      if (e.kind === "false" && e.pid === MY_PID) slapCooldownUntil = Date.now() + 2000;
+    });
     const slap = fresh.slice().reverse().find((e) => e.kind === "slap");
     if (slap) { flash(); toast(`SLAP! ${slap.name}`); }
-    else {
-      const mine = fresh.find((e) => e.kind === "false" && e.name === pname(MY_PID));
-      if (mine) toast("Too early!");
-    }
+    else if (fresh.some((e) => e.kind === "false" && e.pid === MY_PID)) toast("Too early!");
   }
-  if (log.length) lastLogT = Math.max(lastLogT, ...log.map((e) => e.t || 0));
+  if (recent.length) lastLogId = Math.max(lastLogId, ...recent.map((e) => e.id || 0));
 }
 
 function flash() {
@@ -219,6 +251,7 @@ function doFlip() {
 }
 function doSlap() {
   if (!STATE || STATE.phase !== "playing") return;
+  if (Date.now() < slapCooldownUntil) return;   // frozen out after a wrong slap
   socket.emit("slap", { code: GAME_CODE });
 }
 window.doFlip = doFlip;
@@ -229,3 +262,84 @@ document.addEventListener("keydown", (e) => {
   if (e.code === "Space") { e.preventDefault(); doSlap(); }
   else if (e.key === "f" || e.key === "F") { doFlip(); }
 });
+
+// ---- animations ----
+// Animations live inside the table so their z-index sits relative to the pile
+// (fly/hand above it, the burned card tucked below it).
+function fx() { return document.querySelector(".table-page") || document.body; }
+function centerOf(el) {
+  const r = el.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+
+// A face-down card flies from the flipper's seat to the pile and flips face-up.
+function flyCard(pid, card) {
+  const seat = document.getElementById("seat-" + pid);
+  const pileEl = document.getElementById("pile");
+  if (!seat || !pileEl || !card) return;
+  const a = centerOf(seat), b = centerOf(pileEl);
+  const fly = document.createElement("div");
+  fly.className = "fly-card";
+  fly.style.left = a.x + "px";
+  fly.style.top = a.y + "px";
+  fly.style.setProperty("--dx", (b.x - a.x) + "px");
+  fly.style.setProperty("--dy", (b.y - a.y) + "px");
+  fly.innerHTML = `<div class="fly-inner">
+      <div class="fly-face fly-back"></div>
+      <div class="fly-face fly-front">${cardFace(card)}</div>
+    </div>`;
+  fx().appendChild(fly);
+  requestAnimationFrame(() => fly.classList.add("go"));
+  setTimeout(() => fly.remove(), 650);
+}
+
+// On a wrong slap: lift the pile, slide the burned card underneath face-up (so
+// everyone sees the new bottom card), then drop the pile back on top of it.
+function burnCard(pid, card) {
+  const seat = document.getElementById("seat-" + pid);
+  const pileEl = document.getElementById("pile");
+  if (!seat || !pileEl || !card) return;
+  const a = centerOf(seat), b = centerOf(pileEl);
+  pileEl.classList.add("lifted");
+  const burn = document.createElement("div");
+  burn.className = "burn-card";
+  burn.style.left = a.x + "px";
+  burn.style.top = a.y + "px";
+  burn.style.setProperty("--dx", (b.x - a.x) + "px");
+  burn.style.setProperty("--dy", (b.y - a.y + 30) + "px");   // ends in the gap below the lifted pile
+  burn.innerHTML = cardFace(card);                            // face-up
+  fx().appendChild(burn);
+  requestAnimationFrame(() => burn.classList.add("go"));
+  setTimeout(() => pileEl.classList.remove("lifted"), 900);   // drop the pile back down
+  setTimeout(() => burn.remove(), 1300);
+}
+
+function handSVG(color) {
+  return `<svg viewBox="0 0 100 120" width="86" height="104" aria-hidden="true">
+    <g fill="${color}" stroke="rgba(0,0,0,.32)" stroke-width="2" stroke-linejoin="round">
+      <rect x="22" y="46" width="58" height="60" rx="16"/>
+      <rect x="25" y="12" width="12" height="42" rx="6"/>
+      <rect x="41" y="5" width="12" height="50" rx="6"/>
+      <rect x="57" y="8" width="12" height="48" rx="6"/>
+      <rect x="73" y="16" width="12" height="40" rx="6"/>
+      <rect x="4" y="54" width="20" height="14" rx="7" transform="rotate(-28 14 61)"/>
+    </g></svg>`;
+}
+
+// A colored hand shoots in from the slapper's seat and smacks the pile.
+function slapHand(pid, color) {
+  const seat = document.getElementById("seat-" + pid);
+  const pileEl = document.getElementById("pile");
+  if (!seat || !pileEl) return;
+  const a = centerOf(seat), b = centerOf(pileEl);
+  const ang = Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI + 90;
+  const h = document.createElement("div");
+  h.className = "slap-hand";
+  h.style.left = a.x + "px";
+  h.style.top = a.y + "px";
+  h.style.setProperty("--tx", (b.x - a.x) + "px");
+  h.style.setProperty("--ty", (b.y - a.y) + "px");
+  h.innerHTML = `<div class="hand-rot" style="transform:rotate(${ang}deg)">${handSVG(color || "#f2c94c")}</div>`;
+  fx().appendChild(h);
+  setTimeout(() => h.remove(), 520);
+}

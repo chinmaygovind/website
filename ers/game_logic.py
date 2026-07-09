@@ -35,9 +35,8 @@ ROYALTY = {11: 1, 12: 2, 13: 3, 14: 4}  # J, Q, K, A
 # Optional slap rules that are enabled (core double/sandwich/top-bottom always on).
 DEFAULT_RULES = ("ten", "kingqueen")
 
-# Cards burned to the bottom of the pile on a false slap (tunable house rule;
-# the linked ruleset uses two).
-FALSE_SLAP_BURN = 2
+# Cards burned to the bottom of the pile on a false slap.
+FALSE_SLAP_BURN = 1
 
 # Seconds a failed tribute waits before the beneficiary collects, so a valid slap
 # on the final card can still beat the collection. Used by the app's grace timer.
@@ -75,6 +74,8 @@ def new_deal(player_ids, seed=None, rules=DEFAULT_RULES):
         "challenge": None,        # {"chances_left", "beneficiary", "rank"} or None
         "eliminated": [],
         "pending_win": None,      # {"pid", "reason"} awaiting the grace window
+        "last_flip": None,        # {"pid", "card", "seq"} of the most recent flip
+        "last_burn": None,        # {"pid", "card", "seq"} of the most recent false-slap burn
         "slap_locked": [],        # players who false-slapped the current pile
         "phase": "playing",       # "playing" | "ended"
         "winner": None,
@@ -151,6 +152,7 @@ def flip(state, pid):
     state["slap_locked"] = []  # a new card clears false-slap lockouts
     state["turns"] += 1
     state["seq"] += 1
+    state["last_flip"] = {"pid": pid, "card": card, "seq": state["seq"]}
     events.append({"type": "flip", "pid": pid, "card": card})
 
     v = ROYALTY.get(card["rank"], 0)
@@ -166,7 +168,8 @@ def flip(state, pid):
             if ch["chances_left"] <= 0 or not hand:
                 # Tribute failed (ran out of chances, or out of cards mid-tribute):
                 # the beneficiary wins, pending a grace window for a last slap.
-                state["pending_win"] = {"pid": ch["beneficiary"], "reason": "tribute"}
+                state["pending_win"] = {"pid": ch["beneficiary"], "reason": "tribute",
+                                        "rank": ch.get("rank")}
                 events.append({"type": "tribute_fail", "pid": ch["beneficiary"]})
             # else: the same player keeps paying - current stays put.
     else:
@@ -228,7 +231,7 @@ def slap(state, pid, rules=None):
     reasons = slap_reasons(state["pile"], rules)
     if reasons:
         events.append({"type": "slap_win", "pid": pid, "reasons": reasons})
-        events += award_pile(state, pid)
+        events += award_pile(state, pid, via="slap")
     else:
         # False slap: burn cards from the top of the slapper's stack to the
         # bottom of the pile, and lock them out until the next card is flipped.
@@ -238,12 +241,17 @@ def slap(state, pid, rules=None):
             state["pile"] = burned + state["pile"]
         state["slap_locked"].append(pid)
         state["seq"] += 1
-        events.append({"type": "false_slap", "pid": pid, "burned": burn})
+        burned_card = burned[0] if burned else None
+        state["last_burn"] = {"pid": pid, "card": burned_card, "seq": state["seq"]}
+        events.append({"type": "false_slap", "pid": pid, "burned": burn, "card": burned_card})
     return events
 
 
-def award_pile(state, pid):
-    """Give the whole pile to ``pid`` (placed at the bottom of their stack)."""
+def award_pile(state, pid, via=None, rank=None):
+    """Give the whole pile to ``pid`` (placed at the bottom of their stack).
+
+    ``via`` is "slap" or "tribute"; ``rank`` is the royalty rank when a tribute
+    was failed (so the UI can say "takes the pile on a King")."""
     events = []
     pile = state["pile"]
     count = len(pile)
@@ -254,7 +262,7 @@ def award_pile(state, pid):
     state["pending_win"] = None
     state["slap_locked"] = []
     state["seq"] += 1
-    events.append({"type": "win_pile", "pid": pid, "count": count})
+    events.append({"type": "win_pile", "pid": pid, "count": count, "via": via, "rank": rank})
 
     # Anyone else who is now out of cards missed their chance to slap back in.
     for other in state["players"]:
@@ -284,7 +292,7 @@ def resolve_pending(state):
     if not pw:
         return []
     state["pending_win"] = None
-    return award_pile(state, pw["pid"])
+    return award_pile(state, pw["pid"], via="tribute", rank=pw.get("rank"))
 
 
 # ---------------------------------------------------------------------------
@@ -308,6 +316,8 @@ def public_view(state):
         },
         "eliminated": state["eliminated"],
         "pending_win": state.get("pending_win"),
+        "last_flip": state.get("last_flip"),
+        "last_burn": state.get("last_burn"),
         "phase": state["phase"],
         "winner": state["winner"],
         "rules": state["rules"],
