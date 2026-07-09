@@ -21,7 +21,7 @@ SITE_DIR = os.path.join(BASE_DIR, "site")
 
 # Where the Wii "TTR" channel / the /ttr endpoint sends visitors. TTR runs as its
 # own service (the ``ttr/`` git submodule); set TTR_URL to wherever it is reachable.
-TTR_URL = os.environ.get("TTR_URL", "http://52.54.184.133")
+TTR_URL = os.environ.get("TTR_URL", "https://ttr.cgovind.com")
 
 # The roll game's NPC dialog talks to Google's Gemini API. The key MUST stay
 # server-side — a key shipped in client JS is world-readable — so the browser
