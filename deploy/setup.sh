@@ -26,7 +26,7 @@ python3 -m venv "$VENV"
 # ── .env ──────────────────────────────────────────────────────────────────────
 if [ ! -f "$APP_DIR/.env" ]; then
     cp "$APP_DIR/.env.example" "$APP_DIR/.env"
-    echo "==> Created .env from .env.example — edit TTR_URL before going live"
+    echo "==> Created .env from .env.example - edit TTR_URL before going live"
 fi
 
 # ── systemd service ───────────────────────────────────────────────────────────

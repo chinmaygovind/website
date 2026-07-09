@@ -1,0 +1,23 @@
+# Egyptian Rat Screw (the ers.cgovind.com subdomain), served from website/ers.
+#
+# Like TTR it speaks WebSockets and keeps game state + socket rooms in process,
+# so it runs as its OWN single eventlet gunicorn worker. It needs its own
+# virtualenv at {{APP_DIR}}/ers/venv and its own .env at {{APP_DIR}}/ers/.env
+# (share TTR's SECRET_KEY and point DATABASE_URL at the shared SQLite file so the
+# accounts table is the same on both sites).
+[Unit]
+Description=Egyptian Rat Screw (from website subdir)
+After=network.target
+
+[Service]
+User={{USER}}
+WorkingDirectory={{APP_DIR}}/ers
+EnvironmentFile={{APP_DIR}}/ers/.env
+ExecStart={{APP_DIR}}/ers/venv/bin/gunicorn --worker-class eventlet -w 1 --bind 127.0.0.1:5003 app:app
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

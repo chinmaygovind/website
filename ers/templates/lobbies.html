@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Lobbies | Egyptian Rat Screw{% endblock %}
+{% set active_page = 'lobbies' %}
+{% block body %}
+{% include "_nav.html" %}
+<div class="wrap wide">
+  <div class="grid">
+    <div class="panel">
+      <h2>Open games</h2>
+      <div class="error" id="err"></div>
+      {% if games %}
+      <div class="game-list">
+        {% for g in games %}
+        <div class="game-item">
+          <div>
+            <span class="code">{{ g.code }}</span>
+            <div class="meta">{{ g.player_count }}/{{ g.max_players }} players</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:.8rem">
+            <div class="avatars">
+              {% for p in g.players %}<div class="av" style="background:{{ p.color }}">{{ p.name[0]|upper }}</div>{% endfor %}
+            </div>
+            <button class="btn" onclick="joinGame('{{ g.code }}')">Join</button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty">No open games right now - start one!</div>
+      {% endif %}
+
+      <h2 style="margin-top:1.6rem">Join by code</h2>
+      <div class="row">
+        <div class="field" style="margin:0"><input id="jc" placeholder="ABC123" maxlength="6" style="text-transform:uppercase"/></div>
+        <button class="btn secondary" style="flex:0 0 auto" onclick="joinByCode()">Join</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>New game</h2>
+      <div class="field">
+        <label>Players</label>
+        <select id="maxp">
+          <option value="2">2 players</option>
+          <option value="3">3 players</option>
+          <option value="4" selected>4 players</option>
+          <option value="5">5 players</option>
+          <option value="6">6 players</option>
+          <option value="8">8 players</option>
+        </select>
+      </div>
+      <div class="field">
+        <label><input type="checkbox" id="priv" style="width:auto"/> Private (passcode)</label>
+        <input id="pass" placeholder="Passcode" style="margin-top:.4rem;display:none"/>
+      </div>
+      <button class="btn big" style="width:100%" onclick="createGame()">Create game</button>
+      <p class="muted" style="font-size:.85rem;margin-top:.8rem">You'll get a table to invite friends (or add bots) before dealing.</p>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const err = document.getElementById('err');
+function showErr(m){ err.textContent = m; err.classList.add('show'); }
+document.getElementById('priv').onchange = e => {
+  document.getElementById('pass').style.display = e.target.checked ? 'block' : 'none';
+};
+async function post(url, body){
+  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  return [r.ok, await r.json().catch(()=>({}))];
+}
+async function createGame(){
+  const [ok,d] = await post('/create', {
+    max_players: +document.getElementById('maxp').value,
+    is_private: document.getElementById('priv').checked,
+    passcode: document.getElementById('pass').value });
+  ok ? location.href = '/lobby/' + d.code : showErr(d.error || 'Could not create game.');
+}
+async function joinGame(code, passcode){
+  const [ok,d] = await post('/join', {code, passcode: passcode || ''});
+  ok ? location.href = '/lobby/' + d.code : showErr(d.error || 'Could not join.');
+}
+async function joinByCode(){
+  const code = document.getElementById('jc').value.trim().toUpperCase();
+  if(!code) return;
+  const [ok,d] = await post('/join', {code});
+  if(ok){ location.href = '/lobby/' + d.code; }
+  else if(d.error && d.error.toLowerCase().includes('passcode')){
+    const pc = prompt('Passcode for ' + code + ':');
+    if(pc !== null) joinGame(code, pc);
+  } else showErr(d.error || 'Could not join.');
+}
+</script>
+{% endblock %}

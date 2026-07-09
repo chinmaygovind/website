@@ -23,8 +23,12 @@ SITE_DIR = os.path.join(BASE_DIR, "site")
 # own service (the ``ttr/`` git submodule); set TTR_URL to wherever it is reachable.
 TTR_URL = os.environ.get("TTR_URL", "https://ttr.cgovind.com")
 
+# Where /ers redirects. Egyptian Rat Screw runs as its own service (website/ers),
+# like TTR; point this at wherever it is reachable.
+ERS_URL = os.environ.get("ERS_URL", "https://ers.cgovind.com")
+
 # The roll game's NPC dialog talks to Google's Gemini API. The key MUST stay
-# server-side — a key shipped in client JS is world-readable — so the browser
+# server-side - a key shipped in client JS is world-readable - so the browser
 # hits /api/roll/gemini here and this process adds the key. Set GEMINI_API_KEY in
 # .env (empty by default; the feature just degrades gracefully when unset).
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
@@ -71,6 +75,13 @@ def roll_gemini():
 def ttr():
     """Hand off to the Ticket to Ride service."""
     return redirect(TTR_URL, code=302)
+
+
+@app.route("/ers")
+@app.route("/ers/")
+def ers():
+    """Hand off to the Egyptian Rat Screw service."""
+    return redirect(ERS_URL, code=302)
 
 
 @app.route("/", defaults={"path": ""})

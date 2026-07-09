@@ -1,0 +1,16 @@
+{
+  "name": "Egyptian Rat Screw",
+  "short_name": "Rat Screw",
+  "description": "Flip, watch the pile, and slap fastest to win the whole deck.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#221610",
+  "theme_color": "#221610",
+  "icons": [
+    { "src": "/static/img/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/static/img/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/static/img/icon.svg", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

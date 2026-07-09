@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Leaderboard | Egyptian Rat Screw{% endblock %}
+{% set active_page = 'leaderboard' %}
+{% block body %}
+{% include "_nav.html" %}
+<div class="wrap">
+  <div class="panel">
+    <h2>Rat Screw leaderboard</h2>
+    {% if stats %}
+    <div style="overflow-x:auto">
+    <table class="tbl">
+      <thead><tr>
+        <th>#</th><th>Player</th><th>Tier</th><th>Rating</th><th>Games</th><th>Wins</th>
+        <th>Win %</th><th>Slap acc.</th><th>Avg reaction</th>
+      </tr></thead>
+      <tbody>
+      {% for s in stats %}
+        <tr class="{% if user and s.user_id == user.id %}me{% endif %}">
+          <td class="rank-badge">{{ loop.index }}</td>
+          <td><strong>{{ s.user.username }}</strong></td>
+          <td><span class="tier">{{ s.elo_tier }}</span></td>
+          <td><strong>{{ s.elo or 1000 }}</strong></td>
+          <td>{{ s.games_played or 0 }}</td>
+          <td>{{ s.games_won or 0 }}</td>
+          <td>{{ s.win_rate }}%</td>
+          <td>{{ s.slap_accuracy }}%</td>
+          <td>{% if s.avg_reaction_ms %}{{ '%.2f'|format(s.avg_reaction_ms/1000) }}s{% else %}-{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <div class="empty">No games played yet. Be the first to top the table.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Waiting | Egyptian Rat Screw{% endblock %}
+{% block body %}
+{% include "_nav.html" %}
+<div class="wrap center-narrow">
+  <div class="panel">
+    <h2>Waiting table</h2>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
+      <div>
+        <div class="muted" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.06em">Game code</div>
+        <div class="xk" style="font-size:2rem;color:var(--wood-2)">{{ game.code }}</div>
+      </div>
+      <button class="btn ghost" style="border-color:var(--wood-2);color:var(--wood-2)" onclick="share()">Copy invite link</button>
+    </div>
+
+    <div class="muted" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.4rem">
+      Players (<span id="pcount">{{ players|length }}</span>/{{ game.max_players }})</div>
+    <div class="game-list" id="roster"></div>
+
+    {% if me.is_host %}
+    <div class="row" style="margin-top:1.3rem">
+      <button class="btn secondary" onclick="addBot()">+ Add bot</button>
+      <button class="btn big" id="startBtn" onclick="startGame()">Deal & start</button>
+    </div>
+    <p class="muted" id="startHint" style="font-size:.85rem;margin-top:.7rem">Need at least 2 players to start.</p>
+    {% else %}
+    <p class="muted" style="margin-top:1.3rem">Waiting for the host to deal…</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+const CODE = "{{ game.code }}", MAXP = {{ game.max_players }}, IS_HOST = {{ 'true' if me.is_host else 'false' }};
+let players = {{ players|tojson }};
+const socket = io();
+socket.on('connect', () => socket.emit('join_lobby', {code: CODE}));
+socket.on('lobby_update', d => { players = d.players; render(); });
+socket.on('go_to_game', () => location.href = '/game/' + CODE);
+
+function render(){
+  document.getElementById('pcount').textContent = players.length;
+  document.getElementById('roster').innerHTML = players.map(p => `
+    <div class="game-item">
+      <div style="display:flex;align-items:center;gap:.6rem">
+        <div class="av" style="background:${p.color};width:30px;height:30px">${(p.name[0]||'?').toUpperCase()}</div>
+        <span class="code" style="font-size:1.1rem;color:var(--wood-2)">${esc(p.name)}</span>
+        ${p.is_host ? '<span class="tier">HOST</span>' : ''}
+        ${p.is_bot ? '<span class="tier" style="background:#8a5730">BOT</span>' : ''}
+      </div>
+      ${p.elo != null ? `<span class="muted">${p.elo}</span>` : ''}
+    </div>`).join('');
+  const btn = document.getElementById('startBtn');
+  if(btn){ btn.disabled = players.length < 2;
+    document.getElementById('startHint').style.display = players.length < 2 ? 'block' : 'none'; }
+}
+function esc(s){ return (s+'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function addBot(){ socket.emit('add_bot', {code: CODE}); }
+function startGame(){ socket.emit('start_game', {code: CODE}); }
+function share(){ navigator.clipboard.writeText(location.origin + '/lobby/' + CODE).then(()=>{}); }
+render();
+</script>
+{% endblock %}

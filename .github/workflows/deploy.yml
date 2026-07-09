@@ -53,4 +53,13 @@ jobs:
             echo "==> Restarting website"
             sudo systemctl restart website
 
+            echo "==> Egyptian Rat Screw (ers): venv + deps + restart"
+            if [ -f "$APP/ers/.env" ]; then
+              [ -d "$APP/ers/venv" ] || python3 -m venv "$APP/ers/venv"
+              "$APP/ers/venv/bin/pip" install -q -r "$APP/ers/requirements.txt"
+              sudo systemctl restart ers || echo "ers service not installed yet (one-time setup)"
+            else
+              echo "ers/.env missing - skipping ers (do the one-time bring-up first)"
+            fi
+
             echo "==> Deploy complete"

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Sign in | Egyptian Rat Screw{% endblock %}
+{% block body %}
+<div class="login-page">
+  <div class="login-hero">
+    <img src="/static/img/icon.svg" alt="" class="hero-ico"/>
+    <div class="kicker">slap fast · win the deck</div>
+    <h1>Egyptian<br/><span class="accent">Rat Screw</span></h1>
+    <div class="sub">Flip, watch the pile, and slap before anyone else.</div>
+  </div>
+
+  <div class="login-col">
+  <div class="panel">
+    <div class="tabs">
+      <div class="tab active" data-tab="login">Log in</div>
+      <div class="tab" data-tab="register">Sign up</div>
+      <div class="tab" data-tab="guest">Guest</div>
+    </div>
+    <div class="error" id="err"></div>
+
+    <form class="tabform active" id="f-login">
+      <div class="field"><label>Username or email</label><input id="li-user" autocomplete="username"/></div>
+      <div class="field"><label>Password</label><input id="li-pass" type="password" autocomplete="current-password"/></div>
+      <button class="btn big" style="width:100%">Log in</button>
+    </form>
+
+    <form class="tabform" id="f-register">
+      <div class="field"><label>Username</label><input id="rg-user" autocomplete="off"/></div>
+      <div class="field"><label>Email</label><input id="rg-email" type="email" autocomplete="off"/></div>
+      <div class="field"><label>Password</label><input id="rg-pass" type="password" autocomplete="new-password"/></div>
+      <button class="btn big" style="width:100%">Create account</button>
+    </form>
+
+    <form class="tabform" id="f-guest">
+      <div class="field"><label>Display name</label><input id="gu-name" maxlength="20" placeholder="Quickdraw"/></div>
+      <button class="btn big secondary" style="width:100%">Play as guest</button>
+      <p class="muted" style="font-size:.85rem;margin:.8rem 0 0">Guests can play but don't get stats or a rating.</p>
+    </form>
+  </div>
+  <p class="hint">One account across every game at cgovind.com.</p>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const err = document.getElementById('err');
+function showErr(m){ err.textContent = m; err.classList.add('show'); }
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('.tabform').forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  document.getElementById('f-' + t.dataset.tab).classList.add('active');
+  err.classList.remove('show');
+});
+async function post(url, body){
+  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  return [r.ok, await r.json().catch(()=>({}))];
+}
+document.getElementById('f-login').onsubmit = async e => { e.preventDefault();
+  const [ok,d] = await post('/login', {username:li_user.value, password:li_pass.value});
+  ok ? location.href='/lobbies' : showErr(d.error || 'Login failed.');
+};
+document.getElementById('f-register').onsubmit = async e => { e.preventDefault();
+  const [ok,d] = await post('/register', {username:rg_user.value, email:rg_email.value, password:rg_pass.value});
+  ok ? location.href='/lobbies' : showErr(d.error || 'Could not sign up.');
+};
+document.getElementById('f-guest').onsubmit = async e => { e.preventDefault();
+  const [ok,d] = await post('/guest', {name:gu_name.value});
+  ok ? location.href='/lobbies' : showErr(d.error || 'Enter a name.');
+};
+// convenience globals for the input ids
+const li_user=document.getElementById('li-user'), li_pass=document.getElementById('li-pass'),
+  rg_user=document.getElementById('rg-user'), rg_email=document.getElementById('rg-email'),
+  rg_pass=document.getElementById('rg-pass'), gu_name=document.getElementById('gu-name');
+</script>
+{% endblock %}

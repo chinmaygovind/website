@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Game | Egyptian Rat Screw{% endblock %}
+{% block body %}
+<div class="table-page">
+  <div class="felt-room"></div>
+
+  <div class="game-top">
+    <div class="code">Table {{ game.code }}</div>
+    <div id="turnMsg" class="chip" style="font-size:.85rem"></div>
+    <div class="rulechips" id="ruleChips"></div>
+  </div>
+
+  <div class="table-oval"></div>
+  <div id="seats"></div>
+  <div id="challenge"></div>
+  <div class="pile" id="pile"></div>
+  <div class="pile-count" id="pileCount"></div>
+
+  <div class="mystack">
+    <div class="myname" id="myName"></div>
+    <div class="stack-cards" id="myStack" onclick="doFlip()"></div>
+    <div class="lbl" id="myLbl"></div>
+  </div>
+
+  <button class="slap-btn" onclick="doSlap()">SLAP</button>
+  <div class="slap-flash" id="flash"></div>
+  <div class="toast" id="toast"></div>
+
+  <div class="side right">
+    <h3 id="standTitle" style="display:none">Standings</h3>
+    <div class="standings" id="standings" style="display:none"></div>
+  </div>
+  <div class="slog" id="slog"></div>
+  <div class="controls">
+    <div><b>F</b> place card</div>
+    <div><b>Space</b> slap</div>
+  </div>
+
+  <div class="overlay" id="overlay">
+    <div class="box">
+      <div class="crown">👑</div>
+      <h1 id="winName"></h1>
+      <a class="btn big" href="/lobbies">Back to lobbies</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+const GAME_CODE = "{{ game.code }}";
+const MY_PID = "{{ my_pid }}";
+let ROSTER = {{ roster_json|safe }};
+</script>
+<script src="{{ url_for('static', filename='js/game.js') }}?v={{ asset_version }}"></script>
+{% endblock %}

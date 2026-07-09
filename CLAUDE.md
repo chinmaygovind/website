@@ -3,7 +3,8 @@
 Chinmay Govind's personal website: a small **Flask** server that serves a static
 site. The **root (`/`) is a plain landing page**; the old **Wii-menu recreation now
 lives at `/wii/`**. `/ttr` redirects to the **Ticket to Ride** app (bundled as a git
-submodule).
+submodule); `/ers` redirects to **Egyptian Rat Screw** (the `ers/` subdir - a real-time
+multiplayer card game that shares TTR's accounts).
 
 ## What this is / how it runs
 
@@ -29,14 +30,14 @@ submodule).
   root). Warning screen fades into a channel grid. The bottom-left gray slot is a
   **Ticket to Ride channel** (`#channel-ttr`) whose click handler navigates to `/ttr`.
   Its `../../images|audio|videos` paths assume it sits at root, so some break at `/wii/`.
-- `site/warning.html` — the "reset" warning screen the menu loops back to.
-- `site/channels/{mii,music,codebusters}/` — the Wii channel pages. They
+- `site/warning.html` - the "reset" warning screen the menu loops back to.
+- `site/channels/{mii,music,codebusters}/` - the Wii channel pages. They
   reference shared assets with `../../images|audio|videos/…` (resolves to root).
-- `site/home/index.html` — the **projects landing page** (was the site's old `/`).
+- `site/home/index.html` - the **projects landing page** (was the site's old `/`).
   Its assets live in `site/home/{images,audio}/` and `Chinmay_Govind_Resume.pdf`.
-- `site/{projects,games}/` — standalone project/game pages (astro, ibec, quickcal,
+- `site/{projects,games}/` - standalone project/game pages (astro, ibec, quickcal,
   robot-tour, bridge, flip, klotski, roll), copied unchanged.
-- `site/{images,audio,videos}/` — shared media (Wii menu art + channel media).
+- `site/{images,audio,videos}/` - shared media (Wii menu art + channel media).
 - `site/404.html`, `favicon.ico`, `robots.txt` at the root.
 
 ## Conventions / gotchas
@@ -49,11 +50,48 @@ submodule).
   sat at `/` but now lives at `/wii/`; `/` is a simple landing page and the older
   projects page stayed at `/home/`. Dead Create-React-App refs (`%PUBLIC_URL%`,
   `logo192.png`, `manifest.json`) were removed.
-- **TTR is never reverse-proxied** — its templates hardcode root-absolute paths
+- **TTR is never reverse-proxied** - its templates hardcode root-absolute paths
   (`/lobbies`, `/login`, `/static/…`) and connect Socket.IO at root, so it can
   only run at a host's root. `/ttr` just redirects to it. Change the target via
   `TTR_URL`, not by mounting TTR under a path.
 - `ttr/` is a **submodule**; edit TTR in its own repo, then bump the pointer here.
+
+## Egyptian Rat Screw (`ers/`)
+
+A second real-time game at `ers.cgovind.com`, in the `ers/` subdir (NOT a submodule),
+that **shares TTR's accounts**. Flask + Flask-SocketIO, its own eventlet gunicorn on
+`127.0.0.1:5003`, its own venv (`ers/venv`) and `.env`.
+
+- **Shared accounts:** ERS points `DATABASE_URL` at TTR's SQLite file and uses the SAME
+  `SECRET_KEY` + `SESSION_COOKIE_DOMAIN=.cgovind.com`, so one login works on both sites
+  (single sign-on). Per-game stats are kept apart: TTR stats moved from the `users` table
+  into `ttr_stats`; ERS stats live in `ers_stats`. `users` is now a shared account table.
+  The stats split was an additive, reversible migration (old `users` stat columns kept as a
+  dormant backup) that runs on `ttr` startup; `ers_stats`/`ers_games`/`ers_players`/
+  `ers_slaps` are created by ERS. Two processes share one SQLite file via WAL + busy_timeout.
+- **Layout:** `ers/app.py` (auth+lobby routes ported from TTR, socket game loop, bots,
+  ELO/stats finalize), `ers/game_logic.py` (pure, unit-tested rules engine - `pytest ers/tests/`),
+  `ers/models.py` (shared `User` + `ErsStats`/`ErsGame`/`ErsPlayer`/`ErsSlap`),
+  `ers/templates/` + `ers/static/` (wooden-table UI, xkcd Script font, gold, pyramid PWA icons).
+- **Full game history:** every game's move-by-move replay is in `ers_games.events_json`; each
+  slap is also a row in `ers_slaps` (with `reaction_ms`) - e.g. a reaction-time distribution is
+  `SELECT reaction_ms FROM ers_slaps WHERE valid=1 AND reaction_ms IS NOT NULL`.
+- **Single gunicorn worker is required** (in-process socket rooms + game state), like TTR.
+  The engine is server-authoritative; the first valid slap under a per-game lock wins.
+
+## One-time ERS prod bring-up (the deploy pipeline won't do these)
+
+Run once over SSH / AWS (deploy.yml afterwards handles venv + `systemctl restart ers`/`ttr`):
+0. Back up first: `cp ttr/instance/tickettoride.db tickettoride.db.bak`.
+1. Route 53: add `ers.cgovind.com` A record → Elastic IP `54.157.20.148`.
+2. Create `ers/.env` (see `ers/.env.example`): `SECRET_KEY` = TTR's, `DATABASE_URL` = TTR's db
+   absolute path, `SESSION_COOKIE_DOMAIN=.cgovind.com`, `SESSION_COOKIE_SECURE=1`, `PORT=5003`.
+3. Add `SESSION_COOKIE_DOMAIN=.cgovind.com` to `ttr/.env` (keep its existing `SECRET_KEY`;
+   TTR's `app.py` must also set the cookie domain from env - one-time TTR re-login).
+4. Install `deploy/ers.service` (render `{{USER}}`/`{{APP_DIR}}`), `systemctl enable --now ers`.
+5. Add the `ers.cgovind.com` nginx block (in `deploy/nginx.conf`), `nginx -t`, reload, then
+   `certbot --nginx -d ers.cgovind.com` for TLS.
+6. `sudo systemctl restart ttr` (runs the `ttr_stats` migration) and start `ers`.
 
 ## Deploy
 
