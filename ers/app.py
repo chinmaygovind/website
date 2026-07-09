@@ -86,7 +86,7 @@ ERS_COLORS = ["#f2c94c", "#eb5757", "#56ccf2", "#6fcf78", "#bb6bd9",
               "#f2994a", "#2fd4b6", "#f178b6"]
 
 # Bot slap reaction is drawn from Exponential(mean = this many seconds).
-BOT_SLAP_MEAN_SEC = 5.0
+BOT_SLAP_MEAN_SEC = 2.0
 
 # After a wrong slap a player is frozen out for this long before they can slap again
 # (long enough to cover the burn animation).
