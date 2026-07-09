@@ -76,6 +76,7 @@ def new_deal(player_ids, seed=None, rules=DEFAULT_RULES):
         "pending_win": None,      # {"pid", "reason"} awaiting the grace window
         "last_flip": None,        # {"pid", "card", "seq"} of the most recent flip
         "last_burn": None,        # {"pid", "card", "seq"} of the most recent false-slap burn
+        "last_win": None,         # {"pid", "count", "seq"} of the most recent pile win
         "slap_locked": [],        # players who false-slapped the current pile
         "phase": "playing",       # "playing" | "ended"
         "winner": None,
@@ -278,6 +279,7 @@ def award_pile(state, pid, via=None, rank=None):
     state["pending_win"] = None
     state["slap_locked"] = []
     state["seq"] += 1
+    state["last_win"] = {"pid": pid, "count": count, "seq": state["seq"]}
     events.append({"type": "win_pile", "pid": pid, "count": count, "via": via, "rank": rank})
 
     # Anyone else who is now out of cards used up their one life to slap back in.
@@ -331,6 +333,7 @@ def public_view(state):
         "pending_win": state.get("pending_win"),
         "last_flip": state.get("last_flip"),
         "last_burn": state.get("last_burn"),
+        "last_win": state.get("last_win"),
         "phase": state["phase"],
         "winner": state["winner"],
         "rules": state["rules"],

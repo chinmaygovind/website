@@ -303,6 +303,15 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
   box-shadow: 0 8px 18px rgba(0,0,0,.5); }
 
 /* a colored slapping hand shooting in from a player's seat */
+.collect-card { position: fixed; z-index: 31; pointer-events: none; width: 70px; height: 98px;
+  margin-left: -35px; margin-top: -49px; border-radius: 8px; border: 2px solid #2a1710;
+  background: repeating-linear-gradient(45deg, rgba(255,220,150,.14) 0 6px, rgba(0,0,0,.05) 6px 12px),
+    linear-gradient(160deg, #7a4a28, #4a2c17); box-shadow: 0 4px 10px rgba(0,0,0,.4);
+  animation: collect .42s ease-in forwards; }
+@keyframes collect {
+  from { transform: translate(0,0) scale(1) rotate(0deg); opacity: 1; }
+  to   { transform: translate(var(--dx), var(--dy)) scale(.5) rotate(18deg); opacity: 0; }
+}
 .slap-x { position: fixed; z-index: 34; pointer-events: none; transform: translate(-50%,-50%);
   color: #ff5a4d; font-family: "xkcd"; font-size: 4rem; text-shadow: 0 2px 6px rgba(0,0,0,.6);
   animation: xpop .7s ease-out forwards; }

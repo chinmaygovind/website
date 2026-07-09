@@ -8,6 +8,7 @@ let prevPile = 0;
 let lastLogT = 0;
 let lastFlipSeq = 0;       // gates the fly-in animation so a card never re-animates
 let lastBurnSeq = 0;       // gates the burn (lift + slide-under) animation
+let lastWinSeq = 0;        // gates the "cards slide to the winner" animation
 let lastLogId = 0;         // highest chat entry id seen (for fresh-entry effects)
 let slapCooldownUntil = 0; // local echo of the freeze after your wrong slap
 
@@ -103,6 +104,10 @@ function render() {
   if (s.last_burn && s.last_burn.seq > lastBurnSeq && s.last_burn.card) {
     burnCard(s.last_burn.pid, s.last_burn.card);   // lift pile, slide burned card under, drop
     lastBurnSeq = s.last_burn.seq;
+  }
+  if (s.last_win && s.last_win.seq > lastWinSeq) {
+    collectPile(s.last_win.pid, s.last_win.count);  // pile slides to whoever won it
+    lastWinSeq = s.last_win.seq;
   }
 
   // challenge badge - shows the royalty card, how many are left, and who owes it
@@ -325,6 +330,26 @@ function handSVG(color) {
       <rect x="73" y="16" width="12" height="40" rx="6"/>
       <rect x="4" y="54" width="20" height="14" rx="7" transform="rotate(-28 14 61)"/>
     </g></svg>`;
+}
+
+// When a pile is won, a little stack of cards slides from the pile to that player.
+function collectPile(pid, count) {
+  const seat = document.getElementById("seat-" + pid);
+  const pileEl = document.getElementById("pile");
+  if (!seat || !pileEl) return;
+  const a = centerOf(pileEl), b = centerOf(seat);
+  const n = Math.min(5, Math.max(2, count || 2));
+  for (let i = 0; i < n; i++) {
+    const c = document.createElement("div");
+    c.className = "collect-card";
+    c.style.left = a.x + "px";
+    c.style.top = a.y + "px";
+    c.style.setProperty("--dx", (b.x - a.x) + "px");
+    c.style.setProperty("--dy", (b.y - a.y) + "px");
+    c.style.animationDelay = (i * 45) + "ms";
+    fx().appendChild(c);
+    setTimeout(() => c.remove(), 520 + i * 45);
+  }
 }
 
 // A red X pops at the pile on a wrong slap.
