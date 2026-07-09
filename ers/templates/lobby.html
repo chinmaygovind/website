@@ -2,7 +2,7 @@
 {% block title %}Waiting | Egyptian Rat Screw{% endblock %}
 {% block body %}
 {% include "_nav.html" %}
-<div class="wrap center-narrow">
+<div class="wrap" style="max-width:720px">
   <div class="panel">
     <h2>Waiting table</h2>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
@@ -28,24 +28,31 @@
     {% endif %}
   </div>
 
-  <div class="panel" style="margin-top:1.2rem">
+  <div class="panel rules-card" style="margin-top:1.2rem">
     <h2>How to play</h2>
-    <ul class="rules">
-      <li><b>Flip</b> your top card on your turn (press <b>F</b>, or tap your pile).</li>
-      <li><b>Slap</b> the pile the instant it is slappable (press <b>Space</b>, or the SLAP button):</li>
+    <p>The whole deck is dealt out face-down between everyone and you never look at your cards. It is a game of speed: watch the pile in the middle and be the fastest to slap it when it counts.</p>
+
+    <h3>Your turn</h3>
+    <p>When it is your turn, flip your top card face-up onto the pile in the middle (press <b>F</b>, or tap your pile). Play then moves on to the next player.</p>
+
+    <h3>Slapping</h3>
+    <p>Any player can slap the pile at any moment (press <b>Space</b>, or hit the big SLAP button). If the pile is slappable right then, the first person to slap wins the whole pile and adds it to the bottom of their stack. The pile is slappable when:</p>
+    <ul>
+      <li><b>Double</b> - the top two cards are the same rank, like a 7 landing on a 7.</li>
+      <li><b>Sandwich</b> - the top card matches the card two back, with one different card between them (a 7, then a 4, then a 7).</li>
+      <li><b>Top and bottom</b> - the card on top matches the very bottom card of the pile.</li>
+      <li><b>Adds to ten</b> - the top two cards total exactly ten, like a 6 and a 4. An Ace counts as one, and Jacks, Queens and Kings do not count.</li>
+      <li><b>Marriage</b> - a King and a Queen are played one right after the other, in either order.</li>
     </ul>
-    <div class="rule-chips">
-      <span class="slap-chip">Double &middot; 7 7</span>
-      <span class="slap-chip">Sandwich &middot; 7 4 7</span>
-      <span class="slap-chip">Top matches bottom</span>
-      <span class="slap-chip">Two cards add to 10</span>
-      <span class="slap-chip">King + Queen</span>
-    </div>
-    <ul class="rules">
-      <li><b>Face cards:</b> playing J / Q / K / A makes the next player owe 1 / 2 / 3 / 4 cards. Flip a face card and the debt passes on; run out first and whoever laid the last face card wins the pile.</li>
-      <li><b>Careful:</b> slapping when it is not slappable burns 2 of your cards to the bottom of the pile.</li>
-      <li><b>Win</b> by collecting the entire deck.</li>
-    </ul>
+
+    <h3>Face cards</h3>
+    <p>Play a Jack, Queen, King or Ace and the next player owes a tribute of <b>1, 2, 3 or 4</b> cards. They flip that many, hoping to land a face card of their own. If they do, the tribute passes on to the player after them. If they run out of tries first, whoever played the last face card scoops up the entire pile.</p>
+
+    <h3>Careful</h3>
+    <p>Slap when the pile is <b>not</b> slappable and you burn two of your own cards to the bottom of the pile, and you cannot slap again until the next card is played. Slap fast, but slap smart.</p>
+
+    <h3>Winning</h3>
+    <p>Running out of cards does not knock you out right away, you can still slap back in on the next slappable pile. The last player left holding the entire deck wins the game.</p>
   </div>
 </div>
 {% endblock %}

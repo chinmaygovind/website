@@ -124,12 +124,12 @@ a:hover { color: var(--gold-soft); }
 .pdot.lg { width: 30px; height: 30px; border-width: 3px; }
 
 /* rules card (waiting room) */
-ul.rules { margin: .4rem 0 0; padding-left: 1.2rem; color: var(--ink); line-height: 1.6; }
-ul.rules li { margin: .4rem 0; }
-ul.rules b { color: var(--wood-2); }
-.rule-chips { display: flex; flex-wrap: wrap; gap: .45rem; margin: .7rem 0 .3rem; }
-.slap-chip { background: var(--wood-2); color: var(--gold-soft); border-radius: 20px;
-  padding: .28rem .75rem; font-size: .88rem; font-family: "xkcd"; }
+.rules-card > h2 { font-size: 1.6rem; }
+.rules-card h3 { color: var(--wood-2); font-size: 1.22rem; margin: 1.3rem 0 .25rem; }
+.rules-card p { color: var(--ink); font-size: 1.06rem; line-height: 1.7; margin: .5rem 0; }
+.rules-card ul { margin: .4rem 0; padding-left: 1.4rem; }
+.rules-card li { color: var(--ink); font-size: 1.06rem; line-height: 1.6; margin: .55rem 0; }
+.rules-card b { color: var(--wood-2); }
 
 .panel {
   background: linear-gradient(180deg, var(--cream), var(--parch));
@@ -238,9 +238,8 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
 
 /* your face-down stack, off to the bottom-left ("in front of you") */
 .mystack { position:absolute; left:38px; bottom: 16px; text-align:center; z-index:12; }
-.mystack .myname { font-family:"xkcd"; font-size:1.05rem; margin-bottom:.3rem;
-  text-shadow:0 2px 3px rgba(0,0,0,.6); }
-.mystack .myname.turn { color: var(--gold-soft); }
+.seat.me { position: static; transform: none; width: auto; margin: 0 auto .45rem; }
+.you-tag { font-size: .7rem; color: var(--gold-soft); opacity: .85; }
 .stack-cards { position: relative; width: 84px; height: 118px; margin: 0 auto; cursor: pointer; }
 .card-back { position:absolute; inset:0; border-radius:9px; border:2px solid #2a1710;
   background:

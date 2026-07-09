@@ -40,6 +40,22 @@ function cardFace(card, cls) {
   </div>`;
 }
 
+// a seat (colored dot + name + card count) rendered the same for you and everyone else
+function seatInner(pid, s) {
+  const isTurn = pid === s.current && s.phase === "playing";
+  const out = s.eliminated.includes(pid);
+  const st = (s.standings || []).find((x) => x.pid === pid);
+  const cnt = s.counts[pid] || 0;
+  const you = pid === MY_PID ? ' <span class="you-tag">(you)</span>' : "";
+  return {
+    cls: `${isTurn ? "turn" : ""} ${out ? "out" : ""}`,
+    html: `<span class="pdot lg" style="background:${pcolor(pid)}"></span>
+      <div class="pname" style="color:${isTurn ? "" : pcolor(pid)}">${esc(pname(pid))}${you}</div>
+      <div class="count"><span class="mini"></span>${cnt}</div>
+      ${out && st ? `<span class="tag">OUT · #${st.place} · lasted ${st.turns_lasted}</span>` : ""}`,
+  };
+}
+
 // ---- render ----
 function render() {
   if (!STATE) return;
@@ -53,16 +69,8 @@ function render() {
 
   const seatsEl = document.getElementById("seats");
   seatsEl.innerHTML = others.map((pid) => {
-    const isTurn = pid === s.current && s.phase === "playing";
-    const out = s.eliminated.includes(pid);
-    const st = (s.standings || []).find((x) => x.pid === pid);
-    const cnt = s.counts[pid] || 0;
-    return `<div class="seat ${isTurn ? "turn" : ""} ${out ? "out" : ""}" id="seat-${pid}">
-      <span class="pdot lg" style="background:${pcolor(pid)}"></span>
-      <div class="pname" style="color:${isTurn ? "" : pcolor(pid)}">${esc(pname(pid))}</div>
-      <div class="count"><span class="mini"></span>${cnt}</div>
-      ${out && st ? `<span class="tag">OUT · #${st.place} · lasted ${st.turns_lasted}</span>` : ""}
-    </div>`;
+    const si = seatInner(pid, s);
+    return `<div class="seat ${si.cls}" id="seat-${pid}">${si.html}</div>`;
   }).join("");
   positionSeats(others);
 
@@ -91,21 +99,18 @@ function render() {
     chEl.innerHTML = `<div class="big">${s.challenge.label || ""}</div>${s.challenge.chances_left} to beat`;
   } else chEl.className = "";
 
-  // my stack + flip affordance
+  // your own seat (rendered exactly like the others) plus your clickable pile
   const myCnt = s.counts[MY_PID] || 0;
   const canFlip = s.phase === "playing" && s.current === MY_PID && !s.pending_win && myCnt > 0;
+  const mine = seatInner(MY_PID, s);
+  const mySeatEl = document.getElementById("mySeat");
+  mySeatEl.className = "seat me " + mine.cls;
+  mySeatEl.innerHTML = mine.html;
   const stackEl = document.getElementById("myStack");
   const backs = Math.min(myCnt, 4);
-  const meOut = s.eliminated.includes(MY_PID);
   stackEl.className = "stack-cards" + (canFlip ? " can-flip" : "");
   stackEl.innerHTML = Array.from({ length: Math.max(backs, myCnt ? 1 : 0) }, (_, i) =>
     `<div class="card-back" style="transform:translate(${i * 2}px,${-i * 2}px)"></div>`).join("");
-  const nameEl = document.getElementById("myName");
-  nameEl.innerHTML = `<span class="pdot" style="background:${pcolor(MY_PID)}"></span> ${esc(pname(MY_PID))}${meOut ? " (out)" : ""}`;
-  nameEl.style.color = (s.current === MY_PID && s.phase === "playing") ? "" : pcolor(MY_PID);
-  nameEl.classList.toggle("turn", s.current === MY_PID && s.phase === "playing");
-  document.getElementById("myLbl").textContent =
-    myCnt ? `${myCnt} card${myCnt > 1 ? "s" : ""}` : (meOut ? "out" : "no cards");
 
   // turn message
   const tm = document.getElementById("turnMsg");

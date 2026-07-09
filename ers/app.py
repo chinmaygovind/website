@@ -367,6 +367,13 @@ def _broadcast(game):
                                  "roster": _roster(game)}, room="game:" + game.code)
 
 
+def _broadcast_lobby(game):
+    """Push the current roster to everyone in the waiting room (live, like TTR)."""
+    socketio.emit("lobby_update", {"players": [p.to_dict() for p in game.players],
+                                   "max_players": game.max_players,
+                                   "status": game.status}, room="lobby:" + game.code)
+
+
 def _push_log(state, entry):
     entry["t"] = int(time.time() * 1000)
     state.setdefault("log", []).append(entry)
@@ -414,9 +421,8 @@ def on_join_lobby(data):
     join_room("lobby:" + code)
     game = ErsGame.query.filter_by(code=code).first()
     if game:
-        emit("lobby_update", {"players": [p.to_dict() for p in game.players],
-                              "max_players": game.max_players,
-                              "status": game.status})
+        # Broadcast to the whole room so everyone sees the new player immediately.
+        _broadcast_lobby(game)
 
 
 @socketio.on("join_game")
@@ -448,9 +454,7 @@ def on_add_bot(data):
                         is_host=False, is_bot=True)
         db.session.add(bot)
         db.session.commit()
-        socketio.emit("lobby_update", {"players": [p.to_dict() for p in game.players],
-                                       "max_players": game.max_players,
-                                       "status": game.status}, room="lobby:" + code)
+        _broadcast_lobby(game)
 
 
 @socketio.on("start_game")
