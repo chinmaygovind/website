@@ -470,6 +470,48 @@ def on_add_bot(data):
         _broadcast_lobby(game)
 
 
+@socketio.on("kick_player")
+def on_kick_player(data):
+    code = (data or {}).get("code", "").upper()
+    pid = (data or {}).get("pid")
+    with _lock(code):
+        game = ErsGame.query.filter_by(code=code).first()
+        if not game or game.status != "waiting":
+            return
+        me = ErsPlayer.query.filter_by(game_id=game.id, session_key=get_session_key()).first()
+        if not me or not me.is_host:
+            return
+        target = next((p for p in game.players if p.pid == pid), None)
+        if not target or target.is_host:
+            return
+        socketio.emit("player_kicked", {"pid": pid}, room="lobby:" + code)
+        db.session.delete(target)
+        db.session.commit()
+        _broadcast_lobby(game)
+
+
+@socketio.on("leave_lobby")
+def on_leave_lobby(data):
+    code = (data or {}).get("code", "").upper()
+    with _lock(code):
+        game = ErsGame.query.filter_by(code=code).first()
+        if not game:
+            return
+        me = ErsPlayer.query.filter_by(game_id=game.id, session_key=get_session_key()).first()
+        if not me:
+            return
+        was_host = me.is_host
+        db.session.delete(me)
+        db.session.commit()
+        remaining = sorted(game.players, key=lambda p: p.seat_order)
+        if was_host and remaining and not any(p.is_host for p in remaining):
+            new_host = next((p for p in remaining if not p.is_bot), remaining[0])
+            new_host.is_host = True
+            db.session.commit()
+        if remaining:
+            _broadcast_lobby(game)
+
+
 @socketio.on("start_game")
 def on_start_game(data):
     code = (data or {}).get("code", "").upper()

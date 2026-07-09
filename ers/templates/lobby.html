@@ -2,90 +2,93 @@
 {% block title %}Waiting | Egyptian Rat Screw{% endblock %}
 {% block body %}
 {% include "_nav.html" %}
-<div class="wrap" style="max-width:720px">
-  <div class="panel">
-    <h2>Waiting table</h2>
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
-      <div>
-        <div class="muted" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.06em">Game code</div>
-        <div class="xk" style="font-size:2rem;color:var(--wood-2)">{{ game.code }}</div>
+<div class="wrap wide">
+  <div class="lobby-grid">
+    <div class="lobby-col">
+      <div class="panel">
+        <div class="section-title">Players (<span id="pcount">{{ players|length }}</span>/{{ game.max_players }})</div>
+        <div class="player-list" id="roster"></div>
       </div>
-      <button class="btn ghost" style="border-color:var(--wood-2);color:var(--wood-2)" onclick="share()">Copy invite link</button>
+
+      <div class="panel">
+        {% if me.is_host %}
+        <button class="btn big" id="startBtn" style="width:100%" onclick="startGame()">Deal &amp; start</button>
+        <button class="btn secondary" style="width:100%;margin-top:.7rem" onclick="addBot()">+ Add bot</button>
+        <p class="muted" id="startHint" style="font-size:.85rem;margin-top:.7rem">Need at least 2 players to start.</p>
+        {% else %}
+        <div class="waiting-msg"><span class="spinner"></span> Waiting for the host to deal…</div>
+        {% endif %}
+        <button class="btn ghost" style="width:100%;margin-top:.9rem;border-color:rgba(176,48,48,.5);color:#b03030" onclick="leaveGame()">Leave game</button>
+      </div>
+
+      <div class="panel code-box">
+        <div class="section-title" style="text-align:center">{% if game.is_private %}Share with friends{% else %}Share this code{% endif %}</div>
+        <div class="code-display">{{ game.code }}</div>
+        {% if game.is_private and game.passcode %}<div class="muted">Passcode: <b>{{ game.passcode }}</b></div>{% endif %}
+        <button class="btn secondary" onclick="share()">Copy invite link</button>
+        <div class="copied" id="copied" style="display:none">Copied!</div>
+      </div>
     </div>
 
-    <div class="muted" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.4rem">
-      Players (<span id="pcount">{{ players|length }}</span>/{{ game.max_players }})</div>
-    <div class="game-list" id="roster"></div>
-
-    {% if me.is_host %}
-    <div class="row" style="margin-top:1.3rem">
-      <button class="btn secondary" onclick="addBot()">+ Add bot</button>
-      <button class="btn big" id="startBtn" onclick="startGame()">Deal & start</button>
+    <div class="lobby-col">
+      <div class="panel rules-card">
+        <h2>How to play</h2>
+        <p>The whole deck is dealt out face-down between everyone and you never look at your cards. It is a game of speed: watch the pile in the middle and be the fastest to slap it when it counts.</p>
+        <h3>Your turn</h3>
+        <p>When it is your turn, flip your top card face-up onto the pile in the middle (press <b>F</b>, or tap your pile). Play then moves on to the next player.</p>
+        <h3>Slapping</h3>
+        <p>Any player can slap the pile at any moment (press <b>Space</b>, or hit the big SLAP button). If the pile is slappable right then, the first person to slap wins the whole pile. The pile is slappable when:</p>
+        <ul>
+          <li><b>Double</b> - the top two cards are the same rank, like a 7 landing on a 7.</li>
+          <li><b>Sandwich</b> - the top card matches the card two back, with one different card between them (a 7, then a 4, then a 7).</li>
+          <li><b>Top and bottom</b> - the card on top matches the very bottom card of the pile.</li>
+          <li><b>Adds to ten</b> - the top two cards total exactly ten, like a 6 and a 4. An Ace counts as one, and Jacks, Queens and Kings do not count.</li>
+          <li><b>Marriage</b> - a King and a Queen are played one right after the other, in either order.</li>
+        </ul>
+        <h3>Face cards</h3>
+        <p>Play a Jack, Queen, King or Ace and the next player owes a tribute of <b>1, 2, 3 or 4</b> cards. They flip that many, hoping to land a face card of their own. If they do, the tribute passes on. If they run out of tries first, whoever played the last face card scoops up the pile.</p>
+        <h3>Careful</h3>
+        <p>Slap when the pile is <b>not</b> slappable and you burn a card to the bottom of the pile, and you cannot slap again for a moment. Run out of cards and you get <b>one life</b> to slap back in.</p>
+        <h3>Winning</h3>
+        <p>The last player left holding the entire deck wins the game.</p>
+      </div>
     </div>
-    <p class="muted" id="startHint" style="font-size:.85rem;margin-top:.7rem">Need at least 2 players to start.</p>
-    {% else %}
-    <p class="muted" style="margin-top:1.3rem">Waiting for the host to deal…</p>
-    {% endif %}
-  </div>
-
-  <div class="panel rules-card" style="margin-top:1.2rem">
-    <h2>How to play</h2>
-    <p>The whole deck is dealt out face-down between everyone and you never look at your cards. It is a game of speed: watch the pile in the middle and be the fastest to slap it when it counts.</p>
-
-    <h3>Your turn</h3>
-    <p>When it is your turn, flip your top card face-up onto the pile in the middle (press <b>F</b>, or tap your pile). Play then moves on to the next player.</p>
-
-    <h3>Slapping</h3>
-    <p>Any player can slap the pile at any moment (press <b>Space</b>, or hit the big SLAP button). If the pile is slappable right then, the first person to slap wins the whole pile and adds it to the bottom of their stack. The pile is slappable when:</p>
-    <ul>
-      <li><b>Double</b> - the top two cards are the same rank, like a 7 landing on a 7.</li>
-      <li><b>Sandwich</b> - the top card matches the card two back, with one different card between them (a 7, then a 4, then a 7).</li>
-      <li><b>Top and bottom</b> - the card on top matches the very bottom card of the pile.</li>
-      <li><b>Adds to ten</b> - the top two cards total exactly ten, like a 6 and a 4. An Ace counts as one, and Jacks, Queens and Kings do not count.</li>
-      <li><b>Marriage</b> - a King and a Queen are played one right after the other, in either order.</li>
-    </ul>
-
-    <h3>Face cards</h3>
-    <p>Play a Jack, Queen, King or Ace and the next player owes a tribute of <b>1, 2, 3 or 4</b> cards. They flip that many, hoping to land a face card of their own. If they do, the tribute passes on to the player after them. If they run out of tries first, whoever played the last face card scoops up the entire pile.</p>
-
-    <h3>Careful</h3>
-    <p>Slap when the pile is <b>not</b> slappable and you burn two of your own cards to the bottom of the pile, and you cannot slap again until the next card is played. Slap fast, but slap smart.</p>
-
-    <h3>Winning</h3>
-    <p>Running out of cards does not knock you out right away, you can still slap back in on the next slappable pile. The last player left holding the entire deck wins the game.</p>
   </div>
 </div>
 {% endblock %}
 {% block scripts %}
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script>
-const CODE = "{{ game.code }}", MAXP = {{ game.max_players }}, IS_HOST = {{ 'true' if me.is_host else 'false' }};
+const CODE = "{{ game.code }}", IS_HOST = {{ 'true' if me.is_host else 'false' }}, MY_PID = "{{ me.pid }}";
 let players = {{ players|tojson }};
 const socket = io();
 socket.on('connect', () => socket.emit('join_lobby', {code: CODE}));
 socket.on('lobby_update', d => { players = d.players; render(); });
 socket.on('go_to_game', () => location.href = '/game/' + CODE);
+socket.on('player_kicked', d => { if (d.pid === MY_PID) location.href = '/lobbies'; });
 
+function esc(s){ return (s+'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function render(){
   document.getElementById('pcount').textContent = players.length;
   document.getElementById('roster').innerHTML = players.map(p => `
-    <div class="game-item">
-      <div style="display:flex;align-items:center;gap:.6rem">
-        <span class="pdot" style="background:${p.color}"></span>
-        <span class="code" style="font-size:1.1rem;color:var(--wood-2)">${esc(p.name)}</span>
-        ${p.is_host ? '<span class="tier">HOST</span>' : ''}
-        ${p.is_bot ? '<span class="tier" style="background:#8a5730">BOT</span>' : ''}
-      </div>
-      ${p.elo != null ? `<span class="muted">${p.elo}</span>` : ''}
+    <div class="player-entry">
+      <span class="pdot" style="background:${p.color}"></span>
+      <span class="pname">${esc(p.name)}${p.elo != null ? ` <span class="pelo">${p.elo}</span>` : ''}</span>
+      ${p.is_host ? '<span class="badge host">HOST</span>' : ''}
+      ${p.is_bot ? '<span class="badge bot">BOT</span>' : ''}
+      ${p.pid === MY_PID ? '<span class="badge you">YOU</span>' : ''}
+      ${IS_HOST && p.pid !== MY_PID ? `<button class="kick" onclick="kick('${p.pid}')" title="Remove">✕</button>` : ''}
     </div>`).join('');
   const btn = document.getElementById('startBtn');
   if(btn){ btn.disabled = players.length < 2;
-    document.getElementById('startHint').style.display = players.length < 2 ? 'block' : 'none'; }
+    const h = document.getElementById('startHint'); if(h) h.style.display = players.length < 2 ? 'block' : 'none'; }
 }
-function esc(s){ return (s+'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function kick(pid){ socket.emit('kick_player', {code: CODE, pid}); }
 function addBot(){ socket.emit('add_bot', {code: CODE}); }
 function startGame(){ socket.emit('start_game', {code: CODE}); }
-function share(){ navigator.clipboard.writeText(location.origin + '/lobby/' + CODE).then(()=>{}); }
+function leaveGame(){ socket.emit('leave_lobby', {code: CODE}); location.href = '/lobbies'; }
+function share(){ navigator.clipboard.writeText(location.origin + '/lobby/' + CODE).then(() => {
+  const c = document.getElementById('copied'); c.style.display = 'block'; setTimeout(() => c.style.display = 'none', 1500); }); }
 render();
 </script>
 {% endblock %}

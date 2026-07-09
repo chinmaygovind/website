@@ -123,6 +123,33 @@ a:hover { color: var(--gold-soft); }
   border: 2px solid rgba(0,0,0,.28); box-shadow: 0 1px 3px rgba(0,0,0,.35); vertical-align: middle; }
 .pdot.lg { width: 30px; height: 30px; border-width: 3px; }
 
+/* waiting lobby (TTR-style two-column) */
+.lobby-grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: 1.2rem; align-items: start; }
+@media (max-width: 800px) { .lobby-grid { grid-template-columns: 1fr; } }
+.lobby-col { display: flex; flex-direction: column; gap: 1.2rem; }
+.section-title { font-size: .78rem; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--ink-soft); font-weight: 700; }
+.player-list { display: flex; flex-direction: column; gap: .5rem; margin-top: .7rem; }
+.player-entry { display: flex; align-items: center; gap: .6rem; background: #fffdf6;
+  border: 1px solid #e0d0aa; border-radius: 10px; padding: .55rem .7rem; }
+.player-entry .pdot { width: 18px; height: 18px; box-shadow: 0 0 8px currentColor; }
+.player-entry .pname { font-family: "xkcd"; font-size: 1.2rem; color: var(--wood-2); flex: 1; }
+.player-entry .pelo { font-family: var(--sans); font-size: .78rem; color: var(--ink-soft); }
+.player-entry .badge { font-size: .68rem; border-radius: 6px; padding: 1px 7px; font-weight: 700; letter-spacing: .04em; }
+.player-entry .badge.host { background: var(--gold); color: #3a2606; }
+.player-entry .badge.bot { background: #8a5730; color: var(--cream); }
+.player-entry .badge.you { background: var(--wood-2); color: var(--gold-soft); }
+.player-entry .kick { background: #f2dede; color: #b03030; border: 1px solid #e2a3a3; border-radius: 6px;
+  width: 26px; height: 26px; cursor: pointer; font-size: .8rem; line-height: 1; flex: 0 0 auto; }
+.player-entry .kick:hover { background: #b03030; color: #fff; }
+.code-box { text-align: center; }
+.code-display { font-family: "xkcd"; font-size: 2.6rem; color: var(--wood-2); letter-spacing: .1em; margin: .3rem 0 .7rem; }
+.copied { color: var(--green); font-size: .85rem; margin-top: .5rem; font-family: "xkcd"; }
+.waiting-msg { display: flex; align-items: center; gap: .6rem; color: var(--ink-soft); font-size: 1.05rem; }
+.spinner { width: 18px; height: 18px; border: 3px solid #d9c9a5; border-top-color: var(--gold-deep);
+  border-radius: 50%; animation: spin .8s linear infinite; flex: 0 0 auto; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* rules card (waiting room) */
 .rules-card > h2 { font-size: 1.6rem; }
 .rules-card h3 { color: var(--wood-2); font-size: 1.22rem; margin: 1.3rem 0 .25rem; }
