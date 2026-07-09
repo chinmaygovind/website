@@ -222,6 +222,7 @@ function renderLog(log) {
     if (fresh.some((e) => e.kind === "slap" || e.kind === "false")) playSafe(sndSlap);
     fresh.forEach((e) => {
       if (e.kind === "slap") slapHand(e.pid, e.color);
+      if (e.kind === "false") { slapHand(e.pid, e.color); showX(); }
       if (e.kind === "false" && e.pid === MY_PID) slapCooldownUntil = Date.now() + 2000;
     });
     const slap = fresh.slice().reverse().find((e) => e.kind === "slap");
@@ -324,6 +325,20 @@ function handSVG(color) {
       <rect x="73" y="16" width="12" height="40" rx="6"/>
       <rect x="4" y="54" width="20" height="14" rx="7" transform="rotate(-28 14 61)"/>
     </g></svg>`;
+}
+
+// A red X pops at the pile on a wrong slap.
+function showX() {
+  const pileEl = document.getElementById("pile");
+  if (!pileEl) return;
+  const b = centerOf(pileEl);
+  const x = document.createElement("div");
+  x.className = "slap-x";
+  x.style.left = b.x + "px";
+  x.style.top = b.y + "px";
+  x.textContent = "✕";
+  fx().appendChild(x);
+  setTimeout(() => x.remove(), 700);
 }
 
 // A colored hand shoots in from the slapper's seat and smacks the pile.
