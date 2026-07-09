@@ -22,8 +22,9 @@ submodule).
 
 ## Layout (`site/` is the web root)
 
-- `site/index.html` is the landing page: a plain white page with a Comic Sans
-  greeting.
+- `site/index.html` is the landing page: a plain white page with a big "hey!" on
+  the left and a welcome line on the right, set in the self-hosted xkcd Script
+  font (`site/fonts/xkcd-script.woff`, from ipython/xkcd-font).
 - `site/wii/index.html` is the Wii menu (was `public/wii/index.html`, briefly at
   root). Warning screen fades into a channel grid. The bottom-left gray slot is a
   **Ticket to Ride channel** (`#channel-ttr`) whose click handler navigates to `/ttr`.
@@ -56,8 +57,21 @@ submodule).
 
 ## Deploy
 
-Push to `main` → `.github/workflows/deploy.yml` runs an import check, then SSHes
-to EC2 (reusing TTR's `EC2_HOST/EC2_USER/EC2_SSH_KEY` secrets), `git reset --hard`,
-`git submodule update`, `pip install`, and restarts the `website` systemd service.
-`deploy/setup.sh` is the one-time bring-up. TTR runs as its own service and
-`TTR_URL` points at it — see `deploy/nginx.conf` for the subdomain/host options.
+Prod is one Ubuntu EC2 box at the Elastic IP `54.157.20.148`, serving
+`cgovind.com`/`www` (the website) and `ttr.cgovind.com` (TTR) over HTTPS through
+nginx + certbot (Let's Encrypt, auto-renew). Route 53 hosts the `cgovind.com`
+zone. The website runs as the `website` systemd service (gunicorn on
+`127.0.0.1:5002`); TTR runs as its own service on `127.0.0.1:5001`.
+
+Push to `main` triggers `.github/workflows/deploy.yml`: an import check, then an
+SSH deploy (repo secrets `EC2_HOST`/`EC2_USER`/`EC2_SSH_KEY`, where `EC2_HOST` is
+the Elastic IP) that runs `git reset --hard origin/main`, `git submodule update`,
+`pip install -r requirements.txt`, and `sudo systemctl restart website`. That is
+all it does: it ships `site/` and `app.py` but does NOT touch nginx, TLS, or the
+box `.env`, and does NOT run `deploy/setup.sh`. Apply nginx/TLS/`.env` changes by
+hand over SSH (`ssh ubuntu@54.157.20.148`; nginx config at
+`/etc/nginx/sites-available/website`). `deploy/setup.sh` is the one-time bring-up.
+
+Say "push" (or run `/push`) to commit, push, watch the Action, and verify the
+live site in one go. If the SSH step fails with `dial tcp :22 i/o timeout`, the
+`EC2_HOST` secret is stale: `gh secret set EC2_HOST --body 54.157.20.148`.
