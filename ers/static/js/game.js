@@ -290,7 +290,7 @@ function flyCard(pid, card) {
     </div>`;
   fx().appendChild(fly);
   requestAnimationFrame(() => fly.classList.add("go"));
-  setTimeout(() => fly.remove(), 650);
+  setTimeout(() => fly.remove(), 420);
 }
 
 // On a wrong slap: lift the pile, slide the burned card underneath face-up (so
