@@ -107,6 +107,13 @@ def test_slap_back_in_from_zero_cards():
     assert s["phase"] == "playing"
 
 
+def test_wrong_slap_on_last_life_eliminates():
+    s = mk({"A": [C(7)], "B": []}, current="A", pile=[C(2), C(9)])  # not slappable
+    slap(s, "B")                                  # B is at 0 and slaps wrong -> out
+    assert "B" in s["eliminated"]
+    assert s["phase"] == "ended" and s["winner"] == "A"
+
+
 # ----- tribute -----------------------------------------------------------
 
 def test_king_tribute_three_then_fail():

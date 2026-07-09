@@ -235,6 +235,7 @@ def slap(state, pid, rules=None):
     else:
         # False slap: burn cards from the top of the slapper's stack to the
         # bottom of the pile, and lock them out until the next card is flipped.
+        was_empty = not state["hands"][pid]      # already out of cards = on their last life
         burn = min(FALSE_SLAP_BURN, len(state["hands"][pid]))
         burned = [state["hands"][pid].pop(0) for _ in range(burn)]
         if burned:
@@ -244,7 +245,22 @@ def slap(state, pid, rules=None):
         burned_card = burned[0] if burned else None
         state["last_burn"] = {"pid": pid, "card": burned_card, "seq": state["seq"]}
         events.append({"type": "false_slap", "pid": pid, "burned": burn, "card": burned_card})
+        if was_empty:                            # wrong slap on your last life knocks you out
+            ev = _eliminate(state, pid)
+            if ev:
+                events.append(ev)
+            _check_win(state)
     return events
+
+
+def _eliminate(state, pid):
+    """Knock ``pid`` out, recording their finishing place. Returns the event or None."""
+    if pid in state["eliminated"]:
+        return None
+    state["eliminated"].append(pid)
+    place = len(state["players"]) - len(state["standings"])
+    state["standings"].append({"pid": pid, "place": place, "turns_lasted": state["turns"]})
+    return {"type": "eliminated", "pid": pid, "place": place, "turns_lasted": state["turns"]}
 
 
 def award_pile(state, pid, via=None, rank=None):
@@ -264,15 +280,12 @@ def award_pile(state, pid, via=None, rank=None):
     state["seq"] += 1
     events.append({"type": "win_pile", "pid": pid, "count": count, "via": via, "rank": rank})
 
-    # Anyone else who is now out of cards missed their chance to slap back in.
+    # Anyone else who is now out of cards used up their one life to slap back in.
     for other in state["players"]:
         if other != pid and other not in state["eliminated"] and not state["hands"][other]:
-            state["eliminated"].append(other)
-            place = len(state["players"]) - len(state["standings"])
-            state["standings"].append({"pid": other, "place": place,
-                                        "turns_lasted": state["turns"]})
-            events.append({"type": "eliminated", "pid": other, "place": place,
-                           "turns_lasted": state["turns"]})
+            ev = _eliminate(state, other)
+            if ev:
+                events.append(ev)
 
     # The winner leads the next round.
     if state["hands"][pid]:
