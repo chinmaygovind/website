@@ -311,7 +311,7 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
   transition: transform .22s cubic-bezier(.3,.8,.4,1); }
 .fly-card.go { transform: translate(var(--dx), var(--dy)) rotate(var(--frot, 0deg)); }
 /* flip runs over the same duration as the move, so it turns while it travels */
-.fly-inner { position: absolute; left: -50px; top: -70px; width: 100px; height: 140px;
+.fly-inner { position: absolute; left: -54px; top: -76px; width: 108px; height: 152px;
   transform-style: preserve-3d; transition: transform .22s ease-out; }
 .fly-card.go .fly-inner { transform: rotateY(180deg); }
 .fly-face { position: absolute; inset: 0; backface-visibility: hidden; border-radius: 10px; overflow: hidden; }
@@ -319,7 +319,7 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
   background: repeating-linear-gradient(45deg, rgba(255,220,150,.14) 0 6px, rgba(0,0,0,.05) 6px 12px),
     linear-gradient(160deg, #7a4a28, #4a2c17); }
 .fly-front { transform: rotateY(180deg); display: flex; align-items: center; justify-content: center; }
-.fly-front .card { width: 100px; height: 140px; }
+.fly-front .card { width: 108px; height: 152px; }   /* exactly the pile card size, so no snap on land */
 
 /* burned card slides in under the lifted pile, face-up */
 .pile { transition: transform .2s ease-out; }
@@ -327,7 +327,7 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
 .burn-card { position: fixed; z-index: 6; pointer-events: none; transform: translate(0,0);
   transition: transform .34s cubic-bezier(.3,.7,.4,1); }
 .burn-card.go { transform: translate(var(--dx), var(--dy)); }
-.burn-card .card { position: absolute; left: -50px; top: -70px; width: 100px; height: 140px;
+.burn-card .card { position: absolute; left: -54px; top: -76px; width: 108px; height: 152px;
   box-shadow: 0 8px 18px rgba(0,0,0,.5); }
 
 /* a colored slapping hand shooting in from a player's seat */
@@ -498,8 +498,9 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
   .controls { display: none; }
   .side.right { top: 44px; left: 6px; right: auto; width: 42vw; }
   .standings .st { font-size: .78rem; }
-  .fly-inner { width: 74px; height: 104px; left: -37px; top: -52px; }
-  .fly-front .card { width: 74px; height: 104px; }
+  .fly-inner { width: 84px; height: 118px; left: -42px; top: -59px; }
+  .fly-front .card { width: 84px; height: 118px; }
+  .burn-card .card { width: 84px; height: 118px; left: -42px; top: -59px; }
   .slap-hand svg { width: 66px; height: 80px; }
   .flip-lbl { font-size: .9rem; }
   .challenge { top: calc(47% - 104px); padding: .3rem .7rem; }

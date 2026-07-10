@@ -327,7 +327,7 @@ function flyCard(pid, card, rot) {
     </div>`;
   fx().appendChild(fly);
   requestAnimationFrame(() => fly.classList.add("go"));
-  setTimeout(() => fly.remove(), 420);
+  setTimeout(() => fly.remove(), 360);   // pile card is fully faded in by ~.28s
 }
 
 // On a wrong slap: lift the pile, slide the burned card underneath face-up (so
