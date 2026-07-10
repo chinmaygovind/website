@@ -170,6 +170,30 @@
         font-size: clamp(1.1rem, 2vw, 1.6rem);
         line-height: 1.5;
       }
+      .facts {
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+        font-size: clamp(1rem, 1.7vw, 1.4rem);
+        line-height: 1.35;
+      }
+      .fact {
+        display: flex;
+        gap: 0.5rem;
+        align-items: baseline;
+        flex-wrap: wrap;
+      }
+      .fact dt, .fact dd { margin: 0; }
+      .fact dt::after { content: ":"; }
+      .fact-link {
+        color: var(--link);
+        text-decoration: underline;
+      }
+      .penn-red { color: #990000; }
+      .penn-blue { color: #011f5b; }
+      .fav-blue { color: #1a56ff; }
+      .star { color: #f5b301; }
       .pdf-wrap {
         flex: 1;
         min-height: 0;
@@ -259,7 +283,17 @@
         <div class="modal-body">
           <div class="pane pane-left">
             <h2 class="pane-title">fast facts:</h2>
-            <!-- fast facts go here -->
+            <dl class="facts">
+              <div class="fact"><dt>name</dt><dd>Chinmay Govind</dd></div>
+              <div class="fact"><dt>age</dt><dd><span id="fact-age">19</span> years</dd></div>
+              <div class="fact"><dt>school</dt><dd><span class="penn-red">university</span> of <span class="penn-blue">pennsylvania</span></dd></div>
+              <div class="fact"><dt>height</dt><dd>5' 9</dd></div>
+              <div class="fact"><dt>favorite color</dt><dd><span class="fav-blue">blue</span></dd></div>
+              <div class="fact"><dt><a class="fact-link" href="https://puzzles.usatoday.com/" target="_blank" rel="noopener">USA Today Crossword</a></dt><dd>PB: 2:41</dd></div>
+              <div class="fact"><dt><a class="fact-link" href="https://www.duolingo.com/profile/ChinmayGov" target="_blank" rel="noopener">Duolingo Streak</a></dt><dd><span id="fact-duo">2084</span></dd></div>
+              <div class="fact"><dt><a class="fact-link" href="https://www.worldcubeassociation.org/persons/2018GOVI03" target="_blank" rel="noopener">3x3 Rubik's Cube</a></dt><dd>PB: 18.04s</dd></div>
+              <div class="fact"><dt><a class="fact-link" href="https://plancke.io/hypixel/player/stats/bheta#BedWars" target="_blank" rel="noopener">Hypixel Bedwars</a></dt><dd>582 <span class="star">&#9733;</span></dd></div>
+            </dl>
           </div>
           <div class="pane pane-right">
             <div class="pdf-wrap">
@@ -337,6 +371,31 @@
           document.querySelectorAll(".modal:not([hidden])").forEach(closeModal);
         }
       });
+
+      // fast facts: live age from birthday (Jul 31 2006)
+      (function () {
+        var born = new Date(2006, 6, 31); // month is 0-indexed, so 6 = July
+        var now = new Date();
+        var age = now.getFullYear() - born.getFullYear();
+        var beforeBirthday =
+          now.getMonth() < born.getMonth() ||
+          (now.getMonth() === born.getMonth() && now.getDate() < born.getDate());
+        if (beforeBirthday) age--;
+        var el = document.getElementById("fact-age");
+        if (el) el.textContent = age;
+      })();
+
+      // fast facts: live Duolingo streak via the same-origin proxy in app.py
+      // (falls back to the number already in the page if the fetch fails)
+      fetch("/api/duolingo-streak")
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && typeof d.streak === "number") {
+            var el = document.getElementById("fact-duo");
+            if (el) el.textContent = d.streak;
+          }
+        })
+        .catch(function () {});
     </script>
   </body>
 </html>
