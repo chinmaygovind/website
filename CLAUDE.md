@@ -58,40 +58,56 @@ multiplayer card game that shares TTR's accounts).
 
 ## Egyptian Rat Screw (`ers/`)
 
-A second real-time game at `ers.cgovind.com`, in the `ers/` subdir (NOT a submodule),
-that **shares TTR's accounts**. Flask + Flask-SocketIO, its own eventlet gunicorn on
-`127.0.0.1:5003`, its own venv (`ers/venv`) and `.env`.
+**Live at `https://ers.cgovind.com`** (TLS via certbot). A second real-time game in the
+`ers/` subdir (NOT a submodule) that **shares TTR's accounts**. Flask + Flask-SocketIO,
+its own eventlet gunicorn `-w 1` on `127.0.0.1:5003` (single worker required: socket rooms
++ game state live in-process), its own venv (`ers/venv`) and `.env` (both gitignored,
+hand-created on the box). The engine is server-authoritative; the first valid slap under a
+per-game lock wins.
 
-- **Shared accounts:** ERS points `DATABASE_URL` at TTR's SQLite file and uses the SAME
-  `SECRET_KEY` + `SESSION_COOKIE_DOMAIN=.cgovind.com`, so one login works on both sites
-  (single sign-on). Per-game stats are kept apart: TTR stats moved from the `users` table
-  into `ttr_stats`; ERS stats live in `ers_stats`. `users` is now a shared account table.
-  The stats split was an additive, reversible migration (old `users` stat columns kept as a
-  dormant backup) that runs on `ttr` startup; `ers_stats`/`ers_games`/`ers_players`/
-  `ers_slaps` are created by ERS. Two processes share one SQLite file via WAL + busy_timeout.
-- **Layout:** `ers/app.py` (auth+lobby routes ported from TTR, socket game loop, bots,
-  ELO/stats finalize), `ers/game_logic.py` (pure, unit-tested rules engine - `pytest ers/tests/`),
-  `ers/models.py` (shared `User` + `ErsStats`/`ErsGame`/`ErsPlayer`/`ErsSlap`),
-  `ers/templates/` + `ers/static/` (wooden-table UI, xkcd Script font, gold, pyramid PWA icons).
-- **Full game history:** every game's move-by-move replay is in `ers_games.events_json`; each
-  slap is also a row in `ers_slaps` (with `reaction_ms`) - e.g. a reaction-time distribution is
-  `SELECT reaction_ms FROM ers_slaps WHERE valid=1 AND reaction_ms IS NOT NULL`.
-- **Single gunicorn worker is required** (in-process socket rooms + game state), like TTR.
-  The engine is server-authoritative; the first valid slap under a per-game lock wins.
+- **Shared accounts:** `ers/.env` sets `DATABASE_URL` to the SAME SQLite file the live TTR
+  uses and reuses TTR's `SECRET_KEY` + `SESSION_COOKIE_DOMAIN=.cgovind.com`, so one login
+  works on both sites. `users` is the shared account table; ERS creates `ers_stats` /
+  `ers_games` / `ers_players` / `ers_slaps` in that same file (WAL + busy_timeout for
+  concurrent access). ERS's `User` model maps only the account columns.
+- **Prod DB path gotcha:** the live TTR does NOT run from this repo's `ttr/` submodule; it
+  runs from a **separate clone `/home/ubuntu/TicketToRide`** (systemd `tickettoride`, port
+  5001), whose db is `/home/ubuntu/TicketToRide/instance/tickettoride.db` -- that is the
+  shared file `ers/.env`'s `DATABASE_URL` points at.
+- **SSO is one-directional in prod:** a login on ERS carries into TTR (ERS sets a
+  `.cgovind.com` cookie signed with the shared key), but TTR -> ERS auto-login is NOT wired
+  because the live TTR clone still sets a host-only cookie. Same credentials work either way.
+- **The `ttr_stats` refactor is NOT deployed.** This repo's `ttr/` submodule has edits that
+  move TTR stats out of `users` into `ttr_stats` (+ cookie-domain SSO), but the running TTR
+  is the separate clone, so in prod **TTR still uses the `users.elo` columns** and ERS uses
+  `ers_stats`; both coexist in the one db. Deploying that refactor means committing it in the
+  `github.com/chinmaygovind/TicketToRide` repo and `git pull` + restart on
+  `/home/ubuntu/TicketToRide` (back up the db first).
+- **Layout:** `ers/app.py` (auth + lobby routes ported from TTR, socket game loop, bots,
+  ELO/stats finalize, ping, spectators, kick/leave), `ers/game_logic.py` (pure, unit-tested
+  rules engine -- `cd ers && venv/bin/python -m pytest tests/`), `ers/models.py` (shared
+  `User` + `ErsStats`/`ErsGame`/`ErsPlayer`/`ErsSlap`), `ers/templates/` + `ers/static/`
+  (wooden oval table, xkcd Script font, gold, pyramid PWA icons, synth `flip.wav`/`slap.wav`).
+- **Rules:** royalty tribute (A/K/Q/J owe 4/3/2/1); slaps = double, sandwich, top-matches-
+  bottom, add-to-ten, King+Queen; a wrong slap burns 1 card + a 2s freeze; **one life** to
+  slap back in after running out; last player holding all 52 wins. Bots (`is_bot` ErsPlayer
+  rows) slap with `max(0.5s, Exponential(mean 2s))`, driven by eventlet timers.
+- **Feel:** everyone is a seat (dot + count + name) around the table, your flip pile
+  down-left and SLAP down-right of your seat; a card flies from a seat and flips into the
+  pile in one motion; a colored hand smacks on every slap (red X on a wrong one); cards
+  slide to whoever wins the pile; a wrong slap lifts the pile to slide the burned card
+  under face-up; scrollable fading chat; live ping; spectators can watch playing games.
+- **Full game history:** every game's move-by-move replay is in `ers_games.events_json`;
+  each slap is also a row in `ers_slaps` (with `reaction_ms`) -- e.g. a reaction-time
+  distribution is `SELECT reaction_ms FROM ers_slaps WHERE valid=1 AND reaction_ms IS NOT NULL`.
 
-## One-time ERS prod bring-up (the deploy pipeline won't do these)
-
-Run once over SSH / AWS (deploy.yml afterwards handles venv + `systemctl restart ers`/`ttr`):
-0. Back up first: `cp ttr/instance/tickettoride.db tickettoride.db.bak`.
-1. Route 53: add `ers.cgovind.com` A record → Elastic IP `54.157.20.148`.
-2. Create `ers/.env` (see `ers/.env.example`): `SECRET_KEY` = TTR's, `DATABASE_URL` = TTR's db
-   absolute path, `SESSION_COOKIE_DOMAIN=.cgovind.com`, `SESSION_COOKIE_SECURE=1`, `PORT=5003`.
-3. Add `SESSION_COOKIE_DOMAIN=.cgovind.com` to `ttr/.env` (keep its existing `SECRET_KEY`;
-   TTR's `app.py` must also set the cookie domain from env - one-time TTR re-login).
-4. Install `deploy/ers.service` (render `{{USER}}`/`{{APP_DIR}}`), `systemctl enable --now ers`.
-5. Add the `ers.cgovind.com` nginx block (in `deploy/nginx.conf`), `nginx -t`, reload, then
-   `certbot --nginx -d ers.cgovind.com` for TLS.
-6. `sudo systemctl restart ttr` (runs the `ttr_stats` migration) and start `ers`.
+**ERS deploy:** pushes to `main` run the usual Action, which now also (when `ers/.env`
+exists on the box) builds/updates `ers/venv` from `ers/requirements.txt` and
+`sudo systemctl restart ers`. nginx has an `ers.cgovind.com` vhost (`sites-available/ers`,
+proxy to `:5003` with WebSocket upgrade) with its own Let's Encrypt cert; Route 53 has the
+`ers.cgovind.com` A record. `/ers` on the main site 302-redirects there (`ERS_URL`). nginx,
+TLS, DNS and `ers/.env` are all hand-managed on the box (not shipped by the Action), same as
+the rest of the deploy. See the `prod-infra` memory for the full box layout.
 
 ## Deploy
 
