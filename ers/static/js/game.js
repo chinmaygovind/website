@@ -94,10 +94,12 @@ function render() {
   const pileEl = document.getElementById("pile");
   const pile = s.pile || [];
   const show = pile.slice(-6);
+  let topRot = 0;
   pileEl.innerHTML = show.map((c, i) => {
     const n = show.length;
     const rotDeg = (i - (n - 1) / 2) * 7 + ((c.rank * 13 + i) % 5 - 2);
     const isTop = i === n - 1;
+    if (isTop) topRot = rotDeg;
     const landing = newFlip && isTop;
     return `<div class="pcard ${landing ? "landing" : ""}" style="--rot:${rotDeg}deg;
       transform:translate(-50%,-50%) rotate(${rotDeg}deg); z-index:${i}">
@@ -106,8 +108,8 @@ function render() {
   prevPile = pile.length;
   document.getElementById("pileCount").textContent =
     pile.length ? `${pile.length} card${pile.length > 1 ? "s" : ""} in the pile` : "";
-  if (newFlip) {                       // a card was just flipped: fly it in and flip it
-    flyCard(s.last_flip.pid, s.last_flip.card);
+  if (newFlip) {                       // fly it in, rotating and flipping to its landing pose
+    flyCard(s.last_flip.pid, s.last_flip.card, topRot);
     playSafe(sndFlip);
     lastFlipSeq = s.last_flip.seq;
   }
@@ -296,8 +298,9 @@ function centerOf(el) {
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 }
 
-// A face-down card flies from the flipper's seat to the pile and flips face-up.
-function flyCard(pid, card) {
+// A face-down card flies from the flipper's seat to the pile, rotating and flipping
+// face-up in one motion, landing in the pile card's exact pose.
+function flyCard(pid, card, rot) {
   const seat = document.getElementById("seat-" + pid);
   const pileEl = document.getElementById("pile");
   if (!seat || !pileEl || !card) return;
@@ -308,6 +311,7 @@ function flyCard(pid, card) {
   fly.style.top = a.y + "px";
   fly.style.setProperty("--dx", (b.x - a.x) + "px");
   fly.style.setProperty("--dy", (b.y - a.y) + "px");
+  fly.style.setProperty("--frot", (rot || 0) + "deg");
   fly.innerHTML = `<div class="fly-inner">
       <div class="fly-face fly-back"></div>
       <div class="fly-face fly-front">${cardFace(card)}</div>

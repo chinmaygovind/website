@@ -11,6 +11,13 @@
         src: url("fonts/xkcd-script.woff") format("woff");
         font-display: swap;
       }
+      :root {
+        --charcoal: #333333;
+        --poker: #16295c;
+        --link: #1a56ff;
+        --tile: clamp(110px, min(14vw, 30vh), 240px);
+      }
+      * { box-sizing: border-box; }
       html, body {
         margin: 0;
         background: #fff;
@@ -18,36 +25,318 @@
       body {
         color: #000;
         font-family: "xkcd Script", "Comic Sans MS", cursive;
+        min-height: 100vh;
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
       }
+      p { margin: 0; }
+
+      /* ---- header ---- */
       .top {
-        height: 33.333vh;
-        height: 33.333dvh;
-        box-sizing: border-box;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 1rem;
-        padding: 0 6vw;
+        gap: 2rem;
+        width: 100%;
+        padding: 1.4rem 3vw;
       }
       h1 {
         margin: 0;
-        font-size: clamp(2.5rem, 12vw, 7rem);
+        line-height: 1;
+        font-size: clamp(2.5rem, 11vw, 8rem);
       }
-      p {
-        margin: 0;
+      .welcome {
         max-width: 55%;
         text-align: right;
-        font-size: clamp(1rem, 4.5vw, 2.25rem);
+        font-size: clamp(1rem, 4vw, 2.4rem);
       }
-      .name {
-        color: blue;
+      .name { color: blue; }
+
+      /* ---- tile grid (imaginary 6 x 2 squares) ---- */
+      .tiles {
+        flex: 1;
+        display: grid;
+        grid-template-columns: repeat(6, var(--tile));
+        grid-auto-rows: var(--tile);
+        gap: 1vw;
+        justify-content: center;
+        align-content: center;
+        padding: 0 3vw 3vh;
+      }
+      .tile {
+        width: var(--tile);
+        height: var(--tile);
+        background: none;
+        border: none;
+        padding: 0;
+        font: inherit;
+        color: inherit;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.4rem;
+        transition: transform 0.15s ease;
+      }
+      .tile:hover { transform: translateY(-4px); }
+      .tile-art {
+        flex: 1;
+        width: 100%;
+        min-height: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .tile-img {
+        max-width: 82%;
+        max-height: 82%;
+        object-fit: contain;
+      }
+      .tile-label {
+        font-size: clamp(0.9rem, 1.6vw, 1.4rem);
+        letter-spacing: 0.06em;
+      }
+
+      /* ---- modal ---- */
+      .modal {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 3vh 3vw;
+      }
+      .modal[hidden] { display: none; }
+      .modal-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.55);
+      }
+      .modal-box {
+        position: relative;
+        width: min(1150px, 94vw);
+        height: min(780px, 90vh);
+        background: #fff;
+        border: 7px solid var(--charcoal);
+        border-radius: 16px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .modal-resume { border-color: var(--charcoal); }
+      .modal-poker { border-color: var(--poker); }
+      .modal-close {
+        position: absolute;
+        top: 6px;
+        right: 14px;
+        background: none;
+        border: none;
+        font-family: inherit;
+        font-size: 2.2rem;
+        line-height: 1;
+        cursor: pointer;
+        color: inherit;
+        z-index: 2;
+      }
+      .modal-body {
+        flex: 1;
+        display: flex;
+        min-height: 0;
+      }
+      .pane {
+        flex: 1;
+        min-width: 0;
+        padding: 2.2rem;
+        display: flex;
+        flex-direction: column;
+      }
+      .pane-left { overflow: auto; }
+      .pane-right {
+        border-left: 1px solid rgba(0, 0, 0, 0.12);
+        gap: 1rem;
+        overflow: hidden;
+      }
+      .pane-title {
+        margin: 0 0 1rem;
+        font-size: clamp(1.6rem, 3vw, 2.6rem);
+      }
+      .modal-resume .pane-title { color: var(--charcoal); }
+      .modal-poker .pane-title { color: var(--poker); }
+      .pane-text {
+        font-size: clamp(1.1rem, 2vw, 1.6rem);
+        line-height: 1.5;
+      }
+      .pdf-wrap {
+        flex: 1;
+        min-height: 0;
+      }
+      .pdf-frame {
+        width: 100%;
+        height: 100%;
+        border: 1px solid rgba(0, 0, 0, 0.15);
+        border-radius: 6px;
+      }
+      .video-wrap {
+        width: 100%;
+        aspect-ratio: 16 / 9;
+        max-height: 100%;
+      }
+      .video-frame {
+        width: 100%;
+        height: 100%;
+        border: 0;
+        border-radius: 6px;
+      }
+      .pane-caption {
+        font-size: clamp(1rem, 1.6vw, 1.3rem);
+      }
+      .here-link {
+        color: var(--link);
+        text-decoration: underline;
+      }
+
+      /* ---- mobile ---- */
+      @media (max-width: 760px) {
+        :root { --tile: clamp(120px, 40vw, 200px); }
+        .top {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 0.4rem;
+        }
+        .welcome { max-width: 100%; text-align: left; }
+        .tiles { grid-template-columns: repeat(2, var(--tile)); }
+        .modal-body { flex-direction: column; }
+        .pane-right {
+          border-left: none;
+          border-top: 1px solid rgba(0, 0, 0, 0.12);
+        }
       }
     </style>
   </head>
   <body>
-    <div class="top">
+    <header class="top">
       <h1>hey!</h1>
-      <p>welcome to <span class="name">chinmay govind</span>'s website</p>
+      <p class="welcome">welcome to <span class="name">chinmay govind</span>'s website</p>
+    </header>
+
+    <main class="tiles">
+      <button class="tile" data-modal="modal-resume">
+        <span class="tile-art">
+          <img
+            class="tile-img"
+            src="images/icons/resume.png"
+            data-still="images/icons/resume.png"
+            data-anim="images/icons/resume.gif"
+            alt="Resume"
+          />
+        </span>
+        <span class="tile-label">RESUME</span>
+      </button>
+
+      <button class="tile" data-modal="modal-poker">
+        <span class="tile-art">
+          <img
+            class="tile-img"
+            src="images/icons/poker.png"
+            data-still="images/icons/poker.png"
+            data-anim="images/icons/poker.gif"
+            alt="Poker"
+          />
+        </span>
+        <span class="tile-label">POKER</span>
+      </button>
+    </main>
+
+    <!-- resume popup -->
+    <div class="modal" id="modal-resume" hidden>
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-box modal-resume" role="dialog" aria-modal="true" aria-label="Resume">
+        <button class="modal-close" data-close aria-label="Close">&times;</button>
+        <div class="modal-body">
+          <div class="pane pane-left">
+            <h2 class="pane-title">fast facts:</h2>
+            <!-- fast facts go here -->
+          </div>
+          <div class="pane pane-right">
+            <div class="pdf-wrap">
+              <iframe
+                class="pdf-frame"
+                src="assets/Chinmay_Govind_Resume.pdf"
+                title="Chinmay Govind resume"
+              ></iframe>
+            </div>
+            <p class="pane-caption">click <a class="here-link" href="assets/Chinmay_Govind_Resume.pdf" target="_blank" rel="noopener">here</a> to open my resume</p>
+          </div>
+        </div>
+      </div>
     </div>
+
+    <!-- poker popup -->
+    <div class="modal" id="modal-poker" hidden>
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-box modal-poker" role="dialog" aria-modal="true" aria-label="Poker">
+        <button class="modal-close" data-close aria-label="Close">&times;</button>
+        <div class="modal-body">
+          <div class="pane pane-left">
+            <h2 class="pane-title">poker</h2>
+            <p class="pane-text">I like to play cards. I may not be the best, but I do get pretty lucky.</p>
+          </div>
+          <div class="pane pane-right">
+            <div class="video-wrap">
+              <iframe
+                class="video-frame"
+                src="https://www.youtube.com/embed/o0ONz2VgnAQ"
+                title="Poker stream"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowfullscreen
+              ></iframe>
+            </div>
+            <p class="pane-caption">check out this stream of me playing in Susquehanna's tournament!</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // hover a tile -> play its gif; leave -> back to the still png
+      document.querySelectorAll(".tile-img").forEach(function (img) {
+        var still = img.dataset.still;
+        var anim = img.dataset.anim;
+        new Image().src = anim; // preload the gif so the first hover is instant
+        var tile = img.closest(".tile");
+        tile.addEventListener("mouseenter", function () { img.src = anim; });
+        tile.addEventListener("mouseleave", function () { img.src = still; });
+      });
+
+      // open the popup for a tile
+      document.querySelectorAll(".tile").forEach(function (tile) {
+        tile.addEventListener("click", function () {
+          var modal = document.getElementById(tile.dataset.modal);
+          if (!modal) return;
+          modal.hidden = false;
+          document.body.style.overflow = "hidden";
+        });
+      });
+
+      // close on the X, on the backdrop, or with Escape
+      function closeModal(modal) {
+        modal.hidden = true;
+        document.body.style.overflow = "";
+      }
+      document.querySelectorAll(".modal").forEach(function (modal) {
+        modal.querySelectorAll("[data-close]").forEach(function (el) {
+          el.addEventListener("click", function () { closeModal(modal); });
+        });
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") {
+          document.querySelectorAll(".modal:not([hidden])").forEach(closeModal);
+        }
+      });
+    </script>
   </body>
 </html>

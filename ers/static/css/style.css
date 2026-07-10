@@ -264,8 +264,10 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
 .seat .tag { display:none; }
 
 /* your face-down stack, off to the bottom-left ("in front of you") */
-.mystack { position:absolute; left:38px; bottom: 16px; text-align:center; z-index:12; }
-.seat.me { position: static; transform: none; width: auto; margin: 0 auto .45rem; }
+/* your flip pile sits just down-left of your dot; the slap button just down-right,
+   so neither covers your seat or label. */
+.mystack { position:absolute; left: calc(50% - clamp(96px, 20vw, 150px)); transform: translateX(-50%);
+  bottom: 16px; text-align:center; z-index:12; }
 .you-tag { font-size: .7rem; color: var(--gold-soft); opacity: .85; }
 .stack-cards { position: relative; width: 84px; height: 118px; margin: 0 auto; cursor: pointer; }
 .card-back { position:absolute; inset:0; border-radius:9px; border:2px solid #2a1710;
@@ -299,16 +301,15 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
 .card .pip { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); font-size: 3.2rem; }
 .card.red { color: var(--red); }
 /* the just-flipped card stays hidden until the flying card arrives (~.3s), then settles in */
-.pile .pcard.landing { opacity: 0; animation: land .1s ease-out .2s forwards; }
-@keyframes land {
-  from { opacity: 0; transform: translate(-50%,-50%) rotate(var(--rot,0deg)) scale(.92); }
-  to   { opacity: 1; transform: translate(-50%,-50%) rotate(var(--rot,0deg)) scale(1); }
-}
+/* the landed pile card just fades in at its final pose (the flying card already
+   moved+rotated+flipped into that exact pose), so there is no second motion. */
+.pile .pcard.landing { opacity: 0; animation: land .1s ease-out .18s forwards; }
+@keyframes land { from { opacity: 0; } to { opacity: 1; } }
 
 /* a face-down card flying from a seat to the pile, flipping face-up on arrival */
-.fly-card { position: fixed; z-index: 30; pointer-events: none; transform: translate(0,0);
+.fly-card { position: fixed; z-index: 30; pointer-events: none; transform: translate(0,0) rotate(0deg);
   transition: transform .22s cubic-bezier(.3,.8,.4,1); }
-.fly-card.go { transform: translate(var(--dx), var(--dy)); }
+.fly-card.go { transform: translate(var(--dx), var(--dy)) rotate(var(--frot, 0deg)); }
 /* flip runs over the same duration as the move, so it turns while it travels */
 .fly-inner { position: absolute; left: -50px; top: -70px; width: 100px; height: 140px;
   transform-style: preserve-3d; transition: transform .22s ease-out; }
@@ -369,9 +370,10 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
 .challenge .big { font-size: 1.6rem; }
 @keyframes pulse { 50% { box-shadow: 0 0 20px var(--gold); } }
 
-/* SLAP button, centered at the bottom */
+/* SLAP button, down-right of your seat */
 .slap-btn {
-  position:absolute; left:50%; bottom: 26px; transform: translateX(-50%); z-index: 20;
+  position:absolute; left: calc(50% + clamp(96px, 20vw, 150px)); bottom: 26px;
+  transform: translateX(-50%); z-index: 20;
   width: 138px; height: 138px; border-radius: 50%;
   font-family:"xkcd"; font-size: 2rem; color:#3a0d0d;
   border: 4px solid #7c1414;
@@ -475,11 +477,9 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
 
   .stack-cards { width: 58px; height: 82px; }
   .card-back { border-radius: 7px; }
-  .mystack { left: 10px; bottom: 10px; }
-  .mystack .myname { font-size: .9rem; }
-  .mystack .lbl { font-size: .8rem; }
+  .mystack { bottom: 12px; }
 
-  .slap-btn { width: 98px; height: 98px; font-size: 1.4rem; bottom: 12px; }
+  .slap-btn { width: 100px; height: 100px; font-size: 1.4rem; bottom: 12px; }
   /* messages bar up in the top-right; standings top-left; no key hints on mobile */
   .slog { top: 44px; bottom: auto; right: 6px; left: auto; width: 52vw; max-width: 56vw; max-height: 26vh; }
   .slog .entry { font-size: .74rem; padding: .3rem .42rem; }

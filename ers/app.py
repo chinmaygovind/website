@@ -748,10 +748,11 @@ def _kick(code, why=None):
                 for bp in bots:
                     if bp in state["eliminated"] or bp in state["slap_locked"]:
                         continue
-                    # Reaction ~ Exponential(mean 5s). Slow on purpose: by the time most
-                    # of these fire the pile has usually moved on, so _bot_slap re-checks
-                    # and skips - bots only catch a slappable pile that lingers. Beatable.
-                    eventlet.spawn_after(random.expovariate(1 / BOT_SLAP_MEAN_SEC), _bot_slap, code, seq, bp)
+                    # Reaction = max(0.5s, Exponential(mean 2s)). Slow and floored so a
+                    # human can beat them; by the time most fire the pile has usually
+                    # moved on, so _bot_slap re-checks and skips.
+                    delay = max(0.5, random.expovariate(1 / BOT_SLAP_MEAN_SEC))
+                    eventlet.spawn_after(delay, _bot_slap, code, seq, bp)
 
 
 def _bot_flip(code, seq, pid):
