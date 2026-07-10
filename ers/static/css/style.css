@@ -429,6 +429,17 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
 .leave-btn { font-family:"xkcd"; font-size:.9rem; color:#f0b6b0; background:rgba(120,20,20,.45);
   border:1px solid rgba(240,120,110,.5); border-radius:8px; padding:.25rem .7rem; cursor:pointer; }
 .leave-btn:hover { background:rgba(176,48,48,.7); color:#fff; }
+
+/* spectators */
+.spectate-badge { position: absolute; top: 48px; left: 50%; transform: translateX(-50%); z-index: 25;
+  background: rgba(20,12,7,.85); border: 1px solid var(--gold); color: var(--gold-soft);
+  border-radius: 20px; padding: .35rem .95rem; font-family: "xkcd"; }
+.table-page.spectator .mystack,
+.table-page.spectator .slap-btn,
+.table-page.spectator .controls,
+.table-page.spectator .my-status { display: none !important; }
+.live-dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#e05a5a;
+  box-shadow:0 0 6px #e05a5a; animation: pulse 1s infinite; margin-right:3px; vertical-align:middle; }
 .chip { background: rgba(0,0,0,.4); border:1px solid rgba(242,201,76,.3); color: var(--gold-soft);
   border-radius: 20px; padding:1px 9px; font-size:.72rem; }
 

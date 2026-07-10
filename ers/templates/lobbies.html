@@ -34,6 +34,21 @@
         <div class="field" style="margin:0"><input id="jc" placeholder="ABC123" maxlength="6" style="text-transform:uppercase"/></div>
         <button class="btn secondary" style="flex:0 0 auto" onclick="joinByCode()">Join</button>
       </div>
+
+      {% if live %}
+      <h2 style="margin-top:1.6rem">Watch live games</h2>
+      <div class="game-list">
+        {% for g in live %}
+        <div class="game-item">
+          <div>
+            <span class="code">{{ g.code }}</span>
+            <div class="meta"><span class="live-dot"></span> {{ g.player_count }} playing</div>
+          </div>
+          <a class="btn secondary" href="/game/{{ g.code }}">Watch</a>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
     </div>
 
     <div class="panel">

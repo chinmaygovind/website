@@ -248,7 +248,10 @@ def lobbies():
     open_games = ErsGame.query.filter_by(status="waiting", is_private=False)\
         .order_by(ErsGame.created_at.desc()).limit(30).all()
     games = [g.to_lobby_dict() for g in open_games if len(g.players) < g.max_players]
-    return render_template("lobbies.html", games=games, user=get_current_user(),
+    live_games = ErsGame.query.filter_by(status="playing", is_private=False)\
+        .order_by(ErsGame.last_activity_at.desc()).limit(20).all()
+    live = [g.to_lobby_dict() for g in live_games]
+    return render_template("lobbies.html", games=games, live=live, user=get_current_user(),
                            name=get_effective_name())
 
 
@@ -351,10 +354,10 @@ def game_page(code):
     if not game:
         return redirect(url_for("lobbies"))
     me = ErsPlayer.query.filter_by(game_id=game.id, session_key=get_session_key()).first()
-    if not me:
-        return redirect(url_for("lobbies"))
+    if not me and game.status == "waiting":
+        return redirect(url_for("lobbies"))   # nothing to spectate before the deal
     roster = {p.pid: p.to_dict() for p in game.players}
-    return render_template("game.html", game=game, my_pid=me.pid,
+    return render_template("game.html", game=game, my_pid=(me.pid if me else ""),
                            roster_json=json_mod.dumps(roster),
                            name=get_effective_name())
 

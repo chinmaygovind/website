@@ -29,6 +29,15 @@ function measurePing() {
 }
 setInterval(measurePing, 3000);
 setTimeout(measurePing, 600);
+
+// Spectators watch read-only: no flip pile, slap button or key controls.
+const SPECTATOR = !MY_PID;
+if (SPECTATOR) {
+  const tp = document.querySelector(".table-page");
+  if (tp) tp.classList.add("spectator");
+  const b = document.getElementById("spectateBadge");
+  if (b) b.style.display = "block";
+}
 socket.on("game_state", (d) => {
   STATE = d.state;
   if (d.roster) ROSTER = d.roster;
@@ -265,12 +274,12 @@ function toast(msg) {
 
 // ---- actions ----
 function doFlip() {
-  if (!STATE || STATE.phase !== "playing") return;
+  if (SPECTATOR || !STATE || STATE.phase !== "playing") return;
   if (STATE.current !== MY_PID || STATE.pending_win) return;
   socket.emit("flip", { code: GAME_CODE });
 }
 function doSlap() {
-  if (!STATE || STATE.phase !== "playing") return;
+  if (SPECTATOR || !STATE || STATE.phase !== "playing") return;
   if (Date.now() < slapCooldownUntil) return;   // frozen out after a wrong slap
   socket.emit("slap", { code: GAME_CODE });
 }
