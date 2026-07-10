@@ -151,6 +151,21 @@ function render() {
   flipLbl.textContent = myCnt ? "flip" : "out";
   flipLbl.classList.toggle("hot", canFlip);
 
+  // clear "last life" / "you're out" status, bottom-left
+  const myStatusEl = document.getElementById("myStatus");
+  if (myStatusEl && !SPECTATOR) {
+    if (s.eliminated.includes(MY_PID)) {
+      const st = (s.standings || []).find((x) => x.pid === MY_PID);
+      myStatusEl.className = "my-status out show";
+      myStatusEl.innerHTML = `<span class="big">You're out!</span>${st ? "Finished #" + st.place : ""}`;
+    } else if (myCnt === 0 && s.phase === "playing") {
+      myStatusEl.className = "my-status life show";
+      myStatusEl.innerHTML = `<span class="big">Last life!</span>Slap a valid pile to get back in`;
+    } else {
+      myStatusEl.className = "my-status";
+    }
+  }
+
   // turn message
   const tm = document.getElementById("turnMsg");
   if (s.phase === "ended") tm.textContent = "";

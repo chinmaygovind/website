@@ -440,6 +440,16 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
 .table-page.spectator .my-status { display: none !important; }
 .live-dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#e05a5a;
   box-shadow:0 0 6px #e05a5a; animation: pulse 1s infinite; margin-right:3px; vertical-align:middle; }
+
+/* your life / out status, bottom-left */
+.my-status { position: absolute; left: 16px; bottom: 16px; z-index: 21; font-family: "xkcd";
+  padding: .55rem 1rem; border-radius: 14px; display: none; max-width: 42vw; line-height: 1.25;
+  box-shadow: 0 8px 20px var(--shadow); }
+.my-status.show { display: block; }
+.my-status .big { font-size: 1.5rem; display: block; }
+.my-status.life { background: rgba(92,60,10,.92); border: 2px solid var(--gold); color: var(--gold-soft);
+  animation: pulse 1s infinite; }
+.my-status.out { background: rgba(96,16,16,.94); border: 2px solid #e0483a; color: #ffd7d2; }
 .chip { background: rgba(0,0,0,.4); border:1px solid rgba(242,201,76,.3); color: var(--gold-soft);
   border-radius: 20px; padding:1px 9px; font-size:.72rem; }
 
