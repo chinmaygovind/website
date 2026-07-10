@@ -9,7 +9,9 @@ out of the box, so ``serve()`` re-implements that directory-index behaviour; wit
 it every ``/projects/...``, ``/games/...`` and ``/channels/...`` link would 404.
 """
 
+import json
 import os
+import time
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
@@ -68,6 +70,46 @@ def roll_gemini():
         return Response(exc.read(), status=exc.code, mimetype="application/json")
     except urlerror.URLError:
         return {"error": "Could not reach the Gemini API."}, 502
+
+
+# Chinmay's live Duolingo streak for the landing page's "fast facts". Duolingo's
+# user API sends no CORS headers, so the browser can't read it directly; this
+# same-origin proxy fetches it server-side and caches it (the streak ticks at
+# most once a day, so an hour of staleness is fine and spares Duolingo the load).
+DUOLINGO_USERNAME = "ChinmayGov"
+DUOLINGO_API_URL = "https://www.duolingo.com/2017-06-30/users?username=" + DUOLINGO_USERNAME
+DUOLINGO_CACHE_TTL = 3600  # seconds
+_duolingo_cache = {"streak": None, "fetched_at": 0.0}
+
+
+@app.route("/api/duolingo-streak")
+def duolingo_streak():
+    """Return Chinmay's current Duolingo streak (see the note by the constants)."""
+    now = time.time()
+    if (
+        _duolingo_cache["streak"] is not None
+        and now - _duolingo_cache["fetched_at"] < DUOLINGO_CACHE_TTL
+    ):
+        return {"streak": _duolingo_cache["streak"]}
+
+    req = urlrequest.Request(
+        DUOLINGO_API_URL,
+        headers={"User-Agent": "Mozilla/5.0 (cgovind.com fast-facts)"},
+    )
+    try:
+        with urlrequest.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+        streak = int(data["users"][0]["streak"])
+    except (urlerror.URLError, KeyError, IndexError, ValueError, TypeError, TimeoutError):
+        # Serve the last good value if we have one; otherwise let the page keep
+        # its built-in fallback number.
+        if _duolingo_cache["streak"] is not None:
+            return {"streak": _duolingo_cache["streak"], "stale": True}
+        return {"streak": None}, 502
+
+    _duolingo_cache["streak"] = streak
+    _duolingo_cache["fetched_at"] = now
+    return {"streak": streak}
 
 
 @app.route("/ttr")
