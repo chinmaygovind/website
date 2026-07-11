@@ -38,8 +38,7 @@
       .top {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        gap: 2rem;
+        gap: clamp(1rem, 4vw, 3.5rem);
         width: 100%;
         padding: 1.4rem 3vw;
       }
@@ -47,13 +46,45 @@
         margin: 0;
         line-height: 1;
         font-size: clamp(2.5rem, 11vw, 8rem);
+        flex-shrink: 0;
       }
       .welcome {
-        max-width: 55%;
-        text-align: right;
-        font-size: clamp(1rem, 4vw, 2.4rem);
+        flex: 1;
+        min-width: 0;
+        line-height: 1.12;
+        font-size: clamp(1rem, 2.6vw, 1.9rem);
       }
-      .name { color: blue; }
+      .welcome-lead { display: block; }
+      .name {
+        display: block;
+        color: blue;
+        font-size: clamp(1.7rem, 5.5vw, 4rem);
+        line-height: 1.04;
+      }
+      .contacts {
+        flex-shrink: 0;
+        font-style: normal;
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+        font-size: clamp(0.95rem, 1.5vw, 1.3rem);
+      }
+      .contact {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        color: var(--link);
+        text-decoration: none;
+        white-space: nowrap;
+      }
+      .contact svg {
+        width: 1.35em;
+        height: 1.35em;
+        fill: var(--link);
+        flex-shrink: 0;
+      }
+      .contact-name { text-decoration: underline; }
+      .contact:hover .contact-name { text-decoration: none; }
 
       /* ---- tile grid (imaginary 6 x 2 squares) ---- */
       .tiles {
@@ -150,8 +181,8 @@
       }
       .modal-icon {
         position: absolute;
-        top: 10px;
-        right: 56px;
+        top: 1.5rem;
+        right: 1.5rem;
         height: clamp(38px, 6vw, 56px);
         width: auto;
         z-index: 2;
@@ -169,7 +200,7 @@
         display: flex;
         flex-direction: column;
       }
-      .pane-left { overflow: auto; }
+      .pane-left { overflow: auto; position: relative; }
       .pane-right {
         border-left: 1px solid rgba(0, 0, 0, 0.12);
         gap: 1rem;
@@ -260,6 +291,9 @@
         border-radius: 6px;
         display: block;
       }
+      .modal-whale .media-img {
+        border: 2px solid var(--whale);
+      }
       .placeholder {
         flex: 1;
         min-height: 0;
@@ -288,9 +322,9 @@
         .top {
           flex-direction: column;
           align-items: flex-start;
-          gap: 0.4rem;
+          gap: 0.9rem;
         }
-        .welcome { max-width: 100%; text-align: left; }
+        .welcome { flex: none; text-align: left; }
         .tiles { grid-template-columns: repeat(2, var(--tile)); }
 
         /* keep the popup inside the visible viewport and scroll within it */
@@ -322,13 +356,37 @@
         .media { flex: none; }
         .media-img { max-height: 46vh; max-height: 46dvh; }
         .placeholder { flex: none; height: 26vh; height: 26dvh; }
+        /* the top half is full width now, so shift the gif clear of the close X */
+        .modal-icon { top: 1.1rem; right: 3.2rem; }
       }
     </style>
   </head>
   <body>
     <header class="top">
       <h1>hey!</h1>
-      <p class="welcome">welcome to <span class="name">chinmay govind</span>'s website</p>
+      <p class="welcome">
+        <span class="welcome-lead">welcome to</span>
+        <span class="name">chinmay govind's</span>
+        <span class="welcome-lead">website</span>
+      </p>
+      <address class="contacts">
+        <a class="contact" href="mailto:chinmaygov@gmail.com" aria-label="Email chinmaygov@gmail.com">
+          <svg viewBox="0 0 512 512" aria-hidden="true"><path d="M48 64C21.5 64 0 85.5 0 112c0 15.1 7.1 29.3 19.2 38.4L236.8 313.6c11.4 8.5 27 8.5 38.4 0L492.8 150.4c12.1-9.1 19.2-23.3 19.2-38.4c0-26.5-21.5-48-48-48H48zM0 176V384c0 35.3 28.7 64 64 64H448c35.3 0 64-28.7 64-64V176L294.4 339.2c-22.8 17.1-54 17.1-76.8 0L0 176z"/></svg>
+          <span class="contact-name">chinmaygov@gmail.com</span>
+        </a>
+        <a class="contact" href="https://www.linkedin.com/in/chinmaygovind/" target="_blank" rel="noopener" aria-label="LinkedIn: chinmaygovind">
+          <svg viewBox="0 0 448 512" aria-hidden="true"><path d="M100.28 448H7.4V148.9h92.88zM53.79 108.1C24.09 108.1 0 83.5 0 53.8a53.79 53.79 0 0 1 107.58 0c0 29.7-24.1 54.3-53.79 54.3zM447.9 448h-92.68V302.4c0-34.7-.7-79.2-48.29-79.2-48.29 0-55.69 37.7-55.69 76.7V448h-92.78V148.9h89.08v40.8h1.3c12.4-23.5 42.69-48.3 87.88-48.3 94 0 111.28 61.9 111.28 142.3V448z"/></svg>
+          <span class="contact-name">chinmaygovind</span>
+        </a>
+        <a class="contact" href="https://github.com/chinmaygovind/" target="_blank" rel="noopener" aria-label="GitHub: chinmaygovind">
+          <svg viewBox="0 0 496 512" aria-hidden="true"><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6zm-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3zm44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9zM244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8zM97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1zm-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7zm32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1zm-11.4-14.7c-1.6 1-1.6 3.6 0 5.9 1.6 2.3 4.3 3.3 5.6 2.3 1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2z"/></svg>
+          <span class="contact-name">chinmaygovind</span>
+        </a>
+        <a class="contact" href="https://www.instagram.com/sirchinmay/" target="_blank" rel="noopener" aria-label="Instagram: @sirchinmay">
+          <svg viewBox="0 0 448 512" aria-hidden="true"><path d="M224.1 141c-63.6 0-114.9 51.3-114.9 114.9s51.3 114.9 114.9 114.9S339 319.5 339 255.9 287.7 141 224.1 141zm0 189.6c-41.1 0-74.7-33.5-74.7-74.7s33.5-74.7 74.7-74.7 74.7 33.5 74.7 74.7-33.6 74.7-74.7 74.7zm146.4-194.3c0 14.9-12 26.8-26.8 26.8-14.9 0-26.8-12-26.8-26.8s12-26.8 26.8-26.8 26.8 12 26.8 26.8zm76.1 27.2c-1.7-35.9-9.9-67.7-36.2-93.9-26.2-26.2-58-34.4-93.9-36.2-37-2.1-147.9-2.1-184.9 0-35.8 1.7-67.6 9.9-93.9 36.1s-34.4 58-36.2 93.9c-2.1 37-2.1 147.9 0 184.9 1.7 35.9 9.9 67.7 36.2 93.9s58 34.4 93.9 36.2c37 2.1 147.9 2.1 184.9 0 35.9-1.7 67.7-9.9 93.9-36.2 26.2-26.2 34.4-58 36.2-93.9 2.1-37 2.1-147.8 0-184.8zM398.8 388c-7.8 19.6-22.9 34.7-42.6 42.6-29.5 11.7-99.5 9-132.1 9s-102.7 2.6-132.1-9c-19.6-7.8-34.7-22.9-42.6-42.6-11.7-29.5-9-99.5-9-132.1s-2.6-102.7 9-132.1c7.8-19.6 22.9-34.7 42.6-42.6 29.5-11.7 99.5-9 132.1-9s102.7-2.6 132.1 9c19.6 7.8 34.7 22.9 42.6 42.6 11.7 29.5 9 99.5 9 132.1s2.7 102.7-9 132.1z"/></svg>
+          <span class="contact-name">@sirchinmay</span>
+        </a>
+      </address>
     </header>
 
     <main class="tiles">
@@ -390,9 +448,9 @@
       <div class="modal-backdrop" data-close></div>
       <div class="modal-box modal-resume" role="dialog" aria-modal="true" aria-label="Resume">
         <button class="modal-close" data-close aria-label="Close">&times;</button>
-        <img class="modal-icon" src="images/icons/resume.gif" alt="" aria-hidden="true" />
         <div class="modal-body">
           <div class="pane pane-left">
+            <img class="modal-icon" src="images/icons/resume.gif" alt="" aria-hidden="true" />
             <h2 class="pane-title">fast facts about me</h2>
             <dl class="facts">
               <div class="fact"><dt>name</dt><dd>Chinmay Govind</dd></div>
@@ -425,9 +483,9 @@
       <div class="modal-backdrop" data-close></div>
       <div class="modal-box modal-poker" role="dialog" aria-modal="true" aria-label="Poker">
         <button class="modal-close" data-close aria-label="Close">&times;</button>
-        <img class="modal-icon" src="images/icons/poker.gif" alt="" aria-hidden="true" />
         <div class="modal-body">
           <div class="pane pane-left">
+            <img class="modal-icon" src="images/icons/poker.gif" alt="" aria-hidden="true" />
             <h2 class="pane-title">poker</h2>
             <p class="pane-text">I like to play cards. I may not be the best, but I do get pretty lucky.</p>
           </div>
@@ -452,9 +510,9 @@
       <div class="modal-backdrop" data-close></div>
       <div class="modal-box modal-whale" role="dialog" aria-modal="true" aria-label="Whales">
         <button class="modal-close" data-close aria-label="Close">&times;</button>
-        <img class="modal-icon" src="images/icons/whale.gif" alt="" aria-hidden="true" />
         <div class="modal-body">
           <div class="pane pane-left">
+            <img class="modal-icon" src="images/icons/whale.gif" alt="" aria-hidden="true" />
             <h2 class="pane-title">whales</h2>
             <p class="pane-text">Filler text about my whale research goes here. I'll write this in later.</p>
           </div>
@@ -485,9 +543,9 @@
       <div class="modal-backdrop" data-close></div>
       <div class="modal-box modal-racing" role="dialog" aria-modal="true" aria-label="Racing">
         <button class="modal-close" data-close aria-label="Close">&times;</button>
-        <img class="modal-icon" src="images/icons/racing.gif" alt="" aria-hidden="true" />
         <div class="modal-body">
           <div class="pane pane-left">
+            <img class="modal-icon" src="images/icons/racing.gif" alt="" aria-hidden="true" />
             <h2 class="pane-title">racing</h2>
             <p class="pane-text">Filler text about racing goes here. I'll write this in later.</p>
           </div>
