@@ -75,7 +75,7 @@ function seatInner(pid, s) {
   const royHTML = out ? "" : `<div class="royrow">` +
     ["J", "Q", "K", "A"].map((k) => {
       const c = roy[k] || 0;
-      return `<span class="roy${c ? "" : " z"}${k === "A" ? " ace" : ""}">${k}<b>${c}</b></span>`;
+      return `<span class="roy${c ? "" : " z"}${k === "J" ? " jack" : ""}">${k}<b>${c}</b></span>`;
     }).join("") + `</div>`;
   return {
     cls: `${isTurn ? "turn" : ""} ${out ? "out" : ""}`,
@@ -213,12 +213,19 @@ function positionSeats(all) {
   const oval = document.querySelector(".table-oval").getBoundingClientRect();
   const cx = oval.left + oval.width / 2;
   const cy = oval.top + oval.height / 2;
-  const rx = oval.width / 2 + 26;
-  const ry = oval.height / 2 + 20;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const margin = 6, topSafe = 46, botSafe = 12;   // keep clear of edges + the top bar
   const n = all.length;
   all.forEach((pid, k) => {
     const el = document.getElementById("seat-" + pid);
     if (!el) return;
+    const halfW = el.offsetWidth / 2, halfH = el.offsetHeight / 2;
+    // Ring the table, but clamp the radii to the viewport so a seat (esp. the
+    // left/right ones on a narrow phone) can never spill off screen.
+    const rxMax = Math.min(cx, vw - cx) - halfW - margin;
+    const ryMax = Math.min(cy - topSafe, vh - botSafe - cy) - halfH;
+    const rx = Math.min(oval.width / 2 + 26, Math.max(30, rxMax));
+    const ry = Math.min(oval.height / 2 + 20, Math.max(30, ryMax));
     // you (k = 0) sit at the bottom; everyone else spreads evenly around the table
     const theta = Math.PI / 2 + (2 * Math.PI * k) / n;
     el.style.left = cx + rx * Math.cos(theta) + "px";

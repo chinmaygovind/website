@@ -270,8 +270,8 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
   background: rgba(20,12,7,.62); border:1px solid rgba(242,201,76,.28);
   color: var(--gold-soft); text-shadow:none; }
 .roy b { color:#fff; font-size:.7rem; }
-.roy.ace { border-color: rgba(224,72,58,.5); color:#ffb3aa; }
-.roy.ace b { color:#ffd7d2; }
+.roy.jack { border-color: rgba(224,72,58,.5); color:#ffb3aa; }
+.roy.jack b { color:#ffd7d2; }
 .roy.z { opacity:.3; }
 
 /* your face-down stack, off to the bottom-left ("in front of you") */
@@ -527,7 +527,7 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
 }
 
 @media (max-width: 640px) {
-  .table-oval { width: 90vw; height: 54vh; border-width: 10px; }
+  .table-oval { width: 74vw; height: 54vh; border-width: 10px; }
   .seat { width: 88px; }
   .seat .avatar { width: 42px; height: 42px; font-size: 1.1rem; }
   .seat .pname { font-size: .92rem; }
