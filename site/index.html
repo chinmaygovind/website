@@ -14,6 +14,8 @@
       :root {
         --charcoal: #333333;
         --poker: #16295c;
+        --whale: #1565c0;
+        --racing: #c0182b;
         --link: #1a56ff;
         --tile: clamp(110px, min(14vw, 30vh), 240px);
       }
@@ -108,6 +110,7 @@
         align-items: center;
         justify-content: center;
         padding: 3vh 3vw;
+        padding: 3dvh 3vw;
       }
       .modal[hidden] { display: none; }
       .modal-backdrop {
@@ -119,6 +122,7 @@
         position: relative;
         width: min(1150px, 94vw);
         height: min(780px, 90vh);
+        height: min(780px, 90dvh);
         background: #fff;
         border: 7px solid var(--charcoal);
         border-radius: 16px;
@@ -129,6 +133,8 @@
       }
       .modal-resume { border-color: var(--charcoal); }
       .modal-poker { border-color: var(--poker); }
+      .modal-whale { border-color: var(--whale); }
+      .modal-racing { border-color: var(--racing); }
       .modal-close {
         position: absolute;
         top: 6px;
@@ -141,6 +147,15 @@
         cursor: pointer;
         color: inherit;
         z-index: 2;
+      }
+      .modal-icon {
+        position: absolute;
+        top: 10px;
+        right: 56px;
+        height: clamp(38px, 6vw, 56px);
+        width: auto;
+        z-index: 2;
+        pointer-events: none;
       }
       .modal-body {
         flex: 1;
@@ -166,6 +181,8 @@
       }
       .modal-resume .pane-title { color: var(--charcoal); }
       .modal-poker .pane-title { color: var(--poker); }
+      .modal-whale .pane-title { color: var(--whale); }
+      .modal-racing .pane-title { color: var(--racing); }
       .pane-text {
         font-size: clamp(1.1rem, 2vw, 1.6rem);
         line-height: 1.5;
@@ -215,6 +232,48 @@
         border: 0;
         border-radius: 6px;
       }
+      /* stacked media (whales article + poster, racing placeholders) */
+      .media {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+      .media-frame {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+      .media-frame a {
+        display: flex;
+        max-width: 100%;
+        max-height: 100%;
+      }
+      .media-img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        border-radius: 6px;
+        display: block;
+      }
+      .placeholder {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 2px dashed rgba(0, 0, 0, 0.25);
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.02);
+        color: rgba(0, 0, 0, 0.4);
+        font-size: clamp(1rem, 1.6vw, 1.3rem);
+        text-align: center;
+        padding: 1rem;
+      }
       .pane-caption {
         font-size: clamp(1rem, 1.6vw, 1.3rem);
       }
@@ -233,11 +292,36 @@
         }
         .welcome { max-width: 100%; text-align: left; }
         .tiles { grid-template-columns: repeat(2, var(--tile)); }
-        .modal-body { flex-direction: column; }
+
+        /* keep the popup inside the visible viewport and scroll within it */
+        .modal {
+          align-items: flex-start;
+          padding: 2vh 3vw;
+          padding: 2dvh 3vw;
+        }
+        .modal-box {
+          height: auto;
+          max-height: 96vh;
+          max-height: 96dvh;
+        }
+        .modal-body {
+          flex-direction: column;
+          overflow-y: auto;
+        }
+        .pane {
+          flex: none;
+          overflow: visible;
+          padding: 1.5rem;
+        }
         .pane-right {
           border-left: none;
           border-top: 1px solid rgba(0, 0, 0, 0.12);
+          overflow: visible;
         }
+        .pdf-wrap { flex: none; height: 60vh; height: 60dvh; }
+        .media { flex: none; }
+        .media-img { max-height: 46vh; max-height: 46dvh; }
+        .placeholder { flex: none; height: 26vh; height: 26dvh; }
       }
     </style>
   </head>
@@ -273,6 +357,32 @@
         </span>
         <span class="tile-label">POKER</span>
       </button>
+
+      <button class="tile" data-modal="modal-whale">
+        <span class="tile-art">
+          <img
+            class="tile-img"
+            src="images/icons/whale.png"
+            data-still="images/icons/whale.png"
+            data-anim="images/icons/whale.gif"
+            alt="Whales"
+          />
+        </span>
+        <span class="tile-label">WHALES</span>
+      </button>
+
+      <button class="tile" data-modal="modal-racing">
+        <span class="tile-art">
+          <img
+            class="tile-img"
+            src="images/icons/racing.png"
+            data-still="images/icons/racing.png"
+            data-anim="images/icons/racing.gif"
+            alt="Racing"
+          />
+        </span>
+        <span class="tile-label">RACING</span>
+      </button>
     </main>
 
     <!-- resume popup -->
@@ -280,9 +390,10 @@
       <div class="modal-backdrop" data-close></div>
       <div class="modal-box modal-resume" role="dialog" aria-modal="true" aria-label="Resume">
         <button class="modal-close" data-close aria-label="Close">&times;</button>
+        <img class="modal-icon" src="images/icons/resume.gif" alt="" aria-hidden="true" />
         <div class="modal-body">
           <div class="pane pane-left">
-            <h2 class="pane-title">fast facts:</h2>
+            <h2 class="pane-title">fast facts about me</h2>
             <dl class="facts">
               <div class="fact"><dt>name</dt><dd>Chinmay Govind</dd></div>
               <div class="fact"><dt>age</dt><dd><span id="fact-age">19</span> years</dd></div>
@@ -314,6 +425,7 @@
       <div class="modal-backdrop" data-close></div>
       <div class="modal-box modal-poker" role="dialog" aria-modal="true" aria-label="Poker">
         <button class="modal-close" data-close aria-label="Close">&times;</button>
+        <img class="modal-icon" src="images/icons/poker.gif" alt="" aria-hidden="true" />
         <div class="modal-body">
           <div class="pane pane-left">
             <h2 class="pane-title">poker</h2>
@@ -330,6 +442,62 @@
               ></iframe>
             </div>
             <p class="pane-caption">check out this stream of me playing in Susquehanna's tournament!</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- whales popup -->
+    <div class="modal" id="modal-whale" hidden>
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-box modal-whale" role="dialog" aria-modal="true" aria-label="Whales">
+        <button class="modal-close" data-close aria-label="Close">&times;</button>
+        <img class="modal-icon" src="images/icons/whale.gif" alt="" aria-hidden="true" />
+        <div class="modal-body">
+          <div class="pane pane-left">
+            <h2 class="pane-title">whales</h2>
+            <p class="pane-text">Filler text about my whale research goes here. I'll write this in later.</p>
+          </div>
+          <div class="pane pane-right">
+            <div class="media">
+              <div class="media-frame">
+                <a href="https://penntoday.upenn.edu/news/students-use-machine-learning-track-and-protect-whale-populations" target="_blank" rel="noopener">
+                  <img class="media-img" src="assets/whales/penntoday-whales.jpg" alt="PennToday whale research article preview" />
+                </a>
+              </div>
+              <p class="pane-caption">click <a class="here-link" href="https://penntoday.upenn.edu/news/students-use-machine-learning-track-and-protect-whale-populations" target="_blank" rel="noopener">here</a> to read a PennToday article about my research</p>
+            </div>
+            <div class="media">
+              <div class="media-frame">
+                <a href="assets/whales/whales_poster.pdf" target="_blank" rel="noopener">
+                  <img class="media-img" src="assets/whales/whales_poster.png" alt="My whale research poster" />
+                </a>
+              </div>
+              <p class="pane-caption">click <a class="here-link" href="assets/whales/whales_poster.pdf" target="_blank" rel="noopener">here</a> to view my research poster</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- racing popup -->
+    <div class="modal" id="modal-racing" hidden>
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-box modal-racing" role="dialog" aria-modal="true" aria-label="Racing">
+        <button class="modal-close" data-close aria-label="Close">&times;</button>
+        <img class="modal-icon" src="images/icons/racing.gif" alt="" aria-hidden="true" />
+        <div class="modal-body">
+          <div class="pane pane-left">
+            <h2 class="pane-title">racing</h2>
+            <p class="pane-text">Filler text about racing goes here. I'll write this in later.</p>
+          </div>
+          <div class="pane pane-right">
+            <div class="media">
+              <div class="placeholder">image coming soon</div>
+            </div>
+            <div class="media">
+              <div class="placeholder">image coming soon</div>
+            </div>
           </div>
         </div>
       </div>
