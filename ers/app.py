@@ -85,8 +85,12 @@ with app.app_context():
 ERS_COLORS = ["#f2c94c", "#eb5757", "#56ccf2", "#6fcf78", "#bb6bd9",
               "#f2994a", "#2fd4b6", "#f178b6"]
 
-# Bot slap reaction is drawn from Exponential(mean = this many seconds).
-BOT_SLAP_MEAN_SEC = 2.0
+# Bot slap reaction approximates krish's real reaction-time distribution (a
+# Normal fit to his valid slaps: mean 0.794s, stdev 0.307s) but 1.25x slower,
+# and floored so a human can still beat them.
+BOT_SLAP_MEAN_SEC = 0.794 * 1.25   # ~0.992s
+BOT_SLAP_STD_SEC = 0.307
+BOT_SLAP_FLOOR_SEC = 0.5
 
 # After a wrong slap a player is frozen out for this long before they can slap again
 # (long enough to cover the burn animation).
@@ -751,10 +755,11 @@ def _kick(code, why=None):
                 for bp in bots:
                     if bp in state["eliminated"] or bp in state["slap_locked"]:
                         continue
-                    # Reaction = max(0.5s, Exponential(mean 2s)). Slow and floored so a
-                    # human can beat them; by the time most fire the pile has usually
-                    # moved on, so _bot_slap re-checks and skips.
-                    delay = max(0.5, random.expovariate(1 / BOT_SLAP_MEAN_SEC))
+                    # Reaction ~ Normal(krish's mean x 1.25, krish's stdev), floored
+                    # at 0.5s so a human can beat them; by the time most fire the pile
+                    # has usually moved on, so _bot_slap re-checks and skips.
+                    delay = max(BOT_SLAP_FLOOR_SEC,
+                                random.gauss(BOT_SLAP_MEAN_SEC, BOT_SLAP_STD_SEC))
                     eventlet.spawn_after(delay, _bot_slap, code, seq, bp)
 
 
