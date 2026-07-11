@@ -92,9 +92,9 @@ BOT_SLAP_MEAN_SEC = 0.794 * 1.25   # ~0.992s
 BOT_SLAP_STD_SEC = 0.307
 BOT_SLAP_FLOOR_SEC = 0.5
 
-# After a wrong slap a player is frozen out for this long before they can slap again
-# (long enough to cover the burn animation).
-FALSE_SLAP_COOLDOWN = 2.0
+# After a wrong slap a player is frozen out for this long, then may slap again the
+# instant it elapses. The client shows a matching countdown above the slap button.
+FALSE_SLAP_COOLDOWN = 1.0
 ROYALTY_NAMES = {11: "Jack", 12: "Queen", 13: "King", 14: "Ace"}
 
 # In-memory per-game locks + bot scheduling guards (single eventlet worker).
@@ -387,6 +387,23 @@ def _broadcast_lobby(game):
                                    "status": game.status}, room="lobby:" + game.code)
 
 
+def _delete_game(game):
+    """Reap a game and all its player rows so dead lobbies leave the pool.
+    Slap history in ers_slaps is keyed by code, not FK, so it survives."""
+    for p in list(game.players):
+        db.session.delete(p)
+    db.session.delete(game)
+    db.session.commit()
+
+
+def _player_elo(p):
+    """A player's ELO for tie-breaking who gets extra cards; guests/bots (no
+    stats row) sort as the 1000 starting rating."""
+    if p.linked_user and p.linked_user.ers:
+        return p.linked_user.ers.elo or 1000
+    return 1000
+
+
 def _push_log(state, entry):
     state["log_seq"] = state.get("log_seq", 0) + 1
     entry["id"] = state["log_seq"]        # stable id so the client chat can reconcile
@@ -511,12 +528,18 @@ def on_leave_lobby(data):
         db.session.delete(me)
         db.session.commit()
         remaining = sorted(game.players, key=lambda p: p.seat_order)
-        if was_host and remaining and not any(p.is_host for p in remaining):
-            new_host = next((p for p in remaining if not p.is_bot), remaining[0])
-            new_host.is_host = True
+        humans = [p for p in remaining if not p.is_bot]
+        if not humans:
+            # Nobody real is left: reap the lobby (and any orphaned bots) so it
+            # never lingers as a dead entry in the pool.
+            socketio.emit("lobby_closed", {"reason": "Everyone left the lobby."},
+                          room="lobby:" + code)
+            _delete_game(game)
+            return
+        if was_host and not any(p.is_host for p in remaining):
+            humans[0].is_host = True
             db.session.commit()
-        if remaining:
-            _broadcast_lobby(game)
+        _broadcast_lobby(game)
 
 
 @socketio.on("start_game")
@@ -534,7 +557,11 @@ def on_start_game(data):
             emit("start_error", {"error": "Need at least 2 players."})
             return
         pids = [p.pid for p in players]
-        state = gl.new_deal(pids)
+        # Hand the leftover cards (52 rarely splits evenly) to the lowest-ELO
+        # players first, so the underdogs start with a slightly bigger stack.
+        extra_priority = [p.pid for p in sorted(players,
+                                                key=lambda q: (_player_elo(q), q.seat_order))]
+        state = gl.new_deal(pids, extra_priority=extra_priority)
         state["slappable_at"] = None
         state["pg_last_flipper"] = None
         for pid in pids:
@@ -583,15 +610,27 @@ def on_slap(data):
         me = ErsPlayer.query.filter_by(game_id=game.id, session_key=get_session_key()).first()
         if not me:
             return
-        if time.time() < _slap_cooldown.get((code, me.pid), 0):
-            return                               # still frozen out after a wrong slap
+        cd = _slap_cooldown.get((code, me.pid), 0)
+        now = time.time()
+        if now < cd:
+            # Still frozen after a wrong slap. Tell this client exactly how much
+            # longer so its countdown re-syncs to the server (kills any dead zone).
+            emit("slap_result", {"valid": False, "cooldown_ms": max(0, int((cd - now) * 1000))})
+            return
         state = game.state
-        changed = _do_slap(game, state, me.pid, code)
-        if changed:
+        outcome = _do_slap(game, state, me.pid, code)
+        if outcome:
             game.state = state
             game.last_activity_at = datetime.utcnow()
             db.session.commit()
             _broadcast(game)
+        # Ack straight back to the slapper (low latency) so its bar starts/clears in
+        # step with the authoritative server cooldown, not a round-trip later.
+        if outcome == "false":
+            rem = _slap_cooldown.get((code, me.pid), 0) - time.time()
+            emit("slap_result", {"valid": False, "cooldown_ms": max(0, int(rem * 1000))})
+        elif outcome == "win":
+            emit("slap_result", {"valid": True})
     _kick(code)
 
 
@@ -648,11 +687,13 @@ def _do_slap(game, state, pid, code):
     now = time.time()
     events = gl.slap(state, pid, state["rules"])
     if not events:
-        return False
+        return None
+    outcome = None
     won_count = next((e["count"] for e in events if e["type"] == "win_pile"), 0)
     name, color = _name(game, pid)
     for ev in events:
         if ev["type"] == "slap_win":
+            outcome = "win"
             reaction = None
             if state.get("slappable_at"):
                 reaction = max(0, int((now - state["slappable_at"]) * 1000))
@@ -673,6 +714,7 @@ def _do_slap(game, state, pid, code):
                                    reaction_ms=reaction, cards=won_count))
             state["slappable_at"] = None
         elif ev["type"] == "false_slap":
+            outcome = "false"
             _pg(state, pid)["false_slaps"] += 1
             _slap_cooldown[(code, pid)] = now + FALSE_SLAP_COOLDOWN
             _push_log(state, {"kind": "false", "pid": pid, "name": name, "color": color,
@@ -683,7 +725,7 @@ def _do_slap(game, state, pid, code):
                                    name=name, valid=False, reasons="", reaction_ms=None,
                                    cards=0))
     _record_wins(game, state, events)
-    return True
+    return outcome
 
 
 def _record_wins(game, state, events):
@@ -881,6 +923,52 @@ def _finalize(game, state):
 
     db.session.add(game)
     db.session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Background sweep: keep the lobby pool clean (mirrors TTR's _stale_game_cleanup)
+# ---------------------------------------------------------------------------
+
+def _stale_game_cleanup():
+    """Reap the two kinds of dead entries the pool accumulates: playing games
+    nobody has touched in a while, and waiting lobbies that are empty (all their
+    players closed the tab) or simply too old to still be real."""
+    PLAYING_LIMIT = timedelta(minutes=20)
+    WAITING_LIMIT = timedelta(minutes=30)
+
+    def _run():
+        with app.app_context():
+            now = datetime.utcnow()
+
+            # End playing games idle past the limit so they drop off the live list.
+            playing_cutoff = now - PLAYING_LIMIT
+            stale_playing = ErsGame.query.filter(
+                ErsGame.status == "playing",
+                db.or_(ErsGame.last_activity_at == None,        # noqa: E711
+                       ErsGame.last_activity_at < playing_cutoff),
+            ).all()
+            for game in stale_playing:
+                game.status = "ended"
+                db.session.commit()
+
+            # Reap waiting lobbies with no real players left, or ones stale enough
+            # that whoever made them is long gone.
+            waiting_cutoff = now - WAITING_LIMIT
+            for game in ErsGame.query.filter_by(status="waiting").all():
+                humans = [p for p in game.players if not p.is_bot]
+                too_old = (game.created_at or now) < waiting_cutoff
+                if not humans or too_old:
+                    socketio.emit("lobby_closed", {"reason": "Lobby expired."},
+                                  room="lobby:" + game.code)
+                    _delete_game(game)
+
+    _run()  # immediate pass on startup so a restart clears the current backlog
+    while True:
+        eventlet.sleep(5 * 60)  # then sweep every 5 minutes, like TTR
+        _run()
+
+
+eventlet.spawn(_stale_game_cleanup)
 
 
 if __name__ == "__main__":

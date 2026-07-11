@@ -66,6 +66,7 @@ socket.on('connect', () => socket.emit('join_lobby', {code: CODE}));
 socket.on('lobby_update', d => { players = d.players; render(); });
 socket.on('go_to_game', () => location.href = '/game/' + CODE);
 socket.on('player_kicked', d => { if (d.pid === MY_PID) location.href = '/lobbies'; });
+socket.on('lobby_closed', () => location.href = '/lobbies');
 
 function esc(s){ return (s+'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function render(){

@@ -263,6 +263,17 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
 .seat.out .tag { display:block; font-size:.72rem; color:#e9c; opacity:.9; }
 .seat .tag { display:none; }
 
+/* compact J/Q/K/A tally under each seat: four mini chips, zeros dimmed */
+.seat .royrow { display:flex; justify-content:center; gap:3px; margin-top:4px; }
+.roy { display:inline-flex; align-items:center; gap:2px; font-family:"xkcd";
+  font-size:.64rem; line-height:1; padding:2px 4px; border-radius:6px;
+  background: rgba(20,12,7,.62); border:1px solid rgba(242,201,76,.28);
+  color: var(--gold-soft); text-shadow:none; }
+.roy b { color:#fff; font-size:.7rem; }
+.roy.ace { border-color: rgba(224,72,58,.5); color:#ffb3aa; }
+.roy.ace b { color:#ffd7d2; }
+.roy.z { opacity:.3; }
+
 /* your face-down stack, off to the bottom-left ("in front of you") */
 /* your flip pile sits just down-left of your dot; the slap button just down-right,
    so neither covers your seat or label. */
@@ -386,6 +397,36 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
 .slap-flash.go { animation: flash .35s ease-out; }
 @keyframes flash { from { opacity: 1; } to { opacity: 0; } }
 
+/* Wrong-slap cooldown: a little pill + depleting bar right above the SLAP button.
+   Shares the button's horizontal anchor so it stays centred at every size. */
+.slap-cd {
+  position: absolute; z-index: 22;
+  left: calc(50% + clamp(96px, 20vw, 150px)); bottom: 174px;
+  transform: translateX(-50%) translateY(6px);
+  display: none; opacity: 0; pointer-events: none;
+  flex-direction: column; align-items: center; gap: 5px;
+  font-family: "xkcd";
+  transition: opacity .12s ease, transform .12s ease;
+}
+.slap-cd.show { display: flex; opacity: 1; transform: translateX(-50%) translateY(0); }
+.slap-cd-num {
+  font-size: 1.05rem; color: var(--gold-soft); letter-spacing: .5px; white-space: nowrap;
+  background: rgba(40, 16, 10, .92); border: 2px solid #7c1414; border-radius: 999px;
+  padding: 3px 12px; box-shadow: 0 3px 10px var(--shadow), 0 0 14px rgba(224, 72, 58, .4);
+}
+.slap-cd-bar {
+  width: 92px; height: 6px; border-radius: 999px; overflow: hidden;
+  background: rgba(0, 0, 0, .45); border: 1px solid rgba(242, 201, 76, .25);
+}
+.slap-cd-bar > i {
+  display: block; height: 100%; width: 100%; transform-origin: left center;
+  border-radius: 999px; background: linear-gradient(90deg, var(--gold), #e0483a);
+}
+.slap-btn.cooling {
+  filter: grayscale(.5) brightness(.82); cursor: not-allowed;
+  box-shadow: 0 6px 0 #591010, 0 12px 24px var(--shadow);
+}
+
 /* side panels */
 .side { position:absolute; z-index: 18; width: 260px; max-width: 42vw; }
 .side.right { right: 12px; top: 64px; }
@@ -436,6 +477,7 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
   border-radius: 20px; padding: .35rem .95rem; font-family: "xkcd"; }
 .table-page.spectator .mystack,
 .table-page.spectator .slap-btn,
+.table-page.spectator .slap-cd,
 .table-page.spectator .controls,
 .table-page.spectator .my-status { display: none !important; }
 .live-dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#e05a5a;
@@ -490,6 +532,9 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
   .seat .avatar { width: 42px; height: 42px; font-size: 1.1rem; }
   .seat .pname { font-size: .92rem; }
   .seat .count { font-size: .78rem; padding: 1px 7px; }
+  .seat .royrow { gap: 2px; margin-top: 3px; }
+  .roy { font-size: .5rem; padding: 1px 2px; gap: 1px; border-radius: 4px; }
+  .roy b { font-size: .56rem; }
 
   .card { width: 84px; height: 118px; }
   .card .pip { font-size: 2.4rem; }
@@ -502,6 +547,7 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
   .mystack { bottom: 12px; }
 
   .slap-btn { width: 100px; height: 100px; font-size: 1.4rem; bottom: 12px; }
+  .slap-cd { bottom: 120px; }
   /* messages bar up in the top-right; standings top-left; no key hints on mobile */
   .slog { top: 44px; bottom: auto; right: 6px; left: auto; width: 52vw; max-width: 56vw; max-height: 26vh; }
   .slog .entry { font-size: .74rem; padding: .3rem .42rem; }
@@ -523,5 +569,6 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
 @media (max-height: 520px) {
   .table-oval { height: 66vh; top: 44%; }
   .slap-btn { width: 88px; height: 88px; bottom: 10px; }
+  .slap-cd { bottom: 106px; }
   .slog { max-height: 30vh; }
 }

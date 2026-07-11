@@ -71,11 +71,18 @@ function seatInner(pid, s) {
   const st = (s.standings || []).find((x) => x.pid === pid);
   const cnt = s.counts[pid] || 0;
   const you = pid === MY_PID ? ' <span class="you-tag">(you)</span>' : "";
+  const roy = (s.royalty || {})[pid] || {};
+  const royHTML = out ? "" : `<div class="royrow">` +
+    ["J", "Q", "K", "A"].map((k) => {
+      const c = roy[k] || 0;
+      return `<span class="roy${c ? "" : " z"}${k === "A" ? " ace" : ""}">${k}<b>${c}</b></span>`;
+    }).join("") + `</div>`;
   return {
     cls: `${isTurn ? "turn" : ""} ${out ? "out" : ""}`,
     html: `<div class="count"><span class="mini"></span>${cnt}</div>
       <span class="pdot lg" style="background:${pcolor(pid)}"></span>
       <div class="pname" style="color:${isTurn ? "" : pcolor(pid)}">${esc(pname(pid))}${you}</div>
+      ${royHTML}
       ${out && st ? `<span class="tag">OUT · #${st.place} · lasted ${st.turns_lasted}</span>` : ""}`,
   };
 }
@@ -266,7 +273,7 @@ function renderLog(log) {
     fresh.forEach((e) => {
       if (e.kind === "slap") slapHand(e.pid, e.color);
       if (e.kind === "false") { slapHand(e.pid, e.color); showX(); }
-      if (e.kind === "false" && e.pid === MY_PID) slapCooldownUntil = Date.now() + 2000;
+      // (your own freeze is driven optimistically in doSlap + the slap_result ack)
     });
     const slap = fresh.slice().reverse().find((e) => e.kind === "slap");
     if (slap) { flash(); toast(`SLAP! ${slap.name}`); }
@@ -297,7 +304,85 @@ function doSlap() {
   if (SPECTATOR || !STATE || STATE.phase !== "playing") return;
   if (Date.now() < slapCooldownUntil) return;   // frozen out after a wrong slap
   socket.emit("slap", { code: GAME_CODE });
+  // Predict a wrong slap from the pile we can see and start the freeze instantly,
+  // so the bar has zero perceived latency; the server's slap_result then confirms
+  // (valid -> clear it) or re-syncs the exact end time.
+  const locked = (STATE.slap_locked || []).includes(MY_PID);
+  if (!locked && clientSlapReasons(STATE.pile || [], STATE.rules || []).length === 0) {
+    coolDown(1000);
+  }
 }
+
+// Slap-rule check mirrored from the server (game_logic.slap_reasons) so the client
+// can predict a miss locally; the server stays the sole authority.
+function numValue(rank) {
+  if (rank === 14) return 1;             // ace = 1 for the add-to-ten rule
+  if (rank >= 2 && rank <= 10) return rank;
+  return null;
+}
+function clientSlapReasons(pile, rules) {
+  const n = pile.length;
+  if (n < 2) return [];
+  const top = pile[n - 1].rank, second = pile[n - 2].rank, bottom = pile[0].rank;
+  const r = [];
+  if (top === second) r.push("double");
+  if (n >= 3 && top === pile[n - 3].rank) r.push("sandwich");
+  if (top === bottom) r.push("top_bottom");
+  if (rules.includes("ten")) {
+    const a = numValue(top), b = numValue(second);
+    if (a != null && b != null && a + b === 10) r.push("ten");
+  }
+  if (rules.includes("kingqueen") && ((top === 12 && second === 13) || (top === 13 && second === 12)))
+    r.push("kingqueen");
+  return r;
+}
+
+// Wrong-slap freeze shown above the SLAP button. `slapCdStart`..`slapCooldownUntil`
+// drives one RAF loop; coolDown never shortens an active freeze so the client never
+// re-enables ahead of the server.
+let slapCdStart = 0, slapCdRaf = 0;
+function coolDown(ms) {
+  const now = Date.now();
+  if (now < slapCooldownUntil) return;    // already frozen; the server ack tunes the end
+  slapCdStart = now;
+  slapCooldownUntil = now + ms;
+  runCd();
+}
+function runCd() {
+  const box = document.getElementById("slapCd");
+  const num = document.getElementById("slapCdNum");
+  const fill = document.getElementById("slapCdFill");
+  const btn = document.querySelector(".slap-btn");
+  if (!box || !num || !fill) return;
+  box.classList.add("show");
+  if (btn) btn.classList.add("cooling");
+  cancelAnimationFrame(slapCdRaf);
+  const tick = () => {
+    const left = slapCooldownUntil - Date.now();
+    if (left <= 0) { cancelCooldown(); return; }
+    const span = Math.max(1, slapCooldownUntil - slapCdStart);
+    num.textContent = (left / 1000).toFixed(1) + "s";
+    fill.style.transform = "scaleX(" + Math.max(0, Math.min(1, left / span)) + ")";
+    slapCdRaf = requestAnimationFrame(tick);
+  };
+  tick();
+}
+function cancelCooldown() {
+  slapCooldownUntil = 0; slapCdStart = 0;
+  cancelAnimationFrame(slapCdRaf); slapCdRaf = 0;
+  const box = document.getElementById("slapCd");
+  const btn = document.querySelector(".slap-btn");
+  if (box) box.classList.remove("show");
+  if (btn) btn.classList.remove("cooling");
+}
+
+// The server's authoritative verdict for our own slap: clear the optimistic freeze
+// if it was actually valid, otherwise start/re-sync the freeze to its exact end.
+socket.on("slap_result", (d) => {
+  if (!d) return;
+  if (d.valid) cancelCooldown();
+  else coolDown(d.cooldown_ms || 1000);
+});
 function leaveGame() {
   if (!confirm("Leave this game?")) return;
   socket.emit("leave_game", { code: GAME_CODE });

@@ -57,15 +57,40 @@ def make_deck():
     return [{"rank": r, "suit": s} for s in SUITS for r in RANKS]
 
 
-def new_deal(player_ids, seed=None, rules=DEFAULT_RULES):
-    """Deal a shuffled 52-card deck as evenly as possible into face-down stacks."""
+def _extra_receivers(player_ids, extra_priority, remainder):
+    """The ``remainder`` players who each get one leftover card. Follows
+    ``extra_priority`` (filtered to valid ids, de-duped) then deal order as a
+    fallback, so passing lowest-ELO-first steers the extras to the underdogs."""
+    order = []
+    for pid in (extra_priority or []):
+        if pid in player_ids and pid not in order:
+            order.append(pid)
+    for pid in player_ids:
+        if pid not in order:
+            order.append(pid)
+    return order[:remainder]
+
+
+def new_deal(player_ids, seed=None, rules=DEFAULT_RULES, extra_priority=None):
+    """Deal a shuffled 52-card deck as evenly as possible into face-down stacks.
+
+    The even part is dealt round-robin; the few leftover cards (52 rarely divides
+    evenly) go out one each. By default that follows deal order, but a caller can
+    pass ``extra_priority`` to hand the extras to specific players first - the app
+    passes lowest-ELO-first so the weaker players start a touch bigger."""
     player_ids = list(player_ids)
     rng = random.Random(seed)
     deck = make_deck()
     rng.shuffle(deck)
+    n = len(player_ids)
     hands = {pid: [] for pid in player_ids}
-    for i, card in enumerate(deck):
-        hands[player_ids[i % len(player_ids)]].append(card)
+    base = len(deck) // n
+    for i in range(base * n):
+        hands[player_ids[i % n]].append(deck[i])
+    remainder = len(deck) - base * n
+    for pid, card in zip(_extra_receivers(player_ids, extra_priority, remainder),
+                         deck[base * n:]):
+        hands[pid].append(card)
     return {
         "players": player_ids,
         "hands": hands,
@@ -334,12 +359,25 @@ def resolve_pending(state):
 # Views
 # ---------------------------------------------------------------------------
 
+def _royalty_counts(hand):
+    """How many J/Q/K/A a stack holds, for the per-seat royalty tally."""
+    c = {"J": 0, "Q": 0, "K": 0, "A": 0}
+    for card in hand:
+        lbl = RANK_LABELS.get(card["rank"])
+        if lbl in c:
+            c[lbl] += 1
+    return c
+
+
 def public_view(state):
-    """The state broadcast to clients - hand contents stay secret (face-down)."""
+    """The state broadcast to clients - hand contents stay secret (face-down),
+    except the J/Q/K/A tally per seat, which is surfaced on purpose."""
     ch = state["challenge"]
     return {
         "players": state["players"],
         "counts": {pid: len(state["hands"][pid]) for pid in state["players"]},
+        "royalty": {pid: _royalty_counts(state["hands"][pid]) for pid in state["players"]},
+        "slap_locked": state.get("slap_locked", []),
         "pile": state["pile"],
         "pile_count": len(state["pile"]),
         "current": state["current"],
