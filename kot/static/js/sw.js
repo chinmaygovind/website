@@ -1,11 +1,10 @@
 /* Service worker: cache static assets so the app is installable and loads fast.
    It deliberately never intercepts pages, POSTs, or socket.io traffic, so live
    gameplay always goes straight to the network. */
-const CACHE = "kot-v1";
+const CACHE = "kot-v2";
 const ASSETS = [
   "/static/css/style.css",
   "/static/js/game.js",
-  "/static/fonts/xkcd-script.woff",
   "/static/img/icon-192.png",
   "/static/img/icon.svg",
 ];
