@@ -409,9 +409,9 @@
         <span class="tile-art">
           <img
             class="tile-img"
-            src="images/icons/resume.png"
-            data-still="images/icons/resume.png"
-            data-anim="images/icons/resume.gif"
+            src="assets/icons/resume.png"
+            data-still="assets/icons/resume.png"
+            data-anim="assets/icons/resume.gif"
             alt="Resume"
           />
         </span>
@@ -422,9 +422,9 @@
         <span class="tile-art">
           <img
             class="tile-img"
-            src="images/icons/poker.png"
-            data-still="images/icons/poker.png"
-            data-anim="images/icons/poker.gif"
+            src="assets/icons/poker.png"
+            data-still="assets/icons/poker.png"
+            data-anim="assets/icons/poker.gif"
             alt="Poker"
           />
         </span>
@@ -435,9 +435,9 @@
         <span class="tile-art">
           <img
             class="tile-img"
-            src="images/icons/whale.png"
-            data-still="images/icons/whale.png"
-            data-anim="images/icons/whale.gif"
+            src="assets/icons/whale.png"
+            data-still="assets/icons/whale.png"
+            data-anim="assets/icons/whale.gif"
             alt="Whales"
           />
         </span>
@@ -448,13 +448,39 @@
         <span class="tile-art">
           <img
             class="tile-img"
-            src="images/icons/racing.png"
-            data-still="images/icons/racing.png"
-            data-anim="images/icons/racing.gif"
+            src="assets/icons/racing.png"
+            data-still="assets/icons/racing.png"
+            data-anim="assets/icons/racing.gif"
             alt="Racing"
           />
         </span>
         <span class="tile-label">RACING</span>
+      </button>
+
+      <button class="tile" data-modal="modal-ttr">
+        <span class="tile-art">
+          <img
+            class="tile-img"
+            src="assets/icons/ttr.png"
+            data-still="assets/icons/ttr.png"
+            data-anim="assets/icons/ttr.gif"
+            alt="TTR"
+          />
+        </span>
+        <span class="tile-label">TICKET TO RIDE</span>
+      </button>
+
+      <button class="tile" data-modal="modal-ers">
+        <span class="tile-art">
+          <img
+            class="tile-img"
+            src="assets/icons/ers.png"
+            data-still="assets/icons/ers.png"
+            data-anim="assets/icons/ers.gif"
+            alt="ERS"
+          />
+        </span>
+        <span class="tile-label">EGYPTIAN RAT SCREW</span>
       </button>
     </main>
 
@@ -465,7 +491,7 @@
         <button class="modal-close" data-close aria-label="Close">&times;</button>
         <div class="modal-body">
           <div class="pane pane-left">
-            <img class="modal-icon" src="images/icons/resume.gif" alt="" aria-hidden="true" />
+            <img class="modal-icon" src="assets/icons/resume.gif" alt="" aria-hidden="true" />
             <h2 class="pane-title">fast facts about me</h2>
             <dl class="facts">
               <div class="fact"><dt>name</dt><dd>Chinmay Govind</dd></div>
@@ -500,7 +526,7 @@
         <button class="modal-close" data-close aria-label="Close">&times;</button>
         <div class="modal-body">
           <div class="pane pane-left">
-            <img class="modal-icon" src="images/icons/poker.gif" alt="" aria-hidden="true" />
+            <img class="modal-icon" src="assets/icons/poker.gif" alt="" aria-hidden="true" />
             <h2 class="pane-title">poker</h2>
             <p class="pane-text">I like to play cards. I may not be the best, but I do get pretty lucky.</p>
           </div>
@@ -527,9 +553,9 @@
         <button class="modal-close" data-close aria-label="Close">&times;</button>
         <div class="modal-body">
           <div class="pane pane-left">
-            <img class="modal-icon" src="images/icons/whale.gif" alt="" aria-hidden="true" />
+            <img class="modal-icon" src="assets/icons/whale.gif" alt="" aria-hidden="true" />
             <h2 class="pane-title">whales</h2>
-            <p class="pane-text">Filler text about my whale research goes here. I'll write this in later.</p>
+            <p class="pane-text">In</p>
           </div>
           <div class="pane pane-right">
             <div class="media">
@@ -560,7 +586,7 @@
         <button class="modal-close" data-close aria-label="Close">&times;</button>
         <div class="modal-body">
           <div class="pane pane-left">
-            <img class="modal-icon" src="images/icons/racing.gif" alt="" aria-hidden="true" />
+            <img class="modal-icon" src="assets/icons/racing.gif" alt="" aria-hidden="true" />
             <h2 class="pane-title">racing</h2>
             <p class="pane-text">Filler text about racing goes here. I'll write this in later.</p>
           </div>
@@ -570,6 +596,52 @@
             </div>
             <div class="media">
               <div class="placeholder">image coming soon</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ttr popup -->
+    <div class="modal" id="modal-ttr" hidden>
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-box modal-ttr" role="dialog" aria-modal="true" aria-label="TTR">
+        <button class="modal-close" data-close aria-label="Close">&times;</button>
+        <div class="modal-body">
+          <div class="pane pane-left">
+            <img class="modal-icon" src="assets/icons/ttr.gif" alt="" aria-hidden="true" />
+            <h2 class="pane-title">TTR</h2>
+            <p class="pane-text">This is a clone I made of the hit board game Ticket to Ride. You can make a room to play with friends, or play against AI opponents. Go to <a class="here-link" href="ttr.cgovind.com" target="_blank" rel="noopener">ttr.cgovind.com</a> to play!</p>
+          </div>
+          <div class="pane pane-right">
+            <div class="media">
+              <img class="media-img" src="assets/ttr/irl_play.jpg" alt="Me and my friends playing TTR" />
+            </div>
+            <div class="media">
+              <img class="media-img" src="assets/ttr/gameplay.png" alt="An example game of playing on my site" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ers popup -->
+    <div class="modal" id="modal-ers" hidden>
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-box modal-ers" role="dialog" aria-modal="true" aria-label="ERS">
+        <button class="modal-close" data-close aria-label="Close">&times;</button>
+        <div class="modal-body">
+          <div class="pane pane-left">
+            <img class="modal-icon" src="assets/icons/ers.gif" alt="" aria-hidden="true" />
+            <h2 class="pane-title">ERS</h2>
+            <p class="pane-text">This is a recreation of the card game Egyptian Rat Screw, a card game involving slapping the table. </p>
+          </div>
+          <div class="pane pane-right">
+            <div class="media">
+              <img class="media-img" src="assets/ers/irl_play.png" alt="Me and my friends playing ERS in high school" />
+            </div>
+            <div class="media">
+              <img class="media-img" src="assets/ers/gameplay.png" alt="An example game of playing on my site" />
             </div>
           </div>
         </div>
