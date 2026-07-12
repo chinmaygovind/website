@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Waiting | King of Tokyo{% endblock %}
+{% block body %}
+{% include "_nav.html" %}
+<div class="wrap wide">
+  <div class="lobby-grid">
+    <div class="lobby-col">
+      <div class="panel">
+        <div class="section-title">Monsters (<span id="pcount">{{ players|length }}</span>/{{ game.max_players }})</div>
+        <div class="player-list" id="roster"></div>
+      </div>
+
+      <div class="panel">
+        {% if me.is_host %}
+        <button class="btn big" id="startBtn" style="width:100%" onclick="startGame()">Start the brawl</button>
+        <p class="muted" id="startHint" style="font-size:.85rem;margin-top:.7rem">Need at least 2 monsters to start.</p>
+        {% else %}
+        <div class="waiting-msg"><span class="spinner"></span> Waiting for the host to start…</div>
+        {% endif %}
+        <button class="btn ghost" style="width:100%;margin-top:.9rem;border-color:rgba(235,87,87,.5);color:#eb5757" onclick="leaveGame()">Leave game</button>
+      </div>
+
+      <div class="panel code-box">
+        <div class="section-title" style="text-align:center">{% if game.is_private %}Share with friends{% else %}Share this code{% endif %}</div>
+        <div class="code-display">{{ game.code }}</div>
+        {% if game.is_private and game.passcode %}<div class="muted">Passcode: <b>{{ game.passcode }}</b></div>{% endif %}
+        <button class="btn secondary" onclick="share()">Copy invite link</button>
+        <div class="copied" id="copied" style="display:none">Copied!</div>
+      </div>
+    </div>
+
+    <div class="lobby-col">
+      <div class="panel rules-card">
+        <h2>How to play</h2>
+        <p>Each monster wants to be the King of Tokyo. Win by reaching <b>20 victory points</b>, or by being the last monster left alive.</p>
+        <h3>Your turn</h3>
+        <p>Roll six dice up to <b>three times</b>, keeping the ones you like between rolls. Then the faces resolve all at once:</p>
+        <ul>
+          <li><b>1 / 2 / 3</b> - three of a kind scores that many victory points (each extra die of the same number adds 1 more).</li>
+          <li><b>❤ Heart</b> - heal one damage each. You can't heal while you're in Tokyo.</li>
+          <li><b>⚡ Energy</b> - one energy cube each, spent to buy power cards.</li>
+          <li><b>Claw</b> - deal one damage each. Outside Tokyo you hit whoever's in Tokyo; inside Tokyo you hit everyone else.</li>
+        </ul>
+        <h3>Tokyo</h3>
+        <p>If Tokyo is empty you <b>must</b> move in, and you score points for taking it and for starting your turn there. But you can't heal, and everyone will be gunning for you. Get hit and you may <b>yield</b> Tokyo to the attacker.</p>
+        <h3>Power cards</h3>
+        <p>Spend energy in the shop for permanent <b>Keep</b> cards and one-shot effects. Pay 2 energy to sweep the three cards and draw fresh ones.</p>
+        <h3>Winning</h3>
+        <p>First to 20 victory points wins - or be the last monster standing.</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+const CODE = "{{ game.code }}", IS_HOST = {{ 'true' if me.is_host else 'false' }}, MY_PID = "{{ me.pid }}";
+let players = {{ players|tojson }};
+const socket = io();
+socket.on('connect', () => socket.emit('join_lobby', {code: CODE}));
+socket.on('lobby_update', d => { players = d.players; render(); });
+socket.on('go_to_game', () => location.href = '/game/' + CODE);
+socket.on('player_kicked', d => { if (d.pid === MY_PID) location.href = '/lobbies'; });
+socket.on('lobby_closed', () => location.href = '/lobbies');
+socket.on('start_error', d => alert(d.error || 'Could not start.'));
+
+function esc(s){ return (s+'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function render(){
+  document.getElementById('pcount').textContent = players.length;
+  document.getElementById('roster').innerHTML = players.map(p => `
+    <div class="player-entry">
+      <span class="pdot" style="background:${p.color}"></span>
+      <span class="pname">${esc(p.monster)} <span class="pmini">${esc(p.name)}</span>${p.elo != null ? ` <span class="pelo">${p.elo}</span>` : ''}</span>
+      ${p.is_host ? '<span class="badge host">HOST</span>' : ''}
+      ${p.pid === MY_PID ? '<span class="badge you">YOU</span>' : ''}
+      ${IS_HOST && p.pid !== MY_PID ? `<button class="kick" onclick="kick('${p.pid}')" title="Remove">✕</button>` : ''}
+    </div>`).join('');
+  const btn = document.getElementById('startBtn');
+  if(btn){ btn.disabled = players.length < 2;
+    const h = document.getElementById('startHint'); if(h) h.style.display = players.length < 2 ? 'block' : 'none'; }
+}
+function kick(pid){ socket.emit('kick_player', {code: CODE, pid}); }
+function startGame(){ socket.emit('start_game', {code: CODE}); }
+function leaveGame(){ socket.emit('leave_lobby', {code: CODE}); location.href = '/lobbies'; }
+function share(){ navigator.clipboard.writeText(location.origin + '/lobby/' + CODE).then(() => {
+  const c = document.getElementById('copied'); c.style.display = 'block'; setTimeout(() => c.style.display = 'none', 1500); }); }
+render();
+</script>
+{% endblock %}

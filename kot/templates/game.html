@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}King of Tokyo{% endblock %}
+{% block body %}
+<div class="game-shell">
+  <header class="game-top">
+    <a class="brand small" href="/lobbies"><img src="/static/img/icon.svg" alt="" class="brand-ico"/> King of Tokyo</a>
+    <div class="turn-banner" id="turnBanner">Loading…</div>
+    <div class="top-right">
+      <span class="ping" id="ping"></span>
+      <button class="icon-btn" id="logToggle" title="Game log">≡</button>
+    </div>
+  </header>
+
+  <main class="board" id="board">
+    <div class="tokyo" id="tokyo">
+      <div class="tokyo-slot" id="slot-city">
+        <div class="slot-label">Tokyo City</div>
+        <div class="slot-mon" id="city-mon"></div>
+      </div>
+      <div class="tokyo-slot bay" id="slot-bay">
+        <div class="slot-label">Tokyo Bay</div>
+        <div class="slot-mon" id="bay-mon"></div>
+      </div>
+    </div>
+    <div class="monsters" id="monsters"></div>
+  </main>
+
+  <aside class="log-panel" id="logPanel">
+    <div class="log-head">Game log <button class="icon-btn" id="logClose">✕</button></div>
+    <div class="log-feed" id="logFeed"></div>
+  </aside>
+
+  <section class="controls" id="controls">
+    <div class="dice-tray" id="diceTray"></div>
+    <div class="action-row" id="actionRow"></div>
+    <div class="shop" id="shop"></div>
+  </section>
+
+  <div class="overlay" id="overlay" style="display:none">
+    <div class="overlay-card" id="overlayCard"></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+window.KOT = {
+  code: "{{ game.code }}",
+  myPid: "{{ my_pid }}",
+  roster: {{ roster_json|safe }},
+};
+</script>
+<script src="{{ url_for('static', filename='js/game.js') }}?v={{ asset_version }}"></script>
+{% endblock %}

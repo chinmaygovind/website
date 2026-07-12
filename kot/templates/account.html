@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Account | King of Tokyo{% endblock %}
+{% set active_page = 'account' %}
+{% block body %}
+{% include "_nav.html" %}
+<div class="wrap center-narrow">
+  <div class="panel">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <h2 style="margin-bottom:.2rem">{{ user.username }}</h2>
+        <div class="muted">{{ user.email }}</div>
+      </div>
+      <div style="text-align:center">
+        <div class="xk" style="font-size:2.2rem;color:var(--accent)">{{ (stats.elo if stats else 1000) or 1000 }}</div>
+        <span class="tier">{{ stats.elo_tier if stats else 'Monster' }}</span>
+      </div>
+    </div>
+
+    <h2 style="margin-top:1.4rem;font-size:1.1rem">King of Tokyo stats</h2>
+    <div class="stat-grid">
+      <div class="stat"><div class="v">{{ (stats.games_played if stats else 0) or 0 }}</div><div class="l">Games</div></div>
+      <div class="stat"><div class="v">{{ (stats.games_won if stats else 0) or 0 }}</div><div class="l">Wins</div></div>
+      <div class="stat"><div class="v">{{ stats.win_rate if stats else 0 }}%</div><div class="l">Win rate</div></div>
+      <div class="stat"><div class="v">{{ stats.avg_vp if stats else 0 }}</div><div class="l">Avg VP</div></div>
+      <div class="stat"><div class="v">{{ (stats.highest_vp if stats else 0) or 0 }}</div><div class="l">Best VP</div></div>
+      <div class="stat"><div class="v">{{ (stats.monsters_koed if stats else 0) or 0 }}</div><div class="l">Monsters KO'd</div></div>
+      <div class="stat"><div class="v">{{ (stats.damage_dealt if stats else 0) or 0 }}</div><div class="l">Damage dealt</div></div>
+      <div class="stat"><div class="v">{{ (stats.tokyo_turns if stats else 0) or 0 }}</div><div class="l">Turns in Tokyo</div></div>
+      <div class="stat"><div class="v">{{ (stats.cards_bought if stats else 0) or 0 }}</div><div class="l">Cards bought</div></div>
+      <div class="stat"><div class="v">{% if stats and stats.best_place %}#{{ stats.best_place }}{% else %}-{% endif %}</div><div class="l">Best finish</div></div>
+    </div>
+    <p class="muted" style="font-size:.85rem;margin-top:1.2rem">
+      Same account plays <a href="https://ers.cgovind.com" style="color:var(--accent);font-weight:700">Egyptian Rat Screw</a> and <a href="https://ttr.cgovind.com" style="color:var(--accent);font-weight:700">Ticket to Ride</a> - stats are kept separately.
+    </p>
+  </div>
+</div>
+{% endblock %}

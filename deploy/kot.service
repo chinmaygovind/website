@@ -1,0 +1,23 @@
+# King of Tokyo (the kot.cgovind.com subdomain), served from website/kot.
+#
+# Like TTR and ERS it speaks WebSockets and keeps game state + socket rooms in
+# process, so it runs as its OWN single eventlet gunicorn worker. It needs its
+# own virtualenv at {{APP_DIR}}/kot/venv and its own .env at {{APP_DIR}}/kot/.env
+# (share TTR's SECRET_KEY and point DATABASE_URL at the shared SQLite file so the
+# accounts table is the same across all three sites).
+[Unit]
+Description=King of Tokyo (from website subdir)
+After=network.target
+
+[Service]
+User={{USER}}
+WorkingDirectory={{APP_DIR}}/kot
+EnvironmentFile={{APP_DIR}}/kot/.env
+ExecStart={{APP_DIR}}/kot/venv/bin/gunicorn --worker-class eventlet -w 1 --bind 127.0.0.1:5004 app:app
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

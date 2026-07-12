@@ -62,4 +62,13 @@ jobs:
               echo "ers/.env missing - skipping ers (do the one-time bring-up first)"
             fi
 
+            echo "==> King of Tokyo (kot): venv + deps + restart"
+            if [ -f "$APP/kot/.env" ]; then
+              [ -d "$APP/kot/venv" ] || python3 -m venv "$APP/kot/venv"
+              "$APP/kot/venv/bin/pip" install -q -r "$APP/kot/requirements.txt"
+              sudo systemctl restart kot || echo "kot service not installed yet (one-time setup)"
+            else
+              echo "kot/.env missing - skipping kot (do the one-time bring-up first)"
+            fi
+
             echo "==> Deploy complete"

@@ -1,0 +1,18 @@
+<nav class="nav">
+  <a class="brand" href="/lobbies"><img src="/static/img/icon.svg" alt="" class="brand-ico"/> King of Tokyo <small>· cgovind</small></a>
+  <div class="nav-right">
+    {% if current_user %}
+      <span class="nav-user">{{ current_user.username }}{% if current_user.kot %} · {{ current_user.kot.elo or 1000 }}{% endif %}</span>
+    {% elif effective_name and effective_name != 'Guest' %}
+      <span class="nav-user">{{ effective_name }} <span class="badge">GUEST</span></span>
+    {% endif %}
+    <a href="/lobbies" class="{% if active_page == 'lobbies' %}active{% endif %}">Lobbies</a>
+    <a href="/leaderboard" class="{% if active_page == 'leaderboard' %}active{% endif %}">Leaderboard</a>
+    {% if current_user %}
+      <a href="/account" class="{% if active_page == 'account' %}active{% endif %}">Account</a>
+      <a href="/logout">Log out</a>
+    {% else %}
+      <a href="/login">Log in</a>
+    {% endif %}
+  </div>
+</nav>
