@@ -6,29 +6,25 @@
     <a class="brand small" href="/lobbies"><img src="/static/img/icon.svg" alt="" class="brand-ico"/> King of Tokyo</a>
     <div class="turn-banner" id="turnBanner">Loading…</div>
     <div class="top-right">
+      <button class="icon-btn" id="muteBtn" title="Mute sound">🔊</button>
       <button class="icon-btn" id="logToggle" title="Game log">📜</button>
       <button class="icon-btn door-btn" id="leaveBtn" title="Leave game">🚪</button>
     </div>
   </header>
 
   <main class="board" id="board">
-    <div class="zone zone-tokyo">
-      <div class="zone-label">Tokyo</div>
-      <div class="tokyo" id="tokyo">
-        <div class="tokyo-slot" id="slot-city">
-          <div class="slot-label">Tokyo City</div>
-          <div class="slot-mon" id="city-mon"></div>
-        </div>
-        <div class="tokyo-slot bay" id="slot-bay">
-          <div class="slot-label">Tokyo Bay</div>
-          <div class="slot-mon" id="bay-mon"></div>
-        </div>
+    <div class="tokyo-ring" id="tokyo">
+      <div class="tokyo-circle city" id="slot-city">
+        <div class="circle-label">Tokyo City</div>
+        <div class="slot-mon" id="city-mon"></div>
+      </div>
+      <div class="tokyo-circle bay" id="slot-bay">
+        <div class="circle-label">Tokyo Bay</div>
+        <div class="slot-mon" id="bay-mon"></div>
       </div>
     </div>
-    <div class="zone zone-outskirts">
-      <div class="zone-label">Outskirts</div>
-      <div class="monsters" id="monsters"></div>
-    </div>
+    <div class="outskirts-label">Outskirts</div>
+    <div class="monsters" id="monsters"></div>
   </main>
 
   <aside class="log-panel open" id="logPanel">

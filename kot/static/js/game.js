@@ -24,6 +24,52 @@
   const FACE = { "1": "1", "2": "2", "3": "3", heart: "❤", energy: "⚡", claw: "✷", "?": "" };
   const FACE_CLASS = { "1": "num", "2": "num", "3": "num", heart: "heart", energy: "energy", claw: "claw", "?": "blank" };
 
+  // ---- sound effects: short synthesized stings, no samples ------------------
+  const SOUND_SRC = {
+    roll: "/static/sounds/roll.wav", card: "/static/sounds/card.wav",
+    attack: "/static/sounds/attack.wav", ko: "/static/sounds/ko.wav", turn: "/static/sounds/turn.wav",
+  };
+  const soundPool = {};
+  for (const k in SOUND_SRC) { const a = new Audio(SOUND_SRC[k]); a.preload = "auto"; soundPool[k] = a; }
+  let muted = localStorage.getItem("kot_muted") === "1";
+  function playSound(name) {
+    if (muted || !soundPool[name]) return;
+    const el = soundPool[name].cloneNode();
+    el.volume = 0.55;
+    el.play().catch(() => {});
+  }
+  function setMuted(v) {
+    muted = v;
+    localStorage.setItem("kot_muted", v ? "1" : "0");
+    const btn = $("muteBtn");
+    if (btn) btn.textContent = v ? "🔇" : "🔊";
+  }
+
+  // New log lines drive attack/ko/buy stings; a turn change into MY_PID pings.
+  let lastLogId = null;
+  let prevCurrent = null;
+  const LOG_SOUND = { attack: "attack", ko: "ko", buy: "card" };
+  function soundForLog(log) {
+    if (lastLogId == null) {
+      lastLogId = log.length ? log[log.length - 1].id : 0;
+      return;
+    }
+    const played = new Set();
+    for (const l of log) {
+      if (l.id <= lastLogId) continue;
+      const snd = LOG_SOUND[l.kind];
+      if (snd && !played.has(snd)) { playSound(snd); played.add(snd); }
+    }
+    if (log.length) lastLogId = Math.max(lastLogId, log[log.length - 1].id);
+  }
+  function soundForTurn(newState) {
+    if (prevCurrent != null && newState.current !== prevCurrent && newState.current === MY_PID
+        && newState.phase !== "ended" && !isSpectator()) {
+      playSound("turn");
+    }
+    prevCurrent = newState.current;
+  }
+
   // Stable hash so a given card always gets the same one of the 4 background
   // looks, while the shop as a whole reads as a varied spread.
   function bgVarOf(key) {
@@ -149,12 +195,14 @@
     render();
     animateStatChanges(before, state.mon);
     prevMon = snapshotMon(state.mon);
+    soundForLog(state.log || []);
+    soundForTurn(state);
   });
   socket.on("act_error", (d) => toast(d.error || "Not allowed."));
 
   // ---- actions -------------------------------------------------------------
   const emit = (ev, extra) => socket.emit(ev, Object.assign({ code: CODE }, extra || {}));
-  function doRoll() { emit("roll", { keep: [...keep] }); }
+  function doRoll() { playSound("roll"); emit("roll", { keep: [...keep] }); }
   function doResolve() { emit("resolve", {}); }
   function doBuy(i) { emit("buy_card", { index: i }); }
   function doSweep() { emit("sweep_shop", {}); }
@@ -221,9 +269,9 @@
     // in the Outskirts grid), so the badge would just repeat the slot label.
     return `<div class="${cls.join(" ")}" style="--c:${colorOf(pid)}" data-pid="${pid}">
       <div class="mc-left">
+        <div class="mc-avatar">${emojiOf(pid)}</div>
         <div class="mc-head">
-          <span class="mc-dot"></span>
-          <span class="mc-name">${dispName(pid)}</span>
+          <span class="mc-name">${esc(nameOf(pid))}</span>
           ${!m.alive ? '<span class="mc-ko">KO</span>' : ""}
         </div>
         <div class="mc-sub">${esc((ROSTER[pid] && ROSTER[pid].name) || "")}${pid === MY_PID ? " (you)" : ""}</div>
@@ -430,6 +478,8 @@
   $("logToggle").onclick = () => $("logPanel").classList.toggle("open");
   $("logClose").onclick = () => $("logPanel").classList.remove("open");
   $("leaveBtn").onclick = doLeave;
+  $("muteBtn").onclick = () => setMuted(!muted);
+  setMuted(muted);
 
   // Keyboard: R roll, Space resolve/end, 1-6 toggle dice.
   document.addEventListener("keydown", (e) => {
