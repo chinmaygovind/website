@@ -66,12 +66,16 @@ socket.on('lobby_closed', () => location.href = '/lobbies');
 socket.on('start_error', d => alert(d.error || 'Could not start.'));
 
 function esc(s){ return (s+'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+const MONSTER_EMOJI = {
+  "Gigazaur": "🦖", "The King": "🦍", "Cyber Bunny": "🐰",
+  "Kraken": "🐙", "Meka Dragon": "🐉", "Alienoid": "👽",
+};
 function render(){
   document.getElementById('pcount').textContent = players.length;
   document.getElementById('roster').innerHTML = players.map(p => `
     <div class="player-entry">
       <span class="pdot" style="background:${p.color}"></span>
-      <span class="pname">${esc(p.monster)} <span class="pmini">${esc(p.name)}</span>${p.elo != null ? ` <span class="pelo">${p.elo}</span>` : ''}</span>
+      <span class="pname">${MONSTER_EMOJI[p.monster] || '👹'} ${esc(p.monster)} <span class="pmini">${esc(p.name)}</span>${p.elo != null ? ` <span class="pelo">${p.elo}</span>` : ''}</span>
       ${p.is_host ? '<span class="badge host">HOST</span>' : ''}
       ${p.pid === MY_PID ? '<span class="badge you">YOU</span>' : ''}
       ${IS_HOST && p.pid !== MY_PID ? `<button class="kick" onclick="kick('${p.pid}')" title="Remove">✕</button>` : ''}

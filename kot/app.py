@@ -458,11 +458,6 @@ def _log_event(game, ev):
 # Socket handlers - lobby
 # ---------------------------------------------------------------------------
 
-@socketio.on("cping")
-def on_cping(data=None):
-    return "pong"
-
-
 @socketio.on("join_lobby")
 def on_join_lobby(data):
     code = (data or {}).get("code", "").upper()

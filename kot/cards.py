@@ -160,8 +160,36 @@ _DEFS = [
      "Spend 2⚡ to negate damage to you until your next turn."),
 ]
 
+# One emoji per distinct card (shared by both copies of a duplicated card, since
+# they're the same physical card in the real deck).
+_EMOJI = {
+    "acid_attack": "🧪", "alien_metabolism": "🧬", "alpha_monster": "🐺",
+    "apartment_building": "🏢", "armor_plating": "🛡️", "background_dweller": "🙈",
+    "burrowing": "🕳️", "camouflage": "🦎", "commuter_train": "🚆",
+    "complete_destruction": "💥", "corner_store": "🏪", "dedicated_news_team": "📰",
+    "drop_from_high_altitude": "🪂", "eater_of_the_dead": "💀", "energize": "🔋",
+    "energy_hoarder": "🏦", "evacuation_orders": "🚨", "even_bigger": "🦣",
+    "extra_head": "🎲", "fire_blast": "🔥", "fire_breathing": "🌋",
+    "freeze_time": "⏳", "frenzy": "🌀", "friend_of_children": "🧒",
+    "gas_refinery": "🏭", "giant_brain": "🧠", "gourmet": "🍽️",
+    "heal": "🩹", "healing_ray": "🚑", "herbivore": "🌿",
+    "herd_culler": "🐑", "high_altitude_bombing": "💣", "it_has_a_child": "🥚",
+    "jet_fighters": "🛩️", "jets": "🚀", "made_in_a_lab": "🧫",
+    "metamorph": "🦋", "mimic": "🎭", "monster_batteries": "🔌",
+    "national_guard": "🎖️", "nova_breath": "☄️", "nuclear_power_plant": "☢️",
+    "omnivore": "🍖", "opportunist": "🕵️", "parasitic_tentacles": "🦑",
+    "plot_twist": "🔀", "poison_quills": "🦔", "poison_spit": "☠️",
+    "psychic_probe": "🔮", "rapid_healing": "💊", "regeneration": "♻️",
+    "rooting_for_the_underdog": "🐶", "shrink_ray": "📉", "skyscraper": "🏙️",
+    "smoke_cloud": "💨", "solar_powered": "☀️", "spiked_tail": "🦂",
+    "stretchy": "🎈", "tanks": "🪖", "telepath": "📡",
+    "urbavore": "🌆", "vast_storm": "⛈️", "were_only_making_it_stronger": "💪",
+    "wings": "🪽",
+}
+
 CATALOG = {d[0]: {"id": d[0], "key": d[1], "name": d[2], "cost": d[3],
-                  "type": d[4], "text": d[5]} for d in _DEFS}
+                  "type": d[4], "text": d[5], "emoji": _EMOJI.get(d[1], "🎴")}
+           for d in _DEFS}
 
 # Passive numeric modifiers, summed across a monster's Keep cards (per copy).
 _CONTRIB = {

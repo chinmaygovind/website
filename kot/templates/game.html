@@ -6,23 +6,28 @@
     <a class="brand small" href="/lobbies"><img src="/static/img/icon.svg" alt="" class="brand-ico"/> King of Tokyo</a>
     <div class="turn-banner" id="turnBanner">Loading…</div>
     <div class="top-right">
-      <span class="ping" id="ping"></span>
       <button class="icon-btn" id="logToggle" title="Game log">≡</button>
     </div>
   </header>
 
   <main class="board" id="board">
-    <div class="tokyo" id="tokyo">
-      <div class="tokyo-slot" id="slot-city">
-        <div class="slot-label">Tokyo City</div>
-        <div class="slot-mon" id="city-mon"></div>
-      </div>
-      <div class="tokyo-slot bay" id="slot-bay">
-        <div class="slot-label">Tokyo Bay</div>
-        <div class="slot-mon" id="bay-mon"></div>
+    <div class="zone zone-tokyo">
+      <div class="zone-label">Tokyo</div>
+      <div class="tokyo" id="tokyo">
+        <div class="tokyo-slot" id="slot-city">
+          <div class="slot-label">Tokyo City</div>
+          <div class="slot-mon" id="city-mon"></div>
+        </div>
+        <div class="tokyo-slot bay" id="slot-bay">
+          <div class="slot-label">Tokyo Bay</div>
+          <div class="slot-mon" id="bay-mon"></div>
+        </div>
       </div>
     </div>
-    <div class="monsters" id="monsters"></div>
+    <div class="zone zone-outskirts">
+      <div class="zone-label">Outskirts</div>
+      <div class="monsters" id="monsters"></div>
+    </div>
   </main>
 
   <aside class="log-panel" id="logPanel">

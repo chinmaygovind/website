@@ -14,6 +14,13 @@
   const colorOf = (pid) => (ROSTER[pid] && ROSTER[pid].color) || "#888";
   const isSpectator = () => !MY_PID || !state || !state.mon[MY_PID];
 
+  const MONSTER_EMOJI = {
+    "Gigazaur": "🦖", "The King": "🦍", "Cyber Bunny": "🐰",
+    "Kraken": "🐙", "Meka Dragon": "🐉", "Alienoid": "👽",
+  };
+  const emojiOf = (pid) => MONSTER_EMOJI[nameOf(pid)] || "👹";
+  const dispName = (pid) => `${emojiOf(pid)} ${esc(nameOf(pid))}`;
+
   const FACE = { "1": "1", "2": "2", "3": "3", heart: "❤", energy: "⚡", claw: "✷", "?": "" };
   const FACE_CLASS = { "1": "num", "2": "num", "3": "num", heart: "heart", energy: "energy", claw: "claw", "?": "blank" };
 
@@ -30,12 +37,6 @@
     render();
   });
   socket.on("act_error", (d) => toast(d.error || "Not allowed."));
-
-  // ---- ping ----------------------------------------------------------------
-  setInterval(() => {
-    const t = Date.now();
-    socket.emit("cping", {}, () => { $("ping").textContent = (Date.now() - t) + "ms"; });
-  }, 4000);
 
   // ---- actions -------------------------------------------------------------
   const emit = (ev, extra) => socket.emit(ev, Object.assign({ code: CODE }, extra || {}));
@@ -78,7 +79,7 @@
   function renderBanner() {
     const b = $("turnBanner");
     if (state.phase === "ended") { b.textContent = "Game over"; b.className = "turn-banner"; return; }
-    const cur = nameOf(state.current);
+    const cur = `${emojiOf(state.current)} ${nameOf(state.current)}`;
     let phase = state.phase === "rolling" ? "rolling" : state.phase === "buying" ? "shopping" : "Tokyo decision";
     if (myYieldTurn()) { b.textContent = "Stay in Tokyo or yield?"; b.className = "turn-banner mine"; return; }
     b.textContent = isMyTurn() ? `Your turn - ${phase}` : `${cur}'s turn - ${phase}`;
@@ -100,7 +101,7 @@
   function bigMon(pid) {
     const m = state.mon[pid];
     return `<div class="big-mon" style="--c:${colorOf(pid)}">
-      <div class="bm-name">${esc(nameOf(pid))}</div>
+      <div class="bm-name">${dispName(pid)}</div>
       <div class="bm-stats"><span class="hp">❤ ${m.hp}</span> <span class="vp">★ ${m.vp}</span></div>
     </div>`;
   }
@@ -117,11 +118,11 @@
       const hpPct = Math.max(0, Math.round(100 * m.hp / m.maxhp));
       const toks = tokenPills(m.tokens);
       const cards = (m.cards || []).map((c) =>
-        `<span class="own-card" title="${esc(c.name)}: ${esc(c.text || "")}">${esc(c.name)}</span>`).join("");
+        `<span class="own-card" title="${esc(c.name)}: ${esc(c.text || "")}">${c.emoji || "🎴"} ${esc(c.name)}</span>`).join("");
       return `<div class="${cls.join(" ")}" style="--c:${colorOf(pid)}">
         <div class="mc-head">
           <span class="mc-dot"></span>
-          <span class="mc-name">${esc(nameOf(pid))}</span>
+          <span class="mc-name">${dispName(pid)}</span>
           ${inTokyo ? `<span class="mc-tokyo">${inTokyo === "city" ? "TOKYO" : "BAY"}</span>` : ""}
           ${!m.alive ? '<span class="mc-ko">KO</span>' : ""}
         </div>
@@ -168,9 +169,9 @@
       html = `<button class="btn danger" data-a="yield-leave">Yield Tokyo</button>
               <button class="btn" data-a="yield-stay">Stay &amp; take it</button>`;
     } else if (isSpectator()) {
-      html = `<span class="spectate">Spectating - ${esc(nameOf(state.current))}'s turn</span>`;
+      html = `<span class="spectate">Spectating - ${dispName(state.current)}'s turn</span>`;
     } else if (state.current !== MY_PID) {
-      html = `<span class="spectate">Waiting for ${esc(nameOf(state.current))}…</span>
+      html = `<span class="spectate">Waiting for ${dispName(state.current)}…</span>
               <button class="btn ghost sm" data-a="leave">Leave</button>`;
     } else if (state.phase === "rolling") {
       const first = state.roll_num === 0;
@@ -253,7 +254,11 @@
       const cls = ["card", c.type === "keep" ? "keep" : "discard"];
       if (canBuy && afford) cls.push("buyable");
       return `<div class="${cls.join(" ")}" ${canBuy && afford ? `data-buy="${i}"` : ""}>
-        <div class="card-top"><span class="card-name">${esc(c.name)}</span><span class="card-cost">${c.cost}⚡</span></div>
+        <div class="card-top">
+          <span class="card-emoji">${c.emoji || "🎴"}</span>
+          <span class="card-name">${esc(c.name)}</span>
+          <span class="card-cost">${c.cost}⚡</span>
+        </div>
         <div class="card-type">${c.type === "keep" ? "Keep" : "Discard"}</div>
         <div class="card-text">${esc(c.text || "")}</div>
       </div>`;
@@ -271,7 +276,7 @@
     const feed = $("logFeed");
     const items = (state.log || []).slice().reverse();
     feed.innerHTML = items.map((l) =>
-      `<div class="log-line log-${l.kind || "sys"}">${l.pid ? `<b style="color:${colorOf(l.pid)}">${esc(nameOf(l.pid))}</b> ` : ""}${esc(stripName(l))}</div>`
+      `<div class="log-line log-${l.kind || "sys"}">${l.pid ? `<b style="color:${colorOf(l.pid)}">${dispName(l.pid)}</b> ` : ""}${esc(stripName(l))}</div>`
     ).join("");
   }
   // The server log text already contains the monster name; the pid bold prefix
@@ -288,12 +293,12 @@
     const st = state.standings || [];
     const rows = st.map((s) => `<div class="fin-row ${s.place === 1 ? "win" : ""}">
       <span class="fin-place">#${s.place}</span>
-      <span class="fin-name" style="color:${colorOf(s.pid)}">${esc(nameOf(s.pid))}</span>
+      <span class="fin-name" style="color:${colorOf(s.pid)}">${dispName(s.pid)}</span>
       <span class="fin-vp">★ ${s.vp}</span>
     </div>`).join("");
-    const champ = state.winner ? nameOf(state.winner) : "Nobody";
+    const champ = state.winner ? dispName(state.winner) : "Nobody";
     $("overlayCard").innerHTML = `<div class="crown">👑</div>
-      <h2>${esc(champ)} rules Tokyo!</h2>
+      <h2>${champ} rules Tokyo!</h2>
       <div class="finals">${rows}</div>
       <button class="btn big" onclick="location.href='/lobbies'">Back to lobbies</button>`;
     ov.style.display = "flex";

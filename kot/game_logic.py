@@ -624,7 +624,7 @@ def _shop_view(state):
         else:
             C = _cards().CATALOG.get(cid, {})
             out.append({"id": cid, "name": C.get("name"), "cost": C.get("cost"),
-                        "type": C.get("type"), "text": C.get("text")})
+                        "type": C.get("type"), "text": C.get("text"), "emoji": C.get("emoji")})
     return out
 
 
@@ -633,7 +633,7 @@ def _cards_view(state, pid):
     for cid in state["mon"][pid]["cards"]:
         C = _cards().CATALOG.get(cid, {})
         out.append({"id": cid, "name": C.get("name"), "cost": C.get("cost"),
-                    "type": C.get("type"), "text": C.get("text")})
+                    "type": C.get("type"), "text": C.get("text"), "emoji": C.get("emoji")})
     return out
 
 
