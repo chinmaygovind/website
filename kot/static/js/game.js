@@ -241,9 +241,17 @@
   function renderBanner() {
     const b = $("turnBanner");
     if (state.phase === "ended") { b.textContent = "Game over"; b.className = "turn-banner"; return; }
-    const cur = `${emojiOf(state.current)} ${nameOf(state.current)}`;
-    let phase = state.phase === "rolling" ? "rolling" : state.phase === "buying" ? "shopping" : "Tokyo decision";
     if (myYieldTurn()) { b.textContent = "Stay in Tokyo or yield?"; b.className = "turn-banner mine"; return; }
+    // During a yield decision, state.current is still the attacker - the
+    // monster actually being waited on is whoever's first in the queue.
+    if (state.phase === "yield" && state.pending_yield && state.pending_yield.queue.length) {
+      const decider = state.pending_yield.queue[0];
+      b.textContent = `Waiting for ${nameOf(decider)} to stay or leave Tokyo…`;
+      b.className = "turn-banner";
+      return;
+    }
+    const cur = `${emojiOf(state.current)} ${nameOf(state.current)}`;
+    const phase = state.phase === "rolling" ? "rolling" : "shopping";
     b.textContent = isMyTurn() ? `Your turn - ${phase}` : `${cur}'s turn - ${phase}`;
     b.className = "turn-banner" + (isMyTurn() ? " mine" : "");
   }
@@ -312,14 +320,19 @@
     return out.join("");
   }
 
+  let lastAnimatedRollNum = -1;
   function renderDice() {
     const tray = $("diceTray");
     const dice = state.dice || [];
     if (!dice.length || (state.phase !== "rolling" && state.roll_num === 0)) { tray.innerHTML = ""; return; }
+    const freshRoll = state.roll_num !== lastAnimatedRollNum;
+    lastAnimatedRollNum = state.roll_num;
     tray.innerHTML = dice.map((f, i) => {
       const kept = keep.has(i);
       const canClick = isMyRollingTurn() && state.roll_num > 0;
-      return `<button class="die ${FACE_CLASS[f] || "blank"} ${kept ? "kept" : ""}" ${canClick ? "" : "disabled"} data-i="${i}">
+      const anim = freshRoll ? ` style="animation-delay:${i * 35}ms"` : "";
+      return `<button class="die ${FACE_CLASS[f] || "blank"} ${kept ? "kept" : ""} ${freshRoll ? "rolling" : ""}"
+        ${canClick ? "" : "disabled"} data-i="${i}"${anim}>
         <span class="die-face">${FACE[f] || ""}</span>
       </button>`;
     }).join("");
@@ -334,6 +347,9 @@
     } else if (myYieldTurn()) {
       html = `<button class="btn danger" data-a="yield-leave">Yield Tokyo</button>
               <button class="btn" data-a="yield-stay">Stay &amp; take it</button>`;
+    } else if (state.phase === "yield" && state.pending_yield && state.pending_yield.queue.length) {
+      const decider = state.pending_yield.queue[0];
+      html = `<span class="spectate">Waiting for ${dispName(decider)} to stay or leave Tokyo…</span>`;
     } else if (isSpectator()) {
       html = `<span class="spectate">Spectating - ${dispName(state.current)}'s turn</span>`;
     } else if (state.current !== MY_PID) {
@@ -428,9 +444,9 @@
       const afford = myEnergy >= c.cost;
       return cardFaceHtml(c, { buyable: canBuy && afford, buyIndex: canBuy && afford ? i : null });
     }).join("");
-    const sweep = canBuy
-      ? `<button class="btn secondary sweep" ${myEnergy >= 2 ? "" : "disabled"} data-sweep="1">Sweep (2⚡)</button>`
-      : "";
+    // Always render the sweep button (just disabled when unusable) so the
+    // shop's height never changes depending on whose turn it is.
+    const sweep = `<button class="btn secondary sweep" ${canBuy && myEnergy >= 2 ? "" : "disabled"} data-sweep="1">Sweep (2⚡)</button>`;
     shop.innerHTML = `<div class="shop-head"><span class="shop-title">Power cards</span>${deckWidgetHtml(state.deck_left)}</div>
       <div class="shop-cards">${cards}</div>${sweep}`;
     shop.querySelectorAll("[data-buy]").forEach((el) => el.onclick = () => doBuy(+el.dataset.buy));

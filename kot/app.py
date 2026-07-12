@@ -311,10 +311,7 @@ def create():
     if live:
         return jsonify({"ok": False, "error": "You're still in a live game. Leave it first.",
                         "code": live.code}), 409
-    try:
-        max_players = max(2, min(6, int(data.get("max_players", 4))))
-    except (TypeError, ValueError):
-        max_players = 4
+    max_players = 6   # always the max; there's no lobby-size setting to choose
     is_private = bool(data.get("is_private"))
     passcode = (data.get("passcode", "") or "").strip()[:20] or None
     _leave_waiting_lobbies(sk)

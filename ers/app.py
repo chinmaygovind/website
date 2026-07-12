@@ -281,10 +281,7 @@ def _add_player(game, host=False):
 @require_login
 def create():
     data = request.json or {}
-    try:
-        max_players = max(2, min(8, int(data.get("max_players", 4))))
-    except (TypeError, ValueError):
-        max_players = 4
+    max_players = 8   # always the max; there's no lobby-size setting to choose
     is_private = bool(data.get("is_private"))
     passcode = (data.get("passcode", "") or "").strip()[:20] or None
     game = ErsGame(code=_make_code(), status="waiting", max_players=max_players,

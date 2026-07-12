@@ -54,17 +54,6 @@
     <div class="panel">
       <h2>New game</h2>
       <div class="field">
-        <label>Players</label>
-        <select id="maxp">
-          <option value="2">2 players</option>
-          <option value="3">3 players</option>
-          <option value="4" selected>4 players</option>
-          <option value="5">5 players</option>
-          <option value="6">6 players</option>
-          <option value="8">8 players</option>
-        </select>
-      </div>
-      <div class="field">
         <label><input type="checkbox" id="priv" style="width:auto"/> Private (passcode)</label>
         <input id="pass" placeholder="Passcode" style="margin-top:.4rem;display:none"/>
       </div>
@@ -87,7 +76,6 @@ async function post(url, body){
 }
 async function createGame(){
   const [ok,d] = await post('/create', {
-    max_players: +document.getElementById('maxp').value,
     is_private: document.getElementById('priv').checked,
     passcode: document.getElementById('pass').value });
   ok ? location.href = '/lobby/' + d.code : showErr(d.error || 'Could not create game.');
