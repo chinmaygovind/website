@@ -16,6 +16,8 @@
         --poker: #16295c;
         --whale: #1565c0;
         --racing: #c0182b;
+        --ttr: #6b4226;
+        --ers: #b8860b;
         --link: #1a56ff;
         --tile: clamp(110px, min(14vw, 30vh), 240px);
       }
@@ -54,6 +56,7 @@
         font-size: clamp(1.1rem, 3vw, 2.8rem);
       }
       .welcome-lead { display: block; }
+      .welcome-tail { margin-top: 0.5em; }
       .name {
         display: block;
         color: blue;
@@ -164,6 +167,8 @@
       .modal-poker { border-color: var(--poker); }
       .modal-whale { border-color: var(--whale); }
       .modal-racing { border-color: var(--racing); }
+      .modal-ttr { border-color: var(--ttr); }
+      .modal-ers { border-color: var(--ers); }
       .modal-close {
         position: absolute;
         top: 6px;
@@ -212,6 +217,8 @@
       .modal-poker .pane-title { color: var(--poker); }
       .modal-whale .pane-title { color: var(--whale); }
       .modal-racing .pane-title { color: var(--racing); }
+      .modal-ttr .pane-title { color: var(--ttr); }
+      .modal-ers .pane-title { color: var(--ers); }
       .pane-text {
         font-size: clamp(1.1rem, 2vw, 1.6rem);
         line-height: 1.5;
@@ -293,6 +300,18 @@
         border: 2px solid #000;
         border-radius: 0;
       }
+      .modal-racing .media-img {
+        border: 2px solid var(--racing);
+        border-radius: 0;
+      }
+      .modal-ttr .media-img {
+        border: 2px solid var(--ttr);
+        border-radius: 0;
+      }
+      .modal-ers .media-img {
+        border: 2px solid var(--ers);
+        border-radius: 0;
+      }
       .placeholder {
         flex: 1;
         min-height: 0;
@@ -327,6 +346,7 @@
           row-gap: 0.9rem;
         }
         .welcome { flex: 0 1 auto; min-width: 0; text-align: left; }
+        .welcome-tail { margin-top: 0; }
         .name { font-size: clamp(1.5rem, 7vw, 2.4rem); }
         .contacts {
           flex-basis: 100%;
@@ -382,7 +402,7 @@
       <p class="welcome">
         <span class="welcome-lead">welcome to</span>
         <span class="name">chinmay govind's</span>
-        <span class="welcome-lead">website</span>
+        <span class="welcome-lead welcome-tail">website</span>
       </p>
       <address class="contacts">
         <a class="contact" href="mailto:chinmaygov@gmail.com" aria-label="Email chinmaygov@gmail.com">
@@ -592,10 +612,10 @@
           </div>
           <div class="pane pane-right">
             <div class="media">
-              <div class="placeholder">image coming soon</div>
+              <img class="media-img" src="assets/racing/teamphoto.jpeg" alt="My racing team" />
             </div>
             <div class="media">
-              <div class="placeholder">image coming soon</div>
+              <img class="media-img" src="assets/racing/raceengineering.png" alt="Race engineering work" />
             </div>
           </div>
         </div>
@@ -611,7 +631,7 @@
           <div class="pane pane-left">
             <img class="modal-icon" src="assets/icons/ttr.gif" alt="" aria-hidden="true" />
             <h2 class="pane-title">TTR</h2>
-            <p class="pane-text">This is a clone I made of the hit board game Ticket to Ride. You can make a room to play with friends, or play against AI opponents. Go to <a class="here-link" href="ttr.cgovind.com" target="_blank" rel="noopener">ttr.cgovind.com</a> to play!</p>
+            <p class="pane-text">This is a clone I made of the hit board game Ticket to Ride. You can make a room to play with friends, or play against AI opponents. Go to <a class="here-link" href="https://ttr.cgovind.com" target="_blank" rel="noopener">ttr.cgovind.com</a> to play!</p>
           </div>
           <div class="pane pane-right">
             <div class="media">
@@ -634,14 +654,14 @@
           <div class="pane pane-left">
             <img class="modal-icon" src="assets/icons/ers.gif" alt="" aria-hidden="true" />
             <h2 class="pane-title">ERS</h2>
-            <p class="pane-text">This is a recreation of the card game Egyptian Rat Screw, a card game involving slapping the table. </p>
+            <p class="pane-text">This is a recreation of the card game Egyptian Rat Screw, a card game involving slapping the table. Click <a class="here-link" href="https://ers.cgovind.com" target="_blank" rel="noopener">here</a> to play!</p>
           </div>
           <div class="pane pane-right">
             <div class="media">
               <img class="media-img" src="assets/ers/irl_play.png" alt="Me and my friends playing ERS in high school" />
             </div>
             <div class="media">
-              <img class="media-img" src="assets/ers/gameplay.png" alt="An example game of playing on my site" />
+              <img class="media-img" src="assets/ers/gameplay.png" alt="An example game on my site" />
             </div>
           </div>
         </div>
