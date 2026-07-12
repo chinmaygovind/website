@@ -6,11 +6,16 @@
     <a class="brand small" href="/lobbies"><img src="/static/img/icon.svg" alt="" class="brand-ico"/> King of Tokyo</a>
     <div class="turn-banner" id="turnBanner">Loading…</div>
     <div class="top-right">
-      <button class="icon-btn" id="logToggle" title="Game log">≡</button>
+      <button class="icon-btn" id="logToggle" title="Game log">📜</button>
+      <button class="icon-btn door-btn" id="leaveBtn" title="Leave game">🚪</button>
     </div>
   </header>
 
   <main class="board" id="board">
+    <div class="zone zone-outskirts">
+      <div class="zone-label">Outskirts</div>
+      <div class="monsters" id="monsters"></div>
+    </div>
     <div class="zone zone-tokyo">
       <div class="zone-label">Tokyo</div>
       <div class="tokyo" id="tokyo">
@@ -24,22 +29,24 @@
         </div>
       </div>
     </div>
-    <div class="zone zone-outskirts">
-      <div class="zone-label">Outskirts</div>
-      <div class="monsters" id="monsters"></div>
-    </div>
   </main>
 
-  <aside class="log-panel" id="logPanel">
+  <aside class="log-panel open" id="logPanel">
     <div class="log-head">Game log <button class="icon-btn" id="logClose">✕</button></div>
     <div class="log-feed" id="logFeed"></div>
   </aside>
 
   <section class="controls" id="controls">
-    <div class="dice-tray" id="diceTray"></div>
-    <div class="action-row" id="actionRow"></div>
-    <div class="shop" id="shop"></div>
+    <div class="controls-left">
+      <div class="dice-tray" id="diceTray"></div>
+      <div class="action-row" id="actionRow"></div>
+    </div>
+    <div class="controls-right">
+      <div class="shop" id="shop"></div>
+    </div>
   </section>
+
+  <div class="card-popup" id="cardPopup"></div>
 
   <div class="overlay" id="overlay" style="display:none">
     <div class="overlay-card" id="overlayCard"></div>

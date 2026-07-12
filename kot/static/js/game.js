@@ -24,10 +24,122 @@
   const FACE = { "1": "1", "2": "2", "3": "3", heart: "❤", energy: "⚡", claw: "✷", "?": "" };
   const FACE_CLASS = { "1": "num", "2": "num", "3": "num", heart: "heart", energy: "energy", claw: "claw", "?": "blank" };
 
+  // Stable hash so a given card always gets the same one of the 4 background
+  // looks, while the shop as a whole reads as a varied spread.
+  function bgVarOf(key) {
+    let h = 0;
+    for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0;
+    return Math.abs(h) % 4;
+  }
+
+  // The full face of a power card: emoji/name/cost, type, description. Used
+  // both for shop listings and the hover popup, so they always match.
+  function cardFaceHtml(c, opts) {
+    opts = opts || {};
+    const cls = ["card", c.type === "keep" ? "keep" : "discard", "bgvar-" + bgVarOf(c.id || c.name || "x")];
+    if (opts.buyable) cls.push("buyable");
+    const attr = opts.buyIndex != null ? ` data-buy="${opts.buyIndex}"` : "";
+    return `<div class="${cls.join(" ")}"${attr}>
+      <div class="card-top">
+        <span class="card-emoji">${c.emoji || "🎴"}</span>
+        <span class="card-name">${esc(c.name)}</span>
+        <span class="card-cost">${c.cost}⚡</span>
+      </div>
+      <div class="card-type">${c.type === "keep" ? "Keep" : "Discard"}</div>
+      <div class="card-text">${esc(c.text || "")}</div>
+    </div>`;
+  }
+
+  function deckWidgetHtml(n) {
+    return `<div class="deck-widget" title="${n} left in the deck">
+      <div class="deck-card d3">👑</div>
+      <div class="deck-card d2">👑</div>
+      <div class="deck-card d1">👑</div>
+      <span class="deck-count">${n}</span>
+    </div>`;
+  }
+
+  // ---- card hover popup ------------------------------------------------------
+  let popupHideT;
+  function showCardPopup(anchorEl, card) {
+    clearTimeout(popupHideT);
+    const pop = $("cardPopup");
+    pop.innerHTML = cardFaceHtml(card);
+    pop.classList.add("show");
+    const r = anchorEl.getBoundingClientRect();
+    requestAnimationFrame(() => {
+      const pw = pop.offsetWidth || 252;
+      const ph = pop.offsetHeight || 180;
+      let left = r.right + 10;
+      if (left + pw > window.innerWidth - 8) left = r.left - pw - 10;
+      left = Math.max(8, left);
+      let top = Math.max(8, Math.min(r.top + r.height / 2 - ph / 2, window.innerHeight - ph - 8));
+      pop.style.left = left + "px";
+      pop.style.top = top + "px";
+    });
+  }
+  function hideCardPopup() {
+    popupHideT = setTimeout(() => $("cardPopup").classList.remove("show"), 60);
+  }
+  function wireCardPopups(container) {
+    container.querySelectorAll(".mc-cardrow[data-cid]").forEach((row) => {
+      row.addEventListener("mouseenter", () => {
+        const wrap = row.closest("[data-pid]");
+        if (!wrap) return;
+        const card = ((state.mon[wrap.dataset.pid] || {}).cards || []).find((c) => c.id === row.dataset.cid);
+        if (card) showCardPopup(row, card);
+      });
+      row.addEventListener("mouseleave", hideCardPopup);
+    });
+  }
+
+  // ---- floating status-change indicators -------------------------------------
+  let prevMon = null;
+  function snapshotMon(mon) {
+    const out = {};
+    for (const pid of Object.keys(mon || {})) {
+      const m = mon[pid];
+      out[pid] = { hp: m.hp, vp: m.vp, energy: m.energy };
+    }
+    return out;
+  }
+  function animateStatChanges(before, after) {
+    if (!before) return;
+    for (const pid of Object.keys(after)) {
+      const b = before[pid];
+      if (!b) continue;
+      animateStatDelta(pid, "hp", "❤", b.hp, after[pid].hp);
+      animateStatDelta(pid, "vp", "★", b.vp, after[pid].vp);
+      animateStatDelta(pid, "energy", "⚡", b.energy, after[pid].energy);
+    }
+  }
+  function animateStatDelta(pid, key, symbol, before, after) {
+    const delta = after - before;
+    if (!delta) return;
+    const card = document.querySelector(`.mon-card[data-pid="${pid}"]`);
+    if (!card) return;
+    const anchor = key === "hp" ? card.querySelector(".mc-hpbar")
+      : key === "vp" ? card.querySelector(".stat-vp") : card.querySelector(".stat-en");
+    if (!anchor) return;
+    const cardR = card.getBoundingClientRect();
+    const anchorR = anchor.getBoundingClientRect();
+    const span = document.createElement("span");
+    span.className = "stat-float " + (delta > 0 ? "up" : "down");
+    span.textContent = (delta > 0 ? "+" : "") + delta + symbol;
+    span.style.left = (anchorR.left - cardR.left + anchorR.width / 2) + "px";
+    span.style.top = (anchorR.top - cardR.top) + "px";
+    card.appendChild(span);
+    setTimeout(() => span.remove(), 1300);
+    anchor.classList.remove("stat-flash");
+    void anchor.offsetWidth;
+    anchor.classList.add("stat-flash");
+  }
+
   // ---- socket wiring -------------------------------------------------------
   socket.on("connect", () => socket.emit("join_game", { code: CODE }));
   socket.on("game_state", (d) => {
     Object.assign(ROSTER, d.roster || {});
+    const before = prevMon;
     state = d.state;
     if (state.seq !== lastSeq) {
       // Fresh dice roll resets the local keep selection to match the server.
@@ -35,6 +147,8 @@
       lastSeq = state.seq;
     }
     render();
+    animateStatChanges(before, state.mon);
+    prevMon = snapshotMon(state.mon);
   });
   socket.on("act_error", (d) => toast(d.error || "Not allowed."));
 
@@ -86,44 +200,30 @@
     b.className = "turn-banner" + (isMyTurn() ? " mine" : "");
   }
 
-  function monChip(pid) {
+  // Full monster card: stats on the left, that monster's owned power cards as
+  // a vertical list on the right. Shared by the Tokyo slot and the Outskirts
+  // grid so a monster only ever appears in one place.
+  function monCardHtml(pid) {
     const m = state.mon[pid];
     if (!m) return "";
-    return `<span class="mon-chip" style="--c:${colorOf(pid)}">${esc(nameOf(pid))}</span>`;
-  }
-
-  function renderTokyo() {
-    const t = state.tokyo;
-    $("slot-bay").style.display = state.use_bay ? "" : "none";
-    $("city-mon").innerHTML = t.city ? bigMon(t.city) : `<div class="slot-empty">empty</div>`;
-    $("bay-mon").innerHTML = t.bay ? bigMon(t.bay) : `<div class="slot-empty">empty</div>`;
-  }
-  function bigMon(pid) {
-    const m = state.mon[pid];
-    return `<div class="big-mon" style="--c:${colorOf(pid)}">
-      <div class="bm-name">${dispName(pid)}</div>
-      <div class="bm-stats"><span class="hp">❤ ${m.hp}</span> <span class="vp">★ ${m.vp}</span></div>
-    </div>`;
-  }
-
-  function renderMonsters() {
-    const order = state.players;
-    $("monsters").innerHTML = order.map((pid) => {
-      const m = state.mon[pid];
-      const inTokyo = state.tokyo.city === pid ? "city" : state.tokyo.bay === pid ? "bay" : null;
-      const cls = ["mon-card"];
-      if (!m.alive) cls.push("dead");
-      if (state.current === pid && state.phase !== "ended") cls.push("active");
-      if (pid === MY_PID) cls.push("me");
-      const hpPct = Math.max(0, Math.round(100 * m.hp / m.maxhp));
-      const toks = tokenPills(m.tokens);
-      const cards = (m.cards || []).map((c) =>
-        `<span class="own-card" title="${esc(c.name)}: ${esc(c.text || "")}">${c.emoji || "🎴"} ${esc(c.name)}</span>`).join("");
-      return `<div class="${cls.join(" ")}" style="--c:${colorOf(pid)}">
+    const cls = ["mon-card"];
+    if (!m.alive) cls.push("dead");
+    if (state.current === pid && state.phase !== "ended") cls.push("active");
+    if (pid === MY_PID) cls.push("me");
+    const hpPct = Math.max(0, Math.round(100 * m.hp / m.maxhp));
+    const toks = tokenPills(m.tokens);
+    const cards = m.cards || [];
+    const cardList = cards.length
+      ? cards.map((c) => `<div class="mc-cardrow" data-cid="${esc(c.id)}">${c.emoji || "🎴"} ${esc(c.name)}</div>`).join("")
+      : `<div class="mc-cardlist-empty">—</div>`;
+    // The Tokyo/Bay badge lives on the slot label now, not the card itself,
+    // since an occupant only ever renders inside that slot (never duplicated
+    // in the Outskirts grid), so the badge would just repeat the slot label.
+    return `<div class="${cls.join(" ")}" style="--c:${colorOf(pid)}" data-pid="${pid}">
+      <div class="mc-left">
         <div class="mc-head">
           <span class="mc-dot"></span>
           <span class="mc-name">${dispName(pid)}</span>
-          ${inTokyo ? `<span class="mc-tokyo">${inTokyo === "city" ? "TOKYO" : "BAY"}</span>` : ""}
           ${!m.alive ? '<span class="mc-ko">KO</span>' : ""}
         </div>
         <div class="mc-sub">${esc((ROSTER[pid] && ROSTER[pid].name) || "")}${pid === MY_PID ? " (you)" : ""}</div>
@@ -133,9 +233,27 @@
           <span class="stat-en">⚡ ${m.energy}</span>
         </div>
         ${toks ? `<div class="mc-tokens">${toks}</div>` : ""}
-        ${cards ? `<div class="mc-cards">${cards}</div>` : ""}
-      </div>`;
-    }).join("");
+      </div>
+      <div class="mc-cardlist${cards.length ? "" : " empty"}">${cardList}</div>
+    </div>`;
+  }
+
+  function renderTokyo() {
+    const t = state.tokyo;
+    $("slot-bay").style.display = state.use_bay ? "" : "none";
+    $("city-mon").innerHTML = t.city ? monCardHtml(t.city) : `<div class="slot-empty">empty</div>`;
+    $("bay-mon").innerHTML = t.bay ? monCardHtml(t.bay) : `<div class="slot-empty">empty</div>`;
+    wireCardPopups($("city-mon"));
+    wireCardPopups($("bay-mon"));
+  }
+
+  // Whoever's in Tokyo is drawn inside the Tokyo slot only, not duplicated
+  // in the Outskirts grid below.
+  function renderMonsters() {
+    const tokyoOccupants = new Set([state.tokyo.city, state.tokyo.bay].filter(Boolean));
+    const el = $("monsters");
+    el.innerHTML = state.players.filter((pid) => !tokyoOccupants.has(pid)).map(monCardHtml).join("");
+    wireCardPopups(el);
   }
 
   function tokenPills(tokens) {
@@ -171,8 +289,7 @@
     } else if (isSpectator()) {
       html = `<span class="spectate">Spectating - ${dispName(state.current)}'s turn</span>`;
     } else if (state.current !== MY_PID) {
-      html = `<span class="spectate">Waiting for ${dispName(state.current)}…</span>
-              <button class="btn ghost sm" data-a="leave">Leave</button>`;
+      html = `<span class="spectate">Waiting for ${dispName(state.current)}…</span>`;
     } else if (state.phase === "rolling") {
       const first = state.roll_num === 0;
       const canRoll = first || state.rolls_left > 0;
@@ -192,7 +309,6 @@
       else if (a === "end") doEndTurn();
       else if (a === "yield-leave") doYield(true);
       else if (a === "yield-stay") doYield(false);
-      else if (a === "leave") doLeave();
       else if (a.startsWith("card:")) fireCard(a.slice(5));
     });
   }
@@ -251,22 +367,12 @@
     const cards = (state.shop || []).map((c, i) => {
       if (!c) return `<div class="card empty">sold out</div>`;
       const afford = myEnergy >= c.cost;
-      const cls = ["card", c.type === "keep" ? "keep" : "discard"];
-      if (canBuy && afford) cls.push("buyable");
-      return `<div class="${cls.join(" ")}" ${canBuy && afford ? `data-buy="${i}"` : ""}>
-        <div class="card-top">
-          <span class="card-emoji">${c.emoji || "🎴"}</span>
-          <span class="card-name">${esc(c.name)}</span>
-          <span class="card-cost">${c.cost}⚡</span>
-        </div>
-        <div class="card-type">${c.type === "keep" ? "Keep" : "Discard"}</div>
-        <div class="card-text">${esc(c.text || "")}</div>
-      </div>`;
+      return cardFaceHtml(c, { buyable: canBuy && afford, buyIndex: canBuy && afford ? i : null });
     }).join("");
     const sweep = canBuy
       ? `<button class="btn secondary sweep" ${myEnergy >= 2 ? "" : "disabled"} data-sweep="1">Sweep (2⚡)</button>`
       : "";
-    shop.innerHTML = `<div class="shop-head">Power cards <span class="deck-left">${state.deck_left} left in deck</span></div>
+    shop.innerHTML = `<div class="shop-head"><span class="shop-title">Power cards</span>${deckWidgetHtml(state.deck_left)}</div>
       <div class="shop-cards">${cards}</div>${sweep}`;
     shop.querySelectorAll("[data-buy]").forEach((el) => el.onclick = () => doBuy(+el.dataset.buy));
     const sw = shop.querySelector("[data-sweep]"); if (sw) sw.onclick = doSweep;
@@ -312,6 +418,7 @@
   }
   $("logToggle").onclick = () => $("logPanel").classList.toggle("open");
   $("logClose").onclick = () => $("logPanel").classList.remove("open");
+  $("leaveBtn").onclick = doLeave;
 
   // Keyboard: R roll, Space resolve/end, 1-6 toggle dice.
   document.addEventListener("keydown", (e) => {
