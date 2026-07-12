@@ -14,8 +14,8 @@ does hooks in here through a small interface it calls by name:
   card_action(...)     a manual ability the active monster fires this turn
 
 Several highly interactive cards (Mimic, Psychic Probe, Made in a Lab,
-Opportunist, Parasitic Tentacles, Healing Ray, Metamorph) are best-effort: they
-buy and sit in play but have no automatic effect, since they need live table
+Opportunist, Parasitic Tentacles, Healing Ray) are best-effort: they buy and
+sit in play but have no automatic effect, since they need live table
 negotiation this server doesn't model. Everything else is fully implemented.
 """
 
@@ -572,6 +572,17 @@ def card_action(state, pid, card, choice):
         gl._log(state, f"{gl._nm(pid)} twists a die to {f}.", pid=pid, kind="sys")
         gl._bump(state)
 
+    elif key == "background_dweller":
+        if not rolling:
+            return
+        i = _die_index(state, choice)
+        if i is None or state["dice"][i] != "3":
+            return
+        rng = random.Random()
+        state["dice"][i] = rng.choice(gl.FACES)
+        gl._log(state, f"{gl._nm(pid)} freely rerolls a [3] (Background Dweller).", pid=pid, kind="sys")
+        gl._bump(state)
+
     elif key == "stretchy":
         if not rolling or m["energy"] < 2:
             return
@@ -614,6 +625,21 @@ def card_action(state, pid, card, choice):
         gl.spend_energy(state, pid, 2)
         _mem(state, pid)["wings"] = True
         gl._log(state, f"{gl._nm(pid)} takes wing - damage negated until its next turn.", pid=pid, kind="sys")
+        gl._bump(state)
+
+    elif key == "metamorph":
+        if state["phase"] != "buying":
+            return
+        cid = choice.get("card") if isinstance(choice, dict) else None
+        if not cid or cid not in m["cards"]:
+            return
+        C = CATALOG.get(cid)
+        if not C:
+            return
+        m["cards"].remove(cid)
+        state["discard"].append(cid)
+        gl.gain_energy(state, pid, C["cost"])
+        gl._log(state, f"{gl._nm(pid)} morphs {C['name']} back into {C['cost']}⚡.", pid=pid, kind="energy")
         gl._bump(state)
 
 

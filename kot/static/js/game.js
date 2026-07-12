@@ -321,6 +321,15 @@
     } else if (id === "plot_twist" || id === "stretchy") {
       const i = askDie("Change which die?"); if (i == null) return;
       const f = askFace(); if (!f) return; choice = { index: i, face: f };
+    } else if (id === "background_dweller") {
+      const i = askDie("Reroll which [3] die?"); if (i == null) return; choice = { index: i };
+    } else if (id === "metamorph") {
+      const mine = (state.mon[MY_PID].cards || []);
+      if (!mine.length) return;
+      const list = mine.map((c, i) => `${i + 1}. ${c.name} (${c.cost}⚡)`).join("\n");
+      const v = prompt("Discard which card for its energy back?\n" + list); if (v == null) return;
+      const idx = parseInt(v, 10) - 1; if (idx < 0 || idx >= mine.length) return;
+      choice = { card: mine[idx].id };
     }
     doCardAction(id, choice);
   }
@@ -357,6 +366,8 @@
     smoke_cloud: { label: "Smoke Cloud: +1 reroll", when: (s) => s.phase === "rolling" },
     rapid_healing: { label: "Rapid Healing: heal 1 (2⚡)", when: (s) => (s.mon[MY_PID].energy >= 2 && s.mon[MY_PID].hp < s.mon[MY_PID].maxhp) },
     wings: { label: "Wings: negate damage (2⚡)", when: (s) => s.mon[MY_PID].energy >= 2 },
+    background_dweller: { label: "Background Dweller: reroll a [3]", when: (s) => s.phase === "rolling" && s.roll_num > 0 && (s.dice || []).includes("3") },
+    metamorph: { label: "Metamorph: discard a card for ⚡", when: (s) => s.phase === "buying" && (s.mon[MY_PID].cards || []).length > 0 },
   };
 
   function renderShop() {

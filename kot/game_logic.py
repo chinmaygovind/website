@@ -183,6 +183,7 @@ def deal_damage(state, target, n, attacker=None):
     rng = random.Random()
     n = _cards().adjust_incoming(state, target, n, attacker, rng)
     if n <= 0:
+        _bump(state)          # a mitigation card (Camouflage/Armor Plating/Wings) still changed the game
         return 0
     m["hp"] = max(0, m["hp"] - n)
     _bump(state)

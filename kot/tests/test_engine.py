@@ -202,6 +202,16 @@ def test_camouflage_mitigates(monkeypatch):
     assert state["mon"][b]["hp"] == 10
 
 
+def test_camouflage_full_mitigation_still_bumps_seq(monkeypatch):
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][b]["cards"].append("camouflage")
+    monkeypatch.setattr(random.Random, "choice", lambda self, seq: "heart")
+    seq_before = state["seq"]
+    gl.deal_damage(state, b, 1, attacker=a)
+    assert state["seq"] > seq_before      # fully-absorbed damage still changed the game
+
+
 def test_smoke_cloud_extra_reroll():
     state, pids = fresh(2)
     a = pids[0]
@@ -220,3 +230,46 @@ def test_eater_of_the_dead():
     gl.deal_damage(state, c, 100, attacker=b)
     assert not state["mon"][c]["alive"]
     assert state["mon"][a]["vp"] == 3     # a feasts
+
+
+def test_background_dweller_rerolls_a_three(monkeypatch):
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("background_dweller")
+    force_dice(state, ["3", "1", "2", "2", "2", "2"])
+    monkeypatch.setattr(random.Random, "choice", lambda self, seq: "heart")
+    gl.card_action(state, a, "background_dweller", {"index": 0})
+    assert state["dice"][0] == "heart"    # the [3] got rerolled for free
+
+
+def test_background_dweller_refuses_non_three():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("background_dweller")
+    force_dice(state, ["3", "1", "2", "2", "2", "2"])
+    gl.card_action(state, a, "background_dweller", {"index": 1})   # index 1 is a "1"
+    assert state["dice"][1] == "1"        # untouched - not a [3]
+
+
+def test_metamorph_discards_for_energy_back():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"] += ["metamorph", "camouflage"]   # camouflage costs 3
+    state["phase"] = "buying"
+    state["mon"][a]["energy"] = 0
+    gl.card_action(state, a, "metamorph", {"card": "camouflage"})
+    assert "camouflage" not in state["mon"][a]["cards"]
+    assert "camouflage" in state["discard"]
+    assert "metamorph" in state["mon"][a]["cards"]     # only the chosen card is discarded
+    assert state["mon"][a]["energy"] == 3
+
+
+def test_metamorph_refuses_unowned_card():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("metamorph")
+    state["phase"] = "buying"
+    state["mon"][a]["energy"] = 0
+    gl.card_action(state, a, "metamorph", {"card": "camouflage"})   # never owned
+    assert state["mon"][a]["energy"] == 0
+    assert state["mon"][a]["cards"] == ["metamorph"]
