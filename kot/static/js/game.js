@@ -23,17 +23,13 @@
   const dispName = (pid) => `${emojiOf(pid)} ${esc(nameOf(pid))}`;
 
   // Font Awesome icons for heart/energy so they render identically on iPhone
-  // and desktop, instead of platform-inconsistent emoji glyphs. Font Awesome
-  // Free has no real "claw" mark (fa-paw reads as a friendly animal print,
-  // not an attack), so claw is a hand-drawn scratch-mark SVG instead.
-  const CLAW_SVG = `<svg class="claw-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-    stroke-width="2.6" stroke-linecap="round"><path d="M4 20 Q7 12 8 4"/><path d="M11 20 Q13.5 12 14 4"/>
-    <path d="M18 20 Q19.5 12 20 4"/></svg>`;
+  // and desktop, instead of platform-inconsistent emoji glyphs. Claw stays
+  // the original "✷" mark - preferred over both later icon attempts.
   const FACE = {
     "1": "1", "2": "2", "3": "3",
     heart: '<i class="fa-solid fa-heart"></i>',
     energy: '<i class="fa-solid fa-bolt"></i>',
-    claw: CLAW_SVG,
+    claw: "✷",
     "?": "",
   };
   const FACE_CLASS = { "1": "num", "2": "num", "3": "num", heart: "heart", energy: "energy", claw: "claw", "?": "blank" };
@@ -103,10 +99,10 @@
       <div class="card-top">
         <span class="card-emoji">${c.emoji || "🎴"}</span>
         <span class="card-name">${esc(c.name)}</span>
-        <span class="card-cost">${c.cost}⚡</span>
       </div>
       <div class="card-type">${c.type === "keep" ? "Keep" : "Discard"}</div>
       <div class="card-text">${esc(c.text || "")}</div>
+      <span class="card-cost">${c.cost}⚡</span>
     </div>`;
   }
 
@@ -366,6 +362,21 @@
         ${canClick ? "" : "disabled"} data-i="${i}">${inner}</button>`;
     }).join("");
     tray.querySelectorAll(".die").forEach((el) => el.onclick = () => toggleKeep(+el.dataset.i));
+    // Once a die's reel animation genuinely finishes, collapse its multi-row
+    // reel back down to a single plain face. The CSS leaves the reel parked
+    // on the right (real) row via the animation's end state either way, but
+    // without this the multi-row DOM lingers indefinitely - swapping it out
+    // for one clean node removes any doubt about what's actually showing.
+    tray.querySelectorAll(".die.rolling .die-reel").forEach((reel) => {
+      reel.addEventListener("animationend", () => {
+        const viewport = reel.parentElement;
+        const dieEl = viewport && viewport.parentElement;
+        if (!dieEl || !dieEl.isConnected) return;
+        const idx = +dieEl.dataset.i;
+        viewport.outerHTML = dieFaceHtml(state.dice[idx]);
+        dieEl.classList.remove("rolling");
+      }, { once: true });
+    });
   }
 
   function renderActions() {

@@ -14,26 +14,28 @@
     <div class="panel">
       <h2>Open games</h2>
       <div class="error" id="err"></div>
-      {% if games %}
-      <div class="game-list">
-        {% for g in games %}
-        <div class="game-item">
-          <div>
-            <span class="code">{{ g.code }}</span>
-            <div class="meta">{{ g.player_count }}/{{ g.max_players }} monsters</div>
-          </div>
-          <div style="display:flex;align-items:center;gap:.8rem">
-            <div class="avatars">
-              {% for p in g.players %}<div class="av" style="background:{{ p.color }}">{{ p.name[0]|upper }}</div>{% endfor %}
+      <div id="openGamesList">
+        {% if games %}
+        <div class="game-list">
+          {% for g in games %}
+          <div class="game-item">
+            <div>
+              <span class="code">{{ g.code }}</span>
+              <div class="meta">{{ g.player_count }}/{{ g.max_players }} monsters</div>
             </div>
-            <button class="btn" onclick="joinGame('{{ g.code }}')">Join</button>
+            <div style="display:flex;align-items:center;gap:.8rem">
+              <div class="avatars">
+                {% for p in g.players %}<div class="av" style="background:{{ p.color }}">{{ p.name[0]|upper }}</div>{% endfor %}
+              </div>
+              <button class="btn" onclick="joinGame('{{ g.code }}')">Join</button>
+            </div>
           </div>
+          {% endfor %}
         </div>
-        {% endfor %}
+        {% else %}
+        <div class="empty">No open games right now - start one!</div>
+        {% endif %}
       </div>
-      {% else %}
-      <div class="empty">No open games right now - start one!</div>
-      {% endif %}
 
       <h2 style="margin-top:1.6rem">Join by code</h2>
       <div class="row">
@@ -41,20 +43,20 @@
         <button class="btn secondary" style="flex:0 0 auto" onclick="joinByCode()">Join</button>
       </div>
 
-      {% if live %}
-      <h2 style="margin-top:1.6rem">Watch live games</h2>
-      <div class="game-list">
-        {% for g in live %}
-        <div class="game-item">
-          <div>
-            <span class="code">{{ g.code }}</span>
-            <div class="meta"><span class="live-dot"></span> {{ g.player_count }} playing</div>
+      <div id="liveGamesSection" style="{{ '' if live else 'display:none' }}">
+        <h2 style="margin-top:1.6rem">Watch live games</h2>
+        <div class="game-list" id="liveGamesList">
+          {% for g in live %}
+          <div class="game-item">
+            <div>
+              <span class="code">{{ g.code }}</span>
+              <div class="meta"><span class="live-dot"></span> {{ g.player_count }} playing</div>
+            </div>
+            <a class="btn secondary" href="/game/{{ g.code }}">Watch</a>
           </div>
-          <a class="btn secondary" href="/game/{{ g.code }}">Watch</a>
+          {% endfor %}
         </div>
-        {% endfor %}
       </div>
-      {% endif %}
     </div>
 
     <div class="panel">
@@ -70,6 +72,7 @@
 </div>
 {% endblock %}
 {% block scripts %}
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script>
 const err = document.getElementById('err');
 function showErr(m){ err.textContent = m; err.classList.add('show'); }
@@ -100,5 +103,42 @@ async function joinByCode(){
     if(pc !== null) joinGame(code, pc);
   } else showErr(d.error || 'Could not join.');
 }
+
+// ---- live-updating lists: no reload needed to see new/started/ended games ----
+const esc = (s) => (s + '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function renderOpenGames(games){
+  const el = document.getElementById('openGamesList');
+  if (!games.length) { el.innerHTML = '<div class="empty">No open games right now - start one!</div>'; return; }
+  el.innerHTML = '<div class="game-list">' + games.map((g) => {
+    const avatars = g.players.map((p) => `<div class="av" style="background:${esc(p.color)}">${esc((p.name[0]||'?').toUpperCase())}</div>`).join('');
+    return `<div class="game-item">
+      <div>
+        <span class="code">${esc(g.code)}</span>
+        <div class="meta">${g.player_count}/${g.max_players} monsters</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:.8rem">
+        <div class="avatars">${avatars}</div>
+        <button class="btn" onclick="joinGame('${esc(g.code)}')">Join</button>
+      </div>
+    </div>`;
+  }).join('') + '</div>';
+}
+function renderLiveGames(live){
+  const section = document.getElementById('liveGamesSection');
+  section.style.display = live.length ? '' : 'none';
+  document.getElementById('liveGamesList').innerHTML = live.map((g) => `<div class="game-item">
+    <div>
+      <span class="code">${esc(g.code)}</span>
+      <div class="meta"><span class="live-dot"></span> ${g.player_count} playing</div>
+    </div>
+    <a class="btn secondary" href="/game/${esc(g.code)}">Watch</a>
+  </div>`).join('');
+}
+const socket = io();
+socket.on('connect', () => socket.emit('join_lobbies'));
+socket.on('lobbies_update', (d) => {
+  renderOpenGames(d.games || []);
+  renderLiveGames(d.live || []);
+});
 </script>
 {% endblock %}

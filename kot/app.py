@@ -268,19 +268,14 @@ def index():
 @app.route("/lobbies")
 @require_login
 def lobbies():
-    open_games = KotGame.query.filter_by(status="waiting", is_private=False)\
-        .order_by(KotGame.created_at.desc()).limit(30).all()
-    games = [g.to_lobby_dict() for g in open_games if len(g.players) < g.max_players]
-    live_games = KotGame.query.filter_by(status="playing", is_private=False)\
-        .order_by(KotGame.last_activity_at.desc()).limit(20).all()
-    live = [g.to_lobby_dict() for g in live_games]
+    payload = _lobbies_payload()
     # Surface the game this session is already in so they can hop back.
     mine = None
     for p in _my_players(get_session_key()):
         mine = {"code": p.game.code, "status": p.game.status}
         break
-    return render_template("lobbies.html", games=games, live=live, user=get_current_user(),
-                           name=get_effective_name(), mine=mine)
+    return render_template("lobbies.html", games=payload["games"], live=payload["live"],
+                           user=get_current_user(), name=get_effective_name(), mine=mine)
 
 
 def _add_player(game, host=False):
@@ -321,6 +316,7 @@ def create():
     db.session.add(game)
     db.session.commit()
     _add_player(game, host=True)
+    _broadcast_lobbies()
     return jsonify({"ok": True, "code": game.code})
 
 
@@ -348,6 +344,7 @@ def join():
             return jsonify({"ok": False, "error": "Wrong passcode."}), 403
         _leave_waiting_lobbies(sk)
         _add_player(game)
+        _broadcast_lobbies()
     return jsonify({"ok": True, "code": game.code})
 
 
@@ -424,6 +421,22 @@ def _broadcast_lobby(game):
                                    "status": game.status}, room="lobby:" + game.code)
 
 
+def _lobbies_payload():
+    open_games = KotGame.query.filter_by(status="waiting", is_private=False)\
+        .order_by(KotGame.created_at.desc()).limit(30).all()
+    games = [g.to_lobby_dict() for g in open_games if len(g.players) < g.max_players]
+    live_games = KotGame.query.filter_by(status="playing", is_private=False)\
+        .order_by(KotGame.last_activity_at.desc()).limit(20).all()
+    live = [g.to_lobby_dict() for g in live_games]
+    return {"games": games, "live": live}
+
+
+def _broadcast_lobbies():
+    """Push the open/live game lists to anyone sitting on /lobbies, so a new
+    game (or one filling up, starting, or ending) shows up without a reload."""
+    socketio.emit("lobbies_update", _lobbies_payload(), room="lobbies")
+
+
 def _delete_game(game):
     for p in list(game.players):
         db.session.delete(p)
@@ -464,6 +477,13 @@ def on_join_lobby(data):
         _broadcast_lobby(game)
 
 
+@socketio.on("join_lobbies")
+def on_join_lobbies():
+    """The /lobbies page joins this room so it gets a fresh open/live game
+    list pushed to it whenever anything changes, instead of needing a reload."""
+    join_room("lobbies")
+
+
 @socketio.on("join_game")
 def on_join_game(data):
     code = (data or {}).get("code", "").upper()
@@ -491,6 +511,7 @@ def on_kick_player(data):
         db.session.delete(target)
         db.session.commit()
         _broadcast_lobby(game)
+        _broadcast_lobbies()
 
 
 @socketio.on("leave_lobby")
@@ -511,11 +532,13 @@ def on_leave_lobby(data):
             socketio.emit("lobby_closed", {"reason": "Everyone left the lobby."},
                           room="lobby:" + code)
             _delete_game(game)
+            _broadcast_lobbies()
             return
         if was_host and not any(p.is_host for p in remaining):
             remaining[0].is_host = True
             db.session.commit()
         _broadcast_lobby(game)
+        _broadcast_lobbies()
 
 
 @socketio.on("start_game")
@@ -544,6 +567,7 @@ def on_start_game(data):
         db.session.commit()
         socketio.emit("go_to_game", {"code": code}, room="lobby:" + code)
         _broadcast(game)
+        _broadcast_lobbies()
 
 
 # ---------------------------------------------------------------------------
@@ -723,6 +747,7 @@ def _finalize(game, state):
 
     db.session.add(game)
     db.session.commit()
+    _broadcast_lobbies()
 
 
 # ---------------------------------------------------------------------------
@@ -735,6 +760,7 @@ def _stale_game_cleanup():
 
     def _run():
         with app.app_context():
+            changed = False
             now = datetime.utcnow()
             playing_cutoff = now - PLAYING_LIMIT
             stale_playing = KotGame.query.filter(
@@ -745,6 +771,7 @@ def _stale_game_cleanup():
             for game in stale_playing:
                 game.status = "ended"
                 db.session.commit()
+                changed = True
 
             waiting_cutoff = now - WAITING_LIMIT
             for game in KotGame.query.filter_by(status="waiting").all():
@@ -753,6 +780,10 @@ def _stale_game_cleanup():
                     socketio.emit("lobby_closed", {"reason": "Lobby expired."},
                                   room="lobby:" + game.code)
                     _delete_game(game)
+                    changed = True
+
+            if changed:
+                _broadcast_lobbies()
 
     _run()
     while True:
