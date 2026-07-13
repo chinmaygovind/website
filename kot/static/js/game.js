@@ -22,13 +22,18 @@
   const emojiOf = (pid) => MONSTER_EMOJI[nameOf(pid)] || "👹";
   const dispName = (pid) => `${emojiOf(pid)} ${esc(nameOf(pid))}`;
 
-  // Font Awesome icons for heart/energy/claw so they render identically on
-  // iPhone and desktop, instead of platform-inconsistent emoji glyphs.
+  // Font Awesome icons for heart/energy so they render identically on iPhone
+  // and desktop, instead of platform-inconsistent emoji glyphs. Font Awesome
+  // Free has no real "claw" mark (fa-paw reads as a friendly animal print,
+  // not an attack), so claw is a hand-drawn scratch-mark SVG instead.
+  const CLAW_SVG = `<svg class="claw-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2.6" stroke-linecap="round"><path d="M4 20 Q7 12 8 4"/><path d="M11 20 Q13.5 12 14 4"/>
+    <path d="M18 20 Q19.5 12 20 4"/></svg>`;
   const FACE = {
     "1": "1", "2": "2", "3": "3",
     heart: '<i class="fa-solid fa-heart"></i>',
     energy: '<i class="fa-solid fa-bolt"></i>',
-    claw: '<i class="fa-solid fa-paw"></i>',
+    claw: CLAW_SVG,
     "?": "",
   };
   const FACE_CLASS = { "1": "num", "2": "num", "3": "num", heart: "heart", energy: "energy", claw: "claw", "?": "blank" };
