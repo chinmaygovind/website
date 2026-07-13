@@ -342,7 +342,7 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
       centered; a card appears = the box goes back to the full 230px to make
       room on the right, sliding the avatar left to match - same height
       either way, purely a horizontal shift. */
-.slot-mon .mon-card { top: 42px; }
+.slot-mon .mon-card { top: 34px; }
 .slot-mon .mon-card.no-cards { width: 176px; }
 .slot-mon .mc-cardlist.empty { display: none; }
 .slot-empty { color: #fff; opacity: .8; font-style: italic; font-size: .95rem; }
@@ -364,8 +364,12 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
 
 /* monster "cards" - deliberately no bounding box: a big emoji model, stats
    stacked below it, owned power cards in a vertical list to the right */
+/* its own scrollable region (capped height) instead of relying on scrolling
+   the whole board past the Tokyo circles - keeps Tokyo in view while you
+   browse a full roster of outskirts monsters */
 .monsters { display: flex; flex-wrap: wrap; gap: 1.6rem; justify-content: center; position: relative; z-index: 1;
-  width: 100%; max-width: 1100px; }
+  width: 100%; max-width: 1100px; max-height: 380px; overflow-y: auto; overscroll-behavior: contain;
+  padding: .2rem .3rem .6rem; }
 .mon-card { width: 230px; position: relative; display: flex; align-items: flex-start; gap: .5rem; }
 .mon-card:not(.dead):hover .mc-avatar { transform: translateY(-2px); }
 .mon-card.dead { opacity: .42; filter: grayscale(.6); }
@@ -456,7 +460,9 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
 .shop-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem;
   font-family: var(--poster); text-transform: uppercase; letter-spacing: .08em;
   color: var(--accent-soft); font-size: .9rem; margin-bottom: .4rem; flex: 0 0 auto; }
-.shop-head-right { display: flex; align-items: center; gap: .5rem; flex: 0 0 auto; }
+/* a little clear of the panel's right edge - the deck widget's fanned cards
+   overflow their own box slightly, so flush against the edge clipped them */
+.shop-head-right { display: flex; align-items: center; gap: .5rem; flex: 0 0 auto; margin-right: .4rem; }
 
 /* deck: a little stack of card backs standing in for the plain "N left" text */
 .deck-widget { position: relative; width: 38px; height: 42px; flex: 0 0 auto; cursor: default; }
@@ -530,8 +536,13 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
 .card-popup { position: fixed; z-index: 70; pointer-events: none; opacity: 0;
   transform: translateY(6px) scale(.96); transition: opacity .12s ease, transform .12s ease;
   filter: drop-shadow(0 14px 30px rgba(0,0,0,.55)); }
-.card-popup.show { opacity: 1; transform: translateY(0) scale(1); }
+.card-popup.show { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
 .card-popup .card { width: 240px; cursor: default; }
+.card-popup-close { position: absolute; top: -9px; right: -9px; z-index: 1; width: 24px; height: 24px;
+  border-radius: 50%; background: #241d2e; color: var(--accent-soft); border: 2px solid var(--accent);
+  font-size: .7rem; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 6px rgba(0,0,0,.5); }
+.card-popup-close:hover { background: var(--accent); color: #3a2606; }
 
 /* log panel (slide-in from the right, below the header so header buttons stay usable) */
 .log-panel { position: fixed; top: 56px; right: 0; bottom: 0; width: 320px; max-width: 82vw; z-index: 20;
@@ -604,7 +615,13 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
 .mobile-tab { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 1px; border: none; background: transparent; color: var(--cream); opacity: .6;
   font-family: var(--display); font-size: .64rem; text-transform: uppercase; letter-spacing: .04em; cursor: pointer; }
-.mobile-tab-icon { font-size: 1.35rem; line-height: 1; }
+.mobile-tab-icon { font-size: 1.35rem; line-height: 1; position: relative; }
+/* alert badge on the Dice tab while it's this player's call to stay/leave Tokyo */
+.mobile-yield-badge { position: absolute; top: -4px; right: -8px; background: var(--hot); color: #fff;
+  font-family: var(--display); font-size: .55rem; font-weight: 700; line-height: 1; border-radius: 999px;
+  width: 13px; height: 13px; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,.5); animation: yieldPulse 1s ease-in-out infinite; }
+@keyframes yieldPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.2); } }
 .mobile-tab.active { color: var(--accent); opacity: 1; }
 
 /* ---- mobile ---- */
@@ -613,13 +630,13 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
   .nav .brand { font-size: 1.25rem; }
   .nav-user { width: 100%; order: 3; font-size: .82rem; }
   /* the brand is hidden here, so don't reserve an equal-width empty column
-     for it - give the banner all the space instead of truncating it */
-  .game-top { grid-template-columns: auto 1fr auto; gap: .5rem; }
-  /* smaller so it clears the notch/Dynamic Island cutout on iPhones running
-     the installed PWA (which draws under it) */
+     for it - give the banner all the space instead of truncating it. Pushed
+     down by the safe-area inset so the Dynamic Island / status bar (time,
+     wifi, battery) doesn't sit on top of it in the installed PWA, which
+     draws under that cutout by default. */
+  .game-top { grid-template-columns: auto 1fr auto; gap: .5rem; height: auto; min-height: 56px;
+    padding-top: max(0px, env(safe-area-inset-top)); }
   .turn-banner { font-size: .74rem; }
-  /* nudge the icon buttons up and further into the corner, clear of the cutout */
-  .top-right { transform: translate(3px, -3px); }
   .tokyo-circle.city { width: 220px; height: 220px; }
   .tokyo-circle.bay { width: 190px; height: 190px; }
   .circle-label { font-size: 1.1rem; }
@@ -651,6 +668,12 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
   .die .die-face, .die.heart .die-face, .die.energy .die-face { font-size: 1.25rem; }
   .die .die-face i { font-size: 1rem; }
   .die-face-viewport, .die-reel .die-face { height: 28px; }
+
+  /* Done sits smaller, right under Roll/Reroll - always rendered (just
+     disabled pre-roll) at this same small size, so it never changes the
+     roll-stack's height and shifts the sheet around when it becomes usable */
+  .roll-stack { gap: .35rem; }
+  .roll-stack .btn.secondary { font-size: .82rem; padding: .4rem 1rem; }
 
   .game-top .brand.small { display: none; }
 }

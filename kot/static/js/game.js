@@ -80,6 +80,15 @@
     prevCurrent = newState.current;
   }
 
+  // A ping the moment it becomes this player's call to stay in Tokyo or
+  // leave - easy to miss on mobile since it's tucked behind the Dice tab.
+  let prevMyYield = false;
+  function soundForYield() {
+    const nowYield = myYieldTurn();
+    if (nowYield && !prevMyYield) playSound("turn");
+    prevMyYield = nowYield;
+  }
+
   // Stable hash so a given card always gets the same one of the 4 background
   // looks, while the shop as a whole reads as a varied spread.
   function bgVarOf(key) {
@@ -120,7 +129,8 @@
   function showCardPopup(anchorEl, card) {
     clearTimeout(popupHideT);
     const pop = $("cardPopup");
-    pop.innerHTML = cardFaceHtml(card);
+    pop.innerHTML = cardFaceHtml(card) + `<button class="card-popup-close" aria-label="Close">✕</button>`;
+    pop.querySelector(".card-popup-close").onclick = () => { clearTimeout(popupHideT); pop.classList.remove("show"); };
     pop.classList.add("show");
     const r = anchorEl.getBoundingClientRect();
     requestAnimationFrame(() => {
@@ -207,6 +217,7 @@
     prevMon = snapshotMon(state.mon);
     soundForLog(state.log || []);
     soundForTurn(state);
+    soundForYield();
   });
   socket.on("act_error", (d) => toast(d.error || "Not allowed."));
 
@@ -246,6 +257,27 @@
     renderShop();
     renderLog();
     renderOverlay();
+    renderMobileYieldBadge();
+  }
+
+  // A small "!" badge on the mobile Dice tab while it's this player's call
+  // to stay in Tokyo or leave - easy to miss since the decision buttons live
+  // behind that tab, not on the always-visible Board view.
+  function renderMobileYieldBadge() {
+    const icon = $("diceTabIcon");
+    if (!icon) return;
+    let badge = document.getElementById("yieldBadge");
+    if (myYieldTurn()) {
+      if (!badge) {
+        badge = document.createElement("span");
+        badge.id = "yieldBadge";
+        badge.className = "mobile-yield-badge";
+        badge.textContent = "!";
+        icon.appendChild(badge);
+      }
+    } else if (badge) {
+      badge.remove();
+    }
   }
 
   function renderBanner() {
@@ -386,8 +418,8 @@
     if (state.phase === "ended") {
       html = `<button class="btn" onclick="location.href='/lobbies'">Back to lobbies</button>`;
     } else if (myYieldTurn()) {
-      html = `<button class="btn danger" data-a="yield-leave">Yield Tokyo</button>
-              <button class="btn" data-a="yield-stay">Stay &amp; take it</button>`;
+      html = `<button class="btn danger" data-a="yield-leave">Leave Tokyo</button>
+              <button class="btn" data-a="yield-stay">Stay in Tokyo</button>`;
     } else if (state.phase === "yield" && state.pending_yield && state.pending_yield.queue.length) {
       const decider = state.pending_yield.queue[0];
       html = `<span class="spectate">Waiting for ${dispName(decider)} to stay or leave Tokyo…</span>`;
@@ -399,9 +431,11 @@
       const first = state.roll_num === 0;
       const canRoll = first || state.rolls_left > 0;
       const rollLabel = first ? "Roll dice" : `Reroll (${state.rolls_left} left)`;
+      // Done is always rendered (just disabled before the first roll) so its
+      // appearance never changes the roll-stack's height and shifts the UI.
       html = `<div class="roll-stack">
         <button class="btn big ${canRoll ? "" : "hidden"}" data-a="roll">${rollLabel}</button>
-        ${!first ? `<button class="btn big secondary" data-a="resolve">Done</button>` : ""}
+        <button class="btn big secondary" data-a="resolve" ${first ? "disabled" : ""}>Done</button>
       </div>`;
       html += cardActionButtons();
     } else if (state.phase === "buying") {
@@ -490,7 +524,7 @@
     // Always render the sweep button (just disabled when unusable) so the
     // shop's height never changes depending on whose turn it is. It lives up
     // top next to the deck widget, not in its own row below the cards.
-    const sweep = `<button class="btn secondary sweep" ${canBuy && myEnergy >= 2 ? "" : "disabled"} data-sweep="1">Sweep (2⚡)</button>`;
+    const sweep = `<button class="btn secondary sweep" ${canBuy && myEnergy >= 2 ? "" : "disabled"} data-sweep="1">Sweep 2⚡</button>`;
     shop.innerHTML = `<div class="shop-head"><span class="shop-title">Power cards</span>
       <div class="shop-head-right">${sweep}${deckWidgetHtml(state.deck_left)}</div></div>
       <div class="shop-cards">${cards}</div>`;
