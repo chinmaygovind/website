@@ -273,12 +273,8 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
   display: flex; flex-direction: column; align-items: center; gap: .6rem;
   /* a real illustrated skyline (kot/static/img/skyline.svg - "Generic
      Cityscape Skyline" by GDJ, openclipart.org, CC0/public domain), cropped
-     to trim empty sky above its tallest spire and recolored to a dark
-     purple silhouette. Every window is baked in as a solid yellow rect
-     matching its real cutout shape exactly (found by flood-filling the
-     rendered artwork for transparent regions fully enclosed by the
-     building fill, not guessed dots), so the lit windows are real windows,
-     fully filled, not points of light floating over solid wall. Tiles
+     to trim empty sky above its tallest spire and recolored to a plain dark
+     purple silhouette (no lit windows - tried it, looked worse). Tiles
      horizontally only (no vertical repeat - one skyline, not a repeating
      strip), sized big and anchored to the board's bottom so it reaches up
      well past the Outskirts label into the Tokyo City/Bay area instead of
@@ -297,17 +293,27 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
     radial-gradient(1.8px 1.8px at 60% 85%, rgba(255,255,255,.7), transparent),
     radial-gradient(2px 2px at 8% 92%, rgba(255,255,255,.8), transparent),
     radial-gradient(2px 2px at 46% 95%, rgba(255,255,255,.7), transparent),
+    radial-gradient(1.6px 1.6px at 6% 55%, rgba(255,255,255,.65), transparent),
+    radial-gradient(2px 2px at 18% 65%, rgba(255,255,255,.8), transparent),
+    radial-gradient(1.6px 1.6px at 26% 8%, rgba(255,255,255,.6), transparent),
+    radial-gradient(2.2px 2.2px at 35% 45%, rgba(255,255,255,.85), transparent),
+    radial-gradient(1.6px 1.6px at 44% 88%, rgba(255,255,255,.6), transparent),
+    radial-gradient(2px 2px at 52% 20%, rgba(255,255,255,.8), transparent),
+    radial-gradient(1.6px 1.6px at 58% 60%, rgba(255,255,255,.65), transparent),
+    radial-gradient(2.2px 2.2px at 65% 15%, rgba(255,255,255,.85), transparent),
+    radial-gradient(1.6px 1.6px at 12% 78%, rgba(255,255,255,.6), transparent),
+    radial-gradient(1.8px 1.8px at 50% 50%, rgba(255,255,255,.7), transparent),
     radial-gradient(56px 56px at 10% 6%, rgba(255,251,230,.95), rgba(255,247,214,.3) 55%, transparent 74%),
     radial-gradient(1100px 620px at 50% -8%, rgba(235, 87, 87, .26), transparent 62%),
     radial-gradient(700px 520px at 92% 20%, rgba(64, 214, 224, .2), transparent 68%),
     radial-gradient(680px 520px at 4% 50%, rgba(187, 107, 217, .22), transparent 66%),
     url("../img/skyline.svg"),
-    linear-gradient(180deg, #1d0f38 0%, #170c2c 38%, #100820 72%, #0a0514 100%);
-  background-repeat: repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, no-repeat, no-repeat, no-repeat, no-repeat, repeat-x, no-repeat;
-  background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, center bottom, 0 0;
-  background-size: auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, 1500px 365px, auto;
+    linear-gradient(180deg, #160a2b 0%, #120821 38%, #0b0518 72%, #06030d 100%);
+  background-repeat: repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, no-repeat, no-repeat, no-repeat, no-repeat, repeat-x, no-repeat;
+  background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, center bottom, 0 0;
+  background-size: auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, 1500px 365px, auto;
   background-attachment: local;
-  background-color: #100820; }
+  background-color: #0b0518; }
 /* reserve the log panel's width on wide screens so board content never
    grows underneath it while the log is open */
 @media (min-width: 841px) { .board { padding-right: 336px; } }
@@ -368,7 +374,10 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
    browse a full roster of outskirts monsters */
 .monsters { display: flex; flex-wrap: wrap; gap: 1.6rem; justify-content: center; position: relative; z-index: 1;
   width: 100%; max-width: 1100px; max-height: 380px; overflow-y: auto; overscroll-behavior: contain;
-  padding: .2rem .3rem .6rem; }
+  /* enough top padding for the active monster's glow (text-shadow blurs up
+     to 38px) to fade out naturally instead of getting hard-clipped by this
+     container's own scroll boundary, which read as a stray line */
+  padding: 1.6rem .3rem .6rem; }
 .mon-card { width: 230px; position: relative; display: flex; align-items: flex-start; gap: .5rem; }
 .mon-card:not(.dead):hover .mc-avatar { transform: translateY(-2px); }
 .mon-card.dead { opacity: .42; filter: grayscale(.6); }
