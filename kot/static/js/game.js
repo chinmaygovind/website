@@ -272,13 +272,14 @@
   function monCardHtml(pid) {
     const m = state.mon[pid];
     if (!m) return "";
+    const cards = m.cards || [];
     const cls = ["mon-card"];
     if (!m.alive) cls.push("dead");
     if (state.current === pid && state.phase !== "ended") cls.push("active");
     if (pid === MY_PID) cls.push("me");
+    if (!cards.length) cls.push("no-cards");
     const hpPct = Math.max(0, Math.round(100 * m.hp / m.maxhp));
     const toks = tokenPills(m.tokens);
-    const cards = m.cards || [];
     const cardList = cards.length
       ? cards.map((c) => `<div class="mc-cardrow" data-cid="${esc(c.id)}">${c.emoji || "🎴"} ${esc(c.name)}</div>`).join("")
       : `<div class="mc-cardlist-empty">—</div>`;

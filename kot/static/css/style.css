@@ -324,19 +324,27 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
   text-shadow: -2px -2px 0 rgba(0,0,0,.35), 2px -2px 0 rgba(0,0,0,.35), -2px 2px 0 rgba(0,0,0,.35), 2px 2px 0 rgba(0,0,0,.35); }
 .tokyo-circle.bay .circle-label { font-size: 1.05rem; top: 24px; }
 .slot-mon { position: relative; z-index: 1; }
-/* No power cards yet: center the avatar+stats block in the circle (column
-   layout, empty card-list placeholder hidden so it doesn't skew the
-   centering). The avatar itself, not the whole info block below it, is what
-   should land on the circle's true middle - centering the whole stack puts
-   ITS midpoint on center, dragging the avatar up above it - so this is
-   pulled out of the flex-centered flow and anchored by a fixed offset (half
-   the avatar's own rendered height) instead. Once a card is owned, this
-   falls back to the plain flex-centered row layout (avatar+stats left,
-   cards to the right), same as the Outskirts grid. */
-.tokyo-circle .slot-mon:has(.mon-card .mc-cardlist.empty) {
-  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -27px); width: 230px; max-width: 90%; }
-.slot-mon .mon-card:has(.mc-cardlist.empty) { flex-direction: column; align-items: center; }
-.slot-mon .mon-card:has(.mc-cardlist.empty) .mc-cardlist { display: none; }
+/* the Tokyo slot centers this plain flex row (tokyo-circle's own
+   align-items/justify-content, same as always) - two corrections on top of
+   that, applied identically whether or not the monster holds cards, so both
+   states land at the same height:
+   1) .mc-left (avatar+name+hp+stats) has more content trailing below the
+      avatar than above it, so centering the row's own box puts the row's
+      midpoint on the circle's center and drags the avatar itself above it -
+      a fixed downward nudge (measured empirically) brings the avatar back
+      to the true middle.
+   2) .mon-card's width is normally a fixed 230px so avatar+cards line up
+      neatly in the Outskirts grid, which left a blank reserved gap where
+      the empty card-list placeholder used to sit even once its text was
+      hidden, pulling the avatar off-center horizontally. A narrower fixed
+      width while cardless (a plain JS-driven class, not a CSS :has() guess)
+      fixes that: no cards = a narrower box holding just the avatar column,
+      centered; a card appears = the box goes back to the full 230px to make
+      room on the right, sliding the avatar left to match - same height
+      either way, purely a horizontal shift. */
+.slot-mon .mon-card { top: 42px; }
+.slot-mon .mon-card.no-cards { width: 176px; }
+.slot-mon .mc-cardlist.empty { display: none; }
 .slot-empty { color: #fff; opacity: .8; font-style: italic; font-size: .95rem; }
 
 /* a distant skyline silhouette glimpsed beneath the Tokyo circles */
