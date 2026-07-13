@@ -28,7 +28,7 @@
     <div class="monsters" id="monsters"></div>
   </main>
 
-  <aside class="log-panel open" id="logPanel">
+  <aside class="log-panel" id="logPanel">
     <div class="log-head">Game log <button class="icon-btn" id="logClose">✕</button></div>
     <div class="log-feed" id="logFeed"></div>
   </aside>
@@ -42,6 +42,21 @@
       <div class="shop" id="shop"></div>
     </div>
   </section>
+
+  <div class="mobile-tab-bar">
+    <button class="mobile-tab active" data-panel="board">
+      <span class="mobile-tab-icon">🏙️</span>
+      <span>Board</span>
+    </button>
+    <button class="mobile-tab" data-panel="dice">
+      <span class="mobile-tab-icon">🎲</span>
+      <span>Dice</span>
+    </button>
+    <button class="mobile-tab" data-panel="deck">
+      <span class="mobile-tab-icon">🎴</span>
+      <span>Deck</span>
+    </button>
+  </div>
 
   <div class="card-popup" id="cardPopup"></div>
 

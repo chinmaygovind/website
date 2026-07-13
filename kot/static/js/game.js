@@ -320,6 +320,10 @@
     return out.join("");
   }
 
+  const REEL_KEYS = ["1", "2", "3", "heart", "energy", "claw"];
+  const randomFaceKey = () => REEL_KEYS[Math.floor(Math.random() * REEL_KEYS.length)];
+  const dieFaceHtml = (f) => `<span class="die-face">${FACE[f] || ""}</span>`;
+
   let lastAnimatedRollNum = -1;
   function renderDice() {
     const tray = $("diceTray");
@@ -330,11 +334,18 @@
     tray.innerHTML = dice.map((f, i) => {
       const kept = keep.has(i);
       const canClick = isMyRollingTurn() && state.roll_num > 0;
-      const anim = freshRoll ? ` style="animation-delay:${i * 35}ms"` : "";
-      return `<button class="die ${FACE_CLASS[f] || "blank"} ${kept ? "kept" : ""} ${freshRoll ? "rolling" : ""}"
-        ${canClick ? "" : "disabled"} data-i="${i}"${anim}>
-        <span class="die-face">${FACE[f] || ""}</span>
-      </button>`;
+      // Only dice actually being rerolled get the reel animation - kept dice
+      // stay put.
+      const isRolling = freshRoll && !kept;
+      let inner;
+      if (isRolling) {
+        const reel = [randomFaceKey(), randomFaceKey(), randomFaceKey(), randomFaceKey(), f];
+        inner = `<div class="die-face-viewport"><div class="die-reel" style="animation-delay:${i * 45}ms">${reel.map(dieFaceHtml).join("")}</div></div>`;
+      } else {
+        inner = dieFaceHtml(f);
+      }
+      return `<button class="die ${FACE_CLASS[f] || "blank"} ${kept ? "kept" : ""} ${isRolling ? "rolling" : ""}"
+        ${canClick ? "" : "disabled"} data-i="${i}">${inner}</button>`;
     }).join("");
     tray.querySelectorAll(".die").forEach((el) => el.onclick = () => toggleKeep(+el.dataset.i));
   }
@@ -359,7 +370,7 @@
       const canRoll = first || state.rolls_left > 0;
       const rollLabel = first ? "Roll dice" : `Reroll (${state.rolls_left} left)`;
       html = `<button class="btn big ${canRoll ? "" : "hidden"}" data-a="roll">${rollLabel}</button>`;
-      if (!first) html += `<button class="btn secondary" data-a="resolve">Done - resolve</button>`;
+      if (!first) html += `<button class="btn secondary" data-a="resolve">Done</button>`;
       html += cardActionButtons();
     } else if (state.phase === "buying") {
       html = `<button class="btn big" data-a="end">End turn</button>`;
@@ -445,10 +456,12 @@
       return cardFaceHtml(c, { buyable: canBuy && afford, buyIndex: canBuy && afford ? i : null });
     }).join("");
     // Always render the sweep button (just disabled when unusable) so the
-    // shop's height never changes depending on whose turn it is.
+    // shop's height never changes depending on whose turn it is. It lives up
+    // top next to the deck widget, not in its own row below the cards.
     const sweep = `<button class="btn secondary sweep" ${canBuy && myEnergy >= 2 ? "" : "disabled"} data-sweep="1">Sweep (2⚡)</button>`;
-    shop.innerHTML = `<div class="shop-head"><span class="shop-title">Power cards</span>${deckWidgetHtml(state.deck_left)}</div>
-      <div class="shop-cards">${cards}</div>${sweep}`;
+    shop.innerHTML = `<div class="shop-head"><span class="shop-title">Power cards</span>
+      <div class="shop-head-right">${sweep}${deckWidgetHtml(state.deck_left)}</div></div>
+      <div class="shop-cards">${cards}</div>`;
     shop.querySelectorAll("[data-buy]").forEach((el) => el.onclick = () => doBuy(+el.dataset.buy));
     const sw = shop.querySelector("[data-sweep]"); if (sw) sw.onclick = doSweep;
   }
@@ -496,6 +509,31 @@
   $("leaveBtn").onclick = doLeave;
   $("muteBtn").onclick = () => setMuted(!muted);
   setMuted(muted);
+  // Open by default on desktop (where the board reserves space for it), but
+  // start closed on mobile - it's a fixed overlay there and would otherwise
+  // cover most of the "Board" tab's screen.
+  if (window.innerWidth > 760) $("logPanel").classList.add("open");
+
+  // ---- mobile tab bar: board / dice / deck ----------------------------------
+  // Board is always visible; Dice and Deck slide the .controls bar up as a
+  // sheet showing just that half. Tapping the active tab (or the board
+  // itself) closes the sheet back to the board view.
+  (function initMobileTabs() {
+    const tabs = document.querySelectorAll(".mobile-tab");
+    const controls = $("controls");
+    const board = $("board");
+    if (!tabs.length || !controls) return;
+    let active = "board";
+    function setTab(panel) {
+      active = (panel !== "board" && panel === active) ? "board" : panel;
+      tabs.forEach((t) => t.classList.toggle("active", t.dataset.panel === active));
+      controls.classList.remove("panel-dice", "panel-deck", "mobile-open");
+      if (active === "dice") controls.classList.add("mobile-open", "panel-dice");
+      else if (active === "deck") controls.classList.add("mobile-open", "panel-deck");
+    }
+    tabs.forEach((t) => t.onclick = () => setTab(t.dataset.panel));
+    board.addEventListener("click", () => { if (window.innerWidth <= 760) setTab("board"); });
+  })();
 
   // Keyboard: R roll, Space resolve/end, 1-6 toggle dice.
   document.addEventListener("keydown", (e) => {
