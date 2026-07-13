@@ -3,10 +3,21 @@
    sunburst, dark indigo board with gold + monster colors. Deliberately NOT the
    hand-drawn xkcd style the rest of cgovind.com uses. */
 
+/* Good Girl (Cathy Davies, dafont.com) - "No copyright; use as you wish."
+   self-hosted like the rest of the site's fonts. Chunky cartoon caps for the
+   poster/logo role below. */
+@font-face {
+  font-family: "Good Girl";
+  src: url("../fonts/good-girl.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
-  /* Heavy condensed "movie poster" face for the logo + big titles, and a bold
-     block face for headings. Both are system fonts, so nothing to download. */
-  --poster: "Arial Narrow Bold", "Haettenschweiler", "Franklin Gothic Bold", Impact, "Oswald", sans-serif;
+  /* Chunky cartoon-poster face for the logo + big titles, falling back to a
+     condensed system face, and a bold block face for headings. */
+  --poster: "Good Girl", "Arial Narrow Bold", "Haettenschweiler", "Franklin Gothic Bold", Impact, "Oswald", sans-serif;
   --display: "Arial Black", "Arial Bold", "Helvetica Neue", Helvetica, sans-serif;
   --bg-0: #0f0c17;
   --bg-1: #15121f;
@@ -368,6 +379,7 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
   display: flex; align-items: center; justify-content: center; position: relative;
   transition: transform .08s ease, box-shadow .08s ease; }
 .die .die-face { font-family: var(--display); font-size: 1.9rem; color: #3a2606; line-height: 1; }
+.die .die-face i { font-size: 1.5rem; }
 .die.heart .die-face { color: var(--hp); font-size: 2rem; }
 .die.energy .die-face { color: #1f88b0; font-size: 1.9rem; }
 .die.claw { background: linear-gradient(160deg, #ffe1dd, #f0b3ab); border-color: #8f1e16; box-shadow: 0 5px 0 #8f1e16, 0 8px 14px var(--shadow); }
@@ -388,6 +400,10 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
 .action-row { display: flex; gap: .5rem; flex-wrap: wrap; justify-content: center; align-items: center;
   align-content: center; min-height: 90px; width: 100%; }
 .action-row .spectate { color: var(--cream); opacity: .7; font-family: var(--display); font-size: .98rem; text-align: center; }
+/* roll/reroll and Done are the same size, stacked - Done sits right below
+   the roll button instead of floating off to the side at a different size */
+.roll-stack { display: flex; flex-direction: column; align-items: stretch; gap: .5rem; width: 220px; max-width: 100%; }
+.roll-stack .btn { width: 100%; }
 .card-act { font-size: .78rem; padding: .42rem .85rem; }
 
 /* shop - no separate boxed panel, it just fills its half of the bar */
@@ -554,8 +570,11 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
   .nav-user { width: 100%; order: 3; font-size: .82rem; }
   /* the brand is hidden here, so don't reserve an equal-width empty column
      for it - give the banner all the space instead of truncating it */
-  .game-top { grid-template-columns: auto 1fr auto; gap: .5rem; }
-  .turn-banner { font-size: .92rem; }
+  .game-top { grid-template-columns: auto 1fr auto; gap: .5rem; height: auto; min-height: 56px;
+    padding-top: max(0px, env(safe-area-inset-top)); }
+  /* smaller so it clears the notch/Dynamic Island cutout on iPhones running
+     the installed PWA (which draws under it) - the icon buttons are fine */
+  .turn-banner { font-size: .78rem; }
   .tokyo-circle.city { width: 220px; height: 220px; }
   .tokyo-circle.bay { width: 190px; height: 190px; }
   .circle-label { font-size: 1.1rem; }
@@ -567,21 +586,25 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
   .board { padding-bottom: 4.2rem; }
 
   /* controls becomes a slide-up sheet above the tab bar showing only the
-     dice or the shop (whichever tab is active), not both stacked at once */
-  .controls { position: fixed; left: 0; right: 0; bottom: 58px; height: auto; max-height: 60vh;
+     dice or the shop (whichever tab is active), not both stacked at once -
+     it just appears/disappears, no slide transition */
+  .controls { position: fixed; left: 0; right: 0; bottom: 58px; height: auto; max-height: 74vh;
     flex-direction: column; align-items: stretch; border-radius: 18px 18px 0 0;
-    transform: translateY(110%); transition: transform .22s ease; z-index: 35; }
+    transform: translateY(110%); z-index: 35; }
   .controls.mobile-open { transform: translateY(0); }
   .controls-left, .controls-right { display: none; flex: 0 0 auto; width: 100%; overflow-y: visible; }
   .controls-right { border-left: none; margin-left: 0; padding-left: 0; }
   .controls.panel-dice .controls-left { display: flex; }
   .controls.panel-deck .controls-right { display: flex; }
-  .shop-cards { grid-template-columns: repeat(2, 1fr); }
+  /* 3 equal-height cards in one row, same as desktop, instead of an uneven
+     2-then-1 wrap - the taller sheet above gives them room to breathe */
+  .shop-cards { min-height: 220px; }
 
   /* all dice in a single row, not five-then-one wrapping to a second row */
   .dice-tray { flex-wrap: nowrap; gap: .3rem; padding: .4rem .3rem; }
   .die { width: 44px; height: 44px; border-radius: 10px; flex: 0 0 auto; }
   .die .die-face, .die.heart .die-face, .die.energy .die-face { font-size: 1.25rem; }
+  .die .die-face i { font-size: 1rem; }
   .die-face-viewport, .die-reel .die-face { height: 28px; }
 
   .game-top .brand.small { display: none; }

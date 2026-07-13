@@ -7,6 +7,7 @@
   let state = null;              // latest public_view
   let keep = new Set();          // dice indices the player is keeping
   let lastSeq = -1;
+  let pendingRollAnim = false;   // set only by this client's own roll/reroll click
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => (s + "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -21,7 +22,15 @@
   const emojiOf = (pid) => MONSTER_EMOJI[nameOf(pid)] || "👹";
   const dispName = (pid) => `${emojiOf(pid)} ${esc(nameOf(pid))}`;
 
-  const FACE = { "1": "1", "2": "2", "3": "3", heart: "❤", energy: "⚡", claw: "✷", "?": "" };
+  // Font Awesome icons for heart/energy/claw so they render identically on
+  // iPhone and desktop, instead of platform-inconsistent emoji glyphs.
+  const FACE = {
+    "1": "1", "2": "2", "3": "3",
+    heart: '<i class="fa-solid fa-heart"></i>',
+    energy: '<i class="fa-solid fa-bolt"></i>',
+    claw: '<i class="fa-solid fa-paw"></i>',
+    "?": "",
+  };
   const FACE_CLASS = { "1": "num", "2": "num", "3": "num", heart: "heart", energy: "energy", claw: "claw", "?": "blank" };
 
   // ---- sound effects: short synthesized stings, no samples ------------------
@@ -202,7 +211,7 @@
 
   // ---- actions -------------------------------------------------------------
   const emit = (ev, extra) => socket.emit(ev, Object.assign({ code: CODE }, extra || {}));
-  function doRoll() { playSound("roll"); emit("roll", { keep: [...keep] }); }
+  function doRoll() { playSound("roll"); pendingRollAnim = true; emit("roll", { keep: [...keep] }); }
   function doResolve() { emit("resolve", {}); }
   function doBuy(i) { emit("buy_card", { index: i }); }
   function doSweep() { emit("sweep_shop", {}); }
@@ -329,8 +338,12 @@
     const tray = $("diceTray");
     const dice = state.dice || [];
     if (!dice.length || (state.phase !== "rolling" && state.roll_num === 0)) { tray.innerHTML = ""; return; }
-    const freshRoll = state.roll_num !== lastAnimatedRollNum;
-    lastAnimatedRollNum = state.roll_num;
+    // Only animate when THIS client just clicked roll/reroll (pendingRollAnim) -
+    // never on page load, reconnect, or just opening the mobile Dice tab, which
+    // would otherwise replay a stale animation for a roll that already happened.
+    const rollChanged = state.roll_num !== lastAnimatedRollNum;
+    const freshRoll = pendingRollAnim && rollChanged;
+    if (rollChanged) { lastAnimatedRollNum = state.roll_num; pendingRollAnim = false; }
     tray.innerHTML = dice.map((f, i) => {
       const kept = keep.has(i);
       const canClick = isMyRollingTurn() && state.roll_num > 0;
@@ -369,8 +382,10 @@
       const first = state.roll_num === 0;
       const canRoll = first || state.rolls_left > 0;
       const rollLabel = first ? "Roll dice" : `Reroll (${state.rolls_left} left)`;
-      html = `<button class="btn big ${canRoll ? "" : "hidden"}" data-a="roll">${rollLabel}</button>`;
-      if (!first) html += `<button class="btn secondary" data-a="resolve">Done</button>`;
+      html = `<div class="roll-stack">
+        <button class="btn big ${canRoll ? "" : "hidden"}" data-a="roll">${rollLabel}</button>
+        ${!first ? `<button class="btn big secondary" data-a="resolve">Done</button>` : ""}
+      </div>`;
       html += cardActionButtons();
     } else if (state.phase === "buying") {
       html = `<button class="btn big" data-a="end">End turn</button>`;
