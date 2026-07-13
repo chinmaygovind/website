@@ -272,17 +272,20 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
 .board { flex: 1; position: relative; overflow-y: auto; padding: 1rem 1rem 1.4rem; min-height: 180px;
   display: flex; flex-direction: column; align-items: center; gap: .6rem;
   /* a real illustrated skyline (kot/static/img/skyline.svg - "Generic
-     Cityscape Skyline" by GDJ, openclipart.org, CC0/public domain),
-     recolored to a dark purple silhouette, with warm/cool "window" glows
-     placed at the exact coordinates of its own cutout windows (sampled from
-     the rendered artwork's transparent pixels, not guessed) so they line up
-     with the real building shapes instead of floating free. Tiles
-     horizontally only (no vertical repeat, so it reads as one skyline, not
-     a repeating strip) anchored behind Tokyo City/Bay. Stars keep repeating
-     vertically past it toward the Outskirts for atmosphere further down.
-     Kept left of ~60% so they stay clear of the log panel's reserved width
-     on wide screens. The moon + ambient glows stay single, anchored near
-     the circles. */
+     Cityscape Skyline" by GDJ, openclipart.org, CC0/public domain), cropped
+     to trim empty sky above its tallest spire and recolored to a dark
+     purple silhouette. Every window is baked in as a solid yellow rect
+     matching its real cutout shape exactly (found by flood-filling the
+     rendered artwork for transparent regions fully enclosed by the
+     building fill, not guessed dots), so the lit windows are real windows,
+     fully filled, not points of light floating over solid wall. Tiles
+     horizontally only (no vertical repeat - one skyline, not a repeating
+     strip), sized big and anchored to the board's bottom so it reaches up
+     well past the Outskirts label into the Tokyo City/Bay area instead of
+     leaving a dead gap above it. Stars keep repeating vertically past it
+     for atmosphere further down. Kept left of ~60% so they stay clear of
+     the log panel's reserved width on wide screens. The moon + ambient
+     glows stay single, anchored near the circles. */
   background:
     radial-gradient(2.4px 2.4px at 4% 8%, rgba(255,255,255,.95), transparent),
     radial-gradient(1.8px 1.8px at 14% 22%, rgba(255,255,255,.75), transparent),
@@ -298,68 +301,13 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
     radial-gradient(1100px 620px at 50% -8%, rgba(235, 87, 87, .26), transparent 62%),
     radial-gradient(700px 520px at 92% 20%, rgba(64, 214, 224, .2), transparent 68%),
     radial-gradient(680px 520px at 4% 50%, rgba(187, 107, 217, .22), transparent 66%),
-    radial-gradient(1.6px 2.4px at 40.78% 49.42%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 61.44% 56.47%, #8fd6ff, transparent 65%),
-    radial-gradient(1.6px 2.4px at 50.53% 44.59%, #8fd6ff, transparent 65%),
-    radial-gradient(1.6px 2.4px at 85.7% 38.3%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 62.01% 54.59%, #8fd6ff, transparent 65%),
-    radial-gradient(1.6px 2.4px at 92.13% 44.15%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 84.01% 39.0%, #8fd6ff, transparent 65%),
-    radial-gradient(1.6px 2.4px at 38.28% 50.51%, #e06fd4, transparent 65%),
-    radial-gradient(1.6px 2.4px at 77.8% 50.56%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 38.28% 54.68%, #e06fd4, transparent 65%),
-    radial-gradient(1.6px 2.4px at 37.58% 54.68%, #e06fd4, transparent 65%),
-    radial-gradient(1.6px 2.4px at 50.94% 41.74%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 76.88% 56.21%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 92.13% 55.99%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 83.63% 37.13%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 91.37% 52.92%, #e06fd4, transparent 65%),
-    radial-gradient(1.6px 2.4px at 55.7% 20.99%, #8fd6ff, transparent 65%),
-    radial-gradient(1.6px 2.4px at 89.26% 54.02%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 36.99% 44.15%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 86.68% 45.91%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 36.41% 48.1%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 51.52% 41.74%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 61.43% 58.54%, #8fd6ff, transparent 65%),
-    radial-gradient(1.6px 2.4px at 8.28% 48.32%, #8fd6ff, transparent 65%),
-    radial-gradient(1.6px 2.4px at 55.91% 24.06%, #e06fd4, transparent 65%),
-    radial-gradient(1.6px 2.4px at 55.92% 20.91%, #8fd6ff, transparent 65%),
-    radial-gradient(1.6px 2.4px at 69.04% 52.19%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 31.25% 49.42%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 30.97% 33.58%, #e06fd4, transparent 65%),
-    radial-gradient(1.6px 2.4px at 82.36% 50.35%, #8fd6ff, transparent 65%),
-    radial-gradient(1.6px 2.4px at 3.96% 46.11%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 30.96% 49.42%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 88.36% 54.24%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 76.87% 54.28%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 7.93% 56.29%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 8.28% 56.29%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 60.86% 54.68%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 83.91% 45.76%, #8fd6ff, transparent 65%),
-    radial-gradient(1.6px 2.4px at 24.37% 43.93%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 30.97% 45.43%, #e06fd4, transparent 65%),
-    radial-gradient(1.6px 2.4px at 76.87% 48.21%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 82.4% 55.56%, #8fd6ff, transparent 65%),
-    radial-gradient(1.6px 2.4px at 22.93% 39.55%, #8fd6ff, transparent 65%),
-    radial-gradient(1.6px 2.4px at 50.7% 38.01%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 55.92% 30.12%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 84.98% 40.64%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 77.23% 54.24%, #8fd6ff, transparent 65%),
-    radial-gradient(1.6px 2.4px at 7.93% 50.07%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 76.43% 48.25%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 61.43% 52.57%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 87.23% 49.85%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 90.16% 54.97%, #e06fd4, transparent 65%),
-    radial-gradient(1.6px 2.4px at 69.04% 45.69%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 24.37% 48.32%, #f2c94c, transparent 65%),
-    radial-gradient(1.6px 2.4px at 24.37% 50.07%, #e06fd4, transparent 65%),
     url("../img/skyline.svg"),
-    linear-gradient(180deg, #241540 0%, #1c1032 38%, #150c26 72%, #0f0819 100%);
-  background-repeat: repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, no-repeat, no-repeat, no-repeat, no-repeat, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, repeat-x, no-repeat;
-  background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, center bottom, 0 0;
-  background-size: auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, 1300px 350px, auto;
+    linear-gradient(180deg, #1d0f38 0%, #170c2c 38%, #100820 72%, #0a0514 100%);
+  background-repeat: repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, no-repeat, no-repeat, no-repeat, no-repeat, repeat-x, no-repeat;
+  background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, center bottom, 0 0;
+  background-size: auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, 1500px 365px, auto;
   background-attachment: local;
-  background-color: #150c26; }
+  background-color: #100820; }
 /* reserve the log panel's width on wide screens so board content never
    grows underneath it while the log is open */
 @media (min-width: 841px) { .board { padding-right: 336px; } }
@@ -410,7 +358,8 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
 .slot-empty { color: #fff; opacity: .8; font-style: italic; font-size: .95rem; }
 
 .outskirts-label { font-family: var(--poster); text-transform: uppercase; letter-spacing: .16em; font-size: .78rem;
-  color: var(--cream); opacity: .45; margin-top: .6rem; text-align: center; position: relative; z-index: 1; }
+  color: var(--cream); opacity: .7; margin-top: .6rem; text-align: center; position: relative; z-index: 1;
+  text-shadow: 0 1px 3px rgba(0,0,0,.9), 0 0 8px rgba(0,0,0,.7); }
 
 /* monster "cards" - deliberately no bounding box: a big emoji model, stats
    stacked below it, owned power cards in a vertical list to the right */
