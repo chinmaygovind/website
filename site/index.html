@@ -386,17 +386,59 @@
         height: 0;
         width: 0;
       }
-      .spotify-track {
+      .spotify-track-link {
         display: flex;
         align-items: center;
         gap: 0.7rem;
+        margin: -0.3rem;
+        padding: 0.3rem;
+        border-radius: 6px;
+        color: inherit;
+        text-decoration: none;
+        transition: background 0.15s ease;
       }
-      .spotify-track img {
+      a.spotify-track-link:hover,
+      a.spotify-track-link:focus-visible {
+        background: rgba(0, 0, 0, 0.06);
+      }
+      a.spotify-track-link:hover .spotify-track-name {
+        text-decoration: underline;
+      }
+      .spotify-track-art {
+        position: relative;
+        width: 40px;
+        height: 40px;
+        flex-shrink: 0;
+      }
+      .spotify-track-art img {
         width: 40px;
         height: 40px;
         border-radius: 4px;
         object-fit: cover;
-        flex-shrink: 0;
+        display: block;
+      }
+      .spotify-track-play {
+        position: absolute;
+        right: -4px;
+        bottom: -4px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #000;
+        box-shadow: 0 0 0 2px #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.15s ease;
+      }
+      .spotify-track-play svg {
+        width: 8px;
+        height: 8px;
+        fill: #fff;
+        margin-left: 1px;
+      }
+      a.spotify-track-link:hover .spotify-track-play {
+        transform: scale(1.15);
       }
       .spotify-track-info {
         min-width: 0;
@@ -1015,13 +1057,24 @@
           if (!d || !d.tracks || !d.tracks.length) return;
           var el = document.getElementById("spotify-tracks");
           el.innerHTML = d.tracks.map(function (t) {
+            var tag = t.url ? "a" : "span";
+            var attrs = t.url
+              ? ' href="' + escapeHtml(t.url) + '" target="_blank" rel="noopener"'
+              : "";
             return (
-              '<li class="spotify-track">' +
+              "<li><" + tag + ' class="spotify-track-link"' + attrs + ">" +
+              '<span class="spotify-track-art">' +
               (t.image ? '<img src="' + escapeHtml(t.image) + '" alt="" />' : "") +
+              (t.url
+                ? '<span class="spotify-track-play" aria-hidden="true">' +
+                  '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>'
+                : "") +
+              "</span>" +
               '<span class="spotify-track-info">' +
               '<span class="spotify-track-name">' + escapeHtml(t.name) + "</span>" +
               '<span class="spotify-track-artist">' + escapeHtml(t.artist) + "</span>" +
-              "</span></li>"
+              "</span>" +
+              "</" + tag + "></li>"
             );
           }).join("");
         })
