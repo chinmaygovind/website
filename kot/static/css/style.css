@@ -283,10 +283,14 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
      Outskirts label into the Tokyo City/Bay area instead of leaving a dead
      gap above it. Stars keep repeating vertically past it for atmosphere
      further down. Kept left of ~60% so they stay clear of the log panel's
-     reserved width on wide screens. The moon is a real photo-traced asset
+     reserved width on wide screens. The moon is the .board-moon <img> below
      (kot/static/img/moon.svg - "Full Moon" by Merlin2525, openclipart.org,
-     CC0/public domain, traced from a public-domain Wikimedia photo) instead
-     of a drawn gradient, plus a soft glow behind it. */
+     CC0/public domain, traced from a public-domain Wikimedia photo), not a
+     background layer here - it's a real photo trace, sharp/detailed in a
+     way that reads as out of place next to everything else's flat illustrated
+     look, so it's blurred and brightened toward a soft glowing white circle
+     via a CSS filter instead of shown at full photographic clarity. The
+     ambient glow gradient behind it stays a background layer. */
   background:
     radial-gradient(2.4px 2.4px at 4% 8%, rgba(255,255,255,.95), transparent),
     radial-gradient(1.8px 1.8px at 14% 22%, rgba(255,255,255,.75), transparent),
@@ -308,18 +312,25 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
     radial-gradient(2.2px 2.2px at 65% 15%, rgba(255,255,255,.85), transparent),
     radial-gradient(1.6px 1.6px at 12% 78%, rgba(255,255,255,.6), transparent),
     radial-gradient(1.8px 1.8px at 50% 50%, rgba(255,255,255,.7), transparent),
-    url("../img/moon.svg"),
-    radial-gradient(70px 70px at 6% 2.5%, rgba(255,247,214,.28), rgba(255,247,214,.08) 55%, transparent 76%),
+    radial-gradient(95px 95px at 6% 2.5%, rgba(255,247,214,.36), rgba(255,247,214,.12) 55%, transparent 78%),
     radial-gradient(1100px 620px at 50% -8%, rgba(235, 87, 87, .26), transparent 62%),
     radial-gradient(700px 520px at 92% 20%, rgba(64, 214, 224, .2), transparent 68%),
     radial-gradient(680px 520px at 4% 50%, rgba(187, 107, 217, .22), transparent 66%),
     url("../img/skyline.svg"),
     linear-gradient(180deg, #1a0d33 0%, #150a28 38%, #100819 72%, #0d0716 100%);
-  background-repeat: repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat-x, no-repeat;
-  background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 6% 2.5%, 0 0, 0 0, 0 0, 0 0, center bottom, 0 0;
-  background-size: auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, 50px 50px, auto, auto, auto, auto, 1500px 365px, auto;
+  background-repeat: repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, no-repeat, no-repeat, no-repeat, no-repeat, repeat-x, no-repeat;
+  background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, center bottom, 0 0;
+  background-size: auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, 1500px 365px, auto;
   background-attachment: local;
   background-color: #0d0716; }
+/* the real photo-traced moon, blurred/brightened via filter so it reads as
+   a soft glowing orb consistent with the rest of the illustrated scene
+   instead of a sharp photo pasted onto flat art. Positioned to match the
+   ambient glow gradient behind it (a background layer on .board, above). */
+.board-moon { position: absolute; top: 2.5%; left: 6%; width: 56px; height: 56px;
+  transform: translate(-50%, -50%); z-index: 0; pointer-events: none;
+  filter: blur(9px) brightness(2.2) saturate(.08)
+    drop-shadow(0 0 10px rgba(255,251,235,.7)) drop-shadow(0 0 24px rgba(255,251,235,.45)); }
 /* reserve the log panel's width on desktop so board content never grows
    underneath it while the log is open - matches the >760px width where the
    JS defaults the log panel open, so there's no gap width where it opens
@@ -484,12 +495,10 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
   background: linear-gradient(160deg, #fff7e4, #f0dfb4); box-shadow: 0 5px 0 #b79a55, 0 8px 14px var(--shadow);
   display: flex; align-items: center; justify-content: center; position: relative;
   transition: transform .08s ease, box-shadow .08s ease; }
-.die .die-face { font-family: var(--display); font-size: 1.9rem; color: #3a2606; line-height: 1; }
-.die .die-face i { font-size: 1.5rem; }
-.die.heart .die-face { color: var(--hp); font-size: 2rem; }
-.die.energy .die-face { color: #c9960a; font-size: 1.9rem; }
-.die.claw { background: linear-gradient(160deg, #ffe1dd, #f0b3ab); border-color: #8f1e16; box-shadow: 0 5px 0 #8f1e16, 0 8px 14px var(--shadow); }
-.die.claw .die-face { color: #8f1e16; }
+.die .die-face { font-family: var(--display); font-size: 2.15rem; color: #3a2606; line-height: 1; }
+.die .die-face i { font-size: 1.7rem; }
+.die.heart .die-face { color: var(--hp); font-size: 2.25rem; }
+.die.energy .die-face { color: #c9960a; font-size: 2.15rem; }
 .die.blank { background: linear-gradient(160deg, #efe6d4, #d9ccb0); }
 .die.kept { transform: translateY(4px); box-shadow: 0 1px 0 #b79a55; border-color: var(--accent); outline: 3px solid rgba(242,201,76,.5); }
 .die:disabled { cursor: default; }
@@ -506,10 +515,11 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
 .action-row { display: flex; gap: .5rem; flex-wrap: wrap; justify-content: center; align-items: center;
   align-content: center; min-height: 90px; width: 100%; }
 .action-row .spectate { color: var(--cream); opacity: .7; font-family: var(--display); font-size: .98rem; text-align: center; }
-/* roll/reroll and Done are the same size, stacked - Done sits right below
-   the roll button instead of floating off to the side at a different size */
-.roll-stack { display: flex; flex-direction: column; align-items: stretch; gap: .5rem; width: 220px; max-width: 100%; }
-.roll-stack .btn { width: 100%; }
+/* roll/reroll and Done side by side, same size, sharing the row evenly */
+.roll-stack { display: flex; flex-direction: row; align-items: stretch; gap: .6rem; width: 280px; max-width: 100%; }
+.roll-stack .btn { flex: 1 1 0; width: auto; flex-direction: column; gap: 0; line-height: 1.2; }
+.roll-btn-label { display: block; }
+.roll-btn-sub { display: block; font-size: .68rem; font-weight: 400; opacity: .75; margin-top: 1px; }
 .card-act { font-size: .78rem; padding: .42rem .85rem; }
 
 /* shop - no separate boxed panel, it just fills its half of the bar */
@@ -723,15 +733,16 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
   /* all dice in a single row, not five-then-one wrapping to a second row */
   .dice-tray { flex-wrap: nowrap; gap: .3rem; padding: .4rem .3rem; }
   .die { width: 44px; height: 44px; border-radius: 10px; flex: 0 0 auto; }
-  .die .die-face, .die.heart .die-face, .die.energy .die-face { font-size: 1.25rem; }
-  .die .die-face i { font-size: 1rem; }
+  .die .die-face, .die.heart .die-face, .die.energy .die-face { font-size: 1.4rem; }
+  .die .die-face i { font-size: 1.15rem; }
   .die-face-viewport, .die-reel .die-face { height: 28px; }
 
-  /* Done sits smaller, right under Roll/Reroll - always rendered (just
-     disabled pre-roll) at this same small size, so it never changes the
-     roll-stack's height and shifts the sheet around when it becomes usable */
+  /* Roll/Reroll and Done sit side by side even on the narrow mobile sheet -
+     smaller font/padding so "Reroll" + its "N left" sub-line and "Done"
+     both fit their half without wrapping */
   .roll-stack { gap: .35rem; }
-  .roll-stack .btn.secondary { font-size: .82rem; padding: .4rem 1rem; }
+  .roll-stack .btn { font-size: .88rem; padding: .55rem .5rem; }
+  .roll-btn-sub { font-size: .58rem; }
 
   .game-top .brand.small { display: none; }
 }

@@ -430,7 +430,9 @@
     } else if (state.phase === "rolling") {
       const first = state.roll_num === 0;
       const canRoll = first || state.rolls_left > 0;
-      const rollLabel = first ? "Roll dice" : `Reroll (${state.rolls_left} left)`;
+      const rollLabel = first
+        ? `<span class="roll-btn-label">Roll dice</span>`
+        : `<span class="roll-btn-label">Reroll</span><span class="roll-btn-sub">${state.rolls_left} left</span>`;
       // Done is always rendered (just disabled before the first roll) so its
       // appearance never changes the roll-stack's height and shifts the UI.
       html = `<div class="roll-stack">
