@@ -71,6 +71,7 @@ def new_game(players, seed=None):
         "deck": deck,
         "discard": [],
         "shop": shop,
+        "opportunist_window": None,      # {"index":slot, "cid":card} - Opportunist's snipeable freshly-revealed card
         "pending_yield": None,           # {"queue":[pid...], "attacker":pid}
         "ko_order": [],                  # pids in the order they were eliminated
         "winner": None,
@@ -256,6 +257,7 @@ def _begin_turn(state, pid, first=False):
     state["current"] = pid
     state["turn"] += 1
     state["phase"] = "rolling"
+    state["opportunist_window"] = None
     m = state["mon"][pid]
     # Start-of-turn Tokyo victory points.
     slot = _in_tokyo(state, pid)
@@ -362,21 +364,34 @@ def resolve(state, pid):
 
     # 3) Hearts -> heal (blocked while in Tokyo). A Heart that would be wasted
     #    (in Tokyo, or already at full Health) is instead used to shed a poison
-    #    or shrink counter.
+    #    or shrink counter. Healing Ray can redirect all of this to another
+    #    monster instead, who pays 2⚡ per point healed.
     h = dice.count("heart")
     tok = m["tokens"]
-    if h and (_in_tokyo(state, pid) or m["hp"] >= m["maxhp"]):
-        for kind in ("poison", "shrink"):
-            while h > 0 and tok.get(kind, 0) > 0:
-                tok[kind] -= 1
-                h -= 1
-                _log(state, f"{_nm(pid)} sheds a {kind} counter.", pid=pid, kind="heal")
-    if h:
-        healed = heal(state, pid, h, via_dice=True)
-        if healed:
-            _log(state, f"{_nm(pid)} heals {healed}❤.", pid=pid, kind="heal")
-        elif _in_tokyo(state, pid):
-            _log(state, f"{_nm(pid)} can't heal while in Tokyo.", pid=pid, kind="sys")
+    heal_target = _cards().heal_redirect_target(state, pid)
+    if heal_target:
+        if h:
+            healed = heal(state, heal_target, h, via_dice=True)
+            if healed:
+                paid = healed * 2
+                spend_energy(state, heal_target, paid)
+                gain_energy(state, pid, paid)
+                _log(state, f"{_nm(pid)} heals {_nm(heal_target)} for {healed} with its healing ray ({paid}⚡ paid).", pid=pid, kind="heal")
+            elif _in_tokyo(state, heal_target):
+                _log(state, f"{_nm(pid)} can't heal {_nm(heal_target)} while it's in Tokyo.", pid=pid, kind="sys")
+    else:
+        if h and (_in_tokyo(state, pid) or m["hp"] >= m["maxhp"]):
+            for kind in ("poison", "shrink"):
+                while h > 0 and tok.get(kind, 0) > 0:
+                    tok[kind] -= 1
+                    h -= 1
+                    _log(state, f"{_nm(pid)} sheds a {kind} counter.", pid=pid, kind="heal")
+        if h:
+            healed = heal(state, pid, h, via_dice=True)
+            if healed:
+                _log(state, f"{_nm(pid)} heals {healed}❤.", pid=pid, kind="heal")
+            elif _in_tokyo(state, pid):
+                _log(state, f"{_nm(pid)} can't heal while in Tokyo.", pid=pid, kind="sys")
 
     # 4) Claws -> attack. Acid Attack adds damage even with no claws; Spiked
     #    Tail / Urbavore / Burrowing add on top when you actually attack.
@@ -422,14 +437,21 @@ def _attack(state, attacker, dmg):
     _log(state, f"{_nm(attacker)} attacks {where} for {dmg} damage.", pid=attacker, kind="attack")
 
     yield_queue = []
+    deferred = {}   # pid -> damage held back for a Jets holder's stay/leave choice
     for t in list(targets):
         was_in = _in_tokyo(state, t)
+        if was_in and _cards().has_jets(state, t):
+            # Jets: don't apply this attack's damage yet - if they choose to
+            # leave Tokyo below, they never take it at all.
+            deferred[t] = dmg
+            yield_queue.append(t)
+            continue
         took = deal_damage(state, t, dmg, attacker=attacker)
         if took and was_in and state["mon"][t]["alive"] and _in_tokyo(state, t):
             yield_queue.append(t)
     # The active player entering an empty slot is handled by _settle_tokyo, run
     # by resolve() (or by yield_decision once every damaged monster has decided).
-    state["pending_yield"] = {"queue": yield_queue, "attacker": attacker} if yield_queue else None
+    state["pending_yield"] = {"queue": yield_queue, "attacker": attacker, "deferred": deferred} if yield_queue else None
 
 
 def yield_decision(state, pid, leave):
@@ -440,14 +462,21 @@ def yield_decision(state, pid, leave):
     if not py["queue"] or py["queue"][0] != pid:
         return
     py["queue"].pop(0)
+    pending_dmg = py.get("deferred", {}).pop(pid, None)
     if leave:
         slot = _in_tokyo(state, pid)
         if slot:
             state["tokyo"][slot] = None
             _log(state, f"{_nm(pid)} yields Tokyo {slot.title()}.", pid=pid, kind="tokyo")
             _cards().trigger(state, pid, "on_yield", attacker=py["attacker"])
+        if pending_dmg:
+            _log(state, f"{_nm(pid)}'s jets carry it out untouched.", pid=pid, kind="sys")
     else:
         _log(state, f"{_nm(pid)} holds Tokyo.", pid=pid, kind="tokyo")
+        if pending_dmg:
+            deal_damage(state, pid, pending_dmg, attacker=py["attacker"])
+            if state["phase"] == "ended":
+                return
     _bump(state)
     if not py["queue"]:
         attacker = py["attacker"]
@@ -514,8 +543,9 @@ def buy_card(state, pid, index):
         state["discard"].append(cid)
     _cards().on_acquire(state, pid, cid)
     _cards().trigger(state, pid, "on_buy_card", card=cid)
-    # Refill the shop slot.
+    # Refill the shop slot - and open an Opportunist window on whatever's revealed.
     state["shop"][index] = state["deck"].pop() if state["deck"] else None
+    state["opportunist_window"] = {"index": index, "cid": state["shop"][index]} if state["shop"][index] else None
     _bump(state)
 
 
@@ -534,11 +564,20 @@ def sweep_shop(state, pid):
     _bump(state)
 
 
+# Card keys usable by someone OTHER than the active player - a reaction to
+# another monster's roll (Psychic Probe) or to a freshly-revealed shop card
+# (Opportunist). Everything else stays limited to the active player only.
+_OFF_TURN_CARD_KEYS = {"psychic_probe", "opportunist"}
+
+
 def card_action(state, pid, card, choice=None):
     """Player-triggered card ability (e.g. paying energy to fire an effect, or
     answering a prompt the engine raised). Delegated to cards.py, which owns the
     per-card logic and any phase/cost checks."""
-    if state["phase"] == "ended" or state["current"] != pid:
+    if state["phase"] == "ended":
+        return
+    key = _cards().CATALOG.get(card, {}).get("key")
+    if state["current"] != pid and key not in _OFF_TURN_CARD_KEYS:
         return
     _sync_names(state)
     _cards().card_action(state, pid, card, choice)
@@ -640,8 +679,12 @@ def _cards_view(state, pid):
     out = []
     for cid in state["mon"][pid]["cards"]:
         C = _cards().CATALOG.get(cid, {})
-        out.append({"id": cid, "name": C.get("name"), "cost": C.get("cost"),
-                    "type": C.get("type"), "text": C.get("text"), "emoji": C.get("emoji")})
+        entry = {"id": cid, "name": C.get("name"), "cost": C.get("cost"),
+                 "type": C.get("type"), "text": C.get("text"), "emoji": C.get("emoji")}
+        extra = _cards().card_extra_view(state, pid, cid, C.get("key"))
+        if extra:
+            entry.update(extra)
+        out.append(entry)
     return out
 
 
@@ -654,6 +697,7 @@ def public_view(state):
             "hp": m["hp"], "maxhp": m["maxhp"], "vp": m["vp"], "energy": m["energy"],
             "alive": m["alive"], "tokens": m["tokens"],
             "cards": _cards_view(state, pid),
+            "probed_by": m.get("cardmem", {}).get("probed_by", []),
         } for pid, m in state["mon"].items()},
         "tokyo": state["tokyo"],
         "use_bay": state["use_bay"],
@@ -663,6 +707,7 @@ def public_view(state):
         "roll_num": state["roll_num"],
         "shop": _shop_view(state),
         "deck_left": len(state["deck"]),
+        "opportunist_window": state.get("opportunist_window"),
         "pending_yield": state.get("pending_yield"),
         "winner": state["winner"],
         "standings": state["standings"],

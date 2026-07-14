@@ -433,6 +433,7 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
   color: var(--accent-soft); border-radius: 5px; padding: 2px 5px; cursor: pointer; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; flex: 0 0 auto; transition: background .12s ease, border-color .12s ease; }
 .mc-cardrow:hover { background: rgba(242,201,76,.32); border-color: var(--accent); }
+.mc-card-note { opacity: .75; font-style: italic; }
 
 /* ---- desktop: a left rail for Tokyo, players fill the right two-thirds.
    On a short/laptop-height viewport, stacking Tokyo above a full Outskirts

@@ -11,12 +11,16 @@ does hooks in here through a small interface it calls by name:
   trigger(...,hook)    event hooks (turn start/end, numbers, attack, damage, ...)
   on_deal_damage(...)  attacker dealt damage to a distinct target (counters, fire)
   on_any_elimination() a monster hit 0 HP (Eater of the Dead)
-  card_action(...)     a manual ability the active monster fires this turn
+  card_action(...)     a manual ability a monster fires - usually on its own
+                       turn, but Psychic Probe and Opportunist react on
+                       someone else's (see game_logic._OFF_TURN_CARD_KEYS)
+  card_extra_view(...) per-card extra display fields (Mimic's current target,
+                       a pending Made in a Lab peek, Healing Ray's aim)
 
-Several highly interactive cards (Mimic, Psychic Probe, Made in a Lab,
-Opportunist, Parasitic Tentacles, Healing Ray) are best-effort: they buy and
-sit in play but have no automatic effect, since they need live table
-negotiation this server doesn't model. Everything else is fully implemented.
+Mimic works by making ``_keys`` also yield whatever key it's currently
+copying, so every other card's ``_has``/``_count``/``mod`` checks in this file
+pick up a mimicked ability for free, with no special-casing needed anywhere
+else. Everything in the 66-card set is implemented.
 """
 
 import random
@@ -211,11 +215,32 @@ _CONTRIB = {
 # ---------------------------------------------------------------------------
 
 def _keys(state, pid):
-    """Iterator over the mechanic keys of a monster's owned Keep cards."""
+    """Iterator over the mechanic keys of a monster's owned Keep cards - plus
+    whatever key Mimic is currently copying, so every other check in this file
+    (``_has``/``_count``/``mod``) picks up a mimicked ability for free."""
+    for cid in state["mon"][pid]["cards"]:
+        c = CATALOG.get(cid)
+        if not c:
+            continue
+        yield c["key"]
+        if c["key"] == "mimic":
+            mk = _mem(state, pid).get("mimic_key")
+            if mk:
+                yield mk
+
+
+def _physical_keys(state, pid):
+    """Like ``_keys`` but never substitutes in a mimicked key - for the one
+    self-discarding card (Plot Twist) where mimicry shouldn't grant unlimited
+    free uses of what's meant to be a one-shot effect."""
     for cid in state["mon"][pid]["cards"]:
         c = CATALOG.get(cid)
         if c:
             yield c["key"]
+
+
+def _physically_has(state, pid, key):
+    return any(k == key for k in _physical_keys(state, pid))
 
 
 def _count(state, pid, key):
@@ -224,6 +249,13 @@ def _count(state, pid, key):
 
 def _has(state, pid, key):
     return _count(state, pid, key) > 0
+
+
+def has_jets(state, pid):
+    """Jets: a monster in Tokyo who's attacked may leave and take none of that
+    attack's damage - checked by game_logic before applying yield-time damage,
+    so it needs to be public (game_logic never reaches into cards.py internals)."""
+    return _has(state, pid, "jets")
 
 
 def _mem(state, pid):
@@ -241,6 +273,36 @@ def mod(state, pid, key):
     for k in _keys(state, pid):
         total += _CONTRIB.get(k, {}).get(key, 0)
     return total
+
+
+def heal_redirect_target(state, pid):
+    """Healing Ray: who this monster's heart results heal this turn, if not
+    itself. Checked by game_logic.resolve() before applying heart healing."""
+    t = _mem(state, pid).get("heal_target")
+    if t and t != pid and state["mon"].get(t, {}).get("alive"):
+        return t
+    return None
+
+
+def card_extra_view(state, pid, cid, key):
+    """Extra client-display fields for one owned card, beyond its static
+    CATALOG entry - only Mimic/Made in a Lab/Healing Ray need this."""
+    if key == "mimic":
+        mk = _mem(state, pid).get("mimic_key")
+        if mk:
+            t = CATALOG.get(mk, {})
+            return {"mimic_target": {"id": mk, "name": t.get("name"), "emoji": t.get("emoji")}}
+    elif key == "made_in_a_lab":
+        lk = _mem(state, pid).get("lab_peek")
+        if lk and state["deck"] and state["deck"][-1] == lk:
+            t = CATALOG.get(lk, {})
+            cost = max(0, t.get("cost", 0) - mod(state, pid, "buy_discount"))
+            return {"lab_peek": {"id": lk, "name": t.get("name"), "emoji": t.get("emoji"), "cost": cost}}
+    elif key == "healing_ray":
+        ht = _mem(state, pid).get("heal_target")
+        if ht and state["mon"].get(ht, {}).get("alive"):
+            return {"heal_target": ht}
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -397,6 +459,8 @@ def _h_turn_start(state, pid, ctx):
     mem = _mem(state, pid)
     mem["freeze"] = False
     mem["herd_used"] = False
+    mem["probed_by"] = []       # Psychic Probe: who's already probed this roll this turn
+    mem["heal_target"] = None   # Healing Ray: resets to "heal myself" each turn
     if mem.get("wings"):
         mem["wings"] = False
     if _has(state, pid, "monster_batteries") and mem.get("batteries", 0) > 0:
@@ -563,7 +627,7 @@ def card_action(state, pid, card, choice):
         gl._bump(state)
 
     elif key == "plot_twist":
-        if not rolling:
+        if not rolling or not _physically_has(state, pid, "plot_twist"):
             return
         i, f = _die_and_face(state, choice)
         if i is None:
@@ -641,6 +705,146 @@ def card_action(state, pid, card, choice):
         state["discard"].append(cid)
         gl.gain_energy(state, pid, C["cost"])
         gl._log(state, f"{gl._nm(pid)} morphs {C['name']} back into {C['cost']}⚡.", pid=pid, kind="energy")
+        gl._bump(state)
+
+    elif key == "mimic":
+        if state["current"] != pid:
+            return
+        cid = choice.get("card") if isinstance(choice, dict) else None
+        if not cid or cid == "mimic":
+            return
+        target_key = None
+        for q in state["players"]:
+            if q == pid:
+                continue
+            if cid in state["mon"][q]["cards"]:
+                target_key = CATALOG.get(cid, {}).get("key")
+                break
+        if not target_key:
+            return
+        mem = _mem(state, pid)
+        changing = mem.get("mimic_key") is not None
+        if changing:
+            if m["energy"] < 1:
+                return
+            gl.spend_energy(state, pid, 1)
+        mem["mimic_key"] = target_key
+        name = CATALOG.get(cid, {}).get("name", cid)
+        suffix = " (1⚡)" if changing else ""
+        gl._log(state, f"{gl._nm(pid)} mimics {name}{suffix}.", pid=pid, kind="sys")
+        gl._bump(state)
+
+    elif key == "psychic_probe":
+        roller = state["current"]
+        if roller == pid or state["phase"] != "rolling" or state["roll_num"] <= 0:
+            return
+        probed = _mem(state, roller).setdefault("probed_by", [])
+        if pid in probed:
+            return
+        i = _die_index(state, choice)
+        if i is None:
+            return
+        rng = random.Random()
+        state["dice"][i] = rng.choice(gl.FACES)
+        probed.append(pid)
+        gl._log(state, f"{gl._nm(pid)} psychically rerolls one of {gl._nm(roller)}'s dice.", pid=pid, kind="sys")
+        gl._bump(state)
+
+    elif key == "made_in_a_lab":
+        if state["phase"] != "buying" or state["current"] != pid:
+            return
+        action = choice.get("action") if isinstance(choice, dict) else "peek"
+        if action == "peek":
+            if not state["deck"]:
+                return
+            cid = state["deck"][-1]
+            _mem(state, pid)["lab_peek"] = cid
+            name = CATALOG.get(cid, {}).get("name", cid)
+            gl._log(state, f"{gl._nm(pid)} peeks at the deck (Made in a Lab): {name}.", pid=pid, kind="sys")
+            gl._bump(state)
+        elif action == "buy":
+            cid = _mem(state, pid).get("lab_peek")
+            if not cid or not state["deck"] or state["deck"][-1] != cid:
+                return
+            C = CATALOG.get(cid)
+            if not C:
+                return
+            cost = max(0, C["cost"] - gl.mod(state, pid, "buy_discount"))
+            if m["energy"] < cost:
+                return
+            gl.spend_energy(state, pid, cost)
+            state["deck"].pop()
+            m["stat"]["cards"] += 1
+            gl._log(state, f"{gl._nm(pid)} buys {C['name']} for {cost}⚡ (Made in a Lab).", pid=pid, kind="buy")
+            trigger(state, pid, "on_before_gain_card", card=cid)
+            if C["type"] == "keep":
+                m["cards"].append(cid)
+            else:
+                state["discard"].append(cid)
+            on_acquire(state, pid, cid)
+            trigger(state, pid, "on_buy_card", card=cid)
+            _mem(state, pid)["lab_peek"] = None
+            gl._bump(state)
+
+    elif key == "opportunist":
+        win = state.get("opportunist_window")
+        if not win or win.get("cid") is None or state["shop"][win["index"]] != win["cid"]:
+            return
+        idx, cid = win["index"], win["cid"]
+        C = CATALOG.get(cid)
+        if not C:
+            return
+        cost = max(0, C["cost"] - gl.mod(state, pid, "buy_discount"))
+        if m["energy"] < cost:
+            return
+        gl.spend_energy(state, pid, cost)
+        m["stat"]["cards"] += 1
+        gl._log(state, f"{gl._nm(pid)} snaps up {C['name']} for {cost}⚡ the instant it appears (Opportunist).", pid=pid, kind="buy")
+        trigger(state, pid, "on_before_gain_card", card=cid)
+        if C["type"] == "keep":
+            m["cards"].append(cid)
+        else:
+            state["discard"].append(cid)
+        on_acquire(state, pid, cid)
+        trigger(state, pid, "on_buy_card", card=cid)
+        state["shop"][idx] = state["deck"].pop() if state["deck"] else None
+        state["opportunist_window"] = {"index": idx, "cid": state["shop"][idx]} if state["shop"][idx] else None
+        gl._bump(state)
+
+    elif key == "parasitic_tentacles":
+        if state["phase"] != "buying" or state["current"] != pid:
+            return
+        target_pid = choice.get("pid") if isinstance(choice, dict) else None
+        cid = choice.get("card") if isinstance(choice, dict) else None
+        if not target_pid or not cid or target_pid == pid:
+            return
+        tgt = state["mon"].get(target_pid)
+        if not tgt or not tgt["alive"] or cid not in tgt["cards"]:
+            return
+        C = CATALOG.get(cid)
+        if not C or C["type"] != "keep":
+            return
+        cost = max(0, C["cost"] - gl.mod(state, pid, "buy_discount"))
+        if m["energy"] < cost:
+            return
+        gl.spend_energy(state, pid, cost)
+        gl.gain_energy(state, target_pid, cost)
+        tgt["cards"].remove(cid)
+        m["cards"].append(cid)
+        gl._log(state, f"{gl._nm(pid)} rips {C['name']} from {gl._nm(target_pid)} for {cost}⚡ (Parasitic Tentacles).", pid=pid, kind="buy")
+        gl._bump(state)
+
+    elif key == "healing_ray":
+        if state["phase"] != "rolling" or state["current"] != pid:
+            return
+        target_pid = choice.get("pid") if isinstance(choice, dict) else None
+        mem = _mem(state, pid)
+        if not target_pid or target_pid == pid or not state["mon"].get(target_pid, {}).get("alive"):
+            mem["heal_target"] = None
+            gl._log(state, f"{gl._nm(pid)} aims its healing ray at itself.", pid=pid, kind="sys")
+        else:
+            mem["heal_target"] = target_pid
+            gl._log(state, f"{gl._nm(pid)} aims its healing ray at {gl._nm(target_pid)}.", pid=pid, kind="sys")
         gl._bump(state)
 
 

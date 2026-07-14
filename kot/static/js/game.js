@@ -313,7 +313,7 @@
     const hpPct = Math.max(0, Math.round(100 * m.hp / m.maxhp));
     const toks = tokenPills(m.tokens);
     const cardList = cards.length
-      ? cards.map((c) => `<div class="mc-cardrow" data-cid="${esc(c.id)}">${c.emoji || "🎴"} ${esc(c.name)}</div>`).join("")
+      ? cards.map((c) => `<div class="mc-cardrow" data-cid="${esc(c.id)}">${c.emoji || "🎴"} ${esc(c.name)}${cardRowSuffix(c)}</div>`).join("")
       : `<div class="mc-cardlist-empty">—</div>`;
     // The Tokyo/Bay badge lives on the slot label now, not the card itself,
     // since an occupant only ever renders inside that slot (never duplicated
@@ -335,6 +335,16 @@
       </div>
       <div class="mc-cardlist${cards.length ? "" : " empty"}">${cardList}</div>
     </div>`;
+  }
+
+  // A short parenthetical on a card row for the handful of cards with extra
+  // live state worth showing at a glance (Mimic's target, a Made in a Lab
+  // peek, Healing Ray's current aim).
+  function cardRowSuffix(c) {
+    if (c.mimic_target) return ` <span class="mc-card-note">(${esc(c.mimic_target.name)})</span>`;
+    if (c.lab_peek) return ` <span class="mc-card-note">(${esc(c.lab_peek.name)}, ${c.lab_peek.cost}⚡)</span>`;
+    if (c.heal_target) return ` <span class="mc-card-note">(→ ${dispName(c.heal_target)})</span>`;
+    return "";
   }
 
   function renderTokyo() {
@@ -448,6 +458,10 @@
       html = `<button class="btn big" data-a="end">End turn</button>`;
       html += cardActionButtons();
     }
+    // Psychic Probe and Opportunist react on someone ELSE's turn, so they're
+    // not gated by isMyTurn() like the rest of cardActionButtons() - append
+    // them regardless of which branch above fired.
+    html += psychicProbeButton() + opportunistButton();
     row.innerHTML = html;
     row.querySelectorAll("[data-a]").forEach((el) => el.onclick = () => {
       const a = el.dataset.a;
@@ -458,6 +472,33 @@
       else if (a === "yield-stay") doYield(false);
       else if (a.startsWith("card:")) fireCard(a.slice(5));
     });
+  }
+
+  function ownsOrMimics(cardId) {
+    const mine = (state.mon[MY_PID] && state.mon[MY_PID].cards) || [];
+    return mine.some((c) => c.id === cardId || (c.id === "mimic" && c.mimic_target && c.mimic_target.id === cardId));
+  }
+
+  // Psychic Probe: fireable any time someone else is mid-roll, once per
+  // roller per turn - not gated by isMyTurn() at all.
+  function psychicProbeButton() {
+    if (isSpectator() || state.phase !== "rolling" || state.roll_num <= 0) return "";
+    if (state.current === MY_PID || !ownsOrMimics("psychic_probe")) return "";
+    const probedBy = (state.mon[state.current] && state.mon[state.current].probed_by) || [];
+    if (probedBy.includes(MY_PID)) return "";
+    return `<button class="btn card-act" data-a="card:psychic_probe">🔮 Probe ${dispName(state.current)}'s die</button>`;
+  }
+
+  // Opportunist: fireable the instant a shop slot refills, for as long as
+  // that same card sits unclaimed - regardless of whose turn it is.
+  function opportunistButton() {
+    if (isSpectator() || state.phase !== "buying" || !ownsOrMimics("opportunist")) return "";
+    const win = state.opportunist_window;
+    if (!win) return "";
+    const slot = state.shop[win.index];
+    if (!slot || slot.id !== win.cid) return "";
+    if ((state.mon[MY_PID].energy || 0) < slot.cost) return "";
+    return `<button class="btn card-act" data-a="card:opportunist">🕵️ Snap up ${esc(slot.name)} (${slot.cost}⚡)</button>`;
   }
 
   // Gather any choice an actionable card needs, then send it.
@@ -477,6 +518,44 @@
       const v = prompt("Discard which card for its energy back?\n" + list); if (v == null) return;
       const idx = parseInt(v, 10) - 1; if (idx < 0 || idx >= mine.length) return;
       choice = { card: mine[idx].id };
+    } else if (id === "mimic") {
+      const options = [];
+      for (const p of state.players) {
+        if (p === MY_PID) continue;
+        for (const oc of (state.mon[p].cards || [])) {
+          if (oc.id === "mimic") continue;
+          options.push({ pid: p, card: oc });
+        }
+      }
+      if (!options.length) { toast("No copyable cards in play yet."); return; }
+      const list = options.map((o, i) => `${i + 1}. ${o.card.name} (${nameOf(o.pid)})`).join("\n");
+      const v = prompt("Copy which card?\n" + list); if (v == null) return;
+      const idx = parseInt(v, 10) - 1; if (idx < 0 || idx >= options.length) return;
+      choice = { card: options[idx].card.id };
+    } else if (id === "made_in_a_lab") {
+      const c = (state.mon[MY_PID].cards || []).find((x) => x.id === "made_in_a_lab");
+      choice = { action: (c && c.lab_peek) ? "buy" : "peek" };
+    } else if (id === "parasitic_tentacles") {
+      const options = [];
+      for (const p of state.players) {
+        if (p === MY_PID || !state.mon[p].alive) continue;
+        for (const oc of (state.mon[p].cards || [])) options.push({ pid: p, card: oc });
+      }
+      if (!options.length) { toast("No monster has a card to take."); return; }
+      const list = options.map((o, i) => `${i + 1}. ${o.card.name} (${o.card.cost}⚡, ${nameOf(o.pid)})`).join("\n");
+      const v = prompt("Take which card?\n" + list); if (v == null) return;
+      const idx = parseInt(v, 10) - 1; if (idx < 0 || idx >= options.length) return;
+      choice = { pid: options[idx].pid, card: options[idx].card.id };
+    } else if (id === "healing_ray") {
+      const others = state.players.filter((p) => p !== MY_PID && state.mon[p].alive);
+      const list = ["0. Myself"].concat(others.map((p, i) => `${i + 1}. ${nameOf(p)}`)).join("\n");
+      const v = prompt("Aim the healing ray at who?\n" + list); if (v == null) return;
+      const idx = parseInt(v, 10);
+      if (idx === 0) choice = { pid: null };
+      else if (idx >= 1 && idx <= others.length) choice = { pid: others[idx - 1] };
+      else return;
+    } else if (id === "psychic_probe") {
+      const i = askDie(`Reroll which of ${nameOf(state.current)}'s dice?`); if (i == null) return; choice = { index: i };
     }
     doCardAction(id, choice);
   }
@@ -492,13 +571,28 @@
   }
 
   // Cards that grant an active ability the player can fire on their turn.
+  // ``label`` can be a plain string, or a (state, card) => string for cards
+  // whose button text depends on some extra state (Mimic, Made in a Lab,
+  // Healing Ray).
   function cardActionButtons() {
     if (!isMyTurn()) return "";
     const mine = (state.mon[MY_PID] && state.mon[MY_PID].cards) || [];
     const btns = [];
+    const addBtn = (id, a, c) => {
+      const label = typeof a.label === "function" ? a.label(state, c) : a.label;
+      btns.push(`<button class="btn card-act" data-a="card:${id}">${esc(label)}</button>`);
+    };
     for (const c of mine) {
       const a = ACTIONABLE[c.id];
-      if (a && a.when(state)) btns.push(`<button class="btn card-act" data-a="card:${c.id}">${esc(a.label)}</button>`);
+      if (a && a.when(state, c)) addBtn(c.id, a, c);
+      // Mimic also surfaces whatever manual ability it's currently copying.
+      if (c.id === "mimic" && c.mimic_target) {
+        const ma = ACTIONABLE[c.mimic_target.id];
+        if (ma && ma.when(state, c)) {
+          const mimicLabel = typeof ma.label === "function" ? ma.label(state, c) : ma.label;
+          addBtn(c.mimic_target.id, { label: `🎭 ${mimicLabel}` }, c);
+        }
+      }
     }
     return btns.join("");
   }
@@ -515,6 +609,22 @@
     wings: { label: "Wings: negate damage (2⚡)", when: (s) => s.mon[MY_PID].energy >= 2 },
     background_dweller: { label: "Background Dweller: reroll a [3]", when: (s) => s.phase === "rolling" && s.roll_num > 0 && (s.dice || []).includes("3") },
     metamorph: { label: "Metamorph: discard a card for ⚡", when: (s) => s.phase === "buying" && (s.mon[MY_PID].cards || []).length > 0 },
+    mimic: {
+      label: (s, c) => c.mimic_target ? `Mimic: copying ${c.mimic_target.name} (change 1⚡)` : "Mimic: choose a card to copy",
+      when: () => true,
+    },
+    made_in_a_lab: {
+      label: (s, c) => c.lab_peek ? `Buy peeked ${c.lab_peek.name} (${c.lab_peek.cost}⚡)` : "Made in a Lab: peek at the deck",
+      when: (s) => s.phase === "buying",
+    },
+    parasitic_tentacles: {
+      label: "Parasitic Tentacles: take a card from another monster",
+      when: (s) => s.phase === "buying" && s.players.some((p) => p !== MY_PID && s.mon[p].alive && (s.mon[p].cards || []).length),
+    },
+    healing_ray: {
+      label: (s, c) => `Healing Ray: aim at ${c.heal_target ? dispName(c.heal_target) : "yourself"}`,
+      when: (s) => s.phase === "rolling",
+    },
   };
 
   function renderShop() {

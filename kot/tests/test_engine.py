@@ -303,6 +303,129 @@ def test_herd_culler_usable_every_turn_not_just_once():
     assert state["dice"][1] == "1"            # still usable, not a one-time thing
 
 
+def test_jets_leave_avoids_all_damage_from_that_attack():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("jets")
+    state["tokyo"]["city"] = a
+    gl._begin_turn(state, b)                  # make b the current (attacking) player
+    force_dice(state, ["claw", "claw", "claw", "energy", "1", "2"])
+    gl.resolve(state, b)
+    assert state["phase"] == "yield"
+    assert state["pending_yield"]["queue"] == [a]
+    assert state["mon"][a]["hp"] == 10        # damage deferred, not yet applied
+    gl.yield_decision(state, a, leave=True)
+    assert state["mon"][a]["hp"] == 10        # jets carried it out untouched
+    assert state["tokyo"]["city"] == b
+    assert state["phase"] == "buying"
+
+
+def test_jets_stay_takes_the_deferred_damage():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("jets")
+    state["tokyo"]["city"] = a
+    gl._begin_turn(state, b)                  # make b the current (attacking) player
+    force_dice(state, ["claw", "claw", "claw", "energy", "1", "2"])
+    gl.resolve(state, b)
+    assert state["mon"][a]["hp"] == 10
+    gl.yield_decision(state, a, leave=False)
+    assert state["mon"][a]["hp"] == 7         # held Tokyo, so the 3 claws land now
+    assert state["tokyo"]["city"] == a
+
+
+def test_mimic_copies_target_and_costs_energy_to_change():
+    state, pids = fresh(3)
+    a, b, c = pids
+    state["mon"][a]["cards"].append("mimic")
+    state["mon"][b]["cards"].append("armor_plating")
+    state["mon"][c]["cards"].append("regeneration")
+    gl.card_action(state, a, "mimic", {"card": "armor_plating"})
+    assert cards._mem(state, a)["mimic_key"] == "armor_plating"
+    took = gl.deal_damage(state, a, 1, attacker=b)
+    assert took == 0                          # armor plating negates 1 damage, mimicked
+    state["mon"][a]["energy"] = 5
+    gl.card_action(state, a, "mimic", {"card": "regeneration"})
+    assert state["mon"][a]["energy"] == 4     # changing the copy costs 1⚡
+    assert cards._mem(state, a)["mimic_key"] == "regeneration"
+    state["mon"][a]["hp"] = 5
+    healed = gl.heal(state, a, 2)
+    assert healed == 3                        # +1 bonus from the mimicked regeneration
+
+
+def test_psychic_probe_reroll_other_monster_once_per_turn(monkeypatch):
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][b]["cards"].append("psychic_probe")
+    force_dice(state, ["3", "3", "3", "3", "3", "3"])
+    monkeypatch.setattr(random.Random, "choice", lambda self, seq: "heart")
+    gl.card_action(state, b, "psychic_probe", {"index": 0})
+    assert state["dice"][0] == "heart"
+    assert b in cards._mem(state, a)["probed_by"]
+    gl.card_action(state, b, "psychic_probe", {"index": 1})
+    assert state["dice"][1] == "3"             # already used its one probe this turn
+
+
+def test_made_in_a_lab_peek_then_buy():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("made_in_a_lab")
+    state["phase"] = "buying"; state["current"] = a
+    state["deck"] = ["corner_store"]
+    gl.card_action(state, a, "made_in_a_lab", {"action": "peek"})
+    assert cards._mem(state, a)["lab_peek"] == "corner_store"
+    state["mon"][a]["energy"] = 5
+    gl.card_action(state, a, "made_in_a_lab", {"action": "buy"})
+    assert state["mon"][a]["energy"] == 2      # corner store costs 3
+    assert state["mon"][a]["vp"] == 1          # corner store's one-shot +1 VP
+    assert state["deck"] == []
+
+
+def test_opportunist_snipes_freshly_revealed_card():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][b]["cards"].append("opportunist")
+    state["phase"] = "buying"; state["current"] = a
+    state["mon"][a]["energy"] = 10
+    state["shop"][0] = "extra_head"
+    state["deck"] = ["corner_store"]
+    gl.buy_card(state, a, 0)                   # reveals corner_store into slot 0
+    assert state["opportunist_window"] == {"index": 0, "cid": "corner_store"}
+    state["mon"][b]["energy"] = 5
+    gl.card_action(state, b, "opportunist", {})
+    assert state["mon"][b]["vp"] == 1           # corner store's one-shot fired for b, not a
+    assert state["mon"][b]["energy"] == 2       # cost 3
+
+
+def test_parasitic_tentacles_takes_a_card_and_pays_directly():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("parasitic_tentacles")
+    state["mon"][b]["cards"].append("armor_plating")
+    state["phase"] = "buying"; state["current"] = a
+    state["mon"][a]["energy"] = 10
+    state["mon"][b]["energy"] = 0
+    gl.card_action(state, a, "parasitic_tentacles", {"pid": b, "card": "armor_plating"})
+    assert "armor_plating" not in state["mon"][b]["cards"]
+    assert "armor_plating" in state["mon"][a]["cards"]
+    assert state["mon"][a]["energy"] == 6       # armor plating costs 4
+    assert state["mon"][b]["energy"] == 4       # paid directly to b, not the bank
+
+
+def test_healing_ray_redirect_heals_other_monster_for_payment():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("healing_ray")
+    state["mon"][b]["hp"] = 5
+    state["mon"][b]["energy"] = 10
+    gl.card_action(state, a, "healing_ray", {"pid": b})
+    force_dice(state, ["heart", "heart", "1", "2", "3", "energy"])
+    gl.resolve(state, a)
+    assert state["mon"][b]["hp"] == 7           # healed 2
+    assert state["mon"][b]["energy"] == 6       # paid 2⚡ per point healed = 4
+    assert state["mon"][a]["energy"] == 5       # 1 from the energy die + 4 payment
+
+
 def test_shop_price_reflects_alien_metabolism_discount():
     state, pids = fresh(2)
     a = pids[0]

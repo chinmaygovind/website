@@ -662,8 +662,11 @@ def on_sweep(data):
 @socketio.on("card_action")
 def on_card_action(data):
     d = data or {}
+    # must_be_current=False: a couple of cards (Psychic Probe, Opportunist) are
+    # reactions fired on someone else's turn; gl.card_action enforces which ones.
     _act(d.get("code", "").upper(),
-         lambda g, s, pid: gl.card_action(s, pid, d.get("card"), d.get("choice")))
+         lambda g, s, pid: gl.card_action(s, pid, d.get("card"), d.get("choice")),
+         must_be_current=False)
 
 
 @socketio.on("end_turn")
