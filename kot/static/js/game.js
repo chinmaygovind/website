@@ -430,9 +430,10 @@
     } else if (state.phase === "rolling") {
       const first = state.roll_num === 0;
       const canRoll = first || state.rolls_left > 0;
-      const rollLabel = first
-        ? `<span class="roll-btn-label">Roll</span>`
-        : `<span class="roll-btn-label">Reroll</span><span class="roll-btn-sub">${state.rolls_left} left</span>`;
+      // Always "Roll" - before the first roll, rolls_left already counts the
+      // rerolls that follow it, so +1 to also count this upcoming roll itself.
+      const rollsRemaining = first ? state.rolls_left + 1 : state.rolls_left;
+      const rollLabel = `<span class="roll-btn-label">Roll</span><span class="roll-btn-sub">${rollsRemaining} left</span>`;
       // Done is always rendered (just disabled before the first roll) so its
       // appearance never changes the roll-stack's height and shifts the UI.
       html = `<div class="roll-stack">

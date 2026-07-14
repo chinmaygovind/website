@@ -514,13 +514,11 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
 .action-row { display: flex; gap: .5rem; flex-wrap: wrap; justify-content: center; align-items: center;
   align-content: center; min-height: 90px; width: 100%; }
 .action-row .spectate { color: var(--cream); opacity: .7; font-family: var(--display); font-size: .98rem; text-align: center; }
-/* roll/reroll and Done side by side, same size, sharing the row evenly -
-   shorter than a normal .btn.big (own padding, not the inherited size).
-   A fixed min-height (sized for the two-line "Reroll"/"N left" state) means
-   the plain one-line "Roll" label doesn't make the button shrink and then
-   grow again once rerolling starts - .btn's own justify-content:center
-   (still in effect with flex-direction switched to column here) centers
-   "Roll" in that same box instead of it sitting flush at the top. */
+/* roll and Done side by side, same size, sharing the row evenly - shorter
+   than a normal .btn.big (own padding, not the inherited size). The label
+   always reads "Roll" with the rolls remaining (including the upcoming one)
+   as a small line underneath, even before the first roll - never "Reroll",
+   so the button's text/size never changes shape once rolling starts. */
 .roll-stack { display: flex; flex-direction: row; align-items: stretch; gap: .6rem; width: 280px; max-width: 100%; }
 .roll-stack .btn { flex: 1 1 0; width: auto; flex-direction: column; gap: 0; line-height: 1.2;
   padding: .55rem 1rem; min-height: 3.5rem; }
@@ -715,6 +713,8 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
   .tokyo-circle.bay { width: 190px; height: 190px; }
   .circle-label { font-size: 1.1rem; }
   .tokyo-circle.bay .circle-label { font-size: .95rem; }
+  /* nudged right of the desktop 6% - too close to the edge on a narrow phone */
+  .board-moon { left: 11%; }
 
   .mobile-tab-bar { display: flex; }
   /* leave room above the tab bar so the last row of monster cards isn't
