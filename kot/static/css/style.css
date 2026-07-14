@@ -303,20 +303,26 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
     radial-gradient(2.2px 2.2px at 65% 15%, rgba(255,255,255,.85), transparent),
     radial-gradient(1.6px 1.6px at 12% 78%, rgba(255,255,255,.6), transparent),
     radial-gradient(1.8px 1.8px at 50% 50%, rgba(255,255,255,.7), transparent),
-    radial-gradient(56px 56px at 10% 6%, rgba(255,251,230,.95), rgba(255,247,214,.3) 55%, transparent 74%),
+    radial-gradient(6px 5.5px at calc(10% - 7px) calc(6% - 4px), rgba(148,124,88,.7), transparent 72%),
+    radial-gradient(4.5px 4px at calc(10% + 8px) calc(6% + 3px), rgba(148,124,88,.65), transparent 72%),
+    radial-gradient(3.5px 3.5px at calc(10% + 2px) calc(6% + 9px), rgba(148,124,88,.6), transparent 72%),
+    radial-gradient(26px 26px at 10% 6%, #fffaf0 0%, #fdf6e0 58%, #ecdba8 88%, transparent 92%),
+    radial-gradient(78px 78px at 10% 6%, rgba(255,247,214,.28), rgba(255,247,214,.08) 55%, transparent 76%),
     radial-gradient(1100px 620px at 50% -8%, rgba(235, 87, 87, .26), transparent 62%),
     radial-gradient(700px 520px at 92% 20%, rgba(64, 214, 224, .2), transparent 68%),
     radial-gradient(680px 520px at 4% 50%, rgba(187, 107, 217, .22), transparent 66%),
     url("../img/skyline.svg"),
-    linear-gradient(180deg, #160a2b 0%, #120821 38%, #0b0518 72%, #06030d 100%);
-  background-repeat: repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, no-repeat, no-repeat, no-repeat, no-repeat, repeat-x, no-repeat;
-  background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, center bottom, 0 0;
-  background-size: auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, 1500px 365px, auto;
+    linear-gradient(180deg, #1a0d33 0%, #150a28 38%, #100819 72%, #0d0716 100%);
+  background-repeat: repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat-x, no-repeat;
+  background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, center bottom, 0 0;
+  background-size: auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, 1500px 365px, auto;
   background-attachment: local;
-  background-color: #0b0518; }
-/* reserve the log panel's width on wide screens so board content never
-   grows underneath it while the log is open */
-@media (min-width: 841px) { .board { padding-right: 336px; } }
+  background-color: #0d0716; }
+/* reserve the log panel's width on desktop so board content never grows
+   underneath it while the log is open - matches the >760px width where the
+   JS defaults the log panel open, so there's no gap width where it opens
+   without the reservation */
+@media (min-width: 761px) { .board { padding-right: 336px; } }
 
 /* ---- Tokyo: a red City circle and a smaller blue Bay circle, like the
    physical board. Never labeled anywhere else "Tokyo". ---- */
@@ -414,6 +420,39 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
   color: var(--accent-soft); border-radius: 5px; padding: 2px 5px; cursor: pointer; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; flex: 0 0 auto; transition: background .12s ease, border-color .12s ease; }
 .mc-cardrow:hover { background: rgba(242,201,76,.32); border-color: var(--accent); }
+
+/* ---- desktop: a left rail for Tokyo, players fill the right two-thirds.
+   On a short/laptop-height viewport, stacking Tokyo above a full Outskirts
+   roster (the old single-column flow, still used below 761px) pushes the
+   monster list down past the fixed controls bar and forces scrolling to see
+   who's even in the game. Side-by-side uses the wasted horizontal space
+   instead: Tokyo's circles shrink to fit a narrow rail (stacking vertically
+   once Bay is in play) and clamp to viewport height, monster cards shrink
+   too, and the player column gets the grid row's full height so it only
+   needs its own internal scroll (never hidden behind the dice tray) if a
+   full 5-player Outskirts roster still doesn't fit. */
+@media (min-width: 761px) {
+  .board { display: grid; grid-template-columns: minmax(180px, 30%) 1fr;
+    grid-template-rows: auto 1fr; column-gap: 1.3rem; row-gap: .3rem; overflow: hidden; }
+  .tokyo-ring { grid-column: 1; grid-row: 1 / 3; flex-direction: column; flex-wrap: nowrap;
+    align-items: center; justify-content: center; height: 100%; margin-top: 0;
+    gap: clamp(.5rem, 2.4vh, 1.2rem); }
+  .tokyo-circle.city { width: clamp(140px, 24vh, 250px); height: clamp(140px, 24vh, 250px); }
+  .tokyo-circle.bay { width: clamp(115px, 19vh, 200px); height: clamp(115px, 19vh, 200px); }
+  .circle-label, .tokyo-circle.bay .circle-label { top: 11%; font-size: clamp(.8rem, 1.9vh, 1.2rem); }
+  .outskirts-label { grid-column: 2; grid-row: 1; margin-top: .1rem; }
+  .monsters { grid-column: 2; grid-row: 2; height: 100%; max-height: none; align-content: flex-start;
+    gap: .7rem .9rem; padding: 1.4rem .2rem .4rem; }
+  .mon-card { width: 176px; }
+  .slot-mon .mon-card.no-cards { width: 135px; }
+  .mc-avatar { font-size: 2.5rem; }
+  .mc-name { font-size: .95rem; }
+  .mc-hpbar { width: 84px; height: 15px; }
+  .mc-stats { font-size: .85rem; gap: .45rem; }
+  .mc-cardlist { width: 72px; max-height: 170px; }
+  .mc-cardrow { font-size: .58rem; }
+  .slot-mon .mon-card { top: 25px; }
+}
 
 /* controls region: dice fill the left half, shop fills the right half. A
    fixed height so buttons/cards appearing and disappearing never shifts
