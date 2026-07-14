@@ -273,15 +273,20 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
   display: flex; flex-direction: column; align-items: center; gap: .6rem;
   /* a real illustrated skyline (kot/static/img/skyline.svg - "Generic
      Cityscape Skyline" by GDJ, openclipart.org, CC0/public domain), cropped
-     to trim empty sky above its tallest spire and recolored to a plain dark
-     purple silhouette (no lit windows - tried it, looked worse). Tiles
-     horizontally only (no vertical repeat - one skyline, not a repeating
-     strip), sized big and anchored to the board's bottom so it reaches up
-     well past the Outskirts label into the Tokyo City/Bay area instead of
-     leaving a dead gap above it. Stars keep repeating vertically past it
-     for atmosphere further down. Kept left of ~60% so they stay clear of
-     the log panel's reserved width on wide screens. The moon + ambient
-     glows stay single, anchored near the circles. */
+     to trim empty sky above its tallest spire and recolored to a near-black
+     silhouette - no stroke (an earlier version stroked the path for a
+     "sharper" edge, but that also outlined every window cutout in the
+     artwork and a thin antenna-like sliver, which read as noise/a stray
+     line - fill-vs-sky contrast alone is sharp enough). Tiles horizontally
+     only (no vertical repeat - one skyline, not a repeating strip), sized
+     big and anchored to the board's bottom so it reaches up well past the
+     Outskirts label into the Tokyo City/Bay area instead of leaving a dead
+     gap above it. Stars keep repeating vertically past it for atmosphere
+     further down. Kept left of ~60% so they stay clear of the log panel's
+     reserved width on wide screens. The moon is a real photo-traced asset
+     (kot/static/img/moon.svg - "Full Moon" by Merlin2525, openclipart.org,
+     CC0/public domain, traced from a public-domain Wikimedia photo) instead
+     of a drawn gradient, plus a soft glow behind it. */
   background:
     radial-gradient(2.4px 2.4px at 4% 8%, rgba(255,255,255,.95), transparent),
     radial-gradient(1.8px 1.8px at 14% 22%, rgba(255,255,255,.75), transparent),
@@ -303,19 +308,16 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
     radial-gradient(2.2px 2.2px at 65% 15%, rgba(255,255,255,.85), transparent),
     radial-gradient(1.6px 1.6px at 12% 78%, rgba(255,255,255,.6), transparent),
     radial-gradient(1.8px 1.8px at 50% 50%, rgba(255,255,255,.7), transparent),
-    radial-gradient(6px 5.5px at calc(10% - 7px) calc(6% - 4px), rgba(148,124,88,.7), transparent 72%),
-    radial-gradient(4.5px 4px at calc(10% + 8px) calc(6% + 3px), rgba(148,124,88,.65), transparent 72%),
-    radial-gradient(3.5px 3.5px at calc(10% + 2px) calc(6% + 9px), rgba(148,124,88,.6), transparent 72%),
-    radial-gradient(26px 26px at 10% 6%, #fffaf0 0%, #fdf6e0 58%, #ecdba8 88%, transparent 92%),
-    radial-gradient(78px 78px at 10% 6%, rgba(255,247,214,.28), rgba(255,247,214,.08) 55%, transparent 76%),
+    url("../img/moon.svg"),
+    radial-gradient(70px 70px at 6% 2.5%, rgba(255,247,214,.28), rgba(255,247,214,.08) 55%, transparent 76%),
     radial-gradient(1100px 620px at 50% -8%, rgba(235, 87, 87, .26), transparent 62%),
     radial-gradient(700px 520px at 92% 20%, rgba(64, 214, 224, .2), transparent 68%),
     radial-gradient(680px 520px at 4% 50%, rgba(187, 107, 217, .22), transparent 66%),
     url("../img/skyline.svg"),
     linear-gradient(180deg, #1a0d33 0%, #150a28 38%, #100819 72%, #0d0716 100%);
-  background-repeat: repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat-x, no-repeat;
-  background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, center bottom, 0 0;
-  background-size: auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, 1500px 365px, auto;
+  background-repeat: repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, repeat-y, no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat-x, no-repeat;
+  background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 0 0, 6% 2.5%, 0 0, 0 0, 0 0, 0 0, center bottom, 0 0;
+  background-size: auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, auto, 50px 50px, auto, auto, auto, auto, 1500px 365px, auto;
   background-attachment: local;
   background-color: #0d0716; }
 /* reserve the log panel's width on desktop so board content never grows
@@ -442,15 +444,23 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
   .circle-label, .tokyo-circle.bay .circle-label { top: 11%; font-size: clamp(.8rem, 1.9vh, 1.2rem); }
   .outskirts-label { grid-column: 2; grid-row: 1; margin-top: .1rem; }
   .monsters { grid-column: 2; grid-row: 2; height: 100%; max-height: none; align-content: flex-start;
-    gap: .7rem .9rem; padding: 1.4rem .2rem .4rem; }
-  .mon-card { width: 176px; }
+    gap: .8rem 1rem; padding: 1.4rem .2rem .4rem; }
+  /* fixed width in the Tokyo slot (not a flex item there); a flexible
+     grow/shrink range in the Outskirts list, where .monsters is the flex
+     container - fewer cards on a row means more leftover width for flexbox
+     to hand out, so a short roster gets visibly bigger cards instead of
+     the same small fixed size regardless of player count. */
+  .mon-card { width: 176px; container-type: inline-size; }
+  .monsters .mon-card { width: auto; flex: 1 1 176px; max-width: 230px; min-width: 150px; }
   .slot-mon .mon-card.no-cards { width: 135px; }
-  .mc-avatar { font-size: 2.5rem; }
-  .mc-name { font-size: .95rem; }
-  .mc-hpbar { width: 84px; height: 15px; }
-  .mc-stats { font-size: .85rem; gap: .45rem; }
-  .mc-cardlist { width: 72px; max-height: 170px; }
-  .mc-cardrow { font-size: .58rem; }
+  /* sized off the card's own rendered width (cqw) so avatar/text actually
+     grow with a bigger card instead of just floating in more padding */
+  .mc-avatar { font-size: clamp(2.1rem, 22cqw, 3.3rem); }
+  .mc-name { font-size: clamp(.85rem, 8.5cqw, 1.2rem); }
+  .mc-hpbar { width: clamp(72px, 47cqw, 100px); height: clamp(14px, 8cqw, 18px); }
+  .mc-stats { font-size: clamp(.78rem, 7.7cqw, 1rem); gap: .45rem; }
+  .mc-cardlist { width: clamp(60px, 41cqw, 92px); max-height: 170px; }
+  .mc-cardrow { font-size: clamp(.55rem, 5.3cqw, .66rem); }
   .slot-mon .mon-card { top: 25px; }
 }
 
