@@ -313,7 +313,7 @@
     const hpPct = Math.max(0, Math.round(100 * m.hp / m.maxhp));
     const toks = tokenPills(m.tokens);
     const cardList = cards.length
-      ? cards.map((c) => `<div class="mc-cardrow" data-cid="${esc(c.id)}">${c.emoji || "🎴"} ${esc(c.name)}${cardRowSuffix(c)}</div>`).join("")
+      ? cards.map((c) => `<div class="mc-cardrow" data-cid="${esc(c.id)}">${c.emoji || "🎴"} ${esc(c.name)}${cardRowSuffix(c, pid)}</div>`).join("")
       : `<div class="mc-cardlist-empty">—</div>`;
     // The Tokyo/Bay badge lives on the slot label now, not the card itself,
     // since an occupant only ever renders inside that slot (never duplicated
@@ -338,11 +338,14 @@
   }
 
   // A short parenthetical on a card row for the handful of cards with extra
-  // live state worth showing at a glance (Mimic's target, a Made in a Lab
-  // peek, Healing Ray's current aim).
-  function cardRowSuffix(c) {
+  // live state worth showing at a glance (Mimic's target, Healing Ray's aim).
+  // The server broadcasts the same state to everyone, so a Made in a Lab peek
+  // is technically visible to any client that goes looking - but it's only
+  // meant to be seen by its owner, so we only ever render it for MY_PID's own
+  // row, never when looking at someone else's monster card.
+  function cardRowSuffix(c, ownerPid) {
     if (c.mimic_target) return ` <span class="mc-card-note">(${esc(c.mimic_target.name)})</span>`;
-    if (c.lab_peek) return ` <span class="mc-card-note">(${esc(c.lab_peek.name)}, ${c.lab_peek.cost}⚡)</span>`;
+    if (c.lab_peek && ownerPid === MY_PID) return ` <span class="mc-card-note">(${esc(c.lab_peek.name)}, ${c.lab_peek.cost}⚡)</span>`;
     if (c.heal_target) return ` <span class="mc-card-note">(→ ${dispName(c.heal_target)})</span>`;
     return "";
   }
