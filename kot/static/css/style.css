@@ -312,7 +312,7 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
     radial-gradient(2.2px 2.2px at 65% 15%, rgba(255,255,255,.85), transparent),
     radial-gradient(1.6px 1.6px at 12% 78%, rgba(255,255,255,.6), transparent),
     radial-gradient(1.8px 1.8px at 50% 50%, rgba(255,255,255,.7), transparent),
-    radial-gradient(60px 60px at 6% 5%, rgba(255,247,214,.24), rgba(255,247,214,.08) 55%, transparent 76%),
+    radial-gradient(60px 60px at 6% 9%, rgba(255,247,214,.24), rgba(255,247,214,.08) 55%, transparent 76%),
     radial-gradient(1100px 620px at 50% -8%, rgba(235, 87, 87, .26), transparent 62%),
     radial-gradient(700px 520px at 92% 20%, rgba(64, 214, 224, .2), transparent 68%),
     radial-gradient(680px 520px at 4% 50%, rgba(187, 107, 217, .22), transparent 66%),
@@ -327,7 +327,7 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
    a soft glowing orb consistent with the rest of the illustrated scene
    instead of a sharp photo pasted onto flat art. Positioned to match the
    ambient glow gradient behind it (a background layer on .board, above). */
-.board-moon { position: absolute; top: 5%; left: 6%; width: 40px; height: 40px;
+.board-moon { position: absolute; top: 9%; left: 6%; width: 40px; height: 40px;
   transform: translate(-50%, -50%); z-index: 0; pointer-events: none;
   filter: blur(6px) brightness(1.85) saturate(.08)
     drop-shadow(0 0 6px rgba(255,251,235,.55)) drop-shadow(0 0 12px rgba(255,251,235,.28)); }
@@ -515,12 +515,17 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
   align-content: center; min-height: 90px; width: 100%; }
 .action-row .spectate { color: var(--cream); opacity: .7; font-family: var(--display); font-size: .98rem; text-align: center; }
 /* roll/reroll and Done side by side, same size, sharing the row evenly -
-   shorter than a normal .btn.big (own padding, not the inherited size) */
+   shorter than a normal .btn.big (own padding, not the inherited size).
+   A fixed min-height (sized for the two-line "Reroll"/"N left" state) means
+   the plain one-line "Roll" label doesn't make the button shrink and then
+   grow again once rerolling starts - .btn's own justify-content:center
+   (still in effect with flex-direction switched to column here) centers
+   "Roll" in that same box instead of it sitting flush at the top. */
 .roll-stack { display: flex; flex-direction: row; align-items: stretch; gap: .6rem; width: 280px; max-width: 100%; }
 .roll-stack .btn { flex: 1 1 0; width: auto; flex-direction: column; gap: 0; line-height: 1.2;
-  padding: .55rem 1rem; }
+  padding: .55rem 1rem; min-height: 3.5rem; }
 .roll-btn-label { display: block; }
-.roll-btn-sub { display: block; font-size: .68rem; font-weight: 400; opacity: .75; margin-top: 1px; }
+.roll-btn-sub { display: block; font-size: .68rem; font-weight: 400; opacity: .75; margin-top: 0; }
 .card-act { font-size: .78rem; padding: .42rem .85rem; }
 
 /* shop - no separate boxed panel, it just fills its half of the bar */
@@ -742,7 +747,7 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
      smaller font/padding so "Reroll" + its "N left" sub-line and "Done"
      both fit their half without wrapping */
   .roll-stack { gap: .35rem; }
-  .roll-stack .btn { font-size: .88rem; padding: .4rem .5rem; }
+  .roll-stack .btn { font-size: .88rem; padding: .4rem .5rem; min-height: 2.7rem; }
   .roll-btn-sub { font-size: .58rem; }
 
   .game-top .brand.small { display: none; }
