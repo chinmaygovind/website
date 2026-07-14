@@ -376,10 +376,12 @@ def on_acquire(state, pid, cid):
         m["maxhp"] += 2
         gl.heal(state, pid, 2)
     elif key == "monster_batteries":
+        # Whatever's left in your pocket after paying for this card gets
+        # banked as a MATCHING amount on the card too - you keep it AND the
+        # battery pays it back out, 2⚡/turn, effectively doubling it.
         stored = m["energy"]
-        gl.spend_energy(state, pid, stored)
-        _mem(state, pid)["batteries"] = stored       # bank matches your stake, not double it
-        gl._log(state, f"{gl._nm(pid)} charges the batteries with {stored}⚡.", pid=pid, kind="energy")
+        _mem(state, pid)["batteries"] = stored
+        gl._log(state, f"{gl._nm(pid)} charges the batteries with a matching {stored}⚡.", pid=pid, kind="energy")
     elif key == "smoke_cloud":
         _mem(state, pid)["smoke"] = 3
 

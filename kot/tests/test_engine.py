@@ -275,7 +275,7 @@ def test_metamorph_refuses_unowned_card():
     assert state["mon"][a]["cards"] == ["metamorph"]
 
 
-def test_monster_batteries_stores_exact_energy_not_doubled():
+def test_monster_batteries_banks_a_matching_copy_of_remaining_energy():
     state, pids = fresh(2)
     a = pids[0]
     state["phase"] = "buying"
@@ -283,10 +283,10 @@ def test_monster_batteries_stores_exact_energy_not_doubled():
     state["mon"][a]["energy"] = 10
     state["shop"][0] = "monster_batteries"    # keep, cost 2
     gl.buy_card(state, a, 0)
-    assert state["mon"][a]["energy"] == 0     # the 8 left after the 2-cost got banked, not kept
-    assert state["mon"][a]["cardmem"]["batteries"] == 8   # not 16
+    assert state["mon"][a]["energy"] == 8     # the 8 left after the 2-cost stays with you...
+    assert state["mon"][a]["cardmem"]["batteries"] == 8   # ...AND a matching 8 gets banked
     gl._begin_turn(state, a)                  # next turn: draw 2 back
-    assert state["mon"][a]["energy"] == 2
+    assert state["mon"][a]["energy"] == 10
     assert state["mon"][a]["cardmem"]["batteries"] == 6
 
 
