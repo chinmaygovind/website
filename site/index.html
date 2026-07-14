@@ -18,6 +18,8 @@
         --racing: #c0182b;
         --ttr: #6b4226;
         --ers: #b8860b;
+        --music: #000000;
+        --settings: #000000;
         --link: #1a56ff;
         --tile: clamp(110px, min(14vw, 30vh), 240px);
       }
@@ -169,6 +171,8 @@
       .modal-racing { border-color: var(--racing); }
       .modal-ttr { border-color: var(--ttr); }
       .modal-ers { border-color: var(--ers); }
+      .modal-music { border-color: var(--music); }
+      .modal-settings { border-color: var(--settings); }
       .modal-close {
         position: absolute;
         top: 6px;
@@ -219,6 +223,8 @@
       .modal-racing .pane-title { color: var(--racing); }
       .modal-ttr .pane-title { color: var(--ttr); }
       .modal-ers .pane-title { color: var(--ers); }
+      .modal-music .pane-title { color: var(--music); }
+      .modal-settings .pane-title { color: var(--settings); }
       .pane-text {
         font-size: clamp(1.1rem, 2vw, 1.6rem);
         line-height: 1.5;
@@ -334,6 +340,158 @@
         text-decoration: underline;
       }
 
+      /* ---- music tile: spotify + concert gallery ---- */
+      .spotify-section {
+        margin-top: 1.4rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        flex: 1;
+        min-height: 0;
+      }
+      .spotify-heading {
+        margin: 0 0 0.5rem;
+        font-size: clamp(0.85rem, 1.3vw, 1.05rem);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        opacity: 0.55;
+      }
+      .spotify-tracks {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.55rem;
+        overflow-y: auto;
+        max-height: 230px;
+      }
+      .spotify-track {
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+      }
+      .spotify-track img {
+        width: 40px;
+        height: 40px;
+        border-radius: 4px;
+        object-fit: cover;
+        flex-shrink: 0;
+      }
+      .spotify-track-info {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .spotify-track-name {
+        font-weight: 700;
+        font-size: 0.95rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .spotify-track-artist {
+        font-size: 0.85rem;
+        opacity: 0.65;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .spotify-artists {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.9rem;
+      }
+      .spotify-artist {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.3rem;
+        width: 64px;
+        text-align: center;
+      }
+      .spotify-artist img {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        object-fit: cover;
+      }
+      .spotify-artist span {
+        font-size: 0.72rem;
+        line-height: 1.15;
+      }
+      .spotify-placeholder {
+        font-size: 0.88rem;
+        opacity: 0.5;
+        font-style: italic;
+      }
+      .concert-pane {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+      .concert-photos {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 0.5rem;
+        align-content: start;
+      }
+      .concert-photo {
+        width: 100%;
+        height: 140px;
+        object-fit: cover;
+        border-radius: 6px;
+        border: 2px solid #000;
+      }
+      .concert-nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        border-top: 1px solid rgba(0, 0, 0, 0.12);
+        padding-top: 1rem;
+        flex-shrink: 0;
+      }
+      .concert-arrow {
+        background: none;
+        border: 2px solid #000;
+        color: inherit;
+        font-size: 1.5rem;
+        line-height: 1;
+        width: 2.4rem;
+        height: 2.4rem;
+        border-radius: 50%;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .concert-arrow:disabled { opacity: 0.3; cursor: default; }
+      .concert-caption {
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .concert-artist {
+        font-weight: 700;
+        font-size: 1.05rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .concert-date {
+        font-size: 0.82rem;
+        opacity: 0.6;
+      }
+
       /* ---- mobile ---- */
       @media (max-width: 760px) {
         :root { --tile: clamp(120px, 40vw, 200px); }
@@ -393,6 +551,10 @@
         .placeholder { flex: none; height: 26vh; height: 26dvh; }
         /* the top half is full width now, so shift the gif clear of the close X */
         .modal-icon { top: 1.1rem; right: 3.2rem; }
+        .spotify-section { flex: none; }
+        .spotify-tracks { max-height: 180px; }
+        .concert-photos { flex: none; max-height: 240px; }
+        .concert-photo { height: 110px; }
       }
     </style>
   </head>
@@ -501,6 +663,32 @@
           />
         </span>
         <span class="tile-label">EGYPTIAN RAT SCREW</span>
+      </button>
+
+      <button class="tile" data-modal="modal-music">
+        <span class="tile-art">
+          <img
+            class="tile-img"
+            src="assets/icons/music.svg"
+            data-still="assets/icons/music.svg"
+            data-anim="assets/icons/music.svg"
+            alt="Music"
+          />
+        </span>
+        <span class="tile-label">MUSIC</span>
+      </button>
+
+      <button class="tile" data-modal="modal-settings">
+        <span class="tile-art">
+          <img
+            class="tile-img"
+            src="assets/icons/settings.svg"
+            data-still="assets/icons/settings.svg"
+            data-anim="assets/icons/settings.svg"
+            alt="Settings"
+          />
+        </span>
+        <span class="tile-label">SETTINGS</span>
       </button>
     </main>
 
@@ -668,6 +856,66 @@
       </div>
     </div>
 
+    <!-- music popup -->
+    <div class="modal" id="modal-music" hidden>
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-box modal-music" role="dialog" aria-modal="true" aria-label="Music">
+        <button class="modal-close" data-close aria-label="Close">&times;</button>
+        <div class="modal-body">
+          <div class="pane pane-left">
+            <img class="modal-icon" src="assets/icons/music.svg" alt="" aria-hidden="true" />
+            <h2 class="pane-title">music</h2>
+            <p class="pane-text">I love music. I've played piano since I was very young, and I enjoy listening to music, attempting to play music, and going to concerts. Here is some of what I enjoy.</p>
+            <div class="spotify-section">
+              <div>
+                <h3 class="spotify-heading">recently played</h3>
+                <ol class="spotify-tracks" id="spotify-tracks">
+                  <li class="spotify-placeholder">not connected yet</li>
+                </ol>
+              </div>
+              <div>
+                <h3 class="spotify-heading">top artists</h3>
+                <ul class="spotify-artists" id="spotify-artists">
+                  <li class="spotify-placeholder">not connected yet</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <div class="pane pane-right concert-pane">
+            <div class="concert-photos" id="concert-photos">
+              <div class="placeholder">concert photos coming soon</div>
+            </div>
+            <div class="concert-nav">
+              <button class="concert-arrow" id="concert-prev" type="button" aria-label="Previous concert" disabled>&#8249;</button>
+              <div class="concert-caption">
+                <span class="concert-artist" id="concert-artist">&mdash;</span>
+                <span class="concert-date" id="concert-date"></span>
+              </div>
+              <button class="concert-arrow" id="concert-next" type="button" aria-label="Next concert" disabled>&#8250;</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- settings popup -->
+    <div class="modal" id="modal-settings" hidden>
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-box modal-settings" role="dialog" aria-modal="true" aria-label="Settings">
+        <button class="modal-close" data-close aria-label="Close">&times;</button>
+        <div class="modal-body">
+          <div class="pane pane-left">
+            <img class="modal-icon" src="assets/icons/settings.svg" alt="" aria-hidden="true" />
+            <h2 class="pane-title">settings</h2>
+            <p class="pane-text">Placeholder &mdash; nothing here yet.</p>
+          </div>
+          <div class="pane pane-right">
+            <div class="placeholder">more soon</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <script>
       // hover a tile -> play its gif; leave -> back to the still png
       document.querySelectorAll(".tile-img").forEach(function (img) {
@@ -729,6 +977,107 @@
           }
         })
         .catch(function () {});
+
+      // music tile: names/urls below come from Spotify's API or my own JSON,
+      // but escape anyway since they land in innerHTML
+      function escapeHtml(s) {
+        return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+        });
+      }
+
+      // music tile: recently played, from chinmay's Spotify via the
+      // same-origin proxy in app.py (see /api/spotify/*). Leaves the
+      // "not connected yet" placeholder already in the markup on failure.
+      fetch("/api/spotify/recent")
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d || !d.tracks || !d.tracks.length) return;
+          var el = document.getElementById("spotify-tracks");
+          el.innerHTML = d.tracks.map(function (t) {
+            return (
+              '<li class="spotify-track">' +
+              (t.image ? '<img src="' + escapeHtml(t.image) + '" alt="" />' : "") +
+              '<span class="spotify-track-info">' +
+              '<span class="spotify-track-name">' + escapeHtml(t.name) + "</span>" +
+              '<span class="spotify-track-artist">' + escapeHtml(t.artist) + "</span>" +
+              "</span></li>"
+            );
+          }).join("");
+        })
+        .catch(function () {});
+
+      // music tile: top artists, same proxy
+      fetch("/api/spotify/top-artists")
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d || !d.artists || !d.artists.length) return;
+          var el = document.getElementById("spotify-artists");
+          el.innerHTML = d.artists.map(function (a) {
+            return (
+              '<li class="spotify-artist">' +
+              (a.image ? '<img src="' + escapeHtml(a.image) + '" alt="" />' : "") +
+              "<span>" + escapeHtml(a.name) + "</span></li>"
+            );
+          }).join("");
+        })
+        .catch(function () {});
+
+      // music tile: concert photo carousel, driven by assets/music/concerts.json.
+      // To add a concert later: drop its photos anywhere under site/assets/music/
+      // and append { "artist": "...", "date": "...", "photos": ["assets/music/..."] }
+      // to that JSON file -- no code changes needed.
+      (function () {
+        var idx = 0;
+        var concerts = [];
+        var photosEl = document.getElementById("concert-photos");
+        var artistEl = document.getElementById("concert-artist");
+        var dateEl = document.getElementById("concert-date");
+        var prevBtn = document.getElementById("concert-prev");
+        var nextBtn = document.getElementById("concert-next");
+        if (!photosEl) return;
+
+        function render() {
+          if (!concerts.length) {
+            photosEl.innerHTML = '<div class="placeholder">concert photos coming soon</div>';
+            artistEl.textContent = "—";
+            dateEl.textContent = "";
+            prevBtn.disabled = true;
+            nextBtn.disabled = true;
+            return;
+          }
+          var c = concerts[idx];
+          photosEl.innerHTML = (c.photos || []).map(function (src) {
+            return (
+              '<img class="concert-photo" src="' + escapeHtml(src) + '" ' +
+              'alt="' + escapeHtml(c.artist) + ' concert photo" loading="lazy" />'
+            );
+          }).join("");
+          artistEl.textContent = c.artist || "—";
+          dateEl.textContent = c.date || "";
+          prevBtn.disabled = concerts.length < 2;
+          nextBtn.disabled = concerts.length < 2;
+        }
+
+        prevBtn.addEventListener("click", function () {
+          if (!concerts.length) return;
+          idx = (idx - 1 + concerts.length) % concerts.length;
+          render();
+        });
+        nextBtn.addEventListener("click", function () {
+          if (!concerts.length) return;
+          idx = (idx + 1) % concerts.length;
+          render();
+        });
+
+        fetch("assets/music/concerts.json")
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (Array.isArray(data)) concerts = data;
+            render();
+          })
+          .catch(function () {});
+      })();
     </script>
   </body>
 </html>
