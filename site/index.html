@@ -345,6 +345,7 @@
         margin-top: 1.4rem;
         display: flex;
         flex-direction: column;
+        justify-content: flex-end;
         gap: 1rem;
         flex: 1;
         min-height: 0;
@@ -359,12 +360,27 @@
       .spotify-tracks {
         list-style: none;
         margin: 0;
-        padding: 0;
+        padding: 0 0.6rem 0 0;
         display: flex;
         flex-direction: column;
         gap: 0.55rem;
         overflow-y: auto;
         max-height: 230px;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(0, 0, 0, 0.3) transparent;
+      }
+      .spotify-tracks::-webkit-scrollbar {
+        width: 6px;
+      }
+      .spotify-tracks::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .spotify-tracks::-webkit-scrollbar-thumb {
+        background: rgba(0, 0, 0, 0.28);
+        border-radius: 999px;
+      }
+      .spotify-tracks::-webkit-scrollbar-thumb:hover {
+        background: rgba(0, 0, 0, 0.5);
       }
       .spotify-track {
         display: flex;
