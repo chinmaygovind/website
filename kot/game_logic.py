@@ -364,22 +364,13 @@ def resolve(state, pid):
 
     # 3) Hearts -> heal (blocked while in Tokyo). A Heart that would be wasted
     #    (in Tokyo, or already at full Health) is instead used to shed a poison
-    #    or shrink counter. Healing Ray can redirect all of this to another
-    #    monster instead, who pays 2⚡ per point healed.
-    h = dice.count("heart")
-    tok = m["tokens"]
-    heal_target = _cards().heal_redirect_target(state, pid)
-    if heal_target:
-        if h:
-            healed = heal(state, heal_target, h, via_dice=True)
-            if healed:
-                paid = healed * 2
-                spend_energy(state, heal_target, paid)
-                gain_energy(state, pid, paid)
-                _log(state, f"{_nm(pid)} heals {_nm(heal_target)} for {healed} with its healing ray ({paid}⚡ paid).", pid=pid, kind="heal")
-            elif _in_tokyo(state, heal_target):
-                _log(state, f"{_nm(pid)} can't heal {_nm(heal_target)} while it's in Tokyo.", pid=pid, kind="sys")
-    else:
+    #    or shrink counter. Healing Ray fires as its own manual action mid-roll
+    #    (card_action, immediately spending the hearts on another monster who
+    #    pays 2⚡ per point healed) - if that already happened this roll, these
+    #    same hearts don't ALSO do the normal things below.
+    if not _cards().heal_ray_already_fired(state, pid):
+        h = dice.count("heart")
+        tok = m["tokens"]
         if h and (_in_tokyo(state, pid) or m["hp"] >= m["maxhp"]):
             for kind in ("poison", "shrink"):
                 while h > 0 and tok.get(kind, 0) > 0:
@@ -567,7 +558,7 @@ def sweep_shop(state, pid):
 # Card keys usable by someone OTHER than the active player - a reaction to
 # another monster's roll (Psychic Probe) or to a freshly-revealed shop card
 # (Opportunist). Everything else stays limited to the active player only.
-_OFF_TURN_CARD_KEYS = {"psychic_probe", "opportunist"}
+_OFF_TURN_CARD_KEYS = {"psychic_probe", "opportunist", "camouflage"}
 
 
 def card_action(state, pid, card, choice=None):
@@ -675,7 +666,7 @@ def _shop_view(state):
     return out
 
 
-def _cards_view(state, pid):
+def _cards_view(state, pid, viewer_pid):
     out = []
     for cid in state["mon"][pid]["cards"]:
         C = _cards().CATALOG.get(cid, {})
@@ -683,12 +674,17 @@ def _cards_view(state, pid):
                  "type": C.get("type"), "text": C.get("text"), "emoji": C.get("emoji")}
         extra = _cards().card_extra_view(state, pid, cid, C.get("key"))
         if extra:
+            # Made in a Lab's peek is private - only the owner's own view of
+            # their own cards includes it, never a broadcast to other players
+            # or spectators (mimic_target and everything else stay public).
+            if "lab_peek" in extra and viewer_pid != pid:
+                extra = {k: v for k, v in extra.items() if k != "lab_peek"}
             entry.update(extra)
         out.append(entry)
     return out
 
 
-def public_view(state):
+def public_view(state, viewer_pid=None):
     return {
         "players": state["players"],
         "current": state["current"],
@@ -696,8 +692,9 @@ def public_view(state):
         "mon": {pid: {
             "hp": m["hp"], "maxhp": m["maxhp"], "vp": m["vp"], "energy": m["energy"],
             "alive": m["alive"], "tokens": m["tokens"],
-            "cards": _cards_view(state, pid),
+            "cards": _cards_view(state, pid, viewer_pid),
             "probed_by": m.get("cardmem", {}).get("probed_by", []),
+            "camo_roll": m.get("cardmem", {}).get("camo_roll"),
         } for pid, m in state["mon"].items()},
         "tokyo": state["tokyo"],
         "use_bay": state["use_bay"],

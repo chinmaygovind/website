@@ -55,10 +55,12 @@
     if (btn) btn.textContent = v ? "🔇" : "🔊";
   }
 
-  // New log lines drive attack/ko/buy stings; a turn change into MY_PID pings.
+  // New log lines drive attack/ko/buy stings (and It Has a Child's revive
+  // burst on whichever monster's card just came back); a turn change into
+  // MY_PID pings.
   let lastLogId = null;
   let prevCurrent = null;
-  const LOG_SOUND = { attack: "attack", ko: "ko", buy: "card" };
+  const LOG_SOUND = { attack: "attack", ko: "ko", buy: "card", revive: "turn" };
   function soundForLog(log) {
     if (lastLogId == null) {
       lastLogId = log.length ? log[log.length - 1].id : 0;
@@ -69,6 +71,7 @@
       if (l.id <= lastLogId) continue;
       const snd = LOG_SOUND[l.kind];
       if (snd && !played.has(snd)) { playSound(snd); played.add(snd); }
+      if (l.kind === "revive" && l.pid) spawnReviveAnim(l.pid);
     }
     if (log.length) lastLogId = Math.max(lastLogId, log[log.length - 1].id);
   }
@@ -199,6 +202,23 @@
     anchor.classList.remove("stat-flash");
     void anchor.offsetWidth;
     anchor.classList.add("stat-flash");
+  }
+
+  // It Has a Child: a one-shot gold burst on the reborn monster's card plus a
+  // rising "Reborn!" label, on top of whatever hp/vp floats also fire for the
+  // same change.
+  function spawnReviveAnim(pid) {
+    const card = document.querySelector(`.mon-card[data-pid="${pid}"]`);
+    if (!card) return;
+    card.classList.remove("revive-burst");
+    void card.offsetWidth;
+    card.classList.add("revive-burst");
+    card.addEventListener("animationend", () => card.classList.remove("revive-burst"), { once: true });
+    const span = document.createElement("span");
+    span.className = "revive-label";
+    span.textContent = "🥚 Reborn!";
+    card.appendChild(span);
+    setTimeout(() => span.remove(), 1800);
   }
 
   // ---- socket wiring -------------------------------------------------------
@@ -338,15 +358,17 @@
   }
 
   // A short parenthetical on a card row for the handful of cards with extra
-  // live state worth showing at a glance (Mimic's target, Healing Ray's aim).
-  // The server broadcasts the same state to everyone, so a Made in a Lab peek
-  // is technically visible to any client that goes looking - but it's only
-  // meant to be seen by its owner, so we only ever render it for MY_PID's own
-  // row, never when looking at someone else's monster card.
+  // live state worth showing at a glance (Mimic's target, Made in a Lab's
+  // peek, Monster Batteries' remaining charge). The server broadcasts the
+  // same state to everyone, so a Made in a Lab peek is technically visible to
+  // any client that goes looking - but it's only meant to be seen by its
+  // owner, so we only ever render it for MY_PID's own row, never when looking
+  // at someone else's monster card. Battery charge isn't secret, so it always
+  // shows for everyone.
   function cardRowSuffix(c, ownerPid) {
     if (c.mimic_target) return ` <span class="mc-card-note">(${esc(c.mimic_target.name)})</span>`;
     if (c.lab_peek && ownerPid === MY_PID) return ` <span class="mc-card-note">(${esc(c.lab_peek.name)}, ${c.lab_peek.cost}⚡)</span>`;
-    if (c.heal_target) return ` <span class="mc-card-note">(→ ${dispName(c.heal_target)})</span>`;
+    if (c.battery_left != null) return ` <span class="mc-card-note">(${c.battery_left}⚡ left)</span>`;
     return "";
   }
 
@@ -384,22 +406,53 @@
   const dieFaceHtml = (f) => `<span class="die-face">${FACE[f] || ""}</span>`;
 
   let lastAnimatedRollNum = -1;
+  // Generic "arm this button, then click one of your own dice to fire the
+  // ability on it" mode, built for Background Dweller ([3]s only) and reused
+  // for Herd Culler (any die) - any future one-die-picking ability just adds
+  // an entry here instead of growing its own prompt() or its own copy of this
+  // targeting machinery.
+  const DIE_TARGET = {
+    background_dweller: { filter: (f) => f === "3" },
+    herd_culler: { filter: () => true },
+  };
+  let dieTargetCard = null;          // card id currently armed, or null
+  let pendingDieAnim = null;         // {index, prevFace} - a fired action awaiting its server-confirmed face
+  let lastShownCamoId = 0;           // highest Camouflage camo_roll.id already played out
+  let camoRollAnim = null;           // {dice, reels} - a Camouflage roll currently animating
   function renderDice() {
     const tray = $("diceTray");
     const dice = state.dice || [];
-    if (!dice.length || (state.phase !== "rolling" && state.roll_num === 0)) { tray.innerHTML = ""; return; }
+    if (!dice.length || (state.phase !== "rolling" && state.roll_num === 0)) { tray.innerHTML = ""; dieTargetCard = null; return; }
     // Only animate when THIS client just clicked roll/reroll (pendingRollAnim) -
     // never on page load, reconnect, or just opening the mobile Dice tab, which
     // would otherwise replay a stale animation for a roll that already happened.
     const rollChanged = state.roll_num !== lastAnimatedRollNum;
     const freshRoll = pendingRollAnim && rollChanged;
-    if (rollChanged) { lastAnimatedRollNum = state.roll_num; pendingRollAnim = false; }
+    if (rollChanged) {
+      lastAnimatedRollNum = state.roll_num;
+      pendingRollAnim = false;
+      // A fresh roll always exits die-targeting mode - the armed ability has
+      // to be re-armed against the new dice.
+      dieTargetCard = null;
+      pendingDieAnim = null;
+    }
+    if (!isMyRollingTurn()) dieTargetCard = null;
+    const targetFilter = dieTargetCard && DIE_TARGET[dieTargetCard].filter;
+    // A targeted die-changing ability only gets its reel animation once the
+    // server's actual new face lands (never on the optimistic re-render right
+    // after the click, which still shows the old face).
+    let animIdx = null;
+    if (pendingDieAnim) {
+      const { index, prevFace } = pendingDieAnim;
+      if (dice[index] !== prevFace) { animIdx = index; pendingDieAnim = null; }
+    }
     tray.innerHTML = dice.map((f, i) => {
       const kept = keep.has(i);
       const canClick = isMyRollingTurn() && state.roll_num > 0;
+      const targetable = !!targetFilter && targetFilter(f);
       // Only dice actually being rerolled get the reel animation - kept dice
-      // stay put.
-      const isRolling = freshRoll && !kept;
+      // stay put, except a targeted reroll always gets one.
+      const isRolling = (freshRoll && !kept) || i === animIdx;
       let inner;
       if (isRolling) {
         const reel = [randomFaceKey(), randomFaceKey(), randomFaceKey(), randomFaceKey(), f];
@@ -407,10 +460,18 @@
       } else {
         inner = dieFaceHtml(f);
       }
-      return `<button class="die ${FACE_CLASS[f] || "blank"} ${kept ? "kept" : ""} ${isRolling ? "rolling" : ""}"
-        ${canClick ? "" : "disabled"} data-i="${i}">${inner}</button>`;
+      // While targeting, only matching dice stay clickable - everything else
+      // (including the normal keep-toggle) is inert until targeting mode ends.
+      const clickable = targetFilter ? targetable : canClick;
+      return `<button class="die ${FACE_CLASS[f] || "blank"} ${kept ? "kept" : ""} ${isRolling ? "rolling" : ""} ${targetable ? "die-target" : ""}"
+        ${clickable ? "" : "disabled"} data-i="${i}">${inner}</button>`;
     }).join("");
-    tray.querySelectorAll(".die").forEach((el) => el.onclick = () => toggleKeep(+el.dataset.i));
+    tray.querySelectorAll(".die").forEach((el) => {
+      const i = +el.dataset.i;
+      el.onclick = targetFilter
+        ? (targetFilter(dice[i]) ? () => fireDieTarget(dieTargetCard, i) : null)
+        : () => toggleKeep(i);
+    });
     // Once a die's reel animation genuinely finishes, collapse its multi-row
     // reel back down to a single plain face. The CSS leaves the reel parked
     // on the right (real) row via the animation's end state either way, but
@@ -461,10 +522,11 @@
       html = `<button class="btn big" data-a="end">End turn</button>`;
       html += cardActionButtons();
     }
-    // Psychic Probe and Opportunist react on someone ELSE's turn, so they're
-    // not gated by isMyTurn() like the rest of cardActionButtons() - append
-    // them regardless of which branch above fired.
-    html += psychicProbeButton() + opportunistButton();
+    // Psychic Probe, Opportunist and a pending Camouflage roll all react
+    // outside of whoever's turn it is, so they're not gated by isMyTurn()
+    // like the rest of cardActionButtons() - append them regardless of
+    // which branch above fired.
+    html += psychicProbeButton() + opportunistButton() + camoRollButton();
     row.innerHTML = html;
     row.querySelectorAll("[data-a]").forEach((el) => el.onclick = () => {
       const a = el.dataset.a;
@@ -473,6 +535,10 @@
       else if (a === "end") doEndTurn();
       else if (a === "yield-leave") doYield(true);
       else if (a === "yield-stay") doYield(false);
+      // Background Dweller / Herd Culler (or Mimic copying either) arm die-
+      // targeting mode on the dice tray instead of firing straight away.
+      else if (a.startsWith("card:") && DIE_TARGET[a.slice(5)]) toggleDieTargetMode(a.slice(5));
+      else if (a === "camo-roll") fireCamoRoll();
       else if (a.startsWith("card:")) fireCard(a.slice(5));
     });
   }
@@ -504,16 +570,71 @@
     return `<button class="btn card-act" data-a="card:opportunist">🕵️ Snap up ${esc(slot.name)} (${slot.cost}⚡)</button>`;
   }
 
+  // Camouflage: the mitigation already happened server-side the instant
+  // damage landed, but its owner still gets a button to roll-and-reveal it
+  // themselves, with a small reel per point of damage and a floating pop for
+  // each [heart] that shrugs off a point - fireable regardless of whose turn
+  // it is, since damage can land on anyone at any time.
+  function camoRollButton() {
+    if (camoRollAnim) return camoRollWidgetHtml();
+    if (isSpectator()) return "";
+    const mine = state.mon[MY_PID];
+    const cr = mine && mine.camo_roll;
+    if (!cr || cr.id <= lastShownCamoId) return "";
+    return `<button class="btn card-act danger" data-a="camo-roll">🦎 Roll Camouflage (${cr.blocked})</button>`;
+  }
+
+  function camoRollWidgetHtml() {
+    const { dice, reels } = camoRollAnim;
+    const diceHtml = dice.map((f, i) => {
+      const frames = reels[i].concat([f]);
+      return `<span class="die mini rolling ${FACE_CLASS[f] || "blank"}">
+        <span class="die-face-viewport"><span class="die-reel" style="animation-delay:${i * 45}ms">${frames.map(dieFaceHtml).join("")}</span></span>
+      </span>`;
+    }).join("");
+    return `<div class="camo-roll"><span class="camo-roll-label">🦎 Rolling camouflage…</span><div class="camo-roll-dice">${diceHtml}</div></div>`;
+  }
+
+  function fireCamoRoll() {
+    const mine = state.mon[MY_PID];
+    const cr = mine && mine.camo_roll;
+    if (!cr || camoRollAnim || cr.id <= lastShownCamoId) return;
+    lastShownCamoId = cr.id;
+    doCardAction("camouflage", null);
+    // Freeze the reel's random mid-spin frames once, up front - renderActions()
+    // can re-run several times while this plays (e.g. another player acting),
+    // and re-rolling those frames on every re-render would look like flicker
+    // instead of one clean spin.
+    camoRollAnim = { dice: cr.dice, reels: cr.dice.map(() => [randomFaceKey(), randomFaceKey(), randomFaceKey(), randomFaceKey()]) };
+    renderActions();
+    const n = cr.dice.length;
+    cr.dice.forEach((f, i) => {
+      if (f === "heart") setTimeout(spawnCamoBlockedPop, i * 45 + 520);
+    });
+    setTimeout(() => { camoRollAnim = null; renderActions(); }, (n - 1) * 45 + 520 + 700);
+  }
+
+  function spawnCamoBlockedPop() {
+    const card = document.querySelector(`.mon-card[data-pid="${MY_PID}"]`);
+    const anchor = card && card.querySelector(".mc-hpbar");
+    if (!anchor) return;
+    const cardR = card.getBoundingClientRect();
+    const anchorR = anchor.getBoundingClientRect();
+    const span = document.createElement("span");
+    span.className = "stat-float saved";
+    span.textContent = "❤ blocked!";
+    span.style.left = (anchorR.left - cardR.left + anchorR.width / 2) + "px";
+    span.style.top = (anchorR.top - cardR.top) + "px";
+    card.appendChild(span);
+    setTimeout(() => span.remove(), 1300);
+  }
+
   // Gather any choice an actionable card needs, then send it.
   function fireCard(id) {
     let choice = null;
-    if (id === "herd_culler") {
-      const i = askDie("Set which die to a 1?"); if (i == null) return; choice = { index: i };
-    } else if (id === "plot_twist" || id === "stretchy") {
+    if (id === "plot_twist" || id === "stretchy") {
       const i = askDie("Change which die?"); if (i == null) return;
       const f = askFace(); if (!f) return; choice = { index: i, face: f };
-    } else if (id === "background_dweller") {
-      const i = askDie("Reroll which [3] die?"); if (i == null) return; choice = { index: i };
     } else if (id === "metamorph") {
       const mine = (state.mon[MY_PID].cards || []);
       if (!mine.length) return;
@@ -551,16 +672,46 @@
       choice = { pid: options[idx].pid, card: options[idx].card.id };
     } else if (id === "healing_ray") {
       const others = state.players.filter((p) => p !== MY_PID && state.mon[p].alive);
-      const list = ["0. Myself"].concat(others.map((p, i) => `${i + 1}. ${nameOf(p)}`)).join("\n");
-      const v = prompt("Aim the healing ray at who?\n" + list); if (v == null) return;
-      const idx = parseInt(v, 10);
-      if (idx === 0) choice = { pid: null };
-      else if (idx >= 1 && idx <= others.length) choice = { pid: others[idx - 1] };
-      else return;
+      if (!others.length) { toast("No other monster to aim at."); return; }
+      openPlayerPicker({
+        title: "Aim the healing ray",
+        candidates: others,
+        confirmLabel: "🩹 Heal Ray",
+        onConfirm: (target) => doCardAction("healing_ray", { pid: target }),
+      });
+      return;
     } else if (id === "psychic_probe") {
       const i = askDie(`Reroll which of ${nameOf(state.current)}'s dice?`); if (i == null) return; choice = { index: i };
+    } else if (id === "monster_batteries") {
+      const maxE = state.mon[MY_PID].energy;
+      openAmountPicker({
+        title: "Choose how much ⚡ to store in Monster Batteries",
+        min: 0,
+        max: maxE,
+        initial: maxE,
+        confirmLabel: "OK",
+        onConfirm: (amount) => doCardAction("monster_batteries", { amount }),
+      });
+      return;
     }
     doCardAction(id, choice);
+  }
+
+  // Background Dweller / Herd Culler: clicking the button arms that card's
+  // die-targeting mode (renderDice() draws the violet hover box and wires the
+  // click); clicking a matching die fires the ability and disarms it again.
+  function toggleDieTargetMode(card) {
+    if (!isMyRollingTurn() || state.roll_num === 0) return;
+    dieTargetCard = dieTargetCard === card ? null : card;
+    renderDice();
+    renderActions();
+  }
+  function fireDieTarget(card, i) {
+    dieTargetCard = null;
+    pendingDieAnim = { index: i, prevFace: state.dice[i] };
+    doCardAction(card, { index: i });
+    renderDice();
+    renderActions();
   }
   function askDie(msg) {
     const n = state.dice.length;
@@ -573,17 +724,111 @@
     return ["1", "2", "3", "heart", "energy", "claw"].includes(v) ? v : null;
   }
 
+  // Generic "click a monster's icon to target it" popup, built for Healing
+  // Ray but deliberately not hardcoded to it - any future ability (or Mimic
+  // copying one of these) that needs to pick another monster reuses this
+  // instead of growing its own prompt()/modal.
+  //   openPlayerPicker({ title, candidates: [pid...], confirmLabel, onConfirm(pid) })
+  let pickerState = null;
+  function openPlayerPicker(opts) {
+    pickerState = { title: opts.title, candidates: opts.candidates, confirmLabel: opts.confirmLabel, onConfirm: opts.onConfirm, selected: null };
+    renderPicker();
+    $("pickerModal").style.display = "flex";
+  }
+  function closePlayerPicker() {
+    $("pickerModal").style.display = "none";
+    pickerState = null;
+  }
+  function renderPicker() {
+    if (!pickerState) return;
+    const { title, candidates, confirmLabel, selected } = pickerState;
+    const m = selected ? state.mon[selected] : null;
+    $("pickerBox").innerHTML = `
+      <div class="picker-head">
+        <span class="picker-title">${esc(title)}</span>
+        <button class="picker-close" id="pickerCloseBtn">✕</button>
+      </div>
+      <div class="picker-grid">${candidates.map((pid) => `
+        <div class="picker-chip${selected === pid ? " selected" : ""}" data-pid="${pid}" style="--c:${colorOf(pid)}">
+          <div class="picker-avatar">${emojiOf(pid)}</div>
+          <div class="picker-name">${esc(nameOf(pid))}</div>
+        </div>`).join("")}
+      </div>
+      <div class="picker-stats">${m
+        ? `<span class="picker-stat">❤ ${m.hp}/${m.maxhp}</span><span class="picker-stat">⚡ ${m.energy}</span>`
+        : `<span class="picker-hint">Pick a monster above</span>`}</div>
+      <button class="btn card-act picker-confirm" id="pickerConfirmBtn" ${selected ? "" : "disabled"}>${esc(confirmLabel)}</button>
+    `;
+    $("pickerBox").querySelectorAll(".picker-chip").forEach((el) => el.onclick = () => {
+      pickerState.selected = el.dataset.pid;
+      renderPicker();
+    });
+    $("pickerCloseBtn").onclick = closePlayerPicker;
+    if (selected) {
+      $("pickerConfirmBtn").onclick = () => {
+        const target = pickerState.selected;
+        const onConfirm = pickerState.onConfirm;
+        closePlayerPicker();
+        onConfirm(target);
+      };
+    }
+  }
+
+  // Generic "pick a number between min and max" popup, built for Monster
+  // Batteries' store-energy choice but not hardcoded to it, same spirit as
+  // openPlayerPicker above. Shares the same modal container - only one of the
+  // two is ever open at a time.
+  //   openAmountPicker({ title, min, max, initial, confirmLabel, onConfirm(n) })
+  let amountPickerState = null;
+  function openAmountPicker(opts) {
+    amountPickerState = { title: opts.title, min: opts.min, max: opts.max,
+      value: opts.initial, confirmLabel: opts.confirmLabel, onConfirm: opts.onConfirm };
+    renderAmountPicker();
+    $("pickerModal").style.display = "flex";
+  }
+  function closeAmountPicker() {
+    $("pickerModal").style.display = "none";
+    amountPickerState = null;
+  }
+  function renderAmountPicker() {
+    if (!amountPickerState) return;
+    const { title, min, max, value, confirmLabel } = amountPickerState;
+    $("pickerBox").innerHTML = `
+      <div class="picker-head">
+        <span class="picker-title">${esc(title)}</span>
+        <button class="picker-close" id="pickerCloseBtn">✕</button>
+      </div>
+      <div class="amount-stepper">
+        <button class="amount-btn" id="amtMinus" ${value <= min ? "disabled" : ""}>−</button>
+        <span class="amount-value"><i class="fa-solid fa-bolt"></i> ${value}</span>
+        <button class="amount-btn" id="amtPlus" ${value >= max ? "disabled" : ""}>+</button>
+      </div>
+      <button class="btn card-act picker-confirm" id="pickerConfirmBtn">${esc(confirmLabel)}</button>
+    `;
+    $("pickerCloseBtn").onclick = closeAmountPicker;
+    $("amtMinus").onclick = () => { amountPickerState.value = Math.max(min, amountPickerState.value - 1); renderAmountPicker(); };
+    $("amtPlus").onclick = () => { amountPickerState.value = Math.min(max, amountPickerState.value + 1); renderAmountPicker(); };
+    $("pickerConfirmBtn").onclick = () => {
+      const n = amountPickerState.value;
+      const onConfirm = amountPickerState.onConfirm;
+      closeAmountPicker();
+      onConfirm(n);
+    };
+  }
+
   // Cards that grant an active ability the player can fire on their turn.
   // ``label`` can be a plain string, or a (state, card) => string for cards
-  // whose button text depends on some extra state (Mimic, Made in a Lab,
-  // Healing Ray).
+  // whose button text depends on some extra state (Mimic, Made in a Lab).
   function cardActionButtons() {
     if (!isMyTurn()) return "";
     const mine = (state.mon[MY_PID] && state.mon[MY_PID].cards) || [];
     const btns = [];
     const addBtn = (id, a, c) => {
       const label = typeof a.label === "function" ? a.label(state, c) : a.label;
-      btns.push(`<button class="btn card-act" data-a="card:${id}">${esc(label)}</button>`);
+      // A die-targeting ability stays visually "pressed" while its targeting
+      // mode is armed, same card-act color as every other ability button.
+      const extra = dieTargetCard === id ? " active" : "";
+      btns.push(`<button class="btn card-act${extra}" data-a="card:${id}">${esc(label)}</button>`);
     };
     for (const c of mine) {
       const a = ACTIONABLE[c.id];
@@ -610,11 +855,17 @@
     smoke_cloud: { label: "Smoke Cloud: +1 reroll", when: (s) => s.phase === "rolling" },
     rapid_healing: { label: "Rapid Healing: heal 1 (2⚡)", when: (s) => (s.mon[MY_PID].energy >= 2 && s.mon[MY_PID].hp < s.mon[MY_PID].maxhp) },
     wings: { label: "Wings: negate damage (2⚡)", when: (s) => s.mon[MY_PID].energy >= 2 },
-    background_dweller: { label: "Background Dweller: reroll a [3]", when: (s) => s.phase === "rolling" && s.roll_num > 0 && (s.dice || []).includes("3") },
+    background_dweller: { label: "Reroll 3", when: (s) => s.phase === "rolling" && s.roll_num > 0 && (s.dice || []).includes("3") },
     metamorph: { label: "Metamorph: discard a card for ⚡", when: (s) => s.phase === "buying" && (s.mon[MY_PID].cards || []).length > 0 },
+    monster_batteries: {
+      label: "🔌 Monster Batteries: store energy",
+      when: (s, c) => s.phase === "buying" && c.battery_left == null,
+    },
     mimic: {
       label: (s, c) => c.mimic_target ? `Mimic: copying ${c.mimic_target.name} (change 1⚡)` : "Mimic: choose a card to copy",
-      when: () => true,
+      // "At the start of your turn" - only before you've rolled, same window
+      // the server enforces, so the button never sits there doing nothing.
+      when: (s) => s.phase === "rolling" && s.roll_num === 0,
     },
     made_in_a_lab: {
       label: (s, c) => c.lab_peek ? `Buy peeked ${c.lab_peek.name} (${c.lab_peek.cost}⚡)` : "Made in a Lab: peek at the deck",
@@ -625,8 +876,8 @@
       when: (s) => s.phase === "buying" && s.players.some((p) => p !== MY_PID && s.mon[p].alive && (s.mon[p].cards || []).length),
     },
     healing_ray: {
-      label: (s, c) => `Healing Ray: aim at ${c.heal_target ? dispName(c.heal_target) : "yourself"}`,
-      when: (s) => s.phase === "rolling",
+      label: "🩹 Healing Ray: aim at a monster",
+      when: (s) => s.phase === "rolling" && s.roll_num > 0 && (s.dice || []).includes("heart"),
     },
   };
 

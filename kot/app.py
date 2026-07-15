@@ -410,9 +410,17 @@ def _names(game):
 
 
 def _broadcast(game):
+    """Emit personalized per-player views (never room-wide) so an owner-only
+    field like Made in a Lab's peek reaches only its owner - every player has
+    their own private room from on_join_game, and spectators share one
+    generic, owner-blind room."""
     state = game.state
-    socketio.emit("game_state", {"state": gl.public_view(state),
-                                 "roster": _roster(game)}, room="game:" + game.code)
+    roster = _roster(game)
+    for p in game.players:
+        socketio.emit("game_state", {"state": gl.public_view(state, viewer_pid=p.pid), "roster": roster},
+                      room=f"game:{game.code}:{p.pid}")
+    socketio.emit("game_state", {"state": gl.public_view(state), "roster": roster},
+                  room=f"game:{game.code}:spectate")
 
 
 def _broadcast_lobby(game):
@@ -487,10 +495,16 @@ def on_join_lobbies():
 @socketio.on("join_game")
 def on_join_game(data):
     code = (data or {}).get("code", "").upper()
-    join_room("game:" + code)
     game = KotGame.query.filter_by(code=code).first()
-    if game and game.status != "waiting":
-        emit("game_state", {"state": gl.public_view(game.state), "roster": _roster(game)})
+    if not game:
+        return
+    me = _me(game)
+    # Each player gets their own private room so _broadcast can personalize
+    # game_state per viewer; spectators share one generic, owner-blind room.
+    join_room(f"game:{code}:{me.pid}" if me else f"game:{code}:spectate")
+    if game.status != "waiting":
+        emit("game_state", {"state": gl.public_view(game.state, viewer_pid=(me.pid if me else None)),
+                            "roster": _roster(game)})
 
 
 @socketio.on("kick_player")

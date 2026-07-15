@@ -111,7 +111,8 @@ _DEFS = [
     ("mimic", "mimic", "Mimic", 8, "keep",
      "Copy a card any monster has in play. Spend 1⚡ at the start of your turn to change it."),
     ("monster_batteries", "monster_batteries", "Monster Batteries", 2, "keep",
-     "Store your ⚡ on this card, then take 2⚡ back at the start of each turn until it runs out."),
+     "Store any amount of your ⚡ here to double it, then take 2⚡ back at the "
+     "start of each turn until it runs out."),
     ("national_guard", "national_guard", "National Guard", 3, "discard",
      "+2 VP and take 2 damage."),
     ("nova_breath", "nova_breath", "Nova Breath", 7, "keep",
@@ -275,18 +276,16 @@ def mod(state, pid, key):
     return total
 
 
-def heal_redirect_target(state, pid):
-    """Healing Ray: who this monster's heart results heal this turn, if not
-    itself. Checked by game_logic.resolve() before applying heart healing."""
-    t = _mem(state, pid).get("heal_target")
-    if t and t != pid and state["mon"].get(t, {}).get("alive"):
-        return t
-    return None
+def heal_ray_already_fired(state, pid):
+    """Healing Ray fires immediately (card_action), spending this roll's whole
+    heart count on the chosen target right then. Checked by game_logic.resolve()
+    so it doesn't ALSO self-heal/shed poison with those same, already-used hearts."""
+    return _mem(state, pid).get("heal_ray_spent_roll") == state["roll_num"]
 
 
 def card_extra_view(state, pid, cid, key):
     """Extra client-display fields for one owned card, beyond its static
-    CATALOG entry - only Mimic/Made in a Lab/Healing Ray need this."""
+    CATALOG entry - only Mimic/Made in a Lab/Monster Batteries need this."""
     if key == "mimic":
         mk = _mem(state, pid).get("mimic_key")
         if mk:
@@ -298,10 +297,10 @@ def card_extra_view(state, pid, cid, key):
             t = CATALOG.get(lk, {})
             cost = max(0, t.get("cost", 0) - mod(state, pid, "buy_discount"))
             return {"lab_peek": {"id": lk, "name": t.get("name"), "emoji": t.get("emoji"), "cost": cost}}
-    elif key == "healing_ray":
-        ht = _mem(state, pid).get("heal_target")
-        if ht and state["mon"].get(ht, {}).get("alive"):
-            return {"heal_target": ht}
+    elif key == "monster_batteries":
+        mem = _mem(state, pid)
+        if mem.get("battery_charged"):
+            return {"battery_left": mem.get("batteries", 0)}
     return None
 
 
@@ -316,7 +315,11 @@ def adjust_incoming(state, target, n, attacker, rng):
     if _has(state, target, "armor_plating") and n == 1:
         return 0
     if _has(state, target, "camouflage") and n > 0:
-        saved = sum(1 for _ in range(n) if rng.choice(gl.FACES) == "heart")
+        faces = [rng.choice(gl.FACES) for _ in range(n)]
+        saved = faces.count("heart")
+        mem = _mem(state, target)
+        mem["camo_seq"] = mem.get("camo_seq", 0) + 1
+        mem["camo_roll"] = {"id": mem["camo_seq"], "dice": faces, "saved": saved, "blocked": len(faces)}
         n -= saved
         if saved:
             gl._log(state, f"{gl._nm(target)}'s camouflage shrugs off {saved} damage.",
@@ -335,6 +338,19 @@ def on_deal_damage(state, attacker, target, n):
     if _has(state, attacker, "shrink_ray"):
         state["mon"][target]["tokens"]["shrink"] = \
             state["mon"][target]["tokens"].get("shrink", 0) + 1
+    if _has(state, attacker, "fire_breathing") and not state.get("_fb_lock"):
+        # Guard against the neighbor hit below re-entering this same branch
+        # (it's itself a distinct deal_damage call with attacker=attacker).
+        order = state["players"]
+        i = order.index(attacker)
+        n_players = len(order)
+        state["_fb_lock"] = True
+        try:
+            for nb in {order[(i - 1) % n_players], order[(i + 1) % n_players]}:
+                if nb != attacker and state["mon"][nb]["alive"]:
+                    gl.deal_damage(state, nb, 1, attacker=attacker)
+        finally:
+            state.pop("_fb_lock", None)
 
 
 def on_any_elimination(state, pid):
@@ -375,13 +391,6 @@ def on_acquire(state, pid, cid):
     if key == "even_bigger":
         m["maxhp"] += 2
         gl.heal(state, pid, 2)
-    elif key == "monster_batteries":
-        # Whatever's left in your pocket after paying for this card gets
-        # banked as a MATCHING amount on the card too - you keep it AND the
-        # battery pays it back out, 2⚡/turn, effectively doubling it.
-        stored = m["energy"]
-        _mem(state, pid)["batteries"] = stored
-        gl._log(state, f"{gl._nm(pid)} charges the batteries with a matching {stored}⚡.", pid=pid, kind="energy")
     elif key == "smoke_cloud":
         _mem(state, pid)["smoke"] = 3
 
@@ -432,11 +441,15 @@ def on_acquire(state, pid, cid):
     elif key == "drop_from_high_altitude":
         gl.gain_vp(state, pid, 2)
         if not gl._in_tokyo(state, pid):
-            occ = state["tokyo"]["city"]
-            if occ:
+            if state["tokyo"]["city"] is None:
+                gl._take_tokyo(state, pid, "city")
+            elif state["use_bay"] and state["tokyo"]["bay"] is None:
+                gl._take_tokyo(state, pid, "bay")
+            else:
+                occ = state["tokyo"]["city"]
                 state["tokyo"]["city"] = None
                 gl._log(state, f"{gl._nm(occ)} is shoved out of Tokyo.", pid=occ, kind="tokyo")
-            gl._take_tokyo(state, pid, "city")
+                gl._take_tokyo(state, pid, "city")
     elif key == "frenzy":
         m["_extra_turn"] = True
         gl._log(state, f"{gl._nm(pid)} goes into a frenzy - another turn!", pid=pid, kind="sys")
@@ -462,7 +475,7 @@ def _h_turn_start(state, pid, ctx):
     mem["freeze"] = False
     mem["herd_used"] = False
     mem["probed_by"] = []       # Psychic Probe: who's already probed this roll this turn
-    mem["heal_target"] = None   # Healing Ray: resets to "heal myself" each turn
+    mem["heal_ray_spent_roll"] = None   # Healing Ray: hasn't fired yet this turn
     if mem.get("wings"):
         mem["wings"] = False
     if _has(state, pid, "monster_batteries") and mem.get("batteries", 0) > 0:
@@ -502,15 +515,6 @@ def _h_attack(state, pid, ctx):
     if _has(state, pid, "alpha_monster"):
         gl.gain_vp(state, pid, 1)
         gl._log(state, f"{gl._nm(pid)} leads the pack (Alpha Monster +1 VP).", pid=pid, kind="vp")
-    if state["phase"] == "ended":
-        return
-    if _has(state, pid, "fire_breathing"):
-        order = state["players"]
-        i = order.index(pid)
-        n = len(order)
-        for nb in {order[(i - 1) % n], order[(i + 1) % n]}:
-            if nb != pid and state["mon"][nb]["alive"]:
-                gl.deal_damage(state, nb, 1, attacker=pid)
 
 
 def _h_take_damage(state, pid, ctx):
@@ -530,7 +534,7 @@ def _h_would_die(state, pid, ctx):
         m["vp"] = 0
         m["maxhp"] = gl.START_MAX_HP
         m["hp"] = 10
-        gl._log(state, f"{gl._nm(pid)}'s offspring rises to fight on!", pid=pid, kind="sys")
+        gl._log(state, f"{gl._nm(pid)}'s offspring rises to fight on!", pid=pid, kind="revive")
         gl._bump(state)
 
 
@@ -695,7 +699,7 @@ def card_action(state, pid, card, choice):
         gl._bump(state)
 
     elif key == "metamorph":
-        if state["phase"] != "buying":
+        if state["phase"] != "buying" or state["current"] != pid:
             return
         cid = choice.get("card") if isinstance(choice, dict) else None
         if not cid or cid not in m["cards"]:
@@ -709,8 +713,37 @@ def card_action(state, pid, card, choice):
         gl._log(state, f"{gl._nm(pid)} morphs {C['name']} back into {C['cost']}⚡.", pid=pid, kind="energy")
         gl._bump(state)
 
+    elif key == "monster_batteries":
+        # One-time choice (any amount, including 0) of how much of your
+        # current energy to lock away - doubled - in the batteries. Once
+        # decided (even at 0) it can't be redecided; _h_turn_start drains
+        # 2⚡/turn from whatever got stored until it runs out.
+        if state["phase"] != "buying" or state["current"] != pid:
+            return
+        mem = _mem(state, pid)
+        if mem.get("battery_charged"):
+            return
+        amt = choice.get("amount") if isinstance(choice, dict) else None
+        try:
+            amt = int(amt)
+        except (TypeError, ValueError):
+            return
+        amt = max(0, min(amt, m["energy"]))
+        gl.spend_energy(state, pid, amt)
+        mem["battery_charged"] = True
+        mem["batteries"] = amt * 2
+        if amt > 0:
+            gl._log(state, f"{gl._nm(pid)} stores {amt}⚡ in its batteries, doubled to {amt * 2}⚡.", pid=pid, kind="energy")
+        else:
+            gl._log(state, f"{gl._nm(pid)} leaves its batteries empty.", pid=pid, kind="sys")
+        gl._bump(state)
+
     elif key == "mimic":
-        if state["current"] != pid:
+        # "At the start of your turn" - the real card gates the (free first
+        # pick or 1-energy change) to before you've rolled, so you can't peek
+        # at your dice and then reactively pick whatever passive ability
+        # would help that specific roll most.
+        if state["current"] != pid or state["roll_num"] != 0:
             return
         cid = choice.get("card") if isinstance(choice, dict) else None
         if not cid or cid == "mimic":
@@ -833,21 +866,56 @@ def card_action(state, pid, card, choice):
         gl.gain_energy(state, target_pid, cost)
         tgt["cards"].remove(cid)
         m["cards"].append(cid)
+        if C["key"] == "monster_batteries":
+            # Whatever charge is left belongs to the card, not the old owner -
+            # carry it over so it keeps draining under new ownership instead
+            # of silently evaporating.
+            tgt_mem = _mem(state, target_pid)
+            my_mem = _mem(state, pid)
+            my_mem["battery_charged"] = tgt_mem.pop("battery_charged", False)
+            my_mem["batteries"] = tgt_mem.pop("batteries", 0)
         gl._log(state, f"{gl._nm(pid)} rips {C['name']} from {gl._nm(target_pid)} for {cost}⚡ (Parasitic Tentacles).", pid=pid, kind="buy")
         gl._bump(state)
 
     elif key == "healing_ray":
-        if state["phase"] != "rolling" or state["current"] != pid:
+        if state["phase"] != "rolling" or state["current"] != pid or state["roll_num"] <= 0:
             return
-        target_pid = choice.get("pid") if isinstance(choice, dict) else None
         mem = _mem(state, pid)
-        if not target_pid or target_pid == pid or not state["mon"].get(target_pid, {}).get("alive"):
-            mem["heal_target"] = None
-            gl._log(state, f"{gl._nm(pid)} aims its healing ray at itself.", pid=pid, kind="sys")
+        if mem.get("heal_ray_spent_roll") == state["roll_num"]:
+            return  # already fired this roll's hearts
+        target_pid = choice.get("pid") if isinstance(choice, dict) else None
+        tgt = state["mon"].get(target_pid) if target_pid else None
+        if not tgt or target_pid == pid or not tgt["alive"]:
+            return
+        h = state["dice"].count("heart")
+        if h <= 0:
+            return
+        mem["heal_ray_spent_roll"] = state["roll_num"]
+        # The target can only ever pay for as much as they can afford - any
+        # hearts beyond that are wasted, not free healing on credit.
+        affordable = min(h, tgt["energy"] // 2)
+        healed = gl.heal(state, target_pid, affordable, via_dice=True) if affordable > 0 else 0
+        if healed:
+            paid = healed * 2
+            gl.spend_energy(state, target_pid, paid)
+            gl.gain_energy(state, pid, paid)
+            gl._log(state, f"{gl._nm(pid)} heals {gl._nm(target_pid)} for {healed} with its healing ray ({paid}⚡ paid).", pid=pid, kind="heal")
+        elif gl._in_tokyo(state, target_pid):
+            gl._log(state, f"{gl._nm(pid)} can't heal {gl._nm(target_pid)} while it's in Tokyo.", pid=pid, kind="sys")
         else:
-            mem["heal_target"] = target_pid
-            gl._log(state, f"{gl._nm(pid)} aims its healing ray at {gl._nm(target_pid)}.", pid=pid, kind="sys")
+            gl._log(state, f"{gl._nm(pid)} fires its healing ray at {gl._nm(target_pid)}, but it can't afford to pay.", pid=pid, kind="sys")
         gl._bump(state)
+
+    elif key == "camouflage":
+        # Purely an acknowledgement: the mitigation itself already happened
+        # instantly in adjust_incoming (there's no game-state reason to make
+        # anyone wait on it). This just clears the pending roll once its
+        # owner has clicked through the client's reveal animation, so it
+        # doesn't linger and re-show after a reload.
+        mem = _mem(state, pid)
+        if mem.get("camo_roll"):
+            mem["camo_roll"] = None
+            gl._bump(state)
 
 
 def _die_index(state, choice):

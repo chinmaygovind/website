@@ -98,6 +98,7 @@ a:hover { color: var(--accent-soft); }
   background: linear-gradient(180deg, #f08079, #d64237); color: #2a0806;
   border-color: #8f1e16; box-shadow: 0 4px 0 #8f1e16, 0 8px 14px var(--shadow);
 }
+.btn.danger.active { transform: translateY(3px); box-shadow: 0 1px 0 #8f1e16, 0 4px 8px var(--shadow); filter: brightness(1.08); }
 .btn.ghost { background: transparent; color: var(--accent); box-shadow: none; border-color: rgba(242,201,76,.5); }
 .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
 .btn.big { font-size: 1.3rem; padding: .95rem 2rem; }
@@ -405,6 +406,33 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
   transition: transform .15s ease, text-shadow .2s ease; }
 .mon-card.active .mc-avatar { text-shadow: 0 0 20px var(--c), 0 0 38px var(--c); animation: avatarPulse 1.3s ease-in-out infinite; }
 @keyframes avatarPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+
+/* It Has a Child's resurrection: a one-shot gold burst around the whole card
+   plus a rising "Reborn!" label, layered on top of the normal hp/vp floats
+   that also fire for the same change. */
+.mon-card.revive-burst { animation: reviveCardGlow 1.1s ease-out; border-radius: 16px; }
+@keyframes reviveCardGlow {
+  0% { box-shadow: 0 0 0 0 rgba(242,201,76,0); }
+  20% { box-shadow: 0 0 40px 14px rgba(242,201,76,.85); }
+  100% { box-shadow: 0 0 0 0 rgba(242,201,76,0); }
+}
+.mon-card.revive-burst .mc-avatar { animation: reviveAvatarPop 1.1s ease-out; }
+@keyframes reviveAvatarPop {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.4); text-shadow: 0 0 22px var(--accent), 0 0 44px var(--accent); }
+  100% { transform: scale(1); }
+}
+.revive-label { position: absolute; left: 50%; top: -4px; z-index: 8; pointer-events: none;
+  font-family: var(--poster); font-size: 1.05rem; letter-spacing: .5px; white-space: nowrap;
+  color: var(--accent); text-shadow: -1px -1px 0 #0d0a16, 1px -1px 0 #0d0a16, -1px 1px 0 #0d0a16, 1px 1px 0 #0d0a16, 0 3px 0 #0d0a16;
+  animation: reviveLabel 1.8s ease-out forwards; }
+@keyframes reviveLabel {
+  0% { opacity: 0; transform: translate(-50%, 10px) scale(.7); }
+  15% { opacity: 1; transform: translate(-50%, -6px) scale(1.15); }
+  25% { transform: translate(-50%, -10px) scale(1); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -36px) scale(1); }
+}
 .mc-head { display: flex; align-items: center; justify-content: center; gap: .35rem; width: 100%; }
 .mc-name { font-family: var(--poster); font-size: 1.15rem; color: var(--c); min-width: 0; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 4px rgba(0,0,0,.8); }
@@ -508,6 +536,10 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
 .die.blank { background: linear-gradient(160deg, #efe6d4, #d9ccb0); }
 .die.kept { transform: translateY(4px); box-shadow: 0 1px 0 #b79a55; border-color: var(--accent); outline: 3px solid rgba(242,201,76,.5); }
 .die:disabled { cursor: default; }
+/* Die-targeting mode (Background Dweller's [3]s, Herd Culler's any-die): only
+   the choosable dice stay clickable, and boxed violet on hover (matching the
+   card-act button) so it's obvious which ones are pickable. */
+.die.die-target:hover { outline: 3px solid #a559d1; outline-offset: 2px; }
 .die.kept::after { content: "kept"; position: absolute; bottom: -16px; font-size: .55rem; color: var(--accent-soft); font-family: var(--sans); letter-spacing: .05em; }
 /* rolling dice show a small vertical reel that flips through a few random
    faces and lands upward on the real result, instead of spinning in place.
@@ -517,6 +549,17 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
 .die-reel .die-face { height: 40px; display: flex; align-items: center; justify-content: center; }
 @keyframes diceReel { from { transform: translateY(0); } to { transform: translateY(-80%); } }
 .die.rolling .die-reel { animation: diceReel .5s steps(4, end) forwards; }
+
+/* Camouflage's roll-to-reveal button plays the same reel, shrunk down and
+   inline in the action row instead of the main dice tray. */
+.die.mini { width: 34px; height: 34px; border-radius: 8px; border-width: 2px; cursor: default; display: inline-flex; }
+.die.mini .die-face { font-size: 1.05rem; }
+.die.mini.heart .die-face, .die.mini.energy .die-face { font-size: 1.1rem; }
+.die.mini .die-face-viewport { height: 20px; }
+.die.mini .die-reel .die-face { height: 20px; }
+.camo-roll { display: flex; align-items: center; gap: .5rem; }
+.camo-roll-label { font-family: var(--sans); font-size: .8rem; color: var(--accent-soft); }
+.camo-roll-dice { display: flex; gap: .3rem; }
 
 .action-row { display: flex; gap: .5rem; flex-wrap: wrap; justify-content: center; align-items: center;
   align-content: center; min-height: 90px; width: 100%; }
@@ -531,7 +574,18 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
   padding: .55rem 1rem; min-height: 3.5rem; }
 .roll-btn-label { display: block; }
 .roll-btn-sub { display: block; font-size: .68rem; font-weight: 400; opacity: .75; margin-top: 0; }
-.card-act { font-size: .78rem; padding: .42rem .85rem; }
+/* Card-ability buttons (Herd Culler, Wings, Psychic Probe, Background
+   Dweller's Reroll 3, ...) get their own violet color so they read as
+   distinct from the gold Roll/Done buttons, not just smaller versions of
+   them. .danger (Camouflage's reactive roll) still overrides this. */
+.card-act {
+  font-size: .78rem; padding: .42rem .85rem;
+  background: linear-gradient(180deg, #d9a9f0, #a559d1 55%, #7c3aa3); color: #2a0f38;
+  border-color: #5c2678; box-shadow: 0 4px 0 #5c2678, 0 8px 14px var(--shadow);
+}
+/* "Armed" state for Background Dweller's Reroll 3 button while targeting mode
+   is on - reads as pressed in, matching the die it's waiting on you to pick. */
+.card-act.active { transform: translateY(3px); box-shadow: 0 1px 0 #5c2678, 0 4px 8px var(--shadow); filter: brightness(1.1); }
 
 /* shop - no separate boxed panel, it just fills its half of the bar */
 .shop { width: 100%; height: 100%; display: flex; flex-direction: column; }
@@ -635,6 +689,7 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
 .log-tokyo { border-left-color: var(--purple); } .log-ko { border-left-color: var(--hot); }
 .log-heal { border-left-color: var(--green); } .log-energy { border-left-color: var(--energy); }
 .log-win { border-left-color: var(--accent); color: var(--accent-soft); }
+.log-revive { border-left-color: var(--accent); color: var(--accent-soft); }
 
 /* floating status-change indicators, spawned on any hp/vp/energy delta */
 .stat-float { position: absolute; font-family: var(--display);
@@ -642,6 +697,7 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
   animation: statFloat 1.3s ease-out forwards; }
 .stat-float.up { color: #8fe098; text-shadow: 0 2px 6px rgba(0,0,0,.6), 0 0 6px rgba(111,207,120,.6); }
 .stat-float.down { color: #f08079; text-shadow: 0 2px 6px rgba(0,0,0,.6), 0 0 6px rgba(235,87,87,.6); }
+.stat-float.saved { color: #8fd0e8; text-shadow: 0 2px 6px rgba(0,0,0,.6), 0 0 6px rgba(111,180,207,.6); }
 @keyframes statFloat {
   0% { opacity: 0; transform: translate(-50%, 4px) scale(.85); }
   15% { opacity: 1; transform: translate(-50%, -4px) scale(1); }
@@ -676,6 +732,51 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
 .fin-place { font-family: var(--display); color: var(--accent); width: 34px; }
 .fin-name { font-family: var(--display); font-size: 1.15rem; flex: 1; text-align: left; }
 .fin-vp { color: var(--vp); font-family: var(--display); }
+
+/* generic "pick a monster" popup (Healing Ray and anything that copies or
+   later reuses the same pattern) - its own modal, not a repaint of .overlay,
+   since that one is reserved for the end-of-game win screen. */
+.picker-modal { position: fixed; inset: 0; z-index: 60; display: none; align-items: center; justify-content: center;
+  background: rgba(10,6,18,.8); backdrop-filter: blur(3px); padding: 1rem; }
+.picker-box { position: relative; width: 360px; max-width: 100%; max-height: 85vh; overflow-y: auto;
+  background: linear-gradient(180deg, #2a2140, #1a1428); border: 2px solid var(--purple);
+  border-radius: 20px; padding: 1.4rem 1.5rem; box-shadow: 0 20px 60px var(--shadow); }
+.picker-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+.picker-title { font-family: var(--poster); text-transform: uppercase; letter-spacing: .5px;
+  font-size: 1.3rem; color: var(--accent-soft); }
+.picker-close { width: 28px; height: 28px; border-radius: 50%; background: #241d2e; color: var(--accent-soft);
+  border: 2px solid var(--accent); font-size: .8rem; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; flex: none; }
+.picker-close:hover { background: var(--accent); color: #3a2606; }
+.picker-grid { display: flex; flex-wrap: wrap; gap: .7rem; justify-content: center; margin-bottom: 1rem; }
+.picker-chip { display: flex; flex-direction: column; align-items: center; gap: .3rem; width: 84px;
+  padding: .6rem .3rem; border-radius: 14px; border: 2px solid transparent; cursor: pointer;
+  background: rgba(255,255,255,.04); transition: background .12s ease, border-color .12s ease, transform .12s ease; }
+.picker-chip:hover { background: rgba(255,255,255,.09); transform: translateY(-2px); }
+.picker-chip.selected { border-color: var(--c, var(--accent)); background: rgba(255,255,255,.1);
+  box-shadow: 0 0 0 1px var(--c, var(--accent)) inset; }
+.picker-avatar { font-size: 2.4rem; line-height: 1; filter: drop-shadow(0 4px 8px rgba(0,0,0,.6)); }
+.picker-chip.selected .picker-avatar { text-shadow: 0 0 16px var(--c), 0 0 30px var(--c); }
+.picker-name { font-family: var(--poster); font-size: .85rem; color: var(--c, var(--cream)); text-align: center;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.picker-stats { display: flex; gap: 1rem; justify-content: center; align-items: center;
+  min-height: 1.6rem; margin-bottom: 1rem; font-family: var(--display); }
+.picker-stat { font-size: 1rem; color: var(--cream); }
+.picker-hint { font-size: .85rem; color: var(--ink-soft); font-style: italic; }
+.picker-confirm { width: 100%; }
+
+/* Monster Batteries' amount stepper, sharing the same picker-modal/box as the
+   player picker above - a +/- number choice instead of a grid of monsters. */
+.amount-stepper { display: flex; align-items: center; justify-content: center; gap: 1.4rem;
+  margin-bottom: 1.2rem; }
+.amount-btn { width: 44px; height: 44px; border-radius: 50%; flex: none; cursor: pointer;
+  font-family: var(--display); font-size: 1.4rem; line-height: 1;
+  background: linear-gradient(180deg, #d9a9f0, #a559d1 55%, #7c3aa3); color: #2a0f38;
+  border: 2px solid #5c2678; box-shadow: 0 3px 0 #5c2678, 0 6px 10px var(--shadow); }
+.amount-btn:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
+.amount-value { font-family: var(--poster); font-size: 1.8rem; color: var(--energy);
+  min-width: 4.5rem; text-align: center; display: flex; align-items: center; justify-content: center; gap: .35rem; }
+.amount-value i { font-size: 1.4rem; }
 
 .toast { position: fixed; left: 50%; top: 66px; transform: translateX(-50%); z-index: 45;
   background: rgba(20,14,30,.95); border: 1px solid var(--accent); color: var(--accent-soft);

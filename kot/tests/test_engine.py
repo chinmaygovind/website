@@ -275,7 +275,19 @@ def test_metamorph_refuses_unowned_card():
     assert state["mon"][a]["cards"] == ["metamorph"]
 
 
-def test_monster_batteries_banks_a_matching_copy_of_remaining_energy():
+def test_metamorph_refuses_out_of_turn():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][b]["cards"] += ["metamorph", "camouflage"]
+    state["current"] = a               # it's a's buying phase, not b's
+    state["phase"] = "buying"
+    state["mon"][b]["energy"] = 0
+    gl.card_action(state, b, "metamorph", {"card": "camouflage"})
+    assert state["mon"][b]["energy"] == 0
+    assert "camouflage" in state["mon"][b]["cards"]    # untouched - not b's turn
+
+
+def test_monster_batteries_lets_you_choose_how_much_to_store():
     state, pids = fresh(2)
     a = pids[0]
     state["phase"] = "buying"
@@ -283,11 +295,62 @@ def test_monster_batteries_banks_a_matching_copy_of_remaining_energy():
     state["mon"][a]["energy"] = 10
     state["shop"][0] = "monster_batteries"    # keep, cost 2
     gl.buy_card(state, a, 0)
-    assert state["mon"][a]["energy"] == 8     # the 8 left after the 2-cost stays with you...
-    assert state["mon"][a]["cardmem"]["batteries"] == 8   # ...AND a matching 8 gets banked
+    assert state["mon"][a]["energy"] == 8     # buying it doesn't auto-charge it
+    assert "batteries" not in state["mon"][a]["cardmem"]
+    gl.card_action(state, a, "monster_batteries", {"amount": 5})
+    assert state["mon"][a]["energy"] == 3     # 5 of the 8 locked away...
+    assert state["mon"][a]["cardmem"]["batteries"] == 10   # ...doubled to 10 in storage
+    assert state["mon"][a]["cardmem"]["battery_charged"] is True
     gl._begin_turn(state, a)                  # next turn: draw 2 back
-    assert state["mon"][a]["energy"] == 10
-    assert state["mon"][a]["cardmem"]["batteries"] == 6
+    assert state["mon"][a]["energy"] == 5
+    assert state["mon"][a]["cardmem"]["batteries"] == 8
+
+
+def test_monster_batteries_choice_is_one_time_and_capped_at_your_energy():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("monster_batteries")
+    state["phase"] = "buying"
+    state["current"] = a
+    state["mon"][a]["energy"] = 4
+    gl.card_action(state, a, "monster_batteries", {"amount": 99})   # more than you have
+    assert state["mon"][a]["energy"] == 0             # capped to what you actually had
+    assert state["mon"][a]["cardmem"]["batteries"] == 8
+    state["mon"][a]["energy"] = 4                     # got more energy from elsewhere later
+    gl.card_action(state, a, "monster_batteries", {"amount": 3})    # already decided - no redo
+    assert state["mon"][a]["energy"] == 4             # second attempt refused, nothing spent
+    assert state["mon"][a]["cardmem"]["batteries"] == 8   # still the original charge
+
+
+def test_monster_batteries_choosing_zero_leaves_it_empty_but_valid():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("monster_batteries")
+    state["phase"] = "buying"
+    state["current"] = a
+    state["mon"][a]["energy"] = 6
+    gl.card_action(state, a, "monster_batteries", {"amount": 0})
+    assert state["mon"][a]["energy"] == 6
+    assert state["mon"][a]["cardmem"]["batteries"] == 0
+    assert state["mon"][a]["cardmem"]["battery_charged"] is True
+
+
+def test_parasitic_tentacles_carries_over_battery_charge():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("monster_batteries")
+    state["mon"][a]["cardmem"] = {"batteries": 8, "battery_charged": True}
+    state["mon"][b]["cards"].append("parasitic_tentacles")
+    state["phase"] = "buying"
+    state["current"] = b
+    state["mon"][b]["energy"] = 10
+    gl.card_action(state, b, "parasitic_tentacles", {"pid": a, "card": "monster_batteries"})
+    assert "monster_batteries" in state["mon"][b]["cards"]
+    assert state["mon"][b]["cardmem"]["batteries"] == 8      # charge follows the card...
+    assert "batteries" not in state["mon"][a]["cardmem"]     # ...not left behind with the old owner
+    gl._begin_turn(state, b)
+    assert state["mon"][b]["energy"] == 10                   # 8 (paid) + 2 drawn from the batteries
+    assert state["mon"][b]["cardmem"]["batteries"] == 6
 
 
 def test_herd_culler_usable_every_turn_not_just_once():
@@ -334,6 +397,20 @@ def test_jets_stay_takes_the_deferred_damage():
     assert state["tokyo"]["city"] == a
 
 
+def test_nova_breath_hits_everyone_not_just_tokyo():
+    state, pids = fresh(3)
+    a, b, c = pids
+    state["mon"][a]["cards"].append("nova_breath")
+    state["tokyo"]["city"] = b                # b is in Tokyo, c is outside with a
+    gl._begin_turn(state, a)
+    force_dice(state, ["claw", "claw", "1", "2", "3", "energy"])
+    gl.resolve(state, a)
+    assert state["mon"][b]["hp"] == 8          # Tokyo occupant hit...
+    assert state["mon"][c]["hp"] == 8          # ...and the monster outside, both
+    assert state["mon"][a]["hp"] == 10         # attacker never damages itself
+    assert state["pending_yield"]["queue"] == [b]   # only the Tokyo occupant gets a yield choice
+
+
 def test_mimic_copies_target_and_costs_energy_to_change():
     state, pids = fresh(3)
     a, b, c = pids
@@ -351,6 +428,23 @@ def test_mimic_copies_target_and_costs_energy_to_change():
     state["mon"][a]["hp"] = 5
     healed = gl.heal(state, a, 2)
     assert healed == 3                        # +1 bonus from the mimicked regeneration
+
+
+def test_mimic_pick_and_change_refused_once_youve_rolled():
+    state, pids = fresh(3)
+    a, b, c = pids
+    state["mon"][a]["cards"].append("mimic")
+    state["mon"][b]["cards"].append("armor_plating")
+    state["mon"][c]["cards"].append("regeneration")
+    state["roll_num"] = 1                     # already rolled this turn
+    gl.card_action(state, a, "mimic", {"card": "armor_plating"})
+    assert cards._mem(state, a).get("mimic_key") is None     # first pick refused, not "start of turn"
+    state["mon"][a]["cards"] = ["mimic"]
+    cards._mem(state, a)["mimic_key"] = "armor_plating"       # picked before rolling, on an earlier turn
+    state["mon"][a]["energy"] = 5
+    gl.card_action(state, a, "mimic", {"card": "regeneration"})
+    assert cards._mem(state, a)["mimic_key"] == "armor_plating"   # change refused too
+    assert state["mon"][a]["energy"] == 5                          # no energy spent
 
 
 def test_psychic_probe_reroll_other_monster_once_per_turn(monkeypatch):
@@ -412,18 +506,56 @@ def test_parasitic_tentacles_takes_a_card_and_pays_directly():
     assert state["mon"][b]["energy"] == 4       # paid directly to b, not the bank
 
 
-def test_healing_ray_redirect_heals_other_monster_for_payment():
+def test_healing_ray_fires_immediately_for_payment():
     state, pids = fresh(2)
     a, b = pids
     state["mon"][a]["cards"].append("healing_ray")
     state["mon"][b]["hp"] = 5
     state["mon"][b]["energy"] = 10
-    gl.card_action(state, a, "healing_ray", {"pid": b})
     force_dice(state, ["heart", "heart", "1", "2", "3", "energy"])
-    gl.resolve(state, a)
+    gl.card_action(state, a, "healing_ray", {"pid": b})
     assert state["mon"][b]["hp"] == 7           # healed 2
     assert state["mon"][b]["energy"] == 6       # paid 2⚡ per point healed = 4
-    assert state["mon"][a]["energy"] == 5       # 1 from the energy die + 4 payment
+    assert state["mon"][a]["energy"] == 4       # a pockets the payment
+    # Resolving the roll afterward must not ALSO self-heal a with these same
+    # already-spent hearts.
+    a_hp_before = state["mon"][a]["hp"]
+    gl.resolve(state, a)
+    assert state["mon"][a]["hp"] == a_hp_before
+    assert state["mon"][b]["hp"] == 7
+
+
+def test_healing_ray_caps_heal_to_what_target_can_afford():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("healing_ray")
+    state["mon"][b]["hp"] = 2
+    state["mon"][b]["maxhp"] = 10
+    state["mon"][b]["energy"] = 1     # can only ever afford 0 points (1⚡ < 2⚡/point)
+    force_dice(state, ["heart", "heart", "heart", "heart", "heart", "heart"])
+    gl.card_action(state, a, "healing_ray", {"pid": b})
+    assert state["mon"][b]["hp"] == 2             # nothing healed - can't afford even 1 point
+    assert state["mon"][b]["energy"] == 1         # untouched, no credit extended
+    assert state["mon"][a]["energy"] == 0         # a gets nothing it wasn't paid
+
+
+def test_made_in_a_lab_peek_hidden_from_other_viewers():
+    state, pids = fresh(2)
+    a, b = pids
+    state["current"] = a
+    state["phase"] = "buying"
+    state["mon"][a]["cards"].append("made_in_a_lab")
+    state["deck"].append("spiked_tail")
+    gl.card_action(state, a, "made_in_a_lab", {"action": "peek"})
+    owner_view = gl.public_view(state, viewer_pid=a)
+    other_view = gl.public_view(state, viewer_pid=b)
+    spectator_view = gl.public_view(state)
+    owner_card = next(c for c in owner_view["mon"][a]["cards"] if c["id"] == "made_in_a_lab")
+    other_card = next(c for c in other_view["mon"][a]["cards"] if c["id"] == "made_in_a_lab")
+    spectator_card = next(c for c in spectator_view["mon"][a]["cards"] if c["id"] == "made_in_a_lab")
+    assert owner_card["lab_peek"]["id"] == "spiked_tail"    # owner sees their own peek
+    assert "lab_peek" not in other_card                     # another player never does
+    assert "lab_peek" not in spectator_card                 # nor an unauthenticated spectator
 
 
 def test_shop_price_reflects_alien_metabolism_discount():
