@@ -264,6 +264,35 @@ def test_metamorph_discards_for_energy_back():
     assert state["mon"][a]["energy"] == 3
 
 
+def test_metamorph_discarding_even_bigger_reverts_its_max_hp():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"] += ["metamorph", "even_bigger"]
+    cards.on_acquire(state, a, "even_bigger")     # normal purchase flow: +2 maxhp, heal 2
+    assert state["mon"][a]["maxhp"] == 12
+    state["mon"][a]["hp"] = 12
+    state["phase"] = "buying"
+    state["mon"][a]["energy"] = 0
+    gl.card_action(state, a, "metamorph", {"card": "even_bigger"})
+    assert state["mon"][a]["maxhp"] == 10             # bonus gone with the card
+    assert state["mon"][a]["hp"] == 10                # clamped back down, not left over-max
+    assert "even_bigger" in state["discard"]
+
+
+def test_metamorph_discarding_wings_ends_an_active_shield():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"] += ["metamorph", "wings"]
+    state["mon"][a]["energy"] = 2
+    gl.card_action(state, a, "wings", None)
+    assert cards._mem(state, a)["wings"] is True
+    state["phase"] = "buying"
+    state["mon"][a]["energy"] = 0
+    gl.card_action(state, a, "metamorph", {"card": "wings"})
+    assert cards._mem(state, a)["wings"] is False   # can't cash out the card and keep the shield
+    assert "wings" in state["discard"]
+
+
 def test_metamorph_refuses_unowned_card():
     state, pids = fresh(2)
     a = pids[0]
@@ -353,6 +382,69 @@ def test_parasitic_tentacles_carries_over_battery_charge():
     assert state["mon"][b]["cardmem"]["batteries"] == 6
 
 
+def test_parasitic_tentacles_moves_even_biggers_max_hp_not_just_the_card():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("even_bigger")
+    cards.on_acquire(state, a, "even_bigger")      # +2 maxhp, heal 2, as a normal buy would
+    state["mon"][a]["hp"] = 12
+    state["mon"][b]["cards"].append("parasitic_tentacles")
+    state["phase"] = "buying"
+    state["current"] = b
+    state["mon"][b]["energy"] = 10
+    state["mon"][b]["hp"] = 8
+    gl.card_action(state, b, "parasitic_tentacles", {"pid": a, "card": "even_bigger"})
+    assert "even_bigger" in state["mon"][b]["cards"]
+    assert state["mon"][a]["maxhp"] == 10 and state["mon"][a]["hp"] == 10   # bonus (and overflow) gone
+    assert state["mon"][b]["maxhp"] == 12 and state["mon"][b]["hp"] == 10   # bonus + heal 2 arrives
+
+
+def test_parasitic_tentacles_stealing_wings_ends_the_old_owners_shield_without_transferring_it():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("wings")
+    state["mon"][a]["energy"] = 2
+    gl.card_action(state, a, "wings", None)
+    assert cards._mem(state, a)["wings"] is True
+    state["mon"][b]["cards"].append("parasitic_tentacles")
+    state["phase"] = "buying"; state["current"] = b
+    state["mon"][b]["energy"] = 10
+    gl.card_action(state, b, "parasitic_tentacles", {"pid": a, "card": "wings"})
+    assert "wings" in state["mon"][b]["cards"]
+    assert cards._mem(state, a)["wings"] is False    # a's paid-for shield ends when the card leaves
+    assert cards._mem(state, b).get("wings") is not True   # b never paid to raise it - no free shield
+
+
+def test_parasitic_tentacles_carries_over_smoke_cloud_charges_left():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("smoke_cloud")
+    state["mon"][a]["cardmem"] = {"smoke": 1}      # already used 2 of its 3 rerolls
+    state["mon"][b]["cards"].append("parasitic_tentacles")
+    state["phase"] = "buying"
+    state["current"] = b
+    state["mon"][b]["energy"] = 10
+    gl.card_action(state, b, "parasitic_tentacles", {"pid": a, "card": "smoke_cloud"})
+    assert "smoke_cloud" in state["mon"][b]["cards"]
+    assert state["mon"][b]["cardmem"]["smoke"] == 1    # remaining charge follows the card...
+    assert "smoke" not in state["mon"][a]["cardmem"]   # ...not reset to a fresh 3 or left behind
+
+
+def test_parasitic_tentacles_carries_over_mimic_target():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("mimic")
+    state["mon"][a]["cardmem"] = {"mimic_key": "jets"}
+    state["mon"][b]["cards"].append("parasitic_tentacles")
+    state["phase"] = "buying"
+    state["current"] = b
+    state["mon"][b]["energy"] = 10
+    gl.card_action(state, b, "parasitic_tentacles", {"pid": a, "card": "mimic"})
+    assert "mimic" in state["mon"][b]["cards"]
+    assert state["mon"][b]["cardmem"]["mimic_key"] == "jets"     # copy target follows the card...
+    assert "mimic_key" not in state["mon"][a]["cardmem"]         # ...not left stale on the old owner
+
+
 def test_herd_culler_usable_every_turn_not_just_once():
     state, pids = fresh(2)
     a = pids[0]
@@ -411,6 +503,48 @@ def test_nova_breath_hits_everyone_not_just_tokyo():
     assert state["pending_yield"]["queue"] == [b]   # only the Tokyo occupant gets a yield choice
 
 
+def test_poison_quills_deals_2_to_tokyo_when_you_score_three_2s():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("poison_quills")
+    state["tokyo"]["city"] = b
+    gl._begin_turn(state, a)
+    force_dice(state, ["2", "2", "2", "1", "1", "energy"])
+    gl.resolve(state, a)
+    assert state["mon"][b]["hp"] == 8          # 10 - 2 from the quills
+    assert state["mon"][a]["vp"] >= 2          # still scores the three 2s as usual
+
+
+def test_poison_quills_respects_jets_and_still_offers_a_yield():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("poison_quills")
+    state["mon"][b]["cards"].append("jets")
+    state["tokyo"]["city"] = b
+    gl._begin_turn(state, a)
+    force_dice(state, ["2", "2", "2", "1", "1", "energy"])
+    gl.resolve(state, a)
+    assert state["phase"] == "yield"
+    assert state["pending_yield"]["queue"] == [b]
+    assert state["mon"][b]["hp"] == 10         # damage deferred, jets hasn't decided yet
+    gl.yield_decision(state, b, leave=True)
+    assert state["mon"][b]["hp"] == 10         # jets carried it out untouched
+
+
+def test_poison_quills_and_claws_in_the_same_roll_dont_clobber_each_others_yield():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("poison_quills")
+    state["tokyo"]["city"] = b
+    gl._begin_turn(state, a)
+    # three 2s (quills, +2) AND three claws in the same roll
+    force_dice(state, ["2", "2", "2", "claw", "claw", "claw"])
+    gl.resolve(state, a)
+    assert state["phase"] == "yield"
+    assert state["pending_yield"]["queue"] == [b]      # queued once, not twice
+    assert state["mon"][b]["hp"] == 5                  # 10 - 2 (quills) - 3 (claws), both landed
+
+
 def test_mimic_copies_target_and_costs_energy_to_change():
     state, pids = fresh(3)
     a, b, c = pids
@@ -428,6 +562,69 @@ def test_mimic_copies_target_and_costs_energy_to_change():
     state["mon"][a]["hp"] = 5
     healed = gl.heal(state, a, 2)
     assert healed == 3                        # +1 bonus from the mimicked regeneration
+
+
+def test_mimic_copying_plot_twist_gets_its_own_independent_one_time_use():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("mimic")
+    state["mon"][b]["cards"].append("plot_twist")
+    cards._mem(state, b)["plot_twist_used"] = True   # b's own copy is already spent - shouldn't matter to a
+    gl.card_action(state, a, "mimic", {"card": "plot_twist"})
+    assert cards._mem(state, a)["mimic_key"] == "plot_twist"
+    assert cards._mem(state, a)["plot_twist_used"] is False   # a gets a fresh use, not b's spent one
+    force_dice(state, ["1", "2", "3", "heart", "energy", "claw"])
+    gl.card_action(state, a, "plot_twist", {"index": 0, "face": "claw"})
+    assert state["dice"][0] == "claw"
+    assert "plot_twist" not in state["discard"]               # a doesn't own the physical card
+    assert cards._mem(state, a)["plot_twist_used"] is True
+    # spent now - firing again does nothing until a fresh pick
+    gl.card_action(state, a, "plot_twist", {"index": 1, "face": "heart"})
+    assert state["dice"][1] == "2"                             # unchanged - already used
+
+
+def test_mimic_copying_smoke_cloud_gets_its_own_independent_3_charges():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("mimic")
+    state["mon"][b]["cards"].append("smoke_cloud")
+    cards._mem(state, b)["smoke"] = 1   # b's own copy is nearly spent - shouldn't matter to a
+    gl.card_action(state, a, "mimic", {"card": "smoke_cloud"})
+    assert cards._mem(state, a)["smoke"] == 3                  # a gets a fresh 3, not b's leftover 1
+    assert cards._mem(state, b)["smoke"] == 1                  # b's own pool is untouched
+    gl.card_action(state, a, "smoke_cloud", None)
+    assert cards._mem(state, a)["smoke"] == 2
+    assert "smoke_cloud" not in state["mon"][a]["cards"]        # a never owned the physical card
+
+
+def test_mimic_copying_monster_batteries_gets_its_own_independent_charge():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("mimic")
+    state["mon"][b]["cards"].append("monster_batteries")
+    cards._mem(state, b)["battery_charged"] = True
+    cards._mem(state, b)["batteries"] = 8                       # b's own charge - shouldn't matter to a
+    gl.card_action(state, a, "mimic", {"card": "monster_batteries"})
+    assert cards._mem(state, a)["battery_charged"] is False     # a hasn't made their own choice yet
+    state["phase"] = "buying"; state["current"] = a
+    state["mon"][a]["energy"] = 5
+    gl.card_action(state, a, "monster_batteries", {"amount": 3})
+    assert cards._mem(state, a)["batteries"] == 6               # a's own doubled charge
+    assert cards._mem(state, b)["batteries"] == 8               # b's own is untouched
+
+
+def test_smoke_cloud_grants_3_lifetime_charges_then_discards():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("smoke_cloud")
+    cards.on_acquire(state, a, "smoke_cloud")
+    assert cards._mem(state, a)["smoke"] == 3
+    for i in range(3):
+        state["rolls_left"] = 0
+        gl.card_action(state, a, "smoke_cloud", None)
+        assert state["rolls_left"] == 1
+    assert "smoke_cloud" not in state["mon"][a]["cards"]     # discarded once its charges ran out
+    assert "smoke_cloud" in state["discard"]
 
 
 def test_mimic_pick_and_change_refused_once_youve_rolled():
@@ -460,6 +657,126 @@ def test_psychic_probe_reroll_other_monster_once_per_turn(monkeypatch):
     assert state["dice"][1] == "3"             # already used its one probe this turn
 
 
+def test_psychic_probe_refuses_to_probe_your_own_roll():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("psychic_probe")
+    force_dice(state, ["3", "3", "3", "3", "3", "3"])
+    gl.card_action(state, a, "psychic_probe", {"index": 0})
+    assert state["dice"][0] == "3"             # can't target your own dice
+
+
+def test_resolve_opens_a_probe_window_before_resolving_and_prober_can_still_act(monkeypatch):
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][b]["cards"].append("psychic_probe")
+    gl._begin_turn(state, a)
+    force_dice(state, ["1", "1", "energy", "energy", "claw", "heart"])
+    gl.resolve(state, a)
+    assert state["phase"] == "probe_window"           # not resolved yet - b still owes a decision
+    assert state["pending_probe"] == {"queue": [b], "roller": a}
+    assert state["mon"][a]["energy"] == 0
+    monkeypatch.setattr(random.Random, "choice", lambda self, seq: "heart")
+    gl.card_action(state, b, "psychic_probe", {"index": 0})
+    assert state["dice"][0] == "heart"
+    assert state["pending_probe"] is None
+    assert state["phase"] == "buying"                 # window closed - the roll actually resolved
+    assert state["mon"][a]["energy"] == 2
+
+
+def test_probe_window_lets_the_prober_pass_without_burning_anything():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][b]["cards"].append("psychic_probe")
+    gl._begin_turn(state, a)
+    force_dice(state, ["1", "1", "energy", "energy", "claw", "heart"])
+    gl.resolve(state, a)
+    assert state["phase"] == "probe_window"
+    gl.card_action(state, b, "psychic_probe", {"pass": True})
+    assert state["pending_probe"] is None
+    assert state["phase"] == "buying"
+    assert state["mon"][a]["energy"] == 2
+    assert b not in cards._mem(state, a).get("probed_by", [])
+
+
+def test_probe_window_skipped_if_the_prober_already_used_their_probe():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][b]["cards"].append("psychic_probe")
+    gl._begin_turn(state, a)
+    force_dice(state, ["1", "1", "energy", "energy", "claw", "heart"])
+    gl.card_action(state, b, "psychic_probe", {"index": 5})   # eager probe mid-roll
+    assert b in cards._mem(state, a)["probed_by"]
+    gl.resolve(state, a)
+    assert state["phase"] == "buying"          # no window - b already had their chance
+    assert state["pending_probe"] is None
+
+
+def test_probe_window_advances_when_the_pending_prober_resigns():
+    state, pids = fresh(4)
+    a, b, c, d = pids
+    state["mon"][b]["cards"].append("psychic_probe")
+    state["mon"][c]["cards"].append("psychic_probe")
+    gl._begin_turn(state, a)
+    force_dice(state, ["1", "1", "energy", "energy", "claw", "heart"])
+    gl.resolve(state, a)
+    assert state["pending_probe"]["queue"] == [b, c]
+    gl.resign(state, b)
+    assert state["pending_probe"]["queue"] == [c]
+    assert state["phase"] == "probe_window"
+    gl.resign(state, c)
+    assert state["pending_probe"] is None
+    assert state["phase"] == "buying"
+    assert "probed_by" not in cards._mem(state, a) or a not in cards._mem(state, a)["probed_by"]
+
+
+def test_rapid_healing_spends_2_energy_to_heal_1():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("rapid_healing")
+    state["mon"][a]["energy"] = 4
+    state["mon"][a]["hp"] = 5
+    gl.card_action(state, a, "rapid_healing", None)
+    assert state["mon"][a]["hp"] == 6
+    assert state["mon"][a]["energy"] == 2
+
+
+def test_rapid_healing_is_repeatable_and_caps_at_max_hp():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("rapid_healing")
+    state["mon"][a]["energy"] = 10
+    state["mon"][a]["hp"] = 9                  # 1 below max
+    gl.card_action(state, a, "rapid_healing", None)
+    assert state["mon"][a]["hp"] == 10
+    assert state["mon"][a]["energy"] == 8
+    gl.card_action(state, a, "rapid_healing", None)   # already at max - refused
+    assert state["mon"][a]["hp"] == 10
+    assert state["mon"][a]["energy"] == 8
+
+
+def test_rapid_healing_refuses_without_enough_energy():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("rapid_healing")
+    state["mon"][a]["energy"] = 1
+    state["mon"][a]["hp"] = 5
+    gl.card_action(state, a, "rapid_healing", None)
+    assert state["mon"][a]["hp"] == 5
+    assert state["mon"][a]["energy"] == 1
+
+
+def test_rapid_healing_works_even_while_in_tokyo_unlike_dice_hearts():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("rapid_healing")
+    state["mon"][a]["energy"] = 4
+    state["mon"][a]["hp"] = 5
+    state["tokyo"]["city"] = a
+    gl.card_action(state, a, "rapid_healing", None)
+    assert state["mon"][a]["hp"] == 6           # card healing works in Tokyo; dice hearts wouldn't
+
+
 def test_made_in_a_lab_peek_then_buy():
     state, pids = fresh(2)
     a = pids[0]
@@ -484,11 +801,51 @@ def test_opportunist_snipes_freshly_revealed_card():
     state["shop"][0] = "extra_head"
     state["deck"] = ["corner_store"]
     gl.buy_card(state, a, 0)                   # reveals corner_store into slot 0
-    assert state["opportunist_window"] == {"index": 0, "cid": "corner_store"}
+    assert state["opportunist_window"] == [{"index": 0, "cid": "corner_store"}]
     state["mon"][b]["energy"] = 5
-    gl.card_action(state, b, "opportunist", {})
+    gl.card_action(state, b, "opportunist", {"index": 0})
     assert state["mon"][b]["vp"] == 1           # corner store's one-shot fired for b, not a
     assert state["mon"][b]["energy"] == 2       # cost 3
+    # the slot's refill (from an empty deck, so it goes empty) closes the window
+    assert state["opportunist_window"] == []
+
+
+def test_opportunist_refuses_stale_or_missing_index():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][b]["cards"].append("opportunist")
+    state["phase"] = "buying"; state["current"] = a
+    state["mon"][a]["energy"] = 10
+    state["shop"][0] = "extra_head"
+    state["deck"] = ["corner_store"]
+    gl.buy_card(state, a, 0)
+    state["mon"][b]["energy"] = 5
+    win_before = [dict(e) for e in state["opportunist_window"]]
+    gl.card_action(state, b, "opportunist", {"index": 1})   # nothing snipeable there
+    gl.card_action(state, b, "opportunist", {})              # no index at all
+    assert state["opportunist_window"] == win_before
+    assert state["mon"][b]["energy"] == 5                    # nothing spent
+
+
+def test_sweep_shop_opens_an_opportunist_window_on_all_slots():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][b]["cards"].append("opportunist")
+    state["phase"] = "buying"; state["current"] = a
+    state["mon"][a]["energy"] = 10
+    state["mon"][b]["energy"] = 100
+    gl.sweep_shop(state, a)
+    assert len(state["opportunist_window"]) == gl.SHOP_SIZE
+    assert {e["index"] for e in state["opportunist_window"]} == set(range(gl.SHOP_SIZE))
+    # snipe one of the three; the other two entries stay put, and the sniped
+    # slot's refill opens its own fresh entry instead of vanishing
+    target = state["opportunist_window"][1]
+    cost = max(0, cards.CATALOG[target["cid"]]["cost"])
+    before_energy = state["mon"][b]["energy"]
+    gl.card_action(state, b, "opportunist", {"index": target["index"]})
+    assert state["mon"][b]["energy"] == before_energy - cost
+    assert len(state["opportunist_window"]) == gl.SHOP_SIZE
+    assert all(e["cid"] != target["cid"] for e in state["opportunist_window"])
 
 
 def test_parasitic_tentacles_takes_a_card_and_pays_directly():
@@ -504,6 +861,18 @@ def test_parasitic_tentacles_takes_a_card_and_pays_directly():
     assert "armor_plating" in state["mon"][a]["cards"]
     assert state["mon"][a]["energy"] == 6       # armor plating costs 4
     assert state["mon"][b]["energy"] == 4       # paid directly to b, not the bank
+
+
+def test_parasitic_tentacles_theft_still_counts_as_a_buy():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"] += ["parasitic_tentacles", "dedicated_news_team"]
+    state["mon"][b]["cards"].append("armor_plating")
+    state["phase"] = "buying"; state["current"] = a
+    state["mon"][a]["energy"] = 10
+    state["mon"][b]["energy"] = 0
+    gl.card_action(state, a, "parasitic_tentacles", {"pid": b, "card": "armor_plating"})
+    assert state["mon"][a]["vp"] == 1     # Dedicated News Team: +1 VP whenever you buy a card
 
 
 def test_healing_ray_fires_immediately_for_payment():
@@ -570,3 +939,271 @@ def test_shop_price_reflects_alien_metabolism_discount():
     state["phase"] = "buying"
     gl.buy_card(state, a, 0)                  # would fail if the engine still charged 3
     assert state["mon"][a]["energy"] == 0
+
+
+def test_poison_spit_gives_a_token_when_you_deal_damage():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("poison_spit")
+    state["tokyo"]["city"] = b
+    gl._begin_turn(state, a)
+    force_dice(state, ["claw", "claw", "claw", "1", "1", "energy"])
+    gl.resolve(state, a)
+    assert state["mon"][b]["tokens"].get("poison", 0) == 1
+
+
+def test_poison_spit_ticks_at_the_poisoned_monsters_own_turn_end_and_persists():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][b]["tokens"]["poison"] = 3
+    state["phase"] = "buying"; state["current"] = b
+    gl.end_turn(state, b)
+    assert state["mon"][b]["hp"] == 7                  # 3 poison damage
+    assert state["mon"][b]["tokens"]["poison"] == 3    # counters aren't consumed by their own tick
+
+
+def test_poison_spit_token_shed_by_a_wasted_heart():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["tokens"]["poison"] = 2
+    state["mon"][a]["hp"] = state["mon"][a]["maxhp"]   # full HP, so a heart would otherwise be wasted
+    gl._begin_turn(state, a)
+    force_dice(state, ["heart", "1", "1", "2", "2", "energy"])
+    gl.resolve(state, a)
+    assert state["mon"][a]["tokens"]["poison"] == 1    # one heart shed one counter
+    assert state["mon"][a]["hp"] == state["mon"][a]["maxhp"]
+
+
+def test_poison_spit_no_token_when_jets_dodges_the_damage():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("poison_spit")
+    state["mon"][b]["cards"].append("jets")
+    state["tokyo"]["city"] = b
+    gl._begin_turn(state, a)
+    force_dice(state, ["claw", "claw", "claw", "1", "1", "energy"])
+    gl.resolve(state, a)
+    assert state["phase"] == "yield"
+    gl.yield_decision(state, b, leave=True)
+    assert state["mon"][b]["tokens"].get("poison", 0) == 0    # dodged the damage, so no token either
+
+
+def test_shrink_ray_gives_a_token_when_you_deal_damage():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("shrink_ray")
+    state["tokyo"]["city"] = b
+    gl._begin_turn(state, a)
+    force_dice(state, ["claw", "claw", "claw", "1", "1", "energy"])
+    gl.resolve(state, a)
+    assert state["mon"][b]["tokens"].get("shrink", 0) == 1
+
+
+def test_shrink_ray_reduces_dice_count_on_the_shrunk_monsters_next_turn():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][b]["tokens"]["shrink"] = 2
+    gl._begin_turn(state, b)
+    assert len(state["dice"]) == gl.BASE_DICE - 2
+    assert len(state["kept"]) == gl.BASE_DICE - 2
+
+
+def test_shrink_ray_never_reduces_dice_below_one():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][b]["tokens"]["shrink"] = 99
+    gl._begin_turn(state, b)
+    assert len(state["dice"]) == 1
+
+
+def test_shrink_ray_token_shed_by_a_wasted_heart():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["tokens"]["shrink"] = 2
+    state["mon"][a]["hp"] = state["mon"][a]["maxhp"]   # full HP, so a heart would otherwise be wasted
+    gl._begin_turn(state, a)
+    force_dice(state, ["heart", "1", "1", "2", "2", "energy"])
+    gl.resolve(state, a)
+    assert state["mon"][a]["tokens"]["shrink"] == 1    # one heart shed one counter
+    assert state["mon"][a]["hp"] == state["mon"][a]["maxhp"]
+
+
+def test_shrink_ray_no_token_when_jets_dodges_the_damage():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("shrink_ray")
+    state["mon"][b]["cards"].append("jets")
+    state["tokyo"]["city"] = b
+    gl._begin_turn(state, a)
+    force_dice(state, ["claw", "claw", "claw", "1", "1", "energy"])
+    gl.resolve(state, a)
+    assert state["phase"] == "yield"
+    gl.yield_decision(state, b, leave=True)
+    assert state["mon"][b]["tokens"].get("shrink", 0) == 0    # dodged the damage, so no token either
+
+
+def test_stretchy_spends_2_energy_to_change_a_die():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("stretchy")
+    state["mon"][a]["energy"] = 4
+    force_dice(state, ["1", "1", "1", "1", "1", "1"])
+    gl.card_action(state, a, "stretchy", {"index": 0, "face": "claw"})
+    assert state["dice"][0] == "claw"
+    assert state["mon"][a]["energy"] == 2
+
+
+def test_stretchy_refuses_without_enough_energy():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("stretchy")
+    state["mon"][a]["energy"] = 1
+    force_dice(state, ["1", "1", "1", "1", "1", "1"])
+    gl.card_action(state, a, "stretchy", {"index": 0, "face": "claw"})
+    assert state["dice"][0] == "1"
+    assert state["mon"][a]["energy"] == 1
+
+
+def test_stretchy_is_repeatable_not_a_one_shot():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("stretchy")
+    state["mon"][a]["energy"] = 10
+    force_dice(state, ["1", "1", "1", "1", "1", "1"])
+    gl.card_action(state, a, "stretchy", {"index": 0, "face": "claw"})
+    gl.card_action(state, a, "stretchy", {"index": 1, "face": "heart"})
+    assert state["dice"][0] == "claw" and state["dice"][1] == "heart"
+    assert state["mon"][a]["energy"] == 6
+    assert "stretchy" in state["mon"][a]["cards"]              # still held, never discards
+
+
+def test_telepath_spends_1_energy_for_1_extra_reroll():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("telepath")
+    state["mon"][a]["energy"] = 3
+    state["rolls_left"] = 2
+    gl.card_action(state, a, "telepath", None)
+    assert state["rolls_left"] == 3
+    assert state["mon"][a]["energy"] == 2
+
+
+def test_telepath_refuses_without_enough_energy():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("telepath")
+    state["mon"][a]["energy"] = 0
+    state["rolls_left"] = 2
+    gl.card_action(state, a, "telepath", None)
+    assert state["rolls_left"] == 2
+    assert state["mon"][a]["energy"] == 0
+
+
+def test_telepath_is_repeatable_and_usable_before_the_first_roll():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("telepath")
+    state["mon"][a]["energy"] = 5
+    assert state["roll_num"] == 0                # hasn't rolled yet
+    gl.card_action(state, a, "telepath", None)
+    gl.card_action(state, a, "telepath", None)
+    assert state["rolls_left"] == 4              # base 2 + 2 bought
+    assert state["mon"][a]["energy"] == 3
+
+
+def test_urbavore_extra_vp_starting_the_turn_in_tokyo_city():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("urbavore")
+    state["tokyo"]["city"] = a
+    gl._begin_turn(state, a)
+    assert state["mon"][a]["vp"] == 3            # base 2 + urbavore's 1
+
+
+def test_urbavore_extra_vp_starting_the_turn_in_tokyo_bay():
+    state, pids = fresh(3)
+    a = pids[0]
+    state["mon"][a]["cards"].append("urbavore")
+    state["use_bay"] = True
+    state["tokyo"]["bay"] = a
+    gl._begin_turn(state, a)
+    assert state["mon"][a]["vp"] == 2            # base 1 + urbavore's 1
+
+
+def test_urbavore_extra_damage_attacking_from_tokyo():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("urbavore")
+    state["tokyo"]["city"] = a
+    gl._begin_turn(state, a)
+    force_dice(state, ["claw", "1", "1", "2", "2", "energy"])
+    gl.resolve(state, a)
+    assert state["mon"][b]["hp"] == 8             # 10 - (1 claw + urbavore's +1)
+
+
+def test_urbavore_no_bonus_damage_attacking_from_outside_tokyo():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("urbavore")
+    state["tokyo"]["city"] = b
+    gl._begin_turn(state, a)
+    force_dice(state, ["claw", "1", "1", "2", "2", "energy"])
+    gl.resolve(state, a)
+    assert state["mon"][b]["hp"] == 9              # just the 1 claw - no Tokyo bonus while outside
+
+
+def test_urbavore_no_bonus_damage_when_you_dont_attack_at_all():
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["cards"].append("urbavore")
+    state["tokyo"]["city"] = a
+    gl._begin_turn(state, a)
+    force_dice(state, ["1", "1", "1", "2", "2", "energy"])   # no claws
+    gl.resolve(state, a)
+    assert state["mon"][b]["hp"] == 10              # urbavore never grants free damage on its own
+
+
+def test_wings_negates_damage_once_activated():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("wings")
+    state["mon"][a]["energy"] = 2
+    gl.card_action(state, a, "wings", None)
+    assert state["mon"][a]["energy"] == 0
+    took = gl.deal_damage(state, a, 5, attacker=None)
+    assert took == 0
+    assert state["mon"][a]["hp"] == 10
+
+
+def test_wings_refuses_without_enough_energy():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("wings")
+    state["mon"][a]["energy"] = 1
+    gl.card_action(state, a, "wings", None)
+    assert state["mon"][a]["energy"] == 1
+    took = gl.deal_damage(state, a, 5, attacker=None)
+    assert took == 5
+
+
+def test_wings_refuses_to_reactivate_while_already_up():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("wings")
+    state["mon"][a]["energy"] = 10
+    gl.card_action(state, a, "wings", None)
+    gl.card_action(state, a, "wings", None)
+    assert state["mon"][a]["energy"] == 8    # second attempt refused - no double-paying
+
+
+def test_wings_clears_at_the_owners_next_turn_start():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("wings")
+    state["mon"][a]["energy"] = 2
+    gl.card_action(state, a, "wings", None)
+    assert cards._mem(state, a)["wings"] is True
+    gl._begin_turn(state, a)
+    assert cards._mem(state, a)["wings"] is False
+    took = gl.deal_damage(state, a, 5, attacker=None)
+    assert took == 5

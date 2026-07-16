@@ -54,12 +54,12 @@ def new_game(players, seed=None):
     state = {
         "players": pids,
         "current": pids[0],
-        "phase": "rolling",              # rolling | yield | buying | ended
+        "phase": "rolling",              # rolling | probe_window | yield | buying | ended
         "mon": {pid: {
             "hp": START_HP, "maxhp": START_MAX_HP, "vp": START_VP,
             "energy": START_ENERGY, "alive": True,
             "cards": [],                 # owned Keep cards (ids)
-            "tokens": {},                # shrink / poison / smoke / ...
+            "tokens": {},                # shrink / poison (Smoke Cloud's charges live in cardmem, not here)
             "stat": {"damage": 0, "kos": 0, "cards": 0, "tokyo_turns": 0},
         } for pid in pids},
         "tokyo": {"city": None, "bay": None},
@@ -71,8 +71,9 @@ def new_game(players, seed=None):
         "deck": deck,
         "discard": [],
         "shop": shop,
-        "opportunist_window": None,      # {"index":slot, "cid":card} - Opportunist's snipeable freshly-revealed card
+        "opportunist_window": [],        # [{"index":slot, "cid":card}, ...] - Opportunist's snipeable freshly-revealed cards
         "pending_yield": None,           # {"queue":[pid...], "attacker":pid}
+        "pending_probe": None,           # {"queue":[pid...], "roller":pid} - Psychic Probe holders who still owe a decision before this roll resolves
         "ko_order": [],                  # pids in the order they were eliminated
         "winner": None,
         "standings": [],                 # filled at game end: [{pid, place, vp}]
@@ -257,7 +258,8 @@ def _begin_turn(state, pid, first=False):
     state["current"] = pid
     state["turn"] += 1
     state["phase"] = "rolling"
-    state["opportunist_window"] = None
+    state["opportunist_window"] = []
+    state["pending_probe"] = None
     m = state["mon"][pid]
     # Start-of-turn Tokyo victory points.
     slot = _in_tokyo(state, pid)
@@ -303,7 +305,7 @@ def do_roll(state, pid, keep):
         state["kept"] = [False] * n
         state["roll_num"] = 1
     else:
-        if state["rolls_left"] <= 0 and not _spend_smoke(state, pid):
+        if state["rolls_left"] <= 0:
             return
         for i in range(n):
             if i not in keep:
@@ -313,14 +315,6 @@ def do_roll(state, pid, keep):
             state["rolls_left"] -= 1
         state["roll_num"] += 1
     _bump(state)
-
-
-def _spend_smoke(state, pid):
-    tok = state["mon"][pid]["tokens"]
-    if tok.get("smoke", 0) > 0:
-        tok["smoke"] -= 1
-        return True
-    return False
 
 
 def set_keep(state, pid, keep):
@@ -334,10 +328,44 @@ def set_keep(state, pid, keep):
 
 
 def resolve(state, pid):
-    """Stop rolling and resolve the dice."""
+    """Stop rolling and resolve the dice - but first, give any Psychic Probe
+    holder who hasn't used their probe against this roll yet one last chance
+    to act, so clicking Done fast doesn't rob them of the window."""
     if state["phase"] != "rolling" or state["current"] != pid or state["roll_num"] == 0:
         return
     _sync_names(state)
+    eligible = _cards().eligible_psychic_probers(state, pid)
+    if eligible:
+        state["phase"] = "probe_window"
+        state["pending_probe"] = {"queue": eligible, "roller": pid}
+        _bump(state)
+        return
+    _finish_resolve(state, pid)
+
+
+def _probe_window_step(state, pid):
+    """After pid takes (or declines) their psychic-probe decision, pop them
+    from the pending window's queue and, once nobody's left owing one, let
+    the roll actually resolve. Safe to call any time - a no-op unless pid is
+    genuinely the one currently up in an active window."""
+    pp = state.get("pending_probe")
+    if not pp or not pp["queue"] or pp["queue"][0] != pid:
+        return
+    pp["queue"].pop(0)
+    _probe_window_maybe_finish(state)
+
+
+def _probe_window_maybe_finish(state):
+    pp = state.get("pending_probe")
+    if not pp or pp["queue"]:
+        return
+    roller = pp["roller"]
+    state["pending_probe"] = None
+    state["phase"] = "rolling"
+    _finish_resolve(state, roller)
+
+
+def _finish_resolve(state, pid):
     dice = state["dice"]
     m = state["mon"][pid]
     m["_dmg"] = 0
@@ -413,36 +441,52 @@ def resolve(state, pid):
     _enter_buying(state, pid)
 
 
-def _attack(state, attacker, dmg):
-    """Deal ``dmg`` to the right targets, queue yield decisions for survivors."""
+def _attack_targets(state, attacker):
+    """Who an attack out of ``attacker`` hits: everyone else (Nova Breath's
+    hits_everyone), the monsters outside Tokyo if the attacker's in it, or
+    whoever's in Tokyo if not - shared by dice-claw attacks and card-driven
+    ones (Poison Quills) so both hit the same side of the table."""
     nova = mod(state, attacker, "hits_everyone") > 0
     in_tok = _in_tokyo(state, attacker)
     if nova:
-        targets = [p for p in _alive(state) if p != attacker]
-    elif in_tok:
-        targets = [p for p in _alive(state) if _in_tokyo(state, p) is None and p != attacker]
-    else:
-        targets = [p for p in _tokyo_occupants(state) if state["mon"][p]["alive"]]
+        return [p for p in _alive(state) if p != attacker]
+    if in_tok:
+        return [p for p in _alive(state) if _in_tokyo(state, p) is None and p != attacker]
+    return [p for p in _tokyo_occupants(state) if state["mon"][p]["alive"]]
 
-    where = "everyone" if nova else ("the monsters outside" if in_tok else "Tokyo")
-    _log(state, f"{_nm(attacker)} attacks {where} for {dmg} damage.", pid=attacker, kind="attack")
 
-    yield_queue = []
-    deferred = {}   # pid -> damage held back for a Jets holder's stay/leave choice
+def _apply_attack(state, attacker, dmg, targets):
+    """Deal ``dmg`` to ``targets``, respecting Jets and merging into any
+    yield queue already in flight this resolve() (rather than replacing it)
+    so a card-driven hit (Poison Quills, in the numbers step) and the turn's
+    own claw attack (in the claws step right after) both get to queue a yield
+    decision instead of the second one silently clobbering the first's."""
+    py = state.get("pending_yield") or {"queue": [], "attacker": attacker, "deferred": {}}
     for t in list(targets):
         was_in = _in_tokyo(state, t)
         if was_in and _cards().has_jets(state, t):
             # Jets: don't apply this attack's damage yet - if they choose to
             # leave Tokyo below, they never take it at all.
-            deferred[t] = dmg
-            yield_queue.append(t)
+            py["deferred"][t] = py["deferred"].get(t, 0) + dmg
+            if t not in py["queue"]:
+                py["queue"].append(t)
             continue
         took = deal_damage(state, t, dmg, attacker=attacker)
-        if took and was_in and state["mon"][t]["alive"] and _in_tokyo(state, t):
-            yield_queue.append(t)
+        if took and was_in and state["mon"][t]["alive"] and _in_tokyo(state, t) and t not in py["queue"]:
+            py["queue"].append(t)
     # The active player entering an empty slot is handled by _settle_tokyo, run
     # by resolve() (or by yield_decision once every damaged monster has decided).
-    state["pending_yield"] = {"queue": yield_queue, "attacker": attacker, "deferred": deferred} if yield_queue else None
+    state["pending_yield"] = py if py["queue"] else None
+
+
+def _attack(state, attacker, dmg):
+    """Deal ``dmg`` to the right targets, queue yield decisions for survivors."""
+    targets = _attack_targets(state, attacker)
+    nova = mod(state, attacker, "hits_everyone") > 0
+    in_tok = _in_tokyo(state, attacker)
+    where = "everyone" if nova else ("the monsters outside" if in_tok else "Tokyo")
+    _log(state, f"{_nm(attacker)} attacks {where} for {dmg} damage.", pid=attacker, kind="attack")
+    _apply_attack(state, attacker, dmg, targets)
 
 
 def yield_decision(state, pid, leave):
@@ -509,6 +553,17 @@ def _enter_buying(state, pid):
 # Buying
 # ---------------------------------------------------------------------------
 
+def _set_opportunist_slot(state, index):
+    """Track (or drop) one shop slot's Opportunist snipe-eligibility. Called
+    after any refill so each slot's freshness is tracked independently - a
+    sweep can open a window on all 3 slots at once, not just the last one."""
+    win = state["opportunist_window"]
+    win[:] = [e for e in win if e["index"] != index]
+    cid = state["shop"][index]
+    if cid is not None:
+        win.append({"index": index, "cid": cid})
+
+
 def buy_card(state, pid, index):
     if state["phase"] != "buying" or state["current"] != pid:
         return
@@ -536,7 +591,7 @@ def buy_card(state, pid, index):
     _cards().trigger(state, pid, "on_buy_card", card=cid)
     # Refill the shop slot - and open an Opportunist window on whatever's revealed.
     state["shop"][index] = state["deck"].pop() if state["deck"] else None
-    state["opportunist_window"] = {"index": index, "cid": state["shop"][index]} if state["shop"][index] else None
+    _set_opportunist_slot(state, index)
     _bump(state)
 
 
@@ -551,6 +606,8 @@ def sweep_shop(state, pid):
         if c is not None:
             state["deck"].insert(0, c)
     state["shop"] = [state["deck"].pop() if state["deck"] else None for _ in range(SHOP_SIZE)]
+    for i in range(SHOP_SIZE):
+        _set_opportunist_slot(state, i)
     _log(state, f"{_nm(pid)} sweeps the shop for {SWEEP_COST}⚡.", pid=pid, kind="buy")
     _bump(state)
 
@@ -598,10 +655,13 @@ def resign(state, pid):
     if state["phase"] == "ended" or not state["mon"].get(pid, {}).get("alive"):
         return
     was_current = state["current"] == pid
-    # Clear any pending yield they owned.
+    # Clear any pending yield or probe-window decision they owned.
     py = state.get("pending_yield")
     if py and pid in py.get("queue", []):
         py["queue"] = [q for q in py["queue"] if q != pid]
+    pb = state.get("pending_probe")
+    if pb and pid in pb.get("queue", []):
+        pb["queue"] = [q for q in pb["queue"] if q != pid]
     _log(state, f"{_nm(pid)} flees the city.", pid=pid, kind="sys")
     _eliminate(state, pid, by=None)
     if state["phase"] == "ended":
@@ -614,9 +674,13 @@ def resign(state, pid):
             if state["phase"] == "yield":
                 _enter_buying(state, attacker)
     if was_current:
+        # The roller quitting mid-probe-window leaves nothing to resolve.
+        state["pending_probe"] = None
         nxt = _next_alive(state, pid)
         if nxt is not None:
             _begin_turn(state, nxt)
+    elif pb and not pb["queue"]:
+        _probe_window_maybe_finish(state)
 
 
 # ---------------------------------------------------------------------------
@@ -706,6 +770,7 @@ def public_view(state, viewer_pid=None):
         "deck_left": len(state["deck"]),
         "opportunist_window": state.get("opportunist_window"),
         "pending_yield": state.get("pending_yield"),
+        "pending_probe": state.get("pending_probe"),
         "winner": state["winner"],
         "standings": state["standings"],
         "turn": state["turn"],

@@ -259,6 +259,18 @@ def has_jets(state, pid):
     return _has(state, pid, "jets")
 
 
+def eligible_psychic_probers(state, roller):
+    """Who can still use Psychic Probe against ``roller`` this turn - anyone
+    else, alive, who owns (or mimics) it and hasn't already used their one
+    probe against this same roller yet. Checked by game_logic.resolve() to
+    open a last-chance window before a fast Done robs them of it, so it
+    needs to be public (game_logic never reaches into cards.py internals)."""
+    probed = _mem(state, roller).get("probed_by", [])
+    return [q for q in state["players"]
+            if q != roller and state["mon"][q]["alive"]
+            and _has(state, q, "psychic_probe") and q not in probed]
+
+
 def _mem(state, pid):
     return state["mon"][pid].setdefault("cardmem", {})
 
@@ -285,12 +297,29 @@ def heal_ray_already_fired(state, pid):
 
 def card_extra_view(state, pid, cid, key):
     """Extra client-display fields for one owned card, beyond its static
-    CATALOG entry - only Mimic/Made in a Lab/Monster Batteries need this."""
+    CATALOG entry - only Mimic/Made in a Lab/Monster Batteries/Wings need
+    this (Mimic also surfaces a mimicked Plot Twist/Smoke Cloud/Wings/Monster
+    Batteries' own independent charge state, same shape as the real card)."""
     if key == "mimic":
         mk = _mem(state, pid).get("mimic_key")
         if mk:
             t = CATALOG.get(mk, {})
-            return {"mimic_target": {"id": mk, "name": t.get("name"), "emoji": t.get("emoji")}}
+            target = {"id": mk, "name": t.get("name"), "emoji": t.get("emoji")}
+            mem = _mem(state, pid)
+            # A mimicked Plot Twist, Smoke Cloud or Monster Batteries draws
+            # from the mimicker's own independent pool (set up in
+            # card_action's "mimic" branch) - surface it the same way the
+            # real card would, so the client can hide the button once it's
+            # actually spent.
+            if mk == "monster_batteries" and mem.get("battery_charged"):
+                target["battery_left"] = mem.get("batteries", 0)
+            elif mk == "smoke_cloud":
+                target["smoke_left"] = mem.get("smoke", 0)
+            elif mk == "plot_twist":
+                target["used"] = bool(mem.get("plot_twist_used"))
+            elif mk == "wings" and mem.get("wings"):
+                target["wings_active"] = True
+            return {"mimic_target": target}
     elif key == "made_in_a_lab":
         lk = _mem(state, pid).get("lab_peek")
         if lk and state["deck"] and state["deck"][-1] == lk:
@@ -301,6 +330,9 @@ def card_extra_view(state, pid, cid, key):
         mem = _mem(state, pid)
         if mem.get("battery_charged"):
             return {"battery_left": mem.get("batteries", 0)}
+    elif key == "wings":
+        if _mem(state, pid).get("wings"):
+            return {"wings_active": True}
     return None
 
 
@@ -361,19 +393,16 @@ def on_any_elimination(state, pid):
 
 
 # ---------------------------------------------------------------------------
-# A card-driven attack (no yield decision) - used by Poison Quills etc.
+# A card-driven attack (dice-claw targeting/Jets/yield rules apply) - used by
+# Poison Quills.
 # ---------------------------------------------------------------------------
 
 def _card_attack(state, attacker, dmg):
-    in_tok = gl._in_tokyo(state, attacker)
-    if gl.mod(state, attacker, "hits_everyone") > 0:
-        targets = [p for p in gl._alive(state) if p != attacker]
-    elif in_tok:
-        targets = [p for p in gl._alive(state) if gl._in_tokyo(state, p) is None and p != attacker]
-    else:
-        targets = [p for p in gl._tokyo_occupants(state) if state["mon"][p]["alive"]]
-    for t in list(targets):
-        gl.deal_damage(state, t, dmg, attacker=attacker)
+    # Shares _attack's Jets-aware, yield-queue-merging damage application so
+    # this hits exactly like a claw attack would - a Tokyo occupant still
+    # gets to yield afterward, and Jets still lets them dodge it by leaving.
+    targets = gl._attack_targets(state, attacker)
+    gl._apply_attack(state, attacker, dmg, targets)
 
 
 # ---------------------------------------------------------------------------
@@ -610,6 +639,38 @@ def _discard_card(state, pid, key):
     return False
 
 
+def _detach_keep_card(state, pid, key):
+    """Undo whatever standing effect a Keep card grants when it stops being
+    held by pid - the mirror of on_acquire's one-time setup, for the handful
+    of keys where that setup would otherwise leak (a permanent +maxhp that
+    outlives the card) or go dead for whoever takes it next (a mid-use
+    counter reset to zero). Called wherever a still-active Keep card leaves
+    a monster's hand: Metamorph's discard-for-energy and Parasitic Tentacles'
+    theft. Returns any per-card memory the card was carrying, so a thief can
+    inherit it instead of it just evaporating.
+    """
+    m = state["mon"][pid]
+    mem = _mem(state, pid)
+    if key == "even_bigger":
+        m["maxhp"] -= 2
+        m["hp"] = min(m["hp"], m["maxhp"])
+    elif key == "wings":
+        # An already-paid-for shield protects the monster that bought it,
+        # not the card itself - it doesn't transfer to a thief (who never
+        # paid the 2⚡ to raise it) and it can't be cashed out by buying
+        # Wings, activating it, then Metamorphing the card away for a
+        # refund while keeping the protection.
+        mem["wings"] = False
+    elif key == "monster_batteries":
+        return {"battery_charged": mem.pop("battery_charged", False), "batteries": mem.pop("batteries", 0)}
+    elif key == "smoke_cloud":
+        return {"smoke": mem.pop("smoke", 0)}
+    elif key == "mimic":
+        if "mimic_key" in mem:
+            return {"mimic_key": mem.pop("mimic_key")}
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Manual actions (fired by the active monster this turn)
 # ---------------------------------------------------------------------------
@@ -633,13 +694,22 @@ def card_action(state, pid, card, choice):
         gl._bump(state)
 
     elif key == "plot_twist":
-        if not rolling or not _physically_has(state, pid, "plot_twist"):
+        if not rolling:
+            return
+        owns_physically = _physically_has(state, pid, "plot_twist")
+        mem = _mem(state, pid)
+        if not owns_physically and mem.get("plot_twist_used"):
             return
         i, f = _die_and_face(state, choice)
         if i is None:
             return
         state["dice"][i] = f
-        _discard_card(state, pid, "plot_twist")
+        # A real copy discards itself; a mimicked copy just marks its own
+        # one-time use spent, until the mimicker re-picks it for a fresh one.
+        if owns_physically:
+            _discard_card(state, pid, "plot_twist")
+        else:
+            mem["plot_twist_used"] = True
         gl._log(state, f"{gl._nm(pid)} twists a die to {f}.", pid=pid, kind="sys")
         gl._bump(state)
 
@@ -708,6 +778,7 @@ def card_action(state, pid, card, choice):
         if not C:
             return
         m["cards"].remove(cid)
+        _detach_keep_card(state, pid, C["key"])
         state["discard"].append(cid)
         gl.gain_energy(state, pid, C["cost"])
         gl._log(state, f"{gl._nm(pid)} morphs {C['name']} back into {C['cost']}⚡.", pid=pid, kind="energy")
@@ -764,6 +835,18 @@ def card_action(state, pid, card, choice):
                 return
             gl.spend_energy(state, pid, 1)
         mem["mimic_key"] = target_key
+        # Plot Twist, Smoke Cloud and Monster Batteries are one-time-charge
+        # cards, not repeatable passives - "treat this as if you had that
+        # card" means the mimicker gets their OWN independent pool (never
+        # shared with, or drained from, the card's actual owner), fresh every
+        # time they (re)commit to copying it, same as a real purchase would.
+        if target_key == "plot_twist":
+            mem["plot_twist_used"] = False
+        elif target_key == "smoke_cloud":
+            mem["smoke"] = 3
+        elif target_key == "monster_batteries":
+            mem["battery_charged"] = False
+            mem["batteries"] = 0
         name = CATALOG.get(cid, {}).get("name", cid)
         suffix = " (1⚡)" if changing else ""
         gl._log(state, f"{gl._nm(pid)} mimics {name}{suffix}.", pid=pid, kind="sys")
@@ -771,10 +854,21 @@ def card_action(state, pid, card, choice):
 
     elif key == "psychic_probe":
         roller = state["current"]
-        if roller == pid or state["phase"] != "rolling" or state["roll_num"] <= 0:
+        if roller == pid:
+            return
+        pp = state.get("pending_probe")
+        in_window = bool(pp and pp.get("roller") == roller and pp["queue"] and pp["queue"][0] == pid)
+        if not in_window and (state["phase"] != "rolling" or state["roll_num"] <= 0):
             return
         probed = _mem(state, roller).setdefault("probed_by", [])
         if pid in probed:
+            return
+        if isinstance(choice, dict) and choice.get("pass"):
+            if not in_window:
+                return
+            gl._log(state, f"{gl._nm(pid)} lets it go.", pid=pid, kind="sys")
+            gl._probe_window_step(state, pid)
+            gl._bump(state)
             return
         i = _die_index(state, choice)
         if i is None:
@@ -783,6 +877,8 @@ def card_action(state, pid, card, choice):
         state["dice"][i] = rng.choice(gl.FACES)
         probed.append(pid)
         gl._log(state, f"{gl._nm(pid)} psychically rerolls one of {gl._nm(roller)}'s dice.", pid=pid, kind="sys")
+        if in_window:
+            gl._probe_window_step(state, pid)
         gl._bump(state)
 
     elif key == "made_in_a_lab":
@@ -822,10 +918,20 @@ def card_action(state, pid, card, choice):
             gl._bump(state)
 
     elif key == "opportunist":
-        win = state.get("opportunist_window")
-        if not win or win.get("cid") is None or state["shop"][win["index"]] != win["cid"]:
+        # A card revealed by a purchase or a Sweep Shop is snipeable, whoever's
+        # turn it is, until it's bought (by anyone) or reshuffled away. A
+        # sweep opens a window on all 3 slots at once, so the player picks
+        # which (if any) to snap up from a list, one at a time.
+        idx = choice.get("index") if isinstance(choice, dict) else None
+        try:
+            idx = int(idx)
+        except (TypeError, ValueError):
             return
-        idx, cid = win["index"], win["cid"]
+        win = state.get("opportunist_window") or []
+        entry = next((e for e in win if e["index"] == idx), None)
+        if not entry or state["shop"][idx] != entry["cid"]:
+            return
+        cid = entry["cid"]
         C = CATALOG.get(cid)
         if not C:
             return
@@ -834,7 +940,7 @@ def card_action(state, pid, card, choice):
             return
         gl.spend_energy(state, pid, cost)
         m["stat"]["cards"] += 1
-        gl._log(state, f"{gl._nm(pid)} snaps up {C['name']} for {cost}⚡ the instant it appears (Opportunist).", pid=pid, kind="buy")
+        gl._log(state, f"{gl._nm(pid)} buys {C['name']} for {cost}⚡ (Opportunist).", pid=pid, kind="buy")
         trigger(state, pid, "on_before_gain_card", card=cid)
         if C["type"] == "keep":
             m["cards"].append(cid)
@@ -843,7 +949,7 @@ def card_action(state, pid, card, choice):
         on_acquire(state, pid, cid)
         trigger(state, pid, "on_buy_card", card=cid)
         state["shop"][idx] = state["deck"].pop() if state["deck"] else None
-        state["opportunist_window"] = {"index": idx, "cid": state["shop"][idx]} if state["shop"][idx] else None
+        gl._set_opportunist_slot(state, idx)
         gl._bump(state)
 
     elif key == "parasitic_tentacles":
@@ -865,15 +971,19 @@ def card_action(state, pid, card, choice):
         gl.spend_energy(state, pid, cost)
         gl.gain_energy(state, target_pid, cost)
         tgt["cards"].remove(cid)
+        # A card's standing effect belongs to whoever holds it, not whoever
+        # bought it first - detach it from the old owner (undoing a permanent
+        # +maxhp, or handing back its per-card memory) before it counts as
+        # newly acquired for the thief.
+        carried = _detach_keep_card(state, target_pid, C["key"]) or {}
+        trigger(state, pid, "on_before_gain_card", card=cid)
         m["cards"].append(cid)
-        if C["key"] == "monster_batteries":
-            # Whatever charge is left belongs to the card, not the old owner -
-            # carry it over so it keeps draining under new ownership instead
-            # of silently evaporating.
-            tgt_mem = _mem(state, target_pid)
-            my_mem = _mem(state, pid)
-            my_mem["battery_charged"] = tgt_mem.pop("battery_charged", False)
-            my_mem["batteries"] = tgt_mem.pop("batteries", 0)
+        if C["key"] == "even_bigger":
+            m["maxhp"] += 2
+            gl.heal(state, pid, 2)
+        elif carried:
+            _mem(state, pid).update(carried)
+        trigger(state, pid, "on_buy_card", card=cid)
         gl._log(state, f"{gl._nm(pid)} rips {C['name']} from {gl._nm(target_pid)} for {cost}⚡ (Parasitic Tentacles).", pid=pid, kind="buy")
         gl._bump(state)
 

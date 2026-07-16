@@ -278,6 +278,7 @@
     renderLog();
     renderOverlay();
     renderMobileYieldBadge();
+    renderOpportunistPicker();
   }
 
   // A small "!" badge on the mobile Dice tab while it's this player's call
@@ -309,6 +310,14 @@
     if (state.phase === "yield" && state.pending_yield && state.pending_yield.queue.length) {
       const decider = state.pending_yield.queue[0];
       b.textContent = `Waiting for ${nameOf(decider)} to stay or leave Tokyo…`;
+      b.className = "turn-banner";
+      return;
+    }
+    // Same idea as yield above: the roll is frozen on a Psychic Probe
+    // decision, and state.current is still the roller, not the decider.
+    if (state.phase === "probe_window" && state.pending_probe && state.pending_probe.queue.length) {
+      const decider = state.pending_probe.queue[0];
+      b.textContent = `Waiting for ${nameOf(decider)} to psychically probe or pass…`;
       b.className = "turn-banner";
       return;
     }
@@ -366,9 +375,18 @@
   // at someone else's monster card. Battery charge isn't secret, so it always
   // shows for everyone.
   function cardRowSuffix(c, ownerPid) {
-    if (c.mimic_target) return ` <span class="mc-card-note">(${esc(c.mimic_target.name)})</span>`;
+    if (c.mimic_target) {
+      const t = c.mimic_target;
+      let extra = "";
+      if (t.battery_left != null) extra = `, ${t.battery_left}⚡ left`;
+      else if (t.smoke_left != null) extra = `, ${t.smoke_left} left`;
+      else if (t.used != null) extra = t.used ? ", used" : ", ready";
+      else if (t.wings_active) extra = ", shielded";
+      return ` <span class="mc-card-note">(${esc(t.name)}${extra})</span>`;
+    }
     if (c.lab_peek && ownerPid === MY_PID) return ` <span class="mc-card-note">(${esc(c.lab_peek.name)}, ${c.lab_peek.cost}⚡)</span>`;
     if (c.battery_left != null) return ` <span class="mc-card-note">(${c.battery_left}⚡ left)</span>`;
+    if (c.wings_active) return ` <span class="mc-card-note">(shielded)</span>`;
     return "";
   }
 
@@ -414,15 +432,21 @@
   const DIE_TARGET = {
     background_dweller: { filter: (f) => f === "3" },
     herd_culler: { filter: () => true },
+    // These two also let you choose the NEW face, not just which die - once
+    // a die's picked, fireDieTarget opens a small face-picker instead of
+    // firing straight away.
+    plot_twist: { filter: () => true, needsFace: true },
+    stretchy: { filter: () => true, needsFace: true },
   };
   let dieTargetCard = null;          // card id currently armed, or null
   let pendingDieAnim = null;         // {index, prevFace} - a fired action awaiting its server-confirmed face
   let lastShownCamoId = 0;           // highest Camouflage camo_roll.id already played out
   let camoRollAnim = null;           // {dice, reels} - a Camouflage roll currently animating
+  let probeTargetArmed = false;      // Psychic Probe eagerly armed via its own button mid-roll
   function renderDice() {
     const tray = $("diceTray");
     const dice = state.dice || [];
-    if (!dice.length || (state.phase !== "rolling" && state.roll_num === 0)) { tray.innerHTML = ""; dieTargetCard = null; return; }
+    if (!dice.length || (state.phase !== "rolling" && state.phase !== "probe_window" && state.roll_num === 0)) { tray.innerHTML = ""; dieTargetCard = null; return; }
     // Only animate when THIS client just clicked roll/reroll (pendingRollAnim) -
     // never on page load, reconnect, or just opening the mobile Dice tab, which
     // would otherwise replay a stale animation for a roll that already happened.
@@ -437,7 +461,13 @@
       pendingDieAnim = null;
     }
     if (!isMyRollingTurn()) dieTargetCard = null;
-    const targetFilter = dieTargetCard && DIE_TARGET[dieTargetCard].filter;
+    if (!canEagerProbe()) probeTargetArmed = false;
+    // Psychic Probe targets someone ELSE's dice tray (there's only ever one
+    // tray shown, whoever's turn it is), so it's armed either by its own
+    // button mid-roll, or automatically the moment it's your forced decision
+    // in the probe window - either way, every die becomes a valid target.
+    const probeArmed = probeTargetArmed || myProbeWindowTurn();
+    const targetFilter = probeArmed ? () => true : (dieTargetCard && DIE_TARGET[dieTargetCard].filter);
     // A targeted die-changing ability only gets its reel animation once the
     // server's actual new face lands (never on the optimistic re-render right
     // after the click, which still shows the old face).
@@ -468,9 +498,11 @@
     }).join("");
     tray.querySelectorAll(".die").forEach((el) => {
       const i = +el.dataset.i;
-      el.onclick = targetFilter
-        ? (targetFilter(dice[i]) ? () => fireDieTarget(dieTargetCard, i) : null)
-        : () => toggleKeep(i);
+      el.onclick = probeArmed
+        ? () => fireProbeDie(i)
+        : targetFilter
+          ? (targetFilter(dice[i]) ? () => fireDieTarget(dieTargetCard, i) : null)
+          : () => toggleKeep(i);
     });
     // Once a die's reel animation genuinely finishes, collapse its multi-row
     // reel back down to a single plain face. The CSS leaves the reel parked
@@ -500,6 +532,12 @@
     } else if (state.phase === "yield" && state.pending_yield && state.pending_yield.queue.length) {
       const decider = state.pending_yield.queue[0];
       html = `<span class="spectate">Waiting for ${dispName(decider)} to stay or leave Tokyo…</span>`;
+    } else if (myProbeWindowTurn()) {
+      html = `<span class="spectate">🔮 Click one of ${dispName(state.current)}'s dice to reroll it, or pass.</span>
+              <button class="btn secondary" data-a="probe-pass">Pass</button>`;
+    } else if (state.phase === "probe_window" && state.pending_probe && state.pending_probe.queue.length) {
+      const decider = state.pending_probe.queue[0];
+      html = `<span class="spectate">Waiting for ${dispName(decider)} to psychically probe or pass…</span>`;
     } else if (isSpectator()) {
       html = `<span class="spectate">Spectating - ${dispName(state.current)}'s turn</span>`;
     } else if (state.current !== MY_PID) {
@@ -539,6 +577,9 @@
       // targeting mode on the dice tray instead of firing straight away.
       else if (a.startsWith("card:") && DIE_TARGET[a.slice(5)]) toggleDieTargetMode(a.slice(5));
       else if (a === "camo-roll") fireCamoRoll();
+      else if (a === "opportunist-open") openOpportunistPicker();
+      else if (a === "probe-arm") toggleProbeTarget();
+      else if (a === "probe-pass") passProbe();
       else if (a.startsWith("card:")) fireCard(a.slice(5));
     });
   }
@@ -549,25 +590,59 @@
   }
 
   // Psychic Probe: fireable any time someone else is mid-roll, once per
-  // roller per turn - not gated by isMyTurn() at all.
-  function psychicProbeButton() {
-    if (isSpectator() || state.phase !== "rolling" || state.roll_num <= 0) return "";
-    if (state.current === MY_PID || !ownsOrMimics("psychic_probe")) return "";
+  // roller per turn - not gated by isMyTurn() at all. On top of that eager
+  // use, the server also opens a forced last-chance window the instant the
+  // roller clicks Done (so racing to Done can't rob a slower prober of the
+  // window entirely) - myProbeWindowTurn() covers that separate moment.
+  function canEagerProbe() {
+    if (isSpectator() || state.phase !== "rolling" || state.roll_num <= 0) return false;
+    if (state.current === MY_PID || !ownsOrMimics("psychic_probe")) return false;
     const probedBy = (state.mon[state.current] && state.mon[state.current].probed_by) || [];
-    if (probedBy.includes(MY_PID)) return "";
-    return `<button class="btn card-act" data-a="card:psychic_probe">🔮 Probe ${dispName(state.current)}'s die</button>`;
+    return !probedBy.includes(MY_PID);
+  }
+  function myProbeWindowTurn() {
+    return !!(state && state.phase === "probe_window" && state.pending_probe && state.pending_probe.queue[0] === MY_PID);
+  }
+  function psychicProbeButton() {
+    if (!canEagerProbe()) return "";
+    const extra = probeTargetArmed ? " active" : "";
+    return `<button class="btn card-act${extra}" data-a="probe-arm">🔮 Probe ${dispName(state.current)}'s die</button>`;
+  }
+  function toggleProbeTarget() {
+    if (!canEagerProbe()) return;
+    probeTargetArmed = !probeTargetArmed;
+    renderDice();
+    renderActions();
+  }
+  function fireProbeDie(i) {
+    probeTargetArmed = false;
+    pendingDieAnim = { index: i, prevFace: state.dice[i] };
+    doCardAction("psychic_probe", { index: i });
+    renderDice();
+    renderActions();
+  }
+  function passProbe() {
+    if (!myProbeWindowTurn()) return;
+    doCardAction("psychic_probe", { pass: true });
   }
 
-  // Opportunist: fireable the instant a shop slot refills, for as long as
-  // that same card sits unclaimed - regardless of whose turn it is.
+  // Opportunist: a shop slot refilling (one purchase, or all 3 at once from a
+  // Sweep) opens a window on each freshly-revealed card, for as long as it
+  // sits unclaimed - regardless of whose turn it is. Rather than one button
+  // per card, this opens a popup listing everything currently snipeable so
+  // the player can buy any number of them, then dismiss it with Done.
+  function liveOpportunistWindow() {
+    if (!state) return [];
+    return (state.opportunist_window || []).filter((e) => {
+      const c = state.shop[e.index];
+      return c && c.id === e.cid;
+    });
+  }
   function opportunistButton() {
     if (isSpectator() || state.phase !== "buying" || !ownsOrMimics("opportunist")) return "";
-    const win = state.opportunist_window;
-    if (!win) return "";
-    const slot = state.shop[win.index];
-    if (!slot || slot.id !== win.cid) return "";
-    if ((state.mon[MY_PID].energy || 0) < slot.cost) return "";
-    return `<button class="btn card-act" data-a="card:opportunist">🕵️ Snap up ${esc(slot.name)} (${slot.cost}⚡)</button>`;
+    const win = liveOpportunistWindow();
+    if (!win.length) return "";
+    return `<button class="btn card-act" data-a="opportunist-open">🕵️ Buy card (${win.length})</button>`;
   }
 
   // Camouflage: the mitigation already happened server-side the instant
@@ -632,30 +707,35 @@
   // Gather any choice an actionable card needs, then send it.
   function fireCard(id) {
     let choice = null;
-    if (id === "plot_twist" || id === "stretchy") {
-      const i = askDie("Change which die?"); if (i == null) return;
-      const f = askFace(); if (!f) return; choice = { index: i, face: f };
-    } else if (id === "metamorph") {
+    if (id === "metamorph") {
       const mine = (state.mon[MY_PID].cards || []);
       if (!mine.length) return;
-      const list = mine.map((c, i) => `${i + 1}. ${c.name} (${c.cost}⚡)`).join("\n");
-      const v = prompt("Discard which card for its energy back?\n" + list); if (v == null) return;
-      const idx = parseInt(v, 10) - 1; if (idx < 0 || idx >= mine.length) return;
-      choice = { card: mine[idx].id };
+      openCardPicker({
+        title: "Discard which card for its energy back?",
+        options: mine.map((c) => ({ card: c })),
+        onConfirm: (cid) => doCardAction("metamorph", { card: cid }),
+      });
+      return;
     } else if (id === "mimic") {
       const options = [];
       for (const p of state.players) {
         if (p === MY_PID) continue;
         for (const oc of (state.mon[p].cards || [])) {
+          // Only Mimic itself can't be copied - it has no power of its own.
+          // Plot Twist / Smoke Cloud / Monster Batteries are one-time-charge
+          // cards, but the mimicker gets their own independent charge pool
+          // (server-side), so they're copyable like everything else.
           if (oc.id === "mimic") continue;
           options.push({ pid: p, card: oc });
         }
       }
       if (!options.length) { toast("No copyable cards in play yet."); return; }
-      const list = options.map((o, i) => `${i + 1}. ${o.card.name} (${nameOf(o.pid)})`).join("\n");
-      const v = prompt("Copy which card?\n" + list); if (v == null) return;
-      const idx = parseInt(v, 10) - 1; if (idx < 0 || idx >= options.length) return;
-      choice = { card: options[idx].card.id };
+      openCardPicker({
+        title: "Copy which card?",
+        options,
+        onConfirm: (cid) => doCardAction("mimic", { card: cid }),
+      });
+      return;
     } else if (id === "made_in_a_lab") {
       const c = (state.mon[MY_PID].cards || []).find((x) => x.id === "made_in_a_lab");
       choice = { action: (c && c.lab_peek) ? "buy" : "peek" };
@@ -666,10 +746,12 @@
         for (const oc of (state.mon[p].cards || [])) options.push({ pid: p, card: oc });
       }
       if (!options.length) { toast("No monster has a card to take."); return; }
-      const list = options.map((o, i) => `${i + 1}. ${o.card.name} (${o.card.cost}⚡, ${nameOf(o.pid)})`).join("\n");
-      const v = prompt("Take which card?\n" + list); if (v == null) return;
-      const idx = parseInt(v, 10) - 1; if (idx < 0 || idx >= options.length) return;
-      choice = { pid: options[idx].pid, card: options[idx].card.id };
+      openCardPicker({
+        title: "Take which card?",
+        options,
+        onConfirm: (cid, pid) => doCardAction("parasitic_tentacles", { pid, card: cid }),
+      });
+      return;
     } else if (id === "healing_ray") {
       const others = state.players.filter((p) => p !== MY_PID && state.mon[p].alive);
       if (!others.length) { toast("No other monster to aim at."); return; }
@@ -680,8 +762,6 @@
         onConfirm: (target) => doCardAction("healing_ray", { pid: target }),
       });
       return;
-    } else if (id === "psychic_probe") {
-      const i = askDie(`Reroll which of ${nameOf(state.current)}'s dice?`); if (i == null) return; choice = { index: i };
     } else if (id === "monster_batteries") {
       const maxE = state.mon[MY_PID].energy;
       openAmountPicker({
@@ -708,22 +788,24 @@
   }
   function fireDieTarget(card, i) {
     dieTargetCard = null;
+    if (DIE_TARGET[card].needsFace) {
+      renderDice();
+      renderActions();
+      openFacePicker({
+        title: `${card === "stretchy" ? "Stretchy" : "Plot Twist"}: change this die to…`,
+        onConfirm: (face) => {
+          pendingDieAnim = { index: i, prevFace: state.dice[i] };
+          doCardAction(card, { index: i, face });
+          renderDice();
+        },
+      });
+      return;
+    }
     pendingDieAnim = { index: i, prevFace: state.dice[i] };
     doCardAction(card, { index: i });
     renderDice();
     renderActions();
   }
-  function askDie(msg) {
-    const n = state.dice.length;
-    const v = prompt(msg + " (1-" + n + ")"); if (v == null) return null;
-    const i = parseInt(v, 10) - 1; return (i >= 0 && i < n) ? i : null;
-  }
-  function askFace() {
-    let v = prompt("New face: 1, 2, 3, heart, energy, claw"); if (!v) return null;
-    v = v.trim().toLowerCase();
-    return ["1", "2", "3", "heart", "energy", "claw"].includes(v) ? v : null;
-  }
-
   // Generic "click a monster's icon to target it" popup, built for Healing
   // Ray but deliberately not hardcoded to it - any future ability (or Mimic
   // copying one of these) that needs to pick another monster reuses this
@@ -816,6 +898,121 @@
     };
   }
 
+  // Plot Twist / Stretchy: after a die's picked on the tray (dieTargetCard's
+  // arm-then-click flow), this is the second step - a grid of the 6 faces to
+  // change it to, styled like real dice. Shares the same picker-modal/box.
+  //   openFacePicker({ title, onConfirm(face) })
+  let facePickerState = null;
+  function openFacePicker(opts) {
+    facePickerState = { title: opts.title, onConfirm: opts.onConfirm };
+    renderFacePicker();
+    $("pickerModal").style.display = "flex";
+  }
+  function closeFacePicker() {
+    $("pickerModal").style.display = "none";
+    facePickerState = null;
+  }
+  function renderFacePicker() {
+    if (!facePickerState) return;
+    const { title } = facePickerState;
+    $("pickerBox").innerHTML = `
+      <div class="picker-head">
+        <span class="picker-title">${esc(title)}</span>
+        <button class="picker-close" id="pickerCloseBtn">✕</button>
+      </div>
+      <div class="face-grid">${REEL_KEYS.map((f) => `
+        <button class="die ${FACE_CLASS[f] || "blank"}" data-f="${f}">${dieFaceHtml(f)}</button>`).join("")}
+      </div>
+    `;
+    $("pickerCloseBtn").onclick = closeFacePicker;
+    $("pickerBox").querySelectorAll(".face-grid .die").forEach((el) => el.onclick = () => {
+      const f = el.dataset.f;
+      const onConfirm = facePickerState.onConfirm;
+      closeFacePicker();
+      onConfirm(f);
+    });
+  }
+
+  // Generic "pick one card from a list, fires the instant you click it"
+  // popup - built for Metamorph / Mimic / Parasitic Tentacles' card-choice
+  // prompts. Shares the same picker-modal/box as the pickers above.
+  //   openCardPicker({ title, options: [{card, pid?}], onConfirm(cid, pid) })
+  let cardPickerState = null;
+  function openCardPicker(opts) {
+    cardPickerState = { title: opts.title, options: opts.options, onConfirm: opts.onConfirm };
+    renderCardPicker();
+    $("pickerModal").style.display = "flex";
+  }
+  function closeCardPicker() {
+    $("pickerModal").style.display = "none";
+    cardPickerState = null;
+  }
+  function renderCardPicker() {
+    if (!cardPickerState) return;
+    const { title, options } = cardPickerState;
+    const rows = options.map((o, i) => `
+      <div class="card-pick-row" data-i="${i}">
+        ${cardFaceHtml(o.card)}
+        ${o.pid ? `<span class="card-pick-owner">${esc(nameOf(o.pid))}</span>` : ""}
+      </div>`).join("");
+    $("pickerBox").innerHTML = `
+      <div class="picker-head">
+        <span class="picker-title">${esc(title)}</span>
+        <button class="picker-close" id="pickerCloseBtn">✕</button>
+      </div>
+      <div class="opp-list">${rows}</div>
+    `;
+    $("pickerCloseBtn").onclick = closeCardPicker;
+    $("pickerBox").querySelectorAll(".card-pick-row").forEach((el) => el.onclick = () => {
+      const o = options[+el.dataset.i];
+      const onConfirm = cardPickerState.onConfirm;
+      closeCardPicker();
+      onConfirm(o.card.id, o.pid);
+    });
+  }
+
+  // Opportunist's own popup: not a "pick one and confirm" like the two
+  // pickers above, but a list of every currently snipeable card with its own
+  // Buy button, plus a Done button to close whenever the player's finished.
+  // Refreshed on every render() so a card someone else buys out from under
+  // you (or a fresh Sweep) updates live while it's open.
+  let opportunistPickerOpen = false;
+  function openOpportunistPicker() {
+    opportunistPickerOpen = true;
+    renderOpportunistPicker();
+    $("pickerModal").style.display = "flex";
+  }
+  function closeOpportunistPicker() {
+    opportunistPickerOpen = false;
+    $("pickerModal").style.display = "none";
+  }
+  function renderOpportunistPicker() {
+    if (!opportunistPickerOpen) return;
+    const win = liveOpportunistWindow();
+    if (!win.length) { closeOpportunistPicker(); return; }
+    const myEnergy = (state.mon[MY_PID] && state.mon[MY_PID].energy) || 0;
+    const rows = win.map((e) => {
+      const c = state.shop[e.index];
+      const afford = myEnergy >= c.cost;
+      return `<div class="opp-row">${cardFaceHtml(c)}
+        <button class="btn card-act opp-buy" data-idx="${e.index}" ${afford ? "" : "disabled"}>Buy ${c.cost}⚡</button>
+      </div>`;
+    }).join("");
+    $("pickerBox").innerHTML = `
+      <div class="picker-head">
+        <span class="picker-title">Opportunist</span>
+        <button class="picker-close" id="pickerCloseBtn">✕</button>
+      </div>
+      <div class="opp-list">${rows}</div>
+      <button class="btn secondary picker-confirm" id="oppDoneBtn">Done</button>
+    `;
+    $("pickerCloseBtn").onclick = closeOpportunistPicker;
+    $("oppDoneBtn").onclick = closeOpportunistPicker;
+    $("pickerBox").querySelectorAll(".opp-buy").forEach((el) => el.onclick = () => {
+      doCardAction("opportunist", { index: +el.dataset.idx });
+    });
+  }
+
   // Cards that grant an active ability the player can fire on their turn.
   // ``label`` can be a plain string, or a (state, card) => string for cards
   // whose button text depends on some extra state (Mimic, Made in a Lab).
@@ -849,17 +1046,38 @@
   // re-validates everything; these just decide when to show the button.
   const ACTIONABLE = {
     herd_culler: { label: "Herd Culler: set a die to 1", when: (s) => s.phase === "rolling" && s.roll_num > 0 },
-    plot_twist: { label: "Plot Twist: set a die", when: (s) => s.phase === "rolling" && s.roll_num > 0 },
+    plot_twist: {
+      label: "Plot Twist: set a die",
+      // A real copy always has one shot; a mimicked copy has its own
+      // independent one-time use, spent once you've fired it (mimic_target.used).
+      when: (s, c) => s.phase === "rolling" && s.roll_num > 0
+        && (c.id === "mimic" ? !(c.mimic_target && c.mimic_target.used) : true),
+    },
     stretchy: { label: "Stretchy: change a die (2⚡)", when: (s) => s.phase === "rolling" && s.roll_num > 0 && s.mon[MY_PID].energy >= 2 },
     telepath: { label: "Telepath: +1 reroll (1⚡)", when: (s) => s.phase === "rolling" && s.mon[MY_PID].energy >= 1 },
-    smoke_cloud: { label: "Smoke Cloud: +1 reroll", when: (s) => s.phase === "rolling" },
+    smoke_cloud: {
+      label: "Smoke Cloud: +1 reroll",
+      // A real copy just discards itself once its 3 charges run out, so no
+      // charge check is needed for it; a mimicked copy sticks around, so its
+      // own independent pool (mimic_target.smoke_left) has to be checked.
+      when: (s, c) => s.phase === "rolling"
+        && (c.id === "mimic" ? (c.mimic_target && c.mimic_target.smoke_left > 0) : true),
+    },
     rapid_healing: { label: "Rapid Healing: heal 1 (2⚡)", when: (s) => (s.mon[MY_PID].energy >= 2 && s.mon[MY_PID].hp < s.mon[MY_PID].maxhp) },
-    wings: { label: "Wings: negate damage (2⚡)", when: (s) => s.mon[MY_PID].energy >= 2 },
+    wings: {
+      label: "Wings: negate damage (2⚡)",
+      // A real copy just checks energy - once already up, re-arming would
+      // silently no-op server-side, so hide it. A mimicked copy has its own
+      // independent shield state (mimic_target.wings_active) to check instead.
+      when: (s, c) => s.mon[MY_PID].energy >= 2
+        && !(c.id === "mimic" ? (c.mimic_target && c.mimic_target.wings_active) : c.wings_active),
+    },
     background_dweller: { label: "Reroll 3", when: (s) => s.phase === "rolling" && s.roll_num > 0 && (s.dice || []).includes("3") },
     metamorph: { label: "Metamorph: discard a card for ⚡", when: (s) => s.phase === "buying" && (s.mon[MY_PID].cards || []).length > 0 },
     monster_batteries: {
       label: "🔌 Monster Batteries: store energy",
-      when: (s, c) => s.phase === "buying" && c.battery_left == null,
+      when: (s, c) => s.phase === "buying"
+        && (c.id === "mimic" ? (c.mimic_target && c.mimic_target.battery_left == null) : c.battery_left == null),
     },
     mimic: {
       label: (s, c) => c.mimic_target ? `Mimic: copying ${c.mimic_target.name} (change 1⚡)` : "Mimic: choose a card to copy",

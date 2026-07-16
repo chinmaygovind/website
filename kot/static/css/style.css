@@ -778,6 +778,29 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
   min-width: 4.5rem; text-align: center; display: flex; align-items: center; justify-content: center; gap: .35rem; }
 .amount-value i { font-size: 1.4rem; }
 
+/* Opportunist's "buy any of these, then Done" list, same picker-modal/box. */
+.opp-list { display: flex; flex-direction: column; gap: .6rem; margin-bottom: 1rem;
+  max-height: 55vh; overflow-y: auto; }
+.opp-row { display: flex; align-items: center; gap: .6rem; }
+.opp-row .card { width: 100%; cursor: default; }
+.opp-buy { flex: none; white-space: nowrap; }
+.opp-buy:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
+
+/* Plot Twist / Stretchy's face picker, same picker-modal/box - a grid of
+   real dice (reusing .die) standing in for "change it to this". */
+.face-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .7rem;
+  justify-items: center; margin-bottom: .4rem; }
+
+/* Metamorph / Mimic / Parasitic Tentacles' "pick one card" list, same
+   picker-modal/box - unlike Opportunist's list, the whole row is the
+   button (picking IS the action, no separate confirm/buy step). */
+.card-pick-row { display: flex; align-items: center; gap: .6rem; cursor: pointer;
+  border-radius: 11px; transition: transform .08s ease; }
+.card-pick-row:hover { transform: translateY(-3px); }
+.card-pick-row .card { width: 100%; cursor: pointer; }
+.card-pick-owner { flex: none; font-family: var(--poster); font-size: .8rem; color: var(--cream);
+  white-space: nowrap; }
+
 .toast { position: fixed; left: 50%; top: 66px; transform: translateX(-50%); z-index: 45;
   background: rgba(20,14,30,.95); border: 1px solid var(--accent); color: var(--accent-soft);
   border-radius: 12px; padding: .5rem 1rem; font-family: var(--display); display: none; }
