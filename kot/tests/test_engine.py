@@ -273,3 +273,45 @@ def test_metamorph_refuses_unowned_card():
     gl.card_action(state, a, "metamorph", {"card": "camouflage"})   # never owned
     assert state["mon"][a]["energy"] == 0
     assert state["mon"][a]["cards"] == ["metamorph"]
+
+
+def test_monster_batteries_stores_exact_energy_not_doubled():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["phase"] = "buying"
+    state["current"] = a
+    state["mon"][a]["energy"] = 10
+    state["shop"][0] = "monster_batteries"    # keep, cost 2
+    gl.buy_card(state, a, 0)
+    assert state["mon"][a]["energy"] == 0     # the 8 left after the 2-cost got banked, not kept
+    assert state["mon"][a]["cardmem"]["batteries"] == 8   # not 16
+    gl._begin_turn(state, a)                  # next turn: draw 2 back
+    assert state["mon"][a]["energy"] == 2
+    assert state["mon"][a]["cardmem"]["batteries"] == 6
+
+
+def test_herd_culler_usable_every_turn_not_just_once():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["cards"].append("herd_culler")
+    force_dice(state, ["2", "2", "2", "heart", "energy", "claw"])
+    gl.card_action(state, a, "herd_culler", {"index": 0})
+    assert state["dice"][0] == "1"
+    gl._begin_turn(state, a)                  # simulate this player's next turn
+    force_dice(state, ["2", "2", "2", "heart", "energy", "claw"])
+    gl.card_action(state, a, "herd_culler", {"index": 1})
+    assert state["dice"][1] == "1"            # still usable, not a one-time thing
+
+
+def test_shop_price_reflects_alien_metabolism_discount():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["current"] = a
+    state["mon"][a]["cards"].append("alien_metabolism")
+    state["shop"][0] = "corner_store"         # cost 3
+    view = gl.public_view(state)
+    assert view["shop"][0]["cost"] == 2       # 3 - 1 discount, not the sticker price
+    state["mon"][a]["energy"] = 2
+    state["phase"] = "buying"
+    gl.buy_card(state, a, 0)                  # would fail if the engine still charged 3
+    assert state["mon"][a]["energy"] == 0

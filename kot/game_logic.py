@@ -272,7 +272,6 @@ def _begin_turn(state, pid, first=False):
     _cards().trigger(state, pid, "on_turn_start")
     if state["phase"] == "ended":
         return
-    m["_herd_used"] = False       # per-turn card-action guards
     m["_dmg"] = 0
     # Fresh dice tray (Extra Head adds dice; shrink counters remove them).
     ndice = BASE_DICE + mod(state, pid, "extra_dice") - m["tokens"].get("shrink", 0)
@@ -618,13 +617,21 @@ def _end_game(state, winner, reason="vp"):
 # ---------------------------------------------------------------------------
 
 def _shop_view(state):
+    # Priced for the current player specifically (only they can buy right now) so
+    # a buy_discount card (Alien Metabolism) shows the price they'll actually pay
+    # instead of the sticker price - the client also uses this same number to
+    # decide whether a card is affordable, so an undiscounted price here used to
+    # both mislead the display AND wrongly grey out cards they could afford.
+    current = state.get("current")
+    discount = mod(state, current, "buy_discount") if current else 0
     out = []
     for cid in state["shop"]:
         if cid is None:
             out.append(None)
         else:
             C = _cards().CATALOG.get(cid, {})
-            out.append({"id": cid, "name": C.get("name"), "cost": C.get("cost"),
+            cost = max(0, C.get("cost", 0) - discount)
+            out.append({"id": cid, "name": C.get("name"), "cost": cost,
                         "type": C.get("type"), "text": C.get("text"), "emoji": C.get("emoji")})
     return out
 

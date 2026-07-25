@@ -316,8 +316,8 @@ def on_acquire(state, pid, cid):
     elif key == "monster_batteries":
         stored = m["energy"]
         gl.spend_energy(state, pid, stored)
-        _mem(state, pid)["batteries"] = stored * 2   # bank matches your stake
-        gl._log(state, f"{gl._nm(pid)} charges the batteries with {stored * 2}⚡.", pid=pid, kind="energy")
+        _mem(state, pid)["batteries"] = stored       # bank matches your stake, not double it
+        gl._log(state, f"{gl._nm(pid)} charges the batteries with {stored}⚡.", pid=pid, kind="energy")
     elif key == "smoke_cloud":
         _mem(state, pid)["smoke"] = 3
 
@@ -396,6 +396,7 @@ def _h_turn_start(state, pid, ctx):
     m = state["mon"][pid]
     mem = _mem(state, pid)
     mem["freeze"] = False
+    mem["herd_used"] = False
     if mem.get("wings"):
         mem["wings"] = False
     if _has(state, pid, "monster_batteries") and mem.get("batteries", 0) > 0:
