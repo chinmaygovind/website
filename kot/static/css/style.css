@@ -451,7 +451,13 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
     align-items: center; justify-content: center; height: 100%; margin-top: 0;
     gap: clamp(.5rem, 2.4vh, 1.2rem); }
   .tokyo-circle.city { width: clamp(140px, 24vh, 250px); height: clamp(140px, 24vh, 250px); }
-  .tokyo-circle.bay { width: clamp(115px, 19vh, 200px); height: clamp(115px, 19vh, 200px); }
+  .tokyo-circle.bay { width: clamp(140px, 24vh, 250px); height: clamp(140px, 24vh, 250px); }
+  /* Bay only ever appears alongside City (5-6 players) - once both are
+     stacked in the rail together, shrink City a touch and grow Bay to meet
+     it so the pair reads as a matched medium-sized duo instead of one
+     circle dominating the other. */
+  .tokyo-ring.both-active .tokyo-circle.city,
+  .tokyo-ring.both-active .tokyo-circle.bay { width: clamp(120px, 19vh, 200px); height: clamp(120px, 19vh, 200px); }
   .circle-label, .tokyo-circle.bay .circle-label { top: 11%; font-size: clamp(.8rem, 1.9vh, 1.2rem); }
   .outskirts-label { grid-column: 2; grid-row: 1; margin-top: .1rem; }
   .monsters { grid-column: 2; grid-row: 2; height: 100%; max-height: none; align-content: flex-start;
@@ -713,6 +719,14 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
   .tokyo-circle.bay { width: 190px; height: 190px; }
   .circle-label { font-size: 1.1rem; }
   .tokyo-circle.bay .circle-label { font-size: .95rem; }
+  /* same idea as desktop: once Bay joins City, match them to the same
+     smaller size and force them side by side (nowrap) instead of City
+     wrapping above a smaller Bay */
+  .tokyo-ring.both-active { flex-wrap: nowrap; gap: .8rem; }
+  .tokyo-ring.both-active .tokyo-circle.city,
+  .tokyo-ring.both-active .tokyo-circle.bay { width: clamp(120px, 42vw, 165px); height: clamp(120px, 42vw, 165px); }
+  .tokyo-ring.both-active .circle-label,
+  .tokyo-ring.both-active .tokyo-circle.bay .circle-label { font-size: .85rem; top: 20px; }
   /* nudged right of the desktop 6% - too close to the edge on a narrow phone */
   .board-moon { left: 11%; }
 

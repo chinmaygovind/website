@@ -340,6 +340,9 @@
   function renderTokyo() {
     const t = state.tokyo;
     $("slot-bay").style.display = state.use_bay ? "" : "none";
+    // lets CSS size City/Bay differently (each solo vs. a matched medium
+    // size when both are stacked/side-by-side together) without JS doing layout math
+    $("tokyo").classList.toggle("both-active", !!state.use_bay);
     $("city-mon").innerHTML = t.city ? monCardHtml(t.city) : `<div class="slot-empty">empty</div>`;
     $("bay-mon").innerHTML = t.bay ? monCardHtml(t.bay) : `<div class="slot-empty">empty</div>`;
     wireCardPopups($("city-mon"));
