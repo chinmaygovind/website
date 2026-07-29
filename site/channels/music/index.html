@@ -8,13 +8,8 @@
         body, html {
             margin: 0;
             padding: 0;
-            min-height: 100%;
-            overflow-x: hidden;
-            overflow-y: auto;
-        }
-        body {
-            box-sizing: border-box;
-            padding: 20px 0;
+            height: 100%;
+            overflow: hidden;
         }
         .video-background {
             position: fixed;
@@ -39,12 +34,10 @@
         .container {
             text-align: center;
             width: 80%;
-            max-width: min(80vw, 142vh); /* keep the 16:9 player from outgrowing short viewports */
             margin: auto;
             z-index: 1;
             position: relative;
             color: white;
-            box-sizing: border-box;
         }
         select {
             padding: 10px;
@@ -52,7 +45,6 @@
             border: 2px solid #ccc;
             border-radius: 5px;
             margin-bottom: 20px;
-            max-width: 100%;
         }
         .video-container {
             position: relative;
