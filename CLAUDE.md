@@ -13,9 +13,14 @@ multiplayer card game that shares TTR's accounts).
   `/foo/` serves `site/foo/index.html`, and `/foo` 301-redirects to `/foo/` so
   relative links keep working. Path safety via `werkzeug.utils.safe_join`.
 - `/` serves the landing page (`site/index.html`); the Wii menu is at `/wii/`
-  (`site/wii/index.html`). `/ttr` (and `/ttr/`) 302-redirects to `TTR_URL` (env;
-  default `https://ttr.cgovind.com`). A 404 falls back to the `site/404.html`
+  (`site/wii/index.html`). `/ttr`, `/ers` and `/kot` (each with and without the
+  trailing slash) 302-redirect to `TTR_URL` / `ERS_URL` / `KOT_URL` (env; default
+  `https://{ttr,ers,kot}.cgovind.com`). A 404 falls back to the `site/404.html`
   Mario game.
+- `app.py` also proxies a few APIs the landing page calls same-origin, so no keys
+  reach the client: `/api/duolingo-streak`, `/api/spotify/{login,callback,recent,
+  top-artists}` (OAuth refresh token in the box `.env`), and `/api/roll/gemini`
+  for the `site/games/roll/` game.
 - **No build step, no bundler.** Pages are self-contained static HTML with inline
   `<style>`/`<script>`, same as the old GitHub Pages site this was derived from.
 - Local: `python app.py` → http://localhost:5002 (`PORT` overrides). Prod:
@@ -23,14 +28,39 @@ multiplayer card game that shares TTR's accounts).
 
 ## Layout (`site/` is the web root)
 
-- `site/index.html` is the landing page: a plain white page with a big "hey!" on
-  the left and a welcome line on the right, set in the self-hosted xkcd Script
-  font (`site/fonts/xkcd-script.woff`, from ipython/xkcd-font).
+- `site/index.html` is the landing page: white page, big "hey!" left, welcome line
+  and contact links across the top, all in the self-hosted xkcd Script font
+  (`site/fonts/xkcd-script.woff`, from ipython/xkcd-font). Below it is a **tile
+  grid** — `repeat(6, --tile)` × auto rows, so **12 slots** before it wraps to a
+  third row (2 columns on <=760px). Currently 9: resume, poker, whales, racing,
+  ttr, ers, kot, music, settings. **Keep `settings` last** (it's a Wii-menu joke).
+- **Adding a tile is one repeating pattern**, all inside `site/index.html` (no
+  build step, so everything is inline):
+  1. a `--<name>` accent colour in `:root`, then `.modal-<name>` rules for
+     `border-color`, `.pane-title` colour, and `.media-img` border;
+  2. a `<button class="tile" data-modal="modal-<name>">` with a `.tile-img` whose
+     `data-still`/`data-anim` are `assets/icons/<name>.png` / `.gif` — the script
+     at the bottom swaps to the gif on hover and preloads it, so **every tile
+     needs both files**; SVG tiles (music, settings) just point both at the .svg;
+  3. a `.modal` + `.modal-box .modal-<name>` block, left pane = `.pane-title` +
+     `.pane-text` (+ `.modal-icon` gif top-right), right pane = `.media` frames
+     holding a `.media-img` or a dashed `.placeholder` while art is pending.
+  The generic script wires open/close (X, backdrop, Escape) off those classes —
+  a new tile needs no JS. Icon sources are GIMP `.xcf` files kept next to the
+  exported png/gif in `site/assets/icons/`.
+- Two panes are live rather than static: the resume tile's fast facts patch in a
+  computed age and the Duolingo streak, and the music tile fills recently-played
+  and top-artists from the Spotify proxy, plus a concert carousel driven by
+  `site/assets/music/concerts.json` (add a concert by appending to that JSON —
+  no code change).
 - `site/wii/index.html` is the Wii menu (was `public/wii/index.html`, briefly at
   root). Warning screen fades into a channel grid. The bottom-left gray slot is a
   **Ticket to Ride channel** (`#channel-ttr`) whose click handler navigates to `/ttr`.
   Its `../../images|audio|videos` paths assume it sits at root, so some break at `/wii/`.
-- `site/warning.html` - the "reset" warning screen the menu loops back to.
+- **`site/warning.html` is gone** (deleted in `d0a282b`) but `site/wii/index.html`
+  still navigates to `warning.html`, so the Wii menu's "reset" path 404s into the
+  Mario game. The `warning.png`/`warning.wav` assets are still there, so restoring
+  the page (at `site/wii/warning.html`, since the link is relative) would fix it.
 - `site/channels/{mii,music,codebusters}/` - the Wii channel pages. They
   reference shared assets with `../../images|audio|videos/…` (resolves to root).
 - `site/home/index.html` - the **projects landing page** (was the site's old `/`).
@@ -39,6 +69,29 @@ multiplayer card game that shares TTR's accounts).
   robot-tour, bridge, flip, klotski, roll), copied unchanged.
 - `site/{images,audio,videos}/` - shared media (Wii menu art + channel media).
 - `site/404.html`, `favicon.ico`, `robots.txt` at the root.
+
+## Unlinked pages (nothing on the site links to these)
+
+The landing page's tiles only open modals or point off-site (ttr/ers/kot subdomains,
+the resume PDF, YouTube, PennToday). **No internal HTML page is linked from `/` at
+all**, so every page below is reachable only by typing its URL:
+
+- **Orphaned outright:** `games/flip/` ("Flip - The Game"), `games/klotski/`
+  ("Klotski"), `games/roll/` ("3D Ball Roll Game" — note this one has a live
+  backend, `/api/roll/gemini`), `wii/`, `channels/mii/`, and the local
+  `projects/ibec/` copy (7 leftover template pages: committees, contact, events,
+  membership, left-/right-/no-sidebar).
+- **Orphaned transitively:** `home/index.html` (the old projects page) has no
+  inbound links either, so the things only *it* links to are also unreachable:
+  `projects/astro/` (AstroGPT), `projects/quickcal/`, `projects/robot-tour/`,
+  `games/bridge/` (Penn Bridge sim, plus the `projects/bridge/` redirect stub),
+  `channels/music/` and `channels/codebusters/` (+ its `pattern.html`).
+- `site/404.html` (Mario game) is by design only reachable via a bad URL.
+- **Two stale links to fix if you re-link things:** `home/index.html:591`'s "Wii
+  Channel" tile points at `../`, which was the Wii menu when it lived at `/` but is
+  now the landing page — it should be `../wii/`. And the Wii menu itself only
+  navigates for the TTR slot; the mii/music/codebusters channel pages are not
+  wired to any channel tile.
 
 ## Conventions / gotchas
 
