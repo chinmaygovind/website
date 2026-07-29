@@ -8,6 +8,9 @@
       <div class="panel">
         <div class="section-title">Monsters (<span id="pcount">{{ players|length }}</span>/{{ game.max_players }})</div>
         <div class="player-list" id="roster"></div>
+        {% if me.is_host %}
+        <button class="btn secondary" id="addBotBtn" style="width:100%;margin-top:.7rem" onclick="addBot()">+ Add bot</button>
+        {% endif %}
       </div>
 
       <div class="panel">
@@ -56,6 +59,7 @@
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script>
 const CODE = "{{ game.code }}", IS_HOST = {{ 'true' if me.is_host else 'false' }}, MY_PID = "{{ me.pid }}";
+const MAX_PLAYERS = {{ game.max_players }};
 let players = {{ players|tojson }};
 const socket = io();
 socket.on('connect', () => socket.emit('join_lobby', {code: CODE}));
@@ -77,14 +81,18 @@ function render(){
       <span class="pdot" style="background:${p.color}"></span>
       <span class="pname">${MONSTER_EMOJI[p.monster] || '👹'} ${esc(p.monster)} <span class="pmini">${esc(p.name)}</span>${p.elo != null ? ` <span class="pelo">${p.elo}</span>` : ''}</span>
       ${p.is_host ? '<span class="badge host">HOST</span>' : ''}
+      ${p.is_bot ? '<span class="badge bot">BOT</span>' : ''}
       ${p.pid === MY_PID ? '<span class="badge you">YOU</span>' : ''}
       ${IS_HOST && p.pid !== MY_PID ? `<button class="kick" onclick="kick('${p.pid}')" title="Remove">✕</button>` : ''}
     </div>`).join('');
   const btn = document.getElementById('startBtn');
   if(btn){ btn.disabled = players.length < 2;
     const h = document.getElementById('startHint'); if(h) h.style.display = players.length < 2 ? 'block' : 'none'; }
+  const ab = document.getElementById('addBotBtn');
+  if(ab) ab.disabled = players.length >= MAX_PLAYERS;
 }
 function kick(pid){ socket.emit('kick_player', {code: CODE, pid}); }
+function addBot(){ socket.emit('add_bot', {code: CODE}); }
 function startGame(){ socket.emit('start_game', {code: CODE}); }
 function leaveGame(){ socket.emit('leave_lobby', {code: CODE}); location.href = '/lobbies'; }
 function share(){ navigator.clipboard.writeText(location.origin + '/lobby/' + CODE).then(() => {

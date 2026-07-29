@@ -222,6 +222,7 @@ a:hover { color: var(--accent-soft); }
 .player-entry .pelo { font-family: var(--sans); font-size: .78rem; color: var(--ink-soft); }
 .player-entry .badge { font-size: .68rem; border-radius: 6px; padding: 1px 7px; font-weight: 700; letter-spacing: .04em; }
 .player-entry .badge.host { background: var(--accent); color: #3a2606; }
+.player-entry .badge.bot { background: #2f6f5e; color: #d9f5ec; }
 .player-entry .badge.you { background: #4a2c6b; color: var(--accent-soft); }
 .player-entry .kick { background: #f2dede; color: #b03030; border: 1px solid #e2a3a3; border-radius: 6px;
   width: 26px; height: 26px; cursor: pointer; font-size: .8rem; line-height: 1; flex: 0 0 auto; }

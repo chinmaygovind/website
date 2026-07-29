@@ -22,6 +22,7 @@ from sqlalchemy.engine import Engine
 
 from models import db, User, KotStats, KotGame, KotPlayer
 import game_logic as gl
+import bot
 
 # ---------------------------------------------------------------------------
 # Config (mirrors ERS: shared accounts + cross-subdomain SSO)
@@ -82,6 +83,25 @@ MONSTERS = [
     ("Meka Dragon", "#eb5757"),
     ("Alienoid", "#bb6bd9"),
 ]
+
+# Bot display names. Which one shows up is random, but Bot-zilla is the
+# headliner: it gets half the weight on the first bot added to a table, with
+# the other four splitting the rest. Later bots just take a random free name.
+BOT_NAMES = ["Bot-zilla", "Claw-de", "Mechatron", "The Terminator", "Gloopy"]
+BOT_HEADLINER = "Bot-zilla"
+BOT_HEADLINER_WEIGHT = 0.5
+
+
+def _pick_bot_name(used):
+    free = [n for n in BOT_NAMES if n not in used]
+    if not free:
+        return None
+    if BOT_HEADLINER in free:
+        others = [n for n in free if n != BOT_HEADLINER]
+        if not others or random.random() < BOT_HEADLINER_WEIGHT:
+            return BOT_HEADLINER
+        return random.choice(others)
+    return random.choice(free)
 
 # In-memory per-game locks (single eventlet worker, like ERS).
 _locks = {}
@@ -244,7 +264,7 @@ def _leave_waiting_lobbies(sk, keep_code=None):
             db.session.delete(p)
             db.session.commit()
             remaining = sorted(g.players, key=lambda q: q.seat_order)
-            if not remaining:
+            if not any(not q.is_bot for q in remaining):
                 socketio.emit("lobby_closed", {"reason": "Host left."}, room="lobby:" + g.code)
                 _delete_game(g)
             else:
@@ -448,6 +468,8 @@ def _broadcast_lobbies():
 def _delete_game(game):
     for p in list(game.players):
         db.session.delete(p)
+    _bot_sched.pop(game.code, None)
+    _locks.pop(game.code, None)
     db.session.delete(game)
     db.session.commit()
 
@@ -462,8 +484,26 @@ def _me(game):
     return KotPlayer.query.filter_by(game_id=game.id, session_key=get_session_key()).first()
 
 
-def _log_event(game, ev):
+def _log_event(game, ev, state=None, log_after=None):
+    """Append one entry to the game's move-by-move replay.
+
+    ``ev`` is the action itself (what the player chose); passing ``state`` also
+    snapshots the resulting position, and ``log_after`` attaches every engine
+    log line the action produced - which is where the consequences (damage,
+    Tokyo moves, knockouts, card triggers) come from, without game_logic
+    needing to know a replay exists."""
     ev.setdefault("t", int(time.time() * 1000))
+    if state is not None:
+        ev["seq"] = state.get("seq")
+        ev["turn"] = state.get("turn")
+        ev["phase"] = state.get("phase")
+        ev["current"] = state.get("current")
+        ev["tokyo"] = dict(state.get("tokyo") or {})
+        ev["mon"] = {pid: {"hp": m["hp"], "vp": m["vp"], "energy": m["energy"],
+                           "alive": m["alive"], "cards": list(m.get("cards", []))}
+                     for pid, m in (state.get("mon") or {}).items()}
+        if log_after is not None:
+            ev["log"] = [l["text"] for l in state.get("log", []) if l["id"] > log_after]
     try:
         evs = json_mod.loads(game.events_json or "[]")
     except Exception:
@@ -507,6 +547,39 @@ def on_join_game(data):
                             "roster": _roster(game)})
 
 
+@socketio.on("add_bot")
+def on_add_bot(data):
+    """Host-only: seat a bot. It is a normal player row from here on - it takes
+    a monster and colour like anyone else and is driven by _bot_kick once the
+    game starts."""
+    code = (data or {}).get("code", "").upper()
+    with _lock(code):
+        game = KotGame.query.filter_by(code=code).first()
+        if not game or game.status != "waiting":
+            return
+        me = _me(game)
+        if not me or not me.is_host:
+            return
+        if len(game.players) >= game.max_players:
+            emit("start_error", {"error": "The table is full."})
+            return
+        # Pick a monster and seat nobody holds: after a kick, len(players) can
+        # collide with an existing seat and hand out a duplicate monster.
+        taken = {p.monster for p in game.players}
+        monster, color = next(((m, c) for m, c in MONSTERS if m not in taken),
+                              MONSTERS[len(game.players) % len(MONSTERS)])
+        seat = max((p.seat_order for p in game.players), default=-1) + 1
+        name = _pick_bot_name({p.name for p in game.players}) or f"Bot-{seat}"
+        db.session.add(KotPlayer(
+            game_id=game.id, user_id=None,
+            session_key=f"bot_{uuid.uuid4().hex[:8]}", name=name,
+            color=color, monster=monster, seat_order=seat,
+            is_host=False, is_bot=True))
+        db.session.commit()
+        _broadcast_lobby(game)
+        _broadcast_lobbies()
+
+
 @socketio.on("kick_player")
 def on_kick_player(data):
     code = (data or {}).get("code", "").upper()
@@ -542,7 +615,9 @@ def on_leave_lobby(data):
         db.session.delete(me)
         db.session.commit()
         remaining = sorted(game.players, key=lambda p: p.seat_order)
-        if not remaining:
+        # Bots are not a reason to keep a lobby alive - once the last human
+        # walks out, reap it and the bots with it.
+        if not any(not p.is_bot for p in remaining):
             socketio.emit("lobby_closed", {"reason": "Everyone left the lobby."},
                           room="lobby:" + code)
             _delete_game(game)
@@ -576,52 +651,79 @@ def on_start_game(data):
         game.status = "playing"
         game.events_json = "[]"
         _log_event(game, {"type": "start", "players": pids,
-                          "names": {p.pid: p.name for p in players}})
+                          "names": {p.pid: p.name for p in players},
+                          "bots": [p.pid for p in players if p.is_bot]},
+                   state=state, log_after=0)
         game.last_activity_at = datetime.utcnow()
         db.session.commit()
         socketio.emit("go_to_game", {"code": code}, room="lobby:" + code)
         _broadcast(game)
         _broadcast_lobbies()
+    _bot_kick(code, why="start")
 
 
 # ---------------------------------------------------------------------------
 # Socket handlers - gameplay
 # ---------------------------------------------------------------------------
 
-def _act(code, fn, must_be_current=True):
+def _act(code, fn, must_be_current=True, event=None, actor_pid=None):
     """Load the game, verify the caller controls a seat, run fn(game, state, pid),
-    then persist + broadcast + finalize. Returns the acting pid or None."""
+    then record the move, persist, broadcast and finalize.
+
+    ``event`` is either a dict or a callable ``(state, pid) -> dict`` describing
+    the action, evaluated BEFORE fn runs so it captures what the player chose
+    rather than what it turned into. ``actor_pid`` lets a bot act without a
+    session; everything else goes through the caller's own seat."""
     with _lock(code):
         game = KotGame.query.filter_by(code=code).first()
         if not game or game.status != "playing":
             return
-        me = _me(game)
-        if not me:
-            return
         state = game.state
+        if actor_pid is not None:
+            pid = actor_pid
+            if pid not in state.get("mon", {}):
+                return
+        else:
+            me = _me(game)
+            if not me:
+                return
+            pid = me.pid
         gl.set_names(state, _names(game))
         if state["phase"] == "ended":
             return
-        if must_be_current and state["current"] != me.pid:
+        if must_be_current and state["current"] != pid:
             return
-        fn(game, state, me.pid)
+        ev = event(state, pid) if callable(event) else (dict(event) if event else None)
+        log_after = state.get("log_seq", 0)
+        before_seq = state.get("seq")
+        fn(game, state, pid)
+        # A rejected action (wrong phase, unaffordable card) leaves the state
+        # untouched; don't write a replay entry for something that never happened.
+        if ev is not None and state.get("seq") != before_seq:
+            ev.setdefault("pid", pid)
+            _log_event(game, ev, state=state, log_after=log_after)
         game.state = state
         game.last_activity_at = datetime.utcnow()
         if state["phase"] == "ended":
             _finalize(game, state)
         db.session.commit()
         _broadcast(game)
+    _bot_kick(code)
 
 
 @socketio.on("roll")
 def on_roll(data):
     keep = (data or {}).get("keep", [])
     _act((data or {}).get("code", "").upper(),
-         lambda g, s, pid: gl.do_roll(s, pid, keep))
+         lambda g, s, pid: gl.do_roll(s, pid, keep),
+         event=lambda s, pid: {"type": "roll", "roll_num": s["roll_num"],
+                               "keep": list(keep), "before": list(s["dice"])})
 
 
 @socketio.on("set_keep")
 def on_set_keep(data):
+    # Purely cosmetic die-locking; the keep set that matters is the one sent
+    # with the reroll, so this stays out of the replay.
     keep = (data or {}).get("keep", [])
     _act((data or {}).get("code", "").upper(),
          lambda g, s, pid: gl.set_keep(s, pid, keep))
@@ -630,14 +732,19 @@ def on_set_keep(data):
 @socketio.on("resolve")
 def on_resolve(data):
     _act((data or {}).get("code", "").upper(),
-         lambda g, s, pid: gl.resolve(s, pid))
+         lambda g, s, pid: gl.resolve(s, pid),
+         event=lambda s, pid: {"type": "resolve", "dice": list(s["dice"]),
+                               "rolls_used": s["roll_num"]})
 
 
 @socketio.on("token_choice")
 def on_token_choice(data):
     d = data or {}
     _act(d.get("code", "").upper(),
-         lambda g, s, pid: gl.token_choice_decision(s, pid, d.get("poison"), d.get("shrink")))
+         lambda g, s, pid: gl.token_choice_decision(s, pid, d.get("poison"), d.get("shrink")),
+         event=lambda s, pid: {"type": "token_choice", "poison": d.get("poison"),
+                               "shrink": d.get("shrink"),
+                               "hearts": (s.get("pending_token_choice") or {}).get("hearts")})
 
 
 @socketio.on("yield_tokyo")
@@ -658,26 +765,36 @@ def on_yield(data):
         py = state.get("pending_yield")
         if state["phase"] != "yield" or not py or not py["queue"] or py["queue"][0] != me.pid:
             return
+        log_after = state.get("log_seq", 0)
         gl.yield_decision(state, me.pid, leave)
+        _log_event(game, {"type": "yield", "pid": me.pid, "leave": leave,
+                          "attacker": py.get("attacker")},
+                   state=state, log_after=log_after)
         game.state = state
         game.last_activity_at = datetime.utcnow()
         if state["phase"] == "ended":
             _finalize(game, state)
         db.session.commit()
         _broadcast(game)
+    _bot_kick(code)
 
 
 @socketio.on("buy_card")
 def on_buy(data):
     index = (data or {}).get("index")
     _act((data or {}).get("code", "").upper(),
-         lambda g, s, pid: gl.buy_card(s, pid, index))
+         lambda g, s, pid: gl.buy_card(s, pid, index),
+         event=lambda s, pid: {"type": "buy", "index": index,
+                               "card": (s["shop"][index]
+                                        if isinstance(index, int) and 0 <= index < len(s["shop"])
+                                        else None)})
 
 
 @socketio.on("sweep_shop")
 def on_sweep(data):
     _act((data or {}).get("code", "").upper(),
-         lambda g, s, pid: gl.sweep_shop(s, pid))
+         lambda g, s, pid: gl.sweep_shop(s, pid),
+         event=lambda s, pid: {"type": "sweep", "shop": list(s["shop"])})
 
 
 @socketio.on("card_action")
@@ -687,13 +804,15 @@ def on_card_action(data):
     # reactions fired on someone else's turn; gl.card_action enforces which ones.
     _act(d.get("code", "").upper(),
          lambda g, s, pid: gl.card_action(s, pid, d.get("card"), d.get("choice")),
-         must_be_current=False)
+         must_be_current=False,
+         event={"type": "card_action", "card": d.get("card"), "choice": d.get("choice")})
 
 
 @socketio.on("end_turn")
 def on_end_turn(data):
     _act((data or {}).get("code", "").upper(),
-         lambda g, s, pid: gl.end_turn(s, pid))
+         lambda g, s, pid: gl.end_turn(s, pid),
+         event={"type": "end_turn"})
 
 
 @socketio.on("leave_game")
@@ -710,13 +829,268 @@ def on_leave_game(data):
         gl.set_names(state, _names(game))
         if state["phase"] == "ended":
             return
+        log_after = state.get("log_seq", 0)
         gl.resign(state, me.pid)
+        _log_event(game, {"type": "resign", "pid": me.pid},
+                   state=state, log_after=log_after)
         game.state = state
         game.last_activity_at = datetime.utcnow()
         if state["phase"] == "ended":
             _finalize(game, state)
         db.session.commit()
         _broadcast(game)
+    _bot_kick(code)
+
+
+# ---------------------------------------------------------------------------
+# Bot orchestration
+# ---------------------------------------------------------------------------
+#
+# Bots are ordinary KotPlayer rows (is_bot=True, no user_id) driven by eventlet
+# timers. Every decision comes from bot.py and is applied through the same
+# game_logic entry points a human's socket event would hit, so a bot can never
+# make a move a player couldn't.
+#
+# _bot_kick is the single scheduler: it looks at the position, works out whether
+# a bot owes an action, and arms one timer. Each timer re-enters _bot_kick when
+# it lands, so the chain continues until it is a human's turn. Actions are keyed
+# on state["seq"] (which bumps on every mutation) so the same move can never be
+# scheduled twice.
+#
+# CRITICAL: _bot_kick takes the per-game lock, and eventlet semaphores are not
+# reentrant - never call it while already holding that lock.
+
+_bot_sched = {}
+
+# How long a bot "thinks". Long enough to read as deliberate, short enough that
+# a 6-monster table does not drag.
+BOT_DELAY = {
+    "roll":     (0.9, 1.7),
+    "resolve":  (0.7, 1.2),
+    "yield":    (1.1, 2.2),
+    "buy":      (0.9, 1.6),
+    "end_turn": (0.6, 1.1),
+    "probe":    (0.8, 1.5),
+    "token":    (0.7, 1.3),
+}
+
+
+def _bot_pids(game):
+    return {p.pid for p in game.players if p.is_bot}
+
+
+def _bot_delay(kind, why=None):
+    lo, hi = BOT_DELAY.get(kind, (0.8, 1.4))
+    if why == "start":
+        return hi + 0.8          # let everyone's table finish loading first
+    return random.uniform(lo, hi)
+
+
+def _bot_kick(code, why=None):
+    """Schedule whatever a bot owes the table right now, if anything.
+
+    Establishes its own app context so it is safe to call from a bare greenlet
+    as well as from a socket handler."""
+    if not code:
+        return
+    with app.app_context():
+        with _lock(code):
+            game = KotGame.query.filter_by(code=code).first()
+            if not game or game.status != "playing":
+                return
+            state = game.state
+            if state.get("phase") == "ended":
+                return
+            bots = _bot_pids(game)
+            if not bots:
+                return
+            seq = state.get("seq")
+            sched = _bot_sched.setdefault(code, {})
+            phase = state.get("phase")
+
+            def arm(kind, pid, fn):
+                if sched.get(kind) == seq:
+                    return
+                sched[kind] = seq
+                eventlet.spawn_after(_bot_delay(kind, why), fn, code, seq, pid)
+
+            # Off-turn obligations first: these BLOCK the whole game until the
+            # bot answers, so a bot that stayed silent here would hang the table.
+            if phase == "yield":
+                py = state.get("pending_yield") or {}
+                q = py.get("queue") or []
+                if q and q[0] in bots:
+                    arm("yield", q[0], _bot_yield)
+                    return
+            if phase == "probe_window":
+                pp = state.get("pending_probe") or {}
+                q = pp.get("queue") or []
+                if q and q[0] in bots:
+                    arm("probe", q[0], _bot_probe)
+                    return
+            if phase == "token_choice":
+                pc = state.get("pending_token_choice") or {}
+                if pc.get("pid") in bots:
+                    arm("token", pc["pid"], _bot_token)
+                    return
+
+            cur = state.get("current")
+            if cur not in bots:
+                return
+            if phase == "rolling":
+                arm("roll", cur, _bot_roll)
+            elif phase == "buying":
+                arm("buy", cur, _bot_buy)
+
+
+PROBE_CARD_ID = "psychic_probe"     # canonical id; gl.card_action checks the
+                                    # mechanic key, so this also works for a
+                                    # bot holding the ability through Mimic.
+
+
+def _bot_step(code, seq, pid, phase, worker):
+    """Run one bot step atomically.
+
+    ``worker(state, pid, emit)`` does every engine call for the step while the
+    lock is held, calling ``emit(event, log_after)`` for each move it makes so
+    bot turns land in the replay exactly like human ones.
+
+    Doing a whole step under one lock is deliberate. The scheduler refuses to
+    arm the same (kind, seq) twice, so an action the engine silently rejects
+    would leave the seq unchanged, nothing re-armed, and the table frozen. Every
+    worker below is therefore written to guarantee forward progress, and doing
+    it atomically means no other greenlet can slip in between a bot's decision
+    and the move it based on that decision."""
+    with app.app_context():
+        with _lock(code):
+            game = KotGame.query.filter_by(code=code).first()
+            if not game or game.status != "playing":
+                return
+            state = game.state
+            if state.get("seq") != seq or state.get("phase") != phase:
+                return                  # position moved on; whoever moved re-kicked
+            m = state.get("mon", {}).get(pid)
+            if not m or not m["alive"]:
+                return
+            gl.set_names(state, _names(game))
+
+            def emit(ev, log_after):
+                ev.setdefault("pid", pid)
+                ev["bot"] = True
+                _log_event(game, ev, state=state, log_after=log_after)
+
+            worker(state, pid, emit)
+
+            game.state = state
+            game.last_activity_at = datetime.utcnow()
+            if state["phase"] == "ended":
+                _finalize(game, state)
+            db.session.commit()
+            _broadcast(game)
+    _bot_kick(code)
+
+
+def _bot_roll(code, seq, pid):
+    """Roll, reroll, or stop and bank the dice."""
+    def worker(state, pid, emit):
+        if state.get("current") != pid:
+            return
+        action, keep = bot.decide_roll(state, pid)
+        la = state["log_seq"]
+        if action == "roll":
+            ev = {"type": "roll", "roll_num": state["roll_num"],
+                  "keep": list(keep), "before": list(state["dice"])}
+            gl.do_roll(state, pid, keep)
+        else:
+            ev = {"type": "resolve", "dice": list(state["dice"]),
+                  "rolls_used": state["roll_num"]}
+            gl.resolve(state, pid)
+        emit(ev, la)
+
+    _bot_step(code, seq, pid, "rolling", worker)
+
+
+def _bot_yield(code, seq, pid):
+    def worker(state, pid, emit):
+        py = state.get("pending_yield") or {}
+        if not (py.get("queue") or []) or py["queue"][0] != pid:
+            return
+        leave = bot.decide_yield(state, pid)
+        la = state["log_seq"]
+        gl.yield_decision(state, pid, leave)
+        emit({"type": "yield", "leave": leave, "attacker": py.get("attacker")}, la)
+
+    _bot_step(code, seq, pid, "yield", worker)
+
+
+def _bot_token(code, seq, pid):
+    def worker(state, pid, emit):
+        pc = state.get("pending_token_choice") or {}
+        if pc.get("pid") != pid:
+            return
+        poison, shrink = bot.decide_token_choice(state, pid)
+        la = state["log_seq"]
+        gl.token_choice_decision(state, pid, poison, shrink)
+        emit({"type": "token_choice", "poison": poison, "shrink": shrink}, la)
+
+    _bot_step(code, seq, pid, "token_choice", worker)
+
+
+def _bot_probe(code, seq, pid):
+    """Answer a Psychic Probe window.
+
+    The engine holds the ENTIRE game in probe_window until every prober has
+    decided, so this must always drain the bot from the queue. A rerolled die
+    index the engine rejects would otherwise hang the table, hence the
+    belt-and-braces pass at the end."""
+    def worker(state, pid, emit):
+        pp = state.get("pending_probe") or {}
+        if not (pp.get("queue") or []) or pp["queue"][0] != pid:
+            return
+        die = bot.decide_probe(state, pid)
+        if die is not None:
+            la = state["log_seq"]
+            choice = {"index": die}
+            gl.card_action(state, pid, PROBE_CARD_ID, choice)
+            emit({"type": "card_action", "card": PROBE_CARD_ID, "choice": choice}, la)
+        pp = state.get("pending_probe") or {}
+        if state.get("phase") == "probe_window" and (pp.get("queue") or [None])[0] == pid:
+            la = state["log_seq"]
+            gl.card_action(state, pid, PROBE_CARD_ID, {"pass": True})
+            emit({"type": "card_action", "card": PROBE_CARD_ID,
+                  "choice": {"pass": True}}, la)
+
+    _bot_step(code, seq, pid, "probe_window", worker)
+
+
+def _bot_buy(code, seq, pid):
+    """Work the shop, then end the turn.
+
+    The whole buy phase is one step so that a purchase the engine refuses can
+    never leave the bot sitting in ``buying`` forever - whatever happens above,
+    the turn ends below."""
+    def worker(state, pid, emit):
+        if state.get("current") != pid:
+            return
+        for kind, index in bot.decide_buys(state, pid):
+            if state["phase"] != "buying" or state["current"] != pid:
+                break
+            la, before = state["log_seq"], state["seq"]
+            if kind == "buy":
+                ev = {"type": "buy", "index": index,
+                      "card": state["shop"][index] if 0 <= index < len(state["shop"]) else None}
+                gl.buy_card(state, pid, index)
+            else:
+                ev = {"type": "sweep", "shop": list(state["shop"])}
+                gl.sweep_shop(state, pid)
+            if state["seq"] != before:
+                emit(ev, la)
+        if state["phase"] == "buying" and state["current"] == pid:
+            la = state["log_seq"]
+            gl.end_turn(state, pid)
+            emit({"type": "end_turn"}, la)
+
+    _bot_step(code, seq, pid, "buying", worker)
 
 
 # ---------------------------------------------------------------------------
@@ -727,7 +1101,10 @@ def _finalize(game, state):
     if game.status == "ended":
         return
     game.status = "ended"
-    _log_event(game, {"type": "end", "winner": state.get("winner")})
+    _bot_sched.pop(game.code, None)     # no more bot turns to schedule here
+    _log_event(game, {"type": "end", "winner": state.get("winner"),
+                      "standings": state.get("standings"),
+                      "turns": state.get("turn")}, state=state)
 
     places = {s["pid"]: s["place"] for s in state.get("standings", [])}
     real = {p.pid: p.user_id for p in game.players if p.user_id and not p.is_bot}
