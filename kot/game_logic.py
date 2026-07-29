@@ -54,7 +54,7 @@ def new_game(players, seed=None):
     state = {
         "players": pids,
         "current": pids[0],
-        "phase": "rolling",              # rolling | probe_window | yield | buying | ended
+        "phase": "rolling",              # rolling | probe_window | token_choice | yield | buying | ended
         "mon": {pid: {
             "hp": START_HP, "maxhp": START_MAX_HP, "vp": START_VP,
             "energy": START_ENERGY, "alive": True,
@@ -74,6 +74,7 @@ def new_game(players, seed=None):
         "opportunist_window": [],        # [{"index":slot, "cid":card}, ...] - Opportunist's snipeable freshly-revealed cards
         "pending_yield": None,           # {"queue":[pid...], "attacker":pid}
         "pending_probe": None,           # {"queue":[pid...], "roller":pid} - Psychic Probe holders who still owe a decision before this roll resolves
+        "pending_token_choice": None,    # {"pid":pid, "hearts":n} - rolled hearts that could either heal or shed a poison/shrink counter
         "ko_order": [],                  # pids in the order they were eliminated
         "winner": None,
         "standings": [],                 # filled at game end: [{pid, place, vp}]
@@ -158,8 +159,9 @@ def gain_vp(state, pid, n):
     m = state["mon"][pid]
     m["vp"] = max(0, m["vp"] + n)
     _bump(state)
-    if n > 0 and m["vp"] >= WIN_VP and state["phase"] != "ended":
-        _end_game(state, pid, reason="vp")
+    # Reaching 20 doesn't win on the spot - see _check_vp_win, called once the
+    # current turn (and any end-of-turn poison tick) is fully over. A monster
+    # that racks up VP but doesn't survive its own turn never cashes it in.
 
 
 def heal(state, pid, n, via_dice=False):
@@ -390,27 +392,98 @@ def _finish_resolve(state, pid):
     if state["phase"] == "ended":
         return
 
-    # 3) Hearts -> heal (blocked while in Tokyo). A Heart that would be wasted
-    #    (in Tokyo, or already at full Health) is instead used to shed a poison
-    #    or shrink counter. Healing Ray fires as its own manual action mid-roll
+    # 3) Hearts -> heal (blocked while in Tokyo), or shed a poison/shrink
+    #    counter instead. Healing Ray fires as its own manual action mid-roll
     #    (card_action, immediately spending the hearts on another monster who
     #    pays 2⚡ per point healed) - if that already happened this roll, these
     #    same hearts don't ALSO do the normal things below.
     if not _cards().heal_ray_already_fired(state, pid):
         h = dice.count("heart")
-        tok = m["tokens"]
-        if h and (_in_tokyo(state, pid) or m["hp"] >= m["maxhp"]):
-            for kind in ("poison", "shrink"):
-                while h > 0 and tok.get(kind, 0) > 0:
-                    tok[kind] -= 1
-                    h -= 1
-                    _log(state, f"{_nm(pid)} sheds a {kind} counter.", pid=pid, kind="heal")
         if h:
-            healed = heal(state, pid, h, via_dice=True)
-            if healed:
-                _log(state, f"{_nm(pid)} heals {healed}❤.", pid=pid, kind="heal")
-            elif _in_tokyo(state, pid):
-                _log(state, f"{_nm(pid)} can't heal while in Tokyo.", pid=pid, kind="sys")
+            tok = m["tokens"]
+            has_tokens = tok.get("poison", 0) > 0 or tok.get("shrink", 0) > 0
+            # Healing and shedding are both genuinely on the table - the split
+            # is the player's call, so pause and ask instead of always healing.
+            # (If healing is impossible - in Tokyo, or already at full Health -
+            # or there's no counter to shed, there's nothing to choose between.)
+            if has_tokens and not _in_tokyo(state, pid) and m["hp"] < m["maxhp"]:
+                state["phase"] = "token_choice"
+                state["pending_token_choice"] = {"pid": pid, "hearts": h}
+                _bump(state)
+                return
+            _resolve_hearts(state, pid, h)
+
+    _finish_resolve_after_hearts(state, pid)
+
+
+def _resolve_hearts(state, pid, h):
+    """Spend h hearts when there's no real choice to make: shed poison/shrink
+    counters if healing is impossible right now (in Tokyo, or already at full
+    Health), otherwise just heal. token_choice_decision covers the case where
+    the player actually has both options and picks the split themselves."""
+    m = state["mon"][pid]
+    tok = m["tokens"]
+    if h and (_in_tokyo(state, pid) or m["hp"] >= m["maxhp"]):
+        for kind in ("poison", "shrink"):
+            while h > 0 and tok.get(kind, 0) > 0:
+                tok[kind] -= 1
+                h -= 1
+                _log(state, f"{_nm(pid)} sheds a {kind} counter.", pid=pid, kind="heal")
+    if h:
+        healed = heal(state, pid, h, via_dice=True)
+        if healed:
+            _log(state, f"{_nm(pid)} heals {healed}❤.", pid=pid, kind="heal")
+        elif _in_tokyo(state, pid):
+            _log(state, f"{_nm(pid)} can't heal while in Tokyo.", pid=pid, kind="sys")
+
+
+def token_choice_decision(state, pid, shed_poison, shed_shrink):
+    """The player's split of this roll's hearts between shedding poison/shrink
+    counters and healing; whatever's left over heals as normal."""
+    pc = state.get("pending_token_choice")
+    if state["phase"] != "token_choice" or not pc or pc["pid"] != pid:
+        return
+    m = state["mon"][pid]
+    tok = m["tokens"]
+    h = pc["hearts"]
+    try:
+        shed_poison = int(shed_poison or 0)
+    except (TypeError, ValueError):
+        shed_poison = 0
+    try:
+        shed_shrink = int(shed_shrink or 0)
+    except (TypeError, ValueError):
+        shed_shrink = 0
+    shed_poison = max(0, min(shed_poison, tok.get("poison", 0)))
+    shed_shrink = max(0, min(shed_shrink, tok.get("shrink", 0)))
+    if shed_poison + shed_shrink > h:
+        # The client shouldn't ever send more than h, but don't trust it -
+        # trim shrink first, then poison, until the total fits.
+        over = shed_poison + shed_shrink - h
+        cut = min(over, shed_shrink)
+        shed_shrink -= cut
+        over -= cut
+        shed_poison -= over
+    state["pending_token_choice"] = None
+    state["phase"] = "rolling"
+    if shed_poison:
+        tok["poison"] -= shed_poison
+        _log(state, f"{_nm(pid)} sheds {shed_poison} poison counter(s).", pid=pid, kind="heal")
+    if shed_shrink:
+        tok["shrink"] -= shed_shrink
+        _log(state, f"{_nm(pid)} sheds {shed_shrink} shrink counter(s).", pid=pid, kind="heal")
+    remaining = h - shed_poison - shed_shrink
+    if remaining:
+        healed = heal(state, pid, remaining, via_dice=True)
+        if healed:
+            _log(state, f"{_nm(pid)} heals {healed}❤.", pid=pid, kind="heal")
+    _bump(state)
+    _finish_resolve_after_hearts(state, pid)
+
+
+def _finish_resolve_after_hearts(state, pid):
+    dice = state["dice"]
+    m = state["mon"][pid]
 
     # 4) Claws -> attack. Acid Attack adds damage even with no claws; Spiked
     #    Tail / Urbavore / Burrowing add on top when you actually attack.
@@ -639,6 +712,11 @@ def end_turn(state, pid):
     _cards().trigger(state, pid, "on_turn_end")
     if state["phase"] == "ended":
         return
+    # Now that this turn's end-of-turn effects (poison included) have landed,
+    # lock in a VP win for anyone who both reached 20+ and is still alive.
+    _check_vp_win(state)
+    if state["phase"] == "ended":
+        return
     # Advance.
     nxt = _next_alive(state, pid)
     if nxt is None:
@@ -674,8 +752,10 @@ def resign(state, pid):
             if state["phase"] == "yield":
                 _enter_buying(state, attacker)
     if was_current:
-        # The roller quitting mid-probe-window leaves nothing to resolve.
+        # The roller quitting mid-probe-window (or mid-token-choice) leaves
+        # nothing to resolve.
         state["pending_probe"] = None
+        state["pending_token_choice"] = None
         nxt = _next_alive(state, pid)
         if nxt is not None:
             _begin_turn(state, nxt)
@@ -686,6 +766,22 @@ def resign(state, pid):
 # ---------------------------------------------------------------------------
 # Game end
 # ---------------------------------------------------------------------------
+
+def _check_vp_win(state):
+    """A monster that reaches 20+ VP only actually wins if it's still alive
+    once its own turn (including any end-of-turn poison) is over - a monster
+    that racks up 20 VP but dies before its turn ends doesn't win, matching
+    the rulebook. Called at the true end of a turn, not the instant VP crosses
+    the threshold, so a self-damage Power card (Tanks, National Guard, ...) or
+    a poison counter ticking at turn's end gets to happen first."""
+    if state["phase"] == "ended":
+        return
+    winners = [p for p in state["players"]
+               if state["mon"][p]["alive"] and state["mon"][p]["vp"] >= WIN_VP]
+    if winners:
+        winner = max(winners, key=lambda p: state["mon"][p]["vp"])
+        _end_game(state, winner, reason="vp")
+
 
 def _end_game(state, winner, reason="vp"):
     if state["phase"] == "ended":
@@ -771,6 +867,7 @@ def public_view(state, viewer_pid=None):
         "opportunist_window": state.get("opportunist_window"),
         "pending_yield": state.get("pending_yield"),
         "pending_probe": state.get("pending_probe"),
+        "pending_token_choice": state.get("pending_token_choice"),
         "winner": state["winner"],
         "standings": state["standings"],
         "turn": state["turn"],

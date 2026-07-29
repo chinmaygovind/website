@@ -633,6 +633,13 @@ def on_resolve(data):
          lambda g, s, pid: gl.resolve(s, pid))
 
 
+@socketio.on("token_choice")
+def on_token_choice(data):
+    d = data or {}
+    _act(d.get("code", "").upper(),
+         lambda g, s, pid: gl.token_choice_decision(s, pid, d.get("poison"), d.get("shrink")))
+
+
 @socketio.on("yield_tokyo")
 def on_yield(data):
     leave = bool((data or {}).get("leave"))

@@ -587,6 +587,15 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
    is on - reads as pressed in, matching the die it's waiting on you to pick. */
 .card-act.active { transform: translateY(3px); box-shadow: 0 1px 0 #5c2678, 0 4px 8px var(--shadow); filter: brightness(1.1); }
 
+/* Heal-or-shed choice: a rolled heart can either heal or clear a poison/shrink
+   counter, so this panel replaces the roll/Done buttons while it's live. */
+.token-choice { display: flex; flex-direction: column; align-items: center; gap: .45rem; }
+.token-choice-title { font-family: var(--display); font-size: .95rem; color: var(--cream); }
+.token-choice-row { display: flex; align-items: center; gap: .6rem; }
+.token-choice-label { font-family: var(--sans); font-size: .85rem; color: var(--cream); opacity: .85; min-width: 7rem; text-align: right; }
+.token-choice-val { font-family: var(--display); font-size: 1.1rem; color: var(--accent); min-width: 1.4rem; text-align: center; }
+.token-choice-heal { font-family: var(--sans); font-size: .85rem; color: var(--cream); opacity: .75; }
+
 /* shop - no separate boxed panel, it just fills its half of the bar */
 .shop { width: 100%; height: 100%; display: flex; flex-direction: column; }
 .shop-head { display: flex; align-items: center; justify-content: space-between; gap: .6rem;

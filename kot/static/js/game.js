@@ -249,6 +249,11 @@
   function doSweep() { emit("sweep_shop", {}); }
   function doEndTurn() { emit("end_turn", {}); }
   function doYield(leave) { emit("yield_tokyo", { leave }); }
+  function doTokenChoice() {
+    const a = tokenChoiceAlloc || { poison: 0, shrink: 0 };
+    emit("token_choice", { poison: a.poison, shrink: a.shrink });
+    tokenChoiceAlloc = null;
+  }
   function doCardAction(card, choice) { emit("card_action", { card, choice }); }
   function doLeave() { if (confirm("Leave this game? You'll be knocked out.")) { emit("leave_game", {}); location.href = "/lobbies"; } }
 
@@ -264,6 +269,13 @@
   function myYieldTurn() {
     const py = state && state.pending_yield;
     return state && state.phase === "yield" && py && py.queue[0] === MY_PID;
+  }
+  // A rolled heart could either heal or shed a poison/shrink counter - the
+  // player picks the split themselves rather than it happening automatically.
+  let tokenChoiceAlloc = null;   // {poison, shrink} staged locally until Confirm
+  function myTokenChoiceTurn() {
+    const pc = state && state.pending_token_choice;
+    return !!(state && state.phase === "token_choice" && pc && pc.pid === MY_PID);
   }
 
   // ---- rendering -----------------------------------------------------------
@@ -305,6 +317,12 @@
     const b = $("turnBanner");
     if (state.phase === "ended") { b.textContent = "Game over"; b.className = "turn-banner"; return; }
     if (myYieldTurn()) { b.textContent = "Stay in Tokyo or yield?"; b.className = "turn-banner mine"; return; }
+    if (myTokenChoiceTurn()) { b.textContent = "Heal or shed a counter?"; b.className = "turn-banner mine"; return; }
+    if (state.phase === "token_choice" && state.pending_token_choice) {
+      b.textContent = `Waiting for ${nameOf(state.pending_token_choice.pid)} to use its hearts…`;
+      b.className = "turn-banner";
+      return;
+    }
     // During a yield decision, state.current is still the attacker - the
     // monster actually being waited on is whoever's first in the queue.
     if (state.phase === "yield" && state.pending_yield && state.pending_yield.queue.length) {
@@ -521,8 +539,36 @@
     });
   }
 
+  const TOKEN_LABEL = { poison: "☠️ Poison", shrink: "📉 Shrink" };
+  // Lets the player split this roll's hearts between shedding poison/shrink
+  // counters and healing, instead of hearts always defaulting to healing.
+  function tokenChoiceHtml() {
+    const pc = state.pending_token_choice;
+    const tok = (state.mon[MY_PID] && state.mon[MY_PID].tokens) || {};
+    if (!tokenChoiceAlloc) tokenChoiceAlloc = { poison: 0, shrink: 0 };
+    const rows = ["poison", "shrink"].filter((k) => (tok[k] || 0) > 0).map((k) => {
+      const other = k === "poison" ? tokenChoiceAlloc.shrink : tokenChoiceAlloc.poison;
+      const cap = Math.min(tok[k] || 0, pc.hearts - other);
+      const val = tokenChoiceAlloc[k];
+      return `<div class="token-choice-row">
+        <span class="token-choice-label">${TOKEN_LABEL[k]} (${tok[k]})</span>
+        <button class="btn sm" data-tok-dec="${k}" ${val <= 0 ? "disabled" : ""}>−</button>
+        <span class="token-choice-val">${val}</span>
+        <button class="btn sm" data-tok-inc="${k}" ${val >= cap ? "disabled" : ""}>+</button>
+      </div>`;
+    }).join("");
+    const heal = pc.hearts - tokenChoiceAlloc.poison - tokenChoiceAlloc.shrink;
+    return `<div class="token-choice">
+      <div class="token-choice-title">${pc.hearts}❤ rolled — shed a counter, heal, or both</div>
+      ${rows}
+      <div class="token-choice-heal">❤ Heal ${heal}</div>
+      <button class="btn big" data-a="token-confirm">Confirm</button>
+    </div>`;
+  }
+
   function renderActions() {
     const row = $("actionRow");
+    if (!myTokenChoiceTurn()) tokenChoiceAlloc = null;
     let html = "";
     if (state.phase === "ended") {
       html = `<button class="btn" onclick="location.href='/lobbies'">Back to lobbies</button>`;
@@ -532,6 +578,10 @@
     } else if (state.phase === "yield" && state.pending_yield && state.pending_yield.queue.length) {
       const decider = state.pending_yield.queue[0];
       html = `<span class="spectate">Waiting for ${dispName(decider)} to stay or leave Tokyo…</span>`;
+    } else if (myTokenChoiceTurn()) {
+      html = tokenChoiceHtml();
+    } else if (state.phase === "token_choice" && state.pending_token_choice) {
+      html = `<span class="spectate">Waiting for ${dispName(state.pending_token_choice.pid)} to use its hearts…</span>`;
     } else if (myProbeWindowTurn()) {
       html = `<span class="spectate">🔮 Click one of ${dispName(state.current)}'s dice to reroll it, or pass.</span>
               <button class="btn secondary" data-a="probe-pass">Pass</button>`;
@@ -566,6 +616,21 @@
     // which branch above fired.
     html += psychicProbeButton() + opportunistButton() + camoRollButton();
     row.innerHTML = html;
+    row.querySelectorAll("[data-tok-inc],[data-tok-dec]").forEach((el) => el.onclick = () => {
+      const inc = el.dataset.tokInc, dec = el.dataset.tokDec;
+      const k = inc || dec;
+      const pc = state.pending_token_choice;
+      const tok = (state.mon[MY_PID] && state.mon[MY_PID].tokens) || {};
+      if (!tokenChoiceAlloc) tokenChoiceAlloc = { poison: 0, shrink: 0 };
+      if (inc) {
+        const other = k === "poison" ? tokenChoiceAlloc.shrink : tokenChoiceAlloc.poison;
+        const cap = Math.min(tok[k] || 0, pc.hearts - other);
+        if (tokenChoiceAlloc[k] < cap) tokenChoiceAlloc[k]++;
+      } else if (tokenChoiceAlloc[k] > 0) {
+        tokenChoiceAlloc[k]--;
+      }
+      renderActions();
+    });
     row.querySelectorAll("[data-a]").forEach((el) => el.onclick = () => {
       const a = el.dataset.a;
       if (a === "roll") doRoll();
@@ -573,6 +638,7 @@
       else if (a === "end") doEndTurn();
       else if (a === "yield-leave") doYield(true);
       else if (a === "yield-stay") doYield(false);
+      else if (a === "token-confirm") doTokenChoice();
       // Background Dweller / Herd Culler (or Mimic copying either) arm die-
       // targeting mode on the dice tray instead of firing straight away.
       else if (a.startsWith("card:") && DIE_TARGET[a.slice(5)]) toggleDieTargetMode(a.slice(5));

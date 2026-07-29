@@ -119,13 +119,58 @@ def test_attack_forces_yield_and_takeover():
 
 
 def test_win_at_20_vp():
+    # Reaching 20 VP doesn't win on the spot - it's only locked in once the
+    # monster's own turn (and any end-of-turn effects) is over.
     state, pids = fresh(2)
     a, _ = pids
     state["mon"][a]["vp"] = 19
     gl.gain_vp(state, a, 1)
+    assert state["mon"][a]["vp"] == 20
+    assert state["phase"] != "ended"
+    state["phase"] = "buying"; state["current"] = a
+    gl.end_turn(state, a)
     assert state["phase"] == "ended"
     assert state["winner"] == a
     assert state["standings"][0]["pid"] == a
+
+
+def test_cant_win_if_poison_kills_you_at_end_of_the_winning_turn():
+    # Rulebook: a monster that dies doesn't win, even if it reached 20 VP
+    # earlier in the very same turn - poison ticking at end of turn takes
+    # priority over an already-earned VP win.
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["vp"] = 19
+    state["mon"][a]["hp"] = 2
+    state["mon"][a]["tokens"]["poison"] = 5
+    state["phase"] = "buying"; state["current"] = a
+    gl.gain_vp(state, a, 1)
+    assert state["mon"][a]["vp"] == 20
+    gl.end_turn(state, a)
+    assert not state["mon"][a]["alive"]        # poison finished it off first
+    assert state["winner"] != a
+    # b is the only one left alive, so the game ends via last-monster-standing
+    # instead - just not with a's premature VP win.
+    assert state["phase"] == "ended"
+    assert state["winner"] == b
+
+
+def test_cant_win_if_a_self_damage_card_kills_you_the_same_turn():
+    # Tanks (+4 VP, then 3 self-damage) grants the VP and the damage in the
+    # same action - if the damage finishes the buyer off, they don't win even
+    # though the VP counter crossed 20 a moment earlier.
+    state, pids = fresh(2)
+    a, b = pids
+    state["mon"][a]["vp"] = 16
+    state["mon"][a]["hp"] = 3
+    state["mon"][a]["energy"] = 10
+    state["phase"] = "buying"; state["current"] = a
+    state["shop"][0] = "tanks"
+    gl.buy_card(state, a, 0)
+    assert state["mon"][a]["vp"] == 20
+    assert not state["mon"][a]["alive"]
+    assert state["phase"] == "ended"            # last-monster-standing
+    assert state["winner"] == b
 
 
 def test_last_monster_standing_wins():
@@ -972,6 +1017,80 @@ def test_poison_spit_token_shed_by_a_wasted_heart():
     gl.resolve(state, a)
     assert state["mon"][a]["tokens"]["poison"] == 1    # one heart shed one counter
     assert state["mon"][a]["hp"] == state["mon"][a]["maxhp"]
+
+
+def test_token_choice_offered_when_hurt_and_healing_is_actually_possible():
+    # Not full HP, not in Tokyo - healing and shedding are both real options,
+    # so the player should get asked instead of hearts defaulting to healing.
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["tokens"]["poison"] = 2
+    state["mon"][a]["hp"] = 5
+    gl._begin_turn(state, a)
+    force_dice(state, ["heart", "heart", "1", "1", "2", "energy"])
+    gl.resolve(state, a)
+    assert state["phase"] == "token_choice"
+    assert state["pending_token_choice"] == {"pid": a, "hearts": 2}
+    assert state["mon"][a]["hp"] == 5                  # nothing resolved yet
+    assert state["mon"][a]["tokens"]["poison"] == 2
+
+
+def test_token_choice_lets_player_split_hearts_between_shedding_and_healing():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["tokens"]["poison"] = 2
+    state["mon"][a]["hp"] = 5
+    gl._begin_turn(state, a)
+    force_dice(state, ["heart", "heart", "1", "1", "2", "energy"])
+    gl.resolve(state, a)
+    gl.token_choice_decision(state, a, shed_poison=1, shed_shrink=0)
+    assert state["mon"][a]["tokens"]["poison"] == 1    # one heart shed a counter
+    assert state["mon"][a]["hp"] == 6                  # the other heart healed
+    assert state["phase"] == "buying"
+
+
+def test_token_choice_can_shed_every_rolled_heart_instead_of_healing():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["tokens"]["poison"] = 1
+    state["mon"][a]["tokens"]["shrink"] = 1
+    state["mon"][a]["hp"] = 5
+    gl._begin_turn(state, a)
+    force_dice(state, ["heart", "heart", "1", "1", "2", "energy"])
+    gl.resolve(state, a)
+    gl.token_choice_decision(state, a, shed_poison=1, shed_shrink=1)
+    assert state["mon"][a]["tokens"]["poison"] == 0
+    assert state["mon"][a]["tokens"]["shrink"] == 0
+    assert state["mon"][a]["hp"] == 5                  # no hearts left over to heal
+
+
+def test_token_choice_decision_cant_shed_more_than_was_rolled():
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["tokens"]["poison"] = 5
+    state["mon"][a]["hp"] = 5
+    gl._begin_turn(state, a)
+    force_dice(state, ["heart", "1", "1", "2", "2", "energy"])   # only 1 heart
+    gl.resolve(state, a)
+    gl.token_choice_decision(state, a, shed_poison=5, shed_shrink=0)
+    assert state["mon"][a]["tokens"]["poison"] == 4    # capped to the 1 heart rolled
+    assert state["mon"][a]["hp"] == 5
+
+
+def test_token_shed_still_automatic_in_tokyo_even_if_hurt():
+    # Healing is impossible in Tokyo regardless of HP, so there's nothing to
+    # choose between - shedding stays automatic rather than pausing.
+    state, pids = fresh(2)
+    a = pids[0]
+    state["mon"][a]["tokens"]["poison"] = 2
+    state["mon"][a]["hp"] = 5
+    state["tokyo"]["city"] = a
+    gl._begin_turn(state, a)
+    force_dice(state, ["heart", "heart", "1", "1", "2", "energy"])
+    gl.resolve(state, a)
+    assert state["phase"] != "token_choice"
+    assert state["mon"][a]["tokens"]["poison"] == 0
+    assert state["mon"][a]["hp"] == 5
 
 
 def test_poison_spit_no_token_when_jets_dodges_the_damage():
