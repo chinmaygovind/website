@@ -611,7 +611,10 @@ def _settle_tokyo(state, pid, attacked):
 def _take_tokyo(state, pid, slot):
     state["tokyo"][slot] = pid
     gain_vp(state, pid, 1)
-    _log(state, f"{_nm(pid)} takes Tokyo {slot.title()} (+1 VP).", pid=pid, kind="tokyo")
+    # "tokyo_take" (not "tokyo") is the kind the client hangs the crash-through-
+    # a-wall sting on, so only actually moving in is loud. Holding Tokyo, yielding
+    # it and being shoved out stay kind="tokyo": same purple log line, no sound.
+    _log(state, f"{_nm(pid)} takes Tokyo {slot.title()} (+1 VP).", pid=pid, kind="tokyo_take")
     _cards().trigger(state, pid, "on_enter_tokyo")
     _bump(state)
 

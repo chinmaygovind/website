@@ -174,6 +174,15 @@ table for accounts. Stats live in `kot_stats`, games in `kot_games` / `kot_playe
   game loop, bot orchestration, ELO), `kot/models.py`, `kot/templates/` + `kot/static/`.
 - **Tests:** `cd kot && venv/bin/python -m pytest tests/` - `test_engine.py` covers the
   rules, `test_bot.py` covers the bot (liveness, legality, latency, strength).
+- **A log line's `kind` is what makes the sound.** `LOG_SOUND` in `static/js/game.js`
+  maps kinds to stings, and the same `kind` becomes the `.log-<kind>` CSS class, so
+  the engine controls audio purely by how it labels a log line - which means adding
+  or renaming a kind silently changes what the client plays. Kinds are `vp`, `energy`,
+  `heal`, `attack`, `ko`, `buy`, `revive`, `win`, `sys`, `tokyo` and `tokyo_take`.
+  **Only `tokyo_take` (actually moving in) is loud**; holding Tokyo, yielding it and
+  being shoved out are `tokyo`, which shares the purple log styling but has no sound.
+  `test_only_taking_tokyo_is_loud` pins that split; a separate test asserts every
+  damaging/scoring one-shot card logs at least one loud kind.
 
 ### Bots
 

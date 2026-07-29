@@ -65,7 +65,7 @@
   let prevCurrent = null;
   const LOG_SOUND = {
     attack: "attack", ko: "ko", buy: "card", revive: "turn",
-    vp: "vp", energy: "energy", tokyo: "tokyo", heal: "heal",
+    vp: "vp", energy: "energy", tokyo_take: "tokyo", heal: "heal",
   };
   // Resolving a roll can land energy, points, healing and an attack all at
   // once. Playing them together is mush, so they are spaced out in the order

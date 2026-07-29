@@ -118,6 +118,49 @@ def test_attack_forces_yield_and_takeover():
     assert state["phase"] == "buying"
 
 
+def test_only_taking_tokyo_is_loud():
+    """The client hangs the crash-through-a-wall sting on kind="tokyo_take", so
+    moving in is the only Tokyo event that makes a sound. Holding it, yielding it
+    and being shoved out are kind="tokyo": same purple log line, silent."""
+    state, pids = fresh(2)
+    a, b = pids
+
+    def kinds_since(n):
+        return [l["kind"] for l in state["log"] if l["id"] > n and l["kind"].startswith("tokyo")]
+
+    # a moves in -> loud
+    n = state["log_seq"]
+    force_dice(state, ["heart", "heart", "energy", "energy", "1", "2"])
+    gl.resolve(state, a)
+    assert kinds_since(n) == ["tokyo_take"]
+    gl.end_turn(state, a)
+
+    # a is attacked and holds Tokyo -> silent
+    n = state["log_seq"]
+    force_dice(state, ["claw", "claw", "energy", "1", "2", "3"])
+    gl.resolve(state, b)
+    assert state["phase"] == "yield"
+    gl.yield_decision(state, a, leave=False)
+    assert state["tokyo"]["city"] == a
+    assert kinds_since(n) == ["tokyo"], "holding Tokyo must not fire the take sting"
+    gl.end_turn(state, b)
+
+    # a sits in Tokyo for a quiet turn (energy only, no claws) to get back to b
+    force_dice(state, ["energy", "energy", "energy", "1", "2", "3"])
+    gl.resolve(state, a)
+    gl.end_turn(state, a)
+    assert state["current"] == b
+
+    # a yields -> its own line is silent, but b moving in is loud
+    n = state["log_seq"]
+    force_dice(state, ["claw", "claw", "energy", "1", "2", "3"])
+    gl.resolve(state, b)
+    assert state["phase"] == "yield"
+    gl.yield_decision(state, a, leave=True)
+    assert state["tokyo"]["city"] == b
+    assert kinds_since(n) == ["tokyo", "tokyo_take"]
+
+
 def test_win_at_20_vp():
     # Reaching 20 VP doesn't win on the spot - it's only locked in once the
     # monster's own turn (and any end-of-turn effects) is over.
@@ -1396,7 +1439,7 @@ def test_one_shot_cards_all_announce_themselves():
         cards.on_acquire(state, "p1", cid)
         lines = [l for l in state["log"] if l["id"] > n]
         assert lines, f"{cid} applied its effect with no log line"
-        assert any(l["kind"] in ("vp", "energy", "heal", "attack", "tokyo") for l in lines), \
+        assert any(l["kind"] in ("vp", "energy", "heal", "attack", "tokyo_take") for l in lines), \
             f"{cid} logged only untyped lines, so it makes no sound: {lines}"
 
 

@@ -696,7 +696,7 @@ table.tbl { width: 100%; border-collapse: collapse; color: var(--ink); }
 .log-feed { flex: 1; overflow-y: auto; padding: .7rem 1rem; display: flex; flex-direction: column; gap: .4rem; }
 .log-line { font-size: .85rem; color: var(--cream); line-height: 1.4; border-left: 3px solid #3a2f52; padding-left: .6rem; }
 .log-vp { border-left-color: var(--vp); } .log-attack { border-left-color: var(--hot); }
-.log-tokyo { border-left-color: var(--purple); } .log-ko { border-left-color: var(--hot); }
+.log-tokyo, .log-tokyo_take { border-left-color: var(--purple); } .log-ko { border-left-color: var(--hot); }
 .log-heal { border-left-color: var(--green); } .log-energy { border-left-color: var(--energy); }
 .log-win { border-left-color: var(--accent); color: var(--accent-soft); }
 .log-revive { border-left-color: var(--accent); color: var(--accent-soft); }
