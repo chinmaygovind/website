@@ -7,7 +7,7 @@
   let state = null;              // latest public_view
   let keep = new Set();          // dice indices the player is keeping
   let lastSeq = -1;
-  let pendingRollAnim = false;   // set only by this client's own roll/reroll click
+  let rollAnimPending = false;   // armed by noteRoll() for ANY monster's roll
 
   const $ = (id) => document.getElementById(id);
   const esc = (s) => (s + "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -38,6 +38,8 @@
   const SOUND_SRC = {
     roll: "/static/sounds/roll.wav", card: "/static/sounds/card.wav",
     attack: "/static/sounds/attack.wav", ko: "/static/sounds/ko.wav", turn: "/static/sounds/turn.wav",
+    vp: "/static/sounds/vp.wav", energy: "/static/sounds/energy.wav",
+    tokyo: "/static/sounds/tokyo.wav", heal: "/static/sounds/heal.wav",
   };
   const soundPool = {};
   for (const k in SOUND_SRC) { const a = new Audio(SOUND_SRC[k]); a.preload = "auto"; soundPool[k] = a; }
@@ -55,24 +57,42 @@
     if (btn) btn.textContent = v ? "🔇" : "🔊";
   }
 
-  // New log lines drive attack/ko/buy stings (and It Has a Child's revive
-  // burst on whichever monster's card just came back); a turn change into
-  // MY_PID pings.
+  // New log lines drive the stings (and It Has a Child's revive burst on
+  // whichever monster's card just came back); a turn change into MY_PID pings.
+  // These fire for EVERY monster's actions, not just this player's, so a bot
+  // scoring or grabbing Tokyo is as audible as a human doing it.
   let lastLogId = null;
   let prevCurrent = null;
-  const LOG_SOUND = { attack: "attack", ko: "ko", buy: "card", revive: "turn" };
+  const LOG_SOUND = {
+    attack: "attack", ko: "ko", buy: "card", revive: "turn",
+    vp: "vp", energy: "energy", tokyo: "tokyo", heal: "heal",
+  };
+  // Resolving a roll can land energy, points, healing and an attack all at
+  // once. Playing them together is mush, so they are spaced out in the order
+  // the engine actually resolved them, and capped so a big turn stays a
+  // flourish rather than a pile-up.
+  const SOUND_GAP_MS = 115;
+  const MAX_CHAINED_SOUNDS = 4;
+  function playSequence(names) {
+    names.slice(0, MAX_CHAINED_SOUNDS).forEach((n, i) => {
+      if (i === 0) playSound(n);
+      else setTimeout(() => playSound(n), i * SOUND_GAP_MS);
+    });
+  }
   function soundForLog(log) {
     if (lastLogId == null) {
       lastLogId = log.length ? log[log.length - 1].id : 0;
       return;
     }
-    const played = new Set();
+    const queue = [];
+    const seen = new Set();
     for (const l of log) {
       if (l.id <= lastLogId) continue;
       const snd = LOG_SOUND[l.kind];
-      if (snd && !played.has(snd)) { playSound(snd); played.add(snd); }
+      if (snd && !seen.has(snd)) { queue.push(snd); seen.add(snd); }
       if (l.kind === "revive" && l.pid) spawnReviveAnim(l.pid);
     }
+    playSequence(queue);
     if (log.length) lastLogId = Math.max(lastLogId, log[log.length - 1].id);
   }
   function soundForTurn(newState) {
@@ -81,6 +101,32 @@
       playSound("turn");
     }
     prevCurrent = newState.current;
+  }
+
+  // ---- seeing and hearing every roll ---------------------------------------
+  // A roll used to animate only when THIS client clicked the button, so anyone
+  // else's dice - a bot's especially - just silently snapped to their new
+  // faces, which read as the bot moving instantly. Rolls are now detected from
+  // the state itself, so every monster's roll gets the same reel and sting.
+  //
+  // The signature is what makes that safe. Animating on "the dice changed"
+  // would also fire on page load, reconnect, or opening the mobile Dice tab,
+  // replaying a roll that already happened. A roll is only fresh if we saw the
+  // previous position and this one is a genuinely later roll.
+  let lastRollSig = null;
+  function rollSignature(s) {
+    if (!s || s.phase === "ended") return null;
+    return s.turn + ":" + s.current + ":" + s.roll_num;
+  }
+  function noteRoll(newState) {
+    const sig = rollSignature(newState);
+    const fresh = lastRollSig != null && sig != null && sig !== lastRollSig
+                  && newState.roll_num > 0;
+    lastRollSig = sig;
+    if (fresh) {
+      rollAnimPending = true;
+      playSound("roll");
+    }
   }
 
   // A ping the moment it becomes this player's call to stay in Tokyo or
@@ -232,6 +278,7 @@
       if (state.phase === "rolling") keep = new Set(state.kept.map((k, i) => (k ? i : -1)).filter((i) => i >= 0));
       lastSeq = state.seq;
     }
+    noteRoll(state);          // must run before render() so the reel is armed
     render();
     animateStatChanges(before, state.mon);
     prevMon = snapshotMon(state.mon);
@@ -243,7 +290,9 @@
 
   // ---- actions -------------------------------------------------------------
   const emit = (ev, extra) => socket.emit(ev, Object.assign({ code: CODE }, extra || {}));
-  function doRoll() { playSound("roll"); pendingRollAnim = true; emit("roll", { keep: [...keep] }); }
+  // No optimistic sound or animation here: the roll is played back off the
+  // state the server returns, the same way every other monster's roll is.
+  function doRoll() { emit("roll", { keep: [...keep] }); }
   function doResolve() { emit("resolve", {}); }
   function doBuy(i) { emit("buy_card", { index: i }); }
   function doSweep() { emit("sweep_shop", {}); }
@@ -441,7 +490,6 @@
   const randomFaceKey = () => REEL_KEYS[Math.floor(Math.random() * REEL_KEYS.length)];
   const dieFaceHtml = (f) => `<span class="die-face">${FACE[f] || ""}</span>`;
 
-  let lastAnimatedRollNum = -1;
   // Generic "arm this button, then click one of your own dice to fire the
   // ability on it" mode, built for Background Dweller ([3]s only) and reused
   // for Herd Culler (any die) - any future one-die-picking ability just adds
@@ -465,14 +513,13 @@
     const tray = $("diceTray");
     const dice = state.dice || [];
     if (!dice.length || (state.phase !== "rolling" && state.phase !== "probe_window" && state.roll_num === 0)) { tray.innerHTML = ""; dieTargetCard = null; return; }
-    // Only animate when THIS client just clicked roll/reroll (pendingRollAnim) -
-    // never on page load, reconnect, or just opening the mobile Dice tab, which
-    // would otherwise replay a stale animation for a roll that already happened.
-    const rollChanged = state.roll_num !== lastAnimatedRollNum;
-    const freshRoll = pendingRollAnim && rollChanged;
-    if (rollChanged) {
-      lastAnimatedRollNum = state.roll_num;
-      pendingRollAnim = false;
+    // noteRoll() arms this from the state stream, so it is set for whoever
+    // rolled - this client, another player, or a bot. Consumed here so the
+    // reel plays exactly once and not again on the next re-render (a tab
+    // switch, a hover, a stat tick).
+    const freshRoll = rollAnimPending;
+    if (freshRoll) {
+      rollAnimPending = false;
       // A fresh roll always exits die-targeting mode - the armed ability has
       // to be re-armed against the new dice.
       dieTargetCard = null;
@@ -499,8 +546,11 @@
       const canClick = isMyRollingTurn() && state.roll_num > 0;
       const targetable = !!targetFilter && targetFilter(f);
       // Only dice actually being rerolled get the reel animation - kept dice
-      // stay put, except a targeted reroll always gets one.
-      const isRolling = (freshRoll && !kept) || i === animIdx;
+      // stay put, except a targeted reroll always gets one. This uses the
+      // SERVER's kept set, not the local selection, so a spectator or the
+      // player watching a bot animates the right dice.
+      const serverKept = (state.kept || [])[i];
+      const isRolling = (freshRoll && !serverKept) || i === animIdx;
       let inner;
       if (isRolling) {
         const reel = [randomFaceKey(), randomFaceKey(), randomFaceKey(), randomFaceKey(), f];

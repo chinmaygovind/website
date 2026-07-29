@@ -1326,3 +1326,102 @@ def test_wings_clears_at_the_owners_next_turn_start():
     assert cards._mem(state, a)["wings"] is False
     took = gl.deal_damage(state, a, 5, attacker=None)
     assert took == 5
+
+
+# ---------------------------------------------------------------------------
+# Log names are per-game
+# ---------------------------------------------------------------------------
+
+def test_log_names_do_not_leak_between_games():
+    """One eventlet worker serves every live game, and the pid -> name map the
+    log renders through is a module global. Any entry point that writes a log
+    line must sync that map first, or a move in one game prints another game's
+    monster names into its feed."""
+    other = gl.new_game(["p1", "p2"], seed=1)
+    gl.set_names(other, {"p1": "ALPHA", "p2": "BETA"})
+    gl.do_roll(other, "p1", [])          # loads ALPHA/BETA into the global
+
+    mine = gl.new_game(["p1", "p2"], seed=2)
+    gl.set_names(mine, {"p1": "Gigazaur", "p2": "Kraken"})
+
+    def fresh(state, fn):
+        n = state["log_seq"]
+        fn()
+        return " ".join(l["text"] for l in state["log"] if l["id"] > n)
+
+    mine["phase"] = "buying"
+    mine["current"] = "p1"
+    mine["mon"]["p1"]["energy"] = 30
+    text = fresh(mine, lambda: gl.buy_card(mine, "p1", 0))
+    assert "Gigazaur" in text and "ALPHA" not in text
+
+    gl.do_roll(other, "p1", [])          # re-poison the global
+    text = fresh(mine, lambda: gl.sweep_shop(mine, "p1"))
+    assert "Gigazaur" in text and "ALPHA" not in text
+
+    gl.do_roll(other, "p1", [])
+    mine["mon"]["p1"]["tokens"] = {"poison": 1}
+    mine["mon"]["p1"]["hp"] = 5
+    mine["phase"] = "token_choice"
+    mine["pending_token_choice"] = {"pid": "p1", "hearts": 2}
+    text = fresh(mine, lambda: gl.token_choice_decision(mine, "p1", 1, 0))
+    assert "ALPHA" not in text and "BETA" not in text
+
+    gl.do_roll(other, "p1", [])
+    mine["phase"] = "yield"
+    mine["tokyo"]["city"] = "p2"
+    mine["pending_yield"] = {"queue": ["p2"], "attacker": "p1", "deferred": {}}
+    text = fresh(mine, lambda: gl.yield_decision(mine, "p2", True))
+    assert "Kraken" in text and "BETA" not in text
+
+    gl.do_roll(other, "p1", [])
+    text = fresh(mine, lambda: gl.resign(mine, "p2"))
+    assert "Kraken" in text and "BETA" not in text
+
+
+def test_one_shot_cards_all_announce_themselves():
+    """The client picks its sound effects off each log line's ``kind``, so a
+    card that applies its effect without logging is both invisible in the feed
+    and silent. Every damaging or scoring one-shot must say something."""
+    import cards
+    loud = ["tanks", "jet_fighters", "national_guard", "fire_blast", "gas_refinery",
+            "high_altitude_bombing", "skyscraper", "apartment_building",
+            "commuter_train", "corner_store", "energize", "vast_storm",
+            "nuclear_power_plant", "drop_from_high_altitude"]
+    for cid in loud:
+        state = gl.new_game(["p1", "p2"], seed=1)
+        gl.set_names(state, {"p1": "Gigazaur", "p2": "Kraken"})
+        gl._sync_names(state)
+        n = state["log_seq"]
+        cards.on_acquire(state, "p1", cid)
+        lines = [l for l in state["log"] if l["id"] > n]
+        assert lines, f"{cid} applied its effect with no log line"
+        assert any(l["kind"] in ("vp", "energy", "heal", "attack", "tokyo") for l in lines), \
+            f"{cid} logged only untyped lines, so it makes no sound: {lines}"
+
+
+def test_self_damaging_cards_log_the_damage():
+    import cards
+    for cid, dmg in [("tanks", 3), ("jet_fighters", 4), ("national_guard", 2)]:
+        state = gl.new_game(["p1", "p2"], seed=1)
+        gl.set_names(state, {"p1": "Gigazaur", "p2": "Kraken"})
+        gl._sync_names(state)
+        n = state["log_seq"]
+        cards.on_acquire(state, "p1", cid)
+        assert state["mon"]["p1"]["hp"] == gl.START_HP - dmg
+        kinds = [l["kind"] for l in state["log"] if l["id"] > n]
+        assert "attack" in kinds, f"{cid} took {dmg} damage silently"
+
+
+def test_poison_tick_is_audible():
+    """Poison Spit's counters bite at the end of the poisoned monster's turn;
+    that has to reach the feed as damage."""
+    state = gl.new_game(["p1", "p2"], seed=1)
+    gl.set_names(state, {"p1": "Gigazaur", "p2": "Kraken"})
+    state["mon"]["p1"]["tokens"]["poison"] = 2
+    state["phase"] = "buying"
+    state["current"] = "p1"
+    n = state["log_seq"]
+    gl.end_turn(state, "p1")
+    lines = [l for l in state["log"] if l["id"] > n]
+    assert any(l["kind"] == "attack" and "poison" in l["text"] for l in lines), lines

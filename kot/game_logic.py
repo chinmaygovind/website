@@ -443,6 +443,7 @@ def token_choice_decision(state, pid, shed_poison, shed_shrink):
     pc = state.get("pending_token_choice")
     if state["phase"] != "token_choice" or not pc or pc["pid"] != pid:
         return
+    _sync_names(state)
     m = state["mon"][pid]
     tok = m["tokens"]
     h = pc["hearts"]
@@ -569,6 +570,7 @@ def yield_decision(state, pid, leave):
         return
     if not py["queue"] or py["queue"][0] != pid:
         return
+    _sync_names(state)
     py["queue"].pop(0)
     pending_dmg = py.get("deferred", {}).pop(pid, None)
     if leave:
@@ -640,6 +642,7 @@ def _set_opportunist_slot(state, index):
 def buy_card(state, pid, index):
     if state["phase"] != "buying" or state["current"] != pid:
         return
+    _sync_names(state)
     if not (0 <= index < len(state["shop"])):
         return
     cid = state["shop"][index]
@@ -671,6 +674,7 @@ def buy_card(state, pid, index):
 def sweep_shop(state, pid):
     if state["phase"] != "buying" or state["current"] != pid:
         return
+    _sync_names(state)
     m = state["mon"][pid]
     if m["energy"] < SWEEP_COST:
         return
@@ -732,6 +736,7 @@ def resign(state, pid):
     """A player leaves an in-progress game."""
     if state["phase"] == "ended" or not state["mon"].get(pid, {}).get("alive"):
         return
+    _sync_names(state)
     was_current = state["current"] == pid
     # Clear any pending yield or probe-window decision they owned.
     py = state.get("pending_yield")

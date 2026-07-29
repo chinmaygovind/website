@@ -864,14 +864,19 @@ _bot_sched = {}
 
 # How long a bot "thinks". Long enough to read as deliberate, short enough that
 # a 6-monster table does not drag.
+#
+# The floor here is not arbitrary: the client's dice reel runs for 0.5s, and a
+# roll whose reel is still spinning when the next one starts reads as the bot
+# teleporting through its turn. Every delay leaves room for the animation to
+# finish and for the result to be readable before anything else moves.
 BOT_DELAY = {
-    "roll":     (0.9, 1.7),
-    "resolve":  (0.7, 1.2),
-    "yield":    (1.1, 2.2),
-    "buy":      (0.9, 1.6),
-    "end_turn": (0.6, 1.1),
-    "probe":    (0.8, 1.5),
-    "token":    (0.7, 1.3),
+    "roll":     (1.2, 2.0),   # >= reel (0.5s) + time to actually see the faces
+    "resolve":  (1.1, 1.7),   # a beat on the final dice before results land
+    "yield":    (1.2, 2.2),
+    "buy":      (1.0, 1.8),
+    "end_turn": (0.9, 1.4),
+    "probe":    (0.9, 1.6),
+    "token":    (0.8, 1.4),
 }
 
 

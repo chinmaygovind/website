@@ -380,6 +380,8 @@ def on_deal_damage(state, attacker, target, n):
         try:
             for nb in {order[(i - 1) % n_players], order[(i + 1) % n_players]}:
                 if nb != attacker and state["mon"][nb]["alive"]:
+                    gl._log(state, f"{gl._nm(attacker)}'s fire breathing singes {gl._nm(nb)} for 1.",
+                            pid=nb, kind="attack")
                     gl.deal_damage(state, nb, 1, attacker=attacker)
         finally:
             state.pop("_fb_lock", None)
@@ -424,39 +426,61 @@ def on_acquire(state, pid, cid):
         _mem(state, pid)["smoke"] = 3
 
     # --- Discard-card one-shots ---
+    # Every one of these writes a feed line. That is not cosmetic: the client
+    # drives its sound effects off the log's ``kind``, so an effect that lands
+    # silently is one the table can neither see nor hear - a Tanks buy would
+    # take 3 damage off you with nothing to show for it.
     elif key == "apartment_building":
         gl.gain_vp(state, pid, 3)
+        gl._log(state, f"{gl._nm(pid)} levels an apartment building (+3 VP).", pid=pid, kind="vp")
     elif key == "commuter_train":
         gl.gain_vp(state, pid, 2)
+        gl._log(state, f"{gl._nm(pid)} derails the commuter train (+2 VP).", pid=pid, kind="vp")
     elif key == "corner_store":
         gl.gain_vp(state, pid, 1)
+        gl._log(state, f"{gl._nm(pid)} flattens the corner store (+1 VP).", pid=pid, kind="vp")
     elif key == "skyscraper":
         gl.gain_vp(state, pid, 4)
+        gl._log(state, f"{gl._nm(pid)} topples a skyscraper (+4 VP).", pid=pid, kind="vp")
     elif key == "energize":
         gl.gain_energy(state, pid, 9)
+        gl._log(state, f"{gl._nm(pid)} energizes (+9⚡).", pid=pid, kind="energy")
     elif key == "heal":
         healed = gl.heal(state, pid, 2)
         gl._log(state, f"{gl._nm(pid)} heals {healed}❤.", pid=pid, kind="heal")
     elif key == "national_guard":
         gl.gain_vp(state, pid, 2)
+        gl._log(state, f"{gl._nm(pid)} fights off the National Guard (+2 VP).", pid=pid, kind="vp")
+        gl._log(state, f"{gl._nm(pid)} takes 2 damage doing it.", pid=pid, kind="attack")
         gl.deal_damage(state, pid, 2, attacker=None)
     elif key == "tanks":
         gl.gain_vp(state, pid, 4)
+        gl._log(state, f"{gl._nm(pid)} rolls over the tanks (+4 VP).", pid=pid, kind="vp")
+        gl._log(state, f"{gl._nm(pid)} takes 3 damage doing it.", pid=pid, kind="attack")
         gl.deal_damage(state, pid, 3, attacker=None)
     elif key == "jet_fighters":
         gl.gain_vp(state, pid, 5)
+        gl._log(state, f"{gl._nm(pid)} swats down the jet fighters (+5 VP).", pid=pid, kind="vp")
+        gl._log(state, f"{gl._nm(pid)} takes 4 damage doing it.", pid=pid, kind="attack")
         gl.deal_damage(state, pid, 4, attacker=None)
     elif key == "nuclear_power_plant":
         gl.gain_vp(state, pid, 2)
-        gl.heal(state, pid, 3)
+        gl._log(state, f"{gl._nm(pid)} wrecks the power plant (+2 VP).", pid=pid, kind="vp")
+        healed = gl.heal(state, pid, 3)
+        if healed:
+            gl._log(state, f"{gl._nm(pid)} soaks up the radiation (+{healed}❤).", pid=pid, kind="heal")
     elif key == "gas_refinery":
         gl.gain_vp(state, pid, 2)
+        gl._log(state, f"{gl._nm(pid)} blows the gas refinery (+2 VP).", pid=pid, kind="vp")
+        gl._log(state, f"The blast hits every other monster for 3.", pid=pid, kind="attack")
         for q in _others(state, pid):
             gl.deal_damage(state, q, 3, attacker=pid)
     elif key == "fire_blast":
+        gl._log(state, f"{gl._nm(pid)} looses a fire blast - 2 damage to everyone else.", pid=pid, kind="attack")
         for q in _others(state, pid):
             gl.deal_damage(state, q, 2, attacker=pid)
     elif key == "high_altitude_bombing":
+        gl._log(state, "High altitude bombing - every monster takes 3.", pid=pid, kind="attack")
         for q in gl._alive(state):
             gl.deal_damage(state, q, 3, attacker=(pid if q != pid else None))
     elif key == "evacuation_orders":
@@ -465,10 +489,13 @@ def on_acquire(state, pid, cid):
         gl._log(state, f"{gl._nm(pid)} orders an evacuation - everyone else loses 5 VP.", pid=pid, kind="vp")
     elif key == "vast_storm":
         gl.gain_vp(state, pid, 2)
+        gl._log(state, f"{gl._nm(pid)} whips up a vast storm (+2 VP).", pid=pid, kind="vp")
         for q in _others(state, pid):
             gl.spend_energy(state, q, state["mon"][q]["energy"] // 2)
+        gl._log(state, "The storm scatters everyone else's energy.", pid=pid, kind="energy")
     elif key == "drop_from_high_altitude":
         gl.gain_vp(state, pid, 2)
+        gl._log(state, f"{gl._nm(pid)} drops in from high altitude (+2 VP).", pid=pid, kind="vp")
         if not gl._in_tokyo(state, pid):
             if state["tokyo"]["city"] is None:
                 gl._take_tokyo(state, pid, "city")
