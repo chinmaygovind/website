@@ -111,23 +111,26 @@ const PALETTES = {
   // unbroken sea of cloud sells height better than anything you could put in it.
   heights:  { road: 0x4f5460, kerb: 0xf4f4f4, kerb2: 0xf2994a,
               ground: 0x7a6a52, rail: 0xfff2e2, prop: 0x8a7358, deco: 0xf2994a,
-              fog: 0xf0d6b4,
+              fog: 0xc7dcee,
               sky: {
+                // Clear high-altitude blue. Cold and bright, so the cloud sea
+                // under it reads as white rather than as sand.
                 stops: [
-                  [0.00, 0xc2a385], [0.44, 0xe8cdae], [0.50, 0xf6e2c6],
-                  [0.60, 0xcfd8e2], [0.74, 0x86aed6], [0.88, 0x4a7fc4],
-                  [1.00, 0x24559c],
+                  [0.00, 0x7d95ae], [0.44, 0xc4dcee], [0.50, 0xdcecf7],
+                  [0.54, 0xa6cbec], [0.62, 0x74a8e2], [0.74, 0x4785d2],
+                  [0.88, 0x2a63c0], [1.00, 0x113d92],
                 ],
-                glow: 0xfff4de, glowStrength: 0.8, glowMode: 'radial', glowFocus: 4.5,
-                sun: { az: 0.9, el: 0.42, color: 0xfffaea, size: 640 },
-                light: { color: 0xfff4e4, intensity: 1.5,
-                         dir: [Math.sin(0.9) * 0.68, 0.73, Math.cos(0.9) * 0.68] },
-                hemi: { sky: 0xeae2f2, ground: 0xbfae96, intensity: 0.74 },
-                fog: 0xf0d6b4, fogNear: 300, fogFar: 1450,
+                glow: 0xffffff, glowStrength: 0.72, glowMode: 'radial', glowFocus: 5,
+                sun: { az: 0.9, el: 0.46, color: 0xffffff, size: 560 },
+                light: { color: 0xfffaf2, intensity: 1.5,
+                         dir: [Math.sin(0.9) * 0.66, 0.75, Math.cos(0.9) * 0.66] },
+                // Bounce off the cloud below is white, not warm.
+                hemi: { sky: 0xd7e8fa, ground: 0xc3cedb, intensity: 0.8 },
+                fog: 0xc7dcee, fogNear: 300, fogFar: 1450,
               },
               below: { deck: 96, depth: 120, reach: 980,
                        towerDensity: 0, cover: 0.6,
-                       cloud: 0xfdf6ec, floor: 0x8f7a60 } },
+                       cloud: 0xfdfdff, floor: 0x7f93a8 } },
   // Jump City: downtown at dusk, and the towers come up *past* the road rather
   // than sitting under it, so the four gaps have a city to fall between.
   city:     { road: 0x434a58, kerb: 0xf2f4f8, kerb2: 0xf2c94c,
