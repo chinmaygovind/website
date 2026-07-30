@@ -41,7 +41,7 @@ multiplayer card game that shares TTR's accounts).
   2. a `<button class="tile" data-modal="modal-<name>">` with a `.tile-img` whose
      `data-still`/`data-anim` are `assets/icons/<name>.png` / `.gif` — the script
      at the bottom swaps to the gif on hover and preloads it, so **every tile
-     needs both files**; SVG tiles (settings) just point both at the .svg;
+     needs both files**;
   3. a `.modal` + `.modal-box .modal-<name>` block, left pane = `.pane-title` +
      `.pane-text` (+ `.modal-icon` gif top-right), right pane = `.media` frames
      holding a `.media-img` or a dashed `.placeholder` while art is pending.
