@@ -36,7 +36,7 @@ missing locally.
 
 ## What runs there
 
-Four Flask apps behind nginx + certbot, each its own systemd service and port:
+Five Flask apps behind nginx + certbot, each its own systemd service and port:
 
 | Service        | Port | Directory                    | Serves                |
 |----------------|------|------------------------------|-----------------------|
@@ -44,6 +44,7 @@ Four Flask apps behind nginx + certbot, each its own systemd service and port:
 | `tickettoride` | 5001 | `/home/ubuntu/TicketToRide`  | `ttr.cgovind.com`     |
 | `ers`          | 5003 | `/home/ubuntu/website/ers`   | `ers.cgovind.com`     |
 | `kot`          | 5004 | `/home/ubuntu/website/kot`   | `kot.cgovind.com`     |
+| `drive`        | 5005 | `/home/ubuntu/website/drive` | `drive.cgovind.com`   |
 
 The games run `-w 1` eventlet gunicorn on purpose: socket rooms and in-flight
 game state live in-process, so **a restart drops every live game**. Never restart
@@ -63,7 +64,13 @@ All four apps share **one SQLite file**:
 
 `users` is the shared account table. Each game keeps its own tables alongside it:
 `ttr_*` (well, TTR still uses `users.elo` in prod), `ers_stats` / `ers_games` /
-`ers_players` / `ers_slaps`, and `kot_stats` / `kot_games` / `kot_players`.
+`ers_players` / `ers_slaps`, `kot_stats` / `kot_games` / `kot_players`, and
+`drive_stats` / `drive_times` / `drive_games` / `drive_players`.
+
+Drive's live races are deliberately NOT in the database - they are in-process
+state, so `drive_games` only ever holds finished ones. `drive_times` is the
+per-track leaderboard (one row per user per track, with a compressed ghost
+replay in `ghost`).
 
 Confirm the path from the app's own config rather than trusting this file, since
 it is set per-app in a gitignored `.env`:
@@ -123,7 +130,7 @@ ssh kotprod 'sudo systemctl restart kot'
 
 ## nginx and TLS
 
-Configs are at `/etc/nginx/sites-available/{website,ers,kot}`, each a proxy to its
+Configs are at `/etc/nginx/sites-available/{website,ers,kot,drive}`, each a proxy to its
 port with a WebSocket upgrade block for the game hosts, each with its own Let's
 Encrypt cert (certbot auto-renews).
 

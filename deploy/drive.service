@@ -1,0 +1,26 @@
+# Drive (the drive.cgovind.com subdomain), served from website/drive.
+#
+# Like TTR, ERS and KOT it speaks WebSockets and keeps live race state plus the
+# socket rooms in process, so it runs as its OWN single eventlet gunicorn
+# worker. More than one worker would split rooms across processes and players in
+# the same lobby would stop seeing each other.
+#
+# It needs its own virtualenv at {{APP_DIR}}/drive/venv and its own .env at
+# {{APP_DIR}}/drive/.env (share TTR's SECRET_KEY and point DATABASE_URL at the
+# shared SQLite file so the accounts table is the same across all four sites).
+[Unit]
+Description=Drive (from website subdir)
+After=network.target
+
+[Service]
+User={{USER}}
+WorkingDirectory={{APP_DIR}}/drive
+EnvironmentFile={{APP_DIR}}/drive/.env
+ExecStart={{APP_DIR}}/drive/venv/bin/gunicorn --worker-class eventlet -w 1 --bind 127.0.0.1:5005 app:app
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
