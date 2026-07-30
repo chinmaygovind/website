@@ -69,7 +69,14 @@ const PALETTES = {
               prop: 0x347a3c, prop2: 0x4f9440, deco: 0xf2994a,
               density: 0.24,
               props: { bigpine: 0.42, conifer: 0.34, rock: 0.14, block: 0.10 } },
-  skyline:  { road: 0x4d5464, kerb: 0xf6f6f6, kerb2: 0x56ccf2, ground: 0x4a6b8a, sky: 0x7fb6dd, fog: 0x9ec9e6, rail: 0xe9f4ff, prop: 0x6e7f95, deco: 0x56ccf2 },
+  // A road above the weather. `below` is the world under it: a broken cloud
+  // deck with a city drowned in it, only the tallest towers breaking the
+  // surface. See addWorldBelow.
+  skyline:  { road: 0x4d5464, kerb: 0xf6f6f6, kerb2: 0x56ccf2, ground: 0x4a6b8a,
+              sky: 0x7fb6dd, fog: 0x9ec9e6, rail: 0xe9f4ff, prop: 0x6e7f95, deco: 0x56ccf2,
+              below: { deck: 92, depth: 190, reach: 950, rise: 46,
+                       towerDensity: 0.5, breakThrough: 0.3, cover: 0.66,
+                       cloud: 0xf7fbff, tower: 0x2f3b52, floor: 0x1d2740 } },
   lagoon:   { road: 0x515a68, kerb: 0xfdfdfd, kerb2: 0x27ae60, ground: 0x3aa6a0, sky: 0x8fdce6, fog: 0xb6e8ec, rail: 0xf3fffe, prop: 0x1f8f7a, deco: 0x27ae60 },
   heights:  { road: 0x4f5460, kerb: 0xf4f4f4, kerb2: 0xf2994a, ground: 0x7a6a52, sky: 0xf0c9a0, fog: 0xf3d9bd, rail: 0xfff2e2, prop: 0x8a7358, deco: 0xf2994a },
   city:     { road: 0x4a4f5c, kerb: 0xf7f7f7, kerb2: 0xf2c94c, ground: 0x5c6070, sky: 0x8ea9c9, fog: 0xa9bed6, rail: 0xf2f4f7, prop: 0x6b7180, deco: 0xf2c94c },
@@ -484,14 +491,18 @@ export function buildTrack(track, T) {
     killY = groundY - 30;
   } else {
     killY = minY - 26;
-    // a distant plate so the void has a floor to look at
-    const gy = minY - 34;
-    solid.quad([gx0, gy, gz0], [gx0, gy, gz1], [gx1, gy, gz1], [gx1, gy, gz0],
-               shade(pal.ground, -0.3));
+    // A distant plate so the void has a floor to look at - unless the palette
+    // puts a whole world down there, in which case that is the floor.
+    if (!pal.below) {
+      const gy = minY - 34;
+      solid.quad([gx0, gy, gz0], [gx0, gy, gz1], [gx1, gy, gz1], [gx1, gy, gz0],
+                 shade(pal.ground, -0.3));
+    }
   }
 
   // --- scenery (procedural, seeded, deterministic) -------------------------
   addScenery(solid, track, pal, bbox, CELL);
+  if (groundY == null && pal.below) addWorldBelow(solid, track, pal, bbox, CELL, minY);
 
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   const matBright = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
@@ -529,6 +540,109 @@ export function mulberry(seed) {
     t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
     return ((t ^ t >>> 14) >>> 0) / 4294967296;
   };
+}
+
+/**
+ * The world underneath a track that floats.
+ *
+ * A broken deck of cloud with a city buried in it: towers rise from far below,
+ * most of them drowned, a few breaking the surface. You are looking *down* on
+ * this cloud rather than up at it, which is the whole reason it works here and
+ * did not work as a sky - from above you see the lit tops, and the gaps between
+ * slabs read as holes in the layer instead of as edges of boxes.
+ *
+ * It is scenery, so none of it is in the collider. Nothing may reach the road:
+ * towers are barred from the road corridor *and* capped below the track's
+ * lowest point, so neither guard is load-bearing on its own.
+ */
+function addWorldBelow(buf, track, pal, bbox, CELL, minY) {
+  const cfg = pal.below;
+  let seed = 91;
+  for (let i = 0; i < track.slug.length; i++) seed = seed * 31 + track.slug.charCodeAt(i);
+  const rnd = mulberry(seed);
+
+  const deckY = minY - (cfg.deck != null ? cfg.deck : 24);
+  const floorY = deckY - (cfg.depth != null ? cfg.depth : 120);
+  const reach = cfg.reach != null ? cfg.reach : 460;
+  const x0 = bbox.x0 - reach, x1 = bbox.x1 + reach;
+  const z0 = bbox.z0 - reach, z1 = bbox.z1 + reach;
+
+  // Cells the road passes over, so a tower never comes up through the track.
+  const occupied = new Set();
+  for (const e of track.line) {
+    const r = Math.ceil((e.hw + CELL * 2) / CELL);
+    const cx = Math.round(e.p[0] / CELL), cz = Math.round(e.p[2] / CELL);
+    for (let dx = -r; dx <= r; dx++) {
+      for (let dz = -r; dz <= r; dz++) occupied.add((cx + dx) + ',' + (cz + dz));
+    }
+  }
+
+  // the ground the city stands on
+  solid_plate(buf, x0, x1, z0, z1, floorY, cfg.floor != null ? cfg.floor : 0x2a3446);
+
+  // --- towers ---------------------------------------------------------------
+  const tStep = CELL * (cfg.towerStep != null ? cfg.towerStep : 9);
+  const towerTop = deckY + (cfg.rise != null ? cfg.rise : 26);
+  for (let x = x0; x < x1; x += tStep) {
+    for (let z = z0; z < z1; z += tStep) {
+      if (rnd() > (cfg.towerDensity != null ? cfg.towerDensity : 0.5)) continue;
+      const px = x + rnd() * tStep, pz = z + rnd() * tStep;
+      if (occupied.has(Math.round(px / CELL) + ',' + Math.round(pz / CELL))) continue;
+      // Most are drowned; a few break the surface. That ratio is the whole
+      // effect - a forest of towers all poking through is just a city.
+      const breaks = rnd() < (cfg.breakThrough != null ? cfg.breakThrough : 0.34);
+      // A couple of genuine landmarks among them, rather than every tower
+      // topping out at the same height.
+      const tall = breaks && rnd() < 0.14;
+      // Hard cap under the track's lowest point. The corridor test above should
+      // already make this impossible, but a landmark tower is tall enough that
+      // one guard is not enough to bet the geometry on.
+      const top = Math.min(minY - 10,
+        breaks ? deckY + (tall ? 1 : rnd()) * (towerTop - deckY) * (tall ? 1.9 : 1)
+               : deckY - 6 - rnd() * 40);
+      const w = 4 + rnd() * 11, d = 4 + rnd() * 11;
+      const body = shade(cfg.tower != null ? cfg.tower : 0x3a4761, (rnd() - 0.5) * 0.22);
+      buf.box(px, (floorY + top) / 2, pz, w / 2, (top - floorY) / 2, d / 2, body);
+      if (breaks) {
+        // a lighter cap and a thin mast, so the ones you can see have a profile
+        buf.box(px, top + 0.8, pz, w * 0.56, 0.8, d * 0.56, shade(body, 0.22));
+        if (rnd() < 0.45) {
+          buf.box(px, top + 4 + rnd() * 5, pz, 0.5, 4 + rnd() * 5, 0.5, shade(body, 0.3));
+        }
+      }
+    }
+  }
+
+  // --- the cloud deck -------------------------------------------------------
+  // Slabs on a coarse lattice with gaps left in it. Jittered in height as well
+  // as position so the layer has a surface rather than being one flat sheet.
+  const cStep = CELL * (cfg.cloudStep != null ? cfg.cloudStep : 5);
+  const lit = cfg.cloud != null ? cfg.cloud : 0xeef3fa;
+  const cover = cfg.cover != null ? cfg.cover : 0.62;
+  for (let x = x0; x < x1; x += cStep) {
+    for (let z = z0; z < z1; z += cStep) {
+      if (rnd() > cover) continue;
+      const px = x + (rnd() - 0.5) * cStep * 0.8;
+      const pz = z + (rnd() - 0.5) * cStep * 0.8;
+      // Wide and flat. Seen from a long way above you want tops, not sides -
+      // a slab with any depth to it reads as a lump of concrete.
+      const w = cStep * (0.6 + rnd() * 0.55), d = cStep * (0.6 + rnd() * 0.55);
+      const h = 1.1 + rnd() * 2.2;
+      const y = deckY + (rnd() - 0.5) * 18;
+      buf.box(px, y, pz, w, h, d, shade(lit, (rnd() - 0.55) * 0.16));
+      // A smaller slab riding on top of some of them, so the layer has massing
+      // and a lit upper surface rather than being one flat tiling.
+      if (rnd() < 0.45) {
+        buf.box(px + (rnd() - 0.5) * w, y + h + 1.6 + rnd() * 3, pz + (rnd() - 0.5) * d,
+                w * (0.4 + rnd() * 0.35), 1.4 + rnd() * 2.4, d * (0.4 + rnd() * 0.35),
+                shade(lit, rnd() * 0.1));
+      }
+    }
+  }
+}
+
+function solid_plate(buf, x0, x1, z0, z1, y, color) {
+  buf.quad([x0, y, z0], [x0, y, z1], [x1, y, z1], [x1, y, z0], color);
 }
 
 function addScenery(buf, track, pal, bbox, CELL) {
