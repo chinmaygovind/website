@@ -307,6 +307,48 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   tangential velocity preserved, per-pair bump cooldown) - see `Car.resolveCars`.
   `FLAG.BRAKE` rides along in the pose so a rival's brake lights work.
 
+### Look: skies and worlds
+
+Every track's art direction lives in one `PALETTES` entry in `trackmesh.js`.
+Two optional fields do nearly all of it, and both are read by code that has no
+idea which track it is looking at:
+
+- **`sky`** - either a plain colour (the old two-tone dome) or a spec that
+  `render.js` turns into a graded dome plus a sun, stars, and the track's own
+  key light, hemisphere light and fog. `glowMode` matters: `horizon` smears the
+  glow around the sun's *azimuth*, which is what makes a sunrise a sunrise;
+  `radial` puts a halo around the disc, which is what any sun up in the sky
+  wants. A sun drawn on the horizon must still have its *light* come from much
+  higher, or nothing in the world gets lit.
+- **`below`** - what is under a track that floats, dispatched on `kind`: a city
+  drowned in cloud, a desert, a downtown, a lava field, or `void` (which also
+  suppresses the distant floor plate). Ground tracks use `props`/`density`
+  instead, which pick from the scenery vocabulary (conifer, bigpine, deadtree,
+  rock, block) and `snow` turns on snow caps.
+
+Rules learned the hard way, all from the same fact - **you look down on a world
+below from a hundred units up, so you mostly read footprints**:
+
+- dunes must be broad and very low, mesas narrow and tall, or both read as
+  crates and pallets;
+- cloud has to be clumps with sky between them, never an even coverage of
+  anything, and it needs its own translucent mesh with `depthWrite` off so
+  overlapping boxes accumulate into something dense in the middle and wispy at
+  the rim. That is the whole difference between cloud and polystyrene;
+- cloud only works when you look *down* on it. As a sky it reads as pale
+  rectangles however it is shaded, which is why there is none in the dome.
+
+**Nothing below is in the collider**, so the only thing keeping it out of the
+track is the corridor test - and where scenery rises *above* road level (Jump
+City) that test is load-bearing on its own, so it checks a whole footprint
+rather than a centre point. Everything else also obeys a hard height cap under
+the track's lowest station.
+
+The single highest-leverage number in a palette is `hemi.ground`: it is the
+bounce, so sand makes every underside warm over a desert, snow removes the dark
+shadows from a winter scene, and molten orange is most of what separates a lava
+field from a dark field.
+
 ### The HUD, the phone, and the type
 
 - **The HUD is arranged the way Polytrack's is**, because it is the arrangement that
