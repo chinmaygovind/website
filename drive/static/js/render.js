@@ -421,13 +421,24 @@ function skyDome(spec) {
     v.set(pos.getX(i), pos.getY(i), pos.getZ(i));
     const u = Math.max(0, Math.min(1, v.y / R_SKY * 0.5 + 0.5));
     const c = sampleStops(spec.stops, u);
-    if (glow && sunXZ) {
-      // How much this direction faces the sun, sharpened so the glow is a wedge
-      // rather than a wash, and faded out away from the horizon.
-      const h = Math.hypot(v.x, v.z) || 1;
-      const facing = Math.max(0, (v.x / h) * sunXZ.x + (v.z / h) * sunXZ.z);
-      const band = Math.exp(-Math.pow((u - 0.5) * 5.2, 2));
-      c.lerp(glow, Math.pow(facing, 3.2) * band * strength);
+    if (glow && dir) {
+      let g;
+      if (spec.glowMode === 'radial') {
+        // A tight halo around wherever the sun actually is. This is the one you
+        // want for a sun up in the sky - the horizon smear below is only right
+        // when the disc is sitting on the horizon.
+        const len = v.length() || 1;
+        const d = (v.x * dir.x + v.y * dir.y + v.z * dir.z) / len;
+        g = Math.pow(Math.max(0, d), spec.glowFocus != null ? spec.glowFocus : 8);
+      } else {
+        // How much this direction faces the sun's bearing, sharpened so the glow
+        // is a wedge rather than a wash, and faded out away from the horizon.
+        const h = Math.hypot(v.x, v.z) || 1;
+        const facing = Math.max(0, (v.x / h) * sunXZ.x + (v.z / h) * sunXZ.z);
+        const band = Math.exp(-Math.pow((u - 0.5) * 5.2, 2));
+        g = Math.pow(facing, 3.2) * band;
+      }
+      c.lerp(glow, g * strength);
     }
     colors.push(c.r, c.g, c.b);
   }

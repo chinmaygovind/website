@@ -734,7 +734,7 @@ _POOL = [
     ("skyline", "Skyline Sprint", "Up and over a floating skyline. Miss a corner and you fall.",
      "skyline", None, 3, _skyline),
     ("twist", "Twin Loop", "Two full loops that step out sideways. Carry speed in.",
-     "lagoon", None, 3, _twist),
+     "desert", None, 3, _twist),
     ("heights", "Hairpin Heights", "A climb made of hairpins, then a fast plunge back down.",
      "heights", None, 4, _hairpin_heights),
     ("jumpcity", "Jump City", "Four gaps with nothing under them. Launch, land, repeat.",

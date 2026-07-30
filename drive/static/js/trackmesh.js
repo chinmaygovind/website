@@ -77,7 +77,35 @@ const PALETTES = {
               below: { deck: 92, depth: 190, reach: 950, rise: 46,
                        towerDensity: 0.5, breakThrough: 0.3, cover: 0.66,
                        cloud: 0xf7fbff, tower: 0x2f3b52, floor: 0x1d2740 } },
-  lagoon:   { road: 0x515a68, kerb: 0xfdfdfd, kerb2: 0x27ae60, ground: 0x3aa6a0, sky: 0x8fdce6, fog: 0xb6e8ec, rail: 0xf3fffe, prop: 0x1f8f7a, deco: 0x27ae60 },
+  // Twin Loop: two big loops standing over an empty desert, under a sun you
+  // would not want to be out in. `glowMode: radial` puts the halo around the
+  // disc itself rather than smearing it along the horizon, which is what the
+  // sunrise wants and a midday sun does not.
+  desert:   { road: 0x515c6e, kerb: 0xf7f1e6, kerb2: 0xc75b3a,
+              ground: 0xd9b478, rail: 0xf7f1e6, prop: 0xb5744a, deco: 0xf2a03c,
+              fog: 0xdfc79b,
+              sky: {
+                stops: [
+                  [0.00, 0xb08a5c], [0.42, 0xdcbe8e], [0.50, 0xf4e3c0],
+                  [0.58, 0xd3dbdd], [0.70, 0x92b8dd], [0.86, 0x4b86cf],
+                  [1.00, 0x1d55a4],
+                ],
+                // Big, hot and low enough to be in frame from the grid. The
+                // halo is wide (a small focus exponent) because that is what a
+                // sun you have to squint at actually does to a sky.
+                glow: 0xfff9e8, glowStrength: 0.95, glowMode: 'radial', glowFocus: 3.2,
+                sun: { az: 1.9, el: 0.32, color: 0xfffdf2, size: 940 },
+                // The disc is low; the key light is not, or nothing gets lit.
+                light: { color: 0xfff6e6, intensity: 1.62,
+                         dir: [Math.sin(1.9) * 0.72, 0.69, Math.cos(1.9) * 0.72] },
+                // The ground colour is sand on purpose: over a desert the bounce
+                // light really is warm, and it puts a glow on every underside.
+                hemi: { sky: 0xdfeaf7, ground: 0xd6ac78, intensity: 0.78 },
+                fog: 0xdfc79b, fogNear: 320, fogFar: 1500,
+              },
+              below: { kind: 'desert', deck: 108, reach: 980,
+                       duneDensity: 0.4, mesaDensity: 0.55, rockDensity: 0.18,
+                       sand: 0xd9b478, rock: 0xb26a44 } },
   heights:  { road: 0x4f5460, kerb: 0xf4f4f4, kerb2: 0xf2994a, ground: 0x7a6a52, sky: 0xf0c9a0, fog: 0xf3d9bd, rail: 0xfff2e2, prop: 0x8a7358, deco: 0xf2994a },
   city:     { road: 0x4a4f5c, kerb: 0xf7f7f7, kerb2: 0xf2c94c, ground: 0x5c6070, sky: 0x8ea9c9, fog: 0xa9bed6, rail: 0xf2f4f7, prop: 0x6b7180, deco: 0xf2c94c },
   spiral:   { road: 0x525869, kerb: 0xfafafa, kerb2: 0xbb6bd9, ground: 0x5a5570, sky: 0xb9a6e0, fog: 0xd0c4ec, rail: 0xf6f0ff, prop: 0x6d6488, deco: 0xbb6bd9 },
@@ -545,15 +573,14 @@ export function mulberry(seed) {
 /**
  * The world underneath a track that floats.
  *
- * A broken deck of cloud with a city buried in it: towers rise from far below,
- * most of them drowned, a few breaking the surface. You are looking *down* on
- * this cloud rather than up at it, which is the whole reason it works here and
- * did not work as a sky - from above you see the lit tops, and the gaps between
- * slabs read as holes in the layer instead of as edges of boxes.
+ * The six floating tracks have nowhere to stand scenery, so this is the other
+ * half of it: whatever is a long way down. `pal.below.kind` picks which world.
  *
- * It is scenery, so none of it is in the collider. Nothing may reach the road:
- * towers are barred from the road corridor *and* capped below the track's
- * lowest point, so neither guard is load-bearing on its own.
+ * It is all scenery - none of it is in the collider. Nothing may reach the
+ * road, and every generator here obeys the same two rules: stay out of the
+ * road corridor, *and* stay under a hard cap below the track's lowest point.
+ * Either would usually do; a landmark tower or a mesa is tall enough that it is
+ * not worth betting the geometry on one of them.
  */
 function addWorldBelow(buf, track, pal, bbox, CELL, minY) {
   const cfg = pal.below;
@@ -566,8 +593,9 @@ function addWorldBelow(buf, track, pal, bbox, CELL, minY) {
   const reach = cfg.reach != null ? cfg.reach : 460;
   const x0 = bbox.x0 - reach, x1 = bbox.x1 + reach;
   const z0 = bbox.z0 - reach, z1 = bbox.z1 + reach;
+  const cap = minY - 10;              // nothing below may rise past this
 
-  // Cells the road passes over, so a tower never comes up through the track.
+  // Cells the road passes over, so nothing ever comes up through the track.
   const occupied = new Set();
   for (const e of track.line) {
     const r = Math.ceil((e.hw + CELL * 2) / CELL);
@@ -576,8 +604,18 @@ function addWorldBelow(buf, track, pal, bbox, CELL, minY) {
       for (let dz = -r; dz <= r; dz++) occupied.add((cx + dx) + ',' + (cz + dz));
     }
   }
+  const clear = (px, pz) => !occupied.has(Math.round(px / CELL) + ',' + Math.round(pz / CELL));
 
-  // the ground the city stands on
+  if (cfg.kind === 'desert') {
+    desertBelow(buf, cfg, rnd, x0, x1, z0, z1, deckY, cap, CELL, clear);
+    return;
+  }
+
+  // --- default: a city drowned in cloud ------------------------------------
+  //
+  // Cloud works here because you look *down* on it: from above you see lit
+  // tops, and the gaps between slabs read as holes in the layer rather than as
+  // the edges of boxes, which is exactly what sank the same idea as a sky.
   solid_plate(buf, x0, x1, z0, z1, floorY, cfg.floor != null ? cfg.floor : 0x2a3446);
 
   // --- towers ---------------------------------------------------------------
@@ -587,17 +625,14 @@ function addWorldBelow(buf, track, pal, bbox, CELL, minY) {
     for (let z = z0; z < z1; z += tStep) {
       if (rnd() > (cfg.towerDensity != null ? cfg.towerDensity : 0.5)) continue;
       const px = x + rnd() * tStep, pz = z + rnd() * tStep;
-      if (occupied.has(Math.round(px / CELL) + ',' + Math.round(pz / CELL))) continue;
+      if (!clear(px, pz)) continue;
       // Most are drowned; a few break the surface. That ratio is the whole
       // effect - a forest of towers all poking through is just a city.
       const breaks = rnd() < (cfg.breakThrough != null ? cfg.breakThrough : 0.34);
       // A couple of genuine landmarks among them, rather than every tower
       // topping out at the same height.
       const tall = breaks && rnd() < 0.14;
-      // Hard cap under the track's lowest point. The corridor test above should
-      // already make this impossible, but a landmark tower is tall enough that
-      // one guard is not enough to bet the geometry on.
-      const top = Math.min(minY - 10,
+      const top = Math.min(cap,
         breaks ? deckY + (tall ? 1 : rnd()) * (towerTop - deckY) * (tall ? 1.9 : 1)
                : deckY - 6 - rnd() * 40);
       const w = 4 + rnd() * 11, d = 4 + rnd() * 11;
@@ -637,6 +672,83 @@ function addWorldBelow(buf, track, pal, bbox, CELL, minY) {
                 w * (0.4 + rnd() * 0.35), 1.4 + rnd() * 2.4, d * (0.4 + rnd() * 0.35),
                 shade(lit, rnd() * 0.1));
       }
+    }
+  }
+}
+
+/**
+ * Sand, a long way down: dunes, mesas and scattered rock.
+ *
+ * Dunes are wide and very low - two or three stacked slabs whose crest drifts
+ * to one side, so the ridge has a windward and a leeward face rather than being
+ * a symmetrical lump. Mesas are the vertical interest and are rare on purpose;
+ * a desert full of them is a canyon, not a desert.
+ */
+function desertBelow(buf, cfg, rnd, x0, x1, z0, z1, sandY, cap, CELL, clear) {
+  solid_plate(buf, x0, x1, z0, z1, sandY, cfg.sand != null ? cfg.sand : 0xd9b478);
+  const sand = cfg.sand != null ? cfg.sand : 0xd9b478;
+  const rock = cfg.rock != null ? cfg.rock : 0xb5744a;
+
+  // --- dunes ---------------------------------------------------------------
+  const dStep = CELL * 10;
+  for (let x = x0; x < x1; x += dStep) {
+    for (let z = z0; z < z1; z += dStep) {
+      if (rnd() > (cfg.duneDensity != null ? cfg.duneDensity : 0.55)) continue;
+      const px = x + rnd() * dStep, pz = z + rnd() * dStep;
+      // Broad and very low. A dune with any height to it is a crate: from a
+      // long way up you only read the footprint, so the swell has to be wide
+      // enough that the slab never shows you a side.
+      const w = 70 + rnd() * 90, d = 40 + rnd() * 50;
+      const drift = (rnd() - 0.5) * w * 0.45;     // which way the wind piled it
+      let y = sandY;
+      for (let k = 0; k < 2; k++) {
+        const u = k / 2;
+        const h = 1.5 + rnd() * 1.8;
+        buf.box(px + drift * u, y + h, pz + drift * u * 0.4,
+                w * (1 - u * 0.42) / 2, h, d * (1 - u * 0.38) / 2,
+                shade(sand, (rnd() - 0.35) * 0.1));
+        y += h * 1.6;
+      }
+    }
+  }
+
+  // --- mesas ---------------------------------------------------------------
+  const mStep = CELL * 22;
+  for (let x = x0; x < x1; x += mStep) {
+    for (let z = z0; z < z1; z += mStep) {
+      if (rnd() > (cfg.mesaDensity != null ? cfg.mesaDensity : 0.42)) continue;
+      const px = x + rnd() * mStep, pz = z + rnd() * mStep;
+      if (!clear(px, pz)) continue;
+      // Narrow buttes rather than broad mesas. You are looking *down* on all of
+      // this from a hundred units up, so anything as wide as it is tall shows
+      // you its top face and reads as a crate; height is the only thing that
+      // survives the angle.
+      const hgt = Math.min(cap - sandY, 46 + rnd() * 54);
+      if (hgt < 24) continue;
+      const w = 14 + rnd() * 22, d = 12 + rnd() * 20;
+      const tiers = 2 + Math.floor(rnd() * 2);
+      let y = sandY;
+      for (let k = 0; k < tiers; k++) {
+        const u = (k + 1) / tiers;
+        const th = hgt / tiers;
+        // stepped and inset going up, and lighter with it, so the top catches
+        // the sun and the base sits in its own shade
+        buf.box(px, y + th / 2, pz, w * (1 - u * 0.28) / 2, th / 2, d * (1 - u * 0.28) / 2,
+                shade(rock, -0.16 + u * 0.26 + (rnd() - 0.5) * 0.08));
+        y += th;
+      }
+    }
+  }
+
+  // --- loose rock ----------------------------------------------------------
+  const rStep = CELL * 8;
+  for (let x = x0; x < x1; x += rStep) {
+    for (let z = z0; z < z1; z += rStep) {
+      if (rnd() > (cfg.rockDensity != null ? cfg.rockDensity : 0.22)) continue;
+      const px = x + rnd() * rStep, pz = z + rnd() * rStep;
+      const s = 2 + rnd() * 6;
+      buf.box(px, sandY + s * 0.45, pz, s, s * 0.45, s * (0.6 + rnd() * 0.6),
+              shade(rock, -0.24 + (rnd() - 0.5) * 0.16));
     }
   }
 }
