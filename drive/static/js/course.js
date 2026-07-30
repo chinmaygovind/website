@@ -156,7 +156,8 @@ export class Run {
     this.missed = false;
     this.distance = 0;
     this.ghost = [];
-    this._ghostAcc = 0;
+    this._ghostN = 0;
+    this._prevPose = null;
     this._sides = new Map();     // gate -> which side of its plane we were on
     this._lastPos = null;
     this.respawnGate = this.course.startGate();
@@ -176,8 +177,52 @@ export class Run {
     this.missed = false;
     this.distance = 0;
     this.ghost = [];
-    this._ghostAcc = 0;
+    this._ghostN = 0;
+    this._prevPose = null;
     this._sides.clear();
+  }
+
+  /**
+   * Record ghost frame `i` as the pose at exactly `i / GHOST_HZ` seconds.
+   *
+   * This used to be a dt accumulator - add the frame time, push a sample every
+   * time a sixteenth of a second had gone by - which quietly recorded frame 0
+   * one whole interval *after* the start, because the accumulator has to fill
+   * before it fires. Playback reads frame `t * GHOST_HZ` at run time `t`, so
+   * every ghost ran 1/15s ahead of the lap it was recording: a car and a half
+   * up the road at racing speed, from the line to the flag. That is the "the
+   * ghost starts ahead of me" bug, and it applied to every ghost ever saved.
+   *
+   * Interpolating to the sample time rather than pushing the pose we happen to
+   * be holding also takes the frame rate out of it, so a ghost recorded at
+   * 30fps lines up with the same lap replayed at 144.
+   */
+  _recordGhost(pos, quat) {
+    const t = this.time / 1000;
+    const cur = [pos.x, pos.y, pos.z, quat.x, quat.y, quat.z, quat.w];
+    while (this._ghostN / GHOST_HZ <= t) {
+      const want = this._ghostN / GHOST_HZ;
+      const prev = this._prevPose;
+      if (!prev || want >= t || t <= prev.t) {
+        this.ghost.push(cur.slice());
+      } else {
+        const u = Math.max(0, Math.min(1, (want - prev.t) / (t - prev.t)));
+        const p = prev.f;
+        // Quaternions are lerped, not slerped: 1/15s of yaw is a few degrees,
+        // and playback normalises anyway. The sign fix matters more than the
+        // arc does - without it a quaternion that flipped sign between samples
+        // interpolates the long way round and the ghost snaps.
+        const dot = p[3] * cur[3] + p[4] * cur[4] + p[5] * cur[5] + p[6] * cur[6];
+        const sgn = dot < 0 ? -1 : 1;
+        this.ghost.push([
+          p[0] + (cur[0] - p[0]) * u, p[1] + (cur[1] - p[1]) * u, p[2] + (cur[2] - p[2]) * u,
+          p[3] + (cur[3] * sgn - p[3]) * u, p[4] + (cur[4] * sgn - p[4]) * u,
+          p[5] + (cur[5] * sgn - p[5]) * u, p[6] + (cur[6] * sgn - p[6]) * u,
+        ]);
+      }
+      this._ghostN++;
+    }
+    this._prevPose = { t, f: cur };
   }
 
   _side(gate, pos) {
@@ -207,7 +252,7 @@ export class Run {
    * Advance the run. Returns a list of event strings for sound/HUD:
    * 'cp', 'finish', 'missed'.
    */
-  update(car, nowMs, dt) {
+  update(car, nowMs) {
     const events = [];
     const pos = car.pos;
 
@@ -227,11 +272,7 @@ export class Run {
                                     pos.z - this._lastPos[2]);
       }
       // Record the ghost at a fixed rate regardless of frame rate.
-      this._ghostAcc += dt;
-      while (this._ghostAcc >= 1 / GHOST_HZ) {
-        this._ghostAcc -= 1 / GHOST_HZ;
-        this.ghost.push([pos.x, pos.y, pos.z, car.quat.x, car.quat.y, car.quat.z, car.quat.w]);
-      }
+      this._recordGhost(pos, car.quat);
 
       // Gate crossings.
       //

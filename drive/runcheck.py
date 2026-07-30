@@ -74,13 +74,13 @@ def medal_for(track, time_ms):
     """Best medal a time earns on a track, or None."""
     secs = time_ms / 1000.0
     best = None
-    for name in ("bronze", "silver", "gold", "author"):
+    for name in MEDAL_ORDER:
         if secs <= track["medals"][name]:
             best = name
     return best
 
 
-MEDAL_ORDER = ["bronze", "silver", "gold", "author"]
+MEDAL_ORDER = ["bronze", "silver", "gold"]
 
 
 def medal_rank(medal):

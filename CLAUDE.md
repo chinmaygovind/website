@@ -242,6 +242,12 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   relaxation + speed profile → medal times), `runcheck.py` (ghost packing, time
   validation), `models.py`, `app.py`, `static/js/` (`trackmesh.js`, `physics.js`,
   `course.js`, `render.js`, `sound.js`, `game.js`, vendored `three.module.js`).
+- **Three medals, and gold is the best one.** There used to be a fourth above it,
+  `author`, at 0.94 of the ideal lap. The word names an authority rather than a
+  standard, and it sat above the medal everybody already reads as the top one. The
+  times did not move when it went, so nobody lost a medal - an old `author` row is
+  shown as a gold by `DriveTime.medal_shown`, and `_MEDAL_FIELD` keeps the key so
+  improving on one still decrements the right counter.
 - **`tuning.py` is the single source of truth for the simulation.** It is embedded in
   the play page as `window.DRIVE_TUNING` and read by the JS physics, and `laptime.py`
   uses the same numbers to derive medal times. There is deliberately no second copy of
@@ -300,6 +306,21 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   the ground are not, so running wide there costs grass time instead of a respawn. The
   road sits ~1.2 above the grass plane, which is both why it reads as a raised ribbon
   and why the two never z-fight.
+- **The ghost is a practice tool, so in a room it only exists in practice.** Solo it
+  is the replay of your PB, fetched from the server. In a room it is your best lap of
+  *that* practice session and nothing else - not your all-time PB, which was set on a
+  different day against nobody - and it is not rendered at all from the countdown to
+  the flag, whatever the setting says. A translucent car on a line nobody drove is one
+  more thing to mistake for a rival.
+- **A ghost frame is the pose at its own timestamp.** `Run._recordGhost` interpolates
+  to exact multiples of `1/GHOST_HZ`. It used to accumulate dt and push a sample every
+  time an interval had gone by, which meant the accumulator had to fill before frame 0
+  was written - so frame 0 was the pose one interval *after* the start. Playback reads
+  frame `t * GHOST_HZ` at run time `t`, so every ghost ever recorded played back 1/15s
+  ahead of the lap it recorded: a couple of car lengths up the road, from the line to
+  the flag, which is why the ghost appeared to start in front of you.
+  `test_the_ghost_is_recorded_where_the_car_actually_was` drives a lap, notes where the
+  car really was at each sample time and requires the two to agree.
 - **Live races are in memory, not the DB.** A race ticks 20x/sec: clients are
   authoritative over their own car and emit `pose`, the server merges and fans out one
   snapshot per tick, and only the finished standings are written back. Cars are solid,
@@ -356,14 +377,34 @@ field from a dark field.
   flashes directly above it at each checkpoint and fades, your personal best sits to
   its lower left and the speed to its lower right, with a speed bar under the lot.
   The corners are therefore free, which is the whole reason the touch controls fit.
-- **Top left is where you are** (track name, then `Solo time trial` /
-  `Multiplayer lobby` / `Race in progress`); **top right is everything you can open**:
-  the room drawer (rooms only), help, settings. Three icon buttons and nothing else.
-- **The room panel is a drawer at every screen size**, opened by the hamburger. It
+- **Top left is where you are** - the track name, then what kind of session this is.
+  Solo that is `Solo time trial`; in a room it is the room's *phase*, `Multiplayer -
+  Free practice` / `Race about to start` / `Race in progress` / `Race finished`, which
+  is the only place the phase is written down and is driven from one `PHASE_LABEL`
+  table rather than a `setMode` call at each transition. **Top right is everything you
+  can open**: the room drawer (rooms only), help, settings. Three icon buttons and
+  nothing else - plus, solo only, the medal times. In a room those are gone: a table
+  of lap times floating over a race you are driving against other people relates to
+  nothing on the screen.
+- **The room drawer's button is a person, not a hamburger.** Three stacked bars sat
+  next to the settings icon, which is three stacked sliders, and at a glance they were
+  the same button. Chat is the last thing in the drawer so it takes the leftover height
+  and the box you type into sits on the floor of the panel.
+- **The room panel is a drawer at every screen size**, opened by that button. It
   used to be pinned open - a 274px column on a desktop, a 46vh slab across the bottom
   of a phone - so the multiplayer furniture sat on top of the road and the driving
   controls the entire time you were racing. It opens on arrival and closes itself when
   a race starts.
+- **The two finish screens are deliberately different screens.** A time trial ends in
+  a number, so `#results` is that number - big, centred, medal beside it, its rank
+  under it - then `PB:` and `WR:` with their ranks, and Retry / Leaderboard / Exit.
+  There are no sentences on it: "New personal best", "Ranked #3" and "That is the
+  fastest time on this track" were all restating the numbers next to them. Only a
+  *problem* gets a sentence (not logged in, offline). A race ends in an **order**, so
+  `#raceOver` is the finishing order and the three things there are to do next -
+  Practice, Quit, and Rematch for the host. Note that `/api/run`'s `medal`, `rank` and
+  `is_record` all describe your stored PB row, not the lap you just drove: the lap's
+  own medal is computed client-side and its own placing is the separate `run_rank`.
 - **Touch controls: four driving buttons and no handbrake button.** Steering left,
   throttle and brake right, checkpoint and restart small above the steering. There
   is deliberately no fifth button, because there is nowhere a thumb can reach one:
@@ -397,7 +438,7 @@ field from a dark field.
 
 ### Tests
 
-`cd drive && venv/bin/python -m pytest tests/` - 217 tests. `test_tracks.py` and
+`cd drive && venv/bin/python -m pytest tests/` - 219 tests. `test_tracks.py` and
 `test_runcheck.py` are pure Python. **`test_sim.py` runs the game's real JavaScript
 headlessly**: `tests/jsrt.py` strips the ES module syntax, swaps three.js for
 `tests/three_stub.js` (real Vector3/Quaternion maths, inert graphics), and runs it in

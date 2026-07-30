@@ -21,13 +21,19 @@ function simulate(track, T, opts) {
   const maxT = opts.maxT || 180;
   let t = 0, stuck = 0, maxAir = 0, topSpeed = 0, airFrames = 0, frames = 0;
   let sumSpeed = 0;
+  // Where the car really was at each ghost sample time, recorded independently
+  // of the recorder so the two can be compared. See ghostProbe below.
+  const probe = [];
 
   run.start(0);
   while (t < maxT) {
     const inp = drive(dt);
     if (inp.stuck > 4) { stuck = 1; break; }
     car.step(dt, inp);
-    run.update(car, t * 1000, dt);
+    run.update(car, t * 1000);
+    if (run.state === 'running' && probe.length / 15 <= t + 1e-9) {
+      probe.push([car.pos.x, car.pos.y, car.pos.z]);
+    }
     frames++;
     sumSpeed += car.speed;
     if (car.speed > topSpeed) topSpeed = car.speed;
@@ -57,6 +63,9 @@ function simulate(track, T, opts) {
     // against a lap the real physics actually produced.
     ghost: opts.withGhost ? run.ghost.map(f => f.map(v => Math.round(v * 1000) / 1000))
                           : null,
+    // The true pose at every ghost sample time, for
+    // test_the_ghost_is_recorded_where_the_car_actually_was.
+    ghostProbe: probe,
     distance: run.distance,
   };
 }

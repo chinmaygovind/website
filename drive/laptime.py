@@ -18,7 +18,8 @@ simulator does:
 
 It reads its constants from ``tuning``, so retuning the car retunes the medals.
 The result is an *ideal* lap - cleaner than a human will drive - which is why
-``MEDAL_MULT["author"]`` sits at 1.0 and the other medals are multiples of it.
+``MEDAL_MULT["gold"]`` sits just above 1.0 and the other medals are multiples
+of it.
 """
 
 import math

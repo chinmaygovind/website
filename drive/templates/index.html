@@ -29,7 +29,7 @@
       <div class="blurb">{{ t.blurb }}</div>
       <div class="tcard-foot">
         {% if pb %}
-          <span class="medal {{ pb.medal or 'none' }}"></span>
+          <span class="medal {{ pb.medal_shown or 'none' }}"></span>
           <span>{{ '%d:%06.3f'|format((pb.time_ms // 60000), (pb.time_ms % 60000) / 1000) }}</span>
         {% else %}
           <span class="medal none"></span><span>not driven</span>
@@ -46,7 +46,7 @@
   <p>Each track is a single run from the start line to the finish, through every
   checkpoint in order. Miss one and the run does not count. Fall off and you
   restart from the last checkpoint you crossed - the clock keeps going.</p>
-  <p>Four medal times per track, from bronze up to <b>author</b>, which is a lap
+  <p>Three medal times per track, from bronze up to <b>gold</b>, which is a lap
   driven about as well as the track allows. Your best run on each track is saved
   as a <b>ghost</b> you can race against, and the fastest ghost on each track is
   there to chase too.</p>

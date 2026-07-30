@@ -41,8 +41,10 @@ const S = {
   renderer: null, sound: new Sound(), stepper: new Stepper(T),
   view: null, ghostView: null, ghost: null, ghostTimes: null,
   showGhost: true,
+  sessionBest: null,       // rooms only: best practice lap since you arrived
   remotes: new Map(),
   paused: false, menuOpen: false, helpOpen: false,
+  isHost: false,
   started: false,          // has the local run clock been started
   raceMode: false,         // are we in a synced race right now
   racePhase: 'free',
@@ -123,7 +125,12 @@ function loadTrack(track) {
   renderMedalTable();
   showPb();
   drawMinimapBase();
-  loadGhost('me');
+  // In a room the ghost is your own best lap of *this* practice session, so a
+  // new track starts with no ghost at all until you have set one. Solo, it is
+  // the ghost of your personal best, which the server has.
+  S.ghost = null; S.ghostTimes = null; S.sessionBest = null;
+  if (CFG.mode !== 'room') loadGhost('me');
+  applyPhase();
   markActiveTrack();
 }
 
@@ -262,11 +269,6 @@ function bindInput() {
     $('btnRoomClose').onclick = () => showSide(false);
     showSide(true);           // you arrive in a lobby, so start with it open
   }
-  $('btnNextTrack').onclick = () => {
-    // In a room the host owns the track, so this only moves you on when solo.
-    if (CFG.mode === 'room') { toast('The host picks the track in a room'); return; }
-    if (CFG.nextTrack) location.href = '/solo/' + CFG.nextTrack;
-  };
 }
 
 function showSide(on) {
@@ -279,6 +281,21 @@ function setGhost(on) {
   $('btnGhost').textContent = 'Ghost car: ' + (on ? 'on' : 'off');
 }
 
+/**
+ * Should the ghost car be on the road right now?
+ *
+ * In a room it belongs to free practice and nowhere else. A race is against the
+ * cars that are actually there, and a translucent fourth car drifting through
+ * the pack on a line nobody drove is just something else to mistake for a
+ * rival - so the ghost is off for the whole race no matter what the setting
+ * says. It comes back the moment the room is practising again.
+ */
+function ghostOn() {
+  if (!S.showGhost || !S.ghost) return false;
+  if (CFG.mode !== 'room') return true;
+  return !S.raceMode && S.racePhase === 'free';
+}
+
 function setSound(on) {
   S.sound.mute(!on);
   $('btnSound').textContent = 'Sound: ' + (on ? 'on' : 'off');
@@ -289,6 +306,20 @@ function setMode(text, racing) {
   const el = $('modeLabel');
   el.textContent = text;
   el.className = 'mode' + (racing ? ' racing' : '');
+}
+
+/** The room's phase, said out loud in the top-left corner. */
+const PHASE_LABEL = {
+  free: ['Multiplayer - Free practice', false],
+  countdown: ['Multiplayer - Race about to start', true],
+  racing: ['Multiplayer - Race in progress', true],
+  results: ['Multiplayer - Race finished', false],
+};
+
+function applyPhase() {
+  if (CFG.mode !== 'room') return;
+  const [text, racing] = PHASE_LABEL[S.racePhase] || PHASE_LABEL.free;
+  setMode(text, racing);
 }
 
 /** R: throw the run away and line up again. */
@@ -347,7 +378,7 @@ function frame(now) {
   updateRemotes(dt);
 
   // run bookkeeping
-  const events = S.run.update(S.car, now, dt);
+  const events = S.run.update(S.car, now);
   for (const e of events) {
     if (e === 'cp') {
       S.sound.checkpoint();
@@ -396,7 +427,7 @@ function render(dt, now) {
   S.view.setVisible(car.respawnIn <= 0);
 
   // own-best ghost
-  if (S.ghost && S.showGhost && S.started) {
+  if (ghostOn() && S.started) {
     if (!S.ghostView) S.ghostView = new CarView(S.renderer.scene, '#9aa7b8', { ghost: true });
     const t = (S.run.state === 'running' ? S.run.time : 0) / 1000;
     const f = S.ghost.at(t);
@@ -520,11 +551,13 @@ function gapLabel(leader, e) {
 }
 
 function renderMedalTable() {
+  const el = $('medals');
+  if (!el) return;                  // rooms do not show medal times at all
   const m = S.track.medals;
-  const rows = [['author', 'Author'], ['gold', 'Gold'], ['silver', 'Silver'], ['bronze', 'Bronze']];
+  const rows = [['gold', 'Gold'], ['silver', 'Silver'], ['bronze', 'Bronze']];
   // Your own best is not in here any more - it lives under the clock, bottom
   // left of it, where you look for it while you are driving.
-  $('medals').innerHTML = rows.map(([k, label]) =>
+  el.innerHTML = rows.map(([k, label]) =>
     `<div class="mrow"><span class="medal ${k}"></span><span>${label}</span>` +
     `<b>${fmt(m[k] * 1000)}</b></div>`).join('');
 }
@@ -599,23 +632,29 @@ async function loadGhost(who) {
     const r = await fetch('/api/ghost/' + S.track.slug + '?who=' + who);
     const d = await r.json();
     if (!d.ghost) return;
-    S.ghost = new Ghost(d.ghost, d.hz || GHOST_RATE);
-    // Precompute distance-along-track per ghost frame so the live delta can be
-    // "how long did the ghost take to get this far", not "where is it now".
-    S.ghostTimes = [];
-    const tmp = new THREE.Vector3();
-    const course = new Course(S.built);
-    for (let i = 0; i < S.ghost.frames.length; i++) {
-      const f = S.ghost.frames[i];
-      tmp.set(f[0], f[1], f[2]);
-      const loc = course.locate(tmp);
-      S.ghostTimes.push({ s: loc.s, ms: (i / S.ghost.hz) * 1000 });
-    }
-    // enforce monotonic s so the binary search is valid
-    for (let i = 1; i < S.ghostTimes.length; i++) {
-      if (S.ghostTimes[i].s < S.ghostTimes[i - 1].s) S.ghostTimes[i].s = S.ghostTimes[i - 1].s;
-    }
+    useGhost(d.ghost, d.hz || GHOST_RATE);
   } catch (e) { /* no ghost is fine */ }
+}
+
+/** Race against these frames from now on. */
+function useGhost(frames, hz) {
+  if (!frames || frames.length < 2) return;
+  S.ghost = new Ghost(frames, hz || GHOST_RATE);
+  // Precompute distance-along-track per ghost frame so the live delta can be
+  // "how long did the ghost take to get this far", not "where is it now".
+  S.ghostTimes = [];
+  const tmp = new THREE.Vector3();
+  const course = new Course(S.built);
+  for (let i = 0; i < S.ghost.frames.length; i++) {
+    const f = S.ghost.frames[i];
+    tmp.set(f[0], f[1], f[2]);
+    const loc = course.locate(tmp);
+    S.ghostTimes.push({ s: loc.s, ms: (i / S.ghost.hz) * 1000 });
+  }
+  // enforce monotonic s so the binary search is valid
+  for (let i = 1; i < S.ghostTimes.length; i++) {
+    if (S.ghostTimes[i].s < S.ghostTimes[i - 1].s) S.ghostTimes[i].s = S.ghostTimes[i - 1].s;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -628,11 +667,24 @@ async function onFinish() {
   S.car.frozen = false;
   const prev = S.bestTime;
   const improved = prev == null || run.time < prev;
+  // A race ends with the standings sheet, not this one - and it ends when the
+  // last car is in, not when you cross the line.
+  const racing = S.raceMode;
 
-  if (S.raceMode && S.socket) S.socket.emit('finish', { ms: run.time });
+  if (racing && S.socket) S.socket.emit('finish', { ms: run.time });
+
+  // In a room your ghost is the best lap of this practice session. Not your
+  // all-time PB: the room is a place you turn up and learn a track together,
+  // and a ghost from three weeks ago is not what you are chasing there.
+  if (CFG.mode === 'room' && !racing &&
+      (S.sessionBest == null || run.time < S.sessionBest)) {
+    S.sessionBest = run.time;
+    useGhost(run.ghost.slice(), GHOST_RATE);
+  }
 
   if (prev != null) showDelta(run.time - prev);
-  showResults({ time: run.time, medal, prev, improved, pending: true });
+  if (racing) toast('Finished ' + fmt(run.time));
+  else showResults({ time: run.time, medal, pb: improved ? run.time : prev });
 
   try {
     const r = await fetch('/api/run', {
@@ -643,19 +695,31 @@ async function onFinish() {
     });
     const d = await r.json();
     if (d.ok && d.stored) {
-      if (d.is_record) S.sound.record();
+      // `is_record` and `medal` both describe the stored PB row, which is not
+      // this run unless this run beat it - so a slow lap by the record holder
+      // is neither a record nor worth the record's medal.
+      if (d.is_record && d.improved) S.sound.record();
       S.bestTime = d.pb_ms;
       if (CFG.pbs) CFG.pbs[S.track.slug] = d.pb_ms;
-      showResults({ time: run.time, medal: d.medal, prev, improved: d.improved,
-                    rank: d.rank, record: d.record_ms, isRecord: d.is_record });
-      if (d.improved) loadGhost('me');
+      if (!racing) {
+        showResults({ time: run.time, medal, rank: d.run_rank,
+                      pb: d.pb_ms, pbRank: d.rank, wr: d.record_ms });
+      }
+      // Solo, a new PB is a new ghost. In a room the practice ghost is this
+      // session's, and it has already been set above.
+      if (d.improved && CFG.mode !== 'room') loadGhost('me');
     } else {
-      showResults({ time: run.time, medal, prev, improved,
-                    note: d.note || d.error || null, guest: d.guest });
       if (improved) { S.bestTime = run.time; localBest(run.time); }
+      if (!racing) {
+        showResults({ time: run.time, medal, rank: d.run_rank, pb: S.bestTime,
+                      wr: d.record_ms, note: d.note || d.error || null });
+      }
     }
   } catch (e) {
-    showResults({ time: run.time, medal, prev, improved, note: 'Offline - time not saved.' });
+    if (!racing) {
+      showResults({ time: run.time, medal, pb: improved ? run.time : prev,
+                    note: 'Offline - time not saved.' });
+    }
   }
   renderMedalTable();
   showPb();
@@ -663,7 +727,6 @@ async function onFinish() {
 
 function medalFor(ms) {
   const m = S.track.medals, s = ms / 1000;
-  if (s <= m.author) return 'author';
   if (s <= m.gold) return 'gold';
   if (s <= m.silver) return 'silver';
   if (s <= m.bronze) return 'bronze';
@@ -685,24 +748,27 @@ function storedBest() {
   } catch (e) { return null; }
 }
 
+const rankLabel = (n) => (n ? '#' + n : '—');
+
+/**
+ * The finish sheet: your time, then your PB, then the record, with ranks.
+ *
+ * Called twice per run - once the instant you cross the line, and again when
+ * the server has said where the time places - so anything it does not know yet
+ * shows a dash rather than moving the layout around when the answer arrives.
+ */
 function showResults(r) {
   $('results').style.display = '';
   $('resTime').textContent = fmt(r.time);
   const med = $('resMedal');
   med.className = 'medal-big ' + (r.medal || 'none');
   med.textContent = r.medal ? r.medal.toUpperCase() : 'FINISHED';
-  const bits = [];
-  if (r.prev != null) {
-    const diff = r.time - r.prev;
-    bits.push(r.improved ? `New personal best, ${fmtDelta(diff)}s`
-                         : `Personal best ${fmt(r.prev)} (${fmtDelta(diff)}s)`);
-  } else if (r.improved) bits.push('First time on this track!');
-  if (r.isRecord) bits.push('That is the fastest time on this track.');
-  else if (r.record != null) bits.push('Record ' + fmt(r.record));
-  if (r.rank) bits.push('Ranked #' + r.rank);
-  if (r.note) bits.push(r.note);
-  $('resNote').innerHTML = bits.map(b => `<div>${esc(b)}</div>`).join('');
-  $('resPending').style.display = r.pending ? '' : 'none';
+  $('resRank').textContent = rankLabel(r.rank);
+  $('resPb').textContent = r.pb != null ? fmt(r.pb) : '--:--.---';
+  $('resPbRank').textContent = rankLabel(r.pbRank);
+  $('resWr').textContent = r.wr != null ? fmt(r.wr) : '--:--.---';
+  // Only ever a problem, never a summary - the numbers above are the summary.
+  $('resNote').innerHTML = r.note ? `<div>${esc(r.note)}</div>` : '';
 }
 
 function hideResults() { $('results').style.display = 'none'; }
@@ -752,6 +818,7 @@ function connect() {
   socket.on('room_hello', (d) => {
     renderRoster(d.players);
     S.racePhase = d.race ? d.race.phase : 'free';
+    applyPhase();
     (d.chat || []).forEach(addChat);
   });
   socket.on('roster', (d) => {
@@ -767,9 +834,8 @@ function connect() {
   socket.on('race_reset', () => {
     S.raceMode = false; S.racePhase = 'free'; S.raceT0 = null;
     S.standings = [];
-    setMode('Multiplayer lobby', false);
+    applyPhase();
     $('countdown').style.display = 'none';
-    $('raceResult').style.display = 'none';
   });
   socket.on('chat', addChat);
   socket.on('kicked', (d) => { if (CFG.me && d.pid === CFG.me.pid) location.href = '/lobbies'; });
@@ -778,10 +844,26 @@ function connect() {
 
   $('btnStartRace').onclick = () => socket.emit('start_race', { code: CFG.room });
   $('btnLeave').onclick = () => { socket.emit('leave'); location.href = '/lobbies'; };
-  // The top-left Leave is an ordinary link, so it navigates either way; this
-  // just gives the room a chance to hear about it first.
-  const quit = $('btnQuit');
-  if (quit) quit.addEventListener('click', () => socket.emit('leave'));
+  // Every way out of a room is an ordinary link, so it navigates whatever
+  // happens; this just gives the room a chance to hear about it first.
+  for (const id of ['btnQuit', 'btnExit', 'btnRaceQuit']) {
+    const el = $(id);
+    if (el) el.addEventListener('click', () => socket.emit('leave'));
+  }
+  // After a race: practise the track again, or go round again.
+  $('btnPractice').onclick = () => {
+    $('raceOver').style.display = 'none';
+    // The server drops the room back to free on its own a few seconds later;
+    // doing it here too means Practice is instant rather than "instant, then
+    // the ghost appears".
+    S.racePhase = 'free';
+    applyPhase();
+    resetToStart();
+  };
+  $('btnRematch').onclick = () => {
+    $('raceOver').style.display = 'none';
+    socket.emit('start_race', { code: CFG.room });
+  };
   $('chatForm').onsubmit = (e) => {
     e.preventDefault();
     const inp = $('chatInput');
@@ -885,9 +967,13 @@ function collidables() {
 
 function renderRoster(players) {
   S.roster = players;
-  const isHost = CFG.me && players.some(p => p.pid === CFG.me.pid && p.is_host);
+  const isHost = !!(CFG.me && players.some(p => p.pid === CFG.me.pid && p.is_host));
+  S.isHost = isHost;
   $('btnStartRace').style.display = isHost ? '' : 'none';
   $('hostOnly').style.display = isHost ? '' : 'none';
+  // The host can change mid-race if the old one leaves, and the rematch button
+  // has to follow them.
+  showRematch();
   $('roster').innerHTML = players.map(p => `
     <div class="pl${CFG.me && p.pid === CFG.me.pid ? ' me' : ''}">
       <span class="st-dot" style="background:${esc(p.color)}"></span>
@@ -912,6 +998,7 @@ async function switchTrack(slug) {
     const t = await r.json();
     if (!t || t.error) return;
     S.raceMode = false; S.racePhase = 'free'; S.raceT0 = null;
+    if ($('raceOver')) $('raceOver').style.display = 'none';
     loadTrack(t);
     toast('Track: ' + t.name);
   } catch (e) { toast('Could not load that track'); }
@@ -923,8 +1010,8 @@ function onRaceStart(d) {
   S.standings = [];
   // Get the room drawer out of the way - the lights are about to go out.
   showSide(false);
-  setMode('Race starting', true);
-  $('raceResult').style.display = 'none';
+  applyPhase();
+  $('raceOver').style.display = 'none';
   // Put everyone on a grid behind the start line, two by two.
   const slot = (d.grid && CFG.me) ? (d.grid[CFG.me.pid] || 0) : 0;
   const g = S.course.startGate();
@@ -971,28 +1058,47 @@ function countdownLoop() {
 
 function onRaceGreen(d) {
   S.racePhase = 'racing';
-  setMode('Race in progress', true);
+  applyPhase();
   if (d && d.t0) S.raceT0 = performance.now() + (d.t0 - serverNow());
 }
 
+/**
+ * The race is over, so put the race's own sheet up.
+ *
+ * Nothing like the solo one on purpose. A time trial ends in a time measured
+ * against a medal and a record; a race ends in an *order*, and the only things
+ * worth offering afterwards are the three ways to spend the next few minutes:
+ * practise the track, go again, or leave.
+ */
 function onRaceResult(d) {
   S.racePhase = 'results';
   S.raceMode = false;
   S.car.frozen = false;
-  setMode('Multiplayer lobby', false);
-  const el = $('raceResult');
-  el.style.display = '';
-  const mine = CFG.me ? (d.elo || {})[CFG.me.pid] : null;
-  el.innerHTML = '<h3>Race result</h3>' + d.standings.map((e, i) => {
+  applyPhase();
+  hideResults();
+  $('raceStandings').innerHTML = d.standings.map((e, i) => {
     const delta = (d.elo || {})[e.pid];
-    return `<div class="st-row${CFG.me && e.pid === CFG.me.pid ? ' me' : ''}">
-      <span class="st-pos">${i + 1}</span>
+    return `<div class="res-row${CFG.me && e.pid === CFG.me.pid ? ' me' : ''}">
+      <span class="p">${i + 1}</span>
       <span class="st-dot" style="background:${esc(e.color || '#888')}"></span>
-      <span class="st-name">${esc(e.name)}</span>
-      <span class="st-gap">${e.ms != null ? fmt(e.ms) : 'DNF'}</span>
-      ${delta ? `<span class="st-elo ${delta.delta >= 0 ? 'up' : 'down'}">${delta.delta >= 0 ? '+' : ''}${delta.delta}</span>` : ''}
+      <span class="nm">${esc(e.name)}</span>
+      <span class="ms">${e.ms != null ? fmt(e.ms) : 'DNF'}</span>
+      <span class="el${delta ? (delta.delta >= 0 ? ' up' : ' down') : ''}">${
+        delta ? (delta.delta >= 0 ? '+' : '') + delta.delta : ''}</span>
     </div>`;
-  }).join('') + (mine ? `<div class="elo-line">Rating ${mine.before} &rarr; <b>${mine.after}</b></div>` : '');
+  }).join('');
+  const mine = CFG.me ? (d.elo || {})[CFG.me.pid] : null;
+  const elo = $('raceElo');
+  elo.style.display = mine ? '' : 'none';
+  if (mine) elo.innerHTML = `Rating ${mine.before} &rarr; <b>${mine.after}</b>`;
+  $('raceOver').style.display = '';
+  showRematch();
+}
+
+/** Only the host can start one, so only the host is offered one. */
+function showRematch() {
+  const b = $('btnRematch');
+  if (b) b.style.display = S.isHost ? '' : 'none';
 }
 
 function addChat(m) {

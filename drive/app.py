@@ -397,9 +397,26 @@ def api_run():
 
     medal = runcheck.medal_for(track, time_ms)
     user = get_current_user()
+    best = (DriveTime.query.filter_by(track=track["slug"])
+            .order_by(DriveTime.time_ms.asc()).first())
+
+    def _run_rank(exclude_user_id=None):
+        """Where this single run would sit on the board.
+
+        Not the same as the rank of your PB row: a run slower than your own best
+        still placed somewhere, and your existing entry must not be counted as
+        somebody ahead of you.
+        """
+        q = DriveTime.query.filter(DriveTime.track == track["slug"],
+                                   DriveTime.time_ms < time_ms)
+        if exclude_user_id is not None:
+            q = q.filter(DriveTime.user_id != exclude_user_id)
+        return q.count() + 1
+
     if not user:
         return jsonify({"ok": True, "stored": False, "medal": medal,
-                        "guest": True, "rank": None,
+                        "guest": True, "rank": None, "run_rank": _run_rank(),
+                        "record_ms": best.time_ms if best else None,
                         "note": "Log in to put this on the leaderboard."})
 
     st = _stats(user)
@@ -407,6 +424,7 @@ def api_run():
     st.drive_time = (st.drive_time or 0.0) + time_ms / 1000.0
     st.distance = (st.distance or 0.0) + runcheck.clamp_distance(track, data.get("distance"))
 
+    run_rank = _run_rank(exclude_user_id=user.id)
     row = DriveTime.query.filter_by(user_id=user.id, track=track["slug"]).first()
     improved = False
     if row is None:
@@ -430,15 +448,20 @@ def api_run():
         _count_medal(st, medal)
     db.session.commit()
 
+    # Re-read the record: this run may have just become it.
     best = DriveTime.query.filter_by(track=track["slug"]).order_by(DriveTime.time_ms.asc()).first()
     rank = DriveTime.query.filter(DriveTime.track == track["slug"],
                                   DriveTime.time_ms < row.time_ms).count() + 1
     return jsonify({"ok": True, "stored": True, "improved": improved,
-                    "medal": row.medal, "pb_ms": row.time_ms, "rank": rank,
+                    "medal": row.medal_shown, "pb_ms": row.time_ms,
+                    "rank": rank, "run_rank": run_rank,
                     "record_ms": best.time_ms if best else None,
                     "is_record": bool(best and best.id == row.id)})
 
 
+# "author" is retired and never awarded again (see tuning.MEDAL_MULT), but it is
+# still in here so that improving on a row that earned one back when it existed
+# decrements the right counter instead of leaving a phantom medal behind.
 _MEDAL_FIELD = {"author": "authors", "gold": "golds",
                 "silver": "silvers", "bronze": "bronzes"}
 
@@ -484,7 +507,7 @@ def api_board(slug):
     rows = (DriveTime.query.filter_by(track=slug)
             .order_by(DriveTime.time_ms.asc()).limit(20).all())
     return jsonify({"rows": [{"name": r.user.username if r.user else "?",
-                              "time_ms": r.time_ms, "medal": r.medal}
+                              "time_ms": r.time_ms, "medal": r.medal_shown}
                              for r in rows]})
 
 

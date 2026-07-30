@@ -45,7 +45,6 @@
   --gold: #e5b528;
   --silver: #a9b0bb;
   --bronze: #c2803f;
-  --author: #17b57a;
   --hud: rgba(16, 18, 24, .74);
   --hud-line: rgba(255, 255, 255, .16);
 }
@@ -111,20 +110,43 @@ p { line-height: 1.55; }
   box-shadow: 3px 3px 0 rgba(29, 29, 31, .1);
 }
 
+/* One button, three weights: red is "the thing this page is for" (Drive now),
+   dark is "the thing this sheet is for" (Retry, Resume), white is everything
+   else. The lift on hover and the press into the shadow on click are the whole
+   of the animation - it is a paper aesthetic, so the buttons behave like
+   something physical rather than something that glows. */
 .btn {
   font-family: var(--display); font-size: 1rem; font-weight: 600; letter-spacing: .02em;
   border: 2px solid var(--line); border-radius: 10px;
   background: var(--red); color: #fff;
-  padding: .5rem 1.1rem; cursor: pointer;
+  padding: .55rem 1.1rem; cursor: pointer;
   box-shadow: 2px 2px 0 rgba(29, 29, 31, .25);
+  text-align: center; white-space: nowrap;
+  transition: transform .09s ease-out, box-shadow .09s ease-out, background .12s;
 }
-.btn:hover { filter: brightness(1.08); }
+.btn:hover { filter: brightness(1.06); transform: translate(-1px, -1px);
+             box-shadow: 4px 4px 0 rgba(29, 29, 31, .28); text-decoration: none; }
 .btn:active { transform: translate(2px, 2px); box-shadow: none; }
+.btn:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn.secondary { background: #fff; color: var(--ink); }
+.btn.secondary:hover { background: #f1efe9; }
+/* Ink, not racing red. Red on a results screen reads as an alarm, and "have
+   another go" is the friendliest thing on it. */
+.btn.dark { background: var(--ink); color: var(--paper); }
+.btn.dark:hover { background: #33333a; }
 .btn.ghost { background: transparent; color: var(--ink); }
 .btn.big { font-size: 1.3rem; padding: .7rem 1.4rem; }
 .row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+/* Equal columns instead of a wrapping flex row, so a longer label widens every
+   button rather than knocking the last one onto a line of its own. */
+.btn-grid { display: grid; gap: .55rem; }
+.btn-grid.two { grid-template-columns: repeat(2, 1fr); }
+.btn-grid.three { grid-template-columns: repeat(3, 1fr); }
+.btn-grid .btn { width: 100%; }
+@media (max-width: 560px) {
+  .btn-grid.two, .btn-grid.three { grid-template-columns: 1fr; }
+}
 
 input[type=text], input[type=password], input[type=email], input:not([type]) {
   font-family: var(--display); font-size: 1.05rem;
@@ -163,7 +185,6 @@ input[type=text], input[type=password], input[type=email], input:not([type]) {
   width: 12px; height: 12px; border-radius: 50%; display: inline-block;
   border: 1px solid rgba(0, 0, 0, .35); flex: 0 0 auto;
 }
-.medal.author { background: var(--author); }
 .medal.gold { background: var(--gold); }
 .medal.silver { background: var(--silver); }
 .medal.bronze { background: var(--bronze); }
@@ -343,19 +364,74 @@ body.touch .hint-touch { display: inline; }
   padding: 1.3rem 1.5rem; max-width: 460px; width: 100%;
   box-shadow: 5px 5px 0 rgba(0, 0, 0, .3); max-height: 90vh; overflow: auto;
 }
+/* Settings and the race result both hold rows of buttons, and 460px is not
+   enough for three of them side by side. */
+.sheet.wide { max-width: 620px; }
 .sheet h2 { margin-top: 0; }
-.result-time { font-family: var(--mono); font-size: 2.8rem; font-weight: 700; }
-.medal-big {
-  display: inline-block; font-family: var(--sans); font-size: .8rem; letter-spacing: .12em;
-  border: 2px solid var(--line); border-radius: 999px; padding: .2rem .8rem; margin-bottom: .4rem;
+.sheet-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: .55rem;
+                 margin-top: 1.2rem; }
+.sheet-actions .btn { width: 100%; }
+@media (max-width: 520px) { .sheet-actions { grid-template-columns: 1fr; } }
+
+/* --- the results sheet ---------------------------------------------------
+   A three-column grid whose middle column holds the time and its rank, so the
+   time is centred on the *panel* and the medal hangs off its right rather than
+   pushing it off-centre. */
+.res-head {
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  margin: .2rem 0 1.1rem;
 }
-.medal-big.author { background: var(--author); color: #fff; }
+.res-time {
+  grid-column: 2; grid-row: 1;
+  font-family: var(--mono); font-size: 3.4rem; font-weight: 700; line-height: 1;
+  font-variant-numeric: tabular-nums; letter-spacing: -.035em;
+}
+.res-head .medal-big { grid-column: 3; grid-row: 1; justify-self: start;
+                       margin: 0 0 0 .8rem; }
+.res-rank {
+  grid-column: 2; grid-row: 2; text-align: center; margin-top: .3rem;
+  font-family: var(--mono); font-size: 1.15rem; color: var(--ink-soft);
+}
+.res-lines { border-top: 2px solid var(--line); }
+.res-line {
+  display: flex; align-items: baseline; gap: .7rem;
+  padding: .5rem .1rem; border-bottom: 1px solid #ddd9d1;
+}
+.res-line span { width: 2.4rem; font-weight: 700; color: var(--ink-soft);
+                 letter-spacing: .04em; }
+.res-line b { font-family: var(--mono); font-size: 1.5rem; font-weight: 700;
+              font-variant-numeric: tabular-nums; }
+.res-line i { margin-left: auto; font-style: normal; font-family: var(--mono);
+              font-size: 1.05rem; color: var(--ink-soft); }
+
+.medal-big {
+  display: inline-block; font-family: var(--sans); font-size: .8rem; font-weight: 700;
+  letter-spacing: .12em; line-height: 1;
+  border: 2px solid var(--line); border-radius: 999px; padding: .35rem .8rem;
+}
 .medal-big.gold { background: var(--gold); }
 .medal-big.silver { background: var(--silver); }
 .medal-big.bronze { background: var(--bronze); color: #fff; }
 .medal-big.none { background: #fff; }
-#resNote div { font-size: .95rem; color: var(--ink-soft); }
-#resPending { font-size: .85rem; color: var(--ink-soft); }
+/* Only ever a problem worth a sentence - "log in to save this", "offline". The
+   numbers say everything else. */
+#resNote div { font-size: .9rem; color: var(--ink-soft); margin-top: .7rem; }
+
+/* --- the race result sheet ------------------------------------------------ */
+.res-standings { border-top: 2px solid var(--line); }
+.res-row {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .45rem .3rem; border-bottom: 1px solid #ddd9d1; font-size: 1.05rem;
+}
+.res-row.me { background: #fff6d9; font-weight: 700; }
+.res-row .p { width: 1.7rem; font-family: var(--mono); color: var(--ink-soft); }
+.res-row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.res-row .ms { margin-left: auto; font-family: var(--mono);
+               font-variant-numeric: tabular-nums; }
+.res-row .el { width: 3rem; text-align: right; font-family: var(--mono); font-size: .85rem; }
+.res-row .el.up { color: #12855a; }
+.res-row .el.down { color: var(--red); }
+.sheet .elo-line { margin-top: .7rem; font-size: .95rem; color: var(--ink-soft); }
 
 /* The room panel: a drawer behind the hamburger, at every screen size.
    It used to be pinned open - a 274px column on a desktop and a 46vh slab
@@ -401,6 +477,9 @@ body.side-open .hud-tr { transform: translateX(calc(-1 * min(300px, 80vw))); }
   padding: .28rem .45rem; cursor: pointer;
 }
 .tpick.active { border-color: #ffd96b; color: #ffd96b; }
+/* Chat is the last block in the drawer and takes whatever height is left, so
+   the input sits on the floor of the panel however many players are listed. */
+.side-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: auto; }
 #chatLog { flex: 1; min-height: 70px; max-height: 190px; overflow: auto; font-size: .82rem; }
 .cm { padding: .1rem 0; line-height: 1.35; word-break: break-word; }
 #chatInput { font-family: var(--sans); font-size: .85rem; padding: .3rem .45rem; border-width: 1px; }
@@ -483,6 +562,22 @@ body.side-open #touch { display: none; }
   .hud-tr .card.medals { display: none; }
   .countdown { font-size: 5.5rem; }
 }
+/* A phone in landscape is short, not narrow, so the sheets lose height rather
+   than width - the wide button rows are exactly what a short screen needs, and
+   the one thing that must never happen is the buttons ending up below the fold. */
+@media (max-height: 460px) {
+  .sheet { padding: .8rem 1rem; }
+  .sheet h2 { font-size: 1.25rem; }
+  .sheet h3 { margin: .6rem 0 .3rem; }
+  .sheet .btn { padding: .4rem .8rem; }
+  .res-head { margin: 0 0 .7rem; }
+  .res-time { font-size: 2.4rem; }
+  .res-rank { margin-top: .15rem; font-size: 1rem; }
+  .res-line { padding: .3rem .1rem; }
+  .res-line b { font-size: 1.2rem; }
+  .sheet-actions { margin-top: .8rem; }
+}
+
 /* Landscape on a phone is short, not narrow: the left-hand column has to fit
    the track card and the minimap between the top and the steering thumb. */
 @media (max-height: 460px) {

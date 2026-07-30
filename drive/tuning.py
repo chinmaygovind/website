@@ -131,18 +131,24 @@ RESPAWN_DELAY = 0.45       # pause after falling before you pop back
 
 # --- timing / medals ------------------------------------------------------
 # Medal thresholds are multipliers on the calibrated ideal lap from laptime.py,
-# which is tuned to be about what the headless test driver achieves. Author is
-# therefore a little quicker than that driver - a lap you have to work at -
-# while bronze should fall out of a careful first attempt.
+# which is tuned to be about what the headless test driver achieves. Gold is
+# therefore about that driver's pace - a lap you have to work at - while bronze
+# should fall out of a careful first attempt.
+#
+# **Gold is the best medal and there are three of them.** There used to be a
+# fourth above it, "author", at 0.94 of the ideal lap. Nobody could tell what it
+# meant from the game - the word names an authority, not a standard, and it sat
+# above a medal everyone already reads as the top one. Three medals that
+# everyone understands beat four where the best one needs explaining. The times
+# below are unchanged, so nobody's medal moved: an old author lap is a gold.
 MEDAL_MULT = {
-    "author": 0.94,
     "gold": 1.04,
     "silver": 1.18,
     "bronze": 1.42,
 }
 # A submitted time below ideal * this is not physically reachable and is
-# rejected. It has to sit safely below the author time or a genuine author lap
-# would be thrown away.
+# rejected. It has to sit safely below the fastest medal or a genuine gold lap
+# would be thrown away - and well below it, since gold is emphatically beatable.
 MIN_PLAUSIBLE = 0.80
 
 _EXPORT = [

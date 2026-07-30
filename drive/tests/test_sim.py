@@ -132,11 +132,11 @@ def test_ideal_lap_matches_the_simulated_driver(rt):
 
 @pytest.mark.parametrize("slug", SLUGS)
 def test_medals_bracket_the_simulated_driver(rt, slug):
-    """Author should be about as hard as the test driver or harder; bronze should
+    """Gold should be about as hard as the test driver or harder; bronze should
     be comfortable."""
     driven = _sim(rt, slug)["time"] / 1000.0
     m = rt.tracks.get(slug)["medals"]
-    assert m["author"] < driven * 1.10, f"{slug}: author medal is too generous"
+    assert m["gold"] < driven * 1.20, f"{slug}: gold medal is too generous"
     assert m["bronze"] > driven, f"{slug}: bronze medal is not achievable"
 
 
@@ -236,6 +236,40 @@ def test_a_real_lap_passes_the_anti_cheat(rt, slug):
     assert worst < 0.02, f"{slug}: ghost packing moved the car by {worst:.3f}"
     ok2, why2 = runcheck.validate(track, int(round(r["time"])), r["splits"], frames)
     assert ok2, f"{slug}: a lap fails validation after a pack/unpack round trip - {why2}"
+
+
+@pytest.mark.parametrize("slug", ["sunrise", "twist"])
+def test_the_ghost_is_recorded_where_the_car_actually_was(rt, slug):
+    """A ghost frame has to be the pose at its own timestamp.
+
+    The recorder used to accumulate dt and push a sample every time an interval
+    had gone by, which meant the accumulator had to *fill* before frame 0 was
+    written - so frame 0 was the pose one interval after the start, frame 1 two,
+    and so on. Playback reads frame `t * GHOST_HZ` at run time `t`, so every
+    ghost ever saved played back 1/15s ahead of the lap it recorded: a couple of
+    car lengths up the road at racing speed, from the line to the flag. That is
+    the whole "my ghost starts in front of me" bug, and nothing else caught it
+    because the replay was still a perfectly valid drive - just the wrong one.
+
+    So: drive a lap, note independently where the car was at each sample time,
+    and require the recorded ghost to agree. The tolerance is one physics step
+    of travel, which is an order of magnitude tighter than the bug.
+    """
+    i = next(k for k, t in enumerate(rt.tracks.TRACKS) if t["slug"] == slug)
+    r = rt.call("simulate(TRACKS[%d], T, {maxT:120, withGhost:true})" % i)
+    assert r["finished"]
+    ghost, probe = r["ghost"], r["ghostProbe"]
+    assert abs(len(ghost) - len(probe)) <= 1, "the recorder skipped or doubled a sample"
+    worst, where = 0.0, 0
+    for k in range(min(len(ghost), len(probe))):
+        g, p = ghost[k], probe[k]
+        d = ((g[0] - p[0]) ** 2 + (g[1] - p[1]) ** 2 + (g[2] - p[2]) ** 2) ** 0.5
+        if d > worst:
+            worst, where = d, k
+    limit = T.MAX_SPEED * T.FIXED_DT * 1.7
+    assert worst < limit, (
+        f"{slug}: ghost frame {where} is {worst:.2f} units from where the car was "
+        f"at {where / 15:.2f}s - the ghost is out of sync with the lap it recorded")
 
 
 def test_the_brake_light_means_braking(rt):

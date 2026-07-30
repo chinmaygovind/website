@@ -9,14 +9,14 @@
   <h2>Track records</h2>
   <div class="panel">
     <table class="board">
-      <tr><th>Track</th><th>Holder</th><th class="num">Time</th><th class="num">Author time</th></tr>
+      <tr><th>Track</th><th>Holder</th><th class="num">Time</th><th class="num">Gold time</th></tr>
       {% for t in tracks %}
       {% set rec = records.get(t.slug) %}
       <tr>
         <td><a href="/track/{{ t.slug }}">{{ t.name }}</a></td>
         <td>{{ rec[1] if rec else '—' }}</td>
         <td class="num">{{ '%d:%06.3f'|format((rec[0] // 60000), (rec[0] % 60000) / 1000) if rec else '—' }}</td>
-        <td class="num">{{ '%d:%06.3f'|format(((t.medals.author*1000)|int // 60000), ((t.medals.author*1000)|int % 60000) / 1000) }}</td>
+        <td class="num">{{ '%d:%06.3f'|format(((t.medals.gold*1000)|int // 60000), ((t.medals.gold*1000)|int % 60000) / 1000) }}</td>
       </tr>
       {% endfor %}
     </table>

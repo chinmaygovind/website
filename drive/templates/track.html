@@ -22,7 +22,7 @@
           <td>{{ loop.index }}</td>
           <td>{{ r.user.username if r.user else '?' }}</td>
           <td class="num">{{ '%d:%06.3f'|format((r.time_ms // 60000), (r.time_ms % 60000) / 1000) }}</td>
-          <td><span class="medal {{ r.medal or 'none' }}"></span></td>
+          <td><span class="medal {{ r.medal_shown or 'none' }}"></span></td>
           <td class="num">{{ r.runs }}</td>
         </tr>
         {% endfor %}
@@ -35,7 +35,7 @@
     <div class="panel">
       <h3 style="margin-top:0">Medal times</h3>
       <table class="board">
-        {% for key, label in [('author','Author'),('gold','Gold'),('silver','Silver'),('bronze','Bronze')] %}
+        {% for key, label in [('gold','Gold'),('silver','Silver'),('bronze','Bronze')] %}
         <tr><td><span class="medal {{ key }}"></span> {{ label }}</td>
           <td class="num">{{ '%d:%06.3f'|format(((track.medals[key]*1000)|int // 60000), ((track.medals[key]*1000)|int % 60000) / 1000) }}</td></tr>
         {% endfor %}

@@ -57,9 +57,10 @@ def test_a_plausible_run_is_accepted():
     assert ok, why
 
 
-def test_an_author_lap_is_accepted():
-    """The floor must not reject the best legitimate time on the board."""
-    ms = int(TRACK["medals"]["author"] * 1000)
+def test_a_lap_quicker_than_gold_is_accepted():
+    """The floor must not reject the best legitimate time on the board. Gold is
+    the top medal but emphatically beatable, so the floor sits well under it."""
+    ms = int(TRACK["medals"]["gold"] * 1000 * 0.9)
     ok, why = runcheck.validate(TRACK, ms, splits_for(TRACK, ms),
                                 synth_run(TRACK, seconds=ms / 1000))
     assert ok, why
@@ -128,19 +129,21 @@ def test_a_replay_that_does_not_start_on_the_line_is_rejected():
 
 def test_medal_boundaries():
     m = TRACK["medals"]
-    assert runcheck.medal_for(TRACK, int(m["author"] * 1000)) == "author"
     assert runcheck.medal_for(TRACK, int(m["gold"] * 1000)) == "gold"
     assert runcheck.medal_for(TRACK, int(m["silver"] * 1000)) == "silver"
     assert runcheck.medal_for(TRACK, int(m["bronze"] * 1000)) == "bronze"
     assert runcheck.medal_for(TRACK, int(m["bronze"] * 1000) + 2000) is None
-    # just inside author is still author, just outside is gold
-    assert runcheck.medal_for(TRACK, int(m["author"] * 1000) - 50) == "author"
-    assert runcheck.medal_for(TRACK, int(m["author"] * 1000) + 50) == "gold"
+    # gold is the top of the scale: beating it by a mile is still a gold, and
+    # nothing above it exists to be awarded
+    assert runcheck.medal_for(TRACK, int(m["gold"] * 1000) - 50) == "gold"
+    assert runcheck.medal_for(TRACK, int(m["gold"] * 1000 * 0.85)) == "gold"
+    assert runcheck.medal_for(TRACK, int(m["gold"] * 1000) + 50) == "silver"
 
 
 def test_medal_rank_orders_medals():
-    ranks = [runcheck.medal_rank(m) for m in ("bronze", "silver", "gold", "author")]
+    ranks = [runcheck.medal_rank(m) for m in ("bronze", "silver", "gold")]
     assert ranks == sorted(ranks) and runcheck.medal_rank(None) == 0
+    assert runcheck.medal_rank("author") == 0, "the author medal is retired"
 
 
 def test_distance_is_clamped_to_something_possible():

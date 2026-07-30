@@ -23,7 +23,8 @@
 
   <h2>Medals</h2>
   <div class="panel row" style="gap:1.4rem">
-    {% for key, label, n in [('author','Author', stats.authors or 0), ('gold','Gold', stats.golds or 0),
+    {# Retired author medals count as golds - they were faster than one. #}
+    {% for key, label, n in [('gold','Gold', (stats.golds or 0) + (stats.authors or 0)),
                              ('silver','Silver', stats.silvers or 0), ('bronze','Bronze', stats.bronzes or 0)] %}
     <div class="row" style="gap:.4rem"><span class="medal {{ key }}"></span>
       <b style="font-family:var(--mono)">{{ n }}</b> <span class="muted">{{ label }}</span></div>
@@ -39,7 +40,7 @@
       <tr>
         <td>{{ by_slug[r.track].name if r.track in by_slug else r.track }}</td>
         <td class="num">{{ '%d:%06.3f'|format((r.time_ms // 60000), (r.time_ms % 60000) / 1000) }}</td>
-        <td><span class="medal {{ r.medal or 'none' }}"></span></td>
+        <td><span class="medal {{ r.medal_shown or 'none' }}"></span></td>
         <td class="num">{{ r.runs }}</td>
         <td><a href="/solo/{{ r.track }}">drive</a> · <a href="/track/{{ r.track }}">board</a></td>
       </tr>

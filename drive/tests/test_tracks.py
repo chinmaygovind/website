@@ -262,10 +262,11 @@ def test_every_gap_is_clearable(track):
 @pytest.mark.parametrize("track", ALL, ids=IDS)
 def test_medal_times_are_ordered_and_reachable(track):
     m = track["medals"]
-    assert m["author"] < m["gold"] < m["silver"] < m["bronze"]
-    # the anti-cheat floor must sit below the hardest medal, or an author lap
-    # would be rejected as impossible
-    assert track["ideal"] * T.MIN_PLAUSIBLE < m["author"]
+    assert "author" not in m, "the author medal is retired - gold is the best one"
+    assert m["gold"] < m["silver"] < m["bronze"]
+    # the anti-cheat floor must sit below the hardest medal, or a gold lap would
+    # be rejected as impossible
+    assert track["ideal"] * T.MIN_PLAUSIBLE < m["gold"]
     assert 8 < track["ideal"] < 120, "ideal lap outside a sane range"
 
 

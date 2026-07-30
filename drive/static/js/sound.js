@@ -183,8 +183,8 @@ export class Sound {
   }
 
   finish(medal) {
-    const notes = medal === 'author' ? [523, 659, 784, 1047, 1319]
-                : medal === 'gold' ? [523, 659, 784, 1047]
+    // Gold is the top medal, so it gets the top of the fanfare.
+    const notes = medal === 'gold' ? [523, 659, 784, 1047, 1319]
                 : medal ? [523, 659, 784] : [523, 659];
     notes.forEach((f, i) => this._blip({ freq: f, type: 'triangle', dur: 0.26,
                                         gain: 0.22, delay: i * 0.1 }));

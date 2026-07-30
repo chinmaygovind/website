@@ -57,7 +57,9 @@ class DriveStats(db.Model):
     runs         = db.Column(db.Integer, default=0)     # timed runs completed, solo or not
     distance     = db.Column(db.Float, default=0.0)     # metres driven across every run
     drive_time   = db.Column(db.Float, default=0.0)     # seconds spent on a clock
-    authors      = db.Column(db.Integer, default=0)     # author medals held
+    # The author medal is retired (see tuning.MEDAL_MULT); this column only ever
+    # holds what was won while it existed, and shows up as golds.
+    authors      = db.Column(db.Integer, default=0)
     golds        = db.Column(db.Integer, default=0)
     silvers      = db.Column(db.Integer, default=0)
     bronzes      = db.Column(db.Integer, default=0)
@@ -97,7 +99,8 @@ class DriveTime(db.Model):
     user_id    = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
     track      = db.Column(db.String(32), nullable=False, index=True)
     time_ms    = db.Column(db.Integer, nullable=False)
-    medal      = db.Column(db.String(10), nullable=True)   # author|gold|silver|bronze|None
+    medal      = db.Column(db.String(10), nullable=True)   # gold|silver|bronze|None
+                                                           # (or a legacy "author")
     splits_json = db.Column(db.Text, default="[]")         # cumulative ms at each checkpoint
     # Quantised, zlib+base64 replay of the run. Raced against as the ghost car.
     ghost      = db.Column(db.Text, nullable=True)
@@ -115,6 +118,17 @@ class DriveTime(db.Model):
             return json.loads(self.splits_json or "[]")
         except Exception:
             return []
+
+    @property
+    def medal_shown(self):
+        """The medal to put on the screen, which is not always the stored one.
+
+        Rows written while the author medal existed still say "author". It was
+        strictly faster than gold, so every one of them is a gold too - showing
+        them as such retires the medal from the whole site without rewriting
+        anybody's history or taking a medal off them.
+        """
+        return "gold" if self.medal == "author" else self.medal
 
 
 class DriveGame(db.Model):

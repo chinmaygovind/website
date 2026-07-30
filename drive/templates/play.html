@@ -9,7 +9,7 @@
   <div class="hud-tl">
     <div class="card">
       <div class="trackname" id="trackName">{{ track.name }}</div>
-      <div class="mode" id="modeLabel">{% if mode == 'room' %}Multiplayer lobby{% else %}Solo time trial{% endif %}</div>
+      <div class="mode" id="modeLabel">{% if mode == 'room' %}Multiplayer - Free practice{% else %}Solo time trial{% endif %}</div>
       <div class="trackblurb" id="trackBlurb">{{ track.blurb }}</div>
     </div>
     <div class="card" id="position" style="display:none">
@@ -22,8 +22,14 @@
   <div class="hud-tr">
     <div class="btnbar">
       {% if mode == 'room' %}
+      <!-- A person, not a hamburger. Three stacked bars sat next to the settings
+           icon - which is three stacked sliders - and the two read as the same
+           button at a glance; this one says "the people in this room". -->
       <button class="hbtn" id="btnRoom" title="Room: players, track, chat">
-        <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        <svg viewBox="0 0 24 24">
+          <circle cx="12" cy="8.2" r="3.4"/>
+          <path d="M5.2 19.6a6.8 6.8 0 0 1 13.6 0"/>
+        </svg>
       </button>
       {% endif %}
       <button class="hbtn" id="btnHelp" title="Help and controls (H)">
@@ -40,9 +46,13 @@
         </svg>
       </button>
     </div>
+    <!-- Medal times are a time-trial thing. In a room they were a table of lap
+         times sitting above the live standings with no relationship to the race
+         you were driving, so they are simply not here. -->
+    {% if mode != 'room' %}
     <div class="card medals" id="medalsCard"><div id="medals"></div></div>
+    {% endif %}
     <div class="card" id="standingsCard" style="display:none"><div id="standings"></div></div>
-    <div class="card" id="raceResult" style="display:none"></div>
   </div>
 
   <!-- bottom left: minimap -->
@@ -90,12 +100,14 @@
       {% endfor %}
     </div>
   </div>
-  <div>
+  <button class="btn ghost" id="btnLeave" style="border-color:#ff8a7a;color:#ff8a7a">Leave room</button>
+  <!-- Chat last, so it takes the leftover height and the box you type into is
+       at the bottom of the drawer where a chat box belongs. -->
+  <div class="side-chat">
     <h4>Chat</h4>
     <div id="chatLog"></div>
     <form id="chatForm" autocomplete="off"><input id="chatInput" placeholder="Say something" maxlength="200"/></form>
   </div>
-  <button class="btn ghost" id="btnLeave" style="border-color:#ff8a7a;color:#ff8a7a">Leave room</button>
 </aside>
 {% endif %}
 
@@ -141,40 +153,73 @@
 </div>
 <div id="rotate">Turn your phone sideways to drive</div>
 
-<!-- results -->
+<!-- Results.
+     Your time, big and in the middle, with the medal it earned beside it and
+     where it would sit on the board underneath. Then your PB and the world
+     record, in that order, with their ranks. Four numbers and no sentences:
+     everything this used to say in prose ("New personal best", "Ranked #3",
+     "That is the fastest time on this track") is readable off the layout. -->
 <div class="overlay" id="results" style="display:none">
-  <div class="sheet">
-    <div class="medal-big none" id="resMedal">FINISHED</div>
-    <div class="result-time" id="resTime">0:00.000</div>
+  <div class="sheet result">
+    <div class="res-head">
+      <div class="res-time" id="resTime">0:00.000</div>
+      <div class="medal-big none" id="resMedal">FINISHED</div>
+      <div class="res-rank" id="resRank">&mdash;</div>
+    </div>
+    <div class="res-lines">
+      <div class="res-line"><span>PB:</span><b id="resPb">--:--.---</b><i id="resPbRank">&mdash;</i></div>
+      <div class="res-line"><span>WR:</span><b id="resWr">--:--.---</b><i id="resWrRank"></i></div>
+    </div>
     <div id="resNote"></div>
-    <div id="resPending" style="display:none">Saving…</div>
-    <div class="row" style="margin-top:1rem">
-      <button class="btn" id="btnRetry">Retry (R)</button>
-      <button class="btn secondary" id="btnNextTrack">Next track</button>
+    <div class="sheet-actions">
+      <button class="btn dark" id="btnRetry">Retry</button>
       <a class="btn secondary" href="/track/{{ track.slug }}">Leaderboard</a>
+      <a class="btn secondary" id="btnExit"
+         href="{% if mode == 'room' %}/lobbies{% else %}/{% endif %}">Exit</a>
     </div>
   </div>
 </div>
 
-<!-- settings / pause -->
+{% if mode == 'room' %}
+<!-- Race over. Deliberately nothing like the solo sheet: a race ends in an
+     order, not a time against a medal, so this is the finishing order and the
+     three things there are to do next. -->
+<div class="overlay" id="raceOver" style="display:none">
+  <div class="sheet wide">
+    <h2 id="raceOverTitle">Race result</h2>
+    <div class="res-standings" id="raceStandings"></div>
+    <div class="elo-line" id="raceElo" style="display:none"></div>
+    <div class="sheet-actions">
+      <button class="btn dark" id="btnPractice">Practice</button>
+      <a class="btn secondary" id="btnRaceQuit" href="/lobbies">Quit</a>
+      <button class="btn secondary" id="btnRematch" style="display:none">Rematch</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Settings / pause.
+     Wide, and every row is a grid rather than a wrapping flex line - three
+     buttons of equal width on one row beats "Restart run (R)" shoving "Last
+     checkpoint (T)" onto a line of its own the moment a label grows. -->
 <div class="overlay" id="menu" style="display:none">
-  <div class="sheet">
+  <div class="sheet wide">
     <h2>Settings</h2>
     <p class="muted" style="margin-top:-.4rem">{{ track.name }} &middot;
       {% if mode == 'room' %}room {{ room.code }}{% else %}solo time trial{% endif %}</p>
     <h3>Session</h3>
-    <div class="row">
-      <button class="btn" id="btnResume">Resume</button>
+    <div class="btn-grid three">
+      <button class="btn dark" id="btnResume">Resume</button>
       <button class="btn secondary" id="btnRestart">Restart run (R)</button>
       <button class="btn secondary" id="btnCheckpoint">Last checkpoint (T)</button>
     </div>
     <h3>Display &amp; sound</h3>
-    <div class="row">
+    <div class="btn-grid two">
       <button class="btn secondary" id="btnGhost">Ghost car: on</button>
       <button class="btn secondary" id="btnSound">Sound: on</button>
     </div>
     <h3>Leave</h3>
-    <div class="row">
+    <div class="btn-grid two">
       {% if mode == 'room' %}
       <a class="btn secondary" id="btnQuit" href="/lobbies">Leave room</a>
       {% else %}
@@ -211,7 +256,7 @@
     <p class="muted" style="margin:0">Grass is slow, so a corner cut usually costs more than it
       saves. Crests throw the car - land flat and you keep the speed. Inside a loop, stay off
       the brakes: it is your own speed holding you on the wall.</p>
-    <div class="row" style="margin-top:1rem"><button class="btn" id="btnHelpClose">Got it</button></div>
+    <div class="row" style="margin-top:1rem"><button class="btn dark" id="btnHelpClose">Got it</button></div>
   </div>
 </div>
 {% endblock %}
