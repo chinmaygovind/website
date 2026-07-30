@@ -128,7 +128,31 @@ const PALETTES = {
               below: { deck: 96, depth: 120, reach: 980,
                        towerDensity: 0, cover: 0.6,
                        cloud: 0xfdf6ec, floor: 0x8f7a60 } },
-  city:     { road: 0x4a4f5c, kerb: 0xf7f7f7, kerb2: 0xf2c94c, ground: 0x5c6070, sky: 0x8ea9c9, fog: 0xa9bed6, rail: 0xf2f4f7, prop: 0x6b7180, deco: 0xf2c94c },
+  // Jump City: downtown at dusk, and the towers come up *past* the road rather
+  // than sitting under it, so the four gaps have a city to fall between.
+  city:     { road: 0x434a58, kerb: 0xf2f4f8, kerb2: 0xf2c94c,
+              ground: 0x5c6070, rail: 0xeef2f8, prop: 0x6b7180, deco: 0xf2c94c,
+              fog: 0x3f4a6b,
+              sky: {
+                stops: [
+                  [0.00, 0x241d33], [0.42, 0x5b3f52], [0.48, 0xa85f57],
+                  [0.51, 0xd98a58], [0.55, 0xa96a6a], [0.64, 0x62537f],
+                  [0.78, 0x30356b], [1.00, 0x131a41],
+                ],
+                glow: 0xffb478, glowStrength: 0.95,
+                sun: { az: -1.15, el: 0.012, color: 0xffc98a, size: 300 },
+                light: { color: 0xdfd4f0, intensity: 0.72,
+                         dir: [Math.sin(-1.15) * 0.86, 0.5, Math.cos(-1.15) * 0.86] },
+                // Dusk is mostly sky light, and the sky is blue - so the ambient
+                // does the work here and the key light barely does any.
+                hemi: { sky: 0x6f7ec2, ground: 0x1a1f38, intensity: 1.05 },
+                fog: 0x3f4a6b, fogNear: 260, fogFar: 1250,
+              },
+              below: { kind: 'downtown', deck: 118, reach: 620, step: 4,
+                       coreX: 40, coreZ: 150, coreR: 330,
+                       low: 46, spread: 74, rise: 165,
+                       landmarkX: -30, landmarkZ: 20, landmarkH: 330,
+                       tower: 0x36435c, window: 0xffd79a, floor: 0x141a2b } },
   spiral:   { road: 0x525869, kerb: 0xfafafa, kerb2: 0xbb6bd9, ground: 0x5a5570, sky: 0xb9a6e0, fog: 0xd0c4ec, rail: 0xf6f0ff, prop: 0x6d6488, deco: 0xbb6bd9 },
   gauntlet: { road: 0x474c58, kerb: 0xf2f2f2, kerb2: 0xe8453c, ground: 0x3d4250, sky: 0x6f7f9c, fog: 0x8d9ab3, rail: 0xf7f7f7, prop: 0x555c6c, deco: 0xe8453c },
 };
@@ -552,7 +576,7 @@ export function buildTrack(track, T) {
 
   // --- scenery (procedural, seeded, deterministic) -------------------------
   addScenery(solid, track, pal, bbox, CELL);
-  if (groundY == null && pal.below) addWorldBelow(solid, soft, track, pal, bbox, CELL, minY);
+  if (groundY == null && pal.below) addWorldBelow(solid, soft, bright, track, pal, bbox, CELL, minY);
 
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   const matBright = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
@@ -616,7 +640,7 @@ export function mulberry(seed) {
  * Either would usually do; a landmark tower or a mesa is tall enough that it is
  * not worth betting the geometry on one of them.
  */
-function addWorldBelow(buf, soft, track, pal, bbox, CELL, minY) {
+function addWorldBelow(buf, soft, bright, track, pal, bbox, CELL, minY) {
   const cfg = pal.below;
   let seed = 91;
   for (let i = 0; i < track.slug.length; i++) seed = seed * 31 + track.slug.charCodeAt(i);
@@ -638,10 +662,23 @@ function addWorldBelow(buf, soft, track, pal, bbox, CELL, minY) {
       for (let dz = -r; dz <= r; dz++) occupied.add((cx + dx) + ',' + (cz + dz));
     }
   }
-  const clear = (px, pz) => !occupied.has(Math.round(px / CELL) + ',' + Math.round(pz / CELL));
+  // Clear of the road, optionally for a whole footprint rather than a point -
+  // a tower is wide, and it is its corner that ends up over the kerb.
+  const clear = (px, pz, half) => {
+    const n = half ? Math.ceil(half / CELL) : 0;
+    const cx = Math.round(px / CELL), cz = Math.round(pz / CELL);
+    for (let dx = -n; dx <= n; dx++) {
+      for (let dz = -n; dz <= n; dz++) if (occupied.has((cx + dx) + ',' + (cz + dz))) return false;
+    }
+    return true;
+  };
 
   if (cfg.kind === 'desert') {
     desertBelow(buf, cfg, rnd, x0, x1, z0, z1, deckY, cap, CELL, clear);
+    return;
+  }
+  if (cfg.kind === 'downtown') {
+    downtownBelow(buf, bright, cfg, rnd, bbox, x0, x1, z0, z1, deckY, CELL, clear);
     return;
   }
 
@@ -790,6 +827,111 @@ function desertBelow(buf, cfg, rnd, x0, x1, z0, z1, sandY, cap, CELL, clear) {
       const s = 2 + rnd() * 6;
       buf.box(px, sandY + s * 0.45, pz, s, s * 0.45, s * (0.6 + rnd() * 0.6),
               shade(rock, -0.24 + (rnd() - 0.5) * 0.16));
+    }
+  }
+}
+
+/**
+ * A downtown at your own level, not underneath you.
+ *
+ * The other floating tracks put their world far below and cap it under the
+ * road. This one deliberately does not: the towers come up *past* the road, so
+ * you are launching between them rather than over them, and the four gaps have
+ * something to fall between. That means the corridor test is the only thing
+ * keeping geometry out of the track, so it checks a tower's whole footprint
+ * rather than its centre.
+ *
+ * Density falls off from a core, which is most of what makes a skyline read as
+ * a city rather than a field of blocks - a financial district with a couple of
+ * hundred metres of glass in it, and everything else low around it.
+ */
+function downtownBelow(buf, bright, cfg, rnd, bbox, x0, x1, z0, z1, groundY, CELL, clear) {
+  solid_plate(buf, x0, x1, z0, z1, groundY, cfg.floor != null ? cfg.floor : 0x1a2133);
+  const glass = cfg.tower != null ? cfg.tower : 0x36435c;
+  const lampCol = cfg.window != null ? cfg.window : 0xffd79a;
+  // The core sits off to one side of the track rather than on it, so the
+  // skyline is something you drive past and into rather than through.
+  const coreX = (bbox.x0 + bbox.x1) / 2 + (cfg.coreX || 0);
+  const coreZ = (bbox.z0 + bbox.z1) / 2 + (cfg.coreZ || 0);
+  const coreR = cfg.coreR != null ? cfg.coreR : 340;
+
+  const step = CELL * (cfg.step != null ? cfg.step : 4);
+  for (let x = x0; x < x1; x += step) {
+    for (let z = z0; z < z1; z += step) {
+      const px = x + rnd() * step, pz = z + rnd() * step;
+      // how downtown this is, 1 in the core and falling away
+      const d = Math.hypot(px - coreX, pz - coreZ) / coreR;
+      const core = Math.max(0, 1 - d * d * 0.55);
+      if (rnd() > 0.25 + core * 0.6) continue;
+      const w = (5 + rnd() * 10) * (0.7 + core * 0.7);
+      const dp = (5 + rnd() * 10) * (0.7 + core * 0.7);
+      if (!clear(px, pz, Math.max(w, dp) * 0.5 + 6)) continue;
+      // Most stay under the road; in the core a good number come up past it.
+      const tall = rnd() < 0.2 + core * 0.45;
+      const hgt = (cfg.low || 46) + rnd() * (cfg.spread || 70) +
+                  (tall ? core * (cfg.rise || 150) * (0.35 + rnd() * 0.65) : 0);
+      const body = shade(glass, -0.18 + rnd() * 0.3);
+      buf.box(px, groundY + hgt / 2, pz, w / 2, hgt / 2, dp / 2, body);
+      // a setback or a plant room on top, so the roofline is not all flat
+      const r = rnd();
+      if (r < 0.32) {
+        buf.box(px, groundY + hgt + 3, pz, w * 0.3, 3, dp * 0.3, shade(body, 0.12));
+      } else if (r < 0.45) {
+        buf.box(px, groundY + hgt + 9, pz, 0.5, 9, 0.5, shade(body, 0.3));
+      }
+      // Lit windows: thin vertical strips just proud of two faces. Cheaper and
+      // more legible at this scale than any per-window geometry, and they are
+      // in the unlit buffer so they read as light rather than as paint.
+      if (rnd() < 0.82) {
+        const lit = shade(lampCol, (rnd() - 0.6) * 0.35);
+        const n = 1 + Math.floor(rnd() * 3);
+        for (let i = 0; i < n; i++) {
+          const u = (i + 1) / (n + 1);
+          const y0 = groundY + hgt * (0.05 + rnd() * 0.1);
+          const y1 = groundY + hgt * (0.8 + rnd() * 0.18);
+          const sx = px - w / 2 + w * u, t = 0.55;
+          for (const face of [pz - dp / 2 - 0.06, pz + dp / 2 + 0.06]) {
+            bright.quad([sx - t, y0, face], [sx + t, y0, face],
+                        [sx + t, y1, face], [sx - t, y1, face], lit);
+          }
+        }
+      }
+    }
+  }
+
+  // --- the landmark --------------------------------------------------------
+  // Every skyline needs the one thing you recognise it by. A tapering shaft, a
+  // pod near the top and a long antenna above it.
+  if (cfg.landmark !== false) {
+    const lx = coreX + (cfg.landmarkX || 0), lz = coreZ + (cfg.landmarkZ || 0);
+    const H = cfg.landmarkH || 300;
+    const seg = 5;
+    for (let i = 0; i < seg; i++) {
+      const u0 = i / seg, u1 = (i + 1) / seg;
+      const w0 = 9 * (1 - u0 * 0.62);
+      buf.box(lx, groundY + H * (u0 + u1) / 2, lz, w0 / 2, H * (u1 - u0) / 2, w0 / 2,
+              shade(glass, 0.3 - u0 * 0.1));
+    }
+    const podY = groundY + H * 0.74;
+    buf.box(lx, podY, lz, 11, 5.5, 11, shade(glass, 0.42));
+    buf.box(lx, podY + 8, lz, 7.5, 3, 7.5, shade(glass, 0.34));
+    buf.box(lx, groundY + H * 0.9, lz, 4.5, 3, 4.5, shade(glass, 0.38));
+    buf.box(lx, groundY + H * 1.13, lz, 0.9, H * 0.13, 0.9, shade(glass, 0.5));
+    // the pod is lit right round
+    for (const s of [-1, 1]) {
+      bright.quad([lx - 11, podY - 2.4, lz + s * 11.1], [lx + 11, podY - 2.4, lz + s * 11.1],
+                  [lx + 11, podY + 2.4, lz + s * 11.1], [lx - 11, podY + 2.4, lz + s * 11.1],
+                  lampCol);
+      bright.quad([lx + s * 11.1, podY - 2.4, lz - 11], [lx + s * 11.1, podY - 2.4, lz + 11],
+                  [lx + s * 11.1, podY + 2.4, lz + 11], [lx + s * 11.1, podY + 2.4, lz - 11],
+                  lampCol);
+    }
+    // and the domed stadium next door, because that is the pair you picture
+    const dx = lx + 62, dz = lz + 26;
+    for (let i = 0; i < 4; i++) {
+      const u = i / 4;
+      buf.box(dx, groundY + 6 + i * 5, dz, 34 * (1 - u * 0.5), 2.6, 30 * (1 - u * 0.5),
+              shade(glass, 0.16 + u * 0.1));
     }
   }
 }
