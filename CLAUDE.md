@@ -33,7 +33,9 @@ multiplayer card game that shares TTR's accounts).
   (`site/fonts/xkcd-script.woff`, from ipython/xkcd-font). Below it is a **tile
   grid** — `repeat(6, --tile)` × auto rows, so **12 slots** before it wraps to a
   third row (2 columns on <=760px). Currently 9: resume, poker, whales, racing,
-  ttr, ers, kot, music, settings. **Keep `settings` last** (it's a Wii-menu joke).
+  music, settings on the top row, then the three games — ttr, ers, kot — on the
+  second. **Keep `settings` last in the top row** (it's a Wii-menu joke), and add
+  new games to the second row so the split holds.
 - **Adding a tile is one repeating pattern**, all inside `site/index.html` (no
   build step, so everything is inline):
   1. a `--<name>` accent colour in `:root`, then `.modal-<name>` rules for
