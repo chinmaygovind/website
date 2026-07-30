@@ -253,6 +253,135 @@ def test_the_brake_light_means_braking(rt):
     assert r["flag"] & 8, "the brake flag is not in the pose sent to other players"
 
 
+@pytest.mark.parametrize("slug", SLUGS)
+def test_checkpoint_posts_are_solid_and_the_gate_is_not(rt, slug):
+    """You can clip a checkpoint post, and only the post.
+
+    The posts used to be scenery: drawn, but not in the collider, so a car drove
+    straight through the thing it looked like it hit. They are walls now. The
+    same test also pins the other half of that - the mouth of the gate has to
+    stay completely open, or the checkpoint becomes a wall across the road.
+    """
+    rt.eval("""
+    function gatePosts(track, T) {
+      const built = buildTrack(track, T);
+      const posts = [], mouths = [];
+      const probe = (x, y, z) => {
+        let n = 0;
+        built.collider.walls(x, y, z, T.CAR_RADIUS, () => { n++; });
+        return n;
+      };
+      for (const g of track.gates) {
+        const n = track.line[g.si].n;
+        // High enough up the post to be clear of any barrier along the kerb, so
+        // a hit here can only be the post itself.
+        const up = 2.6;
+        for (const s of [-1, 1]) {
+          const o = s * (g.hw + 0.44);
+          posts.push(probe(g.p[0] + g.r[0]*o + n[0]*up,
+                           g.p[1] + g.r[1]*o + n[1]*up,
+                           g.p[2] + g.r[2]*o + n[2]*up));
+        }
+        // straight through the middle, at ride height
+        mouths.push(probe(g.p[0] + n[0]*T.RIDE_HEIGHT,
+                          g.p[1] + n[1]*T.RIDE_HEIGHT,
+                          g.p[2] + n[2]*T.RIDE_HEIGHT));
+      }
+      return {posts, mouths};
+    }
+    """)
+    i = next(k for k, t in enumerate(rt.tracks.TRACKS) if t["slug"] == slug)
+    r = rt.call("gatePosts(TRACKS[%d], T)" % i)
+    assert r["posts"], f"{slug} has no gates"
+    assert all(n > 0 for n in r["posts"]), \
+        f"{slug}: {r['posts'].count(0)} gate posts are scenery, not walls"
+    assert all(n == 0 for n in r["mouths"]), \
+        f"{slug}: something solid is standing in the mouth of a gate"
+
+
+def test_grass_costs_you_the_corner(rt):
+    """Cutting across the infield has to be slower than driving round.
+
+    OFFROAD_DRAG used to put the grass top speed within a whisker of the road's,
+    which made a straight line through the middle of a corner simply the quicker
+    way round - the one thing a racing line must never be. Measured as an
+    acceleration budget rather than by driving somewhere, so the test does not
+    depend on how much grass happens to be next to the track.
+    """
+    rt.eval("""
+    function grassBudget(track, T, frac) {
+      const built = buildTrack(track, T);
+      const car = new Car(T, built);
+      const st = track.line[2];
+      // well out on the grass, pointing along the road
+      const p = [st.p[0] + st.lat[0]*26, track.ground, st.p[2] + st.lat[2]*26];
+      const f = [st.lat[2], 0, -st.lat[0]];
+      car.placeAt(p, f);
+      const inp = {throttle: 1, brake: 0, steer: 0, handbrake: false};
+      for (let i = 0; i < 20; i++) car.step(T.FIXED_DT, {throttle:0, brake:0, steer:0});
+      const settled = {offroad: car.offroad, grounded: car.grounded};
+      car.vel.copy(car.fwd).multiplyScalar(T.MAX_SPEED * frac);
+      const before = car.vel.dot(car.fwd);
+      for (let i = 0; i < 12; i++) car.step(T.FIXED_DT, inp);
+      const after = car.vel.dot(car.fwd);
+      return Object.assign(settled, {accel: (after - before) / (12 * T.FIXED_DT)});
+    }
+    """)
+    i = next(k for k, t in enumerate(rt.tracks.TRACKS) if t["slug"] == "sunrise")
+    slow = rt.call("grassBudget(TRACKS[%d], T, 0.35)" % i)
+    fast = rt.call("grassBudget(TRACKS[%d], T, 0.62)" % i)
+    assert slow["offroad"] and fast["offroad"], "the test car is not on the grass"
+    # Below about a third of MAX_SPEED the grass still pulls; above about
+    # 60 per cent it cannot, so that is the ceiling out there.
+    assert slow["accel"] > 0, "the car cannot even accelerate on grass"
+    assert fast["accel"] < 0, (
+        f"the car still accelerates at {0.62 * T.MAX_SPEED:.0f} u/s on grass "
+        "- cutting the corner is faster than driving round it")
+
+
+def test_the_car_does_not_nosedive_off_a_jump(rt):
+    """A jump should hang, not pitch straight into the ground.
+
+    Two things nose the car down in the air and they compound: holding the
+    throttle pitches it down at AIR_PITCH, and levelling toward world up noses
+    down whatever the take-off ramp raised. At the old values a jump taken flat
+    out - which is how every jump is taken - was pointing at the floor within
+    half a second of leaving the lip.
+    """
+    rt.eval("""
+    function flight(track, T, seconds) {
+      const built = buildTrack(track, T);
+      const car = new Car(T, built);
+      const st = track.line[2];
+      // High above everything, so this is pure flight with no ground under it.
+      car.placeAt([st.p[0], st.p[1] + 120, st.p[2]], track.spawn.fwd);
+      // Launched off a lip: nose up 20 degrees, and travelling that way.
+      car._spin(car.right, 0.35);
+      car.vel.copy(car.fwd).multiplyScalar(T.MAX_SPEED);
+      const out = [];
+      let t = 0;
+      while (t < seconds) {
+        car.step(T.FIXED_DT, {throttle: 1, brake: 0, steer: 0, handbrake: false});
+        t += T.FIXED_DT;
+        out.push(Math.asin(Math.max(-1, Math.min(1, car.fwd.y))) * 180 / Math.PI);
+      }
+      const at = (s) => out[Math.min(out.length - 1, Math.round(s / T.FIXED_DT) - 1)];
+      return {start: at(0.02), half: at(0.5), full: at(1.0), grounded: car.grounded};
+    }
+    """)
+    i = next(k for k, t in enumerate(rt.tracks.TRACKS) if t["slug"] == "jumpcity")
+    r = rt.call("flight(TRACKS[%d], T, 1.0)" % i)
+    assert not r["grounded"], "the test car found the ground - it is meant to be flying"
+    assert r["start"] > 15, "the car did not leave the lip nose-up"
+    # Half a second is about a short jump, and the nose should still be near
+    # where the lip put it.
+    drop = r["start"] - r["half"]
+    assert drop < 25, \
+        f"the nose drops {drop:.0f} degrees in the first half-second of a jump"
+    # But it does come down: this is lazy, not frozen. You can still aim.
+    assert r["full"] < r["half"] - 15, "there is not enough pitch authority to aim a landing"
+
+
 def test_the_road_is_clear_of_the_ground_plane(rt):
     """The z-fighting fix, measured rather than eyeballed: no part of a
     ground-level track may come within a hair of the grass."""

@@ -292,6 +292,22 @@ export function buildTrack(track, T) {
     solid.quad(at, bt, p1, p0, color);
   }
 
+  // A drawn box that is also solid: the five faces a car can reach, as WALL.
+  // Same single-sided rule as wallStrip - the wall query works out its push-out
+  // direction from the closest point on the triangle, so one face per side is
+  // both necessary and sufficient.
+  function solidBox(cx, cy, cz, hx, hy, hz, color) {
+    solid.box(cx, cy, cz, hx, hy, hz, color);
+    const P = (sx, sy, sz) => [cx + sx * hx, cy + sy * hy, cz + sz * hz];
+    const v = [P(-1, -1, -1), P(1, -1, -1), P(1, -1, 1), P(-1, -1, 1),
+               P(-1, 1, -1), P(1, 1, -1), P(1, 1, 1), P(-1, 1, 1)];
+    col.addQuad(v[4], v[7], v[6], v[5], KIND.WALL);   // top
+    col.addQuad(v[0], v[4], v[5], v[1], KIND.WALL);
+    col.addQuad(v[1], v[5], v[6], v[2], KIND.WALL);
+    col.addQuad(v[2], v[6], v[7], v[3], KIND.WALL);
+    col.addQuad(v[3], v[7], v[4], v[0], KIND.WALL);
+  }
+
   // Edge points of the road at a station, and the same points lifted a hair
   // along the normal for the painted kerb (which is drawn, never collided).
   const edge = (e, s) => [e.p[0] + e.lat[0] * s * e.hw,
@@ -380,11 +396,15 @@ export function buildTrack(track, T) {
     const st = line[g.si] || { n: [0, 1, 0] };
     const n = st.n;
     gates.push({ kind: g.kind, gi: g.gi, p: g.p, f: g.f, r: g.r, hw: g.hw, y: g.p[1] });
+    // The posts are solid, so clipping a checkpoint on the way through costs you
+    // the same as clipping a barrier. They sit just *outside* the kerb rather
+    // than on it, so the full width of the road is still yours to use.
+    const POST = 0.34;
     for (const s of [-1, 1]) {
-      const post = [g.p[0] + g.r[0] * s * g.hw, g.p[1] + g.r[1] * s * g.hw,
-                    g.p[2] + g.r[2] * s * g.hw];
-      solid.box(post[0] + n[0] * 1.9, post[1] + n[1] * 1.9, post[2] + n[2] * 1.9,
-                0.34, 1.9, 0.34, color);
+      const off = s * (g.hw + POST + 0.1);
+      const post = [g.p[0] + g.r[0] * off, g.p[1] + g.r[1] * off, g.p[2] + g.r[2] * off];
+      solidBox(post[0] + n[0] * 1.9, post[1] + n[1] * 1.9, post[2] + n[2] * 1.9,
+               POST, 1.9, POST, color);
     }
     const lift = (p, d) => [p[0] + n[0] * d, p[1] + n[1] * d, p[2] + n[2] * d];
     const L = [g.p[0] - g.r[0] * g.hw, g.p[1] - g.r[1] * g.hw, g.p[2] - g.r[2] * g.hw];

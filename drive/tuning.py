@@ -35,7 +35,7 @@ RIDE_HEIGHT = 0.45    # body centre above the surface when resting
 # from a standstill, no torque curve, no clutch. Top speed comes from ACCEL
 # fighting DRAG, and BRAKE is deliberately much stronger than ACCEL so trail
 # braking into a corner is quick and deliberate.
-MAX_SPEED = 44.0
+MAX_SPEED = 50.0
 ACCEL = 62.0          # engine force / mass, u/s^2 (before drag)
 BRAKE = 78.0          # braking deceleration
 COAST = 9.0           # engine braking when off the throttle
@@ -64,10 +64,19 @@ AIR_GRIP = 0.6             # a little sideways damping in the air, mostly none
 # --- air / gravity ---------------------------------------------------------
 GRAVITY = 30.0
 AIR_STEER = 0.62           # fraction of normal yaw authority while airborne
-AIR_PITCH = 1.5            # rad/s of pitch control in the air (up/down keys)
+# Pitch authority and self-levelling in the air are both deliberately lazy. Both
+# of them nose the car down: holding the throttle pitches it down directly, and
+# levelling toward world up noses a car that took off from an uphill ramp down
+# as well. At the old numbers (1.5 and 2.6) a jump taken flat out - which is how
+# every jump is taken - was pointing at the floor within half a second of leaving
+# the lip, which killed the long, floaty arc that makes a jump worth taking.
+# At 0.7 rad/s the nose drops about 40 degrees a second under full throttle:
+# plenty to aim a landing over a one-second flight, lazy enough that the car
+# keeps the attitude the lip gave it.
+AIR_PITCH = 0.7            # rad/s of pitch control in the air (up/down keys)
 AIR_ROLL = 2.0             # rad/s of roll control in the air
 ALIGN_GROUND = 14.0        # how fast the body snaps to the surface normal
-ALIGN_AIR = 2.6            # how fast it levels out while airborne
+ALIGN_AIR = 1.3            # how fast it levels out while airborne
 COYOTE = 0.04              # seconds of grounded grace across a surface seam
 
 # Letting go of the road.
@@ -81,13 +90,14 @@ COYOTE = 0.04              # seconds of grounded grace across a surface seam
 # Polytrack's does. Past the threshold the pull ramps in smoothly.
 #
 # On a corkscrew's wall, gravity contributes nothing toward the axis, so this
-# force alone is the centripetal budget: it has to beat v^2/R. At 44 u/s that
-# means a radius of about 20, which is why the corkscrews in tracks.py are big.
-# `laptime.py` caps corkscrew speed at sqrt(R * STICK_FORCE) so the medal times
-# assume only what the car can actually hold.
+# force alone is the centripetal budget: it has to beat v^2/R. The pool's
+# tightest loop is radius 20, so at MAX_SPEED that needs v^2/R = 125 - hence 150,
+# which leaves a margin rather than sitting exactly on the limit. `laptime.py`
+# caps corkscrew speed at sqrt(R * STICK_FORCE) so the medal times assume only
+# what the car can actually hold.
 STICK_TILT = 0.85
 STICK_SPEED = 15.0         # below this the pull fades out - too slow, you fall
-STICK_FORCE = 95.0         # centripetal budget on a wall or a roof
+STICK_FORCE = 150.0        # centripetal budget on a wall or a roof
 
 # Suspension. SNAP is the gap between the wheels and the road that still counts
 # as grounded - a seam tolerance, nothing more. It used to be a full unit, which
@@ -98,8 +108,13 @@ SNAP = 0.12
 SUSP = 45.0
 
 # --- surfaces --------------------------------------------------------------
-OFFROAD_DRAG = 0.55        # fraction of speed scrubbed per second on grass
-OFFROAD_GRIP = 6.0
+# Grass has to cost you the corner, not just tickle it. OFFROAD_DRAG is a linear
+# term, so the grass top speed is where ACCEL - quadratic drag - OFFROAD_DRAG*v
+# reaches zero: at 1.8 that is about 24 u/s, half of MAX_SPEED. It used to be
+# 0.55, which put the grass top speed at ~36 - close enough to the road's that
+# cutting a corner across the infield was simply faster than driving round it.
+OFFROAD_DRAG = 1.8         # linear speed scrubbed per second on grass
+OFFROAD_GRIP = 5.0
 WALL_BOUNCE = 0.22         # normal velocity kept when you clip a wall
 WALL_SCRUB = 0.86          # tangential speed kept per wall hit
 

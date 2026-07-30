@@ -1,19 +1,39 @@
-/* Drive - the menus wear cgovind.com's clothes (paper white, xkcd Script,
-   hand-drawn borders) while the game itself is a dark HUD over a bright
-   low-poly world. Racing red is the accent, matching the racing tile on the
-   landing page. */
+/* Drive - paper-white menus and hand-drawn borders around a bright low-poly
+   world, with a dark HUD over the top. Racing red is the accent, matching the
+   racing tile on the landing page.
+
+   The type is Titillium Web, self-hosted like everything else here (no CDN, no
+   build step): squared-off, technical, and the closest freely licensable thing
+   to Formula 1's own display face, which is proprietary. It replaced xkcd
+   Script, which is a lovely joke on a landing page and the wrong voice entirely
+   for a timing screen. */
 
 @font-face {
-  font-family: "xkcd Script";
-  src: url("../fonts/xkcd-script.woff") format("woff");
-  font-weight: normal;
-  font-style: normal;
-  font-display: swap;
+  font-family: "Titillium Web";
+  src: url("../fonts/titillium-400.woff2") format("woff2");
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Titillium Web";
+  src: url("../fonts/titillium-600.woff2") format("woff2");
+  font-weight: 600; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Titillium Web";
+  src: url("../fonts/titillium-700.woff2") format("woff2");
+  font-weight: 700; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Titillium Web";
+  src: url("../fonts/titillium-900.woff2") format("woff2");
+  font-weight: 900; font-style: normal; font-display: swap;
 }
 
 :root {
-  --hand: "xkcd Script", "Comic Sans MS", cursive, sans-serif;
-  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  /* --display is headings, buttons and anything that should look stamped on;
+     --sans is body text. Same family, different weight. */
+  --display: "Titillium Web", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --sans: "Titillium Web", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --paper: #faf8f4;
   --ink: #1d1d1f;
@@ -35,7 +55,7 @@
 html, body {
   margin: 0;
   min-height: 100%;
-  font-family: var(--hand);
+  font-family: var(--display);
   color: var(--ink);
   background: var(--paper);
   -webkit-text-size-adjust: 100%;
@@ -54,7 +74,8 @@ a:hover { text-decoration: underline; }
   flex-wrap: wrap;
 }
 .brand {
-  font-size: 1.5rem; color: var(--ink); display: flex; align-items: center; gap: .5rem;
+  font-size: 1.35rem; font-weight: 900; letter-spacing: .02em; text-transform: uppercase;
+  color: var(--ink); display: flex; align-items: center; gap: .5rem;
 }
 .brand:hover { text-decoration: none; }
 .brand small { color: var(--ink-soft); font-size: .8rem; }
@@ -73,9 +94,13 @@ a:hover { text-decoration: underline; }
 /* --- layout ------------------------------------------------------------- */
 .wrap { max-width: 1080px; margin: 0 auto; padding: 1.6rem 1.1rem 4rem; }
 .wrap.narrow { max-width: 480px; }
-h1 { font-size: 2.5rem; margin: .2rem 0 .3rem; }
-h2 { font-size: 1.6rem; margin: 1.6rem 0 .6rem; }
-h3 { font-size: 1.2rem; margin: 1.2rem 0 .4rem; }
+/* Titillium's caps are the point of it, so headings are heavy and slightly
+   tracked out rather than merely bigger. */
+h1, h2, h3 { font-weight: 700; letter-spacing: .005em; }
+h1 { font-size: 2.3rem; margin: .2rem 0 .3rem; font-weight: 900; }
+h2 { font-size: 1.5rem; margin: 1.5rem 0 .6rem; }
+h3 { font-size: 1.05rem; margin: 1.1rem 0 .4rem; text-transform: uppercase;
+     letter-spacing: .08em; color: var(--ink-soft); }
 p { line-height: 1.55; }
 .muted { color: var(--ink-soft); }
 .lede { font-size: 1.15rem; color: var(--ink-soft); margin-top: 0; }
@@ -87,7 +112,7 @@ p { line-height: 1.55; }
 }
 
 .btn {
-  font-family: var(--hand); font-size: 1.1rem;
+  font-family: var(--display); font-size: 1rem; font-weight: 600; letter-spacing: .02em;
   border: 2px solid var(--line); border-radius: 10px;
   background: var(--red); color: #fff;
   padding: .5rem 1.1rem; cursor: pointer;
@@ -102,7 +127,7 @@ p { line-height: 1.55; }
 .row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
 
 input[type=text], input[type=password], input[type=email], input:not([type]) {
-  font-family: var(--hand); font-size: 1.05rem;
+  font-family: var(--display); font-size: 1.05rem;
   border: 2px solid var(--line); border-radius: 8px;
   padding: .45rem .6rem; width: 100%; background: #fff; color: var(--ink);
 }
@@ -147,7 +172,7 @@ input[type=text], input[type=password], input[type=email], input:not([type]) {
 /* --- tables ------------------------------------------------------------- */
 table.board { width: 100%; border-collapse: collapse; font-family: var(--sans); font-size: .92rem; }
 table.board th, table.board td { padding: .42rem .55rem; text-align: left; border-bottom: 1px solid #e4e1da; }
-table.board th { font-family: var(--hand); font-size: 1rem; color: var(--ink-soft); }
+table.board th { font-family: var(--display); font-size: 1rem; color: var(--ink-soft); }
 table.board td.num, table.board th.num { text-align: right; font-family: var(--mono); }
 table.board tr.me { background: #fff6d9; }
 
@@ -160,10 +185,19 @@ body.playing { overflow: hidden; background: #9ed2f0; }
 .hud { position: fixed; inset: 0; pointer-events: none; font-family: var(--sans); }
 .hud > * { pointer-events: auto; }
 
-.hud-tl { position: absolute; top: 12px; left: 14px; display: flex; flex-direction: column; gap: 8px; }
-.hud-tr { position: absolute; top: 12px; right: 14px; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
-.hud-bl { position: absolute; bottom: 14px; left: 14px; }
-.hud-br { position: absolute; bottom: 14px; right: 14px; text-align: right; }
+/* Every anchor is measured from the safe area, so a notch or a home indicator
+   never lands on top of the clock or a control. */
+.hud-tl { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px));
+          left: calc(14px + env(safe-area-inset-left, 0px));
+          display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.hud-tr { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px));
+          right: calc(14px + env(safe-area-inset-right, 0px));
+          display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.hud-bl { position: absolute; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+          left: calc(14px + env(safe-area-inset-left, 0px)); }
+.hud-bc { position: absolute; bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+          left: 50%; transform: translateX(-50%); width: 340px; max-width: 60vw;
+          text-align: center; }
 
 .card {
   background: var(--hud); color: #fff; border: 1px solid var(--hud-line);
@@ -171,30 +205,75 @@ body.playing { overflow: hidden; background: #9ed2f0; }
   backdrop-filter: blur(6px);
 }
 
-.timer { font-family: var(--mono); font-size: 2.1rem; font-weight: 700; line-height: 1.05;
-         font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
-.timer-row { display: flex; align-items: baseline; gap: .6rem; }
-.delta { font-family: var(--mono); font-size: 1.15rem; font-weight: 700; }
+/* --- the three buttons, top right ----------------------------------------
+   Everything that is not driving lives behind one of these: the room, the help
+   sheet and the settings sheet. Icon-only and square, so the row is the same
+   size on a phone as on a desktop and never crowds the track name. */
+.btnbar { display: flex; gap: 6px; }
+.hbtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; height: 38px;
+  background: var(--hud); color: #fff; border: 1px solid var(--hud-line);
+  border-radius: 10px; cursor: pointer;
+  font-family: var(--sans); line-height: 1;
+  backdrop-filter: blur(6px); text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.hbtn:hover { background: rgba(40, 44, 56, .9); text-decoration: none; }
+.hbtn:active { transform: translateY(1px); }
+.hbtn i { font-style: normal; font-size: 1.15rem; line-height: 1; }
+.hbtn.on { border-color: #ffd96b; color: #ffd96b; }
+
+/* --- where you are, top left --------------------------------------------- */
+.mode {
+  font-size: .68rem; color: #9fb0c6; text-transform: uppercase;
+  letter-spacing: .12em; font-weight: 600; margin-top: .1rem;
+}
+.mode.racing { color: #ff8a7a; }
+
+/* --- the run, bottom centre ---------------------------------------------- */
+.hud-bc .timer {
+  font-family: var(--mono); font-size: 2.5rem; font-weight: 700; line-height: 1;
+  font-variant-numeric: tabular-nums; letter-spacing: -.02em; color: #fff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, .6);
+}
+/* The delta appears at a checkpoint and fades out again, so the space above the
+   clock is reserved whether or not one is showing - the clock never jumps. */
+.hud-bc .delta {
+  font-family: var(--mono); font-size: 1.3rem; font-weight: 700; line-height: 1.25;
+  min-height: 1.25em; opacity: 0; transition: opacity .25s;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, .6);
+}
+.hud-bc .delta.show { opacity: 1; }
 .delta.ahead { color: #55e08a; }
 .delta.behind { color: #ff8a7a; }
 .sub { font-size: .78rem; color: #b9c2d0; text-transform: uppercase; letter-spacing: .08em; }
 
-.speedo { display: flex; align-items: flex-end; gap: .35rem; }
-.speed-num { font-family: var(--mono); font-size: 2.6rem; font-weight: 700; line-height: .95;
-             font-variant-numeric: tabular-nums; }
-.speed-unit { font-size: .8rem; color: #b9c2d0; padding-bottom: .35rem; }
-.speed-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.18); overflow: hidden; margin-top: .35rem; }
+.brow { display: flex; align-items: flex-end; justify-content: space-between; gap: .5rem;
+        margin-top: .15rem; }
+.stat { display: flex; flex-direction: column; line-height: 1.05;
+        text-shadow: 0 2px 8px rgba(0, 0, 0, .6); }
+.stat b { font-family: var(--mono); font-size: 1.05rem; font-weight: 700;
+          font-variant-numeric: tabular-nums; }
+.stat span { font-size: .62rem; color: #cbd4e1; text-transform: uppercase; letter-spacing: .08em; }
+.stat.pb { text-align: left; color: #ffd96b; }
+.stat.pb span { color: #d8c48f; }
+.stat.cps { text-align: center; }
+.stat.spd { text-align: right; }
+.stat.spd b { font-size: 1.9rem; line-height: .9; }
+
+.speed-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.2); overflow: hidden; margin-top: .4rem; }
 .speed-bar i { display: block; height: 100%; width: 0; background: #fff; transition: width .06s linear; }
 .speed-bar i.over { background: #8fd6ff; box-shadow: 0 0 10px #8fd6ff; }
 
 #minimap { display: block; width: 190px; height: 150px; }
 
-.trackname { font-family: var(--hand); font-size: 1.35rem; }
-.trackblurb { font-size: .8rem; color: #b9c2d0; max-width: 240px; }
+.trackname { font-family: var(--display); font-size: 1.25rem; font-weight: 700;
+             line-height: 1.1; letter-spacing: .01em; }
+.trackblurb { font-size: .78rem; color: #b9c2d0; max-width: 240px; margin-top: .3rem; }
 
 .mrow { display: flex; align-items: center; gap: .45rem; font-size: .82rem; padding: .1rem 0; }
 .mrow b { margin-left: auto; font-family: var(--mono); }
-.mrow.pb { border-top: 1px solid var(--hud-line); margin-top: .3rem; padding-top: .3rem; color: #ffd96b; }
 
 .st-row { display: flex; align-items: center; gap: .45rem; font-size: .85rem; padding: .14rem 0; }
 .st-row.me { color: #ffd96b; font-weight: 700; }
@@ -229,17 +308,24 @@ body.playing { overflow: hidden; background: #9ed2f0; }
 
 .countdown {
   position: absolute; top: 34%; left: 50%; transform: translate(-50%, -50%);
-  font-family: var(--hand); font-size: 8rem; color: #fff;
+  font-family: var(--display); font-size: 8rem; font-weight: 900; color: #fff;
   text-shadow: 0 6px 24px rgba(0, 0, 0, .5); line-height: 1;
 }
 .countdown.go { color: #55e08a; font-size: 7rem; }
 .countdown.n1 { color: #ffd96b; }
 
+/* Clear of the bottom-centre clock and of the touch controls, so it reads as
+   part of the world rather than part of the HUD. */
 #startHint {
-  position: absolute; bottom: 24%; left: 50%; transform: translateX(-50%);
+  position: absolute; bottom: 42%; left: 50%; transform: translateX(-50%);
   background: var(--hud); color: #fff; border: 1px solid var(--hud-line);
   padding: .45rem 1.1rem; border-radius: 999px; font-size: 1rem;
+  white-space: nowrap; max-width: 92vw; overflow: hidden; text-overflow: ellipsis;
 }
+/* Same hint, the symbols you actually have in front of you. */
+.hint-touch { display: none; }
+body.touch .hint-keys { display: none; }
+body.touch .hint-touch { display: inline; }
 
 .overlay {
   position: fixed; inset: 0; background: rgba(12, 14, 20, .72);
@@ -265,15 +351,37 @@ body.playing { overflow: hidden; background: #9ed2f0; }
 #resNote div { font-size: .95rem; color: var(--ink-soft); }
 #resPending { font-size: .85rem; color: var(--ink-soft); }
 
-/* room side panel */
+/* The room panel: a drawer behind the hamburger, at every screen size.
+   It used to be pinned open - a 274px column on a desktop and a 46vh slab
+   across the bottom of a phone - which meant the multiplayer furniture sat on
+   top of both the road and the driving controls the whole time you were racing.
+   Everything room-shaped now lives behind one button. */
 .side {
-  position: fixed; top: 0; right: 0; bottom: 0; width: 274px; z-index: 30;
-  background: rgba(16, 18, 24, .8); border-left: 1px solid var(--hud-line);
-  color: #fff; font-family: var(--sans); padding: .8rem;
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(300px, 80vw); z-index: 30;
+  background: rgba(16, 18, 24, .88); border-left: 1px solid var(--hud-line);
+  color: #fff; font-family: var(--sans);
+  padding: calc(.8rem + env(safe-area-inset-top, 0px))
+           calc(.8rem + env(safe-area-inset-right, 0px))
+           calc(.8rem + env(safe-area-inset-bottom, 0px)) .8rem;
   display: flex; flex-direction: column; gap: .7rem; overflow: auto;
   backdrop-filter: blur(8px);
+  transform: translateX(100%); transition: transform .18s ease-out;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, .35);
 }
-.side h4 { margin: 0 0 .3rem; font-family: var(--hand); font-size: 1.15rem; font-weight: normal; }
+body.side-open .side { transform: none; }
+/* Slide the top-right stack along with the drawer so help and settings stay
+   reachable while the room is open, rather than hiding underneath it. */
+.hud-tr { transition: transform .18s ease-out; }
+body.side-open .hud-tr { transform: translateX(calc(-1 * min(300px, 80vw))); }
+@media (prefers-reduced-motion: reduce) {
+  .side, .hud-tr { transition: none; }
+}
+.side h4 { margin: 0 0 .3rem; font-family: var(--display); font-size: 1.1rem; font-weight: 700;
+           letter-spacing: .04em; text-transform: uppercase; display: flex; align-items: center; }
+.side-close {
+  margin-left: auto; background: none; border: 0; cursor: pointer;
+  color: #ff8a7a; font-size: 1.5rem; line-height: 1; padding: 0 .2rem;
+}
 .side .btn { font-size: 1rem; padding: .4rem .8rem; width: 100%; }
 .pl { display: flex; align-items: center; gap: .4rem; font-size: .88rem; padding: .15rem 0; }
 .pl.me { color: #ffd96b; }
@@ -291,31 +399,80 @@ body.playing { overflow: hidden; background: #9ed2f0; }
 .cm { padding: .1rem 0; line-height: 1.35; word-break: break-word; }
 #chatInput { font-family: var(--sans); font-size: .85rem; padding: .3rem .45rem; border-width: 1px; }
 
-/* touch controls */
+/* --- touch controls -------------------------------------------------------
+   Two thumb clusters pinned to the bottom corners: steering left, pedals right
+   with the handbrake as a bar under them. They are laid out with flexbox rather
+   than fixed pixel offsets so the safe area and small screens both work out. */
 #touch { display: none; }
 body.touch #touch { display: block; }
+.tpad {
+  position: fixed; z-index: 35; bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  display: flex; flex-direction: column; gap: 10px; align-items: center;
+}
+.tpad.left { left: calc(16px + env(safe-area-inset-left, 0px)); align-items: flex-start; }
+.tpad.right { right: calc(16px + env(safe-area-inset-right, 0px)); align-items: flex-end; }
+.pedals, .steerpad { display: flex; gap: 10px; }
 .tbtn {
-  position: fixed; z-index: 35; width: 78px; height: 78px; border-radius: 50%;
-  background: rgba(255, 255, 255, .16); border: 2px solid rgba(255, 255, 255, .4);
+  width: 76px; height: 76px; border-radius: 50%;
+  background: rgba(255, 255, 255, .16); border: 2px solid rgba(255, 255, 255, .45);
   color: #fff; font-size: 1.6rem; display: flex; align-items: center; justify-content: center;
   user-select: none; -webkit-user-select: none; touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  backdrop-filter: blur(3px); text-shadow: 0 1px 4px rgba(0, 0, 0, .5);
 }
-.tbtn.down { background: rgba(255, 255, 255, .4); }
-#tLeft { left: 14px; bottom: 96px; }
-#tRight { left: 104px; bottom: 96px; }
-#tGas { right: 14px; bottom: 96px; }
-#tBrake { right: 104px; bottom: 96px; }
-#tDrift { right: 60px; bottom: 186px; width: 64px; height: 64px; font-size: .9rem; }
+.tbtn.down { background: rgba(255, 255, 255, .42); }
+/* The handbrake is a bar the width of both pedals: it sits right under the thumb
+   that is already on the throttle, and it is impossible to miss. */
+.tbtn.wide {
+  width: 162px; height: 50px; border-radius: 25px;
+  font-size: .85rem; letter-spacing: .16em; font-weight: 700;
+}
+/* Respawning is a driving action, so it sits with the driving controls rather
+   than two taps deep in a menu - but small, because you should rarely need it. */
+.tbtn.small { width: 46px; height: 46px; font-size: 1.1rem; opacity: .8; }
+#tGas { border-color: rgba(140, 240, 170, .6); }
+#tBrake { border-color: rgba(255, 150, 130, .6); }
+/* With the room drawer out you are reading, not driving - and the pedals would
+   otherwise float on top of it. */
+body.side-open #touch { display: none; }
+
+/* Portrait on a phone: the game is a landscape game, so say so. */
+#rotate {
+  display: none; position: fixed; inset: 0; z-index: 70;
+  background: rgba(12, 14, 20, .92); color: #fff; font-family: var(--display);
+  font-size: 1.6rem; text-align: center; padding: 2rem;
+  align-items: center; justify-content: center;
+}
+@media (orientation: portrait) and (max-width: 620px) {
+  body.touch.playing #rotate { display: flex; }
+}
 
 @media (max-width: 860px) {
-  .side { width: 100%; height: 46vh; top: auto; bottom: 0; border-left: 0; border-top: 1px solid var(--hud-line); }
-  .hud-br { bottom: 48vh; }
-  #minimap { width: 130px; height: 104px; }
+  #chatLog { max-height: 32vh; }
+  /* Minimap out of the bottom-left corner - that is the steering thumb's. */
+  .hud-bl { bottom: auto; top: calc(84px + env(safe-area-inset-top, 0px)); }
+  #minimap { width: 118px; height: 92px; }
   .trackblurb { display: none; }
-  .speed-num { font-size: 2rem; }
-  .timer { font-size: 1.7rem; }
+  .hud-bc { width: 300px; max-width: 46vw; }
+  .hud-bc .timer { font-size: 1.9rem; }
+  .stat.spd b { font-size: 1.5rem; }
+  .tbtn { width: 66px; height: 66px; }
+  .tbtn.wide { width: 142px; height: 44px; }
+  .tbtn.small { width: 42px; height: 42px; }
+  #startHint { bottom: 46%; font-size: .9rem; }
 }
+
 @media (max-width: 560px) {
   .hud-tr .card.medals { display: none; }
   .countdown { font-size: 5.5rem; }
+}
+/* Landscape on a phone is short, not narrow: the left-hand column has to fit
+   the track card and the minimap between the top and the steering thumb. */
+@media (max-height: 460px) {
+  .hud-tr .card.medals { display: none; }
+  .countdown { font-size: 4.5rem; }
+  .hud-bl { top: calc(76px + env(safe-area-inset-top, 0px)); }
+  #minimap { width: 96px; height: 74px; }
+  .trackname { font-size: 1.05rem; }
+  #startHint { bottom: 52%; }
 }

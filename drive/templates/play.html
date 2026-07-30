@@ -1,18 +1,16 @@
 {% extends "base.html" %}
 {% block title %}{{ track.name }} | Drive{% endblock %}
-{% block bodyclass %}playing{% endblock %}
+{% block bodyclass %}playing{% if mode == 'room' %} room{% endif %}{% endblock %}
 {% block body %}
 <canvas id="gl"></canvas>
 
 <div class="hud">
-  <!-- top left: timer, splits, delta -->
+  <!-- top left: where you are - which track, and what kind of session -->
   <div class="hud-tl">
     <div class="card">
-      <div class="timer-row">
-        <span class="timer" id="time">0:00.000</span>
-        <span class="delta" id="delta" style="display:none">+0.000</span>
-      </div>
-      <div class="sub">Checkpoints <span id="cpCount">0/0</span></div>
+      <div class="trackname" id="trackName">{{ track.name }}</div>
+      <div class="mode" id="modeLabel">{% if mode == 'room' %}Multiplayer lobby{% else %}Solo time trial{% endif %}</div>
+      <div class="trackblurb" id="trackBlurb">{{ track.blurb }}</div>
     </div>
     <div class="card" id="position" style="display:none">
       <div class="position"><b id="posNum">-</b><span>/<span id="posTot">1</span></span></div>
@@ -20,14 +18,17 @@
     </div>
   </div>
 
-  <!-- top right: track, medals, standings -->
+  <!-- top right: the three things you can open -->
   <div class="hud-tr">
-    <div class="card" style="text-align:right">
-      <div class="trackname" id="trackName">{{ track.name }}</div>
-      <div class="trackblurb" id="trackBlurb">{{ track.blurb }}</div>
+    <div class="btnbar">
+      {% if mode == 'room' %}
+      <button class="hbtn" id="btnRoom" title="Room: players, track, chat"><i>&#9776;</i></button>
+      {% endif %}
+      <button class="hbtn" id="btnHelp" title="Help and controls (H)"><i>?</i></button>
+      <button class="hbtn" id="btnSettings" title="Settings (Esc)"><i>&#9881;</i></button>
     </div>
     <div class="card medals" id="medalsCard"><div id="medals"></div></div>
-    <div class="card" id="standingsCard"><div id="standings"></div></div>
+    <div class="card" id="standingsCard" style="display:none"><div id="standings"></div></div>
     <div class="card" id="raceResult" style="display:none"></div>
   </div>
 
@@ -36,30 +37,35 @@
     <div class="card"><canvas id="minimap" width="190" height="150"></canvas></div>
   </div>
 
-  <!-- bottom right: speed -->
-  <div class="hud-br">
-    <div class="card">
-      <div class="speedo" style="justify-content:flex-end">
-        <span class="speed-num" id="speed">0</span><span class="speed-unit">km/h</span>
-      </div>
-      <div class="speed-bar"><i id="speedFill"></i></div>
-      <div class="row" style="justify-content:flex-end;margin-top:.4rem;gap:.35rem">
-        <button class="btn secondary" id="btnGhost" style="font-size:.8rem;padding:.2rem .5rem">Ghost</button>
-        <button class="btn secondary" id="btnMenu" style="font-size:.8rem;padding:.2rem .5rem">Menu</button>
-      </div>
+  <!-- bottom centre: the run. Delta above the clock, personal best to its lower
+       left, speed to its lower right - Polytrack's arrangement, and the reason
+       the corners stay free for the touch controls. -->
+  <div class="hud-bc">
+    <div class="delta" id="delta"></div>
+    <div class="timer" id="time">0:00.000</div>
+    <div class="brow">
+      <div class="stat pb"><b id="pbTime">--:--.---</b><span>Personal best</span></div>
+      <div class="stat cps"><b id="cpCount">0/0</b><span>Checkpoints</span></div>
+      <div class="stat spd"><b id="speed">0</b><span>km/h</span></div>
     </div>
+    <div class="speed-bar"><i id="speedFill"></i></div>
   </div>
 
   <div id="wrongWay" style="display:none">WRONG WAY</div>
   <div id="toast"></div>
   <div class="countdown" id="countdown" style="display:none">3</div>
-  <div id="startHint">Press <b>&uarr;</b> or <b>W</b> to start &middot; <b>Space</b> drift &middot; <b>R</b> restart &middot; <b>Enter</b> respawn</div>
+  <div id="startHint">
+    <span class="hint-keys">Press <b>&uarr;</b> or <b>W</b> to start &middot; <b>Space</b> drift
+      &middot; <b>R</b> restart &middot; <b>T</b> last checkpoint</span>
+    <span class="hint-touch">Tap <b>&#9650;</b> to start &middot; <b>&#9664; &#9654;</b> steer
+      &middot; <b>DRIFT</b> to slide</span>
+  </div>
 </div>
 
 {% if mode == 'room' %}
-<aside class="side">
+<aside class="side" id="side">
   <div>
-    <h4>Room {{ room.code }}</h4>
+    <h4>Room {{ room.code }}<button class="side-close" id="btnRoomClose" title="Hide">&times;</button></h4>
     <div id="roster"></div>
   </div>
   <button class="btn" id="btnStartRace" style="display:none">Start race</button>
@@ -80,13 +86,28 @@
 </aside>
 {% endif %}
 
+<!-- Touch controls: steering under the left thumb, the pedals under the right,
+     and the handbrake as a bar beneath the pedals where the same thumb reaches
+     it without leaving them. The checkpoint button lives up here with the
+     driving controls rather than in a menu - falling off is common enough that
+     recovering from it must not cost you two taps. -->
 <div id="touch">
-  <div class="tbtn" id="tLeft">&#9664;</div>
-  <div class="tbtn" id="tRight">&#9654;</div>
-  <div class="tbtn" id="tGas">&#9650;</div>
-  <div class="tbtn" id="tBrake">&#9660;</div>
-  <div class="tbtn" id="tDrift">DRIFT</div>
+  <div class="tpad left">
+    <div class="tbtn small" id="tCheck" title="Back to the last checkpoint">&#9873;</div>
+    <div class="steerpad">
+      <div class="tbtn" id="tLeft">&#9664;</div>
+      <div class="tbtn" id="tRight">&#9654;</div>
+    </div>
+  </div>
+  <div class="tpad right">
+    <div class="pedals">
+      <div class="tbtn" id="tGas">&#9650;</div>
+      <div class="tbtn" id="tBrake">&#9660;</div>
+    </div>
+    <div class="tbtn wide" id="tDrift">DRIFT</div>
+  </div>
 </div>
+<div id="rotate">Turn your phone sideways to drive</div>
 
 <!-- results -->
 <div class="overlay" id="results" style="display:none">
@@ -103,30 +124,59 @@
   </div>
 </div>
 
-<!-- pause menu -->
+<!-- settings / pause -->
 <div class="overlay" id="menu" style="display:none">
   <div class="sheet">
-    <h2>{{ track.name }}</h2>
-    <p class="muted" style="margin-top:-.4rem">{{ track.blurb }}</p>
+    <h2>Settings</h2>
+    <p class="muted" style="margin-top:-.4rem">{{ track.name }} &middot;
+      {% if mode == 'room' %}room {{ room.code }}{% else %}solo time trial{% endif %}</p>
+    <h3>Session</h3>
     <div class="row">
       <button class="btn" id="btnResume">Resume</button>
-      <button class="btn secondary" id="btnRestart">Restart</button>
-      {% if mode == 'room' %}
-      <a class="btn secondary" href="/lobbies">Leave room</a>
-      {% else %}
-      <a class="btn secondary" href="/">All tracks</a>
-      {% endif %}
+      <button class="btn secondary" id="btnRestart">Restart run (R)</button>
+      <button class="btn secondary" id="btnCheckpoint">Last checkpoint (T)</button>
     </div>
-    <h3>Controls</h3>
+    <h3>Display &amp; sound</h3>
+    <div class="row">
+      <button class="btn secondary" id="btnGhost">Ghost car: on</button>
+      <button class="btn secondary" id="btnSound">Sound: on</button>
+    </div>
+    <h3>Leave</h3>
+    <div class="row">
+      {% if mode == 'room' %}
+      <a class="btn secondary" id="btnQuit" href="/lobbies">Leave room</a>
+      {% else %}
+      <a class="btn secondary" id="btnQuit" href="/">All tracks</a>
+      {% endif %}
+      <a class="btn secondary" href="/track/{{ track.slug }}">Leaderboard</a>
+    </div>
+  </div>
+</div>
+
+<!-- help -->
+<div class="overlay" id="help" style="display:none">
+  <div class="sheet">
+    <h2>How to drive</h2>
+    <p class="muted" style="margin-top:-.4rem">{{ track.blurb }}</p>
     <table class="board">
       <tr><td>Steer</td><td>&larr; &rarr; or A / D</td></tr>
       <tr><td>Throttle / brake</td><td>&uarr; &darr; or W / S</td></tr>
       <tr><td>Drift</td><td>Space or Shift</td></tr>
       <tr><td>In the air</td><td>Steer to turn, throttle/brake to pitch</td></tr>
-      <tr><td>Restart run</td><td>R</td></tr>
-      <tr><td>Respawn at checkpoint</td><td>Enter or Backspace</td></tr>
+      <tr><td>Restart the run</td><td>R</td></tr>
+      <tr><td>Back to last checkpoint</td><td>T &mdash; keeps the clock running</td></tr>
       <tr><td>Ghost / mute</td><td>G / M</td></tr>
+      <tr><td>Settings / help</td><td>Esc / H</td></tr>
     </table>
+    <h3>On a phone</h3>
+    <p class="muted" style="margin:0 0 .6rem">Hold it sideways. Steer with the arrows on the
+      left, throttle and brake on the right, and hold <b>DRIFT</b> underneath them to slide.
+      The flag button puts you back at the last checkpoint.</p>
+    <h3>Getting round quickly</h3>
+    <p class="muted" style="margin:0">Grass is slow, so a corner cut usually costs more than it
+      saves. Crests throw the car - land flat and you keep the speed. Inside a loop, stay off
+      the brakes: it is your own speed holding you on the wall.</p>
+    <div class="row" style="margin-top:1rem"><button class="btn" id="btnHelpClose">Got it</button></div>
   </div>
 </div>
 {% endblock %}

@@ -42,7 +42,7 @@ const S = {
   view: null, ghostView: null, ghost: null, ghostTimes: null,
   showGhost: true,
   remotes: new Map(),
-  paused: false, menuOpen: false,
+  paused: false, menuOpen: false, helpOpen: false,
   started: false,          // has the local run clock been started
   raceMode: false,         // are we in a synced race right now
   racePhase: 'free',
@@ -90,8 +90,10 @@ function loadTrack(track) {
 
   $('trackName').textContent = track.name;
   $('trackBlurb').textContent = track.blurb;
-  S.bestTime = (CFG.pbs && CFG.pbs[track.slug]) || null;
+  // A guest has no server-side PB, but the one in localStorage is still theirs.
+  S.bestTime = (CFG.pbs && CFG.pbs[track.slug]) || storedBest() || null;
   renderMedalTable();
+  showPb();
   drawMinimapBase();
   loadGhost('me');
   markActiveTrack();
@@ -129,6 +131,7 @@ function resetToStart() {
   hideResults();
   if (S.ghost) S.ghost.t = 0;
   $('startHint').style.display = '';
+  clearDelta();
 }
 
 // ---------------------------------------------------------------------------
@@ -148,11 +151,17 @@ function bindInput() {
     S.sound.start(); S.sound.resume();
     const k = KEYMAP[e.code];
     if (k) { keys.add(k); e.preventDefault(); }
-    if (e.code === 'KeyR') { resetToStart(); toast('Restart'); }
-    if (e.code === 'Enter' || e.code === 'Backspace') { e.preventDefault(); S.car.requestRespawn(); }
+    // R starts the whole run again; T only puts you back on the road at the last
+    // checkpoint and leaves the clock running, which is the difference between
+    // "that lap is gone" and "I just fell off".
+    if (e.code === 'KeyR') restartRun();
+    if (e.code === 'KeyT' || e.code === 'Enter' || e.code === 'Backspace') {
+      e.preventDefault(); backToCheckpoint();
+    }
     if (e.code === 'Escape') toggleMenu();
-    if (e.code === 'KeyM') { const m = !S.sound.enabled; S.sound.mute(m); toast(m ? 'Sound off' : 'Sound on'); }
-    if (e.code === 'KeyG') { S.showGhost = !S.showGhost; toast(S.showGhost ? 'Ghost on' : 'Ghost off'); }
+    if (e.code === 'KeyH') toggleHelp();
+    if (e.code === 'KeyM') setSound(!S.sound.enabled);
+    if (e.code === 'KeyG') setGhost(!S.showGhost);
   });
   window.addEventListener('keyup', (e) => {
     const k = KEYMAP[e.code];
@@ -178,23 +187,73 @@ function bindInput() {
   tb('tLeft', () => keys.add('left'), () => keys.delete('left'));
   tb('tRight', () => keys.add('right'), () => keys.delete('right'));
   tb('tDrift', () => keys.add('drift'), () => keys.delete('drift'));
-  if ('ontouchstart' in window) {
+  // The checkpoint button fires on press and does nothing on release, so it is
+  // a tap rather than a hold like the pedals are.
+  tb('tCheck', () => backToCheckpoint(), () => {});
+  // `?touch=1` forces the touch HUD on a desktop browser, which is the only way
+  // to look at the phone layout without a phone.
+  if ('ontouchstart' in window || location.search.indexOf('touch=1') >= 0 ||
+      (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) {
     S.touch = true;
     document.body.classList.add('touch');
   }
 
+  $('btnSettings').onclick = () => toggleMenu();
+  $('btnHelp').onclick = () => toggleHelp();
+  $('btnHelpClose').onclick = () => toggleHelp(false);
   $('btnResume').onclick = () => toggleMenu(false);
-  $('btnRestart').onclick = () => { resetToStart(); toggleMenu(false); };
-  $('btnMenu').onclick = () => toggleMenu();
+  $('btnRestart').onclick = () => { restartRun(); toggleMenu(false); };
+  $('btnCheckpoint').onclick = () => { backToCheckpoint(); toggleMenu(false); };
   $('btnRetry').onclick = () => resetToStart();
+  $('btnGhost').onclick = () => setGhost(!S.showGhost);
+  $('btnSound').onclick = () => setSound(!S.sound.enabled);
+  setGhost(S.showGhost);
+  setSound(S.sound.enabled);
+  // Everything room-shaped lives behind the hamburger, at every screen size.
+  if ($('side')) {
+    $('btnRoom').onclick = () => showSide(!document.body.classList.contains('side-open'));
+    $('btnRoomClose').onclick = () => showSide(false);
+    showSide(true);           // you arrive in a lobby, so start with it open
+  }
   $('btnNextTrack').onclick = () => {
     // In a room the host owns the track, so this only moves you on when solo.
     if (CFG.mode === 'room') { toast('The host picks the track in a room'); return; }
     if (CFG.nextTrack) location.href = '/solo/' + CFG.nextTrack;
   };
-  const gt = $('btnGhost');
-  if (gt) gt.onclick = () => { S.showGhost = !S.showGhost; gt.classList.toggle('off', !S.showGhost); };
 }
+
+function showSide(on) {
+  document.body.classList.toggle('side-open', on);
+  $('btnRoom').classList.toggle('on', on);
+}
+
+function setGhost(on) {
+  S.showGhost = on;
+  $('btnGhost').textContent = 'Ghost car: ' + (on ? 'on' : 'off');
+}
+
+function setSound(on) {
+  S.sound.mute(!on);
+  $('btnSound').textContent = 'Sound: ' + (on ? 'on' : 'off');
+}
+
+/** Which kind of session this is, shown under the track name. */
+function setMode(text, racing) {
+  const el = $('modeLabel');
+  el.textContent = text;
+  el.className = 'mode' + (racing ? ' racing' : '');
+}
+
+/** R: throw the run away and line up again. */
+function restartRun() { resetToStart(); toast('Restart'); }
+
+/**
+ * T: back to the last checkpoint with the clock still running.
+ *
+ * This is the same path a fall takes, so there is only ever one respawn rule -
+ * `Run.update` keeps the car's respawn target pinned to the last gate reached.
+ */
+function backToCheckpoint() { S.car.requestRespawn(); }
 
 function readInput() {
   input.throttle = keys.has('up') ? 1 : 0;
@@ -242,7 +301,15 @@ function frame(now) {
   // run bookkeeping
   const events = S.run.update(S.car, now, dt);
   for (const e of events) {
-    if (e === 'cp') { S.sound.checkpoint(); toast('Checkpoint ' + S.run.nextCp + '/' + S.run.cps.length + '  ' + fmt(S.run.time)); }
+    if (e === 'cp') {
+      S.sound.checkpoint();
+      toast('Checkpoint ' + S.run.nextCp + '/' + S.run.cps.length + '  ' + fmt(S.run.time));
+      // How this split compares with the same point on your best lap. Shown at
+      // the checkpoint and then faded out, rather than ticking away all lap:
+      // a number that only moves when something happened is a number you read.
+      const gt = ghostTimeAt(S.run.s);
+      if (gt != null) showDelta(S.run.time - gt);
+    }
     if (e === 'missed') { S.sound.missed(); toast('Missed a checkpoint!'); }
     if (e === 'finish') onFinish();
   }
@@ -318,18 +385,6 @@ function hud(now) {
   $('cpCount').textContent = run.nextCp + '/' + run.cps.length;
   $('wrongWay').style.display = run.wrongWay ? '' : 'none';
 
-  // live delta against your own best run
-  const d = $('delta');
-  if (S.ghostTimes && run.state === 'running') {
-    const gt = ghostTimeAt(run.s);
-    if (gt != null) {
-      const diff = run.time - gt;
-      d.textContent = fmtDelta(diff);
-      d.className = 'delta ' + (diff <= 0 ? 'ahead' : 'behind');
-      d.style.display = '';
-    }
-  } else { d.style.display = 'none'; }
-
   // race positions
   if (S.raceMode || S.remotes.size) {
     const order = liveOrder();
@@ -338,12 +393,32 @@ function hud(now) {
     $('posNum').textContent = me || '-';
     $('posTot').textContent = order.length;
     renderStandings(order);
+    $('standingsCard').style.display = '';
   } else {
     $('position').style.display = 'none';
     $('standings').innerHTML = '';
+    // An empty card is just a dark smudge in the corner.
+    $('standingsCard').style.display = 'none';
   }
   drawMinimap();
   void now;
+}
+
+/** Flash a split delta above the clock, then fade it out. */
+function showDelta(diff) {
+  const d = $('delta');
+  const cls = 'delta ' + (diff <= 0 ? 'ahead' : 'behind');
+  d.textContent = fmtDelta(diff);
+  d.className = cls + ' show';
+  clearTimeout(d._t);
+  d._t = setTimeout(() => { d.className = cls; }, 2800);
+}
+
+function clearDelta() {
+  const d = $('delta');
+  clearTimeout(d._t);
+  d.className = 'delta';
+  d.textContent = '';
 }
 
 function ghostTimeAt(s) {
@@ -399,11 +474,14 @@ function gapLabel(leader, e) {
 function renderMedalTable() {
   const m = S.track.medals;
   const rows = [['author', 'Author'], ['gold', 'Gold'], ['silver', 'Silver'], ['bronze', 'Bronze']];
+  // Your own best is not in here any more - it lives under the clock, bottom
+  // left of it, where you look for it while you are driving.
   $('medals').innerHTML = rows.map(([k, label]) =>
     `<div class="mrow"><span class="medal ${k}"></span><span>${label}</span>` +
-    `<b>${fmt(m[k] * 1000)}</b></div>`).join('') +
-    (S.bestTime ? `<div class="mrow pb"><span>Your best</span><b>${fmt(S.bestTime)}</b></div>` : '');
+    `<b>${fmt(m[k] * 1000)}</b></div>`).join('');
 }
+
+function showPb() { $('pbTime').textContent = S.bestTime ? fmt(S.bestTime) : '--:--.---'; }
 
 function toast(msg) {
   const el = $('toast');
@@ -505,6 +583,7 @@ async function onFinish() {
 
   if (S.raceMode && S.socket) S.socket.emit('finish', { ms: run.time });
 
+  if (prev != null) showDelta(run.time - prev);
   showResults({ time: run.time, medal, prev, improved, pending: true });
 
   try {
@@ -531,6 +610,7 @@ async function onFinish() {
     showResults({ time: run.time, medal, prev, improved, note: 'Offline - time not saved.' });
   }
   renderMedalTable();
+  showPb();
 }
 
 function medalFor(ms) {
@@ -548,6 +628,13 @@ function localBest(ms) {
     const cur = parseInt(localStorage.getItem(k) || '0', 10);
     if (!cur || ms < cur) localStorage.setItem(k, String(ms));
   } catch (e) { /* private mode */ }
+}
+
+function storedBest() {
+  try {
+    const v = parseInt(localStorage.getItem('drive.pb.' + S.track.slug) || '0', 10);
+    return v > 0 ? v : null;
+  } catch (e) { return null; }
 }
 
 function showResults(r) {
@@ -574,9 +661,19 @@ function hideResults() { $('results').style.display = 'none'; }
 
 function toggleMenu(force) {
   S.menuOpen = force != null ? force : !S.menuOpen;
+  if (S.menuOpen) toggleHelp(false);
   $('menu').style.display = S.menuOpen ? '' : 'none';
+  $('btnSettings').classList.toggle('on', S.menuOpen);
   // Pausing only makes sense alone; in a room the world keeps turning.
   S.paused = S.menuOpen && CFG.mode === 'solo';
+}
+
+function toggleHelp(force) {
+  S.helpOpen = force != null ? force : !S.helpOpen;
+  if (S.helpOpen) toggleMenu(false);
+  $('help').style.display = S.helpOpen ? '' : 'none';
+  $('btnHelp').classList.toggle('on', S.helpOpen);
+  if (CFG.mode === 'solo') S.paused = S.helpOpen || S.menuOpen;
 }
 
 function markActiveTrack() {
@@ -622,6 +719,7 @@ function connect() {
   socket.on('race_reset', () => {
     S.raceMode = false; S.racePhase = 'free'; S.raceT0 = null;
     S.standings = [];
+    setMode('Multiplayer lobby', false);
     $('countdown').style.display = 'none';
     $('raceResult').style.display = 'none';
   });
@@ -632,6 +730,10 @@ function connect() {
 
   $('btnStartRace').onclick = () => socket.emit('start_race', { code: CFG.room });
   $('btnLeave').onclick = () => { socket.emit('leave'); location.href = '/lobbies'; };
+  // The top-left Leave is an ordinary link, so it navigates either way; this
+  // just gives the room a chance to hear about it first.
+  const quit = $('btnQuit');
+  if (quit) quit.addEventListener('click', () => socket.emit('leave'));
   $('chatForm').onsubmit = (e) => {
     e.preventDefault();
     const inp = $('chatInput');
@@ -771,6 +873,9 @@ function onRaceStart(d) {
   S.raceMode = true;
   S.racePhase = 'countdown';
   S.standings = [];
+  // Get the room drawer out of the way - the lights are about to go out.
+  showSide(false);
+  setMode('Race starting', true);
   $('raceResult').style.display = 'none';
   // Put everyone on a grid behind the start line, two by two.
   const slot = (d.grid && CFG.me) ? (d.grid[CFG.me.pid] || 0) : 0;
@@ -818,6 +923,7 @@ function countdownLoop() {
 
 function onRaceGreen(d) {
   S.racePhase = 'racing';
+  setMode('Race in progress', true);
   if (d && d.t0) S.raceT0 = performance.now() + (d.t0 - serverNow());
 }
 
@@ -825,6 +931,7 @@ function onRaceResult(d) {
   S.racePhase = 'results';
   S.raceMode = false;
   S.car.frozen = false;
+  setMode('Multiplayer lobby', false);
   const el = $('raceResult');
   el.style.display = '';
   const mine = CFG.me ? (d.elo || {})[CFG.me.pid] : null;

@@ -19,7 +19,7 @@
         --ttr: #6b4226;
         --ers: #b8860b;
         --kot: #5c2678;
-        --drive: #3d8bfd;
+        --drive: #3d8bfd; /* reserved: the drive tile is waiting on its icon */
         --music: #000000;
         --settings: #000000;
         --link: #1a56ff;
@@ -174,7 +174,6 @@
       .modal-ttr { border-color: var(--ttr); }
       .modal-ers { border-color: var(--ers); }
       .modal-kot { border-color: var(--kot); }
-      .modal-drive { border-color: var(--drive); }
       .modal-music { border-color: var(--music); }
       .modal-settings { border-color: var(--settings); }
       .modal-close {
@@ -228,7 +227,6 @@
       .modal-ttr .pane-title { color: var(--ttr); }
       .modal-ers .pane-title { color: var(--ers); }
       .modal-kot .pane-title { color: var(--kot); }
-      .modal-drive .pane-title { color: var(--drive); }
       .modal-music .pane-title { color: var(--music); }
       .modal-settings .pane-title { color: var(--settings); }
       .pane-text {
@@ -326,10 +324,6 @@
       }
       .modal-kot .media-img {
         border: 2px solid var(--kot);
-        border-radius: 0;
-      }
-      .modal-drive .media-img {
-        border: 2px solid var(--drive);
         border-radius: 0;
       }
       .placeholder {
@@ -783,19 +777,6 @@
         </span>
         <span class="tile-label">KING OF TOKYO</span>
       </button>
-
-      <button class="tile" data-modal="modal-drive">
-        <span class="tile-art">
-          <img
-            class="tile-img"
-            src="assets/icons/drive.png"
-            data-still="assets/icons/drive.png"
-            data-anim="assets/icons/drive.gif"
-            alt="DRIVE"
-          />
-        </span>
-        <span class="tile-label">DRIVE</span>
-      </button>
     </main>
 
     <!-- resume popup -->
@@ -980,30 +961,6 @@
             </div>
             <div class="media">
               <div class="placeholder">gameplay screenshot coming soon</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- drive popup -->
-    <div class="modal" id="modal-drive" hidden>
-      <div class="modal-backdrop" data-close></div>
-      <div class="modal-box modal-drive" role="dialog" aria-modal="true" aria-label="Drive">
-        <button class="modal-close" data-close aria-label="Close">&times;</button>
-        <div class="modal-body">
-          <div class="pane pane-left">
-            <img class="modal-icon" src="assets/icons/drive.gif" alt="" aria-hidden="true" />
-            <h2 class="pane-title">drive</h2>
-            <p class="pane-text">Low-poly time trials, in the spirit of PolyTrack. Nine tracks with loops, jumps and hairpins, four medal times on each, and your best run saved as a ghost to race against. Bring friends for a room and bump each other off the road. Click <a class="here-link" href="https://drive.cgovind.com" target="_blank" rel="noopener">here</a> to play!</p>
-          </div>
-          <div class="pane pane-right">
-            <!-- swap each placeholder for <img class="media-img" src="assets/drive/…" alt="…" /> -->
-            <div class="media">
-              <div class="placeholder">gameplay screenshot coming soon</div>
-            </div>
-            <div class="media">
-              <div class="placeholder">track shot coming soon</div>
             </div>
           </div>
         </div>

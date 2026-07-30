@@ -45,7 +45,7 @@
       <h2 style="margin-top:0">New room</h2>
       <div class="field">
         <label for="tsel">Starting track</label>
-        <select id="tsel" style="font-family:var(--hand);font-size:1.05rem;padding:.45rem;border:2px solid var(--line);border-radius:8px;width:100%">
+        <select id="tsel" style="font-family:var(--display);font-size:1.05rem;padding:.45rem;border:2px solid var(--line);border-radius:8px;width:100%">
           {% for t in tracks %}<option value="{{ t.slug }}">{{ t.name }}</option>{% endfor %}
         </select>
       </div>

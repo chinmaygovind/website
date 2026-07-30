@@ -172,7 +172,7 @@ export class Car {
       if (vn < 0) this.vel.addScaledVector(n, -vn);
 
       // Hold the car onto a surface only where nothing else could hold it: past
-      // STICK_TILT (about 70 degrees) and on into fully inverted, which in
+      // STICK_TILT (about 32 degrees) and on into fully inverted, which in
       // practice means a corkscrew and nothing else. Ordinary hills, ramps and
       // banked corners get no help whatsoever - go over a crest and you fly,
       // which is the whole point.

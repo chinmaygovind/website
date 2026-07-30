@@ -35,7 +35,9 @@ multiplayer card game that shares TTR's accounts).
   third row (2 columns on <=760px). Currently 9: resume, poker, whales, racing,
   music, settings on the top row, then the three games — ttr, ers, kot — on the
   second. **Keep `settings` last in the top row** (it's a Wii-menu joke), and add
-  new games to the second row so the split holds.
+  new games to the second row so the split holds. **Drive has no tile on purpose**
+  — it had one, and it was removed because Chinmay wants to draw the icon himself;
+  `--drive` is still in `:root` waiting for it. Do not re-add it unasked.
 - **Adding a tile is one repeating pattern**, all inside `site/index.html` (no
   build step, so everything is inline):
   1. a `--<name>` accent colour in `:root`, then `.modal-<name>` rules for
@@ -262,6 +264,22 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   whole reason a fully inverted loop needs no special case in the car code. Gravity is
   always applied and its normal component removed while grounded, so slope acceleration
   falls out for free.
+- **Grass is meant to hurt.** `OFFROAD_DRAG` is a linear term, so the grass top speed
+  is where `ACCEL - quadratic drag - OFFROAD_DRAG*v` hits zero: about half of
+  `MAX_SPEED`. It was 0.55 (grass top speed ~36 against a road top speed of 44),
+  which made a straight line across the infield simply the faster way round a corner.
+  `test_grass_costs_you_the_corner` pins it as an acceleration budget rather than by
+  driving anywhere, so it does not depend on where the grass happens to be.
+- **Air pitch is deliberately lazy.** Holding the throttle pitches the nose down at
+  `AIR_PITCH`, and `ALIGN_AIR` (which only runs when there is *no* pitch input) noses
+  a car that took off from an uphill ramp down as well. At the original 1.5 and 2.6 a
+  jump taken flat out - which is how every jump is taken - was pointing at the floor
+  half a second off the lip. `test_the_car_does_not_nosedive_off_a_jump` bounds the
+  drop over the first half second and still requires enough authority to aim.
+- **Gate posts are walls, not scenery.** Every checkpoint's two posts go into the
+  collider as well as the mesh, and sit just outside the kerb so the full road stays
+  usable. `test_checkpoint_posts_are_solid_and_the_gate_is_not` pins both halves: the
+  posts stop a car, and the mouth of the gate stays completely open.
 - **The car is not glued to slopes.** `SNAP` is a 0.12-unit seam tolerance, nothing
   more, and there is no term scrubbing velocity along the surface normal - so a crest
   throws the car, as it should. `STICK_FORCE` only engages past `STICK_TILT` (about 32
@@ -289,9 +307,39 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   tangential velocity preserved, per-pair bump cooldown) - see `Car.resolveCars`.
   `FLAG.BRAKE` rides along in the pose so a rival's brake lights work.
 
+### The HUD, the phone, and the type
+
+- **The HUD is arranged the way Polytrack's is**, because it is the arrangement that
+  keeps the middle of the screen empty: the clock is bottom centre, the split delta
+  flashes directly above it at each checkpoint and fades, your personal best sits to
+  its lower left and the speed to its lower right, with a speed bar under the lot.
+  The corners are therefore free, which is the whole reason the touch controls fit.
+- **Top left is where you are** (track name, then `Solo time trial` /
+  `Multiplayer lobby` / `Race in progress`); **top right is everything you can open**:
+  the room drawer (rooms only), help, settings. Three icon buttons and nothing else.
+- **The room panel is a drawer at every screen size**, opened by the hamburger. It
+  used to be pinned open - a 274px column on a desktop, a 46vh slab across the bottom
+  of a phone - so the multiplayer furniture sat on top of the road and the driving
+  controls the entire time you were racing. It opens on arrival and closes itself when
+  a race starts.
+- **Touch controls**: steering under the left thumb with the checkpoint button above
+  it, throttle and brake under the right with `DRIFT` as a bar beneath them. Laid out
+  with flexbox off the safe-area insets, not fixed pixel offsets. `?touch=1` on a play
+  URL forces the touch HUD on a desktop browser, which is the only way to look at the
+  phone layout without a phone.
+- `R` restarts the run; `T` (or Enter) goes back to the last checkpoint **with the
+  clock still running** - the difference between "that lap is gone" and "I fell off".
+- **The type is Titillium Web**, self-hosted in `static/fonts/` at four weights
+  (~46KB total, no CDN). It replaced xkcd Script, which is a good joke on the landing
+  page and the wrong voice entirely for a timing screen. Titillium is the closest
+  freely licensable thing to Formula 1's own display face, which is proprietary.
+  `--display` is headings and buttons, `--sans` is body text, both the same family.
+  **This is Drive only** - the landing page and the other three games still use xkcd
+  Script. Changing the font means changing `sw.js`'s precache list too.
+
 ### Tests
 
-`cd drive && venv/bin/python -m pytest tests/` - 197 tests. `test_tracks.py` and
+`cd drive && venv/bin/python -m pytest tests/` - 217 tests. `test_tracks.py` and
 `test_runcheck.py` are pure Python. **`test_sim.py` runs the game's real JavaScript
 headlessly**: `tests/jsrt.py` strips the ES module syntax, swaps three.js for
 `tests/three_stub.js` (real Vector3/Quaternion maths, inert graphics), and runs it in
