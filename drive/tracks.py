@@ -742,7 +742,7 @@ _POOL = [
     ("spiral", "Spiral Ascent", "A long banked spiral to the top and a dive down the outside.",
      "spiral", None, 4, _spiral),
     ("eight", "Figure Eight", "Short, and it crosses over itself.",
-     "park", -1.2, 2, _figure_eight),
+     "winter", -1.2, 2, _figure_eight),
     ("gauntlet", "The Gauntlet", "Loops, gaps, hairpins, elevation. Everything, twice over.",
      "gauntlet", None, 5, _gauntlet),
 ]
