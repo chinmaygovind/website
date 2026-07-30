@@ -106,7 +106,28 @@ const PALETTES = {
               below: { kind: 'desert', deck: 108, reach: 980,
                        duneDensity: 0.4, mesaDensity: 0.55, rockDensity: 0.18,
                        sand: 0xd9b478, rock: 0xb26a44 } },
-  heights:  { road: 0x4f5460, kerb: 0xf4f4f4, kerb2: 0xf2994a, ground: 0x7a6a52, sky: 0xf0c9a0, fog: 0xf3d9bd, rail: 0xfff2e2, prop: 0x8a7358, deco: 0xf2994a },
+  // Hairpin Heights: a climb with nothing under it but weather. Same deck as
+  // Skyline but no city in it - the point of this one is altitude, and an
+  // unbroken sea of cloud sells height better than anything you could put in it.
+  heights:  { road: 0x4f5460, kerb: 0xf4f4f4, kerb2: 0xf2994a,
+              ground: 0x7a6a52, rail: 0xfff2e2, prop: 0x8a7358, deco: 0xf2994a,
+              fog: 0xf0d6b4,
+              sky: {
+                stops: [
+                  [0.00, 0xc2a385], [0.44, 0xe8cdae], [0.50, 0xf6e2c6],
+                  [0.60, 0xcfd8e2], [0.74, 0x86aed6], [0.88, 0x4a7fc4],
+                  [1.00, 0x24559c],
+                ],
+                glow: 0xfff4de, glowStrength: 0.8, glowMode: 'radial', glowFocus: 4.5,
+                sun: { az: 0.9, el: 0.42, color: 0xfffaea, size: 640 },
+                light: { color: 0xfff4e4, intensity: 1.5,
+                         dir: [Math.sin(0.9) * 0.68, 0.73, Math.cos(0.9) * 0.68] },
+                hemi: { sky: 0xeae2f2, ground: 0xbfae96, intensity: 0.74 },
+                fog: 0xf0d6b4, fogNear: 300, fogFar: 1450,
+              },
+              below: { deck: 96, depth: 120, reach: 980,
+                       towerDensity: 0, cover: 0.72, cloudStep: 5,
+                       cloud: 0xfdf6ec, floor: 0xc9b294 } },
   city:     { road: 0x4a4f5c, kerb: 0xf7f7f7, kerb2: 0xf2c94c, ground: 0x5c6070, sky: 0x8ea9c9, fog: 0xa9bed6, rail: 0xf2f4f7, prop: 0x6b7180, deco: 0xf2c94c },
   spiral:   { road: 0x525869, kerb: 0xfafafa, kerb2: 0xbb6bd9, ground: 0x5a5570, sky: 0xb9a6e0, fog: 0xd0c4ec, rail: 0xf6f0ff, prop: 0x6d6488, deco: 0xbb6bd9 },
   gauntlet: { road: 0x474c58, kerb: 0xf2f2f2, kerb2: 0xe8453c, ground: 0x3d4250, sky: 0x6f7f9c, fog: 0x8d9ab3, rail: 0xf7f7f7, prop: 0x555c6c, deco: 0xe8453c },
