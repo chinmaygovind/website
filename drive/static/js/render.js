@@ -9,6 +9,7 @@
 // smoothing is frame-rate independent, so it never whips or judders.
 
 import * as THREE from './vendor/three.module.js';
+import { mulberry } from './trackmesh.js';
 
 const BRAKE_OFF = 0x521218;
 const BRAKE_ON = 0xff2b2b;
@@ -475,6 +476,43 @@ function sunSprite(sun) {
   return spr;
 }
 
+/**
+ * Stars, as one Points cloud just inside the dome.
+ *
+ * sizeAttenuation is off so a star is a fixed number of pixels however far away
+ * it is - which is both what a star does and the only way it stays visible at
+ * this distance. Biased to the upper hemisphere, because the lower half of the
+ * dome is under the horizon on a track that has one, and looks wrong on one
+ * that does not.
+ */
+function starfield(cfg) {
+  const rnd = mulberry(cfg.seed != null ? cfg.seed : 5);
+  const n = cfg.count != null ? cfg.count : 800;
+  const pos = [], col = [];
+  const warm = new THREE.Color(0xffe6c4), cold = new THREE.Color(0xcfe0ff);
+  const white = new THREE.Color(0xffffff);
+  for (let i = 0; i < n; i++) {
+    const y = -0.12 + rnd() * 1.12;
+    const r = Math.sqrt(Math.max(0, 1 - y * y));
+    const a = rnd() * Math.PI * 2;
+    const d = R_SKY * 0.97;
+    pos.push(Math.cos(a) * r * d, y * d, Math.sin(a) * r * d);
+    // a handful of coloured ones, the rest white at varying brightness
+    const t = rnd();
+    const c = (t < 0.08 ? warm : t < 0.18 ? cold : white).clone()
+      .multiplyScalar(0.45 + rnd() * 0.55);
+    col.push(c.r, c.g, c.b);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  const m = new THREE.Points(geo, new THREE.PointsMaterial({
+    size: cfg.size != null ? cfg.size : 2.2, sizeAttenuation: false,
+    vertexColors: true, transparent: true, depthWrite: false, fog: false }));
+  m.renderOrder = -1;
+  return m;
+}
+
 function makeSky(pal) {
   const group = new THREE.Group();
   const spec = pal.sky && pal.sky.stops ? pal.sky : null;
@@ -484,6 +522,7 @@ function makeSky(pal) {
     return group;
   }
   group.add(skyDome(spec));
+  if (spec.stars) group.add(starfield(spec.stars));
   if (spec.sun) group.add(sunSprite(spec.sun));
   return group;
 }
