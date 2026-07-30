@@ -203,7 +203,30 @@ const PALETTES = {
                 fog: 0x171a30, fogNear: 220, fogFar: 1100,
               },
               below: { kind: 'void' } },
-  gauntlet: { road: 0x474c58, kerb: 0xf2f2f2, kerb2: 0xe8453c, ground: 0x3d4250, sky: 0x6f7f9c, fog: 0x8d9ab3, rail: 0xf7f7f7, prop: 0x555c6c, deco: 0xe8453c },
+  // The Gauntlet: everything twice over, over a lava field, under a storm.
+  gauntlet: { road: 0x33363f, kerb: 0xe8e4e2, kerb2: 0xe8453c,
+              ground: 0x1b1920, rail: 0xd8d2cf, prop: 0x2a2830, deco: 0xff6a2a,
+              fog: 0x2a222a,
+              sky: {
+                // No sun anywhere in it. The horizon is warm because the lava
+                // is lighting the underside of the weather, not because there
+                // is anything up there.
+                stops: [
+                  [0.00, 0x3d1c10], [0.40, 0x4a2314], [0.50, 0x5a2c18],
+                  [0.56, 0x3a3038], [0.66, 0x2b2831], [0.82, 0x1e1c25],
+                  [1.00, 0x14131b],
+                ],
+                light: { color: 0xa9b0c4, intensity: 0.9, dir: [0.32, 0.9, 0.28] },
+                // Ground bounce is molten orange, so every underside in the
+                // world glows. That single number is most of what makes this
+                // look like a lava field rather than a dark field.
+                hemi: { sky: 0x39404f, ground: 0xc2400f, intensity: 1.0 },
+                fog: 0x2a222a, fogNear: 190, fogFar: 780,
+              },
+              below: { kind: 'lava', deck: 96, reach: 700,
+                       crustStep: 5, crustCover: 0.86, spireStep: 16, spireDensity: 0.5,
+                       lava: 0xff5510, crust: 0x1b1920,
+                       above: { deck: 120, cover: 0.5, cloud: 0x2a2731 } } },
 };
 
 export function palette(track) {
@@ -625,7 +648,7 @@ export function buildTrack(track, T) {
 
   // --- scenery (procedural, seeded, deterministic) -------------------------
   addScenery(solid, track, pal, bbox, CELL);
-  if (groundY == null && pal.below) addWorldBelow(solid, soft, bright, track, pal, bbox, CELL, minY);
+  if (groundY == null && pal.below) addWorldBelow(solid, soft, bright, track, pal, bbox, CELL, minY, maxY);
 
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   const matBright = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
@@ -689,7 +712,7 @@ export function mulberry(seed) {
  * Either would usually do; a landmark tower or a mesa is tall enough that it is
  * not worth betting the geometry on one of them.
  */
-function addWorldBelow(buf, soft, bright, track, pal, bbox, CELL, minY) {
+function addWorldBelow(buf, soft, bright, track, pal, bbox, CELL, minY, maxY) {
   const cfg = pal.below;
   let seed = 91;
   for (let i = 0; i < track.slug.length; i++) seed = seed * 31 + track.slug.charCodeAt(i);
@@ -726,7 +749,16 @@ function addWorldBelow(buf, soft, bright, track, pal, bbox, CELL, minY) {
     desertBelow(buf, cfg, rnd, x0, x1, z0, z1, deckY, cap, CELL, clear);
     return;
   }
+  // An overcast ceiling, for the tracks that want weather on top of them too.
+  if (cfg.above) {
+    cloudDeck(soft, cfg.above, rnd, x0, x1, z0, z1,
+              maxY + (cfg.above.deck != null ? cfg.above.deck : 120), CELL);
+  }
   if (cfg.kind === 'void') return;      // nothing down there at all, on purpose
+  if (cfg.kind === 'lava') {
+    lavaBelow(buf, bright, cfg, rnd, x0, x1, z0, z1, deckY, cap, CELL, clear);
+    return;
+  }
   if (cfg.kind === 'downtown') {
     downtownBelow(buf, bright, cfg, rnd, bbox, x0, x1, z0, z1, deckY, CELL, clear);
     return;
@@ -982,6 +1014,65 @@ function downtownBelow(buf, bright, cfg, rnd, bbox, x0, x1, z0, z1, groundY, CEL
       const u = i / 4;
       buf.box(dx, groundY + 6 + i * 5, dz, 34 * (1 - u * 0.5), 2.6, 30 * (1 - u * 0.5),
               shade(glass, 0.16 + u * 0.1));
+    }
+  }
+}
+
+/**
+ * A lava floor, crusted over.
+ *
+ * The trick is the order: a single glowing plane across the whole area in the
+ * *unlit* buffer, then plates of dark crust laid on top of it in the lit one,
+ * covering most but not all of it. The gaps between plates are the lava, so the
+ * veins come out irregular and connected for free instead of being drawn - and
+ * because the lava is unlit it stays at full brightness while everything on top
+ * of it sits in the dark, which is what makes it read as molten.
+ */
+function lavaBelow(buf, bright, cfg, rnd, x0, x1, z0, z1, floorY, cap, CELL, clear) {
+  const hot = cfg.lava != null ? cfg.lava : 0xff5a12;
+  const crust = cfg.crust != null ? cfg.crust : 0x1c1a20;
+  bright.quad([x0, floorY, z0], [x0, floorY, z1], [x1, floorY, z1], [x1, floorY, z0], hot);
+
+  // --- crust ---------------------------------------------------------------
+  const step = CELL * (cfg.crustStep != null ? cfg.crustStep : 5);
+  for (let x = x0; x < x1; x += step) {
+    for (let z = z0; z < z1; z += step) {
+      if (rnd() > (cfg.crustCover != null ? cfg.crustCover : 0.86)) continue;
+      const px = x + (rnd() - 0.5) * step * 0.3, pz = z + (rnd() - 0.5) * step * 0.3;
+      const w = step * (0.4 + rnd() * 0.28), d = step * (0.4 + rnd() * 0.28);
+      const h = 1.2 + rnd() * 2.6;
+      buf.box(px, floorY + h, pz, w, h, d, shade(crust, (rnd() - 0.4) * 0.5));
+    }
+  }
+
+  // --- spires --------------------------------------------------------------
+  // Black rock, jagged, leaning. Height is what survives being seen from above.
+  const sStep = CELL * (cfg.spireStep != null ? cfg.spireStep : 16);
+  for (let x = x0; x < x1; x += sStep) {
+    for (let z = z0; z < z1; z += sStep) {
+      if (rnd() > (cfg.spireDensity != null ? cfg.spireDensity : 0.5)) continue;
+      const px = x + rnd() * sStep, pz = z + rnd() * sStep;
+      const w0 = 7 + rnd() * 12;
+      if (!clear(px, pz, w0)) continue;
+      const hgt = Math.min(cap - floorY, 40 + rnd() * 90);
+      if (hgt < 20) continue;
+      const tiers = 3 + Math.floor(rnd() * 3);
+      const lean = (rnd() - 0.5) * 0.6;
+      let y = floorY;
+      for (let k = 0; k < tiers; k++) {
+        const u = k / tiers, th = hgt / tiers;
+        const w = w0 * (1 - u * 0.78) * (0.8 + rnd() * 0.4);
+        buf.box(px + lean * u * w0, y + th / 2, pz + lean * u * w0 * 0.6,
+                w / 2, th / 2, w * (0.7 + rnd() * 0.5) / 2,
+                shade(crust, -0.25 + u * 0.22 + (rnd() - 0.5) * 0.12));
+        y += th;
+      }
+      // molten at the base, where it came out of the floor
+      if (rnd() < 0.45) {
+        bright.quad([px - w0, floorY + 0.4, pz - w0], [px + w0, floorY + 0.4, pz - w0],
+                    [px + w0, floorY + 0.4, pz + w0], [px - w0, floorY + 0.4, pz + w0],
+                    shade(hot, 0.1));
+      }
     }
   }
 }
