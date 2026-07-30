@@ -67,20 +67,25 @@ const keys = new Set();          // keyboard
 // The missing one is the handbrake, and there is nowhere to put it. The right
 // thumb is on a pedal for essentially the whole lap, so a fifth button on that
 // side cannot be pressed without lifting off; and a button on the left is a
-// button the steering thumb has to leave. So **brake plus steer is the
-// handbrake** - the one combination a pair of thumbs is already making at the
-// point in a corner where you would want it.
+// button the steering thumb has to leave.
+//
+// So it is a gesture on the brake: **double-tap and hold**. The obvious
+// alternative - brake while steering - was tried and is unusable, because
+// braking into a corner *is* steering, so it fired on essentially every corner
+// and the car spent the lap sideways. A handbrake has to be something you ask
+// for, and it cannot be a combination you were going to make anyway.
+const DOUBLE_TAP = 320;          // ms from letting go to the second tap
 const touchDown = new Set();     // ids of touch buttons currently held
 const touchKeys = new Set();
 const TOUCH_KEYS = {
   tGas: ['up'], tBrake: ['down'], tLeft: ['left'], tRight: ['right'],
 };
+let brakeReleasedAt = -1e9;
+let brakeIsDrift = false;
 function syncTouch() {
   touchKeys.clear();
   for (const id of touchDown) for (const k of TOUCH_KEYS[id] || []) touchKeys.add(k);
-  if (touchKeys.has('down') && (touchKeys.has('left') || touchKeys.has('right'))) {
-    touchKeys.add('drift');
-  }
+  if (brakeIsDrift && touchDown.has('tBrake')) touchKeys.add('drift');
 }
 
 // ---------------------------------------------------------------------------
@@ -192,8 +197,9 @@ function bindInput() {
   });
   window.addEventListener('blur', () => {
     keys.clear();
-    touchDown.clear(); syncTouch();
-    document.querySelectorAll('.tbtn.down').forEach(el => el.classList.remove('down'));
+    touchDown.clear(); brakeIsDrift = false; syncTouch();
+    document.querySelectorAll('.tbtn').forEach(el =>
+      el.classList.remove('down', 'drifting'));
   });
 
   // touch: hold-to-act buttons, and a drag anywhere on the left half to steer
@@ -211,7 +217,22 @@ function bindInput() {
   };
   const hold = (id) => tb(id, () => { touchDown.add(id); syncTouch(); },
                               () => { touchDown.delete(id); syncTouch(); });
-  for (const id of Object.keys(TOUCH_KEYS)) hold(id);
+  for (const id of Object.keys(TOUCH_KEYS)) if (id !== 'tBrake') hold(id);
+  // The brake is the one button with two meanings, so it is bound by hand: a
+  // press is the brake, and a press that lands within DOUBLE_TAP of the last
+  // release is the handbrake as well, for as long as you keep your thumb down.
+  tb('tBrake', () => {
+    brakeIsDrift = performance.now() - brakeReleasedAt < DOUBLE_TAP;
+    touchDown.add('tBrake');
+    syncTouch();
+    $('tBrake').classList.toggle('drifting', brakeIsDrift);
+  }, () => {
+    brakeReleasedAt = performance.now();
+    brakeIsDrift = false;
+    touchDown.delete('tBrake');
+    syncTouch();
+    $('tBrake').classList.remove('drifting');
+  });
   // These two fire on press and do nothing on release, so they are taps rather
   // than holds like the pedals are.
   tb('tCheck', () => backToCheckpoint(), () => {});

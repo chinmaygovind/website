@@ -326,10 +326,14 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   throttle and brake right, checkpoint and restart small above the steering. There
   is deliberately no fifth button, because there is nowhere a thumb can reach one:
   the right thumb is on a pedal essentially the whole lap and the left is on an
-  arrow. **Brake plus steer is the handbrake instead** - derived in `syncTouch`, so
-  it is a touch-input mapping and the physics and the keyboard are untouched. (A
-  DRIFT button on the right was tried first and was literally unpressable; a
-  steer-and-drift second row on the left worked but was not worth the clutter.)
+  arrow. The handbrake is a gesture instead - **double-tap the brake and hold** -
+  handled in `bindInput`/`syncTouch`, so it is a touch-input mapping and the
+  physics and the keyboard are untouched. Two earlier attempts are worth not
+  repeating: a DRIFT button beside the pedals, which was literally unpressable,
+  and **brake-while-steering, which is unusable** - braking into a corner *is*
+  steering, so it fired on essentially every corner and the car spent the lap
+  sideways. A handbrake has to be something you ask for, and it cannot be a
+  combination you were going to make anyway.
   Touch state lives in its own `touchDown`/`touchKeys` sets rather than being poked
   into `keys`, since it is not a one-button-one-control mapping. Laid out with
   flexbox off the safe-area insets. `?touch=1` on a play URL forces the touch HUD on

@@ -71,7 +71,7 @@
     <span class="hint-keys">Press <b>&uarr;</b> or <b>W</b> to start &middot; <b>Space</b> drift
       &middot; <b>R</b> restart &middot; <b>T</b> last checkpoint</span>
     <span class="hint-touch">Tap the right pedal to start &middot; steer on the left
-      &middot; brake while steering to drift</span>
+      &middot; double-tap the brake to drift</span>
   </div>
 </div>
 
@@ -103,8 +103,9 @@
      Four driving buttons and no handbrake button at all: the right thumb is on a
      pedal for essentially the whole lap, so nothing on that side of the screen is
      reachable while driving, and a fifth button anywhere else is a button you
-     cannot press. Instead **brake while steering is the handbrake** (see
-     syncTouch in game.js), which is the one combination a thumb can already make.
+     cannot press. Instead the brake **double-tapped and held** is the handbrake
+     (see syncTouch in game.js) - deliberate, and impossible to trigger by
+     accident the way "brake while steering" was.
      The checkpoint and restart buttons live up here with the driving controls
      rather than in a menu - falling off is common enough that recovering from it
      must not cost two taps. -->
@@ -119,17 +120,17 @@
       </div>
     </div>
     <div class="steerpad">
-      <div class="tbtn" id="tLeft" title="Steer left (hold the brake too to drift)">
+      <div class="tbtn" id="tLeft" title="Steer left">
         <svg viewBox="0 0 24 24"><path d="M15 4.5 8 12l7 7.5"/></svg>
       </div>
-      <div class="tbtn" id="tRight" title="Steer right (hold the brake too to drift)">
+      <div class="tbtn" id="tRight" title="Steer right">
         <svg viewBox="0 0 24 24"><path d="M9 4.5 16 12l-7 7.5"/></svg>
       </div>
     </div>
   </div>
   <div class="tpad right">
     <div class="pedals">
-      <div class="tbtn" id="tBrake" title="Brake">
+      <div class="tbtn" id="tBrake" title="Brake - double-tap and hold to drift">
         <svg viewBox="0 0 24 24"><path d="M5 6.5 12 13l7-6.5"/><path d="M5 12.5 12 19l7-6.5"/></svg>
       </div>
       <div class="tbtn" id="tGas" title="Throttle">
@@ -202,9 +203,10 @@
     <h3>On a phone</h3>
     <p class="muted" style="margin:0 0 .6rem">Hold it sideways. Throttle and brake are under
       your right thumb and steering under your left. There is no separate drift button, because
-      your right thumb never leaves a pedal - instead <b>hold the brake while steering</b> and
-      the back end steps out, exactly as the handbrake does on a keyboard. The flag puts you
-      back at the last checkpoint and the arrow restarts the run.</p>
+      your right thumb never leaves a pedal - instead <b>double-tap the brake and hold</b> and
+      it becomes the handbrake for as long as you keep your thumb down; it lights up amber so
+      you can see it took. The flag puts you back at the last checkpoint and the arrow restarts
+      the run.</p>
     <h3>Getting round quickly</h3>
     <p class="muted" style="margin:0">Grass is slow, so a corner cut usually costs more than it
       saves. Crests throw the car - land flat and you keep the speed. Inside a loop, stay off

@@ -430,6 +430,12 @@ body.touch #touch { display: block; }
   backdrop-filter: blur(3px);
 }
 .tbtn.down { background: rgba(255, 255, 255, .5); color: #12141c; }
+/* The brake, double-tapped into the handbrake. It has to be obvious that you
+   asked for something different, or the slide reads as the car misbehaving. */
+.tbtn.drifting, .tbtn.drifting.down {
+  border-color: #ffd96b; color: #ffd96b; background: rgba(120, 84, 12, .55);
+  box-shadow: 0 0 14px rgba(255, 217, 107, .55);
+}
 .tbtn svg {
   width: 34px; height: 34px; fill: none; stroke: currentColor; stroke-width: 2;
   stroke-linecap: round; stroke-linejoin: round;
