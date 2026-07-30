@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}{{ track.name }} | Drive{% endblock %}
+{% block bodyclass %}playing{% endblock %}
+{% block body %}
+<canvas id="gl"></canvas>
+
+<div class="hud">
+  <!-- top left: timer, splits, delta -->
+  <div class="hud-tl">
+    <div class="card">
+      <div class="timer-row">
+        <span class="timer" id="time">0:00.000</span>
+        <span class="delta" id="delta" style="display:none">+0.000</span>
+      </div>
+      <div class="sub">Checkpoints <span id="cpCount">0/0</span></div>
+    </div>
+    <div class="card" id="position" style="display:none">
+      <div class="position"><b id="posNum">-</b><span>/<span id="posTot">1</span></span></div>
+      <div class="sub">Position</div>
+    </div>
+  </div>
+
+  <!-- top right: track, medals, standings -->
+  <div class="hud-tr">
+    <div class="card" style="text-align:right">
+      <div class="trackname" id="trackName">{{ track.name }}</div>
+      <div class="trackblurb" id="trackBlurb">{{ track.blurb }}</div>
+    </div>
+    <div class="card medals" id="medalsCard"><div id="medals"></div></div>
+    <div class="card" id="standingsCard"><div id="standings"></div></div>
+    <div class="card" id="raceResult" style="display:none"></div>
+  </div>
+
+  <!-- bottom left: minimap -->
+  <div class="hud-bl">
+    <div class="card"><canvas id="minimap" width="190" height="150"></canvas></div>
+  </div>
+
+  <!-- bottom right: speed -->
+  <div class="hud-br">
+    <div class="card">
+      <div class="speedo" style="justify-content:flex-end">
+        <span class="speed-num" id="speed">0</span><span class="speed-unit">km/h</span>
+      </div>
+      <div class="speed-bar"><i id="speedFill"></i></div>
+      <div class="row" style="justify-content:flex-end;margin-top:.4rem;gap:.35rem">
+        <button class="btn secondary" id="btnGhost" style="font-size:.8rem;padding:.2rem .5rem">Ghost</button>
+        <button class="btn secondary" id="btnMenu" style="font-size:.8rem;padding:.2rem .5rem">Menu</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="wrongWay" style="display:none">WRONG WAY</div>
+  <div id="toast"></div>
+  <div class="countdown" id="countdown" style="display:none">3</div>
+  <div id="startHint">Press <b>&uarr;</b> or <b>W</b> to start &middot; <b>Space</b> drift &middot; <b>R</b> restart &middot; <b>Enter</b> respawn</div>
+</div>
+
+{% if mode == 'room' %}
+<aside class="side">
+  <div>
+    <h4>Room {{ room.code }}</h4>
+    <div id="roster"></div>
+  </div>
+  <button class="btn" id="btnStartRace" style="display:none">Start race</button>
+  <div id="hostOnly" style="display:none">
+    <h4>Track</h4>
+    <div class="tracklist">
+      {% for t in tracks %}
+      <button class="tpick" data-track="{{ t.slug }}">{{ t.name }}</button>
+      {% endfor %}
+    </div>
+  </div>
+  <div>
+    <h4>Chat</h4>
+    <div id="chatLog"></div>
+    <form id="chatForm" autocomplete="off"><input id="chatInput" placeholder="Say something" maxlength="200"/></form>
+  </div>
+  <button class="btn ghost" id="btnLeave" style="border-color:#ff8a7a;color:#ff8a7a">Leave room</button>
+</aside>
+{% endif %}
+
+<div id="touch">
+  <div class="tbtn" id="tLeft">&#9664;</div>
+  <div class="tbtn" id="tRight">&#9654;</div>
+  <div class="tbtn" id="tGas">&#9650;</div>
+  <div class="tbtn" id="tBrake">&#9660;</div>
+  <div class="tbtn" id="tDrift">DRIFT</div>
+</div>
+
+<!-- results -->
+<div class="overlay" id="results" style="display:none">
+  <div class="sheet">
+    <div class="medal-big none" id="resMedal">FINISHED</div>
+    <div class="result-time" id="resTime">0:00.000</div>
+    <div id="resNote"></div>
+    <div id="resPending" style="display:none">Saving…</div>
+    <div class="row" style="margin-top:1rem">
+      <button class="btn" id="btnRetry">Retry (R)</button>
+      <button class="btn secondary" id="btnNextTrack">Next track</button>
+      <a class="btn secondary" href="/track/{{ track.slug }}">Leaderboard</a>
+    </div>
+  </div>
+</div>
+
+<!-- pause menu -->
+<div class="overlay" id="menu" style="display:none">
+  <div class="sheet">
+    <h2>{{ track.name }}</h2>
+    <p class="muted" style="margin-top:-.4rem">{{ track.blurb }}</p>
+    <div class="row">
+      <button class="btn" id="btnResume">Resume</button>
+      <button class="btn secondary" id="btnRestart">Restart</button>
+      {% if mode == 'room' %}
+      <a class="btn secondary" href="/lobbies">Leave room</a>
+      {% else %}
+      <a class="btn secondary" href="/">All tracks</a>
+      {% endif %}
+    </div>
+    <h3>Controls</h3>
+    <table class="board">
+      <tr><td>Steer</td><td>&larr; &rarr; or A / D</td></tr>
+      <tr><td>Throttle / brake</td><td>&uarr; &darr; or W / S</td></tr>
+      <tr><td>Drift</td><td>Space or Shift</td></tr>
+      <tr><td>In the air</td><td>Steer to turn, throttle/brake to pitch</td></tr>
+      <tr><td>Restart run</td><td>R</td></tr>
+      <tr><td>Respawn at checkpoint</td><td>Enter or Backspace</td></tr>
+      <tr><td>Ghost / mute</td><td>G / M</td></tr>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if mode == 'room' %}<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>{% endif %}
+<script>
+  window.DRIVE_TUNING = {{ tuning_json|safe }};
+  window.DRIVE_TRACK = {{ track_json|safe }};
+  window.DRIVE_CFG = {
+    mode: "{{ mode }}",
+    room: {% if room %}"{{ room.code }}"{% else %}null{% endif %},
+    me: {{ me_json|safe }},
+    roster: {{ roster_json|safe }},
+    name: {{ name|tojson }},
+    pbMs: {{ pb_ms if pb_ms else 'null' }},
+    pbs: {},
+    tracks: {{ tracks|tojson }},
+    nextTrack: {{ next_slug|tojson }}
+  };
+  {% if pb_ms %}window.DRIVE_CFG.pbs["{{ track.slug }}"] = {{ pb_ms }};{% endif %}
+</script>
+<script type="module" src="{{ url_for('static', filename='js/game.js') }}?v={{ asset_version }}"></script>
+{% endblock %}

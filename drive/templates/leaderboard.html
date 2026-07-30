@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Records | Drive{% endblock %}
+{% set active_page = 'leaderboard' %}
+{% block body %}
+{% include "_nav.html" %}
+<div class="wrap">
+  <h1>Records</h1>
+
+  <h2>Track records</h2>
+  <div class="panel">
+    <table class="board">
+      <tr><th>Track</th><th>Holder</th><th class="num">Time</th><th class="num">Author time</th></tr>
+      {% for t in tracks %}
+      {% set rec = records.get(t.slug) %}
+      <tr>
+        <td><a href="/track/{{ t.slug }}">{{ t.name }}</a></td>
+        <td>{{ rec[1] if rec else '—' }}</td>
+        <td class="num">{{ '%d:%06.3f'|format((rec[0] // 60000), (rec[0] % 60000) / 1000) if rec else '—' }}</td>
+        <td class="num">{{ '%d:%06.3f'|format(((t.medals.author*1000)|int // 60000), ((t.medals.author*1000)|int % 60000) / 1000) }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  <h2>Race ratings</h2>
+  <p class="muted" style="margin-top:-.4rem">From finishing positions in multiplayer races.</p>
+  <div class="panel">
+    {% if stats %}
+    <table class="board">
+      <tr><th>#</th><th>Driver</th><th class="num">Rating</th><th>Tier</th><th class="num">Races</th><th class="num">Wins</th><th class="num">Win %</th></tr>
+      {% for s in stats %}
+      <tr {% if user and s.user_id == user.id %}class="me"{% endif %}>
+        <td>{{ loop.index }}</td>
+        <td>{{ s.user.username }}</td>
+        <td class="num">{{ s.elo }}</td>
+        <td>{{ s.elo_tier }}</td>
+        <td class="num">{{ s.races }}</td>
+        <td class="num">{{ s.wins }}</td>
+        <td class="num">{{ s.win_rate }}%</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p class="muted">No races finished yet. <a href="/lobbies">Start one.</a></p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

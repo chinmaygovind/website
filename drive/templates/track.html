@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ track.name }} records | Drive{% endblock %}
+{% set active_page = 'leaderboard' %}
+{% block body %}
+{% include "_nav.html" %}
+<div class="wrap">
+  <h1>{{ track.name }}</h1>
+  <p class="lede">{{ track.blurb }}</p>
+  <div class="row" style="margin-bottom:1.4rem">
+    <a class="btn" href="/solo/{{ track.slug }}">Drive it</a>
+    <a class="btn secondary" href="/leaderboard">All records</a>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 260px;gap:1.3rem" class="lobby-grid">
+    <div class="panel">
+      <h2 style="margin-top:0">Best times</h2>
+      {% if rows %}
+      <table class="board">
+        <tr><th>#</th><th>Driver</th><th class="num">Time</th><th>Medal</th><th class="num">Runs</th></tr>
+        {% for r in rows %}
+        <tr {% if user and r.user_id == user.id %}class="me"{% endif %}>
+          <td>{{ loop.index }}</td>
+          <td>{{ r.user.username if r.user else '?' }}</td>
+          <td class="num">{{ '%d:%06.3f'|format((r.time_ms // 60000), (r.time_ms % 60000) / 1000) }}</td>
+          <td><span class="medal {{ r.medal or 'none' }}"></span></td>
+          <td class="num">{{ r.runs }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% else %}
+      <p class="muted">Nobody has set a time here yet. Go and be first.</p>
+      {% endif %}
+    </div>
+
+    <div class="panel">
+      <h3 style="margin-top:0">Medal times</h3>
+      <table class="board">
+        {% for key, label in [('author','Author'),('gold','Gold'),('silver','Silver'),('bronze','Bronze')] %}
+        <tr><td><span class="medal {{ key }}"></span> {{ label }}</td>
+          <td class="num">{{ '%d:%06.3f'|format(((track.medals[key]*1000)|int // 60000), ((track.medals[key]*1000)|int % 60000) / 1000) }}</td></tr>
+        {% endfor %}
+      </table>
+      <p class="muted" style="font-size:.88rem">Checkpoints: {{ track.checkpoints }}<br/>
+      Difficulty: {{ track.difficulty }}/5</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -36,6 +36,10 @@ ERS_URL = os.environ.get("ERS_URL", "https://ers.cgovind.com")
 # like TTR and ERS; point this at wherever it is reachable.
 KOT_URL = os.environ.get("KOT_URL", "https://kot.cgovind.com")
 
+# Where /drive redirects. Drive runs as its own service (website/drive), like the
+# other three; point this at wherever it is reachable.
+DRIVE_URL = os.environ.get("DRIVE_URL", "https://drive.cgovind.com")
+
 # The roll game's NPC dialog talks to Google's Gemini API. The key MUST stay
 # server-side - a key shipped in client JS is world-readable - so the browser
 # hits /api/roll/gemini here and this process adds the key. Set GEMINI_API_KEY in
@@ -369,6 +373,13 @@ def ers():
 def kot():
     """Hand off to the King of Tokyo service."""
     return redirect(KOT_URL, code=302)
+
+
+@app.route("/drive")
+@app.route("/drive/")
+def drive():
+    """Hand off to the Drive service."""
+    return redirect(DRIVE_URL, code=302)
 
 
 @app.route("/", defaults={"path": ""})

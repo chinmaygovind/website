@@ -71,4 +71,13 @@ jobs:
               echo "kot/.env missing - skipping kot (do the one-time bring-up first)"
             fi
 
+            echo "==> Drive (drive): venv + deps + restart"
+            if [ -f "$APP/drive/.env" ]; then
+              [ -d "$APP/drive/venv" ] || python3 -m venv "$APP/drive/venv"
+              "$APP/drive/venv/bin/pip" install -q -r "$APP/drive/requirements.txt"
+              sudo systemctl restart drive || echo "drive service not installed yet (one-time setup)"
+            else
+              echo "drive/.env missing - skipping drive (do the one-time bring-up first)"
+            fi
+
             echo "==> Deploy complete"

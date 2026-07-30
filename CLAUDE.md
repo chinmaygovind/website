@@ -224,6 +224,65 @@ produced. Bot moves carry `"bot": true`. Note this only became true recently - g
 before that have `start` and `end` and nothing in between, so any analysis has to skip
 them.
 
+## Drive (`drive/`)
+
+**Live at `https://drive.cgovind.com`.** The fourth game, same shape as ERS/KoT:
+Flask + Flask-SocketIO, its own eventlet gunicorn `-w 1` on `127.0.0.1:5005`, its own
+venv (`drive/venv`) and `.env` (both gitignored, hand-made on the box), sharing TTR's
+`users` table for accounts. A PolyTrack-style low-poly driving game: nine
+point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
+
+- **Guests can play.** Driving alone needs no account at all (`/` and `/solo/<slug>`
+  are open); sharing a room needs only a name (`/guest`). Times only reach the
+  leaderboard when logged in - guests keep a PB in `localStorage`.
+- **Layout:** `tuning.py` (every physics constant, in one place), `tracks.py` (the
+  block format + the pool, authored with a turtle `Builder`), `laptime.py` (racing-line
+  relaxation + speed profile → medal times), `runcheck.py` (ghost packing, time
+  validation), `models.py`, `app.py`, `static/js/` (`trackmesh.js`, `physics.js`,
+  `course.js`, `render.js`, `sound.js`, `game.js`, vendored `three.module.js`).
+- **`tuning.py` is the single source of truth for the simulation.** It is embedded in
+  the play page as `window.DRIVE_TUNING` and read by the JS physics, and `laptime.py`
+  uses the same numbers to derive medal times. There is deliberately no second copy of
+  `ACCEL` in a .js file. Retuning the car retunes the medals.
+- **The collision surface IS the render surface.** `trackmesh.js` puts every driveable
+  triangle into both the mesh and a spatial hash, so ramps, banks, loops and bridges
+  all work through one closest-point query with no per-block special cases - and
+  nothing can look solid without being solid.
+- **Steering rotates the car about the surface normal, not world up**, which is the
+  whole reason a full loop needs no special case in the car code. Gravity is always
+  applied and its normal component removed while grounded, so slope acceleration falls
+  out for free.
+- **A "ramp" holds you down, a "jump" launches you.** The suspension (`SNAP`/`SUSP`)
+  keeps the wheels on a ramp crest; a kicker launches you because past its lip there
+  is no road within probe range. The launch comes from geometry, not a special case.
+- Tracks that float in the void (`ground: None`) are built with `rails=True`; tracks on
+  the ground are not, so running wide there costs grass time instead of a respawn.
+- **Live races are in memory, not the DB.** A race ticks 20x/sec: clients are
+  authoritative over their own car and emit `pose`, the server merges and fans out one
+  snapshot per tick, and only the finished standings are written back. Cars are solid,
+  resolved Mario-Kart-style (impulse + penetration spring, never positional snapping,
+  tangential velocity preserved, per-pair bump cooldown) - see `Car.resolveCars`.
+
+### Tests
+
+`cd drive && venv/bin/python -m pytest tests/` - 139 tests. `test_tracks.py` and
+`test_runcheck.py` are pure Python. **`test_sim.py` runs the game's real JavaScript
+headlessly**: `tests/jsrt.py` strips the ES module syntax, swaps three.js for
+`tests/three_stub.js` (real Vector3/Quaternion maths, inert graphics), and runs it in
+QuickJS, then `tests/autopilot.js` *drives every track to the finish*. That is the test
+that matters - it caught road and grass being coplanar (the car thought it was on grass
+for whole laps), every ramp crest launching the car, double-sided wall collision
+geometry cancelling velocity twice per step, loops folding back tightly enough to trap a
+car forever, checkpoint planes being tracked across the whole map so real passes went
+unnoticed, and four tracks that could not be finished. Needs the optional `quickjs`
+package; those tests skip without it, so a plain deploy install is unaffected.
+
+**Drive deploy:** the usual Action also (when `drive/.env` exists) builds/updates
+`drive/venv` and `sudo systemctl restart drive`. nginx has a `drive.cgovind.com` vhost
+proxying `:5005` with WebSocket upgrade, its own Let's Encrypt cert, and a Route 53 A
+record. `/drive` on the main site 302-redirects there (`DRIVE_URL`). As with the others,
+nginx/TLS/DNS/`.env` are hand-managed on the box.
+
 ## Deploy
 
 Prod is one Ubuntu EC2 box at the Elastic IP `54.157.20.148`, serving

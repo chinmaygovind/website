@@ -1,0 +1,16 @@
+{
+  "name": "Drive",
+  "short_name": "Drive",
+  "description": "Low-poly time trials and multiplayer races. Pick a track, chase the medal times, bump your friends off the road.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#9ed2f0",
+  "theme_color": "#faf8f4",
+  "icons": [
+    { "src": "/static/img/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/static/img/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/static/img/icon.svg", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

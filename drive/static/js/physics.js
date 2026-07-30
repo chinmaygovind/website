@@ -1,0 +1,445 @@
+// The car. Fixed-timestep arcade physics, tuned for the Polytrack feel: full
+// throttle authority from a standstill, steering that is darty at low speed and
+// calm flat out, and sideways velocity killed hard enough that the car goes
+// exactly where it points until you ask it not to.
+//
+// Three decisions do most of the work:
+//
+// 1. **Steering rotates the car about the surface normal, not about world up.**
+//    That single choice is what makes banks, ramps and full loops drive normally
+//    instead of needing special cases.
+// 2. **Gravity is always applied, then its component along the surface normal is
+//    removed while grounded.** Slope acceleration then falls out for free - no
+//    "am I on a hill" logic anywhere.
+// 3. **Grip is a velocity filter, not a force.** Lateral speed decays toward zero
+//    at GRIP per second, so cornering is immediate and predictable, and dropping
+//    to DRIFT_GRIP on the handbrake makes the back end step out without any of
+//    the usual slip-angle machinery.
+//
+// Everything reads its numbers from the tuning object handed in by the server, so
+// there is exactly one copy of ACCEL in the project.
+
+import * as THREE from './vendor/three.module.js';
+import { KIND } from './trackmesh.js';
+
+const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
+const _q1 = new THREE.Quaternion();
+const UP = new THREE.Vector3(0, 1, 0);
+
+export const FLAG = { BOOST: 1, DRIFT: 2, AIR: 4, RESPAWN: 8 };
+
+export class Car {
+  constructor(T, world) {
+    this.T = T;
+    this.world = world;
+    this.pos = new THREE.Vector3();
+    this.vel = new THREE.Vector3();
+    this.quat = new THREE.Quaternion();
+    // Local frame: forward -Z, right +X, up +Y - the three.js convention, and a
+    // right-handed triple (right = forward x up), which every sign below assumes.
+    this.up = new THREE.Vector3(0, 1, 0);
+    this.fwd = new THREE.Vector3(0, 0, -1);
+    this.right = new THREE.Vector3(1, 0, 0);
+    this.groundN = new THREE.Vector3(0, 1, 0);
+    this.grounded = false;
+    this.coyote = 0;
+    this.airTime = 0;
+    this.steer = 0;
+    this.boost = 0;
+    this.offroad = false;
+    this.surface = KIND.ROAD;
+    this.speed = 0;
+    this.slip = 0;             // how sideways we are, 0..1, for tyre smoke
+    this.bumpLean = 0;         // visual roll from the last car contact
+    this.bumpTimer = 0;
+    this.lastBump = null;      // {x,y,z,mag} for sparks, consumed by the renderer
+    this.respawnIn = 0;
+    this.frozen = false;       // held on the grid during a countdown
+    this.wheelSpin = 0;
+    this._bumpCooldown = new Map();
+    this._wallHit = 0;
+  }
+
+  placeAt(p, fwd) {
+    this.pos.set(p[0], p[1] + this.T.RIDE_HEIGHT + 0.05, p[2]);
+    this.vel.set(0, 0, 0);
+    // Local forward is -Z, so the yaw that points it at `fwd` is atan2(-x, -z).
+    this.quat.setFromAxisAngle(UP, Math.atan2(-fwd[0], -fwd[2]));
+    this._syncAxes();
+    this.grounded = false;
+    this.coyote = 0;
+    this.boost = 0;
+    this.steer = 0;
+    this.speed = 0;
+    this.respawnIn = 0;
+  }
+
+  _syncAxes() {
+    this.fwd.set(0, 0, -1).applyQuaternion(this.quat);
+    this.up.set(0, 1, 0).applyQuaternion(this.quat);
+    this.right.set(1, 0, 0).applyQuaternion(this.quat);
+  }
+
+  /** Rotate about a world axis without disturbing the rest of the orientation. */
+  _spin(axis, angle) {
+    if (!angle) return;
+    _q1.setFromAxisAngle(axis, angle);
+    this.quat.premultiply(_q1);
+    this._syncAxes();
+  }
+
+  /** Turn the body so its up approaches `target`, at `rate` per second. */
+  _alignUp(target, rate, dt) {
+    const dot = Math.min(1, Math.max(-1, this.up.dot(target)));
+    if (dot > 0.99995) return;
+    _v1.crossVectors(this.up, target);
+    if (_v1.lengthSq() < 1e-12) return;
+    _v1.normalize();
+    const angle = Math.acos(dot) * (1 - Math.exp(-rate * dt));
+    this._spin(_v1, angle);
+  }
+
+  steerRate(speed) {
+    const T = this.T;
+    const t = Math.min(1, Math.max(0, speed / T.MAX_SPEED));
+    return T.STEER_RATE_LOW + (T.STEER_RATE_HIGH - T.STEER_RATE_LOW) * t;
+  }
+
+  /**
+   * One fixed step. `input` is {throttle, brake, steer, handbrake} with steer in
+   * -1..1 (already includes any analogue/touch source).
+   */
+  step(dt, input) {
+    const T = this.T;
+
+    if (this.respawnIn > 0) {
+      this.respawnIn -= dt;
+      if (this.respawnIn <= 0) this._doRespawn();
+      return;
+    }
+
+    let { throttle = 0, brake = 0, steer = 0, handbrake = false } = input || {};
+    if (this.frozen) { throttle = 0; brake = 0; steer = 0; handbrake = false; }
+
+    // --- smooth the steering input ---------------------------------------
+    // Keyboard steering is binary; this is what makes it feel analogue.
+    const rate = (steer === 0) ? T.STEER_RETURN : T.STEER_SMOOTH;
+    this.steer += (steer - this.steer) * (1 - Math.exp(-rate * dt));
+
+    // --- where is the ground ---------------------------------------------
+    const probe = T.PROBE + Math.min(1.2, this.vel.length() * dt * 2);
+    const q = this.world.collider.ground(
+      this.pos.x, this.pos.y, this.pos.z, this.up.x, this.up.y, this.up.z, probe);
+    // The collider returns a shared scratch object; copy what we need out of it
+    // before anything else can query.
+    const g = { hit: q.hit, dist: q.dist, kind: q.kind, nx: q.nx, ny: q.ny, nz: q.nz };
+    this.groundY = q.hit ? q.py : null;
+
+    const wasGrounded = this.grounded;
+    if (g.hit && g.dist <= T.RIDE_HEIGHT + T.SNAP) {
+      this.grounded = true;
+      this.coyote = T.COYOTE;
+      this.groundN.set(g.nx, g.ny, g.nz);
+      this.surface = g.kind;
+    } else {
+      this.coyote -= dt;
+      this.grounded = this.coyote > 0 && g.hit;
+      if (this.grounded) { this.groundN.set(g.nx, g.ny, g.nz); this.surface = g.kind; }
+    }
+    this.offroad = this.grounded && this.surface === KIND.OFFROAD;
+
+    // --- gravity, always -------------------------------------------------
+    this.vel.y -= T.GRAVITY * dt;
+
+    if (this.grounded) {
+      const prevAir = this.airTime;
+      this.airTime = 0;
+      const n = this.groundN;
+
+      // Ride height. Penetrating is corrected positionally (we are inside the
+      // road and have to come out); drooping is corrected by the suspension
+      // spring, as a force, so cresting a ramp pulls the car back down over a
+      // few frames instead of yanking it.
+      const pen = T.RIDE_HEIGHT - g.dist;
+      if (pen > 0) {
+        this.pos.addScaledVector(n, pen * Math.min(1, dt * 42));
+      } else if (pen < 0) {
+        this.vel.addScaledVector(n, T.SUSP * pen * dt);
+      }
+      // Cancel motion into the surface (this is also the landing impact).
+      const vn = this.vel.dot(n);
+      if (vn < 0) this.vel.addScaledVector(n, -vn);
+
+      // Keep the wheels down on anything that is not flat. Scaled by how tilted
+      // the surface is, so jumps off flat ground still launch properly, and by
+      // speed, so a slow car simply falls off a loop like it should.
+      const tilt = 1 - n.dot(UP);
+      if (tilt > 0.02) {
+        const sp = this.vel.length();
+        const f = Math.min(1, tilt / 0.5) * Math.min(1, sp / T.STICK_SPEED);
+        this.vel.addScaledVector(n, -T.STICK_FORCE * f * dt);
+      }
+
+      // Steering: yaw about the surface normal.
+      const sp = this.vel.length();
+      let yaw = this.steerRate(sp) * this.steer;
+      if (handbrake) yaw *= T.DRIFT_STEER_BONUS;
+      // Ease off when nearly stopped so the car cannot pirouette on the spot.
+      yaw *= Math.min(1, sp / 3.5);
+      this._spin(n, -yaw * dt);
+
+      // --- longitudinal -------------------------------------------------
+      let vLong = this.vel.dot(this.fwd);
+      let a = 0;
+      if (throttle > 0 && brake > 0) {
+        a = -T.BRAKE * 0.45;                       // both pedals: hold it there
+      } else if (throttle > 0) {
+        a = (vLong < -0.5 ? T.BRAKE : T.ACCEL) * throttle;
+      } else if (brake > 0) {
+        a = vLong > 0.5 ? -T.BRAKE * brake
+                        : -T.REVERSE_ACCEL * brake * (vLong > -T.REVERSE_MAX ? 1 : 0);
+      } else {
+        a = -Math.sign(vLong) * Math.min(T.COAST, Math.abs(vLong) / dt);
+      }
+      a -= Math.sign(vLong) * T.DRAG * vLong * vLong;
+      if (this.offroad) a -= Math.sign(vLong) * T.OFFROAD_DRAG * Math.abs(vLong);
+      this.vel.addScaledVector(this.fwd, a * dt);
+
+      // --- grip ----------------------------------------------------------
+      let grip = handbrake ? T.DRIFT_GRIP : T.GRIP;
+      if (this.offroad) grip = Math.min(grip, T.OFFROAD_GRIP);
+      const vLat = this.vel.dot(this.right);
+      this.vel.addScaledVector(this.right, -vLat * (1 - Math.exp(-grip * dt)));
+      this.slip = Math.min(1, Math.abs(vLat) / 12);
+
+      // Remove any leftover motion along the normal so we track the surface
+      // instead of skipping off every ramp seam.
+      const vn2 = this.vel.dot(n);
+      if (vn2 > 0 && tilt < 0.02) this.vel.addScaledVector(n, -vn2 * Math.min(1, dt * 18));
+
+      // Boost pads.
+      if (this.surface === KIND.BOOST) {
+        this.boost = T.BOOST_HOLD;
+        const cur = this.vel.dot(this.fwd);
+        if (cur < T.BOOST_SPEED) this.vel.addScaledVector(this.fwd, T.BOOST_SPEED - cur);
+      }
+
+      this._alignUp(n, T.ALIGN_GROUND, dt);
+      if (!wasGrounded && prevAir > 0.15) this.onLand && this.onLand(prevAir);
+    } else {
+      // --- airborne -------------------------------------------------------
+      this.airTime += dt;
+      this.slip = 0;
+      // Yaw with steering, pitch with the pedals - Trackmania's air control,
+      // which is what makes a long jump something you can actually aim.
+      this._spin(this.up, -this.steerRate(this.vel.length()) * T.AIR_STEER * this.steer * dt);
+      const pitch = (brake > 0 ? 1 : 0) - (throttle > 0 ? 1 : 0);
+      if (pitch) this._spin(this.right, pitch * T.AIR_PITCH * dt);
+      else this._alignUp(UP, T.ALIGN_AIR, dt);
+      const vLat = this.vel.dot(this.right);
+      this.vel.addScaledVector(this.right, -vLat * (1 - Math.exp(-T.AIR_GRIP * dt)));
+    }
+
+    // --- integrate --------------------------------------------------------
+    this.pos.addScaledVector(this.vel, dt);
+
+    // --- walls ------------------------------------------------------------
+    this._resolveWalls(dt);
+
+    if (this.boost > 0) this.boost -= dt;
+
+    // Absolute safety cap; drag does the real speed limiting.
+    const hard = T.BOOST_SPEED * 1.5;
+    if (this.vel.lengthSq() > hard * hard) this.vel.setLength(hard);
+
+    this.speed = this.vel.length();
+    this.wheelSpin += (this.vel.dot(this.fwd) / 0.45) * dt;
+    this.bumpLean *= Math.exp(-7 * dt);
+    if (this.bumpTimer > 0) this.bumpTimer -= dt;
+
+    // --- fell off ---------------------------------------------------------
+    if (this.pos.y < this.world.killY) this.requestRespawn();
+  }
+
+  /**
+   * Push out of walls once per step.
+   *
+   * A wall is many triangles and the car has two collision spheres, so a single
+   * contact can be reported several times. Responding to each report separately
+   * multiplies the speed penalty and can fight itself between neighbouring
+   * triangles, so every contact this step is accumulated into one
+   * depth-weighted direction and answered with a single push, one reflection and
+   * one speed scrub.
+   */
+  _resolveWalls(dt) {
+    const T = this.T;
+    const R = T.CAR_RADIUS;
+    const offs = [(T.CAR_LEN / 2 - R), -(T.CAR_LEN / 2 - R)];
+    let ax = 0, ay = 0, az = 0, deepest = 0, hits = 0;
+    for (const o of offs) {
+      _v1.copy(this.pos).addScaledVector(this.fwd, o);
+      this.world.collider.walls(_v1.x, _v1.y, _v1.z, R, (nx, ny, nz, depth) => {
+        ax += nx * depth; ay += ny * depth; az += nz * depth;
+        if (depth > deepest) deepest = depth;
+        hits++;
+      });
+    }
+    if (hits) {
+      const len = Math.hypot(ax, ay, az);
+      if (len > 1e-6) {
+        _v2.set(ax / len, ay / len, az / len);
+        this.pos.addScaledVector(_v2, deepest);
+        const vn = this.vel.dot(_v2);
+        if (vn < 0) {
+          // keep the tangential part, reverse a little of the normal part
+          this.vel.addScaledVector(_v2, -vn * (1 + T.WALL_BOUNCE));
+          this.vel.multiplyScalar(1 - (1 - T.WALL_SCRUB) * Math.min(1, -vn / 18));
+          if (-vn > 8 && this._wallHit <= 0) {
+            this._wallHit = 0.18;
+            this.onWall && this.onWall(-vn, this.pos);
+          }
+        }
+      }
+    }
+    if (this._wallHit > 0) this._wallHit -= dt;
+  }
+
+  /**
+   * Mario-Kart-style car-to-car contact.
+   *
+   * The two rules that make bumping feel smooth rather than sticky or jittery:
+   *
+   * - **Never move a car to fix an overlap.** Penetration is resolved by adding
+   *   velocity along the contact normal, in proportion to how deep the overlap is
+   *   (a spring). Position snapping is what makes networked bumping jitter,
+   *   because every correction fights the next packet.
+   * - **Only the normal component is touched.** Velocity along the contact is left
+   *   alone, so two cars side by side slide along each other and separate
+   *   naturally instead of snagging.
+   *
+   * The rule is symmetric and mass-weighted, so the other client computing the
+   * same contact for its own car arrives at the mirrored result: both cars get
+   * shoved apart by agreement, and nobody's position is ever overwritten.
+   *
+   * `others` is [{pos, vel, fwd, mass, id}] for the interpolated remote cars.
+   */
+  resolveCars(others, dt) {
+    if (!others || !others.length) return;
+    const T = this.T;
+    const R = T.CAR_RADIUS;
+    const half = T.CAR_LEN / 2 - R;
+    const REST = 0.15;                  // barely bouncy: one clean shove
+    const myMass = 1;
+
+    for (const o of others) {
+      if (!o || o.id === this.id) continue;
+      const mass = o.mass || 1;
+      const share = mass / (myMass + mass);     // 0.5 for equal cars
+      let hit = 0, hx = 0, hy = 0, hz = 0;
+
+      for (const a of [half, -half]) {
+        for (const b of [half, -half]) {
+          const ax = this.pos.x + this.fwd.x * a, ay = this.pos.y + this.fwd.y * a,
+                az = this.pos.z + this.fwd.z * a;
+          const bx = o.pos.x + o.fwd.x * b, by = o.pos.y + o.fwd.y * b,
+                bz = o.pos.z + o.fwd.z * b;
+          let nx = ax - bx, ny = ay - by, nz = az - bz;
+          const d = Math.hypot(nx, ny, nz);
+          const min = R * 2;
+          if (d >= min || d < 1e-6) continue;
+          nx /= d; ny /= d; nz /= d;
+          const depth = min - d;
+
+          // 1. spring out of the overlap (a force, so it is frame-rate safe)
+          const push = T.CAR_PUSH * depth * share * dt;
+          this.vel.x += nx * push; this.vel.y += ny * push * 0.35; this.vel.z += nz * push;
+
+          // 2. exchange momentum along the normal, if we are closing
+          const rvx = this.vel.x - o.vel.x, rvy = this.vel.y - o.vel.y, rvz = this.vel.z - o.vel.z;
+          const vn = rvx * nx + rvy * ny + rvz * nz;
+          if (vn < 0) {
+            const j = -(1 + REST) * vn * share;
+            this.vel.x += nx * j; this.vel.y += ny * j * 0.4; this.vel.z += nz * j;
+            if (-vn > hit) { hit = -vn; hx = nx; hy = ny; hz = nz; }
+          }
+        }
+      }
+
+      if (hit > 0) {
+        const key = o.id || 'x';
+        const cool = this._bumpCooldown.get(key) || 0;
+        // A firm hit scrubs a little speed and leans the body; a light rub does
+        // neither, which is what keeps sustained contact quiet.
+        if (hit > 5) {
+          const side = hx * this.right.x + hy * this.right.y + hz * this.right.z;
+          this.bumpLean = Math.max(-0.5, Math.min(0.5, this.bumpLean + side * hit * 0.02));
+          // a whisper of yaw so a side hit reads as a nudge, never a spin
+          this._spin(this.up, -side * Math.min(hit, 20) * 0.0035);
+          // The speed penalty belongs to the *event*, not to every step of
+          // contact. Scrubbing per step compounds - 0.93 a frame is 0.1 after
+          // half a second - so simply driving alongside someone used to bleed a
+          // car almost to a standstill. One hit, one cost.
+          if (cool <= 0) {
+            this._bumpCooldown.set(key, 0.15);
+            this.vel.multiplyScalar(1 - (1 - T.CAR_BUMP_SCRUB) * Math.min(1, hit / 22));
+            this.lastBump = { x: this.pos.x + hx * -1.0, y: this.pos.y, z: this.pos.z + hz * -1.0,
+                              mag: hit };
+            this.onBump && this.onBump(hit);
+          }
+        }
+      }
+    }
+    for (const [k, v] of this._bumpCooldown) {
+      const nv = v - dt;
+      if (nv <= 0) this._bumpCooldown.delete(k); else this._bumpCooldown.set(k, nv);
+    }
+  }
+
+  requestRespawn() {
+    if (this.respawnIn > 0) return;
+    this.respawnIn = this.T.RESPAWN_DELAY;
+    this.vel.set(0, 0, 0);
+    this.onFall && this.onFall();
+  }
+
+  /** Where to reappear: supplied by the run logic (last checkpoint). */
+  setRespawn(p, fwd) {
+    this._respawn = { p: [p[0], p[1], p[2]], fwd: [fwd[0], fwd[1], fwd[2]] };
+  }
+
+  _doRespawn() {
+    const r = this._respawn || { p: [this.world.line[0].p[0], this.world.line[0].p[1],
+                                     this.world.line[0].p[2]], fwd: [0, 0, 1] };
+    this.placeAt(r.p, r.fwd);
+    this.onRespawned && this.onRespawned();
+  }
+
+  flags() {
+    let f = 0;
+    if (this.boost > 0) f |= FLAG.BOOST;
+    if (this.slip > 0.35) f |= FLAG.DRIFT;
+    if (!this.grounded) f |= FLAG.AIR;
+    if (this.respawnIn > 0) f |= FLAG.RESPAWN;
+    return f;
+  }
+}
+
+/**
+ * Steps the car with a fixed timestep and reports how far into the next step we
+ * are, so rendering can interpolate and never judder.
+ */
+export class Stepper {
+  constructor(T) { this.T = T; this.acc = 0; }
+  run(realDt, fn) {
+    const T = this.T;
+    this.acc += Math.min(realDt, 0.25);
+    let steps = 0;
+    while (this.acc >= T.FIXED_DT && steps < T.MAX_STEPS) {
+      fn(T.FIXED_DT);
+      this.acc -= T.FIXED_DT;
+      steps++;
+    }
+    if (steps === T.MAX_STEPS) this.acc = 0;   // do not fast-forward a tabbed-out car
+    return this.acc / T.FIXED_DT;
+  }
+}

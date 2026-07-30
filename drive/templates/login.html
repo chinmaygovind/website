@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Log in | Drive{% endblock %}
+{% block body %}
+{% include "_nav.html" %}
+<div class="wrap narrow">
+  <h1>Log in</h1>
+  <p class="muted">Your cgovind.com account works here - the same one as Ticket to
+  Ride, Egyptian Rat Screw and King of Tokyo.</p>
+  <div class="error" id="err"></div>
+
+  <div class="panel">
+    <div id="loginForm">
+      <div class="field"><label>Username or email</label><input id="lu" autocomplete="username"/></div>
+      <div class="field"><label>Password</label><input id="lp" type="password" autocomplete="current-password"/></div>
+      <button class="btn" style="width:100%" onclick="doLogin()">Log in</button>
+      <p class="muted" style="font-size:.9rem">No account? <a href="#" onclick="show('reg');return false">Register</a></p>
+    </div>
+
+    <div id="regForm" style="display:none">
+      <div class="field"><label>Username</label><input id="ru"/></div>
+      <div class="field"><label>Email</label><input id="re" type="email"/></div>
+      <div class="field"><label>Password</label><input id="rp" type="password" autocomplete="new-password"/></div>
+      <button class="btn" style="width:100%" onclick="doRegister()">Create account</button>
+      <p class="muted" style="font-size:.9rem">Already have one? <a href="#" onclick="show('login');return false">Log in</a></p>
+    </div>
+  </div>
+
+  <h3>Or just play</h3>
+  <p class="muted" style="margin-top:-.3rem">Pick a name to race with. Guest times
+  stay in your browser and don't reach the leaderboard.</p>
+  <div class="panel">
+    <div class="row">
+      <div class="field" style="margin:0;flex:1"><input id="gn" placeholder="Your name" maxlength="20"/></div>
+      <button class="btn secondary" onclick="doGuest()">Play as guest</button>
+    </div>
+  </div>
+  <p class="muted" style="margin-top:1rem"><a href="/">Or drive alone with no name at all &rarr;</a></p>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const NEXT = {{ next|tojson }} || '/lobbies';
+const err = document.getElementById('err');
+function showErr(m){ err.textContent = m; err.classList.add('show'); }
+function show(which){
+  document.getElementById('loginForm').style.display = which === 'login' ? '' : 'none';
+  document.getElementById('regForm').style.display = which === 'reg' ? '' : 'none';
+  err.classList.remove('show');
+}
+async function post(url, body){
+  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  return [r.ok, await r.json().catch(()=>({}))];
+}
+async function doLogin(){
+  const [ok,d] = await post('/login', {username: document.getElementById('lu').value,
+                                       password: document.getElementById('lp').value});
+  ok ? location.href = NEXT : showErr(d.error || 'Could not log in.');
+}
+async function doRegister(){
+  const [ok,d] = await post('/register', {username: document.getElementById('ru').value,
+                                          email: document.getElementById('re').value,
+                                          password: document.getElementById('rp').value});
+  ok ? location.href = NEXT : showErr(d.error || 'Could not register.');
+}
+async function doGuest(){
+  const [ok,d] = await post('/guest', {name: document.getElementById('gn').value});
+  ok ? location.href = NEXT : showErr(d.error || 'Enter a name.');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Enter') {
+  if (document.getElementById('regForm').style.display !== 'none') doRegister();
+  else if (document.activeElement && document.activeElement.id === 'gn') doGuest();
+  else doLogin();
+}});
+</script>
+{% endblock %}
