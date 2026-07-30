@@ -20,8 +20,48 @@ import * as THREE from './vendor/three.module.js';
 
 export const KIND = { ROAD: 0, WALL: 1, OFFROAD: 2 };
 
+// A palette's `sky` is either a plain colour (the old two-tone dome) or a spec
+// that render.js turns into a graded dome, a sun and a bank of cloud. See
+// makeSky there for the full shape.
+const SUNRISE_AZ = 2.42;          // where the sun comes up, radians
+
 const PALETTES = {
-  sunrise:  { road: 0x59606e, kerb: 0xf2f2f2, kerb2: 0xe8453c, ground: 0x6fbf5f, sky: 0xa9d8ef, fog: 0xbfe0f0, rail: 0xf5f5f5, prop: 0x3f8f4f, deco: 0xf2c94c },
+  sunrise: {
+    // Bases are cooler than they look, because the key light is warm and a
+    // neutral grey road mixes down to mud under it. Worth knowing why the
+    // compensation has to be this strong: three converts a light's colour from
+    // sRGB to linear, but MeshBuf writes vertex colours straight into the
+    // buffer unconverted, so a light that reads as a gentle cream in hex is a
+    // much deeper orange by the time it multiplies the geometry.
+    road: 0x4d5769, kerb: 0xf2ece4, kerb2: 0xe8453c,
+    ground: 0x4ea363, rail: 0xf2eee8, prop: 0x27664a, deco: 0xf2c94c,
+    fog: 0xf0b98a,
+    sky: {
+      // Straight down is haze, the horizon burns, and it cools all the way to a
+      // deep blue overhead that still has night in it.
+      stops: [
+        [0.00, 0x8a6a5e], [0.38, 0xd08a63], [0.46, 0xf0a469],
+        [0.50, 0xffc98c], [0.55, 0xf3ab7d], [0.63, 0xd28f92],
+        [0.72, 0x9d8bb4], [0.84, 0x5f76b8], [1.00, 0x27418c],
+      ],
+      glow: 0xffd39a,
+      glowStrength: 0.92,
+      sun: { az: SUNRISE_AZ, el: 0.05, color: 0xffd39a, size: 430 },
+      // A band above the horizon, not a ceiling: a cloud high enough to be
+      // overhead has visible parallax and reads as a slab floating over you.
+      // No cloud here on purpose. Boxes seen from below at a shallow angle read
+      // as pale rectangles no matter how they are shaded, and the graded dome,
+      // the disc and the glow already carry the whole sky. `clouds` in
+      // render.js is for the tracks that float, where you look *down* on it.
+      // Low and warm, from the same bearing as the disc.
+      light: { color: 0xfff1e0, intensity: 1.45,
+               dir: [Math.sin(SUNRISE_AZ) * 0.9, 0.44, Math.cos(SUNRISE_AZ) * 0.9] },
+      hemi: { sky: 0xffeadb, ground: 0x50506a, intensity: 0.7 },
+      // Far enough out that the near field keeps its own colour and only the
+      // distance dissolves into the haze.
+      fog: 0xf0b98a, fogNear: 340, fogFar: 1500,
+    },
+  },
   park:     { road: 0x565d6b, kerb: 0xffffff, kerb2: 0x3d8bfd, ground: 0x63b866, sky: 0x9ed2f0, fog: 0xb9dcee, rail: 0xf0f0f0, prop: 0x347a3c, deco: 0xf2994a },
   skyline:  { road: 0x4d5464, kerb: 0xf6f6f6, kerb2: 0x56ccf2, ground: 0x4a6b8a, sky: 0x7fb6dd, fog: 0x9ec9e6, rail: 0xe9f4ff, prop: 0x6e7f95, deco: 0x56ccf2 },
   lagoon:   { road: 0x515a68, kerb: 0xfdfdfd, kerb2: 0x27ae60, ground: 0x3aa6a0, sky: 0x8fdce6, fog: 0xb6e8ec, rail: 0xf3fffe, prop: 0x1f8f7a, deco: 0x27ae60 },
@@ -225,7 +265,7 @@ function closestOnTri(px, py, pz, V, o, out) {
 // Mesh building
 // ---------------------------------------------------------------------------
 
-class MeshBuf {
+export class MeshBuf {
   constructor() { this.pos = []; this.col = []; }
   tri(a, b, c, color) {
     this.pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
@@ -476,7 +516,7 @@ function shade(hex, amt) {
 }
 
 // A tiny deterministic PRNG so scenery is identical for everyone in a room.
-function mulberry(seed) {
+export function mulberry(seed) {
   return function () {
     seed |= 0; seed = seed + 0x6D2B79F5 | 0;
     let t = Math.imul(seed ^ seed >>> 15, 1 | seed);

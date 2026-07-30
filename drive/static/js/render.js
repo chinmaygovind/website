@@ -9,6 +9,7 @@
 // smoothing is frame-rate independent, so it never whips or judders.
 
 import * as THREE from './vendor/three.module.js';
+import { MeshBuf, mulberry } from './trackmesh.js';
 
 const BRAKE_OFF = 0x521218;
 const BRAKE_ON = 0xff2b2b;
@@ -213,9 +214,11 @@ export class Renderer {
     this.baseFov = 66;
 
     this.sun = new THREE.DirectionalLight(0xffffff, 1.65);
-    this.sun.position.set(0.45, 1, 0.32).multiplyScalar(120);
+    this.lightDir = new THREE.Vector3(0.45, 1, 0.32).normalize().multiplyScalar(140);
+    this.sun.position.copy(this.lightDir);
     this.scene.add(this.sun);
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x5a6172, 0.72));
+    this.hemi = new THREE.HemisphereLight(0xffffff, 0x5a6172, 0.72);
+    this.scene.add(this.hemi);
 
     this.sky = null;
     this.particles = new Particles(this.scene);
@@ -253,11 +256,32 @@ export class Renderer {
     this.scene.add(built.group);
 
     const pal = built.palette;
-    this.scene.fog = new THREE.Fog(pal.fog, 190, 900);
-    this.scene.background = new THREE.Color(pal.sky);
-    if (this.sky) { this.scene.remove(this.sky); this.sky.geometry.dispose(); }
-    this.sky = makeSky(pal.sky, pal.fog);
+    const spec = (pal.sky && pal.sky.stops) ? pal.sky : null;
+    // Fog is the haze the world dissolves into, so it has to be the colour of
+    // the sky at the horizon or the join shows.
+    this.scene.fog = new THREE.Fog(spec ? spec.fog : pal.fog,
+                                   spec && spec.fogNear != null ? spec.fogNear : 190,
+                                   spec && spec.fogFar != null ? spec.fogFar : 900);
+    this.scene.background = new THREE.Color(spec ? spec.fog : pal.sky);
+    if (this.sky) {
+      this.scene.remove(this.sky);
+      this.sky.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+    }
+    this.sky = makeSky(pal);
     this.scene.add(this.sky);
+
+    // Key light comes from the sun's own azimuth so the warm side of every
+    // surface agrees with the warm side of the sky. Its *elevation* is the one
+    // honest lie in here: a sun actually on the horizon lights nothing, so the
+    // light is lifted well above where the disc is drawn.
+    const L = spec && spec.light;
+    this.sun.color.set(L ? L.color : 0xffffff);
+    this.sun.intensity = L && L.intensity != null ? L.intensity : 1.65;
+    this.lightDir.set(...(L ? L.dir : [0.45, 1, 0.32])).normalize().multiplyScalar(140);
+    const H = spec && spec.hemi;
+    this.hemi.color.set(H ? H.sky : 0xffffff);
+    this.hemi.groundColor.set(H ? H.ground : 0x5a6172);
+    this.hemi.intensity = H && H.intensity != null ? H.intensity : 0.72;
     this.started = false;
   }
 
@@ -309,7 +333,7 @@ export class Renderer {
 
     if (this.sky) this.sky.position.copy(this.camera.position);
     // Keep the sun near the action so the whole track is lit the same way.
-    this.sun.position.copy(car.pos).add(new THREE.Vector3(60, 130, 42));
+    this.sun.position.copy(car.pos).add(this.lightDir);
     this.sun.target.position.copy(car.pos);
     this.sun.target.updateMatrixWorld();
     void opts;
@@ -342,19 +366,152 @@ export class Renderer {
   }
 }
 
-// A big inverted sphere with a vertical two-colour gradient baked into vertex
-// colours - a sky without a shader or a texture.
-function makeSky(top, bottom) {
-  const geo = new THREE.SphereGeometry(1400, 18, 12);
+// ---------------------------------------------------------------------------
+// Sky
+// ---------------------------------------------------------------------------
+//
+// A sky here is three things, all of them vertex colours and flat quads - no
+// shader, no texture, nothing loaded:
+//
+//   1. a dome whose colour is a list of stops down the vertical, plus a warm
+//      glow smeared around the sun's *azimuth* rather than evenly round the
+//      horizon. That last part is what makes a sunrise read as a sunrise: the
+//      sky is only on fire in the direction the sun is coming from.
+//   2. a sun, drawn as one sprite with a hot core and a soft halo.
+//   3. a ring of flat cloud slabs, lit warm on the side facing the sun and cool
+//      on the side away from it.
+//
+// Palettes without a `sky` spec fall back to the plain two-colour dome.
+
+const R_SKY = 1800;
+
+/** Direction the sun sits in, from an azimuth and an elevation in radians. */
+function sunDir(az, el) {
+  return new THREE.Vector3(Math.cos(el) * Math.sin(az), Math.sin(el),
+                           Math.cos(el) * Math.cos(az));
+}
+
+/** Colour at height `u` (0 straight down, 0.5 horizon, 1 straight up). */
+function sampleStops(stops, u) {
+  if (u <= stops[0][0]) return new THREE.Color(stops[0][1]);
+  const last = stops[stops.length - 1];
+  if (u >= last[0]) return new THREE.Color(last[1]);
+  for (let i = 1; i < stops.length; i++) {
+    if (u <= stops[i][0]) {
+      const a = stops[i - 1], b = stops[i];
+      const f = (u - a[0]) / Math.max(1e-6, b[0] - a[0]);
+      return new THREE.Color(a[1]).lerp(new THREE.Color(b[1]), f);
+    }
+  }
+  return new THREE.Color(last[1]);
+}
+
+function skyDome(spec) {
+  // Enough segments that the gradient and the glow are smooth; at ~1200 verts
+  // this is still nothing.
+  const geo = new THREE.SphereGeometry(R_SKY, 48, 26);
   const pos = geo.attributes.position;
   const colors = [];
-  const a = new THREE.Color(top), b = new THREE.Color(bottom);
+  const glow = spec.glow != null ? new THREE.Color(spec.glow) : null;
+  const strength = spec.glowStrength != null ? spec.glowStrength : 0.8;
+  const dir = spec.sun ? sunDir(spec.sun.az, spec.sun.el) : null;
+  const sunXZ = dir ? new THREE.Vector3(dir.x, 0, dir.z).normalize() : null;
+  const v = new THREE.Vector3();
   for (let i = 0; i < pos.count; i++) {
-    const t = Math.max(0, Math.min(1, (pos.getY(i) / 1400) * 0.5 + 0.5));
-    const c = b.clone().lerp(a, Math.pow(t, 0.65));
+    v.set(pos.getX(i), pos.getY(i), pos.getZ(i));
+    const u = Math.max(0, Math.min(1, v.y / R_SKY * 0.5 + 0.5));
+    const c = sampleStops(spec.stops, u);
+    if (glow && sunXZ) {
+      // How much this direction faces the sun, sharpened so the glow is a wedge
+      // rather than a wash, and faded out away from the horizon.
+      const h = Math.hypot(v.x, v.z) || 1;
+      const facing = Math.max(0, (v.x / h) * sunXZ.x + (v.z / h) * sunXZ.z);
+      const band = Math.exp(-Math.pow((u - 0.5) * 5.2, 2));
+      c.lerp(glow, Math.pow(facing, 3.2) * band * strength);
+    }
     colors.push(c.r, c.g, c.b);
   }
   geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
     vertexColors: true, side: THREE.BackSide, depthWrite: false, fog: false }));
+  mesh.renderOrder = -1;
+  return mesh;
+}
+
+/** One sprite: a hot core fading into a wide halo. */
+function sunSprite(sun) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const col = new THREE.Color(sun.color);
+  const rgb = (a) => `rgba(${Math.round(col.r * 255)},${Math.round(col.g * 255)},` +
+                     `${Math.round(col.b * 255)},${a})`;
+  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0.00, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.13, rgb(1));
+  grad.addColorStop(0.20, rgb(0.72));
+  grad.addColorStop(0.38, rgb(0.26));
+  grad.addColorStop(0.66, rgb(0.07));
+  grad.addColorStop(1.00, rgb(0));
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 128, 128);
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: new THREE.CanvasTexture(c), transparent: true, fog: false,
+    depthWrite: false, blending: THREE.AdditiveBlending }));
+  spr.scale.setScalar(sun.size || 420);
+  spr.position.copy(sunDir(sun.az, sun.el)).multiplyScalar(R_SKY * 0.93);
+  return spr;
+}
+
+/**
+ * Flat cloud slabs in a ring overhead.
+ *
+ * Deliberately hard-edged and untextured - they are the same low-poly language
+ * as everything else. Each one is shaded by how much it faces the sun, so the
+ * bank is bright on one side of the sky and cold on the other.
+ */
+function clouds(spec) {
+  const cfg = spec.clouds;
+  const buf = new MeshBuf();
+  const dir = spec.sun ? sunDir(spec.sun.az, spec.sun.el) : new THREE.Vector3(1, 0, 0);
+  const sx = dir.x, sz = dir.z;
+  const lit = new THREE.Color(cfg.color), cold = new THREE.Color(cfg.shade);
+  const rnd = mulberry(cfg.seed != null ? cfg.seed : 1234);
+  for (let i = 0; i < cfg.count; i++) {
+    const a = rnd() * Math.PI * 2;
+    // Far out and well up: a cloud close enough to have parallax reads as a
+    // slab of polystyrene floating over the track.
+    const rad = (cfg.radius || 900) * (0.8 + rnd() * (cfg.spread || 0.5));
+    const y = (cfg.low != null ? cfg.low : 200) + rnd() * (cfg.high != null ? cfg.high : 260);
+    const cx = Math.cos(a) * rad, cz = Math.sin(a) * rad;
+    const facing = Math.max(0, (Math.cos(a) * sx + Math.sin(a) * sz));
+    const col = cold.clone().lerp(lit, Math.pow(facing, 1.5));
+    // Long, wide and thin, because a dawn cloud is a streak. Two or three
+    // offset slabs so it has a silhouette rather than being one rectangle.
+    const w = 300 + rnd() * 420, d = 50 + rnd() * 80, h = 4 + rnd() * 6;
+    for (let k = 0; k < 2 + (rnd() < 0.6 ? 1 : 0); k++) {
+      const ox = (rnd() - 0.5) * w * 1.2, oz = (rnd() - 0.5) * d * 1.2;
+      const oy = (rnd() - 0.5) * h * 1.4;
+      const s = 0.5 + rnd() * 0.6;
+      buf.box(cx + ox, y + oy, cz + oz, w * s * 0.5, h * 0.5, d * s * 0.5,
+              col.clone().offsetHSL(0, 0, (rnd() - 0.5) * 0.06).getHex());
+    }
+  }
+  // Opaque on purpose: these are solid slabs in a low-poly sky, and blending
+  // several of them over each other only ever washed the colour out.
+  return buf.toMesh(new THREE.MeshBasicMaterial({ vertexColors: true, fog: false }));
+}
+
+function makeSky(pal) {
+  const group = new THREE.Group();
+  const spec = pal.sky && pal.sky.stops ? pal.sky : null;
+  if (!spec) {
+    // legacy two-colour dome, for palettes that have not been art-directed yet
+    group.add(skyDome({ stops: [[0, pal.fog], [0.5, pal.fog], [1, pal.sky]] }));
+    return group;
+  }
+  group.add(skyDome(spec));
+  if (spec.sun) group.add(sunSprite(spec.sun));
+  if (spec.clouds) group.add(clouds(spec));
+  return group;
 }
