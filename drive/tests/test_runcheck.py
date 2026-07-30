@@ -155,9 +155,9 @@ def test_distance_is_clamped_to_something_possible():
 def test_tuning_exports_everything_the_client_needs():
     """The browser physics reads these by name; a missing one is a crash."""
     d = T.as_dict()
-    for key in ("CELL", "LEVEL", "GRAVITY", "MAX_SPEED", "ACCEL", "BRAKE", "GRIP",
-                "DRIFT_GRIP", "SNAP", "SUSP", "STICK_FORCE", "FIXED_DT",
-                "CAR_RADIUS", "CAR_PUSH", "CAR_BUMP_SCRUB", "BOOST_SPEED"):
+    for key in ("CELL", "ROAD_W", "GRAVITY", "MAX_SPEED", "ACCEL", "BRAKE", "GRIP",
+                "DRIFT_GRIP", "SNAP", "SUSP", "STICK_FORCE", "STICK_TILT",
+                "FIXED_DT", "CAR_RADIUS", "CAR_PUSH", "CAR_BUMP_SCRUB"):
         assert key in d, f"tuning does not export {key}"
     assert T.DRAG == pytest.approx(T.ACCEL / (T.MAX_SPEED ** 2)), \
         "drag must be the value that makes MAX_SPEED the actual top speed"

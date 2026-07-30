@@ -7,17 +7,22 @@ ideal lap and derive each track's medal times. So retuning the car here
 automatically retunes the medals, and there is never a second copy of ACCEL
 sitting in a .js file drifting out of sync.
 
-Units are "roughly metres and seconds": CELL is 8, a car is 3.4 long, gravity is
-30. Nothing is physically accurate - these are arcade numbers picked so the car
-turns in fast and never feels floaty, which is the whole point of the Polytrack
-driving model.
+Units are "roughly metres and seconds": a road is 9 wide, a car is 3.4 long,
+gravity is 30. Nothing is physically accurate - these are arcade numbers picked
+so the car turns in fast and never feels floaty, which is the whole point of the
+Polytrack driving model.
 """
 
 import json
 
 # --- world scale -----------------------------------------------------------
-CELL = 8.0        # grid cell size in XZ; also the road width
-LEVEL = 3.2       # height of one elevation level (a 1-cell ramp is ~21.8 deg)
+# CELL is no longer a grid the track is built on - tracks are continuous ribbons
+# (see tracks.py). It survives as the world's unit of length: the collider's
+# spatial-hash bucket size, and the scale scenery and the ground plane are laid
+# out on.
+CELL = 8.0
+ROAD_W = 9.0      # default road width; every track section can override it
+LEVEL = 3.2       # a convenient "one storey" for authoring heights
 
 # --- car body --------------------------------------------------------------
 CAR_LEN = 3.4
@@ -63,26 +68,38 @@ AIR_PITCH = 1.5            # rad/s of pitch control in the air (up/down keys)
 AIR_ROLL = 2.0             # rad/s of roll control in the air
 ALIGN_GROUND = 14.0        # how fast the body snaps to the surface normal
 ALIGN_AIR = 2.6            # how fast it levels out while airborne
-STICK_SPEED = 15.0         # above this, the car sticks to non-flat surfaces
-STICK_FORCE = 34.0         # extra pull into the surface (what makes loops work)
-COYOTE = 0.09              # seconds of grounded grace over crests and seams
+COYOTE = 0.04              # seconds of grounded grace across a surface seam
 
-# Suspension droop. The car counts as grounded while the road is up to SNAP
-# below its resting height, and gets pulled back down over that gap by a spring
-# rather than being teleported. This is what stops every ramp crest from
-# launching the car: a ramp is a crease in the road, and a real car's wheels
-# follow it. Jumps still launch you, because past a kicker's lip there is no road
-# within reach at all - the launch comes from the geometry, not from a special
-# case. SUSP has to beat the vertical velocity a ramp imparts (v * sin(slope))
-# inside SNAP of travel, hence a stiff-looking number.
-SNAP = 1.0
-SUSP = 150.0
+# Letting go of the road.
+#
+# The car is only held onto a surface steep enough that nothing else could hold
+# it there: the wall and the roof of a corkscrew. STICK_TILT is that threshold as
+# a dot product with world up. 0.85 is about 32 degrees, and it is chosen to sit
+# *above* every hill and bank in the track pool (the steepest hill peaks near
+# 0.94, the steepest bank at 0.96) and below a corkscrew's wall, so ordinary
+# slopes get no help at all and the car flies off their crests exactly like
+# Polytrack's does. Past the threshold the pull ramps in smoothly.
+#
+# On a corkscrew's wall, gravity contributes nothing toward the axis, so this
+# force alone is the centripetal budget: it has to beat v^2/R. At 44 u/s that
+# means a radius of about 20, which is why the corkscrews in tracks.py are big.
+# `laptime.py` caps corkscrew speed at sqrt(R * STICK_FORCE) so the medal times
+# assume only what the car can actually hold.
+STICK_TILT = 0.85
+STICK_SPEED = 15.0         # below this the pull fades out - too slow, you fall
+STICK_FORCE = 95.0         # centripetal budget on a wall or a roof
+
+# Suspension. SNAP is the gap between the wheels and the road that still counts
+# as grounded - a seam tolerance, nothing more. It used to be a full unit, which
+# quietly glued the car to every crest; at 0.12 a crest throws you, which is the
+# point. SUSP is the spring that closes that small gap, soft enough that it never
+# yanks.
+SNAP = 0.12
+SUSP = 45.0
 
 # --- surfaces --------------------------------------------------------------
 OFFROAD_DRAG = 0.55        # fraction of speed scrubbed per second on grass
 OFFROAD_GRIP = 6.0
-BOOST_SPEED = 68.0         # speed a booster pad snaps you up to
-BOOST_HOLD = 1.1           # seconds the over-speed cap lingers after a pad
 WALL_BOUNCE = 0.22         # normal velocity kept when you clip a wall
 WALL_SCRUB = 0.86          # tangential speed kept per wall hit
 
@@ -114,13 +131,13 @@ MEDAL_MULT = {
 MIN_PLAUSIBLE = 0.80
 
 _EXPORT = [
-    "CELL", "LEVEL", "CAR_LEN", "CAR_WID", "CAR_HEI", "RIDE_HEIGHT",
+    "CELL", "ROAD_W", "LEVEL", "CAR_LEN", "CAR_WID", "CAR_HEI", "RIDE_HEIGHT",
     "MAX_SPEED", "ACCEL", "BRAKE", "COAST", "DRAG", "REVERSE_MAX",
     "REVERSE_ACCEL", "STEER_RATE_LOW", "STEER_RATE_HIGH", "STEER_SMOOTH",
     "STEER_RETURN", "DRIFT_STEER_BONUS", "GRIP", "DRIFT_GRIP", "AIR_GRIP",
     "GRAVITY", "AIR_STEER", "AIR_PITCH", "AIR_ROLL", "ALIGN_GROUND",
-    "ALIGN_AIR", "STICK_SPEED", "STICK_FORCE", "COYOTE", "SNAP", "SUSP", "OFFROAD_DRAG",
-    "OFFROAD_GRIP", "BOOST_SPEED", "BOOST_HOLD", "WALL_BOUNCE", "WALL_SCRUB",
+    "ALIGN_AIR", "COYOTE", "STICK_TILT", "STICK_SPEED", "STICK_FORCE",
+    "SNAP", "SUSP", "OFFROAD_DRAG", "OFFROAD_GRIP", "WALL_BOUNCE", "WALL_SCRUB",
     "PROBE", "CAR_RADIUS", "CAR_PUSH", "CAR_BUMP_SCRUB", "FIXED_DT",
     "MAX_STEPS", "RESPAWN_DELAY",
 ]

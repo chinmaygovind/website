@@ -236,7 +236,7 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   are open); sharing a room needs only a name (`/guest`). Times only reach the
   leaderboard when logged in - guests keep a PB in `localStorage`.
 - **Layout:** `tuning.py` (every physics constant, in one place), `tracks.py` (the
-  block format + the pool, authored with a turtle `Builder`), `laptime.py` (racing-line
+  ribbon format + the pool, authored with a turtle `Builder`), `laptime.py` (racing-line
   relaxation + speed profile → medal times), `runcheck.py` (ghost packing, time
   validation), `models.py`, `app.py`, `static/js/` (`trackmesh.js`, `physics.js`,
   `course.js`, `render.js`, `sound.js`, `game.js`, vendored `three.module.js`).
@@ -244,38 +244,73 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   the play page as `window.DRIVE_TUNING` and read by the JS physics, and `laptime.py`
   uses the same numbers to derive medal times. There is deliberately no second copy of
   `ACCEL` in a .js file. Retuning the car retunes the medals.
-- **The collision surface IS the render surface.** `trackmesh.js` puts every driveable
-  triangle into both the mesh and a spatial hash, so ramps, banks, loops and bridges
-  all work through one closest-point query with no per-block special cases - and
-  nothing can look solid without being solid.
+- **A track is a ribbon of stations, not a grid of tiles.** Each station carries a
+  centre `p`, a surface normal `n`, a road-right vector `lat` and a half-width `hw`,
+  about 3.5 units apart; the road is the strip of quads between consecutive stations.
+  That is the *whole* geometry - `trackmesh.js` is one loop over pairs. It replaced an
+  8-unit grid of 90-degree corner tiles, which made every corner the same corner with a
+  4-unit centreline radius no car could hold, and made a smooth elevation change
+  impossible (a ramp was a crease between two flat tiles). Consequences worth knowing:
+  corner radius and road width are free parameters, a gap is just stations flagged
+  `air`, a barrier is a `wl`/`wr` flag on an edge, and a loop is a station list whose
+  normal rotates.
+- **The collision surface IS the render surface.** Every driveable quad goes into both
+  the mesh and a spatial hash, so hills, banks, loops, crests and crossings all work
+  through one closest-point query with no per-shape special cases - and nothing can look
+  solid without being solid.
 - **Steering rotates the car about the surface normal, not world up**, which is the
-  whole reason a full loop needs no special case in the car code. Gravity is always
-  applied and its normal component removed while grounded, so slope acceleration falls
-  out for free.
-- **A "ramp" holds you down, a "jump" launches you.** The suspension (`SNAP`/`SUSP`)
-  keeps the wheels on a ramp crest; a kicker launches you because past its lip there
-  is no road within probe range. The launch comes from geometry, not a special case.
+  whole reason a fully inverted loop needs no special case in the car code. Gravity is
+  always applied and its normal component removed while grounded, so slope acceleration
+  falls out for free.
+- **The car is not glued to slopes.** `SNAP` is a 0.12-unit seam tolerance, nothing
+  more, and there is no term scrubbing velocity along the surface normal - so a crest
+  throws the car, as it should. `STICK_FORCE` only engages past `STICK_TILT` (about 32
+  degrees off level), which in the pool means a loop's wall and roof and nothing else.
+  Hills are *authored* smooth instead: `straight(l, rise=r)` smoothsteps its grade so it
+  has no crease, and `crest`/`hump`/`jump` deliberately do, marking their stations
+  `kick`. A hill needs `length >= sqrt(330 * rise)` or it becomes a jump by accident;
+  `test_hills_are_eased_but_kickers_are_not` enforces it as a vertical curvature radius.
+- **There are no vertical loops and no boost pads.** A plain vertical loop returns to
+  exactly where it started, so its descent lands on its own climb - two surfaces a metre
+  apart, which trapped cars. `Builder.loop` slides the exit sideways (smoothstepped, so
+  both joins stay tangential) which fixes it completely. A helix about the direction of
+  travel is the obvious alternative and does not work: its tangent sits ~55 degrees off
+  its own axis, so it meets the road at a kink and the car drives into the barrier.
+  Loop radius is bounded by physics - on the wall only `STICK_FORCE` opposes `v^2/R`, so
+  radius 20 is about the minimum at racing speed.
 - Tracks that float in the void (`ground: None`) are built with `rails=True`; tracks on
-  the ground are not, so running wide there costs grass time instead of a respawn.
+  the ground are not, so running wide there costs grass time instead of a respawn. The
+  road sits ~1.2 above the grass plane, which is both why it reads as a raised ribbon
+  and why the two never z-fight.
 - **Live races are in memory, not the DB.** A race ticks 20x/sec: clients are
   authoritative over their own car and emit `pose`, the server merges and fans out one
   snapshot per tick, and only the finished standings are written back. Cars are solid,
   resolved Mario-Kart-style (impulse + penetration spring, never positional snapping,
   tangential velocity preserved, per-pair bump cooldown) - see `Car.resolveCars`.
+  `FLAG.BRAKE` rides along in the pose so a rival's brake lights work.
 
 ### Tests
 
-`cd drive && venv/bin/python -m pytest tests/` - 139 tests. `test_tracks.py` and
+`cd drive && venv/bin/python -m pytest tests/` - 197 tests. `test_tracks.py` and
 `test_runcheck.py` are pure Python. **`test_sim.py` runs the game's real JavaScript
 headlessly**: `tests/jsrt.py` strips the ES module syntax, swaps three.js for
 `tests/three_stub.js` (real Vector3/Quaternion maths, inert graphics), and runs it in
 QuickJS, then `tests/autopilot.js` *drives every track to the finish*. That is the test
-that matters - it caught road and grass being coplanar (the car thought it was on grass
-for whole laps), every ramp crest launching the car, double-sided wall collision
-geometry cancelling velocity twice per step, loops folding back tightly enough to trap a
-car forever, checkpoint planes being tracked across the whole map so real passes went
-unnoticed, and four tracks that could not be finished. Needs the optional `quickjs`
-package; those tests skip without it, so a plain deploy install is unaffected.
+that matters. Between them these have caught: road and grass being coplanar (the car
+thought it was on grass for whole laps); wall collision geometry being double-sided so
+contacts cancelled velocity twice per step; loops folding back onto themselves tightly
+enough to trap a car forever, and later meeting the road at a 55-degree kink; checkpoint
+planes being tracked across the whole map so real passes went unnoticed; the spawn point
+having no road under it; a loop built with `self.x` for all three coordinates; and
+several tracks that simply could not be finished. Needs the optional `quickjs` package;
+those tests skip without it, so a plain deploy install is unaffected.
+
+There is no browser in CI, so **check rendering by hand** before shipping a geometry
+change: run the app on a spare port and screenshot it with headless Chrome
+(`google-chrome --headless=new --use-gl=swiftshader --enable-unsafe-swiftshader
+--virtual-time-budget=9000 --screenshot=out.png http://127.0.0.1:5055/solo/twist`). That
+is how the forest of bridge piers and the dark undersides were found - both invisible to
+every test.
 
 **Drive deploy:** the usual Action also (when `drive/.env` exists) builds/updates
 `drive/venv` and `sudo systemctl restart drive`. nginx has a `drive.cgovind.com` vhost

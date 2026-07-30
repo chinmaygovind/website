@@ -43,11 +43,18 @@ function autopilot(car, course, T, rl) {
 
     let steer, throttle = 0, brake = 0;
 
-    if (sample.loop) {
-      // Inside a loop the road doubles back over itself in plan view, so "a point
-      // up the road" can be *behind* the car in XZ. Hold it straight and centred
-      // and let the geometry do the work - which is what a human does here.
-      steer = clamp(-loc.lateral * 0.22, -0.45, 0.45);
+    if (sample.fix && !sample.air) {
+      // Inside a corkscrew the road spirals about the direction of travel, so a
+      // point "up the road" swings from side to side and overhead in plan view
+      // and pure pursuit chases its own tail. Hold it centred and flat out and
+      // let the geometry do the work - which is exactly what a human does here.
+      steer = clamp(-loc.lateral * 0.16, -0.4, 0.4);
+      throttle = 1;
+    } else if (sample.air) {
+      // Mid-flight: hold whatever attitude the lip gave us. Aiming in the air is
+      // a real skill in this game, but a test driver that tries to and gets it
+      // wrong would fail tracks for the wrong reason.
+      steer = clamp(-loc.lateral * 0.05, -0.2, 0.2);
       throttle = 1;
     } else {
       // --- pure pursuit along the racing line ---------------------------

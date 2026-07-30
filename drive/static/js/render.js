@@ -10,6 +10,9 @@
 
 import * as THREE from './vendor/three.module.js';
 
+const BRAKE_OFF = 0x521218;
+const BRAKE_ON = 0xff2b2b;
+
 export class CarView {
   constructor(scene, color, opts = {}) {
     this.group = new THREE.Group();
@@ -74,14 +77,21 @@ export class CarView {
     this.shadow.rotation.x = -Math.PI / 2;
     scene.add(this.shadow);
 
-    // boost flame
-    this.flame = new THREE.Mesh(
-      new THREE.ConeGeometry(0.42, 1.7, 7),
-      new THREE.MeshBasicMaterial({ color: 0x8fd6ff, transparent: true, opacity: 0.9 }));
-    this.flame.rotation.x = -Math.PI / 2;
-    this.flame.position.set(0, 0.35, 2.2);
-    this.flame.visible = false;
-    this.body.add(this.flame);
+    // Brake lights. Two panels on the tail, unlit material so they read as
+    // emissive without a second light in the scene: dark red at rest, full red
+    // the instant you touch the brakes. They are on the *car*, not the HUD, so
+    // you can see the driver ahead of you braking - which is the only reason a
+    // detail like this is worth any geometry at all.
+    this.brakeMats = [];
+    for (const s of [-1, 1]) {
+      const m = new THREE.MeshBasicMaterial({
+        color: BRAKE_OFF, transparent: ghost, opacity: ghost ? 0.42 : 1 });
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.22, 0.1), m);
+      lamp.position.set(s * 0.6, 0.5, 1.73);
+      this.body.add(lamp);
+      this.brakeMats.push(m);
+    }
+    this._braking = false;
 
     scene.add(this.group);
     this.scene = scene;
@@ -133,11 +143,10 @@ export class CarView {
     } else {
       this.shadow.visible = false;
     }
-    const boost = opts.boost || 0;
-    this.flame.visible = boost > 0;
-    if (boost > 0) {
-      const s = 0.7 + Math.random() * 0.6;
-      this.flame.scale.set(1, s * Math.min(1, boost * 2), 1);
+    const braking = !!opts.braking;
+    if (braking !== this._braking) {
+      this._braking = braking;
+      for (const m of this.brakeMats) m.color.setHex(braking ? BRAKE_ON : BRAKE_OFF);
     }
   }
 
@@ -291,8 +300,8 @@ export class Renderer {
     this.camera.up.copy(this.camUp);
     this.camera.lookAt(this.camLook);
 
-    // A little FOV with speed and boost - cheap, and it does a lot.
-    const fov = this.baseFov + Math.min(13, speed * 0.16) + (car.boost > 0 ? 5 : 0);
+    // A little FOV with speed - cheap, and it does a lot.
+    const fov = this.baseFov + Math.min(13, speed * 0.16);
     if (Math.abs(this.camera.fov - fov) > 0.05) {
       this.camera.fov += (fov - this.camera.fov) * (1 - Math.exp(-6 * dt));
       this.camera.updateProjectionMatrix();

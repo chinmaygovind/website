@@ -5,10 +5,10 @@ it whenever the car is retuned. Instead this module does what a lap-time
 simulator does:
 
 1. **Find a racing line.** Relax the road centreline toward minimum curvature,
-   clamped to stay inside the road. That is what turns a 90 degree corner from a
-   4-unit-radius centreline hairpin into the ~19-unit-radius line a driver
-   actually takes, which is the difference between a corner taken at 12 u/s and
-   one taken at 33.
+   clamped to stay inside the road. On a 13-wide road that opens a 30-unit
+   centreline corner out to nearer 40, which is the difference between taking it
+   at 23 u/s and taking it at 27 - and on a chicane it is the difference between
+   two corners and one straight line.
 2. **Find the speed limit at every point** from its curvature, inverted through
    the car's own speed-dependent yaw rate: the fastest v where ``v / omega(v)``
    still fits the corner radius.
@@ -63,7 +63,7 @@ def _corner_speed(radius):
     return lo
 
 
-def racing_line(line, iterations=260, relax=0.34, margin=2.4):
+def racing_line(line, iterations=320, relax=0.34, margin=2.4):
     # `margin` is how close the line may come to the edge of the road. It cannot
     # be zero: the car has width, so its centre line has to stay about a
     # half-width off the kerb, and a driver needs a little more than that again.
@@ -74,15 +74,15 @@ def racing_line(line, iterations=260, relax=0.34, margin=2.4):
 
     Each point may only slide along its own lateral vector (across the road), so
     the line can never leave the track no matter how many iterations run. Air
-    and loop sections are pinned: you cannot choose a line mid-flight, and a
-    loop's line is fixed by the geometry.
+    and ``fix`` sections are pinned: you cannot choose a line mid-flight, and
+    inside a corkscrew the line is fixed by the geometry.
     """
     pts = [list(e["p"]) for e in line]
     n = len(pts)
     if n < 3:
         return pts
     off = [0.0] * n
-    pinned = [bool(e.get("air") or e.get("loop")) for e in line]
+    pinned = [bool(e.get("air") or e.get("fix")) for e in line]
     base = [list(e["p"]) for e in line]
     lat = [e["lat"] for e in line]
     lim = [max(0.0, e["hw"] - margin) for e in line]
@@ -120,6 +120,14 @@ def _curvature_radius(a, b, c):
     return (ab * bc * ca) / (4 * area)
 
 
+def _station(line):
+    """Mean spacing between stations, for sizing the curvature stencil."""
+    if len(line) < 2:
+        return 1.0
+    total = sum(_dist(line[i]["p"], line[i + 1]["p"]) for i in range(len(line) - 1))
+    return total / (len(line) - 1)
+
+
 def speed_profile(track):
     """Return (points, speeds, ideal_time) for the track's racing line."""
     line = track["line"]
@@ -132,18 +140,30 @@ def speed_profile(track):
     for i in range(n - 1):
         ds[i] = _dist(pts[i], pts[i + 1])
 
+    # Curvature is measured across a stencil about eight units wide rather than
+    # between neighbouring stations. Stations are only ~3.5 units apart, and a
+    # three-point circumradius over that short a baseline is dominated by the
+    # relaxation's own residual wobble - it reported hairpin radii on straights.
+    stride = max(1, int(round(8.0 / max(1e-6, _station(line)))))
+
     cap = []
+    top = T.MAX_SPEED
     for i in range(n):
         e = line[i]
-        top = T.BOOST_SPEED if e.get("boost") else T.MAX_SPEED
         if e.get("air"):
             cap.append(top)          # no steering authority matters mid-flight
-        elif e.get("loop"):
-            cap.append(top)          # a loop's curvature is pitch, not yaw
-        elif i == 0 or i == n - 1:
+        elif e.get("crad"):
+            # A corkscrew. Its curvature is not something you steer, so the limit
+            # is not the yaw rate - it is whether the car can be held onto the
+            # wall at all. On the wall gravity points along the road rather than
+            # into it, so STICK_FORCE is the whole centripetal budget.
+            cap.append(min(top, math.sqrt(e["crad"] * T.STICK_FORCE)))
+        elif e.get("fix"):
+            cap.append(top)
+        elif i - stride < 0 or i + stride >= n:
             cap.append(top)
         else:
-            r = _curvature_radius(pts[i - 1], pts[i], pts[i + 1])
+            r = _curvature_radius(pts[i - stride], pts[i], pts[i + stride])
             cap.append(min(top, _corner_speed(r)))
 
     v = list(cap)

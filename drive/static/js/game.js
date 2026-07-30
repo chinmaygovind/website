@@ -247,14 +247,17 @@ function frame(now) {
     if (e === 'finish') onFinish();
   }
 
-  drive();
+  drive(inp);
   render(dt, now);
   if ((S.hudTick = (S.hudTick + 1) % 3) === 0) hud(now);
   sendPose(now);
 }
 
-function drive() {
+function drive(inp) {
   const car = S.car;
+  // Engine, tyres and wind, driven from the car's own state every frame.
+  S.sound.engine(Math.min(1, car.speed / T.MAX_SPEED), inp.throttle, car.slip,
+                 !car.grounded);
   // tyre smoke while sliding, dust when off the road
   if (car.grounded && (car.slip > 0.3 || (car.offroad && car.speed > 8))) {
     const back = new THREE.Vector3().copy(car.pos)
@@ -262,7 +265,6 @@ function drive() {
     const jitter = new THREE.Vector3((Math.random() - 0.5) * 2, 0.9, (Math.random() - 0.5) * 2);
     S.renderer.smoke(back, jitter, car.offroad ? 'dust' : 'smoke');
   }
-  if (car.boost > 0 && Math.random() < 0.5) S.renderer.kick(0.05);
 }
 
 function render(dt, now) {
@@ -274,7 +276,7 @@ function render(dt, now) {
     spin: car.wheelSpin,
     groundY: car.groundY,
     groundN: car.grounded ? car.groundN : null,
-    boost: car.boost,
+    braking: car.braking,
   });
   S.view.setVisible(car.respawnIn <= 0);
 
@@ -309,7 +311,8 @@ function hud(now) {
   const kph = Math.round(car.speed * 3.1);
   $('speed').textContent = kph;
   $('speedFill').style.width = Math.min(100, (car.speed / T.MAX_SPEED) * 100) + '%';
-  $('speedFill').classList.toggle('boosting', car.boost > 0);
+  // Over MAX_SPEED means a descent is doing the work, which is worth showing.
+  $('speedFill').classList.toggle('over', car.speed > T.MAX_SPEED);
 
   $('time').textContent = fmt(run.state === 'ready' ? 0 : run.time);
   $('cpCount').textContent = run.nextCp + '/' + run.cps.length;
@@ -714,7 +717,9 @@ function updateRemotes(dt) {
     r.pos.z += (tz - r.pos.z) * k;
     r.rq.slerp(r.q, 1 - Math.exp(-18 * dt));
     r.fwd.set(0, 0, -1).applyQuaternion(r.rq);
-    r.view.update(r.pos, r.rq, { boost: (r.flags & 1) ? 0.5 : 0, spin: 0 });
+    // FLAG.BRAKE is bit 3 (see physics.js) - remote cars show their brake
+    // lights too, which is most of what tells you a rival is slowing.
+    r.view.update(r.pos, r.rq, { braking: !!(r.flags & 8), spin: 0 });
     r.view.group.visible = !(r.flags & 8);
   }
 }

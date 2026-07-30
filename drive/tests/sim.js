@@ -53,7 +53,38 @@ function simulate(track, T, opts) {
     ghostFrames: run.ghost.length,
     splits: run.splits,
     killY: built.killY,
+    // Only on request: the full replay, so the server's anti-cheat can be tested
+    // against a lap the real physics actually produced.
+    ghost: opts.withGhost ? run.ghost.map(f => f.map(v => Math.round(v * 1000) / 1000))
+                          : null,
+    distance: run.distance,
   };
+}
+
+// When does the car say it is braking? Drives the rear lights on your own car and
+// on every remote one, so it has to mean what a driver would expect: on when you
+// are slowing yourself down, off when you are not.
+function brakeStates(track, T) {
+  const built = buildTrack(track, T);
+  const car = new Car(T, built);
+  const sp = track.spawn;
+  const out = {};
+  const settle = (inp, steps) => {
+    for (let i = 0; i < steps; i++) car.step(T.FIXED_DT, inp);
+    return car.braking;
+  };
+  car.placeAt(sp.p, sp.fwd);
+  out.idle = settle({}, 4);
+  out.accelerating = settle({ throttle: 1 }, 200);
+  out.coasting = settle({}, 4);
+  out.braking = settle({ brake: 1 }, 4);
+  out.flag = car.flags();          // the pose bit, while actually braking
+  out.handbrake = settle({ throttle: 1, handbrake: true }, 4);
+  // Still holding the brake, but now stopped and about to reverse: the lights
+  // should be off, because pressing back is no longer slowing anything down.
+  for (let i = 0; i < 400; i++) car.step(T.FIXED_DT, { brake: 1 });
+  out.reversing = car.braking;
+  return out;
 }
 
 // Drop the car onto a point and report the surface it finds - used to test that

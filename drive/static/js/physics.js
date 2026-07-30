@@ -6,8 +6,8 @@
 // Three decisions do most of the work:
 //
 // 1. **Steering rotates the car about the surface normal, not about world up.**
-//    That single choice is what makes banks, ramps and full loops drive normally
-//    instead of needing special cases.
+//    That single choice is what makes banks, hills and a fully inverted
+//    corkscrew drive normally instead of needing special cases.
 // 2. **Gravity is always applied, then its component along the surface normal is
 //    removed while grounded.** Slope acceleration then falls out for free - no
 //    "am I on a hill" logic anywhere.
@@ -26,7 +26,7 @@ const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vect
 const _q1 = new THREE.Quaternion();
 const UP = new THREE.Vector3(0, 1, 0);
 
-export const FLAG = { BOOST: 1, DRIFT: 2, AIR: 4, RESPAWN: 8 };
+export const FLAG = { DRIFT: 1, AIR: 2, RESPAWN: 4, BRAKE: 8 };
 
 export class Car {
   constructor(T, world) {
@@ -45,7 +45,7 @@ export class Car {
     this.coyote = 0;
     this.airTime = 0;
     this.steer = 0;
-    this.boost = 0;
+    this.braking = false;      // rear lights, and a netcode flag
     this.offroad = false;
     this.surface = KIND.ROAD;
     this.speed = 0;
@@ -68,9 +68,9 @@ export class Car {
     this._syncAxes();
     this.grounded = false;
     this.coyote = 0;
-    this.boost = 0;
     this.steer = 0;
     this.speed = 0;
+    this.braking = false;
     this.respawnIn = 0;
   }
 
@@ -120,6 +120,7 @@ export class Car {
 
     let { throttle = 0, brake = 0, steer = 0, handbrake = false } = input || {};
     if (this.frozen) { throttle = 0; brake = 0; steer = 0; handbrake = false; }
+    this.braking = (brake > 0 && this.vel.dot(this.fwd) > 0.5) || handbrake;
 
     // --- smooth the steering input ---------------------------------------
     // Keyboard steering is binary; this is what makes it feel analogue.
@@ -170,13 +171,21 @@ export class Car {
       const vn = this.vel.dot(n);
       if (vn < 0) this.vel.addScaledVector(n, -vn);
 
-      // Keep the wheels down on anything that is not flat. Scaled by how tilted
-      // the surface is, so jumps off flat ground still launch properly, and by
-      // speed, so a slow car simply falls off a loop like it should.
-      const tilt = 1 - n.dot(UP);
-      if (tilt > 0.02) {
+      // Hold the car onto a surface only where nothing else could hold it: past
+      // STICK_TILT (about 70 degrees) and on into fully inverted, which in
+      // practice means a corkscrew and nothing else. Ordinary hills, ramps and
+      // banked corners get no help whatsoever - go over a crest and you fly,
+      // which is the whole point.
+      //
+      // Nothing is needed on the *concave* parts of a corkscrew either: there
+      // the road curves up to meet the car, so travelling in a straight line
+      // puts it inside the surface and the ride-height term does the work. The
+      // pull is only ever paying for the convex half.
+      const along = n.dot(UP);
+      if (along < T.STICK_TILT) {
         const sp = this.vel.length();
-        const f = Math.min(1, tilt / 0.5) * Math.min(1, sp / T.STICK_SPEED);
+        const f = Math.min(1, (T.STICK_TILT - along) / 0.45) *
+                  Math.min(1, sp / T.STICK_SPEED);
         this.vel.addScaledVector(n, -T.STICK_FORCE * f * dt);
       }
 
@@ -212,17 +221,12 @@ export class Car {
       this.vel.addScaledVector(this.right, -vLat * (1 - Math.exp(-grip * dt)));
       this.slip = Math.min(1, Math.abs(vLat) / 12);
 
-      // Remove any leftover motion along the normal so we track the surface
-      // instead of skipping off every ramp seam.
-      const vn2 = this.vel.dot(n);
-      if (vn2 > 0 && tilt < 0.02) this.vel.addScaledVector(n, -vn2 * Math.min(1, dt * 18));
-
-      // Boost pads.
-      if (this.surface === KIND.BOOST) {
-        this.boost = T.BOOST_HOLD;
-        const cur = this.vel.dot(this.fwd);
-        if (cur < T.BOOST_SPEED) this.vel.addScaledVector(this.fwd, T.BOOST_SPEED - cur);
-      }
+      // Note what is deliberately *not* here: a term that scrubs off velocity
+      // along the surface normal. There used to be one, to stop the car skipping
+      // over ramp seams, and it was what made the car feel glued to every slope
+      // - it ate the launch a crest had just given it. Hills are eased in
+      // tracks.py so they have no seam to skip on, and the suspension spring
+      // above covers what is left.
 
       this._alignUp(n, T.ALIGN_GROUND, dt);
       if (!wasGrounded && prevAir > 0.15) this.onLand && this.onLand(prevAir);
@@ -246,10 +250,9 @@ export class Car {
     // --- walls ------------------------------------------------------------
     this._resolveWalls(dt);
 
-    if (this.boost > 0) this.boost -= dt;
-
-    // Absolute safety cap; drag does the real speed limiting.
-    const hard = T.BOOST_SPEED * 1.5;
+    // Absolute safety cap; drag does the real speed limiting. It sits above
+    // MAX_SPEED because a long descent legitimately overspeeds the car.
+    const hard = T.MAX_SPEED * 1.7;
     if (this.vel.lengthSq() > hard * hard) this.vel.setLength(hard);
 
     this.speed = this.vel.length();
@@ -416,10 +419,10 @@ export class Car {
 
   flags() {
     let f = 0;
-    if (this.boost > 0) f |= FLAG.BOOST;
     if (this.slip > 0.35) f |= FLAG.DRIFT;
     if (!this.grounded) f |= FLAG.AIR;
     if (this.respawnIn > 0) f |= FLAG.RESPAWN;
+    if (this.braking) f |= FLAG.BRAKE;
     return f;
   }
 }

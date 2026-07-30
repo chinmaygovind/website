@@ -86,9 +86,13 @@ export class Course {
     }
 
     // Signed offset across the road, for anything that needs "how far wide am I".
+    // In full 3D, not just XZ: inside a corkscrew the road's lateral axis has a
+    // large vertical component (at the quarter turn it is vertical), and an
+    // XZ-only projection reports nearly zero however far wide the car is.
     const lat = line[best].lat;
     const lp = line[best].p;
-    const lateral = (pos.x - lp[0]) * lat[0] + (pos.z - lp[2]) * lat[2];
+    const lateral = (pos.x - lp[0]) * lat[0] + (pos.y - lp[1]) * lat[1] +
+                    (pos.z - lp[2]) * lat[2];
 
     return { idx: best, s: Math.max(0, Math.min(this.total, s)), dist, lateral };
   }

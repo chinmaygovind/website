@@ -1,23 +1,24 @@
-// Turns a track's block list into (a) one merged flat-shaded mesh and (b) the
+// Turns a track's station ribbon into (a) one merged flat-shaded mesh and (b) the
 // triangle soup the car actually drives on.
 //
 // The important idea here: **the collision surface is the render surface.** Every
 // driveable triangle that goes into the mesh also goes into a spatial hash, and
-// the physics does closest-point queries against it. That means ramps, banked
-// arcs, loops, kicker lips and bridges all work through one code path with no
-// per-block special cases in the car code, and nothing can ever look solid but
-// not be (or vice versa). The cost is a couple of thousand triangles per track,
-// which is nothing.
+// the physics does closest-point queries against it. Hills, banked arcs,
+// corkscrews, crests and crossings all work through one code path with no
+// per-shape special cases in the car code, and nothing can ever look solid but
+// not be (or vice versa). The cost is a few thousand triangles per track, which
+// is nothing.
 //
-// Coordinates: cell (gx,gy,gz) has its centre at (gx*CELL, gy*LEVEL, gz*CELL).
-// A block's rotation r maps its local +X to world DIRS[r]; local +Z is always the
-// road's right-hand side. Surface height runs from p.gy*LEVEL at the block's
-// local -X edge to (p.gy+dy)*LEVEL at its +X edge, which is the whole elevation
-// model - a ramp is just a road with dy.
+// Geometry: a track is a list of stations (see tracks.py), each carrying a centre
+// `p`, a surface normal `n`, a road-right vector `lat` and a half-width `hw`. The
+// road is the strip of quads between consecutive stations - edges at
+// `p ± lat*hw` - so this whole file is one loop over pairs. A station flagged
+// `air` emits nothing, which is how gaps exist; `wl`/`wr` add a barrier along
+// that edge.
 
 import * as THREE from './vendor/three.module.js';
 
-export const KIND = { ROAD: 0, WALL: 1, BOOST: 2, OFFROAD: 3 };
+export const KIND = { ROAD: 0, WALL: 1, OFFROAD: 2 };
 
 const PALETTES = {
   sunrise:  { road: 0x59606e, kerb: 0xf2f2f2, kerb2: 0xe8453c, ground: 0x6fbf5f, sky: 0xa9d8ef, fog: 0xbfe0f0, rail: 0xf5f5f5, prop: 0x3f8f4f, deco: 0xf2c94c },
@@ -29,19 +30,6 @@ const PALETTES = {
   spiral:   { road: 0x525869, kerb: 0xfafafa, kerb2: 0xbb6bd9, ground: 0x5a5570, sky: 0xb9a6e0, fog: 0xd0c4ec, rail: 0xf6f0ff, prop: 0x6d6488, deco: 0xbb6bd9 },
   gauntlet: { road: 0x474c58, kerb: 0xf2f2f2, kerb2: 0xe8453c, ground: 0x3d4250, sky: 0x6f7f9c, fog: 0x8d9ab3, rail: 0xf7f7f7, prop: 0x555c6c, deco: 0xe8453c },
 };
-
-const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];
-
-// Rotate a local offset into world space. r quarter-turns about Y, chosen so
-// local +X lands on DIRS[r] (see the module comment).
-function rot(r, x, y, z) {
-  switch (r & 3) {
-    case 0: return [x, y, z];
-    case 1: return [-z, y, x];
-    case 2: return [-x, y, -z];
-    default: return [z, y, -x];
-  }
-}
 
 export function palette(track) {
   return PALETTES[track.palette] || PALETTES.sunrise;
@@ -265,21 +253,20 @@ class MeshBuf {
   }
 }
 
+const THICK = 0.9;      // depth of the tarmac slab under the road surface
+const RAIL_H = 1.15;    // barrier height
+const KERB_W = 0.7;     // width of the painted stripe along each edge
+
 export function buildTrack(track, T) {
-  const CELL = T.CELL, LEVEL = T.LEVEL, h = CELL / 2;
+  const CELL = T.CELL;
   const pal = palette(track);
   const group = new THREE.Group();
   const col = new Collider(CELL);
   const solid = new MeshBuf();     // flat-shaded, receives light
-  const bright = new MeshBuf();    // unlit accents: kerbs, gates, boosters
-  const gates = [];
+  const bright = new MeshBuf();    // unlit accents: kerbs, gate banners
+  const line = track.line;
   let minY = Infinity, maxY = -Infinity;
   const bbox = { x0: Infinity, x1: -Infinity, z0: Infinity, z1: -Infinity };
-
-  const W = (b, lx, ly, lz) => {
-    const [x, y, z] = rot(b.r, lx, ly, lz);
-    return [b.p[0] * CELL + x, b.p[1] * LEVEL + y, b.p[2] * CELL + z];
-  };
 
   function note(p) {
     minY = Math.min(minY, p[1]); maxY = Math.max(maxY, p[1]);
@@ -287,54 +274,17 @@ export function buildTrack(track, T) {
     bbox.z0 = Math.min(bbox.z0, p[2]); bbox.z1 = Math.max(bbox.z1, p[2]);
   }
 
-  // Road surface + the slab of "tarmac" under it so the track reads as solid
-  // when you see it edge-on or from below.
-  function surfaceQuad(a, b, c, d, kind, color) {
-    col.addQuad(a, b, c, d, kind);
-    solid.quad(a, b, c, d, color);
-    [a, b, c, d].forEach(note);
-  }
-
-  const THICK = 0.9;
-  function underside(a, b, c, d) {
-    const lower = [a, b, c, d].map(p => [p[0], p[1] - THICK, p[2]]);
-    // bottom face (reverse winding) + four sides
-    solid.quad(lower[3], lower[2], lower[1], lower[0], shade(pal.road, -0.45));
-    const edges = [[0, 1], [1, 2], [2, 3], [3, 0]];
-    for (const [i, j] of edges) {
-      solid.quad([a, b, c, d][i], [a, b, c, d][j], lower[j], lower[i], shade(pal.road, -0.25));
-    }
-  }
-
-  function kerb(p0, p1, color) {
-    // a low stripe along an edge, drawn slightly above the road to avoid z-fight
-    const lift = 0.06, wide = 0.55;
-    const dx = p1[0] - p0[0], dz = p1[2] - p0[2];
-    const len = Math.hypot(dx, dz) || 1;
-    const sx = -dz / len * wide, sz = dx / len * wide;
-    bright.quad(
-      [p0[0], p0[1] + lift, p0[2]], [p1[0], p1[1] + lift, p1[2]],
-      [p1[0] + sx, p1[1] + lift, p1[2] + sz], [p0[0] + sx, p0[1] + lift, p0[2] + sz], color);
-  }
-
   // Walls get ONE collision quad, not two. The wall query derives its push-out
   // direction from the closest point on the triangle rather than from the stored
   // normal, so a single-sided quad stops a car arriving from either side. Adding
   // the back face as well used to make every contact fire twice with opposing
   // normals, which cancelled the car's velocity and scrubbed its speed twice per
-  // step - it is what made loops with rails undrivable. The *mesh* still gets
-  // both faces, so nothing looks hollow.
-  function wallStrip(p0, p1, height, color) {
-    const a = [p0[0], p0[1], p0[2]], b = [p1[0], p1[1], p1[2]];
-    const at = [a[0], a[1] + height, a[2]], bt = [b[0], b[1] + height, b[2]];
-    col.addQuad(a, b, bt, at, KIND.WALL);
-    solid.quad(a, b, bt, at, color);
-    solid.quad(at, bt, b, a, color);
-  }
-
-  // Same as wallStrip but offset along a supplied normal instead of world up,
-  // so a rail on the inverted part of a loop still points away from the road.
-  function wallStripN(p0, p1, n0, n1, height, color) {
+  // step - it is what made rails inside a corkscrew undrivable. The *mesh* still
+  // gets both faces, so nothing looks hollow.
+  //
+  // The offset is along the road's own normal rather than world up, so a barrier
+  // on the inverted part of a corkscrew still stands off the road.
+  function wallStrip(p0, p1, n0, n1, height, color) {
     const at = [p0[0] + n0[0] * height, p0[1] + n0[1] * height, p0[2] + n0[2] * height];
     const bt = [p1[0] + n1[0] * height, p1[1] + n1[1] * height, p1[2] + n1[2] * height];
     col.addQuad(p0, p1, bt, at, KIND.WALL);
@@ -342,186 +292,130 @@ export function buildTrack(track, T) {
     solid.quad(at, bt, p1, p0, color);
   }
 
-  const RAIL_H = 1.15;
+  // Edge points of the road at a station, and the same points lifted a hair
+  // along the normal for the painted kerb (which is drawn, never collided).
+  const edge = (e, s) => [e.p[0] + e.lat[0] * s * e.hw,
+                          e.p[1] + e.lat[1] * s * e.hw,
+                          e.p[2] + e.lat[2] * s * e.hw];
+  const inset = (e, s, d) => [e.p[0] + e.lat[0] * s * (e.hw - d) + e.n[0] * 0.05,
+                              e.p[1] + e.lat[1] * s * (e.hw - d) + e.n[1] * 0.05,
+                              e.p[2] + e.lat[2] * s * (e.hw - d) + e.n[2] * 0.05];
+  const sink = (p, e, d) => [p[0] - e.n[0] * d, p[1] - e.n[1] * d, p[2] - e.n[2] * d];
 
-  for (const b of track.blocks) {
-    const dyH = (b.dy || 0) * LEVEL;
-    const t = b.t;
+  // ---- the road: one strip of quads between consecutive stations -----------
+  //
+  // This loop is the entire track geometry. Everything the old grid version
+  // needed a separate branch for - straights, corners, ramps, kicker lips,
+  // loops, bridges - is the same four vertices here, because the stations
+  // already carry the position, the normal, the lateral axis and the width.
+  for (let i = 0; i + 1 < line.length; i++) {
+    const a = line[i], b = line[i + 1];
+    if (a.air || b.air) continue;          // a gap: no road, by construction
 
-    if (t === 'road' || t === 'kick') {
-      // corners in local space: -X edge at y 0, +X edge at y dyH
-      const A = W(b, -h, 0, -h), B = W(b, -h, 0, h);
-      const C = W(b, h, dyH, h), D = W(b, h, dyH, -h);
-      const boost = !!b.boost;
-      surfaceQuad(A, B, C, D, boost ? KIND.BOOST : KIND.ROAD,
-                  boost ? shade(pal.deco, -0.15) : pal.road);
-      underside(A, B, C, D);
-      // kerbs down both sides
-      kerb(A, D, pal.kerb);
-      kerb(C, B, pal.kerb2);
-      if (boost) {
-        // chevrons on the pad
-        for (let i = 0; i < 3; i++) {
-          const f = -h + (i + 0.6) * (CELL / 3.4);
-          const y0 = (f + h) / CELL * dyH;
-          const p0 = W(b, f, y0 + 0.08, -h * 0.7), p1 = W(b, f + 1.5, y0 + 0.08, 0);
-          const p2 = W(b, f, y0 + 0.08, h * 0.7), p3 = W(b, f - 0.5, y0 + 0.08, 0);
-          bright.quad(p0, p1, p2, p3, 0xffffff);
-        }
-      }
-      if (b.w) addSideRails(b, b.w, A, B, C, D);
-      if (t === 'kick') {
-        // paint the launch edge so you can see exactly where the road stops
-        const L1 = W(b, h, dyH, -h), L2 = W(b, h, dyH, h);
-        solid.quad(L1, L2, [L2[0], L2[1] - THICK, L2[2]], [L1[0], L1[1] - THICK, L1[2]],
-                   shade(pal.deco, -0.1));
-        kerb(L1, L2, pal.deco);
-      }
-      if (b.gate) addGate(b, dyH);
-      if (b.over) addPiers(b, dyH);
+    const aL = edge(a, -1), aR = edge(a, 1);
+    const bL = edge(b, -1), bR = edge(b, 1);
+    // Wound so the surface normal comes out along `n`, which is what lets the
+    // ground query find the road while the car is upside down inside a corkscrew.
+    col.addQuad(aL, aR, bR, bL, KIND.ROAD);
+    solid.quad(aL, aR, bR, bL, i % 8 < 4 ? pal.road : shade(pal.road, 0.045));
+    note(aL); note(aR);
 
-    } else if (t === 'turn') {
-      // A quarter disc of radius CELL pivoted on the inside corner. Both the
-      // entry edge and the exit edge are then fully road (their far ends are
-      // exactly one radius from the pivot), so it joins the straights cleanly,
-      // and the opposite corner falls outside the arc and is not road at all.
-      const side = b.d === 'r' ? 1 : -1;
-      const pvx = -h, pvz = side * h;
-      const SEG = 12, R = CELL;
-      const P = W(b, pvx, 0, pvz);
-      const arc = [];
-      for (let i = 0; i <= SEG; i++) {
-        const a = (Math.PI / 2) * (i / SEG);
-        arc.push(W(b, pvx + Math.cos(a) * R, 0, pvz - side * Math.sin(a) * R));
-      }
-      for (let i = 0; i < SEG; i++) {
-        const A2 = arc[i], B2 = arc[i + 1];
-        // A right-hand turn sweeps clockwise in XZ, so its fan winds the other
-        // way to keep every road normal pointing up.
-        if (side > 0) { col.add(P, B2, A2, KIND.ROAD); solid.tri(P, B2, A2, pal.road); }
-        else { col.add(P, A2, B2, KIND.ROAD); solid.tri(P, A2, B2, pal.road); }
-        kerb(A2, B2, i % 2 ? pal.kerb : pal.kerb2);
-        note(A2);
-      }
-      // underside: the same fan flipped, plus a skirt around the arc
-      for (let i = 0; i < SEG; i++) {
-        const A2 = arc[i], B2 = arc[i + 1];
-        const lp = [P[0], P[1] - THICK, P[2]];
-        const la = [A2[0], A2[1] - THICK, A2[2]], lb = [B2[0], B2[1] - THICK, B2[2]];
-        if (side > 0) solid.tri(lp, la, lb, shade(pal.road, -0.45));
-        else solid.tri(lp, lb, la, shade(pal.road, -0.45));
-        solid.quad(A2, B2, lb, la, shade(pal.road, -0.25));
-      }
-      if (b.w) {
-        for (let i = 0; i < SEG; i++) wallStrip(arc[i], arc[i + 1], RAIL_H, pal.rail);
-      }
+    // Underside: the slab, so the track reads as solid edge-on and from below.
+    const aLu = sink(aL, a, THICK), aRu = sink(aR, a, THICK);
+    const bLu = sink(bL, b, THICK), bRu = sink(bR, b, THICK);
+    solid.quad(bLu, bRu, aRu, aLu, shade(pal.road, -0.34));
+    solid.quad(aL, bL, bLu, aLu, shade(pal.road, -0.16));   // left flank
+    solid.quad(bR, aR, aRu, bRu, shade(pal.road, -0.16));   // right flank
 
-    } else if (t === 'loop') {
-      buildLoop(b);
+    // Kerbs: painted stripes just inside each edge, alternating colour.
+    const stripe = (i % 4 < 2) ? pal.kerb : pal.kerb2;
+    bright.quad(inset(a, -1, 0), inset(b, -1, 0),
+                inset(b, -1, KERB_W), inset(a, -1, KERB_W), stripe);
+    bright.quad(inset(a, 1, KERB_W), inset(b, 1, KERB_W),
+                inset(b, 1, 0), inset(a, 1, 0), stripe);
 
-    } else if (t === 'wall') {
-      const A = W(b, -h, 0, -h), B = W(b, -h, 0, h);
-      wallStrip(A, B, RAIL_H * 2, pal.rail);
+    if (a.wl && b.wl) wallStrip(aL, bL, a.n, b.n, RAIL_H, pal.rail);
+    if (a.wr && b.wr) wallStrip(aR, bR, a.n, b.n, RAIL_H, pal.rail);
+
+    // Where the road stops dead - the lip of a jump - paint the end face so you
+    // can see exactly where it goes.
+    if (i + 2 < line.length && line[i + 2].air) {
+      solid.quad(bL, bR, bRu, bLu, shade(pal.deco, -0.1));
+      bright.quad(inset(b, -1, 0), inset(b, 1, 0),
+                  sink(inset(b, 1, 0), b, 0.4), sink(inset(b, -1, 0), b, 0.4), pal.deco);
     }
   }
 
-  function addSideRails(b, which, A, B, C, D) {
-    if (which.includes('l')) wallStrip(A, D, RAIL_H, pal.rail);   // local -Z side
-    if (which.includes('r')) wallStrip(B, C, RAIL_H, pal.rail);
-  }
-
-  function addPiers(b, dyH) {
-    const y = b.p[1] * LEVEL + dyH / 2;
-    const drop = y - (track.ground != null ? track.ground * LEVEL : y - 14);
+  // ---- supports -----------------------------------------------------------
+  // A pair of legs every so often, so an elevated road reads as built rather
+  // than floating. Sparse on purpose: one every three stations turned every
+  // raised section into a picket fence you could not see the track through.
+  const groundY = track.ground != null ? track.ground : null;
+  const legEvery = Math.max(4, Math.round(26 / (track.station || 3.5)));
+  for (let i = Math.floor(legEvery / 2); i < line.length; i += legEvery) {
+    const e = line[i];
+    if (e.air || e.fix) continue;
+    if (e.n[1] < 0.7) continue;                 // not under a banked or rolled bit
+    const base = groundY != null ? groundY : e.p[1] - 16;
+    const drop = e.p[1] - THICK - base;
+    if (drop < 1.5) continue;
     for (const s of [-1, 1]) {
-      const p = W(b, 0, 0, s * (h - 0.9));
-      solid.box(p[0], y - drop / 2 - 0.5, p[2], 0.5, Math.max(1, drop / 2), 0.5,
-                shade(pal.prop, -0.1));
+      const p = edge(e, s * 0.7);
+      solid.box(p[0], base + drop / 2, p[2], 0.62, drop / 2, 0.62,
+                shade(pal.prop, -0.08));
     }
+    // a cross-beam under the deck so the pair reads as one trestle
+    const l = edge(e, -0.7), r = edge(e, 0.7);
+    solid.box((l[0] + r[0]) / 2, e.p[1] - THICK - 0.5, (l[2] + r[2]) / 2,
+              Math.abs(r[0] - l[0]) / 2 + 0.4, 0.32,
+              Math.abs(r[2] - l[2]) / 2 + 0.4, shade(pal.prop, -0.2));
   }
-
-  function addGate(b, dyH) {
-    const mid = W(b, 0, dyH / 2, 0);
-    const [fx, , fz] = rot(b.r, 1, 0, 0);
-    const [rx, , rz] = rot(b.r, 0, 0, 1);
-    const kind = b.gate;
-    const color = kind === 'start' ? 0xffffff : kind === 'finish' ? 0xe8453c : pal.deco;
-    gates.push({ kind, gi: b.gi || 0, p: mid, f: [fx, 0, fz], r: [rx, 0, rz],
-                 hw: h, y: mid[1] });
-    // two posts and a banner
+  // ---- gates --------------------------------------------------------------
+  // Positions come from tracks.py, so the thing you drive through and the thing
+  // the timer watches can never disagree.
+  const gates = [];
+  for (const g of track.gates) {
+    const color = g.kind === 'start' ? 0xffffff
+                : g.kind === 'finish' ? 0xe8453c : pal.deco;
+    const st = line[g.si] || { n: [0, 1, 0] };
+    const n = st.n;
+    gates.push({ kind: g.kind, gi: g.gi, p: g.p, f: g.f, r: g.r, hw: g.hw, y: g.p[1] });
     for (const s of [-1, 1]) {
-      const post = [mid[0] + rx * s * h, mid[1], mid[2] + rz * s * h];
-      solid.box(post[0], post[1] + 1.9, post[2], 0.34, 1.9, 0.34, color);
+      const post = [g.p[0] + g.r[0] * s * g.hw, g.p[1] + g.r[1] * s * g.hw,
+                    g.p[2] + g.r[2] * s * g.hw];
+      solid.box(post[0] + n[0] * 1.9, post[1] + n[1] * 1.9, post[2] + n[2] * 1.9,
+                0.34, 1.9, 0.34, color);
     }
-    const y0 = mid[1] + 3.4, y1 = mid[1] + 4.4;
-    const L = [mid[0] - rx * h, y0, mid[2] - rz * h], R2 = [mid[0] + rx * h, y0, mid[2] + rz * h];
-    bright.quad(L, R2, [R2[0], y1, R2[2]], [L[0], y1, L[2]], color);
-    // painted line on the road
-    if (kind !== 'cp') {
-      const w = 0.75;
-      const a = [mid[0] - rx * h - fx * w, mid[1] + 0.05, mid[2] - rz * h - fz * w];
-      const c = [mid[0] + rx * h + fx * w, mid[1] + 0.05, mid[2] + rz * h + fz * w];
-      bright.quad(a, [c[0] - fx * 2 * w, a[1], c[2] - fz * 2 * w], c,
-                  [a[0] + fx * 2 * w, a[1], a[2] + fz * 2 * w], color);
-    }
-  }
-
-  function buildLoop(b) {
-    const R = b.rad || 12, adv = (b.length || 2) * CELL, SEG = 56;
-    const [fx, , fz] = rot(b.r, 1, 0, 0);
-    const [rx, , rz] = rot(b.r, 0, 0, 1);
-    const o = [b.p[0] * CELL - fx * h, b.p[1] * LEVEL, b.p[2] * CELL - fz * h];
-    const pt = (a, lat) => {
-      const s = adv * a / (2 * Math.PI);
-      const fwd = s + R * Math.sin(a);
-      const up = R * (1 - Math.cos(a));
-      return [o[0] + fx * fwd + rx * lat, o[1] + up, o[2] + fz * fwd + rz * lat];
-    };
-    // Surface normal at angle a points from the road toward the loop's axis -
-    // straight up at the bottom, straight down at the top. Rails follow it, so
-    // they still stand off the road where the road is upside down.
-    const nrm = (a) => [-fx * Math.sin(a), Math.cos(a), -fz * Math.sin(a)];
-    let prevL = null, prevR = null, prevN = null;
-    for (let i = 0; i <= SEG; i++) {
-      const a = 2 * Math.PI * i / SEG;
-      const L = pt(a, -h), R2 = pt(a, h), N = nrm(a);
-      if (prevL) {
-        // Winding chosen so each road normal points to the side the car is on;
-        // that is what lets the ground query find the inverted section.
-        col.addQuad(prevL, prevR, R2, L, KIND.ROAD);
-        solid.quad(prevL, prevR, R2, L, i % 4 < 2 ? pal.road : shade(pal.road, 0.07));
-        // back face so the outside of the loop is not see-through
-        solid.quad(L, R2, prevR, prevL, shade(pal.road, -0.4));
-        for (const s of [-1, 1]) {
-          const p0 = [prevL, prevR][s > 0 ? 1 : 0], p1 = [L, R2][s > 0 ? 1 : 0];
-          wallStripN(p0, p1, prevN, N, 0.55, pal.rail);
-        }
-      }
-      note(L); note(R2);
-      prevL = L; prevR = R2; prevN = N;
-    }
-    // a couple of ribs so it reads as built, not floating
-    for (const a of [Math.PI * 0.5, Math.PI * 1.5]) {
-      const p = pt(a, 0);
-      solid.box(p[0], (p[1] + o[1]) / 2, p[2], 0.4, Math.abs(p[1] - o[1]) / 2, 0.4,
-                shade(pal.prop, -0.15));
+    const lift = (p, d) => [p[0] + n[0] * d, p[1] + n[1] * d, p[2] + n[2] * d];
+    const L = [g.p[0] - g.r[0] * g.hw, g.p[1] - g.r[1] * g.hw, g.p[2] - g.r[2] * g.hw];
+    const R = [g.p[0] + g.r[0] * g.hw, g.p[1] + g.r[1] * g.hw, g.p[2] + g.r[2] * g.hw];
+    bright.quad(lift(L, 3.4), lift(R, 3.4), lift(R, 4.4), lift(L, 4.4), color);
+    if (g.kind !== 'cp') {
+      const w = 0.9;
+      const back = (p) => [p[0] - g.f[0] * w + n[0] * 0.06,
+                           p[1] - g.f[1] * w + n[1] * 0.06,
+                           p[2] - g.f[2] * w + n[2] * 0.06];
+      const fwd = (p) => [p[0] + g.f[0] * w + n[0] * 0.06,
+                          p[1] + g.f[1] * w + n[1] * 0.06,
+                          p[2] + g.f[2] * w + n[2] * 0.06];
+      bright.quad(back(L), back(R), fwd(R), fwd(L), color);
     }
   }
 
   // --- ground / void -------------------------------------------------------
-  const pad = CELL * 6;
+  const pad = CELL * 7;
   const gx0 = bbox.x0 - pad, gx1 = bbox.x1 + pad, gz0 = bbox.z0 - pad, gz1 = bbox.z1 + pad;
   let killY;
-  if (track.ground != null) {
-    // The ground sits a road-thickness BELOW the level-0 road surface, so the
-    // track is a raised ribbon of tarmac rather than being flush with the grass.
-    // Coplanar road and grass would make the ground query a coin toss between
-    // them, and the car would think it was on grass for an entire lap.
-    const gy = track.ground * LEVEL - THICK;
-    const A = [gx0, gy, gz0], B = [gx0, gy, gz1], C = [gx1, gy, gz1], D = [gx1, gy, gz0];
+  if (groundY != null) {
+    // The grass sits well below the road surface, so the track is a raised
+    // ribbon of tarmac. Coplanar road and grass is what made the ground query a
+    // coin toss between the two - the car spent whole laps behaving as if it
+    // were on grass, and the two surfaces z-fought all over the screen.
+    const A = [gx0, groundY, gz0], B = [gx0, groundY, gz1];
+    const C = [gx1, groundY, gz1], D = [gx1, groundY, gz0];
     col.addQuad(A, B, C, D, KIND.OFFROAD);
     solid.quad(A, B, C, D, pal.ground);
-    killY = gy - 30;
+    killY = groundY - 30;
   } else {
     killY = minY - 26;
     // a distant plate so the void has a floor to look at
@@ -531,7 +425,7 @@ export function buildTrack(track, T) {
   }
 
   // --- scenery (procedural, seeded, deterministic) -------------------------
-  addScenery(solid, track, pal, bbox, CELL, LEVEL);
+  addScenery(solid, track, pal, bbox, CELL);
 
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   const matBright = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
@@ -541,7 +435,6 @@ export function buildTrack(track, T) {
   col.finish();
 
   // Centreline with cumulative distance, for race positions and respawns.
-  const line = track.line.map(e => ({ p: e.p, lat: e.lat }));
   const s = [0];
   for (let i = 1; i < line.length; i++) {
     const a = line[i - 1].p, b2 = line[i].p;
@@ -572,17 +465,20 @@ function mulberry(seed) {
   };
 }
 
-function addScenery(buf, track, pal, bbox, CELL, LEVEL) {
+function addScenery(buf, track, pal, bbox, CELL) {
   let seed = 0;
   for (let i = 0; i < track.slug.length; i++) seed = seed * 31 + track.slug.charCodeAt(i);
   const rnd = mulberry(seed);
   const onGround = track.ground != null;
-  const gy = onGround ? track.ground * LEVEL : null;
-  // Keep props off the road: a cell is occupied if any block sits on it.
+  const gy = onGround ? track.ground : null;
+  // Keep props off the road. A cell counts as occupied if any station's road
+  // reaches into it, plus a ring of clearance so nothing overhangs a kerb.
   const occupied = new Set();
-  for (const b of track.blocks) {
-    for (let dx = -1; dx <= 1; dx++) {
-      for (let dz = -1; dz <= 1; dz++) occupied.add((b.p[0] + dx) + ',' + (b.p[2] + dz));
+  for (const e of track.line) {
+    const reach = Math.ceil((e.hw + CELL) / CELL);
+    const cx = Math.round(e.p[0] / CELL), cz = Math.round(e.p[2] / CELL);
+    for (let dx = -reach; dx <= reach; dx++) {
+      for (let dz = -reach; dz <= reach; dz++) occupied.add((cx + dx) + ',' + (cz + dz));
     }
   }
   const x0 = Math.floor(bbox.x0 / CELL) - 4, x1 = Math.ceil(bbox.x1 / CELL) + 4;

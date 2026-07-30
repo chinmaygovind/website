@@ -27,9 +27,9 @@ POS_Q = 100.0     # positions to the centimetre
 ROT_Q = 4096.0    # quaternion components
 
 MAX_GHOST_FRAMES = GHOST_HZ * 60 * 6      # six minutes is beyond any track
-# A hard ceiling on believable speed: the fastest a booster can put you, plus
-# what a long drop can add, plus slack.
-SPEED_CEIL = T.BOOST_SPEED * 1.6
+# A hard ceiling on believable speed: the car's own top speed, plus what a long
+# descent can add on top of it (the physics caps that at 1.7x), plus slack.
+SPEED_CEIL = T.MAX_SPEED * 2.2
 
 
 def pack_ghost(frames):

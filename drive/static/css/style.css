@@ -185,7 +185,7 @@ body.playing { overflow: hidden; background: #9ed2f0; }
 .speed-unit { font-size: .8rem; color: #b9c2d0; padding-bottom: .35rem; }
 .speed-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.18); overflow: hidden; margin-top: .35rem; }
 .speed-bar i { display: block; height: 100%; width: 0; background: #fff; transition: width .06s linear; }
-.speed-bar i.boosting { background: #8fd6ff; box-shadow: 0 0 10px #8fd6ff; }
+.speed-bar i.over { background: #8fd6ff; box-shadow: 0 0 10px #8fd6ff; }
 
 #minimap { display: block; width: 190px; height: 150px; }
 

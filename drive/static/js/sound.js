@@ -90,7 +90,7 @@ export class Sound {
   }
 
   /** Called every frame with the car's state. */
-  engine(speedFrac, throttle, slip, airborne, boost) {
+  engine(speedFrac, throttle, slip, airborne) {
     if (!this.ready) return;
     const t = this.ctx.currentTime;
     const set = (p, v, tc = 0.06) => p.setTargetAtTime(v, t, tc);
@@ -99,7 +99,7 @@ export class Sound {
     set(this.engFilter.frequency, 620 + speedFrac * 2400 + (throttle ? 500 : 0), 0.08);
     set(this.engGain.gain, airborne ? 0.11 : 0.2 + throttle * 0.13, 0.09);
     set(this.whine.frequency, rpm * 3.02, 0.05);
-    set(this.whineGain.gain, (throttle ? 0.045 : 0.012) * (0.4 + speedFrac) + (boost ? 0.05 : 0), 0.1);
+    set(this.whineGain.gain, (throttle ? 0.045 : 0.012) * (0.4 + speedFrac), 0.1);
     set(this.tyreGain.gain, airborne ? 0 : Math.min(0.3, slip * 0.34), 0.05);
     set(this.tyreFilter.frequency, 1300 + slip * 1400, 0.08);
     set(this.windGain.gain, Math.min(0.16, speedFrac * speedFrac * 0.2), 0.12);
@@ -155,11 +155,6 @@ export class Sound {
   land(airTime) {
     const f = Math.min(1, airTime / 1.4);
     this._burst({ freq: 400 + f * 300, q: 0.5, dur: 0.1 + f * 0.1, gain: 0.09 + f * 0.16 });
-  }
-
-  boost() {
-    this._blip({ freq: 300, to: 1500, type: 'sawtooth', dur: 0.32, gain: 0.16 });
-    this._burst({ freq: 1500, q: 0.7, dur: 0.3, gain: 0.12, type: 'highpass' });
   }
 
   checkpoint() {

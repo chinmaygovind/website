@@ -73,13 +73,34 @@ def test_a_clean_lap_needs_no_respawns(rt, slug):
 
 
 @pytest.mark.parametrize("slug", SLUGS)
-def test_the_car_stays_on_the_road_when_it_should(rt, slug):
-    """Air time is for jumps. Anywhere else it means the car is being launched
-    off ramp crests - the bug the suspension model exists to prevent."""
+def test_the_car_is_mostly_on_the_road(rt, slug):
+    """Flying is the point, but a lap is still a driving lap.
+
+    An earlier version of the car was glued to every slope: the suspension held
+    it down over crests and a normal-velocity term ate whatever launch was left,
+    so a hill felt like a conveyor belt. That is gone. The upper bound here only
+    guards the opposite failure - a track that has become a flight simulator.
+    """
     r = _sim(rt, slug)
-    limit = 0.40 if slug == "jumpcity" else 0.20
+    limit = 0.40 if slug == "jumpcity" else 0.28
     assert r["airFraction"] < limit, \
         f"{slug} spent {r['airFraction'] * 100:.0f}% of the lap airborne"
+
+
+@pytest.mark.parametrize("slug", SLUGS)
+def test_every_track_actually_throws_the_car(rt, slug):
+    """The other half of the same story, and the more important half.
+
+    Every track in the pool has either a jump or a rolling crest on it, and
+    arriving at one at speed has to put the car in the air. If a retune quietly
+    re-glues the car to the road - lowering SNAP's effect, reinstating the
+    normal-velocity scrub, softening the crests - this is what notices.
+    """
+    r = _sim(rt, slug)
+    assert r["maxAir"] > 0.4, (
+        f"{slug} never got more than {r['maxAir']:.2f}s of air - the car is stuck "
+        f"to the road")
+    assert r["landings"] > 0, f"{slug} recorded no landings"
 
 
 @pytest.mark.parametrize("slug", SLUGS)
@@ -119,54 +140,63 @@ def test_medals_bracket_the_simulated_driver(rt, slug):
     assert m["bronze"] > driven, f"{slug}: bronze medal is not achievable"
 
 
-def test_the_car_goes_all_the_way_round_a_loop_upside_down(rt):
-    """Straight-line run into a loop: it has to inverta and stay on the road.
+def test_the_car_goes_all_the_way_through_a_corkscrew_upside_down(rt):
+    """Straight-line run into a corkscrew: it has to invert and stay on the road.
 
     Steering is applied about the *surface* normal rather than world up, which is
-    the whole reason a loop needs no special case anywhere in the car code.
+    the whole reason a fully inverted section needs no special case anywhere in
+    the car code.
     """
     rt.eval("""
-    function loopRun(track, T) {
+    function screwRun(track, T) {
       const built = buildTrack(track, T);
       const course = new Course(built);
       const car = new Car(T, built);
-      // start on the boost pad before the first loop
-      const idx = track.line.findIndex(e => e.loop) - 2;
+      const idx = track.line.findIndex(e => e.fix && !e.air) - 3;
       const p = track.line[idx].p, tan = course.tangent(idx);
       car.placeAt(p, tan);
-      car.vel.set(tan[0]*45, tan[1]*45, tan[2]*45);
+      car.vel.set(tan[0]*42, tan[1]*42, tan[2]*42);
       let minUp = 1, maxY = -1e9, airFrames = 0, frames = 0;
       for (let t = 0; t < 3; t += T.FIXED_DT) {
-        car.step(T.FIXED_DT, {throttle: 1, brake: 0, steer: 0, handbrake: false});
+        const loc = course.locate(car.pos);
+        const s = course.line[Math.min(loc.idx, course.line.length - 1)];
+        const steer = (s.fix && !s.air)
+          ? Math.max(-0.4, Math.min(0.4, -loc.lateral * 0.16)) : 0;
+        car.step(T.FIXED_DT, {throttle: 1, brake: 0, steer, handbrake: false});
         frames++;
         if (!car.grounded) airFrames++;
         if (car.up.y < minUp) minUp = car.up.y;
         if (car.pos.y > maxY) maxY = car.pos.y;
       }
-      return {minUp, maxY, airFraction: airFrames/frames, speed: car.speed};
+      return {minUp, maxY, airFraction: airFrames/frames, speed: car.speed,
+              y: car.pos.y};
     }
     """)
-    i = next(k for k, t in enumerate(rt.tracks.TRACKS) if t["slug"] == "lagoon")
-    r = rt.call("loopRun(TRACKS[%d], T)" % i)
+    i = next(k for k, t in enumerate(rt.tracks.TRACKS) if t["slug"] == "twist")
+    r = rt.call("screwRun(TRACKS[%d], T)" % i)
     assert r["minUp"] < -0.85, f"the car never went properly inverted (min up.y {r['minUp']:.2f})"
-    assert r["maxY"] > 15, f"the car only reached {r['maxY']:.1f} up the loop"
-    assert r["airFraction"] < 0.15, "the car came off the loop surface"
-    assert r["speed"] > 5, "the car stalled in the loop"
+    assert r["maxY"] > 14, f"the car only reached {r['maxY']:.1f} up the corkscrew"
+    assert r["airFraction"] < 0.30, "the car came off the corkscrew surface"
+    assert r["speed"] > 5, "the car stalled in the corkscrew"
 
 
 def test_the_collider_finds_the_road_not_the_grass(rt):
-    """Level-0 road and the ground plane used to be coplanar, so this query was a
-    coin toss and the car spent whole laps behaving like it was on grass."""
+    """Road flush with the ground plane used to make this query a coin toss, so
+    the car spent whole laps behaving as if it were on grass - and the two
+    surfaces z-fought all over the screen. The road now sits above the grass."""
     i = next(k for k, t in enumerate(rt.tracks.TRACKS) if t["slug"] == "sunrise")
     rt.eval("""
     function surfaceUnderLine(track, T) {
       const built = buildTrack(track, T);
       let road = 0, other = 0, missing = 0;
       for (const e of track.line) {
-        if (e.air || e.loop) continue;
-        const g = built.collider.ground(e.p[0], e.p[1] + T.RIDE_HEIGHT, e.p[2], 0, 1, 0, 3);
+        if (e.air) continue;
+        const g = built.collider.ground(e.p[0] + e.n[0] * T.RIDE_HEIGHT,
+                                        e.p[1] + e.n[1] * T.RIDE_HEIGHT,
+                                        e.p[2] + e.n[2] * T.RIDE_HEIGHT,
+                                        e.n[0], e.n[1], e.n[2], 3);
         if (!g.hit) missing++;
-        else if (g.kind === KIND.ROAD || g.kind === KIND.BOOST) road++;
+        else if (g.kind === KIND.ROAD) road++;
         else other++;
       }
       return {road, other, missing};
@@ -174,12 +204,65 @@ def test_the_collider_finds_the_road_not_the_grass(rt):
     """)
     r = rt.call("surfaceUnderLine(TRACKS[%d], T)" % i)
     assert r["missing"] == 0, "part of the driving line has no surface under it"
-    assert r["road"] > 20
-    # A handful of samples sit right on a corner's inside pivot, where the road
-    # narrows to a point and the grass beside it is genuinely the nearest surface.
-    # What matters is that the road wins essentially everywhere.
-    assert r["other"] / (r["road"] + r["other"]) < 0.15, \
+    assert r["road"] > 100
+    # The ribbon is continuous, so unlike the old grid there is no corner pivot
+    # where the road narrows to a point. Every station should find tarmac.
+    assert r["other"] == 0, \
         f"{r['other']} of {r['road'] + r['other']} line points report grass, not road"
+
+
+@pytest.mark.parametrize("slug", SLUGS)
+def test_a_real_lap_passes_the_anti_cheat(rt, slug):
+    """Close the loop between the driver and the validator.
+
+    `runcheck.validate` rejects times that are too fast, replays that do not last
+    as long as the time claims, replays containing a teleport, and replays that do
+    not start on the line. Every one of those is a judgement about what a real lap
+    looks like, so the only honest test is to hand it a real lap - driven by the
+    shipped physics, recorded by the shipped ghost recorder - and require it to be
+    accepted.
+    """
+    import runcheck
+    i = next(k for k, t in enumerate(rt.tracks.TRACKS) if t["slug"] == slug)
+    r = rt.call("simulate(TRACKS[%d], T, {maxT:120, withGhost:true})" % i)
+    assert r["finished"]
+    track = rt.tracks.get(slug)
+    ok, why = runcheck.validate(track, int(round(r["time"])), r["splits"], r["ghost"])
+    assert ok, f"{slug}: the anti-cheat rejected a genuine lap - {why}"
+    # And the round trip through the wire format has to survive.
+    frames = runcheck.unpack_ghost(runcheck.pack_ghost(r["ghost"]))
+    assert len(frames) == len(r["ghost"])
+    worst = max(abs(a[k] - b[k]) for a, b in zip(frames, r["ghost"]) for k in range(3))
+    assert worst < 0.02, f"{slug}: ghost packing moved the car by {worst:.3f}"
+    ok2, why2 = runcheck.validate(track, int(round(r["time"])), r["splits"], frames)
+    assert ok2, f"{slug}: a lap fails validation after a pack/unpack round trip - {why2}"
+
+
+def test_the_brake_light_means_braking(rt):
+    """The lights are on the car, not the HUD, so a rival's are how you read that
+    they are slowing - which only works if the flag means the obvious thing."""
+    i = next(k for k, t in enumerate(rt.tracks.TRACKS) if t["slug"] == "sunrise")
+    r = rt.call("brakeStates(TRACKS[%d], T)" % i)
+    assert r["braking"] is True, "holding the brake does not light them"
+    assert r["handbrake"] is True, "the handbrake does not light them"
+    assert r["idle"] is False and r["coasting"] is False and \
+        r["accelerating"] is False, "the lights are on when nothing is slowing down"
+    assert r["reversing"] is False, \
+        "reversing lights the brake lights - the key is held, but nothing is slowing"
+    # FLAG.BRAKE is bit 3; game.js reads it off remote cars as `flags & 8`
+    assert r["flag"] & 8, "the brake flag is not in the pose sent to other players"
+
+
+def test_the_road_is_clear_of_the_ground_plane(rt):
+    """The z-fighting fix, measured rather than eyeballed: no part of a
+    ground-level track may come within a hair of the grass."""
+    for slug in ("sunrise", "chicane", "eight"):
+        t = rt.tracks.get(slug)
+        gy = t["ground"]
+        assert gy is not None
+        lowest = min(e["p"][1] - e["hw"] * abs(e["lat"][1]) for e in t["line"])
+        assert lowest - gy > 0.8, \
+            f"{slug}: the road comes within {lowest - gy:.2f} of the grass"
 
 
 # ---------------------------------------------------------------------------
