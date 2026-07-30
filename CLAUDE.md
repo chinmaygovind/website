@@ -322,11 +322,23 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   of a phone - so the multiplayer furniture sat on top of the road and the driving
   controls the entire time you were racing. It opens on arrival and closes itself when
   a race starts.
-- **Touch controls**: steering under the left thumb with the checkpoint button above
-  it, throttle and brake under the right with `DRIFT` as a bar beneath them. Laid out
-  with flexbox off the safe-area insets, not fixed pixel offsets. `?touch=1` on a play
-  URL forces the touch HUD on a desktop browser, which is the only way to look at the
-  phone layout without a phone.
+- **Touch controls: four driving buttons and no handbrake button.** Steering left,
+  throttle and brake right, checkpoint and restart small above the steering. There
+  is deliberately no fifth button, because there is nowhere a thumb can reach one:
+  the right thumb is on a pedal essentially the whole lap and the left is on an
+  arrow. **Brake plus steer is the handbrake instead** - derived in `syncTouch`, so
+  it is a touch-input mapping and the physics and the keyboard are untouched. (A
+  DRIFT button on the right was tried first and was literally unpressable; a
+  steer-and-drift second row on the left worked but was not worth the clutter.)
+  Touch state lives in its own `touchDown`/`touchKeys` sets rather than being poked
+  into `keys`, since it is not a one-button-one-control mapping. Laid out with
+  flexbox off the safe-area insets. `?touch=1` on a play URL forces the touch HUD on
+  a desktop browser, which is the only way to look at the phone layout without one.
+- **Every icon is inline SVG, never a Unicode glyph.** A gear, a flag or a triangle
+  from the symbol blocks renders as a full-colour emoji on some platforms and a
+  hairline outline on others, so it can be neither styled nor trusted. The touch
+  buttons are dark-fill/light-stroke for the same reason a white wash did not work:
+  it vanishes against a bright sky or a sunlit kerb, and half of every track is one.
 - `R` restarts the run; `T` (or Enter) goes back to the last checkpoint **with the
   clock still running** - the difference between "that lap is gone" and "I fell off".
 - **The type is Titillium Web**, self-hosted in `static/fonts/` at four weights

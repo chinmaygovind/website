@@ -221,7 +221,13 @@ body.playing { overflow: hidden; background: #9ed2f0; }
 }
 .hbtn:hover { background: rgba(40, 44, 56, .9); text-decoration: none; }
 .hbtn:active { transform: translateY(1px); }
-.hbtn i { font-style: normal; font-size: 1.15rem; line-height: 1; }
+/* Inline SVG rather than glyphs: a gear, a flag or a triangle from the Unicode
+   tables renders as a full-colour emoji on some platforms and a hairline
+   outline on others, so none of them can be styled or trusted. */
+.hbtn svg {
+  width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.9;
+  stroke-linecap: round; stroke-linejoin: round;
+}
 .hbtn.on { border-color: #ffd96b; color: #ffd96b; }
 
 /* --- where you are, top left --------------------------------------------- */
@@ -411,25 +417,29 @@ body.touch #touch { display: block; }
 }
 .tpad.left { left: calc(16px + env(safe-area-inset-left, 0px)); align-items: flex-start; }
 .tpad.right { right: calc(16px + env(safe-area-inset-right, 0px)); align-items: flex-end; }
-.pedals, .steerpad { display: flex; gap: 10px; }
+.pedals, .steerpad, .utils { display: flex; gap: 10px; }
 .tbtn {
   width: 76px; height: 76px; border-radius: 50%;
-  background: rgba(255, 255, 255, .16); border: 2px solid rgba(255, 255, 255, .45);
-  color: #fff; font-size: 1.6rem; display: flex; align-items: center; justify-content: center;
+  /* Dark fill, light stroke. A white wash reads fine against tarmac and
+     vanishes completely against a bright sky or a sunlit kerb, and half of
+     every track is one of those. */
+  background: rgba(16, 18, 26, .38); border: 2px solid rgba(255, 255, 255, .6);
+  color: #fff; display: flex; align-items: center; justify-content: center;
   user-select: none; -webkit-user-select: none; touch-action: none;
   -webkit-tap-highlight-color: transparent;
-  backdrop-filter: blur(3px); text-shadow: 0 1px 4px rgba(0, 0, 0, .5);
+  backdrop-filter: blur(3px);
 }
-.tbtn.down { background: rgba(255, 255, 255, .42); }
-/* The handbrake is a bar the width of both pedals: it sits right under the thumb
-   that is already on the throttle, and it is impossible to miss. */
-.tbtn.wide {
-  width: 162px; height: 50px; border-radius: 25px;
-  font-size: .85rem; letter-spacing: .16em; font-weight: 700;
+.tbtn.down { background: rgba(255, 255, 255, .5); color: #12141c; }
+.tbtn svg {
+  width: 34px; height: 34px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .5));
 }
-/* Respawning is a driving action, so it sits with the driving controls rather
-   than two taps deep in a menu - but small, because you should rarely need it. */
-.tbtn.small { width: 46px; height: 46px; font-size: 1.1rem; opacity: .8; }
+/* Respawning and restarting are driving actions, so they sit with the driving
+   controls rather than two taps deep in a menu - but small, because you should
+   rarely need either. */
+.tbtn.small { width: 44px; height: 44px; opacity: .8; }
+.tbtn.small svg { width: 21px; height: 21px; }
 #tGas { border-color: rgba(140, 240, 170, .6); }
 #tBrake { border-color: rgba(255, 150, 130, .6); }
 /* With the room drawer out you are reading, not driving - and the pedals would
@@ -457,8 +467,9 @@ body.side-open #touch { display: none; }
   .hud-bc .timer { font-size: 1.9rem; }
   .stat.spd b { font-size: 1.5rem; }
   .tbtn { width: 66px; height: 66px; }
-  .tbtn.wide { width: 142px; height: 44px; }
-  .tbtn.small { width: 42px; height: 42px; }
+  .tbtn svg { width: 30px; height: 30px; }
+  .tbtn.small { width: 40px; height: 40px; }
+  .tbtn.small svg { width: 19px; height: 19px; }
   #startHint { bottom: 46%; font-size: .9rem; }
 }
 

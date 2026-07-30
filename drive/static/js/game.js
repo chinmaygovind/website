@@ -58,7 +58,30 @@ const S = {
 };
 
 const input = { throttle: 0, brake: 0, steer: 0, handbrake: false };
-const keys = new Set();
+const keys = new Set();          // keyboard
+
+// Touch is derived from which buttons are held rather than poked into `keys`,
+// because it is not a one-button-one-control mapping: there are only four
+// driving buttons on a phone and five things to do.
+//
+// The missing one is the handbrake, and there is nowhere to put it. The right
+// thumb is on a pedal for essentially the whole lap, so a fifth button on that
+// side cannot be pressed without lifting off; and a button on the left is a
+// button the steering thumb has to leave. So **brake plus steer is the
+// handbrake** - the one combination a pair of thumbs is already making at the
+// point in a corner where you would want it.
+const touchDown = new Set();     // ids of touch buttons currently held
+const touchKeys = new Set();
+const TOUCH_KEYS = {
+  tGas: ['up'], tBrake: ['down'], tLeft: ['left'], tRight: ['right'],
+};
+function syncTouch() {
+  touchKeys.clear();
+  for (const id of touchDown) for (const k of TOUCH_KEYS[id] || []) touchKeys.add(k);
+  if (touchKeys.has('down') && (touchKeys.has('left') || touchKeys.has('right'))) {
+    touchKeys.add('drift');
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Boot
@@ -167,7 +190,11 @@ function bindInput() {
     const k = KEYMAP[e.code];
     if (k) keys.delete(k);
   });
-  window.addEventListener('blur', () => keys.clear());
+  window.addEventListener('blur', () => {
+    keys.clear();
+    touchDown.clear(); syncTouch();
+    document.querySelectorAll('.tbtn.down').forEach(el => el.classList.remove('down'));
+  });
 
   // touch: hold-to-act buttons, and a drag anywhere on the left half to steer
   const tb = (id, on, off) => {
@@ -182,14 +209,13 @@ function bindInput() {
     el.addEventListener('mouseup', up);
     el.addEventListener('mouseleave', up);
   };
-  tb('tGas', () => keys.add('up'), () => keys.delete('up'));
-  tb('tBrake', () => keys.add('down'), () => keys.delete('down'));
-  tb('tLeft', () => keys.add('left'), () => keys.delete('left'));
-  tb('tRight', () => keys.add('right'), () => keys.delete('right'));
-  tb('tDrift', () => keys.add('drift'), () => keys.delete('drift'));
-  // The checkpoint button fires on press and does nothing on release, so it is
-  // a tap rather than a hold like the pedals are.
+  const hold = (id) => tb(id, () => { touchDown.add(id); syncTouch(); },
+                              () => { touchDown.delete(id); syncTouch(); });
+  for (const id of Object.keys(TOUCH_KEYS)) hold(id);
+  // These two fire on press and do nothing on release, so they are taps rather
+  // than holds like the pedals are.
   tb('tCheck', () => backToCheckpoint(), () => {});
+  tb('tRestart', () => restartRun(), () => {});
   // `?touch=1` forces the touch HUD on a desktop browser, which is the only way
   // to look at the phone layout without a phone.
   if ('ontouchstart' in window || location.search.indexOf('touch=1') >= 0 ||
@@ -256,10 +282,11 @@ function restartRun() { resetToStart(); toast('Restart'); }
 function backToCheckpoint() { S.car.requestRespawn(); }
 
 function readInput() {
-  input.throttle = keys.has('up') ? 1 : 0;
-  input.brake = keys.has('down') ? 1 : 0;
-  input.steer = (keys.has('right') ? 1 : 0) - (keys.has('left') ? 1 : 0);
-  input.handbrake = keys.has('drift');
+  const on = (k) => keys.has(k) || touchKeys.has(k);
+  input.throttle = on('up') ? 1 : 0;
+  input.brake = on('down') ? 1 : 0;
+  input.steer = (on('right') ? 1 : 0) - (on('left') ? 1 : 0);
+  input.handbrake = on('drift');
   return input;
 }
 
