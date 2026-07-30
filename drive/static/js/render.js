@@ -9,7 +9,6 @@
 // smoothing is frame-rate independent, so it never whips or judders.
 
 import * as THREE from './vendor/three.module.js';
-import { MeshBuf, mulberry } from './trackmesh.js';
 
 const BRAKE_OFF = 0x521218;
 const BRAKE_ON = 0xff2b2b;
@@ -378,8 +377,10 @@ export class Renderer {
 //      horizon. That last part is what makes a sunrise read as a sunrise: the
 //      sky is only on fire in the direction the sun is coming from.
 //   2. a sun, drawn as one sprite with a hot core and a soft halo.
-//   3. a ring of flat cloud slabs, lit warm on the side facing the sun and cool
-//      on the side away from it.
+//
+// There is deliberately no cloud up here. Boxes seen from below at a shallow
+// angle read as pale rectangles however they are shaded; cloud only works when
+// you look *down* on it, which is what `cloudDeck` in trackmesh.js is for.
 //
 // Palettes without a `sky` spec fall back to the plain two-colour dome.
 
@@ -474,45 +475,6 @@ function sunSprite(sun) {
   return spr;
 }
 
-/**
- * Flat cloud slabs in a ring overhead.
- *
- * Deliberately hard-edged and untextured - they are the same low-poly language
- * as everything else. Each one is shaded by how much it faces the sun, so the
- * bank is bright on one side of the sky and cold on the other.
- */
-function clouds(spec) {
-  const cfg = spec.clouds;
-  const buf = new MeshBuf();
-  const dir = spec.sun ? sunDir(spec.sun.az, spec.sun.el) : new THREE.Vector3(1, 0, 0);
-  const sx = dir.x, sz = dir.z;
-  const lit = new THREE.Color(cfg.color), cold = new THREE.Color(cfg.shade);
-  const rnd = mulberry(cfg.seed != null ? cfg.seed : 1234);
-  for (let i = 0; i < cfg.count; i++) {
-    const a = rnd() * Math.PI * 2;
-    // Far out and well up: a cloud close enough to have parallax reads as a
-    // slab of polystyrene floating over the track.
-    const rad = (cfg.radius || 900) * (0.8 + rnd() * (cfg.spread || 0.5));
-    const y = (cfg.low != null ? cfg.low : 200) + rnd() * (cfg.high != null ? cfg.high : 260);
-    const cx = Math.cos(a) * rad, cz = Math.sin(a) * rad;
-    const facing = Math.max(0, (Math.cos(a) * sx + Math.sin(a) * sz));
-    const col = cold.clone().lerp(lit, Math.pow(facing, 1.5));
-    // Long, wide and thin, because a dawn cloud is a streak. Two or three
-    // offset slabs so it has a silhouette rather than being one rectangle.
-    const w = 300 + rnd() * 420, d = 50 + rnd() * 80, h = 4 + rnd() * 6;
-    for (let k = 0; k < 2 + (rnd() < 0.6 ? 1 : 0); k++) {
-      const ox = (rnd() - 0.5) * w * 1.2, oz = (rnd() - 0.5) * d * 1.2;
-      const oy = (rnd() - 0.5) * h * 1.4;
-      const s = 0.5 + rnd() * 0.6;
-      buf.box(cx + ox, y + oy, cz + oz, w * s * 0.5, h * 0.5, d * s * 0.5,
-              col.clone().offsetHSL(0, 0, (rnd() - 0.5) * 0.06).getHex());
-    }
-  }
-  // Opaque on purpose: these are solid slabs in a low-poly sky, and blending
-  // several of them over each other only ever washed the colour out.
-  return buf.toMesh(new THREE.MeshBasicMaterial({ vertexColors: true, fog: false }));
-}
-
 function makeSky(pal) {
   const group = new THREE.Group();
   const spec = pal.sky && pal.sky.stops ? pal.sky : null;
@@ -523,6 +485,5 @@ function makeSky(pal) {
   }
   group.add(skyDome(spec));
   if (spec.sun) group.add(sunSprite(spec.sun));
-  if (spec.clouds) group.add(clouds(spec));
   return group;
 }

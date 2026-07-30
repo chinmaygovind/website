@@ -75,8 +75,8 @@ const PALETTES = {
   skyline:  { road: 0x4d5464, kerb: 0xf6f6f6, kerb2: 0x56ccf2, ground: 0x4a6b8a,
               sky: 0x7fb6dd, fog: 0x9ec9e6, rail: 0xe9f4ff, prop: 0x6e7f95, deco: 0x56ccf2,
               below: { deck: 92, depth: 190, reach: 950, rise: 46,
-                       towerDensity: 0.5, breakThrough: 0.3, cover: 0.66,
-                       cloud: 0xf7fbff, tower: 0x2f3b52, floor: 0x1d2740 } },
+                       towerDensity: 0.5, breakThrough: 0.3, cover: 0.58,
+                       cloud: 0xf7fbff, tower: 0x2f3b52, floor: 0x141c30 } },
   // Twin Loop: two big loops standing over an empty desert, under a sun you
   // would not want to be out in. `glowMode: radial` puts the halo around the
   // disc itself rather than smearing it along the horizon, which is what the
@@ -126,8 +126,8 @@ const PALETTES = {
                 fog: 0xf0d6b4, fogNear: 300, fogFar: 1450,
               },
               below: { deck: 96, depth: 120, reach: 980,
-                       towerDensity: 0, cover: 0.72, cloudStep: 5,
-                       cloud: 0xfdf6ec, floor: 0xc9b294 } },
+                       towerDensity: 0, cover: 0.6,
+                       cloud: 0xfdf6ec, floor: 0x8f7a60 } },
   city:     { road: 0x4a4f5c, kerb: 0xf7f7f7, kerb2: 0xf2c94c, ground: 0x5c6070, sky: 0x8ea9c9, fog: 0xa9bed6, rail: 0xf2f4f7, prop: 0x6b7180, deco: 0xf2c94c },
   spiral:   { road: 0x525869, kerb: 0xfafafa, kerb2: 0xbb6bd9, ground: 0x5a5570, sky: 0xb9a6e0, fog: 0xd0c4ec, rail: 0xf6f0ff, prop: 0x6d6488, deco: 0xbb6bd9 },
   gauntlet: { road: 0x474c58, kerb: 0xf2f2f2, kerb2: 0xe8453c, ground: 0x3d4250, sky: 0x6f7f9c, fog: 0x8d9ab3, rail: 0xf7f7f7, prop: 0x555c6c, deco: 0xe8453c },
@@ -366,6 +366,7 @@ export function buildTrack(track, T) {
   const col = new Collider(CELL);
   const solid = new MeshBuf();     // flat-shaded, receives light
   const bright = new MeshBuf();    // unlit accents: kerbs, gate banners
+  const soft = new MeshBuf();      // lit but translucent: cloud
   const line = track.line;
   let minY = Infinity, maxY = -Infinity;
   const bbox = { x0: Infinity, x1: -Infinity, z0: Infinity, z1: -Infinity };
@@ -551,12 +552,24 @@ export function buildTrack(track, T) {
 
   // --- scenery (procedural, seeded, deterministic) -------------------------
   addScenery(solid, track, pal, bbox, CELL);
-  if (groundY == null && pal.below) addWorldBelow(solid, track, pal, bbox, CELL, minY);
+  if (groundY == null && pal.below) addWorldBelow(solid, soft, track, pal, bbox, CELL, minY);
 
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   const matBright = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
   group.add(solid.toMesh(mat));
   group.add(bright.toMesh(matBright));
+  // Cloud is its own mesh so it can be translucent. depthWrite is off on
+  // purpose: it is what lets overlapping boxes *accumulate* into something
+  // dense in the middle and wispy at the edges, which is the entire difference
+  // between a cloud and a slab of polystyrene.
+  if (soft.pos.length) {
+    const matSoft = new THREE.MeshLambertMaterial({
+      vertexColors: true, flatShading: true, transparent: true,
+      opacity: 0.82, depthWrite: false });
+    const m = soft.toMesh(matSoft);
+    m.renderOrder = 1;
+    group.add(m);
+  }
 
   col.finish();
 
@@ -603,7 +616,7 @@ export function mulberry(seed) {
  * Either would usually do; a landmark tower or a mesa is tall enough that it is
  * not worth betting the geometry on one of them.
  */
-function addWorldBelow(buf, track, pal, bbox, CELL, minY) {
+function addWorldBelow(buf, soft, track, pal, bbox, CELL, minY) {
   const cfg = pal.below;
   let seed = 91;
   for (let i = 0; i < track.slug.length; i++) seed = seed * 31 + track.slug.charCodeAt(i);
@@ -670,41 +683,48 @@ function addWorldBelow(buf, track, pal, bbox, CELL, minY) {
   }
 
   // --- the cloud deck -------------------------------------------------------
-  // Slabs on a coarse lattice with gaps left in it. Jittered in height as well
-  // as position so the layer has a surface rather than being one flat sheet.
-  const cStep = CELL * (cfg.cloudStep != null ? cfg.cloudStep : 5);
-  const lit = cfg.cloud != null ? cfg.cloud : 0xeef3fa;
-  const cover = cfg.cover != null ? cfg.cover : 0.62;
-  for (let x = x0; x < x1; x += cStep) {
-    for (let z = z0; z < z1; z += cStep) {
+  cloudDeck(soft, cfg, rnd, x0, x1, z0, z1, deckY, CELL);
+}
+
+/**
+ * A layer of cloud, as clumps rather than a lattice.
+ *
+ * The first version tiled slabs across a grid at 70% coverage and read as a
+ * snowfield, which is what any even coverage of opaque boxes will do. Clouds
+ * are lumps with sky between them, so: sparse seed points, and around each one
+ * a mound of overlapping boxes sampled in a disc - biggest and tallest in the
+ * middle, small and low at the rim. Combined with a translucent material the
+ * rim boxes fade out on their own and the mass stays solid, so the thing has an
+ * edge you cannot point at.
+ */
+function cloudDeck(soft, cfg, rnd, x0, x1, z0, z1, deckY, CELL) {
+  const step = CELL * (cfg.cloudStep != null ? cfg.cloudStep : 16);
+  const lit = cfg.cloud != null ? cfg.cloud : 0xf7fbff;
+  const cover = cfg.cover != null ? cfg.cover : 0.5;
+  const TAU = Math.PI * 2;
+  for (let x = x0; x < x1; x += step) {
+    for (let z = z0; z < z1; z += step) {
       if (rnd() > cover) continue;
-      const px = x + (rnd() - 0.5) * cStep * 0.8;
-      const pz = z + (rnd() - 0.5) * cStep * 0.8;
-      // Wide and flat. Seen from a long way above you want tops, not sides -
-      // a slab with any depth to it reads as a lump of concrete.
-      const w = cStep * (0.6 + rnd() * 0.55), d = cStep * (0.6 + rnd() * 0.55);
-      const h = 1.1 + rnd() * 2.2;
-      const y = deckY + (rnd() - 0.5) * 18;
-      buf.box(px, y, pz, w, h, d, shade(lit, (rnd() - 0.55) * 0.16));
-      // A smaller slab riding on top of some of them, so the layer has massing
-      // and a lit upper surface rather than being one flat tiling.
-      if (rnd() < 0.45) {
-        buf.box(px + (rnd() - 0.5) * w, y + h + 1.6 + rnd() * 3, pz + (rnd() - 0.5) * d,
-                w * (0.4 + rnd() * 0.35), 1.4 + rnd() * 2.4, d * (0.4 + rnd() * 0.35),
-                shade(lit, rnd() * 0.1));
+      const cx = x + rnd() * step, cz = z + rnd() * step;
+      const R = 38 + rnd() * 58;
+      const cy = deckY + (rnd() - 0.5) * 26;
+      const puffs = 9 + Math.floor(rnd() * 8);
+      for (let i = 0; i < puffs; i++) {
+        // sqrt keeps the sample uniform over the disc rather than piling up in
+        // the middle; the size falls off with radius instead.
+        const a = rnd() * TAU, r = R * Math.sqrt(rnd()) * 0.92;
+        const t = 1 - r / R;                       // 1 centre, 0 rim
+        const w = R * (0.26 + 0.34 * t) * (0.75 + rnd() * 0.5);
+        const h = (4 + 11 * t) * (0.7 + rnd() * 0.6);
+        soft.box(cx + Math.cos(a) * r, cy + t * 10 + (rnd() - 0.5) * 5,
+                 cz + Math.sin(a) * r,
+                 w, h, w * (0.72 + rnd() * 0.55),
+                 shade(lit, (rnd() - 0.5) * 0.08));
       }
     }
   }
 }
 
-/**
- * Sand, a long way down: dunes, mesas and scattered rock.
- *
- * Dunes are wide and very low - two or three stacked slabs whose crest drifts
- * to one side, so the ridge has a windward and a leeward face rather than being
- * a symmetrical lump. Mesas are the vertical interest and are rare on purpose;
- * a desert full of them is a canyon, not a desert.
- */
 function desertBelow(buf, cfg, rnd, x0, x1, z0, z1, sandY, cap, CELL, clear) {
   solid_plate(buf, x0, x1, z0, z1, sandY, cfg.sand != null ? cfg.sand : 0xd9b478);
   const sand = cfg.sand != null ? cfg.sand : 0xd9b478;
