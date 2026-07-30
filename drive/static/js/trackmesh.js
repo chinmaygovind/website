@@ -47,8 +47,6 @@ const PALETTES = {
       glow: 0xffd39a,
       glowStrength: 0.92,
       sun: { az: SUNRISE_AZ, el: 0.05, color: 0xffd39a, size: 430 },
-      // A band above the horizon, not a ceiling: a cloud high enough to be
-      // overhead has visible parallax and reads as a slab floating over you.
       // No cloud here on purpose. Boxes seen from below at a shallow angle read
       // as pale rectangles no matter how they are shaded, and the graded dome,
       // the disc and the glow already carry the whole sky. `clouds` in
@@ -63,6 +61,14 @@ const PALETTES = {
     },
   },
   park:     { road: 0x565d6b, kerb: 0xffffff, kerb2: 0x3d8bfd, ground: 0x63b866, sky: 0x9ed2f0, fog: 0xb9dcee, rail: 0xf0f0f0, prop: 0x347a3c, deco: 0xf2994a },
+  // Chicane Park had `park` too; it has its own now so the two can be art
+  // directed apart. Same daylight, but the conifers have grown up: a mix of
+  // big pines among them, and a denser scatter to make it a park.
+  chicane:  { road: 0x565d6b, kerb: 0xffffff, kerb2: 0x3d8bfd, ground: 0x63b866,
+              sky: 0x9ed2f0, fog: 0xb9dcee, rail: 0xf0f0f0,
+              prop: 0x347a3c, prop2: 0x4f9440, deco: 0xf2994a,
+              density: 0.24,
+              props: { bigpine: 0.42, conifer: 0.34, rock: 0.14, block: 0.10 } },
   skyline:  { road: 0x4d5464, kerb: 0xf6f6f6, kerb2: 0x56ccf2, ground: 0x4a6b8a, sky: 0x7fb6dd, fog: 0x9ec9e6, rail: 0xe9f4ff, prop: 0x6e7f95, deco: 0x56ccf2 },
   lagoon:   { road: 0x515a68, kerb: 0xfdfdfd, kerb2: 0x27ae60, ground: 0x3aa6a0, sky: 0x8fdce6, fog: 0xb6e8ec, rail: 0xf3fffe, prop: 0x1f8f7a, deco: 0x27ae60 },
   heights:  { road: 0x4f5460, kerb: 0xf4f4f4, kerb2: 0xf2994a, ground: 0x7a6a52, sky: 0xf0c9a0, fog: 0xf3d9bd, rail: 0xfff2e2, prop: 0x8a7358, deco: 0xf2994a },
@@ -541,24 +547,83 @@ function addScenery(buf, track, pal, bbox, CELL) {
       for (let dz = -reach; dz <= reach; dz++) occupied.add((cx + dx) + ',' + (cz + dz));
     }
   }
+  // A big tree needs more room than a shrub, so it is only allowed where the
+  // whole 3x3 block of cells is clear of the road corridor. Without this a
+  // fifteen-unit canopy leans over the kerb on the outside of every corner.
+  const roomy = (gx, gz) => {
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) if (occupied.has((gx + dx) + ',' + (gz + dz))) return false;
+    }
+    return true;
+  };
+
+  // What grows here, as weights. Palettes that say nothing get the old mix.
+  const mix = pal.props || { conifer: 0.55, rock: 0.25, block: 0.20 };
+  const kinds = Object.keys(mix);
+  const total = kinds.reduce((s, k) => s + mix[k], 0);
+  const pick = (r) => {
+    let acc = 0;
+    for (const k of kinds) { acc += mix[k] / total; if (r <= acc) return k; }
+    return kinds[kinds.length - 1];
+  };
+
   const x0 = Math.floor(bbox.x0 / CELL) - 4, x1 = Math.ceil(bbox.x1 / CELL) + 4;
   const z0 = Math.floor(bbox.z0 / CELL) - 4, z1 = Math.ceil(bbox.z1 / CELL) + 4;
   for (let gx = x0; gx <= x1; gx++) {
     for (let gz = z0; gz <= z1; gz++) {
       if (occupied.has(gx + ',' + gz)) continue;
-      if (rnd() > (onGround ? 0.17 : 0.05)) continue;
+      if (rnd() > (pal.density != null ? pal.density : (onGround ? 0.17 : 0.05))) continue;
       if (!onGround) continue;         // nothing to stand a tree on in the void
       const px = gx * CELL + (rnd() - 0.5) * CELL * 0.6;
       const pz = gz * CELL + (rnd() - 0.5) * CELL * 0.6;
       const baseY = gy;
-      const kind = rnd();
-      if (kind < 0.55) {
-        // conifer: trunk + two stacked prisms
+      let kind = pick(rnd());
+      if (kind === 'bigpine' && !roomy(gx, gz)) kind = 'conifer';
+
+      if (kind === 'conifer') {
+        // trunk + two stacked prisms
         const hgt = 3 + rnd() * 4;
         buf.box(px, baseY + hgt * 0.22, pz, 0.32, hgt * 0.22, 0.32, 0x6b4f2a);
         buf.box(px, baseY + hgt * 0.62, pz, 1.5, hgt * 0.3, 1.5, pal.prop);
         buf.box(px, baseY + hgt * 1.0, pz, 0.95, hgt * 0.22, 0.95, shade(pal.prop, 0.12));
-      } else if (kind < 0.8) {
+      } else if (kind === 'bigpine') {
+        // A big pine: a trunk that runs most of the way up with four to six
+        // whorls of foliage around it, overlapping enough to read as one tree.
+        //
+        // The point is that it is conical *ish*. A clean taper looks like a
+        // Christmas-tree decal, so every whorl gets its width jittered hard
+        // enough to break the silhouette, is nudged off the trunk's axis, is a
+        // different depth than it is wide, and about half of them grow one
+        // heavier branch out to one side. The leader at the top leans too.
+        const leaf = pal.prop2 != null ? pal.prop2 : pal.prop;
+        const hgt = 11 + rnd() * 9;
+        const tw = 0.4 + rnd() * 0.26;
+        buf.box(px, baseY + hgt * 0.4, pz, tw, hgt * 0.4, tw, 0x5f4830);
+        const tiers = 5 + Math.floor(rnd() * 3);
+        const base = 2.8 + rnd() * 1.8;
+        const y0 = baseY + hgt * 0.22, step = (hgt * 0.74) / tiers;
+        const lean = (rnd() - 0.5) * 0.5;              // the whole crown drifts
+        for (let k = 0; k < tiers; k++) {
+          const u = k / (tiers - 1);
+          const w = base * (1 - u * 0.82) * (0.78 + rnd() * 0.44);
+          // Flat whorls, not cubes. A tier as deep as it is wide stacks into a
+          // pile of boxes; keeping each one much wider than it is tall, with
+          // trunk showing between them, is what makes it read as a pine.
+          const th = step * (0.3 + rnd() * 0.22);
+          const cy = y0 + step * k + th;
+          const ox = (rnd() - 0.5) * base * 0.3 + lean * u * base;
+          const oz = (rnd() - 0.5) * base * 0.3 + lean * u * base * 0.6;
+          const col = shade(leaf, (rnd() - 0.45) * 0.22);
+          buf.box(px + ox, cy, pz + oz, w, th, w * (0.68 + rnd() * 0.58), col);
+          if (rnd() < 0.5) {
+            const a = rnd() * Math.PI * 2, d = w * (0.55 + rnd() * 0.45);
+            buf.box(px + ox + Math.cos(a) * d, cy - th * 0.25, pz + oz + Math.sin(a) * d,
+                    w * 0.5, th * 0.6, w * 0.5, shade(col, -0.06));
+          }
+        }
+        buf.box(px + lean * base * 1.2, y0 + hgt * 0.76, pz + lean * base * 0.7,
+                base * 0.2, hgt * 0.07, base * 0.2, shade(leaf, 0.18));
+      } else if (kind === 'rock') {
         const s = 1 + rnd() * 1.8;
         buf.box(px, baseY + s * 0.5, pz, s, s * 0.5, s * 0.9, shade(pal.ground, -0.25));
       } else {

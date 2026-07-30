@@ -730,7 +730,7 @@ _POOL = [
     ("sunrise", "Sunrise Circuit", "Wide, flowing and forgiving - the one to learn the car on.",
      "sunrise", -1.2, 1, _sunrise),
     ("chicane", "Chicane Park", "Quick direction changes and two very slow hairpins.",
-     "park", -1.2, 2, _chicane_park),
+     "chicane", -1.2, 2, _chicane_park),
     ("skyline", "Skyline Sprint", "Up and over a floating skyline. Miss a corner and you fall.",
      "skyline", None, 3, _skyline),
     ("twist", "Twin Loop", "Two full loops that step out sideways. Carry speed in.",
