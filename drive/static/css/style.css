@@ -518,7 +518,6 @@ body.touch .hint-touch { display: inline; }
 }
 .tcard2-foot { display: flex; align-items: center; gap: .35rem; font-size: .8rem;
                font-variant-numeric: tabular-nums; }
-.tcard2-foot .wr { margin-left: auto; color: var(--ink-soft); }
 /* Everyone sees the same grid in a room; for a guest it just does not pick. */
 .tgrid.locked .tcard2 { cursor: default; opacity: .75; }
 .tgrid.locked .tcard2:hover { transform: none; border-color: var(--line); }

@@ -724,11 +724,16 @@ function renderTrackCards() {
             `<span class="pip${i < c.difficulty ? ' on' : ''}"></span>`).join('')}</span>
         </span>
         <span class="tcard2-blurb">${esc(c.blurb)}</span>
+        <!-- Your time and nothing else. The record was here too and it made
+             every card an argument: two times, two names, one of them somebody
+             else's. This is a menu for choosing where to drive - what you have
+             done on a track is what tells them apart at a glance. The record is
+             still on the board and the home page, where you are reading rather
+             than picking. -->
         <span class="tcard2-foot">
           <span class="medal ${c.pb_medal || 'none'}"></span>
           <span>${c.pb_ms ? fmt(c.pb_ms) + (c.pb_rank ? ' (#' + c.pb_rank + ')' : '')
                           : 'not driven'}</span>
-          <span class="wr">${c.wr_ms ? '★ ' + fmt(c.wr_ms) + ' ' + esc(c.wr_by) : ''}</span>
         </span>
       </span>
     </button>`).join('');

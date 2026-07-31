@@ -308,26 +308,27 @@ def _next_slug(slug):
 
 
 def _track_cards():
-    """Everything the track switcher shows: the track, your time, the record.
+    """Everything the track switcher shows: the track, and your time on it.
 
-    Built here rather than in the switcher because a card wants three things
-    from three different places - the track pool, your PB row and the board -
-    and only the server can see all three.
+    Built here rather than in the switcher because a card wants the track pool,
+    your PB row and where that PB places, and only the server can see all three.
+
+    Deliberately *not* the record: the switcher is a menu for choosing where to
+    drive, and a second time by somebody else on every card turns picking a
+    track into a comparison. The record is on the board and the home page, which
+    are for reading.
     """
     pbs = _my_pb_map()
     ranks = _my_rank_map(pbs)
-    recs = _records()
     ver = os.environ.get("ASSET_VERSION", "1")
     out = []
     for t in tracks_mod.summaries():
         slug = t["slug"]
-        pb, rec = pbs.get(slug), recs.get(slug)
+        pb = pbs.get(slug)
         out.append(dict(t, image="/static/img/tracks/%s.png?v=%s" % (slug, ver),
                         pb_ms=(pb.time_ms if pb else None),
                         pb_medal=(pb.medal_shown if pb else None),
-                        pb_rank=ranks.get(slug),
-                        wr_ms=(rec[0] if rec else None),
-                        wr_by=(rec[1] if rec else None)))
+                        pb_rank=ranks.get(slug)))
     return out
 
 

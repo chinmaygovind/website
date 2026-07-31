@@ -419,6 +419,11 @@ field from a dark field.
   in-game posts to `/api/last-track` so coming back lands where you left off. The same
   switcher is in a room, where only the host can pick - everyone else sees the same
   grid with the picking turned off, rather than a poorer version of it.
+  **A card shows your time and not the record.** The record was on there too, and it
+  made every card an argument: two times and two names, one of them somebody else's,
+  on a menu whose only job is choosing where to drive. `_track_cards` therefore does
+  not even send it. It is still on the board and the home page, which are for reading
+  rather than picking.
 - **The switcher's cards are photographs, not diagrams.** `tools/shoot_tracks.py`
   drives headless Chrome over every track with `?shot=1` (`S.shot` in game.js: HUD off,
   car hidden, camera behind the start line) and writes `static/img/tracks/<slug>.png`;

@@ -226,10 +226,14 @@ def test_a_pb_never_appears_without_its_rank(env):
         from flask import session
         session["user_id"] = me
         cards = {t["slug"]: t for t in A._track_cards()}
+        records = A._records()
     card = cards["sunrise"]
     assert card["pb_rank"] == 2 and card["pb_ms"] == 25000
-    assert card["wr_ms"] == 20000 and card["wr_by"] == "leader"
     assert card["image"].startswith("/static/img/tracks/sunrise.png")
+    # The record deliberately is not on a switcher card - picking a track should
+    # not be a comparison with somebody else. It still reaches the home page.
+    assert "wr_ms" not in card and "wr_by" not in card
+    assert records["sunrise"] == (20000, "leader")
 
 
 def test_every_track_has_a_preview_picture_on_disk(env):
