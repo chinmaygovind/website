@@ -1,0 +1,7 @@
+# Test-only dependencies. Kept out of requirements.txt on purpose: the box
+# installs that one, and nothing in prod needs a JS engine.
+#
+# QuickJS is what test_sim.py runs the game's real JavaScript in (trackmesh,
+# physics, course) and what test_touch.py / test_pending.py drive their stub
+# browsers with. Without it those tests skip, which looks like a pass.
+quickjs==1.19.4

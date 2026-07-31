@@ -14,7 +14,17 @@ says "push", without stopping to ask again.
 1. **Check the diff.** Run `git status --short` and `git --no-pager diff`. Make
    sure nothing secret is staged (`.env` is gitignored; keep it that way).
 
-2. **Commit.** Stage everything and write a human-sounding message:
+2. **Run the tests for what changed.** Not the whole suite: `scripts/tests.sh`
+   with no arguments works out which modules the working tree touches and runs
+   only those. The full set is about five minutes; one game is about two.
+   ```bash
+   scripts/tests.sh
+   ```
+   Fix failures before committing. The deploy Action runs the same selection
+   server side and will not deploy if it fails, so pushing past a red suite
+   just moves the failure.
+
+3. **Commit.** Stage everything and write a human-sounding message:
    - Imperative subject, short body only if it adds something.
    - No em-dashes anywhere. The user cares about this.
    - End with the trailer `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
@@ -29,16 +39,17 @@ says "push", without stopping to ask again.
    MSG
    ```
 
-3. **Push.** `git push origin main`.
+4. **Push.** `git push origin main`.
 
-4. **Watch the deploy.** The push triggers `.github/workflows/deploy.yml` (an
-   import check, then an SSH deploy to the EC2 box).
+5. **Watch the deploy.** The push triggers `.github/workflows/deploy.yml`: it
+   picks the changed modules, runs those suites in parallel, then SSH deploys
+   to the EC2 box.
    ```bash
    RID=$(gh run list --workflow=deploy.yml --branch main --limit 1 --json databaseId -q '.[0].databaseId')
    gh run watch "$RID" --exit-status --interval 10
    ```
 
-5. **Verify live.** The box is at the Elastic IP `54.157.20.148`. The apex can
+6. **Verify live.** The box is at the Elastic IP `54.157.20.148`. The apex can
    negative-cache locally, so pin it and spot-check whatever changed (title, a
    new asset, the `/ttr` redirect):
    ```bash

@@ -3,30 +3,122 @@ name: Deploy
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      test_all:
+        description: "Run every module's tests, not just the changed ones"
+        type: boolean
+        default: true
 
 # One deploy at a time; a newer push cancels an in-progress run.
 concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
-  check:
-    name: Import check
+  # Work out which suites this push actually needs. The whole suite is about
+  # five minutes and nearly every push touches one game, so the rest of it is
+  # waste. scripts/changed-modules.sh owns the path -> module mapping and is
+  # the same script used locally, so CI and a laptop cannot disagree.
+  pick:
+    name: Pick tests
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      modules: ${{ steps.pick.outputs.modules }}
     steps:
+      # Only the scripts. Cone mode brings the root files along, and .git here
+      # is half a gigabyte of committed media, so nothing else is worth pulling.
       - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+
+      - id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+          RUN_ALL: ${{ github.event_name == 'workflow_dispatch' && inputs.test_all }}
+        run: |
+          set -uo pipefail
+          ALL='["site","drive","ers","kot"]'
+
+          if [ "$RUN_ALL" = "true" ]; then
+            modules="$ALL"
+            why="asked for everything"
+          elif files=$(gh api --paginate \
+                "repos/$GITHUB_REPOSITORY/compare/$BEFORE...$SHA" \
+                --jq '.files[].filename' 2>/dev/null) && [ -n "$files" ]; then
+            modules=$(printf '%s\n' "$files" | scripts/changed-modules.sh --json --stdin)
+            why=$(printf '%s\n' "$files" | wc -l)" file(s) changed"
+          else
+            # A first push, a force push or an API hiccup: no idea what moved,
+            # so do not guess.
+            modules="$ALL"
+            why="could not tell what changed"
+          fi
+
+          echo "modules=$modules" >>"$GITHUB_OUTPUT"
+          echo "### Tests: \`$modules\` ($why)" >>"$GITHUB_STEP_SUMMARY"
+
+  test:
+    name: ${{ matrix.module }}
+    needs: pick
+    if: needs.pick.outputs.modules != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.pick.outputs.modules) }}
+    steps:
+      # Just this module. Note the empty line when the module is "site": its
+      # test is `import app`, which does not read site/ (that is 500MB of video
+      # and images, and is only touched per request).
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts
+            ${{ matrix.module != 'site' && matrix.module || '' }}
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install -r requirements.txt
-      - name: Import the app
-        run: python -c "import app; print('app imports OK')"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            ${{ matrix.module }}/requirements*.txt
+
+      - name: Install dependencies
+        run: |
+          set -e
+          M='${{ matrix.module }}'
+          if [ "$M" = site ]; then
+            pip install -r requirements.txt
+          else
+            pip install -r "$M/requirements.txt"
+            # Test-only extras, e.g. drive's QuickJS. Without it test_sim.py
+            # skips itself, which reads as a pass.
+            if [ -f "$M/requirements-test.txt" ]; then
+              pip install -r "$M/requirements-test.txt"
+            fi
+          fi
+
+      - run: scripts/tests.sh '${{ matrix.module }}'
 
   deploy:
     name: SSH deploy
     runs-on: ubuntu-latest
-    needs: check
+    needs: [pick, test]
+    # `test` is skipped when nothing testable changed, and a skipped job would
+    # otherwise skip this one too.
+    if: >-
+      always()
+      && needs.pick.result == 'success'
+      && (needs.test.result == 'success' || needs.test.result == 'skipped')
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3

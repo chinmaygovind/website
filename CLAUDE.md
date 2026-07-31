@@ -142,7 +142,7 @@ per-game lock wins.
   `/home/ubuntu/TicketToRide` (back up the db first).
 - **Layout:** `ers/app.py` (auth + lobby routes ported from TTR, socket game loop, bots,
   ELO/stats finalize, ping, spectators, kick/leave), `ers/game_logic.py` (pure, unit-tested
-  rules engine -- `cd ers && venv/bin/python -m pytest tests/`), `ers/models.py` (shared
+  rules engine -- `scripts/tests.sh ers`), `ers/models.py` (shared
   `User` + `ErsStats`/`ErsGame`/`ErsPlayer`/`ErsSlap`), `ers/templates/` + `ers/static/`
   (wooden oval table, xkcd Script font, gold, pyramid PWA icons, synth `flip.wav`/`slap.wav`).
 - **Rules:** royalty tribute (A/K/Q/J owe 4/3/2/1); slaps = double, sandwich, top-matches-
@@ -176,7 +176,7 @@ table for accounts. Stats live in `kot_stats`, games in `kot_games` / `kot_playe
 - **Layout:** `kot/game_logic.py` (pure rules engine), `kot/cards.py` (all 66 power
   cards), `kot/bot.py` (the bot brain, also pure), `kot/app.py` (auth, lobby, socket
   game loop, bot orchestration, ELO), `kot/models.py`, `kot/templates/` + `kot/static/`.
-- **Tests:** `cd kot && venv/bin/python -m pytest tests/` - `test_engine.py` covers the
+- **Tests:** `scripts/tests.sh kot` - `test_engine.py` covers the
   rules, `test_bot.py` covers the bot (liveness, legality, latency, strength).
 - **A log line's `kind` is what makes the sound.** `LOG_SOUND` in `static/js/game.js`
   maps kinds to stings, and the same `kind` becomes the `.log-<kind>` CSS class, so
@@ -542,7 +542,7 @@ field from a dark field.
 
 ### Tests
 
-`cd drive && venv/bin/python -m pytest tests/` - 258 tests. `test_tracks.py` and
+`scripts/tests.sh drive` - 259 tests, about 2:10. `test_tracks.py` and
 `test_runcheck.py` are pure Python; `test_app.py` runs the real routes against a
 throwaway SQLite file (the `/solo` memory, the board and ghost APIs, and a guest's run
 being replayed after login). **`test_sim.py` runs the game's real JavaScript
@@ -555,8 +555,10 @@ contacts cancelled velocity twice per step; loops folding back onto themselves t
 enough to trap a car forever, and later meeting the road at a 55-degree kink; checkpoint
 planes being tracked across the whole map so real passes went unnoticed; the spawn point
 having no road under it; a loop built with `self.x` for all three coordinates; and
-several tracks that simply could not be finished. Needs the optional `quickjs` package;
-those tests skip without it, so a plain deploy install is unaffected.
+several tracks that simply could not be finished. Needs `quickjs`, which lives in
+`drive/requirements-test.txt` rather than `requirements.txt` so a plain deploy install
+is unaffected. Without it these tests skip, which reads as a pass - `scripts/tests.sh`
+and CI both install it.
 
 **Two other files run browser JavaScript the same way, against a stub DOM instead of a
 stub three.js.** `test_touch.py` lifts the touch bindings straight out of `game.js` and
@@ -590,7 +592,8 @@ nginx + certbot (Let's Encrypt, auto-renew). Route 53 hosts the `cgovind.com`
 zone. The website runs as the `website` systemd service (gunicorn on
 `127.0.0.1:5002`); TTR runs as its own service on `127.0.0.1:5001`.
 
-Push to `main` triggers `.github/workflows/deploy.yml`: an import check, then an
+Push to `main` triggers `.github/workflows/deploy.yml`: pick the changed modules,
+run those tests (see **Tests** below), then an
 SSH deploy (repo secrets `EC2_HOST`/`EC2_USER`/`EC2_SSH_KEY`, where `EC2_HOST` is
 the Elastic IP) that runs `git reset --hard origin/main`, `git submodule update`,
 `pip install -r requirements.txt`, and `sudo systemctl restart website`. That is
@@ -602,3 +605,45 @@ hand over SSH (`ssh ubuntu@54.157.20.148`; nginx config at
 Say "push" (or run `/push`) to commit, push, watch the Action, and verify the
 live site in one go. If the SSH step fails with `dial tcp :22 i/o timeout`, the
 `EC2_HOST` secret is stale: `gh secret set EC2_HOST --body 54.157.20.148`.
+
+## Tests: run only what changed
+
+The full suite is about five minutes (drive ~2:10, kot ~2:00, ers and the root
+import check a few seconds each) and nearly every change is to exactly one game,
+so **never reach for the whole thing by hand**:
+
+```bash
+scripts/tests.sh              # only the modules the working tree touches
+scripts/tests.sh drive        # one module: site | drive | ers | kot
+scripts/tests.sh --all        # everything
+scripts/tests.sh --list       # what would run, without running it
+scripts/tests.sh drive -- -k ghost -x     # after --, straight to pytest
+```
+
+- **`scripts/changed-modules.sh` is the one place a path becomes a module**, and
+  both the runner and CI call it, so a laptop and the Action can never disagree.
+  `drive/`, `ers/` and `kot/` map to themselves; `app.py`/`site/` (and anything
+  unrecognised, deliberately) map to `site`, whose "suite" is `import app` - the
+  same check the deploy used to be. Docs, `deploy/` and `.claude/` map to
+  nothing; **`scripts/` and `.github/workflows/` map to everything**, because a
+  change to the selection itself is a change you cannot trust the selection about.
+  `ttr/` maps to nothing: it is a submodule with its own repo and its own CI.
+- **The venvs are gitignored, so a module you have never tested locally has
+  none.** `tests.sh` builds it rather than reporting `No module named pytest`,
+  which is not a test result. It also installs `requirements-test.txt` if there
+  is one - that is where drive's `quickjs` lives, kept out of `requirements.txt`
+  so the box never compiles a JS engine it has no use for. **Without quickjs,
+  `test_sim.py` skips itself, which reads as a pass**, which is why CI installs
+  it explicitly.
+- **In the Action, `pick` asks the GitHub compare API which files moved rather
+  than cloning to find out.** This repo's `.git` is ~484MB of committed media and
+  `site/` is ~513MB on disk, so a full-history checkout would cost more than the
+  tests it is trying to save. Every job is a sparse checkout of just its own
+  module (for `site` that is the root files only, since `import app` never reads
+  `site/`). The suites then run as a parallel matrix, so a two-game change costs
+  one game's wall time.
+- If nothing testable changed the `test` job is skipped, and `deploy` treats
+  skipped as fine - hence its `always() && ...` guard, since a skipped need would
+  otherwise skip the deploy too. A **failed** suite does block the deploy.
+- `workflow_dispatch` on the Action has a `test_all` box (default on) for
+  re-running everything without a commit.
