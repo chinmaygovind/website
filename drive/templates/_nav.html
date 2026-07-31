@@ -6,7 +6,9 @@
     {% elif effective_name and effective_name != 'Guest' %}
       <span class="nav-user">{{ effective_name }} <span class="badge">GUEST</span></span>
     {% endif %}
-    <a href="/" class="{% if active_page == 'tracks' %}active{% endif %}">Tracks</a>
+    <!-- Solo is a door into the game, not a page: it drops you onto the track
+         you were last driving, and the switcher in there changes it. -->
+    <a href="/solo" class="{% if active_page == 'solo' %}active{% endif %}">Solo</a>
     <a href="/lobbies" class="{% if active_page == 'lobbies' %}active{% endif %}">Multiplayer</a>
     <a href="/leaderboard" class="{% if active_page == 'leaderboard' %}active{% endif %}">Records</a>
     {% if current_user %}

@@ -57,21 +57,20 @@ def test_a_plausible_run_is_accepted():
     assert ok, why
 
 
-def test_a_lap_quicker_than_gold_is_accepted():
-    """The floor must not reject the best legitimate time on the board. Gold is
-    the top medal but emphatically beatable, so the floor sits well under it."""
-    ms = int(TRACK["medals"]["gold"] * 1000 * 0.9)
-    ok, why = runcheck.validate(TRACK, ms, splits_for(TRACK, ms),
-                                synth_run(TRACK, seconds=ms / 1000))
-    assert ok, why
+@pytest.mark.parametrize("ms_factor", [0.9, 0.75, 0.5])
+def test_a_lap_faster_than_the_estimate_is_still_accepted(ms_factor):
+    """Being quick is not evidence of cheating.
 
-
-@pytest.mark.parametrize("ms_factor", [0.5, 0.75])
-def test_impossibly_fast_times_are_rejected(ms_factor):
+    `ideal` is what `laptime.py` derives from a relaxed racing line, and it is
+    beatable - so a lap well inside it is a good lap, not a rejected one. This
+    used to be the opposite test: anything under 0.8 of ideal was thrown away,
+    which meant the floor punished exactly the people who had learned the track.
+    A replay that holds up is what makes a time acceptable now.
+    """
     ms = int(TRACK["ideal"] * 1000 * ms_factor)
     ok, why = runcheck.validate(TRACK, ms, splits_for(TRACK, ms),
                                 synth_run(TRACK, seconds=ms / 1000))
-    assert not ok and "allow" in why
+    assert ok, why
 
 
 def test_missing_checkpoints_are_rejected():

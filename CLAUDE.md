@@ -234,14 +234,29 @@ venv (`drive/venv`) and `.env` (both gitignored, hand-made on the box), sharing 
 `users` table for accounts. A PolyTrack-style low-poly driving game: nine
 point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
 
-- **Guests can play.** Driving alone needs no account at all (`/` and `/solo/<slug>`
-  are open); sharing a room needs only a name (`/guest`). Times only reach the
-  leaderboard when logged in - guests keep a PB in `localStorage`.
+- **Guests can play, and a guest's times are not thrown away.** Driving alone needs
+  no account at all (`/`, `/solo` and `/solo/<slug>` are open); sharing a room needs
+  only a name (`/guest`). A guest's runs are kept *whole* - time, splits and replay -
+  in `localStorage` by `static/js/pending.js`, best one per track, and submitted
+  through the ordinary `/api/run` the moment the browser is logged in. That script is
+  on **every** page via `base.html`, because the login that unlocks the times happens
+  on `/login`, a page the game code never runs on. A rejected run is dropped (the
+  server will not change its mind); a *failed request* is kept, so an offline lap
+  goes up when you reconnect. `test_pending.js`-style coverage lives in
+  `tests/test_pending.py`, which runs the real file in QuickJS against a stub browser.
+- **Being fast is not evidence of cheating.** There used to be a floor here:
+  `tuning.MIN_PLAUSIBLE`, rejecting any time under 0.8 of `ideal`. But `ideal` is an
+  estimate off a relaxed racing line and anyone who learns a track beats it, so the
+  floor was measuring how conservative the estimate was, not dishonesty - and it
+  punished exactly the people driving best. It is gone. What a run still has to
+  survive is entirely about the *replay*: right duration, no teleports, starts on the
+  line, through every checkpoint in order (`runcheck.validate`).
 - **Layout:** `tuning.py` (every physics constant, in one place), `tracks.py` (the
   ribbon format + the pool, authored with a turtle `Builder`), `laptime.py` (racing-line
   relaxation + speed profile → medal times), `runcheck.py` (ghost packing, time
   validation), `models.py`, `app.py`, `static/js/` (`trackmesh.js`, `physics.js`,
-  `course.js`, `render.js`, `sound.js`, `game.js`, vendored `three.module.js`).
+  `course.js`, `render.js`, `sound.js`, `game.js`, `pending.js`, vendored
+  `three.module.js`), `tools/shoot_tracks.py` (the preview pictures).
 - **Three medals, and gold is the best one.** There used to be a fourth above it,
   `author`, at 0.94 of the ideal lap. The word names an authority rather than a
   standard, and it sat above the medal everybody already reads as the top one. The
@@ -382,10 +397,69 @@ field from a dark field.
   Free practice` / `Race about to start` / `Race in progress` / `Race finished`, which
   is the only place the phase is written down and is driven from one `PHASE_LABEL`
   table rather than a `setMode` call at each transition. **Top right is everything you
-  can open**: the room drawer (rooms only), help, settings. Three icon buttons and
-  nothing else - plus, solo only, the medal times. In a room those are gone: a table
-  of lap times floating over a race you are driving against other people relates to
-  nothing on the screen.
+  can open**: the room drawer (rooms only), the track switcher, help, settings. Icon
+  buttons and nothing else - plus, solo only, the medal times. In a room those are
+  gone: a table of lap times floating over a race you are driving against other people
+  relates to nothing on the screen. **Top centre is the host's Start race button**, and
+  only that; it used to live in the room drawer, which closes itself, so the one thing
+  everybody was waiting on was behind a panel.
+- **Bottom left is the minimap with restart and last-checkpoint above it.** Those two
+  used to head the settings sheet, which meant a menu you had to open to restart a run
+  - which is the most common thing you do. They are hidden on touch, where the real
+  buttons are under a thumb already. Note `@media (max-height: 460px)` moves `.hud-bl`
+  to the *top* left under the track card, and has to release `bottom` as well as set
+  `top`: an absolutely positioned box with both is stretched between them, which put
+  the map on top of the track card on any screen short enough for that rule but too
+  wide for the narrow one.
+- **Solo is `/solo`, and the track is something you change from inside it.** There is
+  no "pick a track" page any more: `/solo` opens whatever you were last driving (kept
+  in the session, so the first paint is right) and the **track switcher** - the map
+  icon, top right - swaps the world in place without touching the URL. `/solo/<slug>`
+  still works for links and bookmarks and records itself as your last track; switching
+  in-game posts to `/api/last-track` so coming back lands where you left off. The same
+  switcher is in a room, where only the host can pick - everyone else sees the same
+  grid with the picking turned off, rather than a poorer version of it.
+- **The switcher's cards are photographs, not diagrams.** `tools/shoot_tracks.py`
+  drives headless Chrome over every track with `?shot=1` (`S.shot` in game.js: HUD off,
+  car hidden, camera behind the start line) and writes `static/img/tracks/<slug>.png`;
+  the home page uses the same nine. **Re-run it after changing a track's geometry or
+  sky** - a test asserts the files exist but nothing can notice that one is stale.
+  Fitting the *whole* track in frame was tried first and is much worse: from far enough
+  back to hold a point-to-point the road is a thread, and on Jump City it vanished into
+  the towers entirely. Aiming level from 40 units up fails the same way - it photographs
+  the horizon. Behind the start line, angled down at the road, is the shot.
+- **Settings is only settings.** Title, an X, and the things you set. The session
+  controls moved to the HUD, and it ends in one red **Leave**. The **Ghost** row is
+  four states rather than a toggle, because "is there a ghost" is a dull question and
+  "whose lap is it" is not: off / my best / world record / view others. In a room `my
+  best` still means your best lap of *this* practice session, and `ghostOn()` still
+  hides every ghost for the whole of a race.
+- **The board is in the game.** "View others" opens the leaderboard over the track;
+  clicking a row opens that lap - its checkpoint splits against your own PB's, who set
+  it, and **Watch it** / **Race this ghost**. Picking somebody to chase is something you
+  do between runs on the track you are already on, so leaving the page for it would be
+  the wrong shape. The public `/track/<slug>` page opens a lap the same way and links
+  back in with `?ghost=<id>` / `?watch=<id>`; `/api/board` carries each row's id and
+  splits so no second request is needed, and `/api/ghost/<slug>?who=<id>` serves one
+  lap, **scoped to the track that asked** so a replay cannot be played against geometry
+  it was never driven on.
+- **Watching is not driving, so it takes the HUD away.** `body.watching` hides the
+  clock, the map and the pedals - none of it is true during somebody else's lap - and
+  leaves a bar with their name and the replay clock. The camera reads its speed and
+  orientation back off the ghost's own motion, since a replay carries neither. It
+  loops, and it refuses to start mid-race: it parks your car and stops your pose going
+  out, which in a race would leave a stationary obstacle with your name on it.
+- **`S.paused` is derived in one place** (`syncPaused`), from whether any panel is
+  open, and only solo. Four panels each assigning it meant closing any one of them
+  unpaused a game with another still open, and the car rolled away behind the sheet you
+  were reading.
+- **The start hint is shown once per session.** It tells a new player the one thing
+  they cannot guess; by the second run it is a label floating over the road on every
+  restart. Remembered in `sessionStorage`, so a reload does not restart the lecture,
+  and the touch and keyboard wordings are two spans switched by `body.touch`.
+- **`?panel=settings|tracks|board` (plus `&row=N`) opens a panel on load**, for the
+  same reason `?touch=1` exists: there is no browser in CI and a screenshot cannot
+  click, so it is the only way to look at a panel's layout.
 - **The room drawer's button is a person, not a hamburger.** Three stacked bars sat
   next to the settings icon, which is three stacked sliders, and at a glance they were
   the same button. Chat is the last thing in the drawer so it takes the leftover height
@@ -409,18 +483,34 @@ field from a dark field.
   throttle and brake right, checkpoint and restart small above the steering. There
   is deliberately no fifth button, because there is nowhere a thumb can reach one:
   the right thumb is on a pedal essentially the whole lap and the left is on an
-  arrow. The handbrake is a gesture instead - **double-tap the brake and hold** -
-  handled in `bindInput`/`syncTouch`, so it is a touch-input mapping and the
-  physics and the keyboard are untouched. Two earlier attempts are worth not
-  repeating: a DRIFT button beside the pedals, which was literally unpressable,
-  and **brake-while-steering, which is unusable** - braking into a corner *is*
-  steering, so it fired on essentially every corner and the car spent the lap
-  sideways. A handbrake has to be something you ask for, and it cannot be a
-  combination you were going to make anyway.
+  arrow. The handbrake is a gesture on the steering instead - **double-tap and
+  hold the arrow you are turning with**, so tap-tap-hold left is a handbrake turn
+  to the left - handled in `bindInput`/`syncTouch`, so it is a touch-input mapping
+  and the physics and the keyboard are untouched. The steering thumb is the one
+  that can afford a gesture: it arrives at a corner having just let go of the last
+  arrow, so the second tap is the press it was going to make anyway, where the
+  pedal thumb is holding something the entire lap. Letting go of the arrow drops
+  the handbrake, which is also how you catch the slide.
+  **The two arrows share one double-tap timer, and a press on either voids the
+  other's window**, so left-right-left is a correction rather than a double-tap of
+  left. That sequence is fast and common, and it is exactly the moment - mid-corner,
+  already saving it - when an unasked-for handbrake does the most damage.
+  Three earlier attempts are worth not repeating: a DRIFT button beside the pedals,
+  which was literally unpressable; **brake-while-steering, which is unusable** -
+  braking into a corner *is* steering, so it fired on essentially every corner and
+  the car spent the lap sideways; and the same double-tap on the *brake*, which
+  worked but charged the busy thumb a release mid-corner and could not be reached
+  from the throttle at all. A handbrake has to be something you ask for, it cannot
+  be a combination you were going to make anyway, and it should cost you nothing
+  you were already holding.
   Touch state lives in its own `touchDown`/`touchKeys` sets rather than being poked
   into `keys`, since it is not a one-button-one-control mapping. Laid out with
   flexbox off the safe-area insets. `?touch=1` on a play URL forces the touch HUD on
   a desktop browser, which is the only way to look at the phone layout without one.
+  **Checkpoint and restart sit above the pedals, not above the steering** - flag left,
+  restart right, mirroring the pedals under them. You reach for them having just gone
+  off, which is the moment the right thumb has stopped driving and the left one is
+  still holding a corner.
 - **Every icon is inline SVG, never a Unicode glyph.** A gear, a flag or a triangle
   from the symbol blocks renders as a full-colour emoji on some platforms and a
   hairline outline on others, so it can be neither styled nor trusted. The touch
@@ -438,8 +528,10 @@ field from a dark field.
 
 ### Tests
 
-`cd drive && venv/bin/python -m pytest tests/` - 219 tests. `test_tracks.py` and
-`test_runcheck.py` are pure Python. **`test_sim.py` runs the game's real JavaScript
+`cd drive && venv/bin/python -m pytest tests/` - 258 tests. `test_tracks.py` and
+`test_runcheck.py` are pure Python; `test_app.py` runs the real routes against a
+throwaway SQLite file (the `/solo` memory, the board and ghost APIs, and a guest's run
+being replayed after login). **`test_sim.py` runs the game's real JavaScript
 headlessly**: `tests/jsrt.py` strips the ES module syntax, swaps three.js for
 `tests/three_stub.js` (real Vector3/Quaternion maths, inert graphics), and runs it in
 QuickJS, then `tests/autopilot.js` *drives every track to the finish*. That is the test
@@ -452,12 +544,23 @@ having no road under it; a loop built with `self.x` for all three coordinates; a
 several tracks that simply could not be finished. Needs the optional `quickjs` package;
 those tests skip without it, so a plain deploy install is unaffected.
 
+**Two other files run browser JavaScript the same way, against a stub DOM instead of a
+stub three.js.** `test_touch.py` lifts the touch bindings straight out of `game.js` and
+drives them with synthetic touches (the handbrake gesture, and that left-right-left is a
+correction rather than a double-tap); `test_pending.py` runs `pending.js` against a fake
+`localStorage` and a `fetch` whose answers the test chooses. Both extract by marker
+rather than line number, and `test_touch.py`'s stub deliberately lists every function
+`bindInput` reaches for - if a new one appears the slice throws instead of quietly
+testing nothing.
+
 There is no browser in CI, so **check rendering by hand** before shipping a geometry
 change: run the app on a spare port and screenshot it with headless Chrome
 (`google-chrome --headless=new --use-gl=swiftshader --enable-unsafe-swiftshader
 --virtual-time-budget=9000 --screenshot=out.png http://127.0.0.1:5055/solo/twist`). That
 is how the forest of bridge piers and the dark undersides were found - both invisible to
-every test.
+every test. `?panel=`, `?touch=1` and `?shot=1` make the panels, the phone layout and a
+clean preview shot reachable the same way. Note `app.py` runs with the reloader on, so a
+backgrounded dev server needs `debug=False` or it forks and the port looks dead.
 
 **Drive deploy:** the usual Action also (when `drive/.env` exists) builds/updates
 `drive/venv` and `sudo systemctl restart drive`. nginx has a `drive.cgovind.com` vhost

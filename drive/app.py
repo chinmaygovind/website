@@ -151,6 +151,7 @@ def _stats(user):
 def inject_globals():
     return {"current_user": get_current_user(),
             "effective_name": get_effective_name(),
+            "track_names": {t["slug"]: t["name"] for t in tracks_mod.TRACKS},
             "asset_version": os.environ.get("ASSET_VERSION", "1")}
 
 
@@ -258,11 +259,43 @@ def _records():
     return out
 
 
+def _my_rank_map(pbs=None):
+    """{slug: rank} for the logged-in user's PB on each track.
+
+    A time on its own says nothing until you know what else is on the board, so
+    every place a PB is shown says where it places. One count per track the user
+    has actually driven, which is at most the size of the pool.
+    """
+    pbs = _my_pb_map() if pbs is None else pbs
+    return {slug: DriveTime.query.filter(DriveTime.track == slug,
+                                         DriveTime.time_ms < row.time_ms).count() + 1
+            for slug, row in pbs.items()}
+
+
+# The track you were last on, so that "Solo" is a door back into the game rather
+# than a menu. Kept in the session (not localStorage) because the /solo route has
+# to know it server-side to render the right track on the first paint.
+def _remember_track(slug):
+    session["last_track"] = slug
+
+
+def _last_track():
+    slug = session.get("last_track")
+    return slug if tracks_mod.get(slug) else tracks_mod.TRACKS[0]["slug"]
+
+
 @app.route("/")
 def index():
-    """The menu: pick a track and drive, or go and find people."""
+    """The home page: what this is, then the tracks.
+
+    It is no longer the way in - "Solo" and "Drive now" both go straight to
+    /solo, which puts you on the track you were last driving. This page is here
+    to be read, so it leads with how the game works and keeps the track list
+    below as a way of picking a specific one.
+    """
+    pbs = _my_pb_map()
     return render_template("index.html", tracks=tracks_mod.summaries(),
-                           pbs=_my_pb_map(), records=_records(),
+                           pbs=pbs, ranks=_my_rank_map(pbs), records=_records(),
                            name=get_effective_name(), user=get_current_user())
 
 
@@ -274,11 +307,52 @@ def _next_slug(slug):
     return slugs[(slugs.index(slug) + 1) % len(slugs)]
 
 
+def _track_cards():
+    """Everything the track switcher shows: the track, your time, the record.
+
+    Built here rather than in the switcher because a card wants three things
+    from three different places - the track pool, your PB row and the board -
+    and only the server can see all three.
+    """
+    pbs = _my_pb_map()
+    ranks = _my_rank_map(pbs)
+    recs = _records()
+    ver = os.environ.get("ASSET_VERSION", "1")
+    out = []
+    for t in tracks_mod.summaries():
+        slug = t["slug"]
+        pb, rec = pbs.get(slug), recs.get(slug)
+        out.append(dict(t, image="/static/img/tracks/%s.png?v=%s" % (slug, ver),
+                        pb_ms=(pb.time_ms if pb else None),
+                        pb_medal=(pb.medal_shown if pb else None),
+                        pb_rank=ranks.get(slug),
+                        wr_ms=(rec[0] if rec else None),
+                        wr_by=(rec[1] if rec else None)))
+    return out
+
+
+@app.route("/solo")
+def solo_last():
+    """Solo, on whatever you were driving last.
+
+    The point of the track switcher is that picking a track is something you do
+    *while driving*, not a page you pass through on the way in - so this is the
+    only URL solo needs, and it does not change when you switch track.
+    """
+    return _play_solo(_last_track())
+
+
 @app.route("/solo/<slug>")
 def solo(slug):
+    """A specific track, which is still a real URL people link to and bookmark."""
+    if not tracks_mod.get(slug):
+        return redirect(url_for("solo_last"))
+    return _play_solo(slug)
+
+
+def _play_solo(slug):
     track = tracks_mod.get(slug)
-    if not track:
-        return redirect(url_for("index"))
+    _remember_track(slug)
     user = get_current_user()
     pb = DriveTime.query.filter_by(user_id=user.id, track=slug).first() if user else None
     return render_template(
@@ -287,7 +361,8 @@ def solo(slug):
         tuning_json=tuning.as_json(), room=None, me_json="null",
         roster_json="[]", name=get_effective_name(), user=user,
         pb_ms=(pb.time_ms if pb else None), next_slug=_next_slug(slug),
-        tracks=tracks_mod.summaries())
+        pb_splits=({slug: pb.splits} if pb else {}),
+        tracks=tracks_mod.summaries(), cards=_track_cards())
 
 
 @app.route("/lobbies")
@@ -313,6 +388,7 @@ def room(code):
     if not me:
         return redirect(url_for("lobbies"))
     track = tracks_mod.get(game.track) or tracks_mod.TRACKS[0]
+    _remember_track(track["slug"])
     user = get_current_user()
     pb = DriveTime.query.filter_by(user_id=user.id, track=track["slug"]).first() if user else None
     return render_template(
@@ -323,7 +399,8 @@ def room(code):
         roster_json=json_mod.dumps([p.to_dict() for p in game.players], separators=(",", ":")),
         name=get_effective_name(), user=user,
         pb_ms=(pb.time_ms if pb else None), next_slug=_next_slug(track["slug"]),
-        tracks=tracks_mod.summaries())
+        pb_splits=({track["slug"]: pb.splits} if pb else {}),
+        tracks=tracks_mod.summaries(), cards=_track_cards())
 
 
 @app.route("/track/<slug>")
@@ -333,7 +410,12 @@ def track_board(slug):
         return redirect(url_for("index"))
     rows = (DriveTime.query.filter_by(track=slug)
             .order_by(DriveTime.time_ms.asc()).limit(100).all())
-    return render_template("track.html", track=track, rows=rows,
+    # The same shape the in-game board uses, so a lap opens the same way in both
+    # places rather than each growing its own idea of what a lap is.
+    laps = [{"id": r.id, "name": r.user.username if r.user else "?",
+             "time_ms": r.time_ms, "splits": r.splits,
+             "medal": r.medal_shown, "has_ghost": bool(r.ghost)} for r in rows]
+    return render_template("track.html", track=track, rows=rows, laps=laps,
                            tracks=tracks_mod.summaries(),
                            user=get_current_user(), name=get_effective_name())
 
@@ -377,12 +459,29 @@ def api_track(slug):
     return jsonify(track)
 
 
+@app.route("/api/last-track", methods=["POST"])
+def api_last_track():
+    """The switcher saying where you have moved to.
+
+    Solo changes track without changing URL, so without this the session would
+    still think you were on whatever /solo first handed you, and coming back
+    would take you there instead of where you left off.
+    """
+    slug = (request.json or {}).get("track", "")
+    if not tracks_mod.get(slug):
+        return jsonify({"ok": False}), 404
+    _remember_track(slug)
+    return jsonify({"ok": True})
+
+
 @app.route("/api/run", methods=["POST"])
 def api_run():
     """A finished timed run: store it if it is a PB, and always count the try.
 
-    Guests are welcome to drive but have nowhere to store a time, so they get an
-    honest answer back (their own browser keeps their PB) instead of a 401.
+    Guests are welcome to drive but have no row to store a time in, so they get
+    an honest answer back instead of a 401 - and their browser keeps the whole
+    run (see static/js/pending.js), which is submitted here for real the moment
+    they log in. A good lap should not be the price of not having an account.
     """
     data = request.json or {}
     track = tracks_mod.get(data.get("track", ""))
@@ -417,7 +516,7 @@ def api_run():
         return jsonify({"ok": True, "stored": False, "medal": medal,
                         "guest": True, "rank": None, "run_rank": _run_rank(),
                         "record_ms": best.time_ms if best else None,
-                        "note": "Log in to put this on the leaderboard."})
+                        "note": "Kept on this device - log in and it goes on the board."})
 
     st = _stats(user)
     st.runs = (st.runs or 0) + 1
@@ -480,7 +579,12 @@ def _uncount_medal(st, medal):
 
 @app.route("/api/ghost/<slug>")
 def api_ghost(slug):
-    """Fetch a ghost to race: ``who=me`` for your PB, ``who=wr`` for the record."""
+    """Fetch a ghost to race.
+
+    ``who=me`` is your PB, ``who=wr`` the record, and ``who=<id>`` any single row
+    on the board - which is what makes "race this person's lap" possible from the
+    leaderboard without leaving the track you are on.
+    """
     track = tracks_mod.get(slug)
     if not track:
         return jsonify({"error": "no such track"}), 404
@@ -488,6 +592,10 @@ def api_ghost(slug):
     row = None
     if who == "wr":
         row = DriveTime.query.filter_by(track=slug).order_by(DriveTime.time_ms.asc()).first()
+    elif who.isdigit():
+        # Scoped to this track so an id from elsewhere cannot fetch a ghost that
+        # would be replayed against geometry it was never driven on.
+        row = DriveTime.query.filter_by(id=int(who), track=slug).first()
     else:
         user = get_current_user()
         if user:
@@ -495,19 +603,28 @@ def api_ghost(slug):
     if not row or not row.ghost:
         return jsonify({"ok": True, "ghost": None})
     return jsonify({"ok": True, "hz": runcheck.ghost_hz(row.ghost),
-                    "time_ms": row.time_ms,
+                    "id": row.id, "time_ms": row.time_ms, "splits": row.splits,
                     "who": (row.user.username if row.user else "?"),
                     "ghost": runcheck.unpack_ghost(row.ghost)})
 
 
 @app.route("/api/board/<slug>")
 def api_board(slug):
+    """The board for one track, with enough on each row to open it.
+
+    Each row carries its own id and splits so the in-game leaderboard can show a
+    lap's checkpoint times and then race or watch it, without a second request
+    per row.
+    """
     if not tracks_mod.get(slug):
         return jsonify({"error": "no such track"}), 404
     rows = (DriveTime.query.filter_by(track=slug)
-            .order_by(DriveTime.time_ms.asc()).limit(20).all())
-    return jsonify({"rows": [{"name": r.user.username if r.user else "?",
-                              "time_ms": r.time_ms, "medal": r.medal_shown}
+            .order_by(DriveTime.time_ms.asc()).limit(50).all())
+    user = get_current_user()
+    return jsonify({"rows": [{"id": r.id, "name": r.user.username if r.user else "?",
+                              "time_ms": r.time_ms, "medal": r.medal_shown,
+                              "splits": r.splits, "has_ghost": bool(r.ghost),
+                              "me": bool(user and r.user_id == user.id)}
                              for r in rows]})
 
 

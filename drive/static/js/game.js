@@ -32,6 +32,14 @@ const fmt = (ms) => {
 };
 const fmtDelta = (ms) => (ms >= 0 ? '+' : '') + (ms / 1000).toFixed(3);
 
+/** The ghost you picked last time is the ghost you probably still want. */
+function storedGhostMode() {
+  try {
+    const v = localStorage.getItem('drive.ghost');
+    return ['off', 'me', 'wr'].includes(v) ? v : 'me';
+  } catch (e) { return 'me'; }
+}
+
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
@@ -40,7 +48,15 @@ const S = {
   built: null, course: null, run: null, car: null,
   renderer: null, sound: new Sound(), stepper: new Stepper(T),
   view: null, ghostView: null, ghost: null, ghostTimes: null,
+  // Which lap the ghost is: off | me | wr | run (one picked off the board).
+  ghostMode: storedGhostMode(),
+  ghostRun: null,          // {id, who, time_ms} while chasing somebody's lap
   showGhost: true,
+  board: null,             // the last board fetched, for the detail pane
+  mySplits: [],            // your PB's splits, to compare somebody else's with
+  watch: null,             // a replay playing instead of a run
+  shot: false,             // taking a preview picture, not playing
+  hintShown: false,
   sessionBest: null,       // rooms only: best practice lap since you arrived
   remotes: new Map(),
   paused: false, menuOpen: false, helpOpen: false,
@@ -71,23 +87,35 @@ const keys = new Set();          // keyboard
 // side cannot be pressed without lifting off; and a button on the left is a
 // button the steering thumb has to leave.
 //
-// So it is a gesture on the brake: **double-tap and hold**. The obvious
-// alternative - brake while steering - was tried and is unusable, because
+// So it is a gesture on the arrow you are about to press anyway:
+// **double-tap and hold the way you are turning**. Tap-tap-hold left is a
+// handbrake turn to the left, for as long as you keep the thumb down.
+//
+// The steering thumb is the one that can afford it. It arrives at a corner
+// having just let go of the last arrow, so the second tap of the gesture is the
+// press it was going to make; the pedal thumb, by contrast, is holding
+// something all lap, and any gesture there costs a release you did not want to
+// make. That the drift ends when you let go of the arrow is the point too - you
+// catch a slide by coming off the steering, and that is exactly when a real
+// handbrake comes off.
+//
+// Two earlier attempts are worth not repeating. A DRIFT button beside the
+// pedals was literally unpressable. Brake-while-steering was unusable, because
 // braking into a corner *is* steering, so it fired on essentially every corner
-// and the car spent the lap sideways. A handbrake has to be something you ask
-// for, and it cannot be a combination you were going to make anyway.
+// and the car spent the lap sideways. This replaced a third, the same
+// double-tap on the *brake*, which worked but charged the busy thumb a release
+// mid-corner and could not be reached from the throttle at all.
 const DOUBLE_TAP = 320;          // ms from letting go to the second tap
 const touchDown = new Set();     // ids of touch buttons currently held
 const touchKeys = new Set();
 const TOUCH_KEYS = {
   tGas: ['up'], tBrake: ['down'], tLeft: ['left'], tRight: ['right'],
 };
-let brakeReleasedAt = -1e9;
-let brakeIsDrift = false;
+const drifting = new Set();      // arrows double-tapped into the handbrake
 function syncTouch() {
   touchKeys.clear();
   for (const id of touchDown) for (const k of TOUCH_KEYS[id] || []) touchKeys.add(k);
-  if (brakeIsDrift && touchDown.has('tBrake')) touchKeys.add('drift');
+  if (drifting.size) touchKeys.add('drift');
 }
 
 // ---------------------------------------------------------------------------
@@ -98,7 +126,48 @@ function boot() {
   loadTrack(S.track);
   bindInput();
   if (CFG.mode === 'room') connect();
+  openRequestedLap();
+  openPanelParam();
   requestAnimationFrame(frame);
+}
+
+/**
+ * `?panel=settings|tracks|board` opens a panel on load.
+ *
+ * There is no browser in CI and a screenshot cannot click, so this is the only
+ * way to look at a panel's layout without a person driving the mouse - the same
+ * reason `?touch=1` exists.
+ */
+async function openPanelParam() {
+  const q = new URLSearchParams(location.search);
+  const p = q.get('panel');
+  if (p === 'settings') toggleMenu(true);
+  else if (p === 'tracks') toggleTracks(true);
+  else if (p === 'board') {
+    await openBoard();
+    if (q.has('row')) showBoardRow(parseInt(q.get('row'), 10) || 0);
+  }
+}
+
+/**
+ * Arriving from the leaderboard with a lap already chosen.
+ *
+ * `?ghost=<id>` means race it, `?watch=<id>` means watch it. Both are how the
+ * public board hands a lap to the game - it can list times but it cannot play
+ * them, so it links here and the game does the rest.
+ */
+async function openRequestedLap() {
+  const q = new URLSearchParams(location.search);
+  const race = q.get('ghost'), watch = q.get('watch');
+  const id = race || watch;
+  if (!id) return;
+  const d = await fetchGhost(id).catch(() => null);
+  if (!d) { toast('That lap is no longer there'); return; }
+  if (watch) { startWatching(d.ghost, d.hz || GHOST_RATE, d); return; }
+  useGhost(d.ghost, d.hz || GHOST_RATE);
+  S.ghostRun = { id: d.id, who: d.who, time_ms: d.time_ms };
+  setGhostMode('run', { quiet: true });
+  toast('Chasing ' + d.who + '  ' + fmt(d.time_ms));
 }
 
 function loadTrack(track) {
@@ -125,11 +194,15 @@ function loadTrack(track) {
   renderMedalTable();
   showPb();
   drawMinimapBase();
-  // In a room the ghost is your own best lap of *this* practice session, so a
-  // new track starts with no ghost at all until you have set one. Solo, it is
-  // the ghost of your personal best, which the server has.
+  // A new track is a new set of laps, so whoever you were chasing on the last
+  // one is gone - but *what kind* of ghost you asked for is a preference and
+  // survives. In a room `me` still means this session's best, which by
+  // definition does not exist yet on a track you have just arrived at.
   S.ghost = null; S.ghostTimes = null; S.sessionBest = null;
-  if (CFG.mode !== 'room') loadGhost('me');
+  S.ghostRun = null;
+  S.mySplits = (CFG.pbSplits && CFG.pbSplits[track.slug]) || [];
+  if (S.ghostMode === 'run') S.ghostMode = 'me';
+  setGhostMode(S.ghostMode, { quiet: true });
   applyPhase();
   markActiveTrack();
 }
@@ -165,8 +238,29 @@ function resetToStart() {
   S.finishedPayload = null;
   hideResults();
   if (S.ghost) S.ghost.t = 0;
-  $('startHint').style.display = '';
+  showStartHint();
   clearDelta();
+}
+
+/**
+ * The "press up to go" line, once per session.
+ *
+ * It tells a new player the one thing they cannot guess. By the second run they
+ * have already done it, and it becomes a label floating over the road on every
+ * restart for the rest of the evening - so it is shown once and then never
+ * again, remembered per tab so a reload does not start the lecture over.
+ */
+function showStartHint() {
+  const el = $('startHint');
+  let seen = S.hintShown;
+  try { seen = seen || sessionStorage.getItem('drive.hint') === '1'; } catch (e) {}
+  el.style.display = seen ? 'none' : '';
+}
+
+function markHintSeen() {
+  S.hintShown = true;
+  try { sessionStorage.setItem('drive.hint', '1'); } catch (e) {}
+  $('startHint').style.display = 'none';
 }
 
 // ---------------------------------------------------------------------------
@@ -193,10 +287,20 @@ function bindInput() {
     if (e.code === 'KeyT' || e.code === 'Enter' || e.code === 'Backspace') {
       e.preventDefault(); backToCheckpoint();
     }
-    if (e.code === 'Escape') toggleMenu();
+    // Escape means "close whatever is in front of me", innermost first - a
+    // replay, then a panel opened from another panel, then the panel itself.
+    if (e.code === 'Escape') {
+      if (S.watch) stopWatching();
+      else if ($('boardOv').style.display !== 'none') toggleBoard(false);
+      else if ($('tracksOv').style.display !== 'none') toggleTracks(false);
+      else toggleMenu();
+    }
     if (e.code === 'KeyH') toggleHelp();
+    if (e.code === 'KeyP') toggleTracks();
     if (e.code === 'KeyM') setSound(!S.sound.enabled);
-    if (e.code === 'KeyG') setGhost(!S.showGhost);
+    // G is still the quick "get it off the screen", and turning it back on
+    // returns to whichever lap you had chosen.
+    if (e.code === 'KeyG') setGhostMode(S.ghostMode === 'off' ? 'me' : 'off');
   });
   window.addEventListener('keyup', (e) => {
     const k = KEYMAP[e.code];
@@ -204,7 +308,7 @@ function bindInput() {
   });
   window.addEventListener('blur', () => {
     keys.clear();
-    touchDown.clear(); brakeIsDrift = false; syncTouch();
+    touchDown.clear(); drifting.clear(); syncTouch();
     document.querySelectorAll('.tbtn').forEach(el =>
       el.classList.remove('down', 'drifting'));
   });
@@ -224,28 +328,51 @@ function bindInput() {
   };
   const hold = (id) => tb(id, () => { touchDown.add(id); syncTouch(); },
                               () => { touchDown.delete(id); syncTouch(); });
-  for (const id of Object.keys(TOUCH_KEYS)) if (id !== 'tBrake') hold(id);
-  // The brake is the one button with two meanings, so it is bound by hand: a
-  // press is the brake, and a press that lands within DOUBLE_TAP of the last
-  // release is the handbrake as well, for as long as you keep your thumb down.
-  tb('tBrake', () => {
-    brakeIsDrift = performance.now() - brakeReleasedAt < DOUBLE_TAP;
-    touchDown.add('tBrake');
-    syncTouch();
-    $('tBrake').classList.toggle('drifting', brakeIsDrift);
-  }, () => {
-    brakeReleasedAt = performance.now();
-    brakeIsDrift = false;
-    touchDown.delete('tBrake');
-    syncTouch();
-    $('tBrake').classList.remove('drifting');
-  });
+  for (const id of ['tGas', 'tBrake']) hold(id);
+  // An arrow is the one button with two meanings, so it is bound by hand: a
+  // press is steering, and a press that lands within DOUBLE_TAP of that same
+  // arrow's last release is the handbrake as well, for as long as you keep your
+  // thumb down.
+  //
+  // The two arrows share the timer rather than keeping one each, because
+  // **anything you touched in between ends the gesture**: left-right-left is a
+  // correction, not a double-tap of left, and it is a fast one - exactly the
+  // shape that would otherwise fire the handbrake in the middle of a corner
+  // you were busy saving. So a press on either arrow voids the other's window,
+  // and only left-nothing-left counts.
+  const released = { tLeft: -1e9, tRight: -1e9 };
+  const steer = (id) => {
+    const el = $(id);
+    if (!el) return;
+    const other = id === 'tLeft' ? 'tRight' : 'tLeft';
+    tb(id, () => {
+      if (performance.now() - released[id] < DOUBLE_TAP) drifting.add(id);
+      released[other] = -1e9;
+      touchDown.add(id);
+      syncTouch();
+      el.classList.toggle('drifting', drifting.has(id));
+    }, () => {
+      released[id] = performance.now();
+      drifting.delete(id);
+      touchDown.delete(id);
+      syncTouch();
+      el.classList.remove('drifting');
+    });
+  };
+  for (const id of ['tLeft', 'tRight']) steer(id);
   // These two fire on press and do nothing on release, so they are taps rather
   // than holds like the pedals are.
   tb('tCheck', () => backToCheckpoint(), () => {});
   tb('tRestart', () => restartRun(), () => {});
   // `?touch=1` forces the touch HUD on a desktop browser, which is the only way
   // to look at the phone layout without a phone.
+  // Preview-picture mode: no HUD, no car, no controls - just the track.
+  if (location.search.indexOf('shot=1') >= 0) {
+    S.shot = true;
+    S.car.frozen = true;
+    S.view.setVisible(false);
+    document.body.classList.add('shot');
+  }
   if ('ontouchstart' in window || location.search.indexOf('touch=1') >= 0 ||
       (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) {
     S.touch = true;
@@ -256,13 +383,22 @@ function bindInput() {
   $('btnHelp').onclick = () => toggleHelp();
   $('btnHelpClose').onclick = () => toggleHelp(false);
   $('btnResume').onclick = () => toggleMenu(false);
-  $('btnRestart').onclick = () => { restartRun(); toggleMenu(false); };
-  $('btnCheckpoint').onclick = () => { backToCheckpoint(); toggleMenu(false); };
+  // Both of these are on the HUD now, so they close nothing and cost no clicks.
+  $('btnRestart').onclick = () => restartRun();
+  $('btnCheckpoint').onclick = () => backToCheckpoint();
   $('btnRetry').onclick = () => resetToStart();
-  $('btnGhost').onclick = () => setGhost(!S.showGhost);
   $('btnSound').onclick = () => setSound(!S.sound.enabled);
-  setGhost(S.showGhost);
   setSound(S.sound.enabled);
+
+  // Ghost source, track switcher and the in-game board.
+  $('ghostOpts').querySelectorAll('[data-ghost]').forEach(b => {
+    b.onclick = () => chooseGhost(b.dataset.ghost);
+  });
+  $('btnTracks').onclick = () => toggleTracks();
+  $('btnTracksClose').onclick = () => toggleTracks(false);
+  $('btnBoardClose').onclick = () => toggleBoard(false);
+  $('btnWatchStop').onclick = () => stopWatching();
+  renderTrackCards();          // loadTrack has already set the ghost up
   // Everything room-shaped lives behind the hamburger, at every screen size.
   if ($('side')) {
     $('btnRoom').onclick = () => showSide(!document.body.classList.contains('side-open'));
@@ -276,9 +412,73 @@ function showSide(on) {
   $('btnRoom').classList.toggle('on', on);
 }
 
-function setGhost(on) {
-  S.showGhost = on;
-  $('btnGhost').textContent = 'Ghost car: ' + (on ? 'on' : 'off');
+// ---------------------------------------------------------------------------
+// The ghost you are chasing
+// ---------------------------------------------------------------------------
+//
+// Four states rather than a toggle, because "is there a ghost" and "whose lap is
+// it" are different questions and only the second one is interesting: off, your
+// own, the record, or a lap you picked off the board.
+//
+// In a room `me` keeps meaning what it has always meant there - your best lap of
+// *this* practice session, not a PB from another day against nobody - so the
+// same word means "the best I have driven here" in both places. The record and
+// somebody else's lap are new, and they are still hidden for the whole of a
+// race by ghostOn(), where a translucent extra car is just a fake rival.
+
+const GHOST_LABEL = { off: 'Off', me: 'My best', wr: 'World record', run: 'Chasing' };
+
+function chooseGhost(mode) {
+  if (mode === 'others') { openBoard(); return; }
+  setGhostMode(mode);
+}
+
+function setGhostMode(mode, opts = {}) {
+  S.ghostMode = mode;
+  S.showGhost = mode !== 'off';
+  if (mode !== 'run') S.ghostRun = null;
+  try { localStorage.setItem('drive.ghost', mode === 'run' ? 'me' : mode); } catch (e) {}
+  $('ghostOpts').querySelectorAll('[data-ghost]').forEach(b => {
+    // "View others" is a door, not a state - it lights up only while the lap you
+    // are chasing is one you opened through it.
+    const on = b.dataset.ghost === mode ||
+               (b.dataset.ghost === 'others' && mode === 'run');
+    b.classList.toggle('on', on);
+  });
+  if (mode === 'off') { S.ghost = null; S.ghostTimes = null; }
+  else if (mode === 'me') { if (CFG.mode !== 'room') loadGhost('me'); }
+  else if (mode === 'wr') loadGhost('wr');
+  showGhostNow();
+  if (!opts.quiet) toast('Ghost: ' + ghostDescription());
+}
+
+function ghostDescription() {
+  if (S.ghostMode === 'run' && S.ghostRun) {
+    return S.ghostRun.who + '  ' + fmt(S.ghostRun.time_ms);
+  }
+  if (S.ghostMode === 'me' && CFG.mode === 'room') return 'your best lap here';
+  return GHOST_LABEL[S.ghostMode] || 'Off';
+}
+
+/** The one line under the ghost buttons that says what is actually loaded. */
+function showGhostNow() {
+  const el = $('ghostNow');
+  if (!el) return;
+  if (S.ghostMode === 'off') { el.textContent = 'No ghost car.'; return; }
+  if (S.ghostMode === 'run' && S.ghostRun) {
+    el.innerHTML = 'Chasing <b>' + esc(S.ghostRun.who) + '</b> &middot; ' +
+                   fmt(S.ghostRun.time_ms);
+    return;
+  }
+  if (S.ghostMode === 'me') {
+    el.textContent = CFG.mode === 'room'
+      ? 'Your best lap of this practice session.'
+      : (S.bestTime ? 'Your personal best, ' + fmt(S.bestTime) + '.'
+                    : 'Drive a lap and it becomes your ghost.');
+    return;
+  }
+  el.textContent = S.ghost ? 'The fastest lap on this track.'
+                           : 'Nobody has set a time here yet.';
 }
 
 /**
@@ -299,6 +499,263 @@ function ghostOn() {
 function setSound(on) {
   S.sound.mute(!on);
   $('btnSound').textContent = 'Sound: ' + (on ? 'on' : 'off');
+}
+
+// ---------------------------------------------------------------------------
+// The board, in the game
+// ---------------------------------------------------------------------------
+
+/**
+ * Stopped if anything is open on top of the track, and only when alone.
+ *
+ * Derived in one place from what is actually on screen rather than set by each
+ * panel as it opens: with four panels each assigning it, closing any one of
+ * them unpaused a game with another still open, and the car would start rolling
+ * behind the sheet you were reading.
+ *
+ * In a room the world keeps turning whatever you have open - the other cars are
+ * real people and they are not waiting for you.
+ */
+function syncPaused() {
+  const anyOpen = S.menuOpen || S.helpOpen ||
+                  $('boardOv').style.display !== 'none' ||
+                  $('tracksOv').style.display !== 'none';
+  S.paused = anyOpen && CFG.mode === 'solo';
+}
+
+function toggleBoard(force) {
+  const on = force != null ? force : $('boardOv').style.display === 'none';
+  $('boardOv').style.display = on ? '' : 'none';
+  syncPaused();
+  if (!on) return;
+  $('boardTitle').textContent = S.track.name;
+  $('boardDetail').innerHTML = '<p class="muted empty">Pick a time to see its splits.</p>';
+}
+
+async function openBoard() {
+  toggleMenu(false);
+  toggleBoard(true);
+  const list = $('boardList');
+  list.innerHTML = '<p class="muted empty">Loading…</p>';
+  let rows = [];
+  try {
+    const r = await fetch('/api/board/' + S.track.slug);
+    rows = (await r.json()).rows || [];
+  } catch (e) {
+    list.innerHTML = '<p class="muted empty">Could not load the board.</p>';
+    return;
+  }
+  S.board = rows;
+  if (!rows.length) {
+    list.innerHTML = '<p class="muted empty">No times here yet. Set the first one.</p>';
+    return;
+  }
+  list.innerHTML = rows.map((row, i) => `
+    <button class="brow${row.me ? ' me' : ''}" data-row="${i}">
+      <span class="brow-pos">${i + 1}</span>
+      <span class="medal ${row.medal || 'none'}"></span>
+      <span class="brow-name">${esc(row.name)}</span>
+      <span class="brow-ms">${fmt(row.time_ms)}</span>
+    </button>`).join('');
+  list.querySelectorAll('[data-row]').forEach(b => {
+    b.onclick = () => showBoardRow(parseInt(b.dataset.row, 10));
+  });
+}
+
+/**
+ * One lap, opened.
+ *
+ * The splits are the reason to open it: a time on its own says somebody was
+ * faster, and the splits say *where*. They are shown against your own PB's
+ * splits when you have them, since the gap per sector is the only part of
+ * somebody else's lap you can actually do something with.
+ */
+function showBoardRow(i) {
+  const row = (S.board || [])[i];
+  if (!row) return;
+  $('boardList').querySelectorAll('.brow').forEach((el, n) =>
+    el.classList.toggle('open', n === i));
+  const mine = S.mySplits || [];
+  const splits = row.splits || [];
+  const rows = splits.map((ms, n) => {
+    const ref = mine[n];
+    const d = ref != null ? ms - ref : null;
+    return `<div class="sp">
+      <span>CP ${n + 1}</span><b>${fmt(ms)}</b>
+      <i class="${d == null ? '' : (d <= 0 ? 'ahead' : 'behind')}">${
+        d == null ? '' : fmtDelta(d)}</i></div>`;
+  }).join('');
+  $('boardDetail').innerHTML = `
+    <div class="bd-head">
+      <div class="bd-time">${fmt(row.time_ms)}</div>
+      <div class="bd-who"><span class="medal ${row.medal || 'none'}"></span>${esc(row.name)}</div>
+    </div>
+    <div class="bd-splits">${rows || '<p class="muted">No splits recorded.</p>'}</div>
+    ${row.has_ghost ? `<div class="bd-actions">
+      <button class="btn dark" data-race="${row.id}">Race this ghost</button>
+      <button class="btn secondary" data-watch="${row.id}">Watch it</button>
+    </div>` : '<p class="muted">This lap has no replay to watch.</p>'}`;
+  const detail = $('boardDetail');
+  const race = detail.querySelector('[data-race]');
+  const watch = detail.querySelector('[data-watch]');
+  if (race) race.onclick = () => raceGhost(row);
+  if (watch) watch.onclick = () => watchGhost(row);
+}
+
+async function fetchGhost(id) {
+  const r = await fetch('/api/ghost/' + S.track.slug + '?who=' + id);
+  const d = await r.json();
+  return d && d.ghost ? d : null;
+}
+
+async function raceGhost(row) {
+  const d = await fetchGhost(row.id).catch(() => null);
+  if (!d) { toast('Could not load that ghost'); return; }
+  useGhost(d.ghost, d.hz || GHOST_RATE);
+  S.ghostRun = { id: row.id, who: d.who, time_ms: d.time_ms };
+  setGhostMode('run', { quiet: true });
+  toggleBoard(false);
+  toast('Chasing ' + d.who + '  ' + fmt(d.time_ms));
+  resetToStart();
+}
+
+// ---------------------------------------------------------------------------
+// Watching somebody's lap
+// ---------------------------------------------------------------------------
+//
+// A replay is not a run: there is no car of yours in it, the clock is theirs and
+// so is the speed. So watching takes the whole driving HUD away and gives the
+// camera to the ghost, rather than trying to be both at once. It loops, because
+// the interesting part of somebody's lap is rarely the first corner.
+
+async function watchGhost(row) {
+  // Watching parks your car and stops your pose going out, so in the middle of
+  // a race it would leave a stationary obstacle on the track with your name on
+  // it while everyone else is still driving.
+  if (S.raceMode) { toast('Not while the race is on'); return; }
+  const d = await fetchGhost(row.id).catch(() => null);
+  if (!d) { toast('Could not load that lap'); return; }
+  toggleBoard(false);
+  startWatching(d.ghost, d.hz || GHOST_RATE, d);
+}
+
+function startWatching(frames, hz, meta) {
+  stopWatching();
+  const view = new CarView(S.renderer.scene, '#ffd96b');
+  view.setLabel(meta.who || 'Replay', '#ffd96b');
+  S.watch = {
+    g: new Ghost(frames, hz), t: 0, view, meta,
+    dur: frames.length / hz,
+    subject: { pos: new THREE.Vector3(), fwd: new THREE.Vector3(0, 0, -1),
+               up: new THREE.Vector3(0, 1, 0), speed: 0, grounded: true },
+    prev: null,
+  };
+  S.car.frozen = true;
+  S.view.setVisible(false);
+  document.body.classList.add('watching');
+  $('watchWho').textContent = 'Watching ' + (meta.who || 'a lap');
+  $('watchBar').style.display = '';
+}
+
+function stopWatching() {
+  if (!S.watch) return;
+  S.watch.view.dispose();
+  S.watch = null;
+  S.car.frozen = false;
+  S.view.setVisible(true);
+  document.body.classList.remove('watching');
+  $('watchBar').style.display = 'none';
+  resetToStart();
+}
+
+/** Advance the replay and point the camera at it. */
+function updateWatch(dt) {
+  const w = S.watch;
+  w.t += dt;
+  if (w.t > w.dur) { w.t = 0; w.prev = null; }
+  const f = w.g.at(w.t);
+  if (!f) return;
+  const p = new THREE.Vector3(f[0], f[1], f[2]);
+  const q = new THREE.Quaternion(f[3], f[4], f[5], f[6]).normalize();
+  const s = w.subject;
+  // The camera wants a speed and a frame to orbit in, which a replay does not
+  // carry - so both are read back off the motion itself.
+  s.speed = w.prev ? p.distanceTo(w.prev) / Math.max(1e-3, dt) : 0;
+  s.pos.copy(p);
+  s.fwd.set(0, 0, -1).applyQuaternion(q);
+  s.up.set(0, 1, 0).applyQuaternion(q);
+  w.prev = p.clone();
+  w.view.update(p, q, {});
+  w.view.group.visible = true;
+  $('watchClock').textContent = fmt(w.t * 1000);
+}
+
+// ---------------------------------------------------------------------------
+// The track switcher
+// ---------------------------------------------------------------------------
+
+function toggleTracks(force) {
+  const on = force != null ? force : $('tracksOv').style.display === 'none';
+  $('tracksOv').style.display = on ? '' : 'none';
+  $('btnTracks').classList.toggle('on', on);
+  syncPaused();
+  if (on) {
+    // Only the host picks in a room, and saying so beats a grid of cards that
+    // silently ignore you.
+    const locked = CFG.mode === 'room' && !S.isHost;
+    $('tracksNote').style.display = locked ? '' : 'none';
+    $('tGrid').classList.toggle('locked', locked);
+    markActiveTrack();
+  }
+}
+
+function renderTrackCards() {
+  const grid = $('tGrid');
+  if (!grid) return;
+  grid.innerHTML = (CFG.cards || []).map(c => `
+    <button class="tcard2" data-track="${esc(c.slug)}">
+      <span class="tcard2-img" style="background-image:url('${esc(c.image)}')">
+        <span class="tcard2-live">Now</span>
+      </span>
+      <span class="tcard2-body">
+        <span class="tcard2-top">
+          <b>${esc(c.name)}</b>
+          <span class="diff">${[0, 1, 2, 3, 4].map(i =>
+            `<span class="pip${i < c.difficulty ? ' on' : ''}"></span>`).join('')}</span>
+        </span>
+        <span class="tcard2-blurb">${esc(c.blurb)}</span>
+        <span class="tcard2-foot">
+          <span class="medal ${c.pb_medal || 'none'}"></span>
+          <span>${c.pb_ms ? fmt(c.pb_ms) + (c.pb_rank ? ' (#' + c.pb_rank + ')' : '')
+                          : 'not driven'}</span>
+          <span class="wr">${c.wr_ms ? '★ ' + fmt(c.wr_ms) + ' ' + esc(c.wr_by) : ''}</span>
+        </span>
+      </span>
+    </button>`).join('');
+  grid.querySelectorAll('[data-track]').forEach(el => {
+    el.onclick = () => pickTrack(el.dataset.track);
+  });
+  markActiveTrack();
+}
+
+/**
+ * Change track without going anywhere.
+ *
+ * Solo this swaps the world in place and leaves the URL alone: /solo is the
+ * address of "driving on your own", and the track is a thing you change while
+ * you are there. In a room it is the host's decision to make, so it goes to the
+ * server and comes back to everyone at once.
+ */
+function pickTrack(slug) {
+  if (slug === S.track.slug) { toggleTracks(false); return; }
+  if (CFG.mode === 'room') {
+    if (!S.isHost) { toast('Only the host can change the track'); return; }
+    S.socket.emit('set_track', { code: CFG.room, track: slug });
+    toggleTracks(false);
+    return;
+  }
+  toggleTracks(false);
+  switchTrack(slug);
 }
 
 /** Which kind of session this is, shown under the track name. */
@@ -352,6 +809,25 @@ function frame(now) {
   const dt = Math.min(0.1, (now - lastFrame) / 1000);
   lastFrame = now;
 
+  // Shot mode: hold the whole track in frame and render nothing else. This is
+  // how the switcher's pictures are taken (tools/shoot_tracks.py), so the
+  // preview of a track is always the track as it is now rather than a drawing
+  // of it that has to be kept in step.
+  if (S.shot) {
+    shotCamera();
+    S.renderer.render(dt);
+    return;
+  }
+
+  // A replay is somebody else's run, so none of the below applies to it: no
+  // input, no physics, no clock of yours, and the camera belongs to them.
+  if (S.watch) {
+    updateWatch(dt);
+    S.renderer.follow(S.watch.subject, dt);
+    S.renderer.render(dt);
+    return;
+  }
+
   const inp = readInput();
 
   // In solo, the clock starts the moment you ask the car to move. In a race it
@@ -359,13 +835,13 @@ function frame(now) {
   if (!S.started && !S.raceMode && (inp.throttle || inp.brake || inp.steer)) {
     S.started = true;
     S.run.start(now);
-    $('startHint').style.display = 'none';
+    markHintSeen();
   }
   if (S.raceMode && S.racePhase === 'racing' && !S.started && S.raceT0 != null && now >= S.raceT0) {
     S.started = true;
     S.car.frozen = false;
     S.run.start(S.raceT0);
-    $('startHint').style.display = 'none';
+    markHintSeen();
   }
 
   if (!S.paused) {
@@ -447,6 +923,45 @@ function render(dt, now) {
 
   S.renderer.render(dt);
   void now;
+}
+
+/**
+ * Frame a preview picture: over your shoulder on the start line.
+ *
+ * Fitting the whole track in frame was the obvious thing and it is the wrong
+ * picture. From far enough away to hold a point-to-point, the road is a thread -
+ * on Jump City it disappeared into the towers completely - and every track
+ * became a photograph of its scenery with a track somewhere in it.
+ *
+ * So this stands behind the start line at a height that scales with the size of
+ * the track, and looks along it. The road fills the bottom of the frame at a
+ * width you can read, the layout recedes into the distance, and the sky and
+ * whatever is underneath are still most of the picture, which is what makes one
+ * track recognisably a different place from another.
+ */
+function shotCamera() {
+  const sp = S.track.spawn;
+  const pts = S.built.line.map(e => e.p);
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const p of pts) {
+    x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]);
+    z0 = Math.min(z0, p[2]); z1 = Math.max(z1, p[2]);
+  }
+  // How far back to stand grows with the track but nothing like as fast, or a
+  // big track is shot from orbit and a small one from inside a hedge.
+  const radius = Math.max(30, Math.hypot(x1 - x0, z1 - z0) / 2);
+  const back = Math.min(70, 16 + radius * 0.22);
+  const up = back * 0.62;
+  const f = sp.fwd, p = sp.p;
+  const cam = S.renderer.camera;
+  cam.position.set(p[0] - f[0] * back, p[1] + up, p[2] - f[2] * back);
+  // Aimed down at the road just ahead, not out at the horizon. Level from 40
+  // units up is a picture of the skyline with a track somewhere under it - the
+  // road has to be the thing in the frame, with the rest of the lap receding
+  // behind it.
+  cam.lookAt(new THREE.Vector3(p[0] + f[0] * back * 0.5, p[1],
+                               p[2] + f[2] * back * 0.5));
+  cam.updateProjectionMatrix();
 }
 
 // ---------------------------------------------------------------------------
@@ -710,15 +1225,32 @@ async function onFinish() {
       if (d.improved && CFG.mode !== 'room') loadGhost('me');
     } else {
       if (improved) { S.bestTime = run.time; localBest(run.time); }
+      // A guest's lap is kept whole - replay and all - so that logging in later
+      // puts it on the board rather than asking them to drive it again.
+      if (d.guest && window.DrivePending) {
+        window.DrivePending.save({
+          track: S.track.slug, time_ms: run.time, splits: run.splits,
+          ghost: run.ghost, distance: Math.round(run.distance),
+        });
+      }
       if (!racing) {
         showResults({ time: run.time, medal, rank: d.run_rank, pb: S.bestTime,
                       wr: d.record_ms, note: d.note || d.error || null });
       }
     }
   } catch (e) {
+    // The request never landed, so nobody has this lap but us. Keep it in the
+    // same place a guest's laps go and it will be handed over on a later page.
+    if (window.DrivePending) {
+      window.DrivePending.save({
+        track: S.track.slug, time_ms: run.time, splits: run.splits,
+        ghost: run.ghost, distance: Math.round(run.distance),
+      });
+    }
+    if (improved) { S.bestTime = run.time; localBest(run.time); }
     if (!racing) {
       showResults({ time: run.time, medal, pb: improved ? run.time : prev,
-                    note: 'Offline - time not saved.' });
+                    note: 'Offline - saved, and sent when you reconnect.' });
     }
   }
   renderMedalTable();
@@ -778,8 +1310,7 @@ function toggleMenu(force) {
   if (S.menuOpen) toggleHelp(false);
   $('menu').style.display = S.menuOpen ? '' : 'none';
   $('btnSettings').classList.toggle('on', S.menuOpen);
-  // Pausing only makes sense alone; in a room the world keeps turning.
-  S.paused = S.menuOpen && CFG.mode === 'solo';
+  syncPaused();
 }
 
 function toggleHelp(force) {
@@ -787,7 +1318,7 @@ function toggleHelp(force) {
   if (S.helpOpen) toggleMenu(false);
   $('help').style.display = S.helpOpen ? '' : 'none';
   $('btnHelp').classList.toggle('on', S.helpOpen);
-  if (CFG.mode === 'solo') S.paused = S.helpOpen || S.menuOpen;
+  syncPaused();
 }
 
 function markActiveTrack() {
@@ -870,9 +1401,7 @@ function connect() {
     if (inp.value.trim()) socket.emit('chat', { text: inp.value.trim() });
     inp.value = '';
   };
-  document.querySelectorAll('[data-track]').forEach(el => {
-    el.onclick = () => socket.emit('set_track', { code: CFG.room, track: el.dataset.track });
-  });
+  // Track picking is the switcher's job in both modes now - see pickTrack.
 }
 
 function sendPose(now) {
@@ -970,7 +1499,6 @@ function renderRoster(players) {
   const isHost = !!(CFG.me && players.some(p => p.pid === CFG.me.pid && p.is_host));
   S.isHost = isHost;
   $('btnStartRace').style.display = isHost ? '' : 'none';
-  $('hostOnly').style.display = isHost ? '' : 'none';
   // The host can change mid-race if the old one leaves, and the rematch button
   // has to follow them.
   showRematch();
@@ -997,10 +1525,17 @@ async function switchTrack(slug) {
     const r = await fetch('/api/track/' + slug);
     const t = await r.json();
     if (!t || t.error) return;
+    if (S.watch) stopWatching();
     S.raceMode = false; S.racePhase = 'free'; S.raceT0 = null;
     if ($('raceOver')) $('raceOver').style.display = 'none';
     loadTrack(t);
     toast('Track: ' + t.name);
+    // So that "Solo" next time opens the track you were actually driving,
+    // rather than the one you happened to arrive on.
+    fetch('/api/last-track', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ track: slug }),
+    }).catch(() => {});
   } catch (e) { toast('Could not load that track'); }
 }
 
@@ -1008,6 +1543,12 @@ function onRaceStart(d) {
   S.raceMode = true;
   S.racePhase = 'countdown';
   S.standings = [];
+  // Everything you might have open belongs to practice, and the lights are
+  // about to go out.
+  if (S.watch) stopWatching();
+  toggleBoard(false);
+  toggleTracks(false);
+  toggleMenu(false);
   // Get the room drawer out of the way - the lights are about to go out.
   showSide(false);
   applyPhase();

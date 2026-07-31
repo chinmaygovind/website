@@ -4,9 +4,17 @@ The car is simulated in the browser - it has to be, for the driving to feel like
 anything - which means a submitted lap time is a claim, not a fact. Nothing here
 can make it a fact. What it can do is insist the claim comes with a *replay that
 holds up*: every run ships the ghost that will be raced against, and a run is
-rejected unless that ghost is self-consistent (right duration, no teleports, no
-impossible speeds) and the time beats neither the simulated ideal lap nor its own
-checkpoint splits.
+rejected unless that ghost is self-consistent - right duration, no teleports, no
+impossible speeds, starting on the line, through every checkpoint in order.
+
+**Being fast is not evidence of anything.** There used to be a floor here as
+well: a time under `ideal * MIN_PLAUSIBLE` was rejected as physically
+unreachable. But `ideal` is the lap `laptime.py` derives from a relaxed racing
+line, and a person who knows the track beats it - so the floor was not measuring
+cheating, it was measuring how conservative the estimate happened to be, and the
+better you drove the more likely it was to throw the lap away. The replay checks
+below are the ones that mean something, because they are about the run rather
+than about the number.
 
 So faking a time is no longer "send a small number", it is "synthesise a
 plausible 30-second replay", and the fake ghost is then public on the
@@ -91,9 +99,6 @@ def validate(track, time_ms, splits, frames):
     """(ok, reason). ``frames`` is the unpacked ghost, or None."""
     if not isinstance(time_ms, int) or time_ms <= 0:
         return False, "bad time"
-    ideal_ms = track["ideal"] * 1000.0
-    if time_ms < ideal_ms * T.MIN_PLAUSIBLE:
-        return False, "faster than the track allows"
     if time_ms > 1000 * 60 * 60:
         return False, "run too long"
 

@@ -15,10 +15,13 @@
     <div class="panel">
       <h2 style="margin-top:0">Best times</h2>
       {% if rows %}
-      <table class="board">
+      {# Every row opens: a time on a board is only interesting next to where it
+         was won and lost, and the two things worth doing with somebody's lap -
+         watching it and racing it - both need you back on the track. #}
+      <table class="board rows-open">
         <tr><th>#</th><th>Driver</th><th class="num">Time</th><th>Medal</th><th class="num">Runs</th></tr>
         {% for r in rows %}
-        <tr {% if user and r.user_id == user.id %}class="me"{% endif %}>
+        <tr data-row="{{ loop.index0 }}" {% if user and r.user_id == user.id %}class="me"{% endif %}>
           <td>{{ loop.index }}</td>
           <td>{{ r.user.username if r.user else '?' }}</td>
           <td class="num">{{ '%d:%06.3f'|format((r.time_ms // 60000), (r.time_ms % 60000) / 1000) }}</td>
@@ -33,16 +36,74 @@
     </div>
 
     <div class="panel">
-      <h3 style="margin-top:0">Medal times</h3>
-      <table class="board">
-        {% for key, label in [('gold','Gold'),('silver','Silver'),('bronze','Bronze')] %}
-        <tr><td><span class="medal {{ key }}"></span> {{ label }}</td>
-          <td class="num">{{ '%d:%06.3f'|format(((track.medals[key]*1000)|int // 60000), ((track.medals[key]*1000)|int % 60000) / 1000) }}</td></tr>
-        {% endfor %}
-      </table>
-      <p class="muted" style="font-size:.88rem">Checkpoints: {{ track.checkpoints }}<br/>
-      Difficulty: {{ track.difficulty }}/5</p>
+      <div id="lapDetail" style="display:none"></div>
+      <div id="trackFacts">
+        <h3 style="margin-top:0">Medal times</h3>
+        <table class="board">
+          {% for key, label in [('gold','Gold'),('silver','Silver'),('bronze','Bronze')] %}
+          <tr><td><span class="medal {{ key }}"></span> {{ label }}</td>
+            <td class="num">{{ '%d:%06.3f'|format(((track.medals[key]*1000)|int // 60000), ((track.medals[key]*1000)|int % 60000) / 1000) }}</td></tr>
+          {% endfor %}
+        </table>
+        <p class="muted" style="font-size:.88rem">Checkpoints: {{ track.checkpoints }}<br/>
+        Difficulty: {{ track.difficulty }}/5</p>
+      </div>
     </div>
   </div>
 </div>
+
+<script>
+(function () {
+  const SLUG = {{ track.slug | tojson }};
+  const LAPS = {{ laps | tojson }};
+
+  const fmt = (ms) => {
+    const m = Math.floor(ms / 60000), s = Math.floor((ms % 60000) / 1000);
+    return m + ':' + String(s).padStart(2, '0') + '.' + String(ms % 1000).padStart(3, '0');
+  };
+  const esc = (s) => (s + '').replace(/[&<>"]/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  const detail = document.getElementById('lapDetail');
+  const facts = document.getElementById('trackFacts');
+  // Compared against the leader's splits, since the question a public board
+  // answers is "where does the fastest lap actually gain it".
+  const best = (LAPS[0] || {}).splits || [];
+
+  function open(i) {
+    const lap = LAPS[i];
+    if (!lap) return;
+    document.querySelectorAll('tr[data-row]').forEach((tr, n) =>
+      tr.classList.toggle('open', n === i));
+    const rows = (lap.splits || []).map((ms, n) => {
+      const d = i > 0 && best[n] != null ? ms - best[n] : null;
+      return '<div class="sp"><span>CP ' + (n + 1) + '</span><b>' + fmt(ms) + '</b>' +
+        '<i class="' + (d == null ? '' : (d <= 0 ? 'ahead' : 'behind')) + '">' +
+        (d == null ? '' : (d >= 0 ? '+' : '') + (d / 1000).toFixed(3)) + '</i></div>';
+    }).join('');
+    detail.innerHTML =
+      '<div class="bd-head"><div class="bd-time">' + fmt(lap.time_ms) + '</div>' +
+      '<div class="bd-who"><span class="medal ' + (lap.medal || 'none') + '"></span>' +
+      esc(lap.name) + '</div></div>' +
+      '<div class="bd-splits">' + (rows || '<p class="muted">No splits recorded.</p>') + '</div>' +
+      '<div class="bd-actions">' +
+      (lap.has_ghost
+        ? '<a class="btn dark" href="/solo/' + SLUG + '?ghost=' + lap.id + '">Race this ghost</a>' +
+          '<a class="btn secondary" href="/solo/' + SLUG + '?watch=' + lap.id + '">Watch it</a>'
+        : '<p class="muted">This lap has no replay.</p>') +
+      '<button class="btn secondary" id="lapBack">Track info</button></div>';
+    detail.style.display = '';
+    facts.style.display = 'none';
+    document.getElementById('lapBack').onclick = () => {
+      detail.style.display = 'none';
+      facts.style.display = '';
+      document.querySelectorAll('tr[data-row]').forEach(tr => tr.classList.remove('open'));
+    };
+  }
+
+  document.querySelectorAll('tr[data-row]').forEach(tr => {
+    tr.onclick = () => open(parseInt(tr.dataset.row, 10));
+  });
+})();
+</script>
 {% endblock %}

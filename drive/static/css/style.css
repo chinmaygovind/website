@@ -165,11 +165,18 @@ input[type=text], input[type=password], input[type=email], input:not([type]) {
 .tracks { display: grid; grid-template-columns: repeat(auto-fill, minmax(258px, 1fr)); gap: 1rem; }
 .tcard {
   border: 2px solid var(--line); border-radius: 12px; background: #fff;
-  padding: .9rem 1rem; display: flex; flex-direction: column; gap: .4rem;
+  display: flex; flex-direction: column; overflow: hidden;
   box-shadow: 3px 3px 0 rgba(29, 29, 31, .1); color: var(--ink);
   transition: transform .08s;
 }
 .tcard:hover { text-decoration: none; transform: translate(-1px, -2px); }
+/* The same rendered shot the in-game switcher uses (tools/shoot_tracks.py). A
+   name and a blurb tell you a track exists; a picture tells you which one. */
+.tshot {
+  aspect-ratio: 16 / 9; background: #dfe4ea center/cover no-repeat;
+  border-bottom: 2px solid var(--line);
+}
+.tcard-in { padding: .8rem 1rem .9rem; display: flex; flex-direction: column; gap: .4rem; flex: 1; }
 .tcard-top { display: flex; align-items: baseline; gap: .5rem; }
 .tcard h3 { margin: 0; font-size: 1.25rem; }
 .tcard .blurb { color: var(--ink-soft); font-size: .92rem; line-height: 1.4; flex: 1; }
@@ -180,6 +187,11 @@ input[type=text], input[type=password], input[type=email], input:not([type]) {
   display: flex; align-items: center; gap: .5rem; font-family: var(--mono);
   font-size: .82rem; color: var(--ink-soft); border-top: 1px dashed #d5d2cb; padding-top: .45rem;
 }
+
+/* On a board whose rows open, they have to look like they do. */
+table.board.rows-open tr[data-row] { cursor: pointer; }
+table.board.rows-open tr[data-row]:hover td { background: #f1efe9; }
+table.board.rows-open tr.open td { background: #f1efe9; font-weight: 600; }
 
 .medal {
   width: 12px; height: 12px; border-radius: 50%; display: inline-block;
@@ -215,7 +227,23 @@ body.playing { overflow: hidden; background: #9ed2f0; }
           right: calc(14px + env(safe-area-inset-right, 0px));
           display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
 .hud-bl { position: absolute; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
-          left: calc(14px + env(safe-area-inset-left, 0px)); }
+          left: calc(14px + env(safe-area-inset-left, 0px));
+          display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+/* Restart and last-checkpoint, sitting on the minimap. Both are things you reach
+   for mid-run after a mistake, so they cannot be behind a menu - and this is the
+   corner your eye is already in when you have just gone off. On a phone the
+   touch buttons do this job, so these would be two dead icons in the way. */
+.mapbtns { display: flex; gap: 6px; }
+body.touch .mapbtns { display: none; }
+
+/* The host's one decision, where nobody has to look for it. */
+.hud-tc { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px));
+          left: 50%; transform: translateX(-50%); }
+.btn.start-race {
+  background: var(--red); color: #fff; border-color: rgba(0, 0, 0, .35);
+  font-size: 1.05rem; padding: .5rem 1.5rem;
+  box-shadow: 0 6px 22px rgba(232, 69, 60, .4);
+}
 .hud-bc { position: absolute; bottom: calc(12px + env(safe-area-inset-bottom, 0px));
           left: 50%; transform: translateX(-50%); width: 340px; max-width: 60vw;
           text-align: center; }
@@ -373,6 +401,161 @@ body.touch .hint-touch { display: inline; }
 .sheet-actions .btn { width: 100%; }
 @media (max-width: 520px) { .sheet-actions { grid-template-columns: 1fr; } }
 
+/* --- panels that close with an X -----------------------------------------
+   Settings, the board and the track switcher are all "a thing you opened", so
+   they all close the same way and in the same place, rather than each ending in
+   its own differently-worded button. */
+.sheet-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; margin-bottom: .5rem;
+}
+.sheet-head h2 { margin: 0; }
+.sheet-x {
+  flex: none; width: 36px; height: 36px; border-radius: 9px; cursor: pointer;
+  background: transparent; border: 2px solid var(--line); color: var(--ink);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.sheet-x:hover { background: #f1efe9; }
+.sheet-x svg {
+  width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2.4;
+  stroke-linecap: round;
+}
+/* Leaving is the last thing on the sheet and the only red thing on it: it is
+   the one control here you cannot undo by pressing it again. */
+.sheet-foot { margin-top: 1.3rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+.btn.danger { background: var(--red); color: #fff; width: 100%; }
+.btn.danger:hover { background: #d13c33; }
+
+/* --- a row of exclusive choices ------------------------------------------ */
+.opt-row { display: flex; flex-wrap: wrap; gap: .4rem; }
+.opt {
+  font-family: var(--display); font-weight: 600; font-size: .95rem;
+  padding: .38rem .8rem; border-radius: 999px; cursor: pointer;
+  background: #fff; color: var(--ink); border: 2px solid var(--line);
+}
+.opt:hover { background: #f1efe9; }
+.opt.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.ghost-now { margin: .55rem 0 0; font-size: .9rem; color: var(--ink-soft); }
+
+/* --- the board, in the game ---------------------------------------------- */
+.board-sheet, .tracks-sheet { max-width: 780px; }
+.board-split { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem; }
+.board-list { max-height: 52vh; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.brow {
+  display: flex; align-items: center; gap: .5rem; width: 100%;
+  padding: .35rem .5rem; border-radius: 8px; cursor: pointer;
+  background: transparent; border: 1px solid transparent; color: var(--ink);
+  font-family: var(--sans); font-size: .95rem; text-align: left;
+}
+.brow:hover { background: #f1efe9; }
+.brow.open { border-color: var(--ink); background: #f1efe9; }
+.brow.me { font-weight: 700; }
+.brow-pos { width: 1.6rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.brow-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brow-ms { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.board-detail { border-left: 1px solid var(--line); padding-left: .9rem; min-height: 12rem; }
+.board-detail .empty { margin-top: 2.5rem; text-align: center; }
+.bd-head { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+.bd-time {
+  font-family: var(--mono); font-size: 1.9rem; font-weight: 700; line-height: 1;
+  font-variant-numeric: tabular-nums; letter-spacing: -.03em;
+}
+.bd-who { display: flex; align-items: center; gap: .35rem; color: var(--ink-soft); }
+.bd-splits { margin: .8rem 0; display: flex; flex-direction: column; gap: 1px; }
+/* Their split, then what it is worth against yours - which is the only part of
+   somebody else's lap you can act on. */
+.sp { display: grid; grid-template-columns: 3.4rem 1fr auto; gap: .5rem;
+      font-size: .92rem; padding: .12rem 0; }
+.sp span { color: var(--ink-soft); }
+.sp b { font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 600; }
+.sp i { font-style: normal; font-family: var(--mono); font-size: .85rem; }
+.sp i.ahead { color: #1f9d55; }
+.sp i.behind { color: var(--red); }
+.bd-actions { display: grid; gap: .45rem; }
+@media (max-width: 620px) {
+  .board-split { grid-template-columns: 1fr; }
+  .board-detail { border-left: 0; border-top: 1px solid var(--line); padding: .8rem 0 0; }
+  .board-list { max-height: 30vh; }
+}
+
+/* --- the track switcher --------------------------------------------------
+   Cards big enough to recognise a place from. The picture is the point: nine
+   names in a list are nine names, and nine pictures are nine tracks. */
+.tgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem;
+         max-height: 66vh; overflow: auto; }
+.tcard2 {
+  display: flex; flex-direction: column; text-align: left; cursor: pointer;
+  background: #fff; border: 2px solid var(--line); border-radius: 12px;
+  overflow: hidden; color: var(--ink); font-family: var(--sans); padding: 0;
+}
+.tcard2:hover { transform: translate(-1px, -2px); border-color: var(--ink); }
+.tcard2.active { border-color: var(--red); }
+.tcard2-img {
+  display: block; aspect-ratio: 16 / 9; background: #dfe4ea center/cover no-repeat;
+  border-bottom: 1px solid var(--line); position: relative;
+}
+/* "Now" only on the one you are driving, so the grid says where you are as well
+   as where you could go. */
+.tcard2-live { display: none; }
+.tcard2.active .tcard2-live {
+  display: block; position: absolute; top: .35rem; left: .35rem;
+  background: var(--red); color: #fff; font-size: .62rem; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase; padding: .1rem .35rem;
+  border-radius: 4px;
+}
+.tcard2-body { display: flex; flex-direction: column; gap: .25rem; padding: .5rem .6rem .6rem; }
+/* The name stays on one line and the pips stay on the right, so a long name
+   cannot make one card taller than the two beside it. */
+.tcard2-top { display: flex; align-items: center; gap: .4rem; }
+.tcard2-top b {
+  font-family: var(--display); font-size: 1rem; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tcard2-top .diff { flex: none; }
+.tcard2-blurb {
+  color: var(--ink-soft); font-size: .8rem; line-height: 1.35;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.tcard2-foot { display: flex; align-items: center; gap: .35rem; font-size: .8rem;
+               font-variant-numeric: tabular-nums; }
+.tcard2-foot .wr { margin-left: auto; color: var(--ink-soft); }
+/* Everyone sees the same grid in a room; for a guest it just does not pick. */
+.tgrid.locked .tcard2 { cursor: default; opacity: .75; }
+.tgrid.locked .tcard2:hover { transform: none; border-color: var(--line); }
+.tgrid.locked .tcard2.active { opacity: 1; border-color: var(--red); }
+@media (max-width: 760px) { .tgrid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px) { .tgrid { grid-template-columns: 1fr; } }
+
+/* --- watching a replay ---------------------------------------------------
+   Everything on the HUD is about your run, and during a replay none of it is
+   true, so all of it goes and this is what is left. */
+body.watching .hud-bc, body.watching .hud-bl, body.watching .hud-tr,
+body.watching #touch, body.watching #startHint { display: none; }
+#watchBar {
+  position: fixed; z-index: 40; left: 50%; transform: translateX(-50%);
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  display: flex; align-items: center; gap: .8rem;
+  background: var(--hud); color: #fff; border: 1px solid var(--hud-line);
+  border-radius: 999px; padding: .45rem .5rem .45rem 1.1rem;
+  backdrop-filter: blur(6px); font-family: var(--sans);
+}
+#watchBar b { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.btn.small { font-size: .85rem; padding: .3rem .8rem; }
+
+/* Preview-picture mode: the track and the sky, nothing else on the glass. */
+body.shot .hud, body.shot #touch, body.shot #rotate, body.shot .side { display: none; }
+
+/* --- a guest's times, saved on the way in --------------------------------- */
+.pending-note {
+  position: fixed; z-index: 80; left: 50%; bottom: 22px;
+  transform: translate(-50%, 12px); opacity: 0;
+  transition: opacity .35s ease, transform .35s ease;
+  background: var(--ink); color: var(--paper); font-family: var(--sans);
+  font-size: .95rem; padding: .55rem 1.1rem; border-radius: 999px;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, .28);
+}
+.pending-note.show { opacity: 1; transform: translate(-50%, 0); }
+
 /* --- the results sheet ---------------------------------------------------
    A three-column grid whose middle column holds the time and its rank, so the
    time is centred on the *panel* and the medal hangs off its right rather than
@@ -470,13 +653,6 @@ body.side-open .hud-tr { transform: translateX(calc(-1 * min(300px, 80vw))); }
 .pl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pl-elo { margin-left: auto; font-family: var(--mono); font-size: .75rem; color: #b9c2d0; }
 .kick { background: none; border: 0; color: #ff8a7a; cursor: pointer; font-size: 1rem; }
-.tracklist { display: flex; flex-direction: column; gap: 2px; max-height: 168px; overflow: auto; }
-.tpick {
-  text-align: left; background: rgba(255,255,255,.06); border: 1px solid transparent;
-  color: #fff; font-family: var(--sans); font-size: .82rem; border-radius: 6px;
-  padding: .28rem .45rem; cursor: pointer;
-}
-.tpick.active { border-color: #ffd96b; color: #ffd96b; }
 /* Chat is the last block in the drawer and takes whatever height is left, so
    the input sits on the floor of the panel however many players are listed. */
 .side-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: auto; }
@@ -509,7 +685,7 @@ body.touch #touch { display: block; }
   backdrop-filter: blur(3px);
 }
 .tbtn.down { background: rgba(255, 255, 255, .5); color: #12141c; }
-/* The brake, double-tapped into the handbrake. It has to be obvious that you
+/* An arrow, double-tapped into the handbrake. It has to be obvious that you
    asked for something different, or the slide reads as the car misbehaving. */
 .tbtn.drifting, .tbtn.drifting.down {
   border-color: #ffd96b; color: #ffd96b; background: rgba(120, 84, 12, .55);
@@ -522,7 +698,13 @@ body.touch #touch { display: block; }
 }
 /* Respawning and restarting are driving actions, so they sit with the driving
    controls rather than two taps deep in a menu - but small, because you should
-   rarely need either. */
+   rarely need either.
+   They live above the *pedals*, not the steering: you reach for them having just
+   gone off, which is the moment the right thumb has stopped driving and the left
+   one is still holding a corner. Stretched across the pad so the flag sits over
+   the brake and restart over the throttle, which keeps each one under the thumb
+   position it is nearest to. */
+.tpad.right .utils { align-self: stretch; justify-content: space-between; }
 .tbtn.small { width: 44px; height: 44px; opacity: .8; }
 .tbtn.small svg { width: 21px; height: 21px; }
 #tGas { border-color: rgba(140, 240, 170, .6); }
@@ -583,8 +765,14 @@ body.side-open #touch { display: none; }
 @media (max-height: 460px) {
   .hud-tr .card.medals { display: none; }
   .countdown { font-size: 4.5rem; }
-  .hud-bl { top: calc(76px + env(safe-area-inset-top, 0px)); }
+  /* `bottom` has to be released as well as `top` set: an absolutely positioned
+     box with both is stretched between them, so the map ended up at the top of
+     a full-height column - directly on top of the track card - on any screen
+     short enough for this rule but too wide for the narrow one. */
+  .hud-bl { top: calc(76px + env(safe-area-inset-top, 0px)); bottom: auto; }
   #minimap { width: 96px; height: 74px; }
   .trackname { font-size: 1.05rem; }
+  /* The blurb is the first thing to go when the height is what is short. */
+  .trackblurb { display: none; }
   #startHint { bottom: 52%; }
 }

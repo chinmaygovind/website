@@ -17,6 +17,13 @@
 </head>
 <body class="{% block bodyclass %}{% endblock %}">
   {% block body %}{% endblock %}
+  <!-- Before any page's own script: a guest's unsaved times are handed over the
+       moment the browser is logged in, whichever page that turns out to be. -->
+  <script>
+    window.DRIVE_USER = {{ 'true' if current_user else 'false' }};
+    window.DRIVE_TRACK_NAMES = {{ track_names|tojson }};
+  </script>
+  <script src="{{ url_for('static', filename='js/pending.js') }}?v={{ asset_version }}"></script>
   {% block scripts %}{% endblock %}
   <script>
     if ('serviceWorker' in navigator) {

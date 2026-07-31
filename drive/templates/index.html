@@ -1,45 +1,22 @@
 {% extends "base.html" %}
 {% block title %}Drive{% endblock %}
-{% set active_page = 'tracks' %}
+{% set active_page = 'home' %}
 {% block body %}
 {% include "_nav.html" %}
+{# The home page is no longer the way in - Drive now and the Solo tab both go
+   straight to /solo, which puts you back on the track you were last driving and
+   lets you change it from in there. So this page leads with what the game is,
+   and keeps the track list underneath as a way of going to a specific one. #}
 <div class="wrap">
-  <h1>Pick a track and drive.</h1>
-  <p class="lede">Low-poly time trials. Beat the medal times, then beat everyone else's.
-    {% if not current_user %}<a href="/login">Log in</a> to put your times on the board, or just start driving.{% endif %}
+  <h1>Low-poly time trials.</h1>
+  <p class="lede">Nine tracks, three medal times each, and a ghost of your best lap to chase.
+    {% if not current_user %}<a href="/login">Log in</a> to put your times on the board, or just start driving -
+    anything you set as a guest is saved and goes up when you do.{% endif %}
   </p>
 
-  <div class="row" style="margin:.9rem 0 1.6rem">
-    <a class="btn big" href="/solo/{{ tracks[0].slug }}">Drive now</a>
+  <div class="row" style="margin:.9rem 0 1.8rem">
+    <a class="btn big" href="/solo">Drive now</a>
     <a class="btn secondary big" href="/lobbies">Race people</a>
-  </div>
-
-  <h2>Tracks</h2>
-  <div class="tracks">
-    {% for t in tracks %}
-    {% set pb = pbs.get(t.slug) %}
-    {% set rec = records.get(t.slug) %}
-    <a class="tcard" href="/solo/{{ t.slug }}">
-      <div class="tcard-top">
-        <h3>{{ t.name }}</h3>
-        <span class="diff" title="Difficulty {{ t.difficulty }}/5">
-          {% for i in range(5) %}<span class="pip {% if i < t.difficulty %}on{% endif %}"></span>{% endfor %}
-        </span>
-      </div>
-      <div class="blurb">{{ t.blurb }}</div>
-      <div class="tcard-foot">
-        {% if pb %}
-          <span class="medal {{ pb.medal_shown or 'none' }}"></span>
-          <span>{{ '%d:%06.3f'|format((pb.time_ms // 60000), (pb.time_ms % 60000) / 1000) }}</span>
-        {% else %}
-          <span class="medal none"></span><span>not driven</span>
-        {% endif %}
-        <span style="margin-left:auto">
-          {% if rec %}★ {{ '%d:%06.3f'|format((rec[0] // 60000), (rec[0] % 60000) / 1000) }} {{ rec[1] }}{% else %}no record yet{% endif %}
-        </span>
-      </div>
-    </a>
-    {% endfor %}
   </div>
 
   <h2>How it works</h2>
@@ -48,10 +25,43 @@
   restart from the last checkpoint you crossed - the clock keeps going.</p>
   <p>Three medal times per track, from bronze up to <b>gold</b>, which is a lap
   driven about as well as the track allows. Your best run on each track is saved
-  as a <b>ghost</b> you can race against, and the fastest ghost on each track is
-  there to chase too.</p>
+  as a <b>ghost</b> you can race against - so is the fastest lap on the track,
+  and so is anyone else's, straight off the leaderboard.</p>
   <p>In multiplayer everyone drives the same track together. The host starts a
   countdown when people are ready; between races you can keep practising in the
   same room. Cars are solid - bumping is allowed and encouraged.</p>
+
+  <h2>Tracks</h2>
+  <div class="tracks">
+    {% for t in tracks %}
+    {% set pb = pbs.get(t.slug) %}
+    {% set rank = ranks.get(t.slug) %}
+    {% set rec = records.get(t.slug) %}
+    <a class="tcard" href="/solo/{{ t.slug }}">
+      <div class="tshot" style="background-image:url('/static/img/tracks/{{ t.slug }}.png?v={{ asset_version }}')"></div>
+      <div class="tcard-in">
+        <div class="tcard-top">
+          <h3>{{ t.name }}</h3>
+          <span class="diff" title="Difficulty {{ t.difficulty }}/5">
+            {% for i in range(5) %}<span class="pip {% if i < t.difficulty %}on{% endif %}"></span>{% endfor %}
+          </span>
+        </div>
+        <div class="blurb">{{ t.blurb }}</div>
+        <div class="tcard-foot">
+          {% if pb %}
+            <span class="medal {{ pb.medal_shown or 'none' }}"></span>
+            {# A time means nothing on its own, so it never appears without its place. #}
+            <span>{{ '%d:%06.3f'|format((pb.time_ms // 60000), (pb.time_ms % 60000) / 1000) }}{% if rank %} (#{{ rank }}){% endif %}</span>
+          {% else %}
+            <span class="medal none"></span><span>not driven</span>
+          {% endif %}
+          <span style="margin-left:auto">
+            {% if rec %}★ {{ '%d:%06.3f'|format((rec[0] // 60000), (rec[0] % 60000) / 1000) }} {{ rec[1] }}{% else %}no record yet{% endif %}
+          </span>
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
 </div>
 {% endblock %}

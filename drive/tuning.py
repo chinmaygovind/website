@@ -146,10 +146,11 @@ MEDAL_MULT = {
     "silver": 1.18,
     "bronze": 1.42,
 }
-# A submitted time below ideal * this is not physically reachable and is
-# rejected. It has to sit safely below the fastest medal or a genuine gold lap
-# would be thrown away - and well below it, since gold is emphatically beatable.
-MIN_PLAUSIBLE = 0.80
+# There is deliberately no lower bound on a submitted time. `ideal` is an
+# estimate off a relaxed racing line, not a limit, and it is beatable by anyone
+# who has learned the track - so a floor derived from it rejected good laps for
+# being good. What a run has to survive is in `runcheck.validate`, and all of it
+# is about the replay rather than the number.
 
 _EXPORT = [
     "CELL", "ROAD_W", "LEVEL", "CAR_LEN", "CAR_WID", "CAR_HEI", "RIDE_HEIGHT",
