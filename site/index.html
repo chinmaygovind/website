@@ -288,24 +288,49 @@
         flex-direction: column;
         gap: 0.5rem;
       }
-      .media-frame {
-        flex: 1;
-        min-height: 0;
+      .media-frame { flex: 1; min-height: 0; }
+      .media-frame a { display: contents; }
+
+      /* ---- fit frame ----
+         One filled box that takes any aspect ratio. A photo whose shape does not
+         match its slot leaves empty space either side; cropping it loses the shot
+         and letterboxing it leaves a dead bar. So the frame is filled with a
+         blurred, blown-up copy of that same photo, with the shot on top at its own
+         aspect ratio -- the leftover space becomes the shot's own colour.
+         Used by every modal photo AND by the concert stage. `fitFrame` in the
+         script is the only thing that adds it, because the backdrop has to be the
+         media's own src and there is no build step to author that twice. */
+      .fit-frame {
+        position: relative;
+        overflow: hidden;
+        border-radius: 6px;
+        background: #0d0d0d;
         display: flex;
         align-items: center;
         justify-content: center;
-        overflow: hidden;
       }
-      .media-frame a { display: contents; }
-      .media-img {
+      .fit-bg {
+        position: absolute;
+        inset: 0;
+        background-size: cover;
+        background-position: center;
+        filter: blur(26px) saturate(1.4) brightness(0.6);
+        transform: scale(1.2);
+      }
+      /* position:relative keeps the media above .fit-bg, which is absolutely
+         positioned and would otherwise paint over a static sibling */
+      .fit-frame img,
+      .fit-frame video {
+        position: relative;
         max-width: 100%;
         max-height: 100%;
         width: auto;
         height: auto;
         object-fit: contain;
-        border-radius: 6px;
         display: block;
       }
+      .fit-frame .placeholder { position: relative; }
+      .media-img { border-radius: 6px; }
       .modal-whale .media-img {
         border: 2px solid #000;
         border-radius: 0;
@@ -502,22 +527,47 @@
         flex-direction: column;
         gap: 1rem;
       }
-      .concert-photos {
+      /* the stage is a .fit-frame (added by the script) plus its own size and
+         border -- the aspect-ratio handling itself lives up in .fit-frame */
+      .concert-stage {
         flex: 1;
-        min-height: 0;
-        overflow-y: auto;
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-        gap: 0.5rem;
-        align-content: start;
-      }
-      .concert-photo {
-        width: 100%;
-        height: 140px;
-        object-fit: cover;
-        border-radius: 6px;
+        min-height: 220px;
+        border-radius: 8px;
         border: 2px solid #000;
       }
+      /* which shot you are on, and a way to jump straight to a clip */
+      .concert-thumbs {
+        display: flex;
+        gap: 0.4rem;
+        overflow-x: auto;
+        flex-shrink: 0;
+        padding-bottom: 0.15rem;
+      }
+      .concert-thumb {
+        position: relative;
+        flex: 0 0 auto;
+        width: 52px;
+        height: 40px;
+        padding: 0;
+        border: 2px solid transparent;
+        border-radius: 5px;
+        overflow: hidden;
+        cursor: pointer;
+        background: #0d0d0d;
+        opacity: 0.55;
+      }
+      .concert-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+      .concert-thumb:hover { opacity: 0.85; }
+      .concert-thumb.is-current { opacity: 1; border-color: #000; }
+      .concert-thumb .play-dot {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.35);
+      }
+      .concert-thumb .play-dot svg { width: 14px; height: 14px; fill: #fff; }
       .concert-nav {
         display: flex;
         align-items: center;
@@ -616,7 +666,9 @@
         }
         .pdf-wrap { flex: none; height: 60vh; height: 60dvh; }
         .media { flex: none; }
-        .media-img { max-height: 46vh; max-height: 46dvh; }
+        /* needs to outrank `.fit-frame img`, and must not catch the concert
+           stage, which is sized by .concert-stage instead */
+        .fit-frame .media-img { max-height: 46vh; max-height: 46dvh; }
         .placeholder { flex: none; height: 26vh; height: 26dvh; }
         /* the top half is full width now, so shift the gif clear of the close X */
         .modal-icon { top: 1.1rem; right: 3.2rem; }
@@ -627,8 +679,8 @@
         .spotify-track-play svg { width: 10px; height: 10px; }
         .spotify-track-name { font-size: 0.95rem; }
         .spotify-track-artist { font-size: 0.85rem; }
-        .concert-photos { flex: none; max-height: 240px; }
-        .concert-photo { height: 110px; }
+        .concert-stage { flex: none; height: 260px; min-height: 0; }
+        .concert-thumb { width: 46px; height: 36px; }
       }
     </style>
   </head>
@@ -887,10 +939,14 @@
           </div>
           <div class="pane pane-right">
             <div class="media">
-              <img class="media-img" src="assets/racing/teamphoto.jpeg" alt="My racing team" />
+              <div class="media-frame">
+                <img class="media-img" src="assets/racing/teamphoto.jpeg" alt="My racing team" />
+              </div>
             </div>
             <div class="media">
-              <img class="media-img" src="assets/racing/raceengineering.png" alt="Race engineering work" />
+              <div class="media-frame">
+                <img class="media-img" src="assets/racing/raceengineering.png" alt="Race engineering work" />
+              </div>
             </div>
           </div>
         </div>
@@ -910,10 +966,14 @@
           </div>
           <div class="pane pane-right">
             <div class="media">
-              <img class="media-img" src="assets/ttr/irl_play.jpg" alt="Me and my friends playing TTR" />
+              <div class="media-frame">
+                <img class="media-img" src="assets/ttr/irl_play.jpg" alt="Me and my friends playing TTR" />
+              </div>
             </div>
             <div class="media">
-              <img class="media-img" src="assets/ttr/gameplay.png" alt="An example game of playing on my site" />
+              <div class="media-frame">
+                <img class="media-img" src="assets/ttr/gameplay.png" alt="An example game of playing on my site" />
+              </div>
             </div>
           </div>
         </div>
@@ -933,10 +993,14 @@
           </div>
           <div class="pane pane-right">
             <div class="media">
-              <img class="media-img" src="assets/ers/irl_play.png" alt="Me and my friends playing ERS in high school" />
+              <div class="media-frame">
+                <img class="media-img" src="assets/ers/irl_play.png" alt="Me and my friends playing ERS in high school" />
+              </div>
             </div>
             <div class="media">
-              <img class="media-img" src="assets/ers/gameplay.png" alt="An example game on my site" />
+              <div class="media-frame">
+                <img class="media-img" src="assets/ers/gameplay.png" alt="An example game on my site" />
+              </div>
             </div>
           </div>
         </div>
@@ -955,7 +1019,9 @@
             <p class="pane-text">This is my version of King of Tokyo, the dice game where giant monsters fight over Tokyo. Grab friends for a room or fill the table with bots. Click <a class="here-link" href="https://kot.cgovind.com" target="_blank" rel="noopener">here</a> to play!</p>
           </div>
           <div class="pane pane-right">
-            <!-- swap each placeholder for <img class="media-img" src="assets/kot/…" alt="…" /> -->
+            <!-- swap each placeholder for
+                 <div class="media-frame"><img class="media-img" src="assets/kot/…" alt="…" /></div>
+                 and the blurred fit frame comes with it -->
             <div class="media">
               <div class="placeholder">photo coming soon</div>
             </div>
@@ -993,9 +1059,10 @@
             </div>
           </div>
           <div class="pane pane-right concert-pane">
-            <div class="concert-photos" id="concert-photos">
+            <div class="concert-stage" id="concert-stage">
               <div class="placeholder">concert photos coming soon</div>
             </div>
+            <div class="concert-thumbs" id="concert-thumbs"></div>
             <div class="concert-nav">
               <button class="concert-arrow" id="concert-prev" type="button" aria-label="Previous concert" disabled>&#8249;</button>
               <div class="concert-caption">
@@ -1052,6 +1119,9 @@
       function closeModal(modal) {
         modal.hidden = true;
         document.body.style.overflow = "";
+        // hiding the modal does not stop playback, so a concert clip would keep
+        // playing its audio over a page that looks idle
+        modal.querySelectorAll("video").forEach(function (v) { v.pause(); });
       }
       document.querySelectorAll(".modal").forEach(function (modal) {
         modal.querySelectorAll("[data-close]").forEach(function (el) {
@@ -1062,6 +1132,30 @@
         if (e.key === "Escape") {
           document.querySelectorAll(".modal:not([hidden])").forEach(closeModal);
         }
+      });
+
+      // Make `box` a fit frame (see .fit-frame in the stylesheet): fill it with a
+      // blurred, blown-up copy of `src` behind whatever media it holds, so a shot
+      // whose shape does not match the box sits on its own colour, not a bar.
+      // Every modal photo and the concert stage go through here.
+      function fitFrame(box, src) {
+        box.classList.add("fit-frame");
+        var bg = box.querySelector(".fit-bg");
+        if (!bg) {
+          bg = document.createElement("div");
+          bg.className = "fit-bg";
+          box.insertBefore(bg, box.firstChild);
+        }
+        // assigned as a property rather than built into a style string, so a
+        // filename containing a quote or a bracket cannot break out of the rule
+        bg.style.backgroundImage = src ? 'url("' + encodeURI(src) + '")' : "";
+      }
+
+      // every static modal photo sits in a .media-frame, whether or not it is
+      // also wrapped in a link
+      document.querySelectorAll(".media-frame").forEach(function (frame) {
+        var img = frame.querySelector("img");
+        fitFrame(frame, img ? img.getAttribute("src") : "");
       });
 
       // fast facts: live age from birthday (Jul 31 2006)
@@ -1077,17 +1171,22 @@
         if (el) el.textContent = age;
       })();
 
+      // Every live pane fetches JSON and patches itself in. Failure is silent by
+      // design: each one already has a sensible placeholder in the markup, so a
+      // missing API key or an offline box just leaves the page as authored.
+      function getJSON(url, fn) {
+        fetch(url)
+          .then(function (r) { return r.json(); })
+          .then(fn)
+          .catch(function () {});
+      }
+
       // fast facts: live Duolingo streak via the same-origin proxy in app.py
-      // (falls back to the number already in the page if the fetch fails)
-      fetch("/api/duolingo-streak")
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (d && typeof d.streak === "number") {
-            var el = document.getElementById("fact-duo");
-            if (el) el.textContent = d.streak;
-          }
-        })
-        .catch(function () {});
+      getJSON("/api/duolingo-streak", function (d) {
+        if (!d || typeof d.streak !== "number") return;
+        var el = document.getElementById("fact-duo");
+        if (el) el.textContent = d.streak;
+      });
 
       // music tile: names/urls below come from Spotify's API or my own JSON,
       // but escape anyway since they land in innerHTML
@@ -1098,107 +1197,170 @@
       }
 
       // music tile: recently played, from chinmay's Spotify via the
-      // same-origin proxy in app.py (see /api/spotify/*). Leaves the
-      // "not connected yet" placeholder already in the markup on failure.
-      fetch("/api/spotify/recent")
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (!d || !d.tracks || !d.tracks.length) return;
-          var el = document.getElementById("spotify-tracks");
-          el.innerHTML = d.tracks.map(function (t) {
-            var tag = t.url ? "a" : "span";
-            var attrs = t.url
-              ? ' href="' + escapeHtml(t.url) + '" target="_blank" rel="noopener"'
-              : "";
-            return (
-              "<li><" + tag + ' class="spotify-track-link"' + attrs + ">" +
-              '<span class="spotify-track-art">' +
-              (t.image ? '<img src="' + escapeHtml(t.image) + '" alt="" />' : "") +
-              (t.url
-                ? '<span class="spotify-track-play" aria-hidden="true">' +
-                  '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>'
-                : "") +
-              "</span>" +
-              '<span class="spotify-track-info">' +
-              '<span class="spotify-track-name">' + escapeHtml(t.name) + "</span>" +
-              '<span class="spotify-track-artist">' + escapeHtml(t.artist) + "</span>" +
-              "</span>" +
-              "</" + tag + "></li>"
-            );
-          }).join("");
-        })
-        .catch(function () {});
+      // same-origin proxy in app.py (see /api/spotify/*)
+      getJSON("/api/spotify/recent", function (d) {
+        if (!d || !d.tracks || !d.tracks.length) return;
+        var el = document.getElementById("spotify-tracks");
+        el.innerHTML = d.tracks.map(function (t) {
+          var tag = t.url ? "a" : "span";
+          var attrs = t.url
+            ? ' href="' + escapeHtml(t.url) + '" target="_blank" rel="noopener"'
+            : "";
+          return (
+            "<li><" + tag + ' class="spotify-track-link"' + attrs + ">" +
+            '<span class="spotify-track-art">' +
+            (t.image ? '<img src="' + escapeHtml(t.image) + '" alt="" />' : "") +
+            (t.url
+              ? '<span class="spotify-track-play" aria-hidden="true">' +
+                '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>'
+              : "") +
+            "</span>" +
+            '<span class="spotify-track-info">' +
+            '<span class="spotify-track-name">' + escapeHtml(t.name) + "</span>" +
+            '<span class="spotify-track-artist">' + escapeHtml(t.artist) + "</span>" +
+            "</span>" +
+            "</" + tag + "></li>"
+          );
+        }).join("");
+      });
 
       // music tile: top artists, same proxy
-      fetch("/api/spotify/top-artists")
-        .then(function (r) { return r.json(); })
-        .then(function (d) {
-          if (!d || !d.artists || !d.artists.length) return;
-          var el = document.getElementById("spotify-artists");
-          el.innerHTML = d.artists.map(function (a) {
-            return (
-              '<li class="spotify-artist">' +
-              (a.image ? '<img src="' + escapeHtml(a.image) + '" alt="" />' : "") +
-              "<span>" + escapeHtml(a.name) + "</span></li>"
-            );
-          }).join("");
-        })
-        .catch(function () {});
+      getJSON("/api/spotify/top-artists", function (d) {
+        if (!d || !d.artists || !d.artists.length) return;
+        var el = document.getElementById("spotify-artists");
+        el.innerHTML = d.artists.map(function (a) {
+          return (
+            '<li class="spotify-artist">' +
+            (a.image ? '<img src="' + escapeHtml(a.image) + '" alt="" />' : "") +
+            "<span>" + escapeHtml(a.name) + "</span></li>"
+          );
+        }).join("");
+      });
 
-      // music tile: concert photo carousel, driven by assets/music/concerts.json.
-      // To add a concert later: drop its photos anywhere under site/assets/music/
-      // and append { "artist": "...", "date": "...", "photos": ["assets/music/..."] }
-      // to that JSON file -- no code changes needed.
+      // music tile: concert gallery, driven by assets/music/concerts.json.
+      // To add a concert later: drop its media under site/assets/music/<slug>/ and
+      // append { "artist": "...", "date": "...", "photos": ["assets/music/..."],
+      // "videos": [{ "src": "assets/music/...", "poster": "assets/music/..." }] }
+      // to that JSON file -- no code changes needed. Both lists are optional.
+      // Newest concert first; the carousel keeps whatever order the file has.
       (function () {
-        var idx = 0;
-        var concerts = [];
-        var photosEl = document.getElementById("concert-photos");
+        var stage = document.getElementById("concert-stage");
+        if (!stage) return;
+        var thumbs = document.getElementById("concert-thumbs");
         var artistEl = document.getElementById("concert-artist");
         var dateEl = document.getElementById("concert-date");
         var prevBtn = document.getElementById("concert-prev");
         var nextBtn = document.getElementById("concert-next");
-        if (!photosEl) return;
 
-        function render() {
-          if (!concerts.length) {
-            photosEl.innerHTML = '<div class="placeholder">concert photos coming soon</div>';
-            artistEl.textContent = "—";
-            dateEl.textContent = "";
-            prevBtn.disabled = true;
-            nextBtn.disabled = true;
-            return;
-          }
-          var c = concerts[idx];
-          photosEl.innerHTML = (c.photos || []).map(function (src) {
-            return (
-              '<img class="concert-photo" src="' + escapeHtml(src) + '" ' +
-              'alt="' + escapeHtml(c.artist) + ' concert photo" loading="lazy" />'
-            );
-          }).join("");
-          artistEl.textContent = c.artist || "—";
-          dateEl.textContent = c.date || "";
-          prevBtn.disabled = concerts.length < 2;
-          nextBtn.disabled = concerts.length < 2;
+        var concerts = [];
+        var concertIdx = 0;
+        var shotIdx = 0;   // which photo or clip within the current concert
+
+        // one concert's media as a single list, photos then clips; the stage and
+        // the thumb strip both walk it, so they cannot disagree about the order
+        function shotsOf(c) {
+          if (!c) return [];
+          var shots = (c.photos || []).map(function (src) {
+            return { video: false, src: src, still: src };
+          });
+          (c.videos || []).forEach(function (v) {
+            shots.push({ video: true, src: v.src, still: v.poster || "" });
+          });
+          return shots;
         }
 
-        prevBtn.addEventListener("click", function () {
-          if (!concerts.length) return;
-          idx = (idx - 1 + concerts.length) % concerts.length;
+        // built as elements rather than an HTML string: the values come from a
+        // JSON file, and this way none of them is ever parsed as markup
+        function shotNode(shot, artist) {
+          if (!shot.video) {
+            var img = document.createElement("img");
+            img.src = shot.src;
+            img.alt = artist + " concert photo";
+            return img;
+          }
+          var video = document.createElement("video");
+          video.src = shot.src;
+          if (shot.still) video.poster = shot.still;
+          video.controls = true;
+          video.preload = "none";   // opening the modal must not pull 90MB of clips
+          video.playsInline = true;
+          video.setAttribute("aria-label", artist + " concert clip");
+          return video;
+        }
+
+        function thumbNode(shot, i) {
+          var btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "concert-thumb" + (i === shotIdx ? " is-current" : "");
+          btn.dataset.shot = i;
+          btn.setAttribute("aria-label", (shot.video ? "Clip " : "Photo ") + (i + 1));
+          if (shot.still) {
+            var img = document.createElement("img");
+            img.src = shot.still;
+            img.alt = "";
+            img.loading = "lazy";
+            btn.appendChild(img);
+          }
+          if (shot.video) {
+            var dot = document.createElement("span");
+            dot.className = "play-dot";
+            dot.innerHTML =
+              '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
+            btn.appendChild(dot);
+          }
+          return btn;
+        }
+
+        function placeholder(text) {
+          var div = document.createElement("div");
+          div.className = "placeholder";
+          div.textContent = text;
+          return div;
+        }
+
+        function render() {
+          var c = concerts[concertIdx];
+          var shots = shotsOf(c);
+          if (shotIdx >= shots.length) shotIdx = 0;
+          var shot = shots[shotIdx];
+
+          stage.textContent = "";
+          stage.appendChild(shot
+            ? shotNode(shot, c.artist || "")
+            : placeholder(c ? "no media for this one yet" : "concert photos coming soon"));
+          fitFrame(stage, shot ? shot.still : "");
+
+          thumbs.textContent = "";
+          if (shots.length > 1) {
+            shots.forEach(function (s, i) { thumbs.appendChild(thumbNode(s, i)); });
+          }
+
+          artistEl.textContent = (c && c.artist) || "—";
+          dateEl.textContent = (c && c.date) || "";
+          prevBtn.disabled = nextBtn.disabled = concerts.length < 2;
+        }
+
+        function goConcert(step) {
+          if (concerts.length < 2) return;
+          concertIdx = (concertIdx + step + concerts.length) % concerts.length;
+          shotIdx = 0;
           render();
-        });
-        nextBtn.addEventListener("click", function () {
-          if (!concerts.length) return;
-          idx = (idx + 1) % concerts.length;
+        }
+
+        prevBtn.addEventListener("click", function () { goConcert(-1); });
+        nextBtn.addEventListener("click", function () { goConcert(1); });
+        thumbs.addEventListener("click", function (e) {
+          var btn = e.target.closest(".concert-thumb");
+          if (!btn) return;
+          shotIdx = +btn.dataset.shot;
           render();
         });
 
-        fetch("assets/music/concerts.json")
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            if (Array.isArray(data)) concerts = data;
-            render();
-          })
-          .catch(function () {});
+        render();   // the empty state, until the file arrives
+        getJSON("assets/music/concerts.json", function (data) {
+          if (Array.isArray(data)) concerts = data;
+          render();
+        });
       })();
     </script>
   </body>

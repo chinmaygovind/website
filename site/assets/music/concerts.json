@@ -1,1 +1,151 @@
-[]
+[
+  {
+    "artist": "Travis Scott",
+    "date": "January 14, 2024",
+    "photos": [
+      "assets/music/travis-scott/travis-scott-02.jpg",
+      "assets/music/travis-scott/travis-scott-01.jpg",
+      "assets/music/travis-scott/travis-scott-03.jpg"
+    ],
+    "videos": [
+      {
+        "src": "assets/music/travis-scott/travis-scott-clip-01.mp4",
+        "poster": "assets/music/travis-scott/travis-scott-clip-01.jpg"
+      },
+      {
+        "src": "assets/music/travis-scott/travis-scott-clip-02.mp4",
+        "poster": "assets/music/travis-scott/travis-scott-clip-02.jpg"
+      }
+    ]
+  },
+  {
+    "artist": "PinkPantheress",
+    "date": "May 9, 2026",
+    "photos": [
+      "assets/music/pinkpantheress/pinkpantheress-01.jpg",
+      "assets/music/pinkpantheress/pinkpantheress-02.jpg"
+    ],
+    "videos": [
+      {
+        "src": "assets/music/pinkpantheress/pinkpantheress-clip-01.mp4",
+        "poster": "assets/music/pinkpantheress/pinkpantheress-clip-01.jpg"
+      },
+      {
+        "src": "assets/music/pinkpantheress/pinkpantheress-clip-02.mp4",
+        "poster": "assets/music/pinkpantheress/pinkpantheress-clip-02.jpg"
+      },
+      {
+        "src": "assets/music/pinkpantheress/pinkpantheress-clip-03.mp4",
+        "poster": "assets/music/pinkpantheress/pinkpantheress-clip-03.jpg"
+      }
+    ]
+  },
+  {
+    "artist": "Kendrick Lamar + SZA",
+    "date": "June 16, 2025",
+    "photos": [
+      "assets/music/kendrick-sza/kendrick-sza-01.jpg",
+      "assets/music/kendrick-sza/kendrick-sza-02.jpg",
+      "assets/music/kendrick-sza/kendrick-sza-03.jpg"
+    ],
+    "videos": [
+      {
+        "src": "assets/music/kendrick-sza/kendrick-sza-clip-01.mp4",
+        "poster": "assets/music/kendrick-sza/kendrick-sza-clip-01.jpg"
+      },
+      {
+        "src": "assets/music/kendrick-sza/kendrick-sza-clip-02.mp4",
+        "poster": "assets/music/kendrick-sza/kendrick-sza-clip-02.jpg"
+      }
+    ]
+  },
+  {
+    "artist": "Laufey",
+    "date": "October 24, 2025",
+    "photos": [
+      "assets/music/laufey/laufey-01.jpg",
+      "assets/music/laufey/laufey-02.jpg",
+      "assets/music/laufey/laufey-03.jpg"
+    ],
+    "videos": [
+      {
+        "src": "assets/music/laufey/laufey-clip-01.mp4",
+        "poster": "assets/music/laufey/laufey-clip-01.jpg"
+      },
+      {
+        "src": "assets/music/laufey/laufey-clip-02.mp4",
+        "poster": "assets/music/laufey/laufey-clip-02.jpg"
+      }
+    ]
+  },
+  {
+    "artist": "Flo Rida",
+    "date": "April 17, 2026",
+    "photos": [
+      "assets/music/flo-rida/flo-rida-01.jpg",
+      "assets/music/flo-rida/flo-rida-02.jpg"
+    ],
+    "videos": [
+      {
+        "src": "assets/music/flo-rida/flo-rida-clip-01.mp4",
+        "poster": "assets/music/flo-rida/flo-rida-clip-01.jpg"
+      }
+    ]
+  },
+  {
+    "artist": "Playboi Carti",
+    "date": "November 10, 2025",
+    "photos": [
+      "assets/music/playboi-carti/playboi-carti-01.jpg",
+      "assets/music/playboi-carti/playboi-carti-02.jpg",
+      "assets/music/playboi-carti/playboi-carti-03.jpg"
+    ],
+    "videos": [
+      {
+        "src": "assets/music/playboi-carti/playboi-carti-clip-01.mp4",
+        "poster": "assets/music/playboi-carti/playboi-carti-clip-01.jpg"
+      },
+      {
+        "src": "assets/music/playboi-carti/playboi-carti-clip-02.mp4",
+        "poster": "assets/music/playboi-carti/playboi-carti-clip-02.jpg"
+      }
+    ]
+  },
+  {
+    "artist": "The Weeknd + Playboi Carti",
+    "date": "July 31, 2025",
+    "photos": [
+      "assets/music/weeknd-carti/weeknd-carti-01.jpg",
+      "assets/music/weeknd-carti/weeknd-carti-02.jpg"
+    ],
+    "videos": [
+      {
+        "src": "assets/music/weeknd-carti/weeknd-carti-clip-01.mp4",
+        "poster": "assets/music/weeknd-carti/weeknd-carti-clip-01.jpg"
+      },
+      {
+        "src": "assets/music/weeknd-carti/weeknd-carti-clip-02.mp4",
+        "poster": "assets/music/weeknd-carti/weeknd-carti-clip-02.jpg"
+      },
+      {
+        "src": "assets/music/weeknd-carti/weeknd-carti-clip-03.mp4",
+        "poster": "assets/music/weeknd-carti/weeknd-carti-clip-03.jpg"
+      }
+    ]
+  },
+  {
+    "artist": "Sexyy Red",
+    "date": "April 4, 2025",
+    "photos": [
+      "assets/music/sexyy-red/sexyy-red-01.jpg",
+      "assets/music/sexyy-red/sexyy-red-02.jpg",
+      "assets/music/sexyy-red/sexyy-red-03.jpg"
+    ],
+    "videos": [
+      {
+        "src": "assets/music/sexyy-red/sexyy-red-clip-01.mp4",
+        "poster": "assets/music/sexyy-red/sexyy-red-clip-01.jpg"
+      }
+    ]
+  }
+]
