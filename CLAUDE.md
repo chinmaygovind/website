@@ -500,6 +500,15 @@ field from a dark field.
   other's window**, so left-right-left is a correction rather than a double-tap of
   left. That sequence is fast and common, and it is exactly the moment - mid-corner,
   already saving it - when an unasked-for handbrake does the most damage.
+  **`DOUBLE_TAP` is 50ms, which is far tighter than a normal double tap and is
+  meant to be.** The other correction is coming off *the same* arrow and putting
+  it straight back on, which is the exact shape of the gesture and cannot be told
+  apart by anything except speed - at 320ms it fired on half of them. A gap this
+  short is not something a thumb does while driving unless it means to.
+  `test_touch.py` expresses its waits as fractions of `DOUBLE_TAP` rather than in
+  milliseconds, so retuning the window retunes the tests instead of quietly
+  invalidating them, and one test pins the intent directly: a 150ms re-grab is
+  never a drift.
   Three earlier attempts are worth not repeating: a DRIFT button beside the pedals,
   which was literally unpressable; **brake-while-steering, which is unusable** -
   braking into a corner *is* steering, so it fired on essentially every corner and

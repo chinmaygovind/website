@@ -700,10 +700,9 @@ body.touch #touch { display: block; }
    rarely need either.
    They live above the *pedals*, not the steering: you reach for them having just
    gone off, which is the moment the right thumb has stopped driving and the left
-   one is still holding a corner. Stretched across the pad so the flag sits over
-   the brake and restart over the throttle, which keeps each one under the thumb
-   position it is nearest to. */
-.tpad.right .utils { align-self: stretch; justify-content: space-between; }
+   one is still holding a corner. Kept as a pair and pushed to the right - so
+   they sit over the throttle, where the thumb already rests - rather than spread
+   across the pad, which put a gap between two buttons that belong together. */
 .tbtn.small { width: 44px; height: 44px; opacity: .8; }
 .tbtn.small svg { width: 21px; height: 21px; }
 #tGas { border-color: rgba(140, 240, 170, .6); }

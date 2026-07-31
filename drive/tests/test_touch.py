@@ -81,6 +81,10 @@ bindInput();
 function press(id) { NOW += 1; $(id).fire('touchstart'); }
 function release(id) { NOW += 1; $(id).fire('touchend'); }
 function wait(ms) { NOW += ms; }
+// Expressed against the window rather than in fixed milliseconds, so retuning
+// DOUBLE_TAP retunes the tests instead of silently invalidating them.
+function quick() { wait(Math.max(1, Math.round(DOUBLE_TAP * 0.4))); }
+function slow() { wait(DOUBLE_TAP * 4 + 100); }
 function held() { var a = []; touchKeys.forEach(k => a.push(k)); return a.sort().join(','); }
 function drifting_() { return touchKeys.has('drift'); }
 function lit(id) { return $(id).classList.contains('drifting'); }
@@ -99,14 +103,14 @@ def test_a_single_press_just_steers():
 
 def test_double_tap_and_hold_an_arrow_is_the_handbrake():
     assert run("""
-      press('tLeft'); release('tLeft'); wait(100); press('tLeft');
+      press('tLeft'); release('tLeft'); quick(); press('tLeft');
       [drifting_(), held(), lit('tLeft')].join('|');
     """) == "true|drift,left|true"
 
 
 def test_either_arrow_drifts_on_its_own_double_tap():
     assert run("""
-      press('tRight'); release('tRight'); wait(100); press('tRight');
+      press('tRight'); release('tRight'); quick(); press('tRight');
       [drifting_(), held()].join('|');
     """) == "true|drift,right"
 
@@ -114,7 +118,7 @@ def test_either_arrow_drifts_on_its_own_double_tap():
 def test_letting_go_of_the_arrow_lets_go_of_the_handbrake():
     """Which is also how you catch the slide, so it has to be immediate."""
     assert run("""
-      press('tLeft'); release('tLeft'); wait(100); press('tLeft');
+      press('tLeft'); release('tLeft'); quick(); press('tLeft');
       release('tLeft');
       [drifting_(), held(), lit('tLeft')].join('|');
     """) == "false||false"
@@ -122,7 +126,23 @@ def test_letting_go_of_the_arrow_lets_go_of_the_handbrake():
 
 def test_a_slow_second_press_is_not_a_double_tap():
     assert run("""
-      press('tLeft'); release('tLeft'); wait(600); press('tLeft');
+      press('tLeft'); release('tLeft'); slow(); press('tLeft');
+      drifting_();
+    """) is False
+
+
+def test_re_grabbing_the_same_arrow_mid_corner_is_not_a_double_tap():
+    """The failure that set the window where it is.
+
+    Coming off an arrow and putting it straight back on is an ordinary
+    correction, made constantly, on the same arrow - which is the exact shape of
+    the gesture. At a relaxed window it fired on half of them and the car spent
+    the corner sideways. So the window has to be shorter than a thumb adjusting
+    its grip, which is what 150ms is standing in for here: a deliberate
+    double-tap is much faster than a correction, and nothing else is.
+    """
+    assert run("""
+      press('tLeft'); release('tLeft'); wait(150); press('tLeft');
       drifting_();
     """) is False
 
@@ -137,8 +157,8 @@ def test_a_correction_the_other_way_is_not_a_double_tap(a, b):
     other's window; only arrow-nothing-arrow counts.
     """
     assert run(f"""
-      press('{a}'); release('{a}'); wait(40);
-      press('{b}'); release('{b}'); wait(40);
+      press('{a}'); release('{a}'); quick();
+      press('{b}'); release('{b}'); quick();
       press('{a}');
       drifting_();
     """) is False
@@ -146,7 +166,7 @@ def test_a_correction_the_other_way_is_not_a_double_tap(a, b):
 
 def test_counter_steering_out_of_a_drift_drops_the_handbrake():
     assert run("""
-      press('tLeft'); release('tLeft'); wait(60); press('tLeft');
+      press('tLeft'); release('tLeft'); quick(); press('tLeft');
       press('tRight');
       release('tLeft');
       [drifting_(), held()].join('|');
@@ -157,7 +177,7 @@ def test_the_throttle_survives_starting_a_drift():
     """The whole point of putting the gesture on the steering thumb."""
     assert run("""
       press('tGas');
-      press('tLeft'); release('tLeft'); wait(60); press('tLeft');
+      press('tLeft'); release('tLeft'); quick(); press('tLeft');
       [drifting_(), held()].join('|');
     """) == "true|drift,left,up"
 
@@ -167,7 +187,7 @@ def test_a_pedal_never_drifts_however_fast_you_tap_it(pedal):
     """The gesture used to live on the brake. Tapping a pedal is now just tapping
     a pedal, so stabbing the brake into a corner cannot start a slide."""
     assert run(f"""
-      press('{pedal}'); release('{pedal}'); wait(50); press('{pedal}');
+      press('{pedal}'); release('{pedal}'); quick(); press('{pedal}');
       drifting_();
     """) is False
 
@@ -176,7 +196,7 @@ def test_a_cancelled_touch_releases_the_handbrake():
     """A notification tray or a palm can cancel a touch mid-corner; the car must
     not be left with the handbrake on and no way to let it off."""
     assert run("""
-      press('tLeft'); release('tLeft'); wait(60); press('tLeft');
+      press('tLeft'); release('tLeft'); quick(); press('tLeft');
       $('tLeft').fire('touchcancel');
       [drifting_(), held()].join('|');
     """) == "false|"

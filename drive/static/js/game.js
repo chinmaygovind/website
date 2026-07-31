@@ -105,7 +105,11 @@ const keys = new Set();          // keyboard
 // and the car spent the lap sideways. This replaced a third, the same
 // double-tap on the *brake*, which worked but charged the busy thumb a release
 // mid-corner and could not be reached from the throttle at all.
-const DOUBLE_TAP = 320;          // ms from letting go to the second tap
+// Deliberately tiny. At 320ms almost any mid-corner correction - come off the
+// arrow, put it straight back on - landed inside the window and started a slide
+// nobody asked for. A gap this short is not something your thumb does by
+// accident while driving; it only happens when you mean it.
+const DOUBLE_TAP = 50;           // ms from letting go to the second tap
 const touchDown = new Set();     // ids of touch buttons currently held
 const touchKeys = new Set();
 const TOUCH_KEYS = {
