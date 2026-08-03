@@ -209,6 +209,68 @@ table.board th { font-family: var(--display); font-size: 1rem; color: var(--ink-
 table.board td.num, table.board th.num { text-align: right; font-family: var(--mono); }
 table.board tr.me { background: #fff6d9; }
 
+/* --- account ------------------------------------------------------------
+   The profile used to be nine bordered boxes in a grid with the medal tally in
+   a tenth panel underneath, which made ten pieces of furniture out of one
+   thing: who you are and what you have done. It is one panel now. The figures
+   are just figures - no border each, since the panel already is the border -
+   and the medals sit under a hairline in the same box, because they are three
+   more of the same kind of number. */
+.profile { padding: 1.15rem 1.25rem; }
+.statgrid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 1rem .5rem;
+}
+.stat-cell b {
+  display: block; font-family: var(--mono); font-size: 1.5rem;
+  font-weight: 700; line-height: 1.05;
+}
+.stat-cell span {
+  display: block; margin-top: .15rem; font-size: .7rem; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--ink-soft);
+}
+.medalbar {
+  display: flex; flex-wrap: wrap; gap: .5rem 1.5rem;
+  margin-top: 1rem; padding-top: .85rem; border-top: 1px solid #e4e1da;
+}
+.mtally { display: flex; align-items: center; gap: .4rem; }
+.mtally .medal { width: 14px; height: 14px; }
+.mtally b { font-family: var(--mono); font-size: 1.05rem; }
+.mtally span { color: var(--ink-soft); font-size: .9rem; }
+
+/* Fixed columns, because on a 1080px page an auto table hands the whole of the
+   slack to the one column that wants it least - the track name, which is two
+   short words. */
+.acct-tracks { table-layout: fixed; }
+/* Track names are two short words, so they should never be the thing that
+   wraps - which is exactly what they do once the table is narrow enough to
+   scroll and the percentages become suggestions. */
+.acct-tracks td:first-child, .acct-tracks th:first-child { white-space: nowrap; }
+.acct-tracks .medalcell { display: flex; align-items: center; gap: .4rem; }
+.acct-actions { display: flex; gap: .4rem; justify-content: flex-end; }
+.btn.mini {
+  display: inline-flex; align-items: center; gap: .35rem;
+  font-size: .82rem; padding: .28rem .6rem; border-radius: 8px;
+  box-shadow: 2px 2px 0 rgba(29, 29, 31, .18);
+}
+.btn.mini:hover { transform: translate(-1px, -1px); }
+.btn.mini:active { transform: translate(1px, 1px); box-shadow: none; }
+/* Inline SVG, never a glyph - the same rule the in-game icons follow, for the
+   same reason: a Unicode wheel or trophy is a full-colour emoji on one platform
+   and a hairline outline on the next. */
+.icn {
+  width: 15px; height: 15px; flex: 0 0 auto; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+/* Below this the six columns cannot all be honest, so the table keeps its real
+   widths and scrolls inside the panel rather than crushing every one of them. */
+.tablewrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+@media (max-width: 700px) {
+  .acct-tracks { table-layout: auto; min-width: 620px; }
+  .statgrid { gap: .9rem .4rem; }
+  .stat-cell b { font-size: 1.3rem; }
+}
+
 /* =======================================================================
    In-game
    ======================================================================= */

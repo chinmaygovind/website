@@ -249,14 +249,20 @@ def _my_pb_map():
 
 
 def _records():
-    """{slug: (time_ms, username)} - the standing record on every track."""
+    """{slug: (time_ms, username, set_at)} - the standing record on every track.
+
+    ``set_at`` is the holder's ``updated_at``, which is when *this* lap was set:
+    a better run replaces the row wholesale and stamps it, so the column cannot
+    drift into meaning "when they first drove here".
+    """
     rows = (db.session.query(DriveTime.track, func.min(DriveTime.time_ms))
             .group_by(DriveTime.track).all())
     out = {}
     for slug, best in rows:
         holder = (DriveTime.query.filter_by(track=slug, time_ms=best)
                   .order_by(DriveTime.updated_at.asc()).first())
-        out[slug] = (best, holder.user.username if holder and holder.user else "?")
+        out[slug] = (best, holder.user.username if holder and holder.user else "?",
+                     holder.updated_at if holder else None)
     return out
 
 

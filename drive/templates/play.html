@@ -233,7 +233,9 @@
     <div id="resNote"></div>
     <div class="sheet-actions">
       <button class="btn dark" id="btnRetry">Retry</button>
-      <a class="btn secondary" href="/track/{{ track.slug }}">Leaderboard</a>
+      {# `board-link` is repointed by loadTrack: the switcher changes the track
+         under a page the template rendered for a different one. #}
+      <a class="btn secondary board-link" href="/track/{{ track.slug }}">Leaderboard</a>
       <a class="btn secondary" id="btnExit"
          href="{% if mode == 'room' %}/lobbies{% else %}/{% endif %}">Exit</a>
     </div>
@@ -288,7 +290,7 @@
     <h3>Sound</h3>
     <div class="btn-grid two">
       <button class="btn secondary" id="btnSound">Sound: on</button>
-      <a class="btn secondary" href="/track/{{ track.slug }}">Full leaderboard</a>
+      <a class="btn secondary board-link" href="/track/{{ track.slug }}">Full leaderboard</a>
     </div>
 
     <div class="sheet-foot">
@@ -327,7 +329,7 @@
 <div class="overlay" id="help" style="display:none">
   <div class="sheet">
     <h2>How to drive</h2>
-    <p class="muted" style="margin-top:-.4rem">{{ track.blurb }}</p>
+    <p class="muted" id="helpBlurb" style="margin-top:-.4rem">{{ track.blurb }}</p>
     <table class="board">
       <tr><td>Steer</td><td>&larr; &rarr; or A / D</td></tr>
       <tr><td>Throttle / brake</td><td>&uarr; &darr; or W / S</td></tr>

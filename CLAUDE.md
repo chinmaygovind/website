@@ -435,9 +435,18 @@ field from a dark field.
 - **Solo is `/solo`, and the track is something you change from inside it.** There is
   no "pick a track" page any more: `/solo` opens whatever you were last driving (kept
   in the session, so the first paint is right) and the **track switcher** - the map
-  icon, top right - swaps the world in place without touching the URL. `/solo/<slug>`
+  icon, top right - swaps the world in place. `/solo/<slug>`
   still works for links and bookmarks and records itself as your last track; switching
-  in-game posts to `/api/last-track` so coming back lands where you left off. The same
+  in-game posts to `/api/last-track` so coming back lands where you left off.
+  **Everything that names the track has to follow the switcher**, and for a long
+  time none of it did: you arrived from the home page on `/solo/<slug>`, changed
+  track, and the leaderboard button still went to the board for the track you
+  arrived on. `loadTrack` now repoints every `.board-link`, the page title and the
+  help sheet's blurb, and `switchTrack` rewrites the URL with `history.replaceState`
+  (not `pushState` - a switch is a setting inside one session, not somewhere to go
+  Back out of; the query string is dropped because `?ghost=`/`?watch=` name a lap on
+  the track you just left). **A room's URL is left alone** - it is the join code and
+  has nothing to do with the current track. The same
   switcher is in a room, where only the host can pick - everyone else sees the same
   grid with the picking turned off, rather than a poorer version of it.
   **A card shows your time and not the record.** The record was on there too, and it
@@ -460,6 +469,29 @@ field from a dark field.
   "whose lap is it" is not: off / my best / world record / view others. In a room `my
   best` still means your best lap of *this* practice session, and `ghostOn()` still
   hides every ghost for the whole of a race.
+- **`/account` is two boxes and the second one is a table.** It was nine bordered
+  stat tiles in a grid plus a tenth panel for the medal tally, which made ten pieces
+  of furniture out of one thing - who you are and what you have done. Now one
+  `.panel.profile` holds the figures (no border each; the panel is already the
+  border) with the three medal counts under a hairline in the same box, since they
+  are three more of the same kind of number. The standalone "Medals" total went with
+  the redesign - it was the sum of three numbers sitting an inch below it. The track
+  table uses `table-layout: fixed` with a `<colgroup>`, because on a 1080px page an
+  auto table hands all the slack to the column that wants it least (the track name,
+  two short words); under 700px it switches to auto with a `min-width` and scrolls
+  inside `.tablewrap` rather than crushing six columns. The medal column carries the
+  word as well as the swatch, and the row actions are icon+label buttons - a steering
+  wheel for **Play** and a podium for **Leaderboard**, which used to read "drive" and
+  "board" and nobody knew what a board was. Icons are inline SVG (`.icn`), never
+  glyphs, for the reason the in-game ones are.
+- **`/leaderboard`'s track table is dated, not gold-timed.** The gold time used to be
+  the fourth column; it is a property of the track rather than of the record, it is
+  already on the track page and in the game, and sitting next to somebody's name it
+  read as though they had won a gold rather than set the fastest lap on the site.
+  `_records()` now carries the holder's `updated_at` (which is when *that lap* was
+  set, since a better run replaces the row wholesale and stamps it). It is stored and
+  rendered as UTC so the page is right with no JS, then rewritten into the reader's
+  own timezone by the script at the foot of the template.
 - **The board is in the game.** "View others" opens the leaderboard over the track;
   clicking a row opens that lap - its checkpoint splits against your own PB's, who set
   it, and **Watch it** / **Race this ghost**. Picking somebody to chase is something you
@@ -578,7 +610,7 @@ field from a dark field.
 
 ### Tests
 
-`scripts/tests.sh drive` - 278 tests, about 2:10. `test_tracks.py` and
+`scripts/tests.sh drive` - 282 tests, about 2:10. `test_tracks.py` and
 `test_runcheck.py` are pure Python; `test_app.py` runs the real routes against a
 throwaway SQLite file (the `/solo` memory, the board and ghost APIs, and a guest's run
 being replayed after login). **`test_sim.py` runs the game's real JavaScript

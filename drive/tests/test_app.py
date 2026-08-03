@@ -233,7 +233,9 @@ def test_a_pb_never_appears_without_its_rank(env):
     # The record deliberately is not on a switcher card - picking a track should
     # not be a comparison with somebody else. It still reaches the home page.
     assert "wr_ms" not in card and "wr_by" not in card
-    assert records["sunrise"] == (20000, "leader")
+    assert records["sunrise"][:2] == (20000, "leader")
+    # ...and when it was set, which is the records page's Date column.
+    assert records["sunrise"][2] is not None
 
 
 def test_every_track_has_a_preview_picture_on_disk(env):
@@ -399,3 +401,66 @@ def test_the_backfill_seeds_old_finishes_and_can_be_run_twice(env):
     assert bf.backfill() == (0, 2, 0)
     with env.app.app_context():
         assert env.DriveStart.query.filter_by(track="sunrise").first().starts == 2
+
+
+# ---------------------------------------------------------------------------
+# The track you are on, and the links that name it
+# ---------------------------------------------------------------------------
+
+def test_every_link_that_names_the_track_is_repointable(env):
+    """The switcher changes the world under a page rendered for another track.
+
+    You arrive from the home page on `/solo/<slug>`, switch track, and the
+    leaderboard button still points at the track you arrived on - so it has to
+    carry the hook `loadTrack` uses to repoint it.
+    """
+    html = env.app.test_client().get("/solo/sunrise").get_data(as_text=True)
+    assert html.count('class="btn secondary board-link"') == 2, (
+        "both leaderboard links must be repointable")
+    assert 'id="helpBlurb"' in html, "the help sheet names the track too"
+
+    src = open(os.path.join(os.path.dirname(__file__), "..",
+                            "static", "js", "game.js")).read()
+    load = src[src.index("function loadTrack("):]
+    load = load[:load.index("\n}\n")]
+    for needle in ("board-link", "document.title", "helpBlurb"):
+        assert needle in load, "loadTrack leaves %s stale" % needle
+
+
+def test_switching_track_rewrites_the_url_but_not_in_a_room():
+    """`/solo/<slug>` is a link people copy out of the bar, so it has to name
+    the track on the screen. A room's URL is its join code and is not about the
+    track at all."""
+    here = os.path.dirname(__file__)
+    src = open(os.path.join(here, "..", "static", "js", "game.js")).read()
+    fn = src[src.index("async function switchTrack("):]
+    fn = fn[:fn.index("\n}\n")]
+    # The comments here discuss pushState at length; the code must not use it.
+    code = "\n".join(ln for ln in fn.splitlines()
+                     if not ln.lstrip().startswith("//"))
+    assert "history.replaceState" in code, "the URL goes stale on a switch"
+    assert "pushState" not in code, "a switch is not somewhere to go Back out of"
+    assert "CFG.mode !== 'room'" in code, "a room's URL must be left alone"
+
+
+def test_the_records_page_dates_the_record_and_drops_the_gold_time(env):
+    """Gold time is a property of the track, not of whoever holds the record."""
+    c = env.app.test_client()
+    _login(c, _user(env))
+    c.post("/api/run", json=_run_payload(env, "sunrise", seconds=22))
+    html = c.get("/leaderboard").get_data(as_text=True)
+    assert "<th class=\"num\">Date</th>" in html
+    assert "Gold time" not in html
+    with env.app.app_context():
+        row = env.DriveTime.query.filter_by(track="sunrise").first()
+        assert row.updated_at.strftime("%Y") in html, "the record has to be dated"
+    assert "<time datetime=" in html and "UTC</time>" in html, (
+        "served as UTC so it is right before any script runs")
+
+
+def test_a_track_with_no_record_still_lists(env):
+    """Nine rows, record or not - the table is the pool, not the records."""
+    html = env.app.test_client().get("/leaderboard").get_data(as_text=True)
+    import tracks as tracks_mod
+    for t in tracks_mod.TRACKS:
+        assert t["name"] in html

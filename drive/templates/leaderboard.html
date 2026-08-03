@@ -9,14 +9,23 @@
   <h2>Track records</h2>
   <div class="panel">
     <table class="board">
-      <tr><th>Track</th><th>Holder</th><th class="num">Time</th><th class="num">Gold time</th></tr>
+      {# The gold time used to sit here. It is a property of the track rather
+         than of the record, it is already on the track page and in the game,
+         and next to somebody's name it read as though they had won a gold
+         rather than set the fastest lap on the site. When the record went in
+         is the thing this table could say and nothing else does. #}
+      <tr><th>Track</th><th>Holder</th><th class="num">Time</th><th class="num">Date</th></tr>
       {% for t in tracks %}
       {% set rec = records.get(t.slug) %}
       <tr>
         <td><a href="/track/{{ t.slug }}">{{ t.name }}</a></td>
         <td>{{ rec[1] if rec else '—' }}</td>
         <td class="num">{{ '%d:%06.3f'|format((rec[0] // 60000), (rec[0] % 60000) / 1000) if rec else '—' }}</td>
-        <td class="num">{{ '%d:%06.3f'|format(((t.medals.gold*1000)|int // 60000), ((t.medals.gold*1000)|int % 60000) / 1000) }}</td>
+        {# Stored UTC. Rendered as UTC so it is right with no JS, then rewritten
+           into the reader's own timezone by the script below - a lap time is
+           the same number everywhere, but the moment it was set is not. #}
+        <td class="num">{% if rec and rec[2] %}<time datetime="{{ rec[2].isoformat() }}Z"
+          >{{ rec[2].strftime('%-d %b %Y, %H:%M:%S') }} UTC</time>{% else %}—{% endif %}</td>
       </tr>
       {% endfor %}
     </table>
@@ -45,4 +54,19 @@
     {% endif %}
   </div>
 </div>
+
+<script>
+// Every record date is stored and rendered in UTC, which is correct and reads
+// like somebody else's clock. Rewrite it into the reader's own - and only if
+// the date parses, so a browser that cannot do it keeps the UTC it was served.
+document.querySelectorAll('time[datetime]').forEach(function (el) {
+  var d = new Date(el.getAttribute('datetime'));
+  if (isNaN(d.getTime())) return;
+  el.textContent = d.toLocaleString([], {
+    day: 'numeric', month: 'short', year: 'numeric',
+    hour: 'numeric', minute: '2-digit', second: '2-digit',
+  });
+  el.title = d.toString();
+});
+</script>
 {% endblock %}

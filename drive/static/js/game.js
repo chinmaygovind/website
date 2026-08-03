@@ -210,6 +210,16 @@ function loadTrack(track) {
 
   $('trackName').textContent = track.name;
   $('trackBlurb').textContent = track.blurb;
+  // Everything else on the page that names the track. All of it was rendered by
+  // the template for the track you *arrived* on, and the switcher changes the
+  // world underneath it - so a leaderboard link left alone quietly sends you to
+  // the board for a track you stopped driving several switches ago.
+  document.title = track.name + ' | Drive';
+  const helpBlurb = $('helpBlurb');
+  if (helpBlurb) helpBlurb.textContent = track.blurb;
+  document.querySelectorAll('.board-link').forEach((a) => {
+    a.href = '/track/' + track.slug;
+  });
   // A guest has no server-side PB, but the one in localStorage is still theirs.
   S.bestTime = (CFG.pbs && CFG.pbs[track.slug]) || storedBest() || null;
   renderMedalTable();
@@ -1657,6 +1667,19 @@ async function switchTrack(slug) {
     if ($('raceOver')) $('raceOver').style.display = 'none';
     loadTrack(t);
     toast('Track: ' + t.name);
+    // Solo, the URL is one more thing naming the track, and the one people copy
+    // out of the bar. `/solo/<slug>` stays a real link, so it has to name the
+    // track actually on the screen.
+    //
+    // `replaceState`, not `pushState`: switching track is changing a setting
+    // inside one session, not travelling somewhere you should be able to go
+    // Back out of - Back belongs to the page you came in from. The query string
+    // is dropped because it can only be stale by now: `?ghost=`/`?watch=` name a
+    // lap on the track you have just left, and `?panel=` was consumed at boot.
+    //
+    // A room is left alone entirely. Its URL is the room code, which is what
+    // people share to join, and it has nothing to do with the current track.
+    if (CFG.mode !== 'room') history.replaceState(null, '', '/solo/' + slug);
     // So that "Solo" next time opens the track you were actually driving,
     // rather than the one you happened to arrive on.
     fetch('/api/last-track', {
