@@ -20,7 +20,8 @@ from flask_socketio import SocketIO, join_room, leave_room, emit
 from sqlalchemy import event, func
 from sqlalchemy.engine import Engine
 
-from models import db, User, DriveStats, DriveTime, DriveGame, DrivePlayer
+from models import (db, User, DriveStats, DriveTime, DriveStart,
+                    DriveGame, DrivePlayer)
 import tracks as tracks_mod
 import tuning
 import runcheck
@@ -411,13 +412,19 @@ def track_board(slug):
         return redirect(url_for("index"))
     rows = (DriveTime.query.filter_by(track=slug)
             .order_by(DriveTime.time_ms.asc()).limit(100).all())
+    # One query for the whole board rather than one per row, clamped the same way
+    # the account page clamps it (see `_starts_for`).
+    started = {s.user_id: (s.starts or 0) for s in
+               DriveStart.query.filter(DriveStart.track == slug,
+                                       DriveStart.user_id.in_([r.user_id for r in rows])).all()}
+    starts = {r.id: max(started.get(r.user_id, 0), r.runs or 0) for r in rows}
     # The same shape the in-game board uses, so a lap opens the same way in both
     # places rather than each growing its own idea of what a lap is.
     laps = [{"id": r.id, "name": r.user.username if r.user else "?",
              "time_ms": r.time_ms, "splits": r.splits,
              "medal": r.medal_shown, "has_ghost": bool(r.ghost)} for r in rows]
     return render_template("track.html", track=track, rows=rows, laps=laps,
-                           tracks=tracks_mod.summaries(),
+                           starts=starts, tracks=tracks_mod.summaries(),
                            user=get_current_user(), name=get_effective_name())
 
 
@@ -438,8 +445,21 @@ def account():
         return redirect(url_for("login_page", next="/account"))
     times = (DriveTime.query.filter_by(user_id=user.id)
              .order_by(DriveTime.updated_at.desc()).all())
+    starts = _starts_for(user.id, times)
+    # A track you have started and never finished has no `drive_times` row, so it
+    # would be missing from a table listing those - and it is the one the start
+    # count has most to say about. Listed after the times, without one.
+    done = {t.track for t in times}
+    unfinished = sorted(((slug, n) for slug, n in starts.items() if slug not in done),
+                        key=lambda kv: -kv[1])
+    # Totalled per track rather than kept in a counter of its own: a track can have
+    # starts and no time (never finished) or a time and no starts (driven before
+    # the counter existed), and the per-track clamp already knows what to do with
+    # both, so summing it cannot disagree with the column underneath.
     return render_template("account.html", user=user, stats=_stats(user),
-                           times=times, by_slug=tracks_mod.BY_SLUG,
+                           times=times, starts=starts, unfinished=unfinished,
+                           total_starts=sum(starts.values()),
+                           by_slug=tracks_mod.BY_SLUG,
                            tracks=tracks_mod.summaries(), name=get_effective_name())
 
 
@@ -473,6 +493,75 @@ def api_last_track():
         return jsonify({"ok": False}), 404
     _remember_track(slug)
     return jsonify({"ok": True})
+
+
+@app.route("/api/start", methods=["POST"])
+def api_start():
+    """A run has begun: count the attempt.
+
+    The clock starting is what an attempt *is* - not opening the page and not
+    rolling around behind the line - so this is posted from the same place the
+    clock starts, which is also why a race counts: the green light is a start
+    like any other. Guests have no row to count it in and get an honest ``false``
+    rather than a 401; the clamp in ``_starts_for`` puts their history straight
+    when they log in and the laps their browser kept are replayed.
+    """
+    slug = (request.json or {}).get("track", "")
+    if not tracks_mod.get(slug):
+        return jsonify({"ok": False, "error": "no such track"}), 404
+    user = get_current_user()
+    if not user:
+        return jsonify({"ok": True, "stored": False})
+    row = DriveStart.query.filter_by(user_id=user.id, track=slug).first()
+    if row is None:
+        row = DriveStart(user_id=user.id, track=slug, starts=0)
+        db.session.add(row)
+    row.starts = (row.starts or 0) + 1
+    row.updated_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({"ok": True, "stored": True, "starts": row.starts})
+
+
+def _floor_starts(user_id, slug, finishes):
+    """Lift a track's start count to at least its finish count, and write it.
+
+    A finish implies a start, but not that one was *recorded*: a guest posts no
+    starts at all and their kept laps arrive at ``/api/run`` when they log in,
+    and every lap driven before this counter existed has none behind it either.
+    Clamping only on the way out to the screen would read correctly and still be
+    wrong underneath - the next real start would land on a stored 0 and vanish
+    under the backlog of finishes, and go on vanishing until it caught up. So
+    the floor is put into the row, once, where the next start can count from it.
+
+    Caller commits.
+    """
+    row = DriveStart.query.filter_by(user_id=user_id, track=slug).first()
+    if row is None:
+        row = DriveStart(user_id=user_id, track=slug, starts=0)
+        db.session.add(row)
+    if (row.starts or 0) < finishes:
+        row.starts = finishes
+        row.updated_at = datetime.utcnow()
+    return row
+
+
+def _starts_for(user_id, times):
+    """Per-track start counts to put on a screen, keyed by slug.
+
+    Never below the finish count beside it: you cannot finish a run you did not
+    start, and "12 starts, 40 finishes" is not a smaller number than the truth
+    but a wrong one. ``tools/backfill_starts.py`` and ``_floor_starts`` normally
+    see to that in the data, so this is the same rule applied on the way out -
+    for a database the backfill has not been run against, and for the window
+    between a deploy and running it.
+
+    ``times`` is the user's ``DriveTime`` rows, which the callers already hold.
+    """
+    rows = {r.track: (r.starts or 0)
+            for r in DriveStart.query.filter_by(user_id=user_id).all()}
+    for t in times:
+        rows[t.track] = max(rows.get(t.track, 0), t.runs or 0)
+    return rows
 
 
 @app.route("/api/run", methods=["POST"])
@@ -546,6 +635,7 @@ def api_run():
             improved = True
     if improved:
         _count_medal(st, medal)
+    _floor_starts(user.id, track["slug"], row.runs or 0)
     db.session.commit()
 
     # Re-read the record: this run may have just become it.

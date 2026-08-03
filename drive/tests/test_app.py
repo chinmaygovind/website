@@ -257,3 +257,145 @@ def test_the_track_page_hands_each_lap_over_whole(env):
     assert "has_ghost" in html, "Watch and Race need to know there is a replay"
     for ms in payload["splits"]:
         assert str(ms) in html, "every split is needed to open the lap"
+
+
+# ---------------------------------------------------------------------------
+# Starts: the attempts that did not end in a time
+# ---------------------------------------------------------------------------
+
+def test_starting_a_run_counts_an_attempt(env):
+    """The thing a board of finishes cannot tell you: how many goes it took."""
+    c = env.app.test_client()
+    _login(c, _user(env))
+    for _ in range(3):
+        assert c.post("/api/start", json={"track": "sunrise"}).get_json()["stored"]
+    with env.app.app_context():
+        row = env.DriveStart.query.filter_by(track="sunrise").first()
+        assert row.starts == 3
+
+
+def test_starts_are_counted_per_track(env):
+    c = env.app.test_client()
+    _login(c, _user(env))
+    c.post("/api/start", json={"track": "sunrise"})
+    c.post("/api/start", json={"track": "twist"})
+    c.post("/api/start", json={"track": "twist"})
+    with env.app.app_context():
+        got = {r.track: r.starts for r in env.DriveStart.query.all()}
+    assert got == {"sunrise": 1, "twist": 2}
+
+
+def test_a_guest_start_is_refused_gently_and_a_nonsense_track_is_not(env):
+    """Same shape as /api/run: no account is not an error, a bad slug is."""
+    c = env.app.test_client()
+    assert c.post("/api/start", json={"track": "sunrise"}).get_json() == {
+        "ok": True, "stored": False}
+    assert c.post("/api/start", json={"track": "nowhere"}).status_code == 404
+
+
+def test_finishes_never_outnumber_the_starts_beside_them(env):
+    """A database the backfill has not reached yet still has to read right.
+
+    Between the deploy and `tools/backfill_starts.py` - and on any database it
+    was never run against - there are finishes with no starts behind them at
+    all. "0 starts, 200 finishes" is not a smaller number than the truth but a
+    wrong one, so the finishes clamp the count on the way out to the screen too.
+    """
+    c = env.app.test_client()
+    _login(c, _user(env))
+    c.post("/api/run", json=_run_payload(env, seconds=30))
+    c.post("/api/run", json=_run_payload(env, seconds=25))
+    with env.app.app_context():
+        env.DriveStart.query.delete()          # how a pre-counter database looks
+        env.db.session.commit()
+        times = env.DriveTime.query.all()
+        assert env._starts_for(times[0].user_id, times) == {"sunrise": 2}
+    assert "Starts" in c.get("/account").get_data(as_text=True)
+
+
+def test_a_start_and_a_finish_are_the_same_attempt_not_two(env):
+    """One go at a track that ends in a time is one start, not one of each."""
+    c = env.app.test_client()
+    _login(c, _user(env))
+    c.post("/api/start", json={"track": "sunrise"})
+    c.post("/api/run", json=_run_payload(env))
+    with env.app.app_context():
+        times = env.DriveTime.query.all()
+        assert env._starts_for(times[0].user_id, times) == {"sunrise": 1}
+
+
+def test_a_track_you_never_finished_still_shows_its_starts(env):
+    """It has no time row, and it is the track the count says the most about."""
+    c = env.app.test_client()
+    _login(c, _user(env))
+    for _ in range(7):
+        c.post("/api/start", json={"track": "twist"})
+    html = c.get("/account").get_data(as_text=True)
+    assert "Twin Loop" in html, "a track with starts and no time still belongs"
+    assert ">7</td>" in html, "with the number of goes it has had out of you"
+
+
+def test_a_race_start_is_counted_like_any_other(env):
+    """A lap driven against other people is still a lap.
+
+    The mode never reaches the server - `/api/start` is posted from the one
+    place the clock starts - so what needs pinning is that the race branch
+    posts it as well as the solo one.
+    """
+    here = os.path.dirname(__file__)
+    with open(os.path.join(here, "..", "static", "js", "game.js")) as f:
+        src = f.read()
+    branches = src.split("S.run.start(")[1:]
+    assert len(branches) == 2, "the clock now starts somewhere new: count it too"
+    for b in branches:
+        assert "noteStart()" in b[:160], "a start that is not counted"
+
+
+def test_a_finish_lifts_the_start_count_in_the_row_not_just_on_the_screen(env):
+    """Otherwise the next real start lands under the backlog and vanishes.
+
+    A guest's kept laps arrive here at login with no starts behind them. If the
+    finishes only clamped the number on the way out, the start after them would
+    be stored as 1 against 5 finishes and show as 5 - and so would the next
+    four. The counter would look right and stop moving.
+    """
+    c = env.app.test_client()
+    _login(c, _user(env))
+    for s in (34, 33, 32, 31, 30):                 # five laps, no starts posted
+        c.post("/api/run", json=_run_payload(env, seconds=s))
+    with env.app.app_context():
+        assert env.DriveStart.query.filter_by(track="sunrise").first().starts == 5
+    c.post("/api/start", json={"track": "sunrise"})
+    with env.app.app_context():
+        times = env.DriveTime.query.all()
+        assert env._starts_for(times[0].user_id, times) == {"sunrise": 6}
+
+
+def test_the_backfill_seeds_old_finishes_and_can_be_run_twice(env):
+    """The one-shot for players who were driving before starts were counted."""
+    import tools.backfill_starts as bf
+    c = env.app.test_client()
+    uid = _user(env)
+    _login(c, uid)
+    c.post("/api/run", json=_run_payload(env, "sunrise", seconds=30))
+    c.post("/api/run", json=_run_payload(env, "twist", seconds=40))
+    # Wind the database back to how a pre-starts one looks: finishes, no starts.
+    with env.app.app_context():
+        env.DriveStart.query.delete()
+        env.db.session.commit()
+
+    seeded, fine, added = bf.backfill(dry_run=True)
+    assert (seeded, added) == (2, 2)
+    with env.app.app_context():
+        assert env.DriveStart.query.count() == 0, "--dry-run writes nothing"
+
+    assert bf.backfill()[0] == 2
+    with env.app.app_context():
+        assert {r.track: r.starts for r in env.DriveStart.query.all()} == {
+            "sunrise": 1, "twist": 1}
+
+    # Idempotent: every write is a max, so a second pass is a no-op.
+    c.post("/api/start", json={"track": "sunrise"})
+    assert bf.backfill() == (0, 2, 0)
+    with env.app.app_context():
+        assert env.DriveStart.query.filter_by(track="sunrise").first().starts == 2

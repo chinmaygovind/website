@@ -244,6 +244,27 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   server will not change its mind); a *failed request* is kept, so an offline lap
   goes up when you reconnect. `test_pending.js`-style coverage lives in
   `tests/test_pending.py`, which runs the real file in QuickJS against a stub browser.
+- **Starts are counted as well as finishes**, because a board of finishes cannot
+  say how many goes a track took out of you - and on a hard one that is most of
+  the story. An attempt is *the clock starting*: `/api/start` is posted from the
+  one place in `game.js` that calls `run.start()`, which is why a race counts
+  too (the green light is a start like any other) and why loading the page does
+  not. They live in their own `drive_starts` table, one row per (user, track) -
+  `create_all` creates tables and not columns, so a new table lands on the live
+  database by itself where a new column would need a migration, and a track you
+  have started fifty times and never finished has no `drive_times` row to keep
+  the count in. Finishes are not duplicated there; they stay in `DriveTime.runs`
+  and `DriveStats.runs`. **A finish floors the start count in the row**
+  (`_floor_starts`), because a finish implies a start but not that one was
+  *recorded*: a guest posts none at all and their kept laps arrive at `/api/run`
+  at login. Clamping only on the way out to the screen looks identical and is a
+  trap - the next real start lands on a stored 0, disappears under the backlog of
+  finishes, and goes on disappearing until it catches up, so the number looks
+  right and stops moving. `tools/backfill_starts.py` is the same floor applied
+  once to everything that was already there; **run it on the box right after the
+  deploy that creates the table**, `--dry-run` first. It is a `max` per row, so
+  it is safe to run twice. `_starts_for` still clamps on read, now only as cover
+  for a database the backfill has not reached.
 - **Being fast is not evidence of cheating.** There used to be a floor here:
   `tuning.MIN_PLAUSIBLE`, rejecting any time under 0.8 of `ideal`. But `ideal` is an
   estimate off a relaxed racing line and anyone who learns a track beats it, so the
@@ -488,14 +509,21 @@ field from a dark field.
   throttle and brake right, checkpoint and restart small above the steering. There
   is deliberately no fifth button, because there is nowhere a thumb can reach one:
   the right thumb is on a pedal essentially the whole lap and the left is on an
-  arrow. The handbrake is a gesture on the steering instead - **double-tap and
-  hold the arrow you are turning with**, so tap-tap-hold left is a handbrake turn
-  to the left - handled in `bindInput`/`syncTouch`, so it is a touch-input mapping
-  and the physics and the keyboard are untouched. The steering thumb is the one
-  that can afford a gesture: it arrives at a corner having just let go of the last
-  arrow, so the second tap is the press it was going to make anyway, where the
-  pedal thumb is holding something the entire lap. Letting go of the arrow drops
-  the handbrake, which is also how you catch the slide.
+  arrow. The handbrake is **two gestures, one per thumb**, both handled in
+  `bindInput`/`syncTouch` - so they are touch-input mappings and the physics and
+  the keyboard are untouched, and either just adds `drift` to `touchKeys`.
+  **Drag the throttle down** (`dragDrift`, threshold `DRAG_DRIFT`) and it comes
+  on *without the thumb leaving the pedal*. That is the whole reason this thumb
+  can carry a gesture after all: the objection was never the thumb but that every
+  earlier candidate charged it a **release**, and coming off the power mid-corner
+  is the one thing it must never do. A drag costs nothing, so the slide arrives
+  under throttle, which is how the turn is actually driven. `DRAG_KEEP` is a
+  second, lower threshold for letting off, so a thumb parked on the boundary
+  cannot chatter the handbrake under itself. **Or double-tap and hold the arrow
+  you are turning with**, so tap-tap-hold left is a handbrake turn to the left;
+  the steering thumb arrives at a corner having just let go of the last arrow, so
+  the second tap is the press it was going to make anyway. Letting go of either
+  drops the handbrake, which is also how you catch the slide.
   **The two arrows share one double-tap timer, and a press on either voids the
   other's window**, so left-right-left is a correction rather than a double-tap of
   left. That sequence is fast and common, and it is exactly the moment - mid-corner,
@@ -509,6 +537,14 @@ field from a dark field.
   milliseconds, so retuning the window retunes the tests instead of quietly
   invalidating them, and one test pins the intent directly: a 150ms re-grab is
   never a drift.
+  The button that is drifting goes **amber** (`.tbtn.drifting`, `#ffd96b`) so it
+  is obvious you asked for something different - that is the drift indicator, and
+  it is on the on-screen button, *not* on the car. The car's tail lamps are
+  two-state red (`BRAKE_ON`/`BRAKE_OFF` in `render.js`), and since `Car.braking`
+  is `braking || handbrake` a handbrake slide lights them plain red like any
+  other braking. `FLAG.DRIFT` is computed in `physics.js` and packed into the
+  multiplayer pose but **consumed nowhere** - so amber tail lights on drifting
+  cars, local and remote, are already wired for and just not drawn.
   Three earlier attempts are worth not repeating: a DRIFT button beside the pedals,
   which was literally unpressable; **brake-while-steering, which is unusable** -
   braking into a corner *is* steering, so it fired on essentially every corner and
@@ -542,7 +578,7 @@ field from a dark field.
 
 ### Tests
 
-`scripts/tests.sh drive` - 259 tests, about 2:10. `test_tracks.py` and
+`scripts/tests.sh drive` - 278 tests, about 2:10. `test_tracks.py` and
 `test_runcheck.py` are pure Python; `test_app.py` runs the real routes against a
 throwaway SQLite file (the `/solo` memory, the board and ghost APIs, and a guest's run
 being replayed after login). **`test_sim.py` runs the game's real JavaScript

@@ -4,7 +4,8 @@ The ``users`` table is shared with Ticket to Ride, Egyptian Rat Screw and King
 of Tokyo - same physical table, same columns - so one account works across
 every game at cgovind.com. This module maps only the account/identity columns of
 ``users``; Drive keeps its own per-user stats in ``drive_stats``, its best times
-in ``drive_times`` and its lobbies in ``drive_games`` / ``drive_players``.
+in ``drive_times``, its attempt counts in ``drive_starts`` and its lobbies in
+``drive_games`` / ``drive_players``.
 ``create_all`` uses CREATE TABLE IF NOT EXISTS, so Drive never clobbers the
 shared ``users`` table.
 
@@ -54,7 +55,8 @@ class DriveStats(db.Model):
     races        = db.Column(db.Integer, default=0)     # synced multiplayer races finished
     wins         = db.Column(db.Integer, default=0)
     podiums      = db.Column(db.Integer, default=0)
-    runs         = db.Column(db.Integer, default=0)     # timed runs completed, solo or not
+    runs         = db.Column(db.Integer, default=0)     # timed runs finished, solo or not
+                                                        # (starts are per-track, in DriveStart)
     distance     = db.Column(db.Float, default=0.0)     # metres driven across every run
     drive_time   = db.Column(db.Float, default=0.0)     # seconds spent on a clock
     # The author medal is retired (see tuning.MEDAL_MULT); this column only ever
@@ -129,6 +131,33 @@ class DriveTime(db.Model):
         anybody's history or taking a medal off them.
         """
         return "gold" if self.medal == "author" else self.medal
+
+
+class DriveStart(db.Model):
+    """One row per (user, track): how many runs they have *begun* there.
+
+    A finish was always counted (``DriveTime.runs`` per track, ``DriveStats.runs``
+    overall) and a start never was, which made every attempt that ended in the
+    scenery invisible - on a hard track that is most of them, and the ratio of
+    the two is the only number that says how hard a track actually is.
+
+    Starts get their own table rather than a column on ``drive_stats`` or
+    ``drive_times`` for two reasons. ``create_all`` creates whole tables and
+    nothing else, so a new table arrives on a live database by itself where a
+    new column would need a migration. And a start is not a time: you can begin
+    a track fifty times without ever finishing one, so there is no
+    ``drive_times`` row to keep the count in until you do - and that track is
+    exactly the one whose start count is worth reading.
+
+    Finishes are deliberately *not* duplicated here; the counters that already
+    hold them keep holding them, history and all.
+    """
+    __tablename__ = "drive_starts"
+
+    user_id    = db.Column(db.Integer, db.ForeignKey("users.id"), primary_key=True)
+    track      = db.Column(db.String(32), primary_key=True)
+    starts     = db.Column(db.Integer, default=0, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class DriveGame(db.Model):

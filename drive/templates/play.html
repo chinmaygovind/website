@@ -114,7 +114,7 @@
     <span class="hint-keys">Press <b>&uarr;</b> or <b>W</b> to start &middot; <b>Space</b> drift
       &middot; <b>R</b> restart &middot; <b>T</b> last checkpoint</span>
     <span class="hint-touch">Hold the right pedal to start &middot; steer on the left
-      &middot; double-tap an arrow to drift</span>
+      &middot; drag down the pedal to drift</span>
   </div>
 
   <!-- Watching somebody's lap. The whole HUD would be lying during a replay -
@@ -150,11 +150,14 @@
      Four driving buttons and no handbrake button at all: the right thumb is on a
      pedal for essentially the whole lap, so nothing on that side of the screen is
      reachable while driving, and a fifth button anywhere else is a button you
-     cannot press. Instead the arrow you are turning with, **double-tapped and
-     held**, is the handbrake (see the `steer` binding in game.js) - the
-     steering thumb is the one arriving at a fresh press anyway, where the pedal
-     thumb is holding something all lap. Deliberate, and impossible to trigger
-     by accident the way "brake while steering" was.
+     cannot press. So the handbrake is a gesture instead, and there are two, one
+     per thumb (both in game.js: `dragDrift` and the `steer` binding).
+     **Drag the throttle downwards** and it comes on without the pedal thumb
+     giving up the throttle - a drag costs no release, which is what ruled every
+     other candidate out for that thumb. Or **double-tap and hold the arrow you
+     are turning with**, the steering thumb being the one arriving at a fresh
+     press anyway. Both are deliberate, and neither can be triggered by accident
+     the way "brake while steering" was.
      The checkpoint and restart buttons sit above the pedals rather than above
      the steering: falling off is common, and the thumb that is free to deal
      with it is the one that just stopped driving. They mirror the pedals - the
@@ -184,7 +187,7 @@
       <div class="tbtn" id="tBrake" title="Brake">
         <svg viewBox="0 0 24 24"><path d="M5 6.5 12 13l7-6.5"/><path d="M5 12.5 12 19l7-6.5"/></svg>
       </div>
-      <div class="tbtn" id="tGas" title="Throttle">
+      <div class="tbtn" id="tGas" title="Throttle - drag down to drift">
         <svg viewBox="0 0 24 24"><path d="M5 17.5 12 11l7 6.5"/><path d="M5 11.5 12 5l7 6.5"/></svg>
       </div>
     </div>
@@ -337,12 +340,14 @@
     </table>
     <h3>On a phone</h3>
     <p class="muted" style="margin:0 0 .6rem">Hold it sideways. Throttle and brake are under
-      your right thumb and steering under your left. There is no separate drift button, because
-      your right thumb never leaves a pedal - instead <b>double-tap and hold the arrow you are
-      turning with</b> and it becomes the handbrake for as long as you keep your thumb down, so
-      tap-tap-hold left is a handbrake turn to the left. It lights up amber so you can see it
-      took, and letting go of the arrow lets the handbrake go, which is how you catch the slide.
-      The flag puts you back at the last checkpoint and the arrow restarts the run.</p>
+      your right thumb and steering under your left. There is no separate drift button - there
+      is nowhere a thumb could reach one - so the handbrake is a gesture, and there are two of
+      them. <b>Drag down on the throttle</b> without letting go of it: the slide comes on under
+      power and lets off as you slide back up. Or <b>double-tap and hold the arrow you are
+      turning with</b>, so tap-tap-hold left is a handbrake turn to the left, and letting go of
+      the arrow lets the handbrake go. Whichever you use, the button lights up amber so you can
+      see it took. The flag puts you back at the last checkpoint and the arrow restarts the
+      run.</p>
     <h3>Getting round quickly</h3>
     <p class="muted" style="margin:0">Grass is slow, so a corner cut usually costs more than it
       saves. Crests throw the car - land flat and you keep the speed. Inside a loop, stay off

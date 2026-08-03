@@ -53,7 +53,10 @@ function El(id) {
   };
   this.querySelectorAll = () => [];
   this.addEventListener = (t, f) => { (this.h[t] = this.h[t] || []).push(f); };
-  this.fire = (t) => (this.h[t] || []).forEach(f => f({ preventDefault() {} }));
+  // `ev` carries the touch list for the drag gesture; the button bindings that
+  // only care whether a thumb is down ignore it.
+  this.fire = (t, ev) => (this.h[t] || []).forEach(f => f(
+    Object.assign({ preventDefault() {} }, ev)));
 }
 function $(id) { if (!els[id]) els[id] = new El(id); return els[id]; }
 var window = { addEventListener: function () {}, matchMedia: null };
@@ -78,8 +81,15 @@ function stopWatching() {} function renderTrackCards() {}
 # only thing that opens or closes the double-tap window is an explicit wait().
 HARNESS = r"""
 bindInput();
-function press(id) { NOW += 1; $(id).fire('touchstart'); }
-function release(id) { NOW += 1; $(id).fire('touchend'); }
+// A real touchstart always carries the finger that caused it, so the thumb here
+// does too - the drag gesture reads its identifier and where it landed.
+var Y0 = 500;
+function at(y) { return { changedTouches: [{ identifier: 1, clientY: y }] }; }
+function press(id) { NOW += 1; $(id).fire('touchstart', at(Y0)); }
+function release(id) { NOW += 1; $(id).fire('touchend', at(Y0)); }
+// Distances are fractions of the threshold rather than pixel counts, so
+// retuning DRAG_DRIFT retunes the tests instead of quietly invalidating them.
+function dragBy(id, px) { NOW += 1; $(id).fire('touchmove', at(Y0 + px)); }
 function wait(ms) { NOW += ms; }
 // Expressed against the window rather than in fixed milliseconds, so retuning
 // DOUBLE_TAP retunes the tests instead of silently invalidating them.
@@ -200,3 +210,100 @@ def test_a_cancelled_touch_releases_the_handbrake():
       $('tLeft').fire('touchcancel');
       [drifting_(), held()].join('|');
     """) == "false|"
+
+
+# ---------------------------------------------------------------------------
+# The other way in: drag the throttle down
+# ---------------------------------------------------------------------------
+
+def test_dragging_the_throttle_down_pulls_the_handbrake():
+    assert run("""
+      press('tGas'); dragBy('tGas', DRAG_DRIFT);
+      [drifting_(), lit('tGas')].join('|');
+    """) == "true|true"
+
+
+def test_the_throttle_stays_open_through_the_drag():
+    """The entire reason this gesture can live on the pedal thumb.
+
+    Every earlier candidate for that thumb charged it a release, and coming off
+    the power mid-corner is the one thing it must never do. A drag costs
+    nothing: the slide arrives under throttle, which is how the turn is driven.
+    """
+    assert run("""
+      press('tGas'); dragBy('tGas', DRAG_DRIFT * 2);
+      held();
+    """) == "drift,up"
+
+
+def test_a_short_drag_is_not_a_drift():
+    """A thumb rolls and settles on a pedal it holds all lap. That is not a
+    request for the handbrake, and it happens constantly."""
+    assert run("""
+      press('tGas'); dragBy('tGas', DRAG_DRIFT - 1);
+      drifting_();
+    """) is False
+
+
+def test_dragging_up_the_throttle_never_drifts():
+    """Down is the direction the lever comes up, and it is the only one."""
+    assert run("""
+      press('tGas'); dragBy('tGas', -DRAG_DRIFT * 3);
+      drifting_();
+    """) is False
+
+
+def test_sliding_back_up_lets_the_handbrake_off():
+    """Same as letting go of the arrow: you catch the slide by undoing the ask."""
+    assert run("""
+      press('tGas'); dragBy('tGas', DRAG_DRIFT);
+      dragBy('tGas', 0);
+      [drifting_(), held(), lit('tGas')].join('|');
+    """) == "false|up|false"
+
+
+def test_the_handbrake_does_not_chatter_on_the_threshold():
+    """A thumb parked on the boundary would otherwise flick it on and off under
+    itself, which is a car that will not settle rather than a car sliding."""
+    assert run("""
+      press('tGas'); dragBy('tGas', DRAG_DRIFT);
+      dragBy('tGas', (DRAG_DRIFT + DRAG_KEEP) / 2);
+      drifting_();
+    """) is True
+
+
+def test_letting_go_of_the_pedal_lets_go_of_the_drift():
+    assert run("""
+      press('tGas'); dragBy('tGas', DRAG_DRIFT * 2);
+      release('tGas');
+      [drifting_(), held(), lit('tGas')].join('|');
+    """) == "false||false"
+
+
+def test_a_cancelled_pedal_touch_releases_the_drift():
+    """A palm or a notification tray must not leave the car held sideways."""
+    assert run("""
+      press('tGas'); dragBy('tGas', DRAG_DRIFT * 2);
+      $('tGas').fire('touchcancel');
+      [drifting_(), held()].join('|');
+    """) == "false|"
+
+
+def test_a_drag_on_the_brake_is_not_a_drift():
+    """Only the throttle carries the gesture. Braking into a corner already
+    moves the thumb about, and that was the failure of `brake while steering`."""
+    assert run("""
+      press('tBrake'); dragBy('tBrake', DRAG_DRIFT * 3);
+      drifting_();
+    """) is False
+
+
+def test_the_two_gestures_do_not_interfere():
+    """They are for different hands, so both can be going at once, and letting
+    go of one must not let go of the other's handbrake."""
+    assert run("""
+      press('tGas'); dragBy('tGas', DRAG_DRIFT * 2);
+      press('tLeft'); release('tLeft'); quick(); press('tLeft');
+      release('tLeft');
+      [drifting_(), held()].join('|');
+    """) == "true|drift,up"

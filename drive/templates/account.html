@@ -11,7 +11,8 @@
     {% for label, value in [
         ('Races', stats.races or 0), ('Wins', stats.wins or 0),
         ('Podiums', stats.podiums or 0), ('Win rate', (stats.win_rate|string) + '%'),
-        ('Runs finished', stats.runs or 0), ('Medals', stats.medal_count),
+        ('Starts', total_starts), ('Finishes', stats.runs or 0),
+        ('Medals', stats.medal_count),
         ('Distance', ((stats.distance or 0) / 1000)|round(1)|string + ' km'),
         ('Time driving', ((stats.drive_time or 0) / 60)|round|int|string + ' min') ] %}
     <div class="panel" style="text-align:center">
@@ -31,23 +32,38 @@
     {% endfor %}
   </div>
 
-  <h2>Your times</h2>
+  <h2>Your tracks</h2>
   <div class="panel">
-    {% if times %}
+    {% if times or unfinished %}
     <table class="board">
-      <tr><th>Track</th><th class="num">Best</th><th>Medal</th><th class="num">Runs</th><th></th></tr>
+      <tr><th>Track</th><th class="num">Best</th><th>Medal</th>
+        <th class="num">Starts</th><th class="num">Finishes</th><th></th></tr>
       {% for r in times %}
       <tr>
         <td>{{ by_slug[r.track].name if r.track in by_slug else r.track }}</td>
         <td class="num">{{ '%d:%06.3f'|format((r.time_ms // 60000), (r.time_ms % 60000) / 1000) }}</td>
         <td><span class="medal {{ r.medal_shown or 'none' }}"></span></td>
+        <td class="num">{{ starts.get(r.track, r.runs) }}</td>
         <td class="num">{{ r.runs }}</td>
         <td><a href="/solo/{{ r.track }}">drive</a> · <a href="/track/{{ r.track }}">board</a></td>
       </tr>
       {% endfor %}
+      {# Started, never finished. No time and no medal, on purpose - the row is
+         here to say how many goes a track has had out of you, which is the one
+         thing a table of times alone cannot tell you. #}
+      {% for slug, n in unfinished %}
+      <tr class="muted">
+        <td>{{ by_slug[slug].name if slug in by_slug else slug }}</td>
+        <td class="num">—</td>
+        <td></td>
+        <td class="num">{{ n }}</td>
+        <td class="num">0</td>
+        <td><a href="/solo/{{ slug }}">drive</a> · <a href="/track/{{ slug }}">board</a></td>
+      </tr>
+      {% endfor %}
     </table>
     {% else %}
-    <p class="muted">No times yet. <a href="/">Pick a track.</a></p>
+    <p class="muted">Nothing driven yet. <a href="/">Pick a track.</a></p>
     {% endif %}
   </div>
 </div>

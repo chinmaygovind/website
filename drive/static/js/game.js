@@ -110,12 +110,29 @@ const keys = new Set();          // keyboard
 // nobody asked for. A gap this short is not something your thumb does by
 // accident while driving; it only happens when you mean it.
 const DOUBLE_TAP = 50;           // ms from letting go to the second tap
+//
+// The second way in is **drag the throttle downwards**, which is the one gesture
+// the pedal thumb can afford after all. The objection to putting anything on
+// that thumb was never that it is the wrong thumb - it is the one already at the
+// controls - but that every candidate charged it a *release*: a tap costs a lift,
+// and lifting off mid-corner is the one thing the throttle thumb must never do.
+// A drag costs nothing. The thumb stays down, the throttle stays open, and the
+// slide comes on under power, which is how a handbrake turn is actually driven.
+// Pulling down is the direction a real lever comes up, and there is nothing
+// below the pedal to hit by accident.
+//
+// So there are two, and they are for different hands rather than alternatives:
+// the arrow gesture is for a corner you are already turning into, the throttle
+// drag for one you want to provoke. Either sets `drift`; both let go the moment
+// the thumb does.
+const DRAG_DRIFT = 26;           // px down the throttle before the handbrake bites
+const DRAG_KEEP = 14;            // px it must come back above to let it off again
 const touchDown = new Set();     // ids of touch buttons currently held
 const touchKeys = new Set();
 const TOUCH_KEYS = {
   tGas: ['up'], tBrake: ['down'], tLeft: ['left'], tRight: ['right'],
 };
-const drifting = new Set();      // arrows double-tapped into the handbrake
+const drifting = new Set();      // buttons currently asking for the handbrake
 function syncTouch() {
   touchKeys.clear();
   for (const id of touchDown) for (const k of TOUCH_KEYS[id] || []) touchKeys.add(k);
@@ -333,6 +350,57 @@ function bindInput() {
   const hold = (id) => tb(id, () => { touchDown.add(id); syncTouch(); },
                               () => { touchDown.delete(id); syncTouch(); });
   for (const id of ['tGas', 'tBrake']) hold(id);
+  // The throttle, dragged downwards, is the handbrake too - without ever coming
+  // off the throttle, which is the whole reason this thumb can carry a gesture
+  // at all (see DRAG_DRIFT). `hold` above keeps the pedal held throughout; this
+  // only adds `drift` on top of it.
+  //
+  // Bound as its own listeners rather than folded into `tb`, because it is the
+  // only control that cares *where* the thumb is rather than whether it is
+  // down. A touch is delivered to the element it started on for its whole life,
+  // so the drag keeps working past the bottom of the button - which it has to,
+  // since the pedal is already near the floor of the screen.
+  const dragDrift = (id) => {
+    const el = $(id);
+    if (!el) return;
+    let originY = null, tid = null;
+    const paint = () => el.classList.toggle('drifting', drifting.has(id));
+    const mine = (e) => {
+      const list = e.changedTouches || [];
+      for (const t of list) if (t.identifier === tid) return t;
+      return null;
+    };
+    el.addEventListener('touchstart', (e) => {
+      const t = (e.changedTouches || [])[0];
+      if (!t) return;
+      tid = t.identifier;
+      originY = t.clientY;
+    }, { passive: false });
+    el.addEventListener('touchmove', (e) => {
+      const t = originY == null ? null : mine(e);
+      if (!t) return;
+      e.preventDefault();
+      const dy = t.clientY - originY;
+      // Two thresholds, so a thumb resting on the boundary does not chatter the
+      // handbrake on and off underneath it.
+      if (dy >= DRAG_DRIFT) drifting.add(id);
+      else if (dy < DRAG_KEEP) drifting.delete(id);
+      syncTouch();
+      paint();
+    }, { passive: false });
+    // Lifting the thumb drops the drift with the throttle, and so does a touch
+    // the system takes away - the car must never be left held sideways by a
+    // gesture there is no longer a finger for.
+    const end = () => {
+      originY = null; tid = null;
+      drifting.delete(id);
+      syncTouch();
+      paint();
+    };
+    el.addEventListener('touchend', end, { passive: false });
+    el.addEventListener('touchcancel', end, { passive: false });
+  };
+  dragDrift('tGas');
   // An arrow is the one button with two meanings, so it is bound by hand: a
   // press is steering, and a press that lands within DOUBLE_TAP of that same
   // arrow's last release is the handbrake as well, for as long as you keep your
@@ -844,12 +912,14 @@ function frame(now) {
   if (!S.started && !S.raceMode && (inp.throttle || inp.brake || inp.steer)) {
     S.started = true;
     S.run.start(now);
+    noteStart();
     markHintSeen();
   }
   if (S.raceMode && S.racePhase === 'racing' && !S.started && S.raceT0 != null && now >= S.raceT0) {
     S.started = true;
     S.car.frozen = false;
     S.run.start(S.raceT0);
+    noteStart();
     markHintSeen();
   }
 
@@ -880,6 +950,9 @@ function frame(now) {
 
   drive(inp);
   render(dt, now);
+  // The clock and the speed move every frame; everything else in the HUD is
+  // cheap to look at but expensive to draw, so it stays on the slow tick.
+  hudFast();
   if ((S.hudTick = (S.hudTick + 1) % 3) === 0) hud(now);
   sendPose(now);
 }
@@ -976,15 +1049,33 @@ function shotCamera() {
 // ---------------------------------------------------------------------------
 // HUD
 // ---------------------------------------------------------------------------
-function hud(now) {
+/**
+ * The parts of the HUD that are a live reading rather than a state: the clock
+ * and the speed. Every frame, deliberately.
+ *
+ * These used to be inside `hud()`, which runs on every third frame. That is
+ * 20Hz on a 60Hz screen, and because frames land on multiples of the refresh
+ * interval it did not merely look choppy - the clock could only ever show
+ * `start + k * 50ms`, so its last two digits alternated between two values all
+ * lap and the milliseconds read as decoration rather than a time. A timer is
+ * the one number on the screen whose job is to look continuous, so it is
+ * sampled as often as the screen can show it.
+ *
+ * Everything here is a `textContent`/inline-style write on a handful of nodes,
+ * which is why it can afford the frame rate; the minimap canvas and the
+ * standings list cannot, and stay in `hud()`.
+ */
+function hudFast() {
   const car = S.car, run = S.run;
-  const kph = Math.round(car.speed * 3.1);
-  $('speed').textContent = kph;
+  $('speed').textContent = Math.round(car.speed * 3.1);
   $('speedFill').style.width = Math.min(100, (car.speed / T.MAX_SPEED) * 100) + '%';
   // Over MAX_SPEED means a descent is doing the work, which is worth showing.
   $('speedFill').classList.toggle('over', car.speed > T.MAX_SPEED);
-
   $('time').textContent = fmt(run.state === 'ready' ? 0 : run.time);
+}
+
+function hud(now) {
+  const run = S.run;
   $('cpCount').textContent = run.nextCp + '/' + run.cps.length;
   $('wrongWay').style.display = run.wrongWay ? '' : 'none';
 
@@ -1182,8 +1273,35 @@ function useGhost(frames, hz) {
 }
 
 // ---------------------------------------------------------------------------
-// Finishing
+// Starting and finishing
 // ---------------------------------------------------------------------------
+
+/**
+ * Tell the server a run has begun.
+ *
+ * An attempt is the clock starting - not loading the page, not rolling about
+ * behind the line - which is why this sits next to `run.start()` and nowhere
+ * near setup, and why the race branch calls it too: a green light is a start
+ * like any other, and a lap driven against other people is still a lap.
+ *
+ * Fire and forget, and quietly. A start is a tally rather than a result: there
+ * is nothing to tell the player if it fails, nothing to show them if it works,
+ * and unlike a lap there is nothing worth keeping on the device to hand over
+ * later - a start that never lands is simply one that was not counted. Guests
+ * have no row to count it in, so they do not send it at all; the clamp on the
+ * way back out keeps their finishes from outnumbering their starts once they
+ * log in and the laps their browser kept get replayed.
+ */
+function noteStart() {
+  if (!CFG.loggedIn || typeof fetch !== 'function') return;
+  try {
+    fetch('/api/start', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ track: S.track.slug }),
+    }).catch(() => {});
+  } catch (e) { /* no network, no counter, no interruption */ }
+}
+
 async function onFinish() {
   const run = S.run;
   const medal = medalFor(run.time);

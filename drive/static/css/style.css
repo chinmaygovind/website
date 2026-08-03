@@ -318,7 +318,10 @@ body.touch .mapbtns { display: none; }
 .stat.spd b { font-size: 1.9rem; line-height: .9; }
 
 .speed-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.2); overflow: hidden; margin-top: .4rem; }
-.speed-bar i { display: block; height: 100%; width: 0; background: #fff; transition: width .06s linear; }
+/* No transition on the fill: the width is written every frame now, so a 60ms
+   ease is a restarted animation per frame - it can only add lag to a bar that
+   is already as smooth as the screen is. */
+.speed-bar i { display: block; height: 100%; width: 0; background: #fff; }
 .speed-bar i.over { background: #8fd6ff; box-shadow: 0 0 10px #8fd6ff; }
 
 #minimap { display: block; width: 190px; height: 150px; }

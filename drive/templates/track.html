@@ -19,13 +19,15 @@
          was won and lost, and the two things worth doing with somebody's lap -
          watching it and racing it - both need you back on the track. #}
       <table class="board rows-open">
-        <tr><th>#</th><th>Driver</th><th class="num">Time</th><th>Medal</th><th class="num">Runs</th></tr>
+        <tr><th>#</th><th>Driver</th><th class="num">Time</th><th>Medal</th>
+          <th class="num">Starts</th><th class="num">Finishes</th></tr>
         {% for r in rows %}
         <tr data-row="{{ loop.index0 }}" {% if user and r.user_id == user.id %}class="me"{% endif %}>
           <td>{{ loop.index }}</td>
           <td>{{ r.user.username if r.user else '?' }}</td>
           <td class="num">{{ '%d:%06.3f'|format((r.time_ms // 60000), (r.time_ms % 60000) / 1000) }}</td>
           <td><span class="medal {{ r.medal_shown or 'none' }}"></span></td>
+          <td class="num">{{ starts.get(r.id, r.runs) }}</td>
           <td class="num">{{ r.runs }}</td>
         </tr>
         {% endfor %}
