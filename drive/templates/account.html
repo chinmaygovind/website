@@ -25,14 +25,17 @@
      under a hairline in here rather than in a panel of its own. The total
      "Medals" figure went with it - it was the sum of the three numbers sitting
      an inch below it. #}
+  {# The unit lives in the label rather than the figure: "2.0 km" and "2 min"
+     are two words where every other cell is one, so they crowded their
+     neighbours and broke the rhythm of the row. #}
   <div class="panel profile">
     <div class="statgrid">
       {% for label, value in [
           ('Races', stats.races or 0), ('Wins', stats.wins or 0),
           ('Podiums', stats.podiums or 0), ('Win rate', (stats.win_rate|string) + '%'),
           ('Starts', total_starts), ('Finishes', stats.runs or 0),
-          ('Distance', ((stats.distance or 0) / 1000)|round(1)|string + ' km'),
-          ('Driving', ((stats.drive_time or 0) / 60)|round|int|string + ' min') ] %}
+          ('Distance (km)', ((stats.distance or 0) / 1000)|round(1)),
+          ('Driving (min)', ((stats.drive_time or 0) / 60)|round|int) ] %}
       <div class="stat-cell"><b>{{ value }}</b><span>{{ label }}</span></div>
       {% endfor %}
     </div>
@@ -52,9 +55,12 @@
     {% if times or unfinished %}
     <div class="tablewrap">
     <table class="board acct-tracks">
+      {# The last column takes the slack deliberately: its buttons are left
+         aligned, so everything that is a fact stays packed together and the
+         empty width ends up off the right-hand end where it reads as margin. #}
       <colgroup>
-        <col style="width:21%"><col style="width:14%"><col style="width:17%">
-        <col style="width:11%"><col style="width:12%"><col style="width:25%">
+        <col style="width:17%"><col style="width:12%"><col style="width:15%">
+        <col style="width:10%"><col style="width:11%"><col style="width:35%">
       </colgroup>
       <tr><th>Track</th><th class="num">Best</th><th>Medal</th>
         <th class="num">Starts</th><th class="num">Finishes</th><th></th></tr>
