@@ -246,16 +246,15 @@ table.board tr.me { background: #fff6d9; }
    wraps - which is exactly what they do once the table is narrow enough to
    scroll and the percentages become suggestions. */
 .acct-tracks td:first-child, .acct-tracks th:first-child { white-space: nowrap; }
-/* Mono, like the three number columns it sits among. It is the only other
-   per-track fact in the row, and in the proportional face it read as a
-   different table from the one either side of it. */
-.acct-tracks .medalcell {
-  display: flex; align-items: center; gap: .4rem; font-family: var(--mono);
-}
+.acct-tracks .medalcell { display: flex; align-items: center; gap: .4rem; }
 .acct-tracks td, .acct-tracks th { padding: .3rem .5rem; }
-/* Left, hard against the numbers, so the slack in the row falls off the end
-   instead of opening a gap in the middle of it. */
-.acct-actions { display: flex; gap: .55rem; justify-content: flex-start; }
+/* Every heading in the one face. `th.num` is mono site-wide, which is right in
+   a cell - figures want to line up - but in the heading row it split five
+   labels into two fonts, and left "Medal" looking pasted in from another
+   table. The cells keep the distinction, where it does the real work. */
+.acct-tracks th, .acct-tracks th.num { font-family: var(--display); }
+/* Right, so the last button finishes where the table does. */
+.acct-actions { display: flex; gap: .55rem; justify-content: flex-end; }
 .btn.mini {
   display: inline-flex; align-items: center; gap: .35rem;
   font-size: .82rem; padding: .24rem .58rem; border-radius: 8px;
