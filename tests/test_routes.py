@@ -502,3 +502,14 @@ def test_registering_leaves_you_logged_in_at_your_settings(client):
     assert resp.status_code == 302
     assert resp.headers["Location"].endswith("/accounts/settings")
     assert client.get("/accounts/settings").status_code == 200
+
+
+def test_an_upload_far_too_large_is_refused_before_it_is_read(client, logged_in):
+    """nginx allows 20m through, so without a limit here a request could put
+    20MB in memory just to be told the picture is over 5MB."""
+    logged_in("hefty")
+    resp = client.post("/accounts/settings/profile", data={
+        "avatar": (io.BytesIO(b"x" * (7 * 1024 * 1024)), "huge.png")},
+        content_type="multipart/form-data")
+    assert resp.status_code == 413
+    assert "under 5MB" in body(resp)

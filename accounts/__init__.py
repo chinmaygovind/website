@@ -54,6 +54,28 @@ def init_app(app: Flask):
         os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                      "instance", "avatars"))
 
+    # Werkzeug refuses an oversized body before reading it, which matters
+    # because the avatar route's own 5MB check happens after the upload is in
+    # memory - nginx allows 20m, so without this a request could put 20MB there
+    # just to be told no. A little over the avatar limit, so the friendly
+    # message is what people actually see and this is only the backstop.
+    from .avatars import MAX_UPLOAD
+    app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD + 1024 * 1024
+
+    from werkzeug.exceptions import RequestEntityTooLarge
+
+    @app.errorhandler(RequestEntityTooLarge)
+    def _too_large(_e):
+        # Flask's own page for this says "413 Request Entity Too Large", which
+        # is true and is no help to somebody who picked a photo.
+        from flask import render_template, request
+        if request.path.startswith("/accounts/"):
+            return render_template(
+                "accounts/message.html", title="That file is too big",
+                body="Profile pictures have to be under 5MB. Try a smaller one.",
+                link="/accounts/settings", link_text="Back to settings"), 413
+        return "That upload is too large.", 413
+
     _configure_sqlite(app, database_url)
     db.init_app(app)
 
