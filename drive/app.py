@@ -901,10 +901,10 @@ def _delete_game(game):
 # A room is always "on": everyone in it is driving the current track whenever
 # they like, and a race is a *phase* of the room rather than a separate place.
 # Poses are kept in memory and fanned out as one merged snapshot per tick, so
-# traffic is 20 messages/sec/viewer instead of 20 per car per viewer. None of
-# this is ever written to the database.
+# traffic is TICK_HZ messages/sec/viewer instead of that per car per viewer.
+# None of this is ever written to the database.
 
-TICK_HZ = 20
+TICK_HZ = 30
 POSE_STALE_MS = 6000
 QUAL_MS = 90000
 COUNTDOWN_MS = 5000
@@ -953,6 +953,14 @@ def _car(r, pid):
 
 
 def _snapshot(r):
+    """Everyone's latest pose, merged, with each one's own age.
+
+    `t` is when the snapshot went out; a car's pose in it is whatever arrived
+    last, which can be a whole pose-interval older. The last field is that gap,
+    because the client extrapolates each car forward from when it reported and
+    reading them all as fresh leaves every car short by a different amount every
+    tick - jitter that looks like the network and is actually arithmetic.
+    """
     now = _now_ms()
     cars = {}
     for pid, c in r["cars"].items():
@@ -961,7 +969,7 @@ def _snapshot(r):
         cars[pid] = [round(c["p"][0], 2), round(c["p"][1], 2), round(c["p"][2], 2),
                      round(c["q"][0], 3), round(c["q"][1], 3), round(c["q"][2], 3), round(c["q"][3], 3),
                      round(c["v"][0], 2), round(c["v"][1], 2), round(c["v"][2], 2),
-                     round(c["prog"], 1), c["cp"], c["flags"]]
+                     round(c["prog"], 1), c["cp"], c["flags"], max(0, now - c["ts"])]
     return {"t": now, "cars": cars}
 
 

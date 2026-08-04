@@ -283,7 +283,9 @@ def test_the_brake_light_means_braking(rt):
         r["accelerating"] is False, "the lights are on when nothing is slowing down"
     assert r["reversing"] is False, \
         "reversing lights the brake lights - the key is held, but nothing is slowing"
-    # FLAG.BRAKE is bit 3; game.js reads it off remote cars as `flags & 8`
+    # FLAG.BRAKE is bit 3; game.js lights a rival's lamps off it and nothing
+    # else - it once also hid them and stopped them being solid, which is what
+    # made rivals vanish through every braking zone.
     assert r["flag"] & 8, "the brake flag is not in the pose sent to other players"
 
 

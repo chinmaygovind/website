@@ -7,13 +7,13 @@
 // every time on the leaderboard depend on the machine that set it.
 //
 // Multiplayer is client-authoritative: your browser decides where your car is
-// and says so twenty times a second, and the server fans out the merged
+// and says so thirty times a second, and the server fans out the merged
 // snapshot. Nobody's position is ever corrected by anyone else, which is what
 // keeps contact smooth (see Car.resolveCars for the bumping rules).
 
 import * as THREE from './vendor/three.module.js';
 import { buildTrack } from './trackmesh.js';
-import { Car, Stepper } from './physics.js';
+import { Car, Stepper, FLAG } from './physics.js';
 import { Course, Run, Ghost, GHOST_RATE } from './course.js';
 import { Renderer, CarView } from './render.js';
 import { Sound } from './sound.js';
@@ -1141,14 +1141,18 @@ function frame(now) {
     markHintSeen();
   }
 
+  // Rivals are brought up to now *before* the physics that has to hit them.
+  // This used to run after, so every fixed substep in the frame resolved contact
+  // against where the other cars were a frame ago - a car length of error at
+  // racing speed, all of it in the direction of travel.
+  updateRemotes(dt);
+
   if (!S.paused) {
     S.stepper.run(dt, (h) => {
       S.car.step(h, inp);
       S.car.resolveCars(collidables(), h);
     });
   }
-
-  updateRemotes(dt);
 
   // run bookkeeping
   const events = S.run.update(S.car, now);
@@ -1806,7 +1810,7 @@ function markActiveTrack() {
 // ---------------------------------------------------------------------------
 // Netcode
 // ---------------------------------------------------------------------------
-const POSE_HZ = 20;
+const POSE_HZ = 30;
 
 function serverNow() { return Date.now() + S.clockOffset; }
 
@@ -1946,7 +1950,13 @@ function onPoses(snap) {
     const a = snap.cars[pid];
     let r = S.remotes.get(pid);
     if (!r) r = addRemote(pid);
-    r.packetT = snap.t;
+    // `snap.t` is when the *snapshot* went out, but a car's pose inside it can
+    // be a whole pose-interval older than that - so each car carries its own
+    // age, and how far it is extrapolated is measured from when it actually
+    // reported. Reading them all as fresh under-extrapolates every car by a
+    // different amount each tick, which is jitter no smoothing can remove.
+    // (Guarded for a client that outlives a server without the field.)
+    r.packetT = snap.t - (a.length > 13 ? a[13] : 0);
     r.px = a[0]; r.py = a[1]; r.pz = a[2];
     r.q.set(a[3], a[4], a[5], a[6]);
     r.vel.set(a[7], a[8], a[9]);
@@ -1981,13 +1991,22 @@ function addRemote(pid) {
 /**
  * Bring remote cars up to "now" and smooth them.
  *
- * Packets arrive 20 times a second with a position and a velocity. Rendering the
+ * Packets arrive 30 times a second with a position and a velocity. Rendering the
  * raw positions would stutter, and rendering them delayed would mean bumping a
  * car where it *was*. So: extrapolate the last packet forward to the current
  * server time with its velocity, then chase that target exponentially. The car
  * you see and the car you hit are the same car, and the motion stays smooth
  * between packets - which is what keeps the contact spring quiet.
+ *
+ * Chasing is for the small corrections between packets and nothing else. A car
+ * that respawns, is put on the grid, or simply goes quiet for a moment does not
+ * *travel* to its new position - so a jump bigger than any car could have driven
+ * is taken whole. Smoothing one is worse than useless: the car streaks across
+ * the map at a speed nothing can do, through the middle of everybody, and is
+ * solid the entire way.
  */
+const REMOTE_SNAP = 12;               // units; ~3.5 car lengths, well past a frame of driving
+
 function updateRemotes(dt) {
   const nowS = serverNow();
   for (const r of S.remotes.values()) {
@@ -1995,24 +2014,36 @@ function updateRemotes(dt) {
     const tx = r.px + r.vel.x * ahead;
     const ty = r.py + r.vel.y * ahead;
     const tz = r.pz + r.vel.z * ahead;
-    if (!r.primed) { r.pos.set(tx, ty, tz); r.rq.copy(r.q); r.primed = true; }
-    const k = 1 - Math.exp(-16 * dt);
-    r.pos.x += (tx - r.pos.x) * k;
-    r.pos.y += (ty - r.pos.y) * k;
-    r.pos.z += (tz - r.pos.z) * k;
-    r.rq.slerp(r.q, 1 - Math.exp(-18 * dt));
+    // A respawning car is not on the track at all, so wherever it comes back is
+    // a jump by definition - and it is hidden below, so the snap is never seen.
+    const jump = !r.primed || (r.flags & FLAG.RESPAWN) ||
+      (tx - r.pos.x) ** 2 + (ty - r.pos.y) ** 2 + (tz - r.pos.z) ** 2 > REMOTE_SNAP ** 2;
+    if (jump) {
+      r.pos.set(tx, ty, tz); r.rq.copy(r.q); r.primed = true;
+    } else {
+      const k = 1 - Math.exp(-16 * dt);
+      r.pos.x += (tx - r.pos.x) * k;
+      r.pos.y += (ty - r.pos.y) * k;
+      r.pos.z += (tz - r.pos.z) * k;
+      r.rq.slerp(r.q, 1 - Math.exp(-18 * dt));
+    }
     r.fwd.set(0, 0, -1).applyQuaternion(r.rq);
-    // FLAG.BRAKE is bit 3 (see physics.js) - remote cars show their brake
-    // lights too, which is most of what tells you a rival is slowing.
-    r.view.update(r.pos, r.rq, { braking: !!(r.flags & 8), spin: 0 });
-    r.view.group.visible = !(r.flags & 8);
+    // Remote cars show their brake lights too, which is most of what tells you a
+    // rival is slowing. Braking is the one flag that changes nothing else about
+    // them: it is what a rival does in every corner, so a car that stopped being
+    // drawn or stopped being solid for the length of a braking zone would blink
+    // out and be driven through at exactly the moment you are closest to it.
+    // Only RESPAWN takes a car off the track.
+    const off = !!(r.flags & FLAG.RESPAWN);
+    r.view.update(r.pos, r.rq, { braking: !!(r.flags & FLAG.BRAKE), spin: 0 });
+    r.view.group.visible = !off;
   }
 }
 
 function collidables() {
   const out = [];
   for (const r of S.remotes.values()) {
-    if (r.flags & 8) continue;         // respawning: not on the track
+    if (r.flags & FLAG.RESPAWN) continue;   // not on the track: nothing to hit
     out.push(r);
   }
   return out;

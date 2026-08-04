@@ -384,12 +384,40 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   the flag, which is why the ghost appeared to start in front of you.
   `test_the_ghost_is_recorded_where_the_car_actually_was` drives a lap, notes where the
   car really was at each sample time and requires the two to agree.
-- **Live races are in memory, not the DB.** A race ticks 20x/sec: clients are
+- **Live races are in memory, not the DB.** A race ticks 30x/sec: clients are
   authoritative over their own car and emit `pose`, the server merges and fans out one
   snapshot per tick, and only the finished standings are written back. Cars are solid,
   resolved Mario-Kart-style (impulse + penetration spring, never positional snapping,
   tangential velocity preserved, per-pair bump cooldown) - see `Car.resolveCars`.
   `FLAG.BRAKE` rides along in the pose so a rival's brake lights work.
+- **Only `FLAG.RESPAWN` takes a rival off the track.** Both the visibility line
+  and `collidables()` used to test `flags & 8`, which is `FLAG.BRAKE` - copied
+  off the brake-light line directly above them, and commented "respawning". So
+  every rival went invisible *and* intangible for the length of every braking
+  zone: they blinked out on the way into each corner and you drove through them
+  at the one moment you were closest. Braking is the flag that must change
+  nothing except the lamps. `FLAG` is imported into `game.js` now rather than
+  the bits being written by hand.
+- **A remote car chases its target, except when no car could have driven it.**
+  `updateRemotes` extrapolates the last packet forward on its velocity and
+  chases exponentially, which is right for the small corrections between
+  packets and wrong for everything else. A respawn, a grid placement or a
+  packet gap moves the target further than a car can travel in a frame, and
+  smoothing that streaked the rival across the map at an impossible speed,
+  solid the whole way. Past `REMOTE_SNAP` (12 units), or on `FLAG.RESPAWN`, the
+  jump is taken whole - and a respawning car is hidden, so the cut is not seen.
+- **Each car in a snapshot carries its own age.** `snap.t` is when the
+  *snapshot* went out; the pose inside it is whatever last arrived and can be a
+  full pose-interval older. Extrapolating every car from `snap.t` left them all
+  short by a different amount every tick - jitter that reads as the network and
+  is arithmetic. `_snapshot` sends `now - c["ts"]` per car and the client
+  measures from there. It is the last field, and the client guards on array
+  length, so a cached old client meeting a new server degrades rather than
+  computing `NaN` positions.
+- **Rivals are brought up to now before the physics that has to hit them.**
+  `updateRemotes` ran after the fixed-step loop, so every substep resolved
+  contact against a frame-old position - about a car length at racing speed,
+  all of it in the direction of travel.
 - **A room is a phase machine, and every way out of a phase is guarded.** The
   phases are `free` -> `qualifying` (90s) -> `countdown` (5s) -> `racing` ->
   `results` -> `free`. **A race must end**, and for a long time one could not:
