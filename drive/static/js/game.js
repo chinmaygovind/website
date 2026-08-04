@@ -1446,17 +1446,16 @@ function renderMedalTable() {
   if (!el) return;                  // rooms do not show medal times at all
   const m = S.track.medals;
   const rows = [['gold', 'Gold'], ['silver', 'Silver'], ['bronze', 'Bronze']];
-  // The record heads the list, because it is the fourth time on it and the
-  // only one that is somebody's rather than the track's - the medals say what
-  // the track asks of you, and this says what has actually been done here.
+  // The record heads the list, because it is the fourth time on it: the medals
+  // say what the track asks of you and this says what has actually been done
+  // here. Just the time, laid out exactly like the three under it - whose lap
+  // it is belongs on the leaderboard, not on a card you read at 200km/h.
   // Green, and not a medal colour: it is not a medal and cannot be won.
   const wr = S.track.record_ms;
-  const who = S.track.record_by ? ' &middot; ' + esc(S.track.record_by) : '';
   // Your own best is not in here - it lives under the clock, bottom left of
   // it, where you look for it while you are driving.
   el.innerHTML =
-    `<div class="mrow wr"><span class="medal wr"></span>` +
-    `<span>WR${wr != null ? who : ''}</span>` +
+    `<div class="mrow"><span class="medal wr"></span><span>WR</span>` +
     `<b>${wr != null ? fmt(wr) : '&mdash;'}</b></div>` +
     rows.map(([k, label]) =>
       `<div class="mrow"><span class="medal ${k}"></span><span>${label}</span>` +

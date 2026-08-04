@@ -301,10 +301,12 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   `test_medals_bracket_the_simulated_driver` still requires the headless driver
   to manage a bronze. **Medals already earned do not move**: `DriveTime.medal`
   is written when the run is stored.
-- **The record heads the medals card**, above gold/silver/bronze, as a green dot
-  with the holder's name - the fourth time on the same list and the only one
-  that is somebody's rather than the track's. Green because it is not a medal
-  and cannot be won. It rides along on the track payload (`_track_payload`,
+- **The record heads the medals card**, above gold/silver/bronze, as a green
+  dot and a time laid out exactly like the three under it - the fourth time on
+  the same list. Green because it is not a medal and cannot be won. **The
+  holder's name is not on it**: whose lap it is belongs on the leaderboard, not
+  on a card read at 200km/h with three other times on it, so `_track_payload`
+  does not even send it. It rides along on the track payload (`_track_payload`,
   used by `/api/track/<slug>` *and* the play template) rather than in a request
   of its own, so it is right on the first paint and follows the switcher. That
   helper returns a **copy** - the dicts in `tracks_mod` are module-level and

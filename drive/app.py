@@ -511,8 +511,9 @@ def _track_payload(slug):
     best = (DriveTime.query.filter_by(track=slug)
             .order_by(DriveTime.time_ms.asc()).first())
     out = dict(track)
+    # The time and not the holder: whose lap it is belongs on the leaderboard,
+    # not on a card read at 200km/h with three other times on it.
     out["record_ms"] = best.time_ms if best else None
-    out["record_by"] = best.user.username if best and best.user else None
     return out
 
 

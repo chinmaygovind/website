@@ -483,11 +483,6 @@ body.touch .mapbtns { display: none; }
 
 .mrow { display: flex; align-items: center; gap: .45rem; font-size: .82rem; padding: .1rem 0; }
 .mrow b { margin-left: auto; font-family: var(--mono); }
-/* Ruled off from the three medals under it: it is a different kind of time. */
-.mrow.wr { color: #7ef0ab; border-bottom: 1px solid var(--hud-line);
-           padding-bottom: .28rem; margin-bottom: .28rem; }
-.mrow.wr span:not(.medal) { overflow: hidden; text-overflow: ellipsis;
-                            white-space: nowrap; max-width: 9rem; }
 
 .st-row { display: flex; align-items: center; gap: .45rem; font-size: .85rem; padding: .14rem 0; }
 .st-row.me { color: #ffd96b; font-weight: 700; }

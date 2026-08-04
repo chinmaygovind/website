@@ -383,14 +383,14 @@ def test_a_track_carries_the_record_on_it(env):
     record travels with the track rather than in a request of its own."""
     A = env
     c = A.app.test_client()
-    empty = c.get("/api/track/sunrise").get_json()
-    assert empty["record_ms"] is None and empty["record_by"] is None
+    assert c.get("/api/track/sunrise").get_json()["record_ms"] is None
 
     _login(c, _user(A, "chinmay"))
     c.post("/api/run", json=_run_payload(A, "sunrise"))
     got = c.get("/api/track/sunrise").get_json()
     assert got["record_ms"] > 0
-    assert got["record_by"] == "chinmay", "and says whose it is"
+    # The time and nothing else. Whose lap it is is the leaderboard's job.
+    assert "record_by" not in got
     # The play page has to have it on the first paint, not after a round trip.
     assert '"record_ms"' in c.get("/solo/sunrise").get_data(as_text=True)
 
