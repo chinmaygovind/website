@@ -146,6 +146,14 @@ export class Sound {
     this._burst({ freq: 2600, q: 0.8, dur: 0.07 + f * 0.07, gain: 0.1 + f * 0.16 });
   }
 
+  // The tow letting go: a rising whoosh with a bright top on it. It has to be
+  // unmistakable, because the boost arrives without anybody pressing anything.
+  slipstream() {
+    this._blip({ freq: 260, to: 1000, type: 'sawtooth', dur: 0.34, gain: 0.13 });
+    this._blip({ freq: 520, to: 1560, type: 'square', dur: 0.3, gain: 0.09, delay: 0.03 });
+    this._burst({ freq: 1900, q: 0.5, dur: 0.3, gain: 0.12 });
+  }
+
   wall(mag) {
     const f = Math.min(1, mag / 26);
     this._burst({ freq: 900, q: 0.6, dur: 0.12 + f * 0.1, gain: 0.1 + f * 0.15 });

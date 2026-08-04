@@ -26,7 +26,7 @@ const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vect
 const _q1 = new THREE.Quaternion();
 const UP = new THREE.Vector3(0, 1, 0);
 
-export const FLAG = { DRIFT: 1, AIR: 2, RESPAWN: 4, BRAKE: 8 };
+export const FLAG = { DRIFT: 1, AIR: 2, RESPAWN: 4, BRAKE: 8, SLIP: 16 };
 
 export class Car {
   constructor(T, world) {
@@ -56,6 +56,9 @@ export class Car {
     this.respawnIn = 0;
     this.frozen = false;       // held on the grid during a countdown
     this.wheelSpin = 0;
+    this.towed = false;        // in another car's hole right now
+    this.slipCharge = 0;       // 0..1, how full the tow is
+    this.slipBoost = 0;        // seconds of boost left
     this._bumpCooldown = new Map();
     this._wallHit = 0;
   }
@@ -72,6 +75,11 @@ export class Car {
     this.speed = 0;
     this.braking = false;
     this.respawnIn = 0;
+    // A tow does not survive being picked up and put down: whatever you were
+    // chasing, you are not behind it any more.
+    this.towed = false;
+    this.slipCharge = 0;
+    this.slipBoost = 0;
   }
 
   _syncAxes() {
@@ -203,7 +211,12 @@ export class Car {
       if (throttle > 0 && brake > 0) {
         a = -T.BRAKE * 0.45;                       // both pedals: hold it there
       } else if (throttle > 0) {
-        a = (vLong < -0.5 ? T.BRAKE : T.ACCEL) * throttle;
+        // The slipstream is more engine, not a raised limit: top speed is where
+        // ACCEL fights DRAG, so the multiplier lifts it by its square root and
+        // the car has to accelerate up to the new one. On the throttle only -
+        // a tow is a bigger top end, not free speed while you coast.
+        const eng = this.slipBoost > 0 ? T.ACCEL * T.SLIP_ACCEL_MULT : T.ACCEL;
+        a = (vLong < -0.5 ? T.BRAKE : eng) * throttle;
       } else if (brake > 0) {
         a = vLong > 0.5 ? -T.BRAKE * brake
                         : -T.REVERSE_ACCEL * brake * (vLong > -T.REVERSE_MAX ? 1 : 0);
@@ -398,6 +411,63 @@ export class Car {
     }
   }
 
+  /**
+   * The slipstream: charge up behind somebody, then get fired past them.
+   *
+   * Mario Kart Wii's draft, because that is the version of this everybody has
+   * already played. Sitting in the hole another car is punching through the air
+   * pays **nothing** while it fills - and then the whole of it arrives at once
+   * as `slipBoost` seconds of extra engine. A trickle of speed for following
+   * somebody would be invisible and unearned; a boost you spent a second and a
+   * half lining up is a move you decided to make.
+   *
+   * What counts as "in the tow" is measured in the *following* car's own frame,
+   * so it works upside down in a loop and up the wall of a bank exactly as it
+   * does on the flat: they must be ahead along your forward axis, inside a
+   * narrow corridor either side of it and above/below it, and pointing roughly
+   * the way you are - you tow off a car you are chasing, never one coming the
+   * other way or crossing at a junction.
+   *
+   * Nothing accumulates while the boost is running, so the cadence is charge,
+   * fire, charge again rather than a permanent tow behind a car you cannot pass.
+   * Call it with a falsy `others` (which is what the phases with no contact in
+   * them do) and it bleeds both the charge and the boost away.
+   */
+  draft(others, dt) {
+    const T = this.T;
+    let towed = false;
+    if (others && others.length && this.grounded && this.respawnIn <= 0
+        && this.speed > T.SLIP_MIN_SPEED) {
+      for (const o of others) {
+        if (!o || o.id === this.id) continue;
+        const dx = o.pos.x - this.pos.x, dy = o.pos.y - this.pos.y, dz = o.pos.z - this.pos.z;
+        const ahead = dx * this.fwd.x + dy * this.fwd.y + dz * this.fwd.z;
+        if (ahead <= T.CAR_LEN || ahead > T.SLIP_RANGE) continue;
+        const lat = dx * this.right.x + dy * this.right.y + dz * this.right.z;
+        if (Math.abs(lat) > T.SLIP_HALF_W) continue;
+        const vert = dx * this.up.x + dy * this.up.y + dz * this.up.z;
+        if (Math.abs(vert) > T.SLIP_HALF_W) continue;
+        if (o.fwd && this.fwd.dot(o.fwd) < T.SLIP_ALIGN) continue;
+        towed = true;
+        break;
+      }
+    }
+    this.towed = towed;
+
+    if (this.slipBoost > 0) {
+      this.slipBoost = Math.max(0, this.slipBoost - dt);
+    } else if (towed) {
+      this.slipCharge += dt / T.SLIP_CHARGE;
+      if (this.slipCharge >= 1) {
+        this.slipCharge = 0;
+        this.slipBoost = T.SLIP_BOOST;
+        this.onSlipstream && this.onSlipstream();
+      }
+    } else if (this.slipCharge > 0) {
+      this.slipCharge = Math.max(0, this.slipCharge - dt / T.SLIP_DECAY);
+    }
+  }
+
   requestRespawn() {
     if (this.respawnIn > 0) return;
     this.respawnIn = this.T.RESPAWN_DELAY;
@@ -423,6 +493,7 @@ export class Car {
     if (!this.grounded) f |= FLAG.AIR;
     if (this.respawnIn > 0) f |= FLAG.RESPAWN;
     if (this.braking) f |= FLAG.BRAKE;
+    if (this.slipBoost > 0) f |= FLAG.SLIP;
     return f;
   }
 }

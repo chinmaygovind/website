@@ -531,6 +531,33 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   resolved Mario-Kart-style (impulse + penetration spring, never positional snapping,
   tangential velocity preserved, per-pair bump cooldown) - see `Car.resolveCars`.
   `FLAG.BRAKE` rides along in the pose so a rival's brake lights work.
+- **Contact and the slipstream belong to free practice and the race, and to
+  nothing else.** They are the same question - are the cars around you cars you
+  are driving against - so they are one answer, `contactOn()` in `game.js`.
+  Qualifying is the exception on purpose: everybody is alone on their own lap on
+  a road they are all using at different points of it, so being punted by
+  somebody a corner behind would take away the one thing the session is for, and
+  a tow off a car you are not racing would hand out a grid slot nobody drove
+  for. For those ninety seconds the rivals are drawn and you go through them.
+  Countdown and the results sheet are outside it too - there is nothing to race
+  there. `test_slipstream.py` pins the phase table.
+- **The slipstream is Mario Kart Wii's draft: it charges, then it pays.**
+  `Car.draft` measures the tow in the *following* car's own frame - ahead along
+  your forward axis, inside a narrow corridor either side of and above/below it,
+  and pointing roughly the way you are - so it works upside down in a loop and up
+  a banking with no special case, and you cannot tow off somebody crossing at a
+  junction or coming the other way. Sitting in it pays **nothing** for
+  `SLIP_CHARGE` seconds and then hands over the whole of it at once: a trickle of
+  speed for following somebody is invisible and unearned, a boost you spent a
+  second and a half lining up is a move you decided to make. **The boost is more
+  engine, not a raised limit** - top speed is where `ACCEL` fights the quadratic
+  `DRAG`, so `SLIP_ACCEL_MULT` 1.5 lifts it by its square root (about a fifth,
+  50 -> 61) and you have to accelerate up to it. Nothing accumulates while a
+  boost runs, so the cadence is charge, fire, charge rather than a permanent tow
+  behind a car you cannot pass. It pays out with nobody pressing anything, so it
+  announces itself: a bar under the speed bar filling, then the whole bar amber
+  with the word on it, a rising whoosh and a toast. `FLAG.SLIP` rides along in
+  the pose - wired for, and like `FLAG.DRIFT` not yet drawn on a rival.
 - **Only `FLAG.RESPAWN` takes a rival off the track.** Both the visibility line
   and `collidables()` used to test `flags & 8`, which is `FLAG.BRAKE` - copied
   off the brake-light line directly above them, and commented "respawning". So
@@ -939,7 +966,7 @@ field from a dark field.
 
 ### Tests
 
-`scripts/tests.sh drive` - 301 tests, about 2:30. `test_tracks.py` and
+`scripts/tests.sh drive` - 349 tests, about 2:40. `test_tracks.py` and
 `test_runcheck.py` are pure Python; `test_app.py` runs the real routes against a
 throwaway SQLite file (the `/solo` memory, the board and ghost APIs, and a guest's run
 being replayed after login). **`test_race.py` covers the room's race machine** -
@@ -968,7 +995,10 @@ correction rather than a double-tap); `test_pending.py` runs `pending.js` agains
 `localStorage` and a `fetch` whose answers the test chooses. Both extract by marker
 rather than line number, and `test_touch.py`'s stub deliberately lists every function
 `bindInput` reaches for - if a new one appears the slice throws instead of quietly
-testing nothing.
+testing nothing. `test_slipstream.py` does both halves: `Car.draft` runs for real
+in QuickJS (it only reads the body's own frame and the rivals it is handed, so it
+needs no world and no lap), and `contactOn` is lifted out of `game.js` by name and
+run against a stubbed phase.
 
 There is no browser in CI, so **check rendering by hand** before shipping a geometry
 change: run the app on a spare port and screenshot it with headless Chrome

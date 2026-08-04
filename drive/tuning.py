@@ -124,6 +124,33 @@ CAR_RADIUS = 1.25          # collision sphere for walls and other cars
 CAR_PUSH = 26.0            # how hard cars shove each other apart
 CAR_BUMP_SCRUB = 0.93      # speed kept after a car-to-car hit
 
+# --- slipstream ------------------------------------------------------------
+# Sit in the hole another car is punching through the air and, after a moment,
+# you are fired out of it - Mario Kart Wii's draft, which is the version of this
+# everybody already knows how to use. Two decisions matter:
+#
+# - **It charges, then it pays.** Being in the tow gives you nothing at all
+#   while SLIP_CHARGE seconds go by; then the whole of it arrives at once as a
+#   burst of engine force. A trickle of extra speed for following somebody is
+#   invisible and unearned; a boost you waited for is a move you planned.
+# - **The boost is more engine, not a higher speed limit.** Top speed is where
+#   ACCEL fights the quadratic DRAG, so multiplying the throttle term by 1.5
+#   raises it by sqrt(1.5) - about 22%, MAX_SPEED 50 -> 61 - and gets you there
+#   with a shove rather than teleporting the needle. It applies on the throttle
+#   only: a tow is a bigger top end, not free speed while you coast.
+#
+# The corridor is deliberately narrow and short. A tow that reaches half the
+# straight makes following the correct way to drive; at 26 units (about eight
+# car lengths) you have to be committed to the car in front.
+SLIP_RANGE = 26.0          # how far back the tow reaches
+SLIP_HALF_W = 3.6          # half-width (and half-height) of the tow corridor
+SLIP_ALIGN = 0.65          # min dot(my fwd, their fwd): you must be following them
+SLIP_MIN_SPEED = 22.0      # no tow at a crawl - there is no hole to sit in
+SLIP_CHARGE = 1.5          # seconds in the tow before it pays out
+SLIP_DECAY = 1.6           # seconds for a full charge to bleed away once you leave
+SLIP_BOOST = 1.6           # seconds the boost lasts
+SLIP_ACCEL_MULT = 1.5      # engine force while boosting; top speed x sqrt(1.5)
+
 # --- simulation ------------------------------------------------------------
 FIXED_DT = 1.0 / 120.0     # physics step; render interpolates between steps
 MAX_STEPS = 8              # catch-up cap so a tab-out cannot fast-forward you
@@ -184,6 +211,8 @@ _EXPORT = [
     "SNAP", "SUSP", "OFFROAD_DRAG", "OFFROAD_GRIP", "WALL_BOUNCE", "WALL_SCRUB",
     "PROBE", "CAR_RADIUS", "CAR_PUSH", "CAR_BUMP_SCRUB", "FIXED_DT",
     "MAX_STEPS", "RESPAWN_DELAY",
+    "SLIP_RANGE", "SLIP_HALF_W", "SLIP_ALIGN", "SLIP_MIN_SPEED", "SLIP_CHARGE",
+    "SLIP_DECAY", "SLIP_BOOST", "SLIP_ACCEL_MULT",
 ]
 
 

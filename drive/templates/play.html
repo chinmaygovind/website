@@ -109,6 +109,13 @@
       <div class="stat spd"><b id="speed">0</b><span>km/h</span></div>
     </div>
     <div class="speed-bar"><i id="speedFill"></i></div>
+    {% if mode == 'room' %}
+    <!-- The tow, filling. It sits under the speed bar because that is what it
+         is about to change, and it is hidden outside the phases where the other
+         cars are solid (see contactOn) rather than sitting there at zero in a
+         session where nothing could fill it. -->
+    <div class="slip-bar" id="slipBar"><i id="slipFill"></i><b>SLIPSTREAM</b></div>
+    {% endif %}
   </div>
 
   {% if mode == 'room' %}

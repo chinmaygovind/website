@@ -303,6 +303,13 @@ function wireCarEvents() {
   };
   car.onFall = () => { S.sound.fall(); toast('Off the track'); };
   car.onRespawned = () => S.sound.respawn();
+  // The tow pays out on its own, with no button pressed, so it has to announce
+  // itself: the bar under the speed bar has been filling, and this is it going.
+  car.onSlipstream = () => {
+    S.sound.slipstream();
+    S.renderer.kick(0.35);
+    toast('Slipstream!');
+  };
 }
 
 function resetToStart() {
@@ -1147,10 +1154,17 @@ function frame(now) {
   // racing speed, all of it in the direction of travel.
   updateRemotes(dt);
 
+  // One list per frame rather than one per substep: the remote cars are
+  // interpolated above and do not move again inside the fixed-step loop.
+  const rivals = contactOn() ? collidables() : null;
   if (!S.paused) {
     S.stepper.run(dt, (h) => {
       S.car.step(h, inp);
-      S.car.resolveCars(collidables(), h);
+      if (rivals) S.car.resolveCars(rivals, h);
+      // Always called, even with nobody to tow off: that is what bleeds a
+      // charge away when you drop out of the hole, or when the phase changes
+      // under you and the other cars stop being there at all.
+      S.car.draft(rivals, h);
     });
   }
 
@@ -1295,6 +1309,12 @@ function hudFast() {
   // Over MAX_SPEED means a descent is doing the work, which is worth showing.
   $('speedFill').classList.toggle('over', car.speed > T.MAX_SPEED);
   $('time').textContent = fmt(run.state === 'ready' ? 0 : run.time);
+  const slip = $('slipBar');      // rooms only; solo has nobody to tow off
+  if (slip) {
+    slip.classList.toggle('on', contactOn());
+    slip.classList.toggle('boost', car.slipBoost > 0);
+    $('slipFill').style.width = (car.slipCharge * 100) + '%';
+  }
 }
 
 function hud(now) {
@@ -2038,6 +2058,27 @@ function updateRemotes(dt) {
     r.view.update(r.pos, r.rq, { braking: !!(r.flags & FLAG.BRAKE), spin: 0 });
     r.view.group.visible = !off;
   }
+}
+
+/**
+ * Are the other cars real to you right now - solid, and worth towing off?
+ *
+ * Contact and the slipstream are the same question asked twice, so they are one
+ * answer: both belong to the two phases where the cars around you are cars you
+ * are actually driving against - **free practice and the race itself**.
+ *
+ * Qualifying is the exception, and the reason is the whole point of qualifying:
+ * everybody is alone on their own lap against the clock, on a road they are all
+ * using at different points of it. Being punted by somebody a corner behind you
+ * on their out-lap would take away the one thing the session is for, and a tow
+ * off a car you are not racing would hand out a grid slot nobody drove for. So
+ * for those ninety seconds the rivals are still drawn - you want to know where
+ * they are - and you go straight through them. Countdown and the results sheet
+ * are outside it for the same reason there is nothing to race there.
+ */
+function contactOn() {
+  if (CFG.mode !== 'room') return false;
+  return S.racePhase === 'free' || (S.raceMode && S.racePhase === 'racing');
 }
 
 function collidables() {
