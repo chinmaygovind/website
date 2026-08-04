@@ -56,7 +56,7 @@
             <span class="medal none"></span><span>not driven</span>
           {% endif %}
           <span style="margin-left:auto">
-            {% if rec %}★ {{ '%d:%06.3f'|format((rec[0] // 60000), (rec[0] % 60000) / 1000) }} {{ rec[1] }}{% else %}no record yet{% endif %}
+            {% if rec %}★ {{ '%d:%06.3f'|format((rec[0] // 60000), (rec[0] % 60000) / 1000) }} {{ rec[1].display if rec[1] else '?' }}{% else %}no record yet{% endif %}
           </span>
         </div>
       </div>

@@ -280,7 +280,12 @@ def _my_pb_map():
 
 
 def _records():
-    """{slug: (time_ms, username, set_at)} - the standing record on every track.
+    """{slug: (time_ms, holder, set_at)} - the standing record on every track.
+
+    ``holder`` is the ``User``, not their name, so the templates can put the
+    flag and the profile link on it the same way every other board does - the
+    two tables on the Records page sat one above the other with only one of
+    them linking anybody. It is ``None`` where the row's account is gone.
 
     ``set_at`` is the holder's ``updated_at``, which is when *this* lap was set:
     a better run replaces the row wholesale and stamps it, so the column cannot
@@ -292,7 +297,7 @@ def _records():
     for slug, best in rows:
         holder = (DriveTime.query.filter_by(track=slug, time_ms=best)
                   .order_by(DriveTime.updated_at.asc()).first())
-        out[slug] = (best, holder.user.display if holder and holder.user else "?",
+        out[slug] = (best, holder.user if holder else None,
                      holder.updated_at if holder else None)
     return out
 

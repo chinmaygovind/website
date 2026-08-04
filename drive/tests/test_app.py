@@ -233,7 +233,10 @@ def test_a_pb_never_appears_without_its_rank(env):
     # The record deliberately is not on a switcher card - picking a track should
     # not be a comparison with somebody else. It still reaches the home page.
     assert "wr_ms" not in card and "wr_by" not in card
-    assert records["sunrise"][:2] == (20000, "leader")
+    # The holder is the user rather than their name, so the records table can
+    # put a flag and a profile link on it the way every other board does.
+    assert records["sunrise"][0] == 20000
+    assert records["sunrise"][1].username == "leader"
     # ...and when it was set, which is the records page's Date column.
     assert records["sunrise"][2] is not None
 

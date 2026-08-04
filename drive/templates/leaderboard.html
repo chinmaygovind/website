@@ -20,7 +20,7 @@
       {% set rec = records.get(t.slug) %}
       <tr>
         <td><a href="/track/{{ t.slug }}">{{ t.name }}</a></td>
-        <td>{{ rec[1] if rec else '—' }}</td>
+        <td>{{ p.player(rec[1]) if rec else '—' }}</td>
         <td class="num">{{ '%d:%06.3f'|format((rec[0] // 60000), (rec[0] % 60000) / 1000) if rec else '—' }}</td>
         {# Stored UTC. Rendered as UTC so it is right with no JS, then rewritten
            into the reader's own timezone by the script below - a lap time is
