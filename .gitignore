@@ -19,3 +19,10 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Agent worktrees: whole checkouts of this repo, which git would otherwise
+# record as gitlinks to commits no clone can resolve.
+.claude/worktrees/
+
+# Scratch notes, not the repo.
+drive/todo.txt
