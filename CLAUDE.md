@@ -246,6 +246,13 @@ the rating tiers, Drive's track names, the reserved usernames, the profile
 columns, the display-name wiring, the forgot link, `MAIN_SITE_URL` — has a test
 that **reads the other file** and fails when the two stop agreeing.
 
+**Its TTR checks skip unless the submodule is checked out**, which it is not in
+CI (nor in a plain clone), so six of them read as passes there. That is on
+purpose — `ttr/` is a separate repo with its own CI and the deploy never builds
+it — but it means the TTR half of the agreement is only actually checked on a
+machine that has run `git submodule update --init ttr`, i.e. when somebody is
+changing TTR anyway. If you touch the shared profile columns, run it there.
+
 ## Egyptian Rat Screw (`ers/`)
 
 **Live at `https://ers.cgovind.com`** (TLS via certbot). A second real-time game in the
