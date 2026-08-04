@@ -41,8 +41,15 @@
 
   <div class="field">
     <label for="country">Country</label>
+    {# The common answer first, then a rule, then the alphabet. Without the
+       rule the top entry just looks like the list is sorted wrong. #}
     <select id="country" name="country">
       <option value="">— not saying —</option>
+      {% for code, name in pinned_countries %}
+      <option value="{{ code }}"
+        {{ 'selected' if profile and profile.country == code }}>{{ name }}</option>
+      {% endfor %}
+      <option disabled>──────────</option>
       {% for code, name in countries %}
       <option value="{{ code }}"
         {{ 'selected' if profile and profile.country == code }}>{{ name }}</option>

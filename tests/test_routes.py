@@ -513,3 +513,17 @@ def test_an_upload_far_too_large_is_refused_before_it_is_read(client, logged_in)
         content_type="multipart/form-data")
     assert resp.status_code == 413
     assert "under 5MB" in body(resp)
+
+
+def test_the_country_dropdown_opens_on_the_united_states(client, logged_in):
+    logged_in("picker")
+    page = body(client.get("/accounts/settings"))
+    options = page.split('id="country"')[1].split("</select>")[0]
+    first = options.split('<option value="us"')[0]
+    # Nothing above it but the empty choice.
+    assert first.count("<option") == 1
+    assert 'value=""' in first
+    # ...and a rule under it, or the top entry just reads as a sorting bug.
+    assert options.index("<option disabled") > options.index('<option value="us"')
+    # It is not also down in the alphabet.
+    assert options.count('<option value="us"') == 1

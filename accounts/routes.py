@@ -267,9 +267,11 @@ def settings():
     user, bounce = _require_login()
     if bounce:
         return bounce
+    pinned, rest = places.picker_countries()
     return render_template("accounts/settings.html", user=user,
                            profile=user.profile,
-                           countries=places.COUNTRIES, states=places.US_STATES,
+                           pinned_countries=pinned, countries=rest,
+                           states=places.US_STATES,
                            notice=request.args.get("ok"),
                            error=request.args.get("err"))
 

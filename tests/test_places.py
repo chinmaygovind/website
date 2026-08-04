@@ -99,3 +99,18 @@ def test_the_home_nations_and_kosovo_are_offered_even_though_they_are_not_iso():
     codes = {c for c, _ in places.COUNTRIES}
     for code in ("gb-eng", "gb-sct", "gb-wls", "gb-nir", "xk"):
         assert code in codes
+
+
+def test_the_picker_puts_the_common_answer_first():
+    """"United States" is two thirds of the way down 254 entries, which makes
+    the answer most people here are giving the slow one to find."""
+    pinned, rest = places.picker_countries()
+    assert pinned == [("us", "United States")]
+
+    # Pinned entries are removed from the alphabetical part rather than
+    # repeated in it: two options with the same value in one <select> is a way
+    # to disagree with yourself about which is selected.
+    codes = [c for c, _ in rest]
+    assert "us" not in codes
+    assert len(pinned) + len(rest) == len(places.COUNTRIES)
+    assert [n for _, n in rest] == sorted(n for _, n in rest)

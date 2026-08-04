@@ -340,6 +340,27 @@ US_STATES = [
 COUNTRY_NAMES = dict(COUNTRIES)
 US_STATE_NAMES = dict(US_STATES)
 
+# Countries lifted to the top of the picker, ahead of the alphabet. Almost
+# everybody here is in one of them, and "United States" is two thirds of the way
+# down 254 entries - far enough that the common answer is the slow one.
+PINNED = ("us",)
+
+
+def picker_countries():
+    """``(pinned, rest)`` - what the country dropdown shows, in the order it shows it.
+
+    Kept out of ``COUNTRIES`` rather than baked into it: that list is the data,
+    sorted by name, and everything else that reads it (the tests that check the
+    art, anything listing what is offered) wants it that way. This is only how
+    one form chooses to present it, and the pinned entries are *removed* from
+    the alphabetical part rather than repeated in it - two options with the same
+    value in one ``<select>`` is a way to disagree with yourself about which one
+    is selected.
+    """
+    pinned = [(code, COUNTRY_NAMES[code]) for code in PINNED if code in COUNTRY_NAMES]
+    rest = [(code, name) for code, name in COUNTRIES if code not in PINNED]
+    return pinned, rest
+
 
 def flag_of(country, state=None, prefer_state=False):
     """The flag a profile flies, as ``(url_path, alt_text)`` - or ``None``.
