@@ -153,3 +153,13 @@ def test_the_flag_url_does_not_borrow_the_wrong_site(game):
     assert "MAIN_SITE_URL" in src, game
     assert re.search(r'"site_url":\s*MAIN_SITE_URL', src) \
         or "'site_url': MAIN_SITE_URL" in src, game
+
+
+@pytest.mark.parametrize("game", GAMES)
+def test_every_board_can_reach_a_profile(game):
+    """A flag next to a name is the moment somebody wonders who that is. The
+    link uses the *username*, which is the permanent one - a display name can
+    change and would break every link the moment it did."""
+    src = source(game, "templates", "_player.html")
+    assert "/accounts/{{ user.username }}" in src, game
+    assert "user.display" in src, game
