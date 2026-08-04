@@ -55,6 +55,18 @@
         </svg>
       </button>
     </div>
+    {% if mode == 'room' %}
+    <!-- Retiring from a race. Only here while there is a race to retire from,
+         and it asks twice: it is one click away from the settings icon, it
+         cannot be undone, and nobody has ever meant it on the first press
+         while steering. The second press is the one that counts, and the
+         button says so rather than opening a dialog over the road. -->
+    <button class="hbtn danger" id="btnResign" style="display:none"
+            title="Retire from this race">
+      <svg viewBox="0 0 24 24"><path d="M6 21V4"/><path d="M6 5h11l-2.2 3.4L17 12H6z"/></svg>
+      <span class="hbtn-label">Resign</span>
+    </button>
+    {% endif %}
     <!-- Medal times are a time-trial thing. In a room they were a table of lap
          times sitting above the live standings with no relationship to the race
          you were driving, so they are simply not here. -->
@@ -100,7 +112,26 @@
        button in a drawer that closes itself. Top centre, above everything, so
        nobody has to go looking for the thing everyone is waiting on. -->
   <div class="hud-tc">
-    <button class="btn start-race" id="btnStartRace" style="display:none">Start race</button>
+    <!-- Qualifying, for the ninety seconds it lasts. Top centre because for
+         that minute and a half it *is* the session: the clock everybody is
+         driving against and the order they will line up in, updating as the
+         laps come in. It is ordered exactly the way the grid will be, so the
+         list you watch is the list you start in. -->
+    <div class="card qual" id="qualCard" style="display:none">
+      <div class="qual-head">
+        <span class="qual-title">Qualifying</span>
+        <b class="qual-clock" id="qualClock">1:30</b>
+      </div>
+      <div class="qual-rows" id="qualRows"></div>
+      <div class="qual-note">Set your fastest lap &mdash; it sets the grid</div>
+    </div>
+    <div class="tc-btns">
+      <button class="btn start-race" id="btnStartRace" style="display:none">Start race</button>
+      <!-- The host's way out of a race that is not going to end on its own.
+           Before the lights it cancels; once they are out it is the chequered
+           flag, and it says which of the two it is about to do. -->
+      <button class="btn end-race" id="btnEndRace" style="display:none">End race</button>
+    </div>
   </div>
   {% endif %}
 

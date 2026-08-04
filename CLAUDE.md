@@ -363,6 +363,71 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   resolved Mario-Kart-style (impulse + penetration spring, never positional snapping,
   tangential velocity preserved, per-pair bump cooldown) - see `Car.resolveCars`.
   `FLAG.BRAKE` rides along in the pose so a rival's brake lights work.
+- **A room is a phase machine, and every way out of a phase is guarded.** The
+  phases are `free` -> `qualifying` (90s) -> `countdown` (5s) -> `racing` ->
+  `results` -> `free`. **A race must end**, and for a long time one could not:
+  the only thing that armed the finish clock was somebody *finishing*
+  (`FINISH_GRACE_MS`), so a race nobody finished never ended, and the room sat
+  in `racing` for ever with the host unable to start another or change track -
+  `set_track` and `start_race` both refuse mid-race, correctly, which is why
+  the hang presented as "the host can't do anything". There are now four
+  independent ways out, and `_maybe_close` is called from *every* path that can
+  empty the road (finish, resign, disconnect, kick) rather than from the finish
+  alone: "the last car is in" is not something only finishing can cause. Behind
+  all of them is `_hard_race_ms` (8x a gold lap, clamped), which depends on
+  nobody doing anything. **Every deferred close carries the `race_seq` it was
+  armed for**, so a timer from one race can never close the next - which is
+  live, because Rematch can fire inside the twelve seconds the results sheet is
+  up.
+- **Leaving mid-race is a DNF, not a disappearance.** `_drop` used to delete
+  the car, and with it the loss, so the cheapest way to protect a rating was to
+  close the tab - the one thing a rating system must never make the smart move.
+  The car is now marked `gone` (excluded from `_snapshot` and `_live`, so it
+  stops being drawn and stops holding the race open) but kept, so it is still
+  in the standings and still rated. `_reset_race` is what finally drops it.
+- **Two buttons for the two ways a race stops early.** Anyone can **Resign**
+  (top right, only while there is a race to resign from): a DNF, rated as one,
+  and you drop straight back into practice without leaving the room. The host
+  gets **End race** (top centre, beside Start race), which is a *cancellation*
+  before the lights - `_abort_race`, nothing recorded - and the chequered flag
+  after them, freezing the standings and rating them normally. Both arm on the
+  first press and fire on the second, in place: they happen mid-drive, one
+  press from the settings icon, and an "are you sure" overlay would cover the
+  race you want to look at before answering it.
+- **The grid is set by a 90-second qualifying session**, not by name. It was
+  `sorted(fresh, key=name)`, which is both arbitrary *and stable* - so the same
+  person started on pole every single race. Qualifying is ordinary practice
+  with a clock on it: `qual_time` per improved lap, best one counts, a lap
+  finishes into a toast and an automatic restart rather than the results sheet
+  (covering the road while there are seconds left to improve is taking the
+  session away). No lap at all means the back of the grid, shuffled. The host's
+  Start race means "open qualifying" in `free` and "go now" during it, so
+  ninety seconds never traps four people who are ready.
+- **The grid is staggered and its sides alternate.** Ordering alone does not
+  fix a two-by-two grid: cars level with each other reach the first corner
+  together and the one on the inside of it simply gets there. So the odd slot
+  of each row sits back 2.4 units (F1 style), and the server flips `flip` every
+  race. **Nothing in the code knows which way the first corner goes** - not the
+  server, not `placeOnGrid` - and nothing needs to: staggering stops the pair
+  fighting for the same metre at the same instant, and flipping stops whichever
+  side is the good one belonging to the same person twice running. Pole keeps
+  its advantage; it was earned in qualifying, and taking it away would make the
+  session pointless.
+- **Guests are invisible to ELO.** They are in the room, on the grid and in the
+  standings, but `_rate_race` ranks the logged-in players *among themselves*:
+  beating a guest gains nothing, losing to one costs nothing. Anything else is
+  a rating anybody can move by opening a second tab. The win and podium tallies
+  were read off the overall standings, so a guest winning meant nobody was
+  recorded as having won and a guest in the top three pushed an account off its
+  own podium; they follow the rated order now, and retiring is never a win.
+  **Two DNFs draw** (0.5), because their order is whichever they happened to
+  give up in. Still needs two accounts - one has nobody to be rated against,
+  and its race count no longer creeps up on races that were never rated.
+- `?panel=qual|racing` pins a phase and fakes a session, for the same reason
+  the other `?panel=` values exist: neither is a panel you can open, and
+  getting a room into either takes two browsers and a stopwatch. Pinned rather
+  than assigned - the room reports `free` the moment the socket connects, so a
+  phase merely set at boot is gone before the shutter.
 
 ### Look: skies and worlds
 
@@ -610,10 +675,14 @@ field from a dark field.
 
 ### Tests
 
-`scripts/tests.sh drive` - 282 tests, about 2:10. `test_tracks.py` and
+`scripts/tests.sh drive` - 301 tests, about 2:30. `test_tracks.py` and
 `test_runcheck.py` are pure Python; `test_app.py` runs the real routes against a
 throwaway SQLite file (the `/solo` memory, the board and ghost APIs, and a guest's run
-being replayed after login). **`test_sim.py` runs the game's real JavaScript
+being replayed after login). **`test_race.py` covers the room's race machine** -
+the ways a race used to strand a room (no finisher, the last car leaving, a
+stale timer closing the wrong race), the grid rules, and the rating rules. The
+live room state is plain dicts, so it builds them directly rather than driving
+a socket: what is under test is the bookkeeping, not the wire. **`test_sim.py` runs the game's real JavaScript
 headlessly**: `tests/jsrt.py` strips the ES module syntax, swaps three.js for
 `tests/three_stub.js` (real Vector3/Quaternion maths, inert graphics), and runs it in
 QuickJS, then `tests/autopilot.js` *drives every track to the finish*. That is the test

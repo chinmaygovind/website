@@ -857,8 +857,21 @@ def _delete_game(game):
 
 TICK_HZ = 20
 POSE_STALE_MS = 6000
+QUAL_MS = 90000
 COUNTDOWN_MS = 5000
 FINISH_GRACE_MS = 45000
+# A race must end. The grace clock below only starts when somebody *finishes*,
+# so on its own it cannot save a race nobody finishes - which is the ordinary
+# outcome of everyone crashing out or wandering off, and used to park the room
+# in `racing` for ever with the host unable to restart it or change track.
+HARD_RACE_MIN_MS = 150000
+HARD_RACE_MAX_MS = 900000
+
+# The phases a room moves through. Everything that can strand a room is a
+# transition out of one of the middle three, so they all go through the same
+# `_close_*` helpers and every one of them is guarded by a race sequence
+# number - see `_race_seq`.
+LIVE_PHASES = ("qualifying", "countdown", "racing")
 
 _rooms = {}       # code -> live room state
 _sid_room = {}    # socket id -> (code, pid)
@@ -869,7 +882,16 @@ def _room(code):
     if not r:
         r = _rooms[code] = {"code": code, "phase": "free", "cars": {}, "t0": None,
                             "deadline": None, "finish": [], "chat": [],
-                            "loop": None, "seq": 0}
+                            "loop": None, "seq": 0,
+                            # qualifying -> grid
+                            "qual": {}, "qual_end": None, "grid": {},
+                            # Which side of the road pole starts on. Flipped
+                            # every race so no slot is permanently the inside
+                            # line - see `_start_grid`.
+                            "flip": False, "races_run": 0,
+                            # Bumped by every race so a timer armed for one race
+                            # can never close the next one.
+                            "race_seq": 0, "hard_end": None}
     return r
 
 
@@ -877,7 +899,7 @@ def _car(r, pid):
     return r["cars"].setdefault(pid, {
         "p": [0.0, 0.0, 0.0], "q": [0.0, 0.0, 0.0, 1.0], "v": [0.0, 0.0, 0.0],
         "prog": 0.0, "cp": 0, "flags": 0, "ts": 0, "name": "", "color": "#fff",
-        "ms": None, "dnf": False,
+        "ms": None, "dnf": False, "gone": False,
     })
 
 
@@ -885,7 +907,7 @@ def _snapshot(r):
     now = _now_ms()
     cars = {}
     for pid, c in r["cars"].items():
-        if now - c["ts"] > POSE_STALE_MS:
+        if c["gone"] or now - c["ts"] > POSE_STALE_MS:
             continue
         cars[pid] = [round(c["p"][0], 2), round(c["p"][1], 2), round(c["p"][2], 2),
                      round(c["q"][0], 3), round(c["q"][1], 3), round(c["q"][2], 3), round(c["q"][3], 3),
@@ -896,9 +918,79 @@ def _snapshot(r):
 
 def _race_state(r):
     return {"phase": r["phase"], "t0": r["t0"], "deadline": r["deadline"],
-            "finish": r["finish"],
+            "finish": r["finish"], "qual": _qual_state(r),
             "order": [pid for pid, _ in sorted(r["cars"].items(),
                                                key=lambda kv: -kv[1]["prog"])]}
+
+
+def _live(r):
+    """Everyone actually here: a fresh pose, and not already out of the door.
+
+    A car that has gone is kept in `cars` while a race is on (it is a DNF, not
+    a disappearance) so it must be excluded from every "who is still driving"
+    question by name rather than by going stale on its own.
+    """
+    now = _now_ms()
+    return [pid for pid, c in r["cars"].items()
+            if not c["gone"] and now - c["ts"] < POSE_STALE_MS]
+
+
+def _pending(r):
+    """Cars still out on the circuit - neither home nor retired.
+
+    Scoped to the grid, because the grid is exactly who started. Somebody who
+    walks into the room while a race is on is driving, but they are not in it,
+    and counting them here would mean a race could never reach "all in".
+    """
+    live = set(_live(r))
+    return [pid for pid in r["grid"]
+            if pid in live and r["cars"][pid]["ms"] is None
+            and not r["cars"][pid]["dnf"]]
+
+
+def _hard_race_ms(slug):
+    """The longest a race on this track may possibly last.
+
+    Eight times a gold lap is far beyond any honest attempt while still being
+    short enough that a stranded room recovers on its own rather than needing
+    the host to notice.
+    """
+    t = tracks_mod.get(slug) or {}
+    gold = (t.get("medals") or {}).get("gold") or 60.0
+    return int(max(HARD_RACE_MIN_MS, min(HARD_RACE_MAX_MS, gold * 8000)))
+
+
+def _qual_state(r):
+    """The provisional grid, live, while qualifying is running.
+
+    Ordered exactly the way the grid will be, so the list people watch during
+    the session is the list they line up in - no lap sorts to the back, and
+    everyone can see what a lap would buy them.
+    """
+    if r["phase"] not in ("qualifying", "countdown") and not r["qual"]:
+        return None
+    rows = []
+    for pid in _live(r):
+        c = r["cars"][pid]
+        rows.append({"pid": pid, "name": c["name"], "color": c["color"],
+                     "ms": r["qual"].get(pid)})
+    rows.sort(key=lambda e: (e["ms"] is None, e["ms"] or 0, e["name"]))
+    return {"ends": r["qual_end"], "rows": rows}
+
+
+def _start_grid(r):
+    """Qualifying order, with anyone who never set a lap shuffled in at the back.
+
+    A lap is the price of a good slot. Nobody is sorted by name, ever: it is
+    the one ordering that is both arbitrary and *stable*, so the same person
+    started on pole every single race.
+    """
+    live = _live(r)
+    timed = sorted((p for p in live if r["qual"].get(p)),
+                   key=lambda p: r["qual"][p])
+    untimed = [p for p in live if not r["qual"].get(p)]
+    random.shuffle(untimed)
+    return {pid: i for i, pid in enumerate(timed + untimed)}
 
 
 def _pump(code):
@@ -915,6 +1007,11 @@ def _pump(code):
             socketio.emit("poses", snap, room="room:" + code)
         else:
             idle += 1
+            # An empty room in the middle of a race is a race that can never
+            # end by itself, and the room it strands is still there when
+            # somebody comes back to it. Let it go before the pump does.
+            if idle == TICK_HZ * 8 and r["phase"] in LIVE_PHASES:
+                _abort_race(code, "Everyone left.")
             if idle > TICK_HZ * 20:      # nobody has sent a pose in 20s
                 r["loop"] = None
                 return
@@ -947,6 +1044,10 @@ def on_join_room(data):
     r = _room(code)
     c = _car(r, me.pid)
     c["name"], c["color"], c["ts"] = me.name, me.color, _now_ms()
+    # Coming back clears the "left the room" mark but *not* a DNF: reconnecting
+    # mid-race puts you back on the road, it does not put you back in the race
+    # you dropped out of.
+    c["gone"] = False
     _ensure_pump(code)
     game.last_activity_at = datetime.utcnow()
     db.session.commit()
@@ -1002,23 +1103,318 @@ def on_set_track(data):
         if not me or not me.is_host:
             return
         r = _room(code)
-        if r["phase"] in ("countdown", "racing"):
+        if r["phase"] in LIVE_PHASES:
             emit("room_error", {"error": "Can't change track mid-race."})
             return
         game.track = slug
         game.last_activity_at = datetime.utcnow()
         db.session.commit()
-        r["phase"] = "free"
-        r["t0"] = r["deadline"] = None
-        r["finish"] = []
-        for c in r["cars"].values():
-            c["ms"], c["dnf"], c["cp"], c["prog"] = None, False, 0, 0.0
+        _reset_race(r)
     socketio.emit("track_change", {"track": slug}, room="room:" + code)
     _broadcast_lobbies()
 
 
+def _reset_race(r):
+    """Put the room back to free practice with nothing left over."""
+    r["phase"] = "free"
+    r["t0"] = r["deadline"] = r["hard_end"] = r["qual_end"] = None
+    r["finish"] = []
+    r["qual"] = {}
+    r["grid"] = {}
+    for pid in list(r["cars"]):
+        c = r["cars"][pid]
+        if c["gone"]:
+            # Only kept around to be a DNF in the race that has just ended.
+            r["cars"].pop(pid, None)
+            continue
+        c["ms"], c["dnf"], c["cp"], c["prog"] = None, False, 0, 0.0
+
+
+def _abort_race(code, why):
+    """Scrap a race in progress and hand the room back, rating nothing.
+
+    Used for the ways a race stops being a race rather than ending as one: the
+    host calling it off before the lights, and the room emptying out.
+    """
+    with app.app_context():
+        with _lock(code):
+            r = _rooms.get(code)
+            if not r or r["phase"] not in LIVE_PHASES:
+                return
+            r["race_seq"] += 1        # orphan every timer this race armed
+            _reset_race(r)
+            game = DriveGame.query.filter_by(code=code).first()
+            if game:
+                game.status = "waiting"
+                game.last_activity_at = datetime.utcnow()
+                db.session.commit()
+        socketio.emit("race_abort", {"why": why}, room="room:" + code)
+        _broadcast_lobbies()
+
+
 @socketio.on("start_race")
 def on_start_race(data):
+    """The host's one button, and it means different things by phase.
+
+    In free practice it opens qualifying. During qualifying it is "go now",
+    because ninety seconds is the right length for a session nobody wants to
+    cut short and the wrong length for four people who are ready.
+    """
+    code = (data or {}).get("code", "").upper()
+    seq = qseq = ends = None
+    with _lock(code):
+        game = DriveGame.query.filter_by(code=code).first()
+        if not game:
+            return
+        me = DrivePlayer.query.filter_by(game_id=game.id,
+                                         session_key=get_session_key()).first()
+        if not me or not me.is_host:
+            return
+        r = _room(code)
+        if r["phase"] == "qualifying":
+            seq = r["race_seq"]       # skip the rest of the session
+        elif r["phase"] in ("countdown", "racing"):
+            return
+        else:
+            if not _live(r):
+                emit("room_error", {"error": "Nobody is here to race."})
+                return
+            r["race_seq"] += 1
+            r["phase"] = "qualifying"
+            r["qual"] = {}
+            r["qual_end"] = _now_ms() + QUAL_MS
+            r["t0"] = r["deadline"] = r["hard_end"] = None
+            r["finish"] = []
+            r["grid"] = {}
+            # Rematch can land inside the twelve seconds the results sheet is
+            # up, before the tail of `_close_race` has tidied up, so the cars
+            # kept behind to be DNFs in the last race are dropped here too.
+            for pid in [p for p, c in r["cars"].items() if c["gone"]]:
+                r["cars"].pop(pid, None)
+            for c in r["cars"].values():
+                c["ms"], c["dnf"] = None, False
+            game.status = "playing"
+            game.last_activity_at = datetime.utcnow()
+            db.session.commit()
+            qseq, ends = r["race_seq"], r["qual_end"]
+    if seq is not None:
+        _close_qual(code, seq)
+        return
+    socketio.emit("qual_start", {"ends": ends, "qual": _qual_state(_room(code)),
+                                 "server_ms": _now_ms()}, room="room:" + code)
+    eventlet.spawn_after(QUAL_MS / 1000.0, _close_qual, code, qseq)
+    _broadcast_lobbies()
+
+
+@socketio.on("qual_time")
+def on_qual_time(data):
+    """A practice lap set during qualifying. Best one counts, as it should."""
+    ent = _sid_room.get(request.sid)
+    if not ent:
+        return
+    code, pid = ent
+    r = _rooms.get(code)
+    if not r or r["phase"] != "qualifying":
+        return
+    ms = int((data or {}).get("ms") or 0)
+    if ms <= 0:
+        return
+    if r["qual"].get(pid) is None or ms < r["qual"][pid]:
+        r["qual"][pid] = ms
+        socketio.emit("qual_progress", {"qual": _qual_state(r)},
+                      room="room:" + code)
+
+
+def _close_qual(code, seq):
+    """Lock the grid in and light the countdown."""
+    with app.app_context():
+        with _lock(code):
+            r = _rooms.get(code)
+            if not r or r["phase"] != "qualifying" or r["race_seq"] != seq:
+                return
+            game = DriveGame.query.filter_by(code=code).first()
+            if not game:
+                return
+            grid = _start_grid(r)
+            if not grid:
+                r["race_seq"] += 1
+                _reset_race(r)
+                socketio.emit("race_abort", {"why": "Nobody set off."},
+                              room="room:" + code)
+                return
+            r["grid"] = grid
+            # Pole's side of the road alternates, so over a session everybody
+            # has driven both. Which side is the *inside* line depends on which
+            # way the first corner goes, and the server has no idea - but it
+            # does not need to know to stop it being the same side every time.
+            r["flip"] = bool(r["races_run"] % 2)
+            r["races_run"] += 1
+            r["phase"] = "countdown"
+            r["t0"] = _now_ms() + COUNTDOWN_MS
+            r["deadline"] = None
+            for pid in grid:
+                c = r["cars"][pid]
+                c["ms"], c["dnf"], c["cp"], c["prog"] = None, False, 0, 0.0
+            track = game.track
+            t0 = r["t0"]
+            flip = r["flip"]
+        socketio.emit("race_start", {"t0": t0, "grid": grid, "track": track,
+                                     "flip": flip, "qual": dict(r["qual"]),
+                                     "server_ms": _now_ms()},
+                      room="room:" + code)
+        eventlet.spawn_after(COUNTDOWN_MS / 1000.0, _go_green, code, seq)
+        _broadcast_lobbies()
+
+
+def _go_green(code, seq):
+    with app.app_context():
+        with _lock(code):
+            r = _rooms.get(code)
+            if not r or r["phase"] != "countdown" or r["race_seq"] != seq:
+                return
+            r["phase"] = "racing"
+            game = DriveGame.query.filter_by(code=code).first()
+            hard = _hard_race_ms(game.track if game else "")
+            r["hard_end"] = _now_ms() + hard
+            t0 = r["t0"]
+        socketio.emit("race_green", {"t0": t0}, room="room:" + code)
+        # The backstop. Every other way a race ends depends on somebody doing
+        # something; this one does not.
+        eventlet.spawn_after(hard / 1000.0, _close_race, code, "time limit", seq)
+
+
+@socketio.on("finish")
+def on_finish(data):
+    """A car crossed the line. First one home starts the clock on everyone else."""
+    ent = _sid_room.get(request.sid)
+    if not ent:
+        return
+    code, pid = ent
+    seq = None
+    with _lock(code):
+        r = _rooms.get(code)
+        if not r or r["phase"] != "racing":
+            return
+        c = _car(r, pid)
+        if c["ms"] is not None or c["dnf"]:
+            return
+        ms = int((data or {}).get("ms") or 0)
+        if ms <= 0:
+            return
+        seq = r["race_seq"]
+        c["ms"] = ms
+        r["finish"].append({"pid": pid, "name": c["name"], "ms": ms,
+                            "color": c["color"]})
+        r["finish"].sort(key=lambda e: e["ms"])
+        if r["deadline"] is None:
+            r["deadline"] = _now_ms() + FINISH_GRACE_MS
+            eventlet.spawn_after(FINISH_GRACE_MS / 1000.0,
+                                 _close_race, code, "timeout", seq)
+        socketio.emit("race_progress", _race_state(r), room="room:" + code)
+    _maybe_close(code, seq)
+
+
+def _maybe_close(code, seq=None):
+    """Close the race the moment nobody is left out on the circuit.
+
+    Called from every path that can empty the road - a finish, a resignation, a
+    disconnection, a kick - because "the last car is in" is not something only
+    finishing can cause, and when a leaver was the last one still driving there
+    is nothing else left to notice it.
+
+    Never called with the room lock held: `_close_race` takes it, and an
+    eventlet semaphore is not reentrant.
+    """
+    r = _rooms.get(code)
+    if not r or r["phase"] != "racing":
+        return
+    if seq is not None and r["race_seq"] != seq:
+        return
+    if _pending(r):
+        return
+    eventlet.spawn_after(0.4, _close_race, code, "all in", r["race_seq"])
+
+
+def _close_race(code, why, seq=None):
+    with app.app_context():
+        with _lock(code):
+            r = _rooms.get(code)
+            if not r or r["phase"] != "racing":
+                return
+            if seq is not None and r["race_seq"] != seq:
+                return          # a timer armed for a race that is already over
+            r["phase"] = "results"
+            game = DriveGame.query.filter_by(code=code).first()
+            standings = list(r["finish"])
+            # Everyone on the grid who is not in the results is a DNF: retired,
+            # still circulating when the flag came out, or gone. A car that
+            # left mid-race is kept in `cars` precisely so that it lands here
+            # rather than quietly escaping the result. The grid is the field,
+            # so somebody who turned up after the lights is not in the standings
+            # and somebody who was there at the lights always is.
+            now = _now_ms()
+            for pid in r["grid"]:
+                c = r["cars"].get(pid)
+                if c is None or c["ms"] is not None:
+                    continue
+                c["dnf"] = True
+                standings.append({"pid": pid, "name": c["name"], "ms": None,
+                                  "color": c["color"]})
+            elo_delta = {}
+            if game:
+                elo_delta = _rate_race(game, standings)
+                game.add_result({"t": now, "track": game.track,
+                                 "standings": standings, "why": why})
+                game.status = "waiting"
+                game.last_activity_at = datetime.utcnow()
+                db.session.commit()
+            closed_seq = r["race_seq"]
+            socketio.emit("race_result", {"standings": standings, "why": why,
+                                          "elo": elo_delta}, room="room:" + code)
+        eventlet.sleep(12)
+        with _lock(code):
+            r = _rooms.get(code)
+            if not r or r["phase"] != "results" or r["race_seq"] != closed_seq:
+                return
+            _reset_race(r)
+        socketio.emit("race_reset", {}, room="room:" + code)
+        _broadcast_lobbies()
+
+
+@socketio.on("resign")
+def on_resign(data):
+    """Retire from the race and go back to practice, without leaving the room.
+
+    A DNF, and it is rated as one. Quitting the race has to cost the same as
+    quitting the tab, or the honest way out is the expensive one.
+    """
+    ent = _sid_room.get(request.sid)
+    if not ent:
+        return
+    code, pid = ent
+    seq = None
+    with _lock(code):
+        r = _rooms.get(code)
+        if not r or r["phase"] not in ("countdown", "racing"):
+            return
+        c = _car(r, pid)
+        if c["ms"] is not None or c["dnf"]:
+            return
+        seq = r["race_seq"]
+        c["dnf"] = True
+        emit("resigned", {"pid": pid})
+        socketio.emit("race_progress", _race_state(r), room="room:" + code)
+    _maybe_close(code, seq)
+
+
+@socketio.on("end_race")
+def on_end_race(data):
+    """The host stopping a race that is not going to end on its own.
+
+    Before the lights it is a cancellation and rates nothing. Once the race is
+    running it is the chequered flag: whoever is home keeps their finishing
+    order, everyone still out is a DNF, and it is rated like any other race.
+    """
     code = (data or {}).get("code", "").upper()
     with _lock(code):
         game = DriveGame.query.filter_by(code=code).first()
@@ -1029,146 +1425,75 @@ def on_start_race(data):
         if not me or not me.is_host:
             return
         r = _room(code)
-        if r["phase"] in ("countdown", "racing"):
-            return
-        fresh = [pid for pid, c in r["cars"].items()
-                 if _now_ms() - c["ts"] < POSE_STALE_MS]
-        if len(fresh) < 1:
-            emit("room_error", {"error": "Nobody is here to race."})
-            return
-        r["phase"] = "countdown"
-        r["t0"] = _now_ms() + COUNTDOWN_MS
-        r["deadline"] = None
-        r["finish"] = []
-        grid = {}
-        for i, pid in enumerate(sorted(fresh, key=lambda x: r["cars"][x]["name"])):
-            grid[pid] = i
-            c = r["cars"][pid]
-            c["ms"], c["dnf"], c["cp"], c["prog"] = None, False, 0, 0.0
-        r["grid"] = grid
-        game.status = "playing"
-        game.last_activity_at = datetime.utcnow()
-        db.session.commit()
-    socketio.emit("race_start", {"t0": r["t0"], "grid": grid, "track": game.track,
-                                 "server_ms": _now_ms()}, room="room:" + code)
-    eventlet.spawn_after(COUNTDOWN_MS / 1000.0, _go_green, code)
-    _broadcast_lobbies()
-
-
-def _go_green(code):
-    with app.app_context():
-        r = _rooms.get(code)
-        if not r or r["phase"] != "countdown":
-            return
-        r["phase"] = "racing"
-        socketio.emit("race_green", {"t0": r["t0"]}, room="room:" + code)
-
-
-@socketio.on("finish")
-def on_finish(data):
-    """A car crossed the line. First one home starts the clock on everyone else."""
-    ent = _sid_room.get(request.sid)
-    if not ent:
-        return
-    code, pid = ent
-    with _lock(code):
-        r = _rooms.get(code)
-        if not r or r["phase"] != "racing":
-            return
-        c = _car(r, pid)
-        if c["ms"] is not None:
-            return
-        ms = int((data or {}).get("ms") or 0)
-        if ms <= 0:
-            return
-        c["ms"] = ms
-        r["finish"].append({"pid": pid, "name": c["name"], "ms": ms,
-                            "color": c["color"]})
-        r["finish"].sort(key=lambda e: e["ms"])
-        if r["deadline"] is None:
-            r["deadline"] = _now_ms() + FINISH_GRACE_MS
-            eventlet.spawn_after(FINISH_GRACE_MS / 1000.0, _close_race, code, "timeout")
-        socketio.emit("race_progress", _race_state(r), room="room:" + code)
-        racers = [p for p, cc in r["cars"].items()
-                  if _now_ms() - cc["ts"] < POSE_STALE_MS]
-        if all(r["cars"][p]["ms"] is not None for p in racers):
-            eventlet.spawn_after(0.4, _close_race, code, "all in")
-
-
-def _close_race(code, why):
-    with app.app_context():
-        with _lock(code):
-            r = _rooms.get(code)
-            if not r or r["phase"] != "racing":
-                return
-            r["phase"] = "results"
-            game = DriveGame.query.filter_by(code=code).first()
-            standings = list(r["finish"])
-            for pid, c in r["cars"].items():
-                if c["ms"] is None and _now_ms() - c["ts"] < POSE_STALE_MS:
-                    c["dnf"] = True
-                    standings.append({"pid": pid, "name": c["name"], "ms": None,
-                                      "color": c["color"]})
-            elo_delta = {}
-            if game:
-                elo_delta = _rate_race(game, standings)
-                game.add_result({"t": _now_ms(), "track": game.track,
-                                 "standings": standings, "why": why})
-                game.status = "waiting"
-                game.last_activity_at = datetime.utcnow()
-                db.session.commit()
-            socketio.emit("race_result", {"standings": standings, "why": why,
-                                          "elo": elo_delta}, room="room:" + code)
-        eventlet.sleep(12)
-        r = _rooms.get(code)
-        if r and r["phase"] == "results":
-            r["phase"] = "free"
-            r["t0"] = r["deadline"] = None
-            socketio.emit("race_reset", {}, room="room:" + code)
-        _broadcast_lobbies()
+        phase, seq = r["phase"], r["race_seq"]
+    if phase == "racing":
+        _close_race(code, "ended by the host", seq)
+    elif phase in ("qualifying", "countdown"):
+        _abort_race(code, "The host called it off.")
 
 
 def _rate_race(game, standings):
-    """Pairwise ELO over the finishing order; DNFs sit below every finisher.
+    """Pairwise ELO over the finishing order, counting only logged-in accounts.
 
-    Only rated when at least two logged-in accounts took part - a race against
-    guests moves nobody's number.
+    **Guests are invisible to the rating.** They are in the room, on the grid
+    and in the standings on the screen, but for ELO the field is the accounts
+    and their order is their order *among themselves*: beating a guest gains
+    nothing and losing to one costs nothing. Anything else is a rating anybody
+    can move by opening a second tab, and the number stops meaning anything.
+    The same goes for the win and podium tallies, which used to be read off the
+    overall standings - so a guest winning meant nobody was recorded as having
+    won, and a guest in the top three pushed an account off its own podium.
+
+    A finisher beats a DNF. **Two DNFs draw with each other**, because their
+    order in the standings is the arbitrary order they happened to drop out in
+    (or the dict order they were swept up in), and staking a full win on it
+    would be rating noise.
+
+    Still needs two accounts: a race with one is a race with nobody to rate
+    them against.
     """
     by_pid = {p.pid: p for p in game.players}
-    rated = [(e, by_pid[e["pid"]]) for e in standings
+    rated = [e for e in standings
              if e["pid"] in by_pid and by_pid[e["pid"]].user_id]
     if len(rated) < 2:
         return {}
     K = 32.0
-    place = {}
-    for i, e in enumerate(standings):
-        place[e["pid"]] = i
+    # Rank among the rated field only, so guest placings do not leave gaps or
+    # steal a win. `standings` is already in finishing order with DNFs last.
+    place = {e["pid"]: i for i, e in enumerate(rated)}
+    finished = {e["pid"]: e["ms"] is not None for e in rated}
     ratings = {}
-    for e, p in rated:
-        st = _stats(p.linked_user)
-        ratings[e["pid"]] = st.elo or 1000
+    for e in rated:
+        ratings[e["pid"]] = _stats(by_pid[e["pid"]].linked_user).elo or 1000
     out = {}
-    for e, p in rated:
-        st = _stats(p.linked_user)
-        mine = ratings[e["pid"]]
+    for e in rated:
+        pid = e["pid"]
+        st = _stats(by_pid[pid].linked_user)
+        mine = ratings[pid]
         delta = 0.0
         n = 0
-        for o, _op in rated:
-            if o["pid"] == e["pid"]:
+        for o in rated:
+            if o["pid"] == pid:
                 continue
             n += 1
             exp = 1 / (1 + 10 ** ((ratings[o["pid"]] - mine) / 400))
-            actual = 1.0 if place[e["pid"]] < place[o["pid"]] else 0.0
+            if not finished[pid] and not finished[o["pid"]]:
+                actual = 0.5           # neither of us got there; nobody won
+            else:
+                actual = 1.0 if place[pid] < place[o["pid"]] else 0.0
             delta += K * (actual - exp)
         if n:
             delta /= n
         st.races = (st.races or 0) + 1
-        if place[e["pid"]] == 0:
-            st.wins = (st.wins or 0) + 1
-        if place[e["pid"]] < 3:
-            st.podiums = (st.podiums or 0) + 1
+        # A win is a win of the race you were rated in. Retiring is never one,
+        # even when everybody retired.
+        if finished[pid]:
+            if place[pid] == 0:
+                st.wins = (st.wins or 0) + 1
+            if place[pid] < 3:
+                st.podiums = (st.podiums or 0) + 1
         st.elo = max(100, int(round(mine + delta)))
-        out[e["pid"]] = {"before": mine, "after": st.elo, "delta": round(delta)}
+        out[pid] = {"before": mine, "after": st.elo, "delta": round(delta)}
     db.session.commit()
     return out
 
@@ -1210,7 +1535,19 @@ def _drop(sid, hard):
     code, pid = ent
     r = _rooms.get(code)
     if r:
-        r["cars"].pop(pid, None)
+        c = r["cars"].get(pid)
+        # Leaving mid-race is a DNF, not a disappearance. The car is marked
+        # gone (so it stops being drawn and stops holding the race open) but
+        # kept, so it is still in the standings and still rated. Otherwise the
+        # cheapest way to avoid losing rating is to close the tab.
+        if c is not None and r["phase"] in ("countdown", "racing") \
+                and pid in r["grid"] and c["ms"] is None:
+            c["dnf"] = True
+            c["gone"] = True
+        else:
+            r["cars"].pop(pid, None)
+    # Whoever just left may have been the last car still out there.
+    _maybe_close(code)
     if not hard:
         return
     with _lock(code):
@@ -1257,8 +1594,14 @@ def on_kick(data):
         db.session.commit()
         r = _rooms.get(code)
         if r:
-            r["cars"].pop(pid, None)
+            c = r["cars"].get(pid)
+            if c is not None and r["phase"] in ("countdown", "racing") \
+                    and pid in r["grid"] and c["ms"] is None:
+                c["dnf"], c["gone"] = True, True
+            else:
+                r["cars"].pop(pid, None)
         _broadcast_roster(game)
+    _maybe_close(code)
 
 
 # ---------------------------------------------------------------------------
@@ -1275,7 +1618,7 @@ def _stale_cleanup():
             for game in DriveGame.query.filter(DriveGame.status != "ended").all():
                 seen = game.last_activity_at or game.created_at
                 live = _rooms.get(game.code)
-                busy = bool(live and live["cars"])
+                busy = bool(live and _live(live))
                 if not game.players or (not busy and seen and seen < cutoff):
                     socketio.emit("room_closed", {"reason": "Room expired."},
                                   room="room:" + game.code)

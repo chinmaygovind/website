@@ -56,6 +56,7 @@ const S = {
   mySplits: [],            // your PB's splits, to compare somebody else's with
   watch: null,             // a replay playing instead of a run
   shot: false,             // taking a preview picture, not playing
+  previewPhase: null,      // `?panel=qual|racing` pins a phase to look at it
   hintShown: false,
   sessionBest: null,       // rooms only: best practice lap since you arrived
   remotes: new Map(),
@@ -65,6 +66,8 @@ const S = {
   raceMode: false,         // are we in a synced race right now
   racePhase: 'free',
   raceT0: null,            // local perf-clock ms of the green light
+  raceDone: false,         // finished or retired: out of the race, still in the room
+  qualEnd: null,           // local perf-clock ms qualifying closes
   standings: [],
   lastPose: 0,
   socket: null,
@@ -153,18 +156,37 @@ function boot() {
 }
 
 /**
- * `?panel=settings|tracks|board` opens a panel on load.
+ * `?panel=settings|tracks|board|qual` opens a panel on load.
  *
  * There is no browser in CI and a screenshot cannot click, so this is the only
  * way to look at a panel's layout without a person driving the mouse - the same
  * reason `?touch=1` exists.
+ *
+ * `qual` and `racing` are the odd ones out: neither is a panel you can open,
+ * they appear because the room said so, and getting a room into either needs
+ * two browsers and a stopwatch. So they pin the phase and fake a session,
+ * which is enough to look at - and looking at it is the whole point here.
+ * Pinned rather than assigned, because the room reports "free practice" the
+ * moment the socket connects and a phase merely set here would be gone before
+ * the shutter.
  */
 async function openPanelParam() {
   const q = new URLSearchParams(location.search);
   const p = q.get('panel');
   if (p === 'settings') toggleMenu(true);
   else if (p === 'tracks') toggleTracks(true);
-  else if (p === 'board') {
+  else if ((p === 'qual' || p === 'racing') && CFG.mode === 'room') {
+    S.previewPhase = p === 'qual' ? 'qualifying' : 'racing';
+    S.isHost = true;
+    applyPhase();
+    if (p === 'qual') renderQual({
+      ends: serverNow() + 72000,
+      rows: [{ pid: 'a', name: 'Chinmay', color: '#e8453c', ms: 42108 },
+             { pid: CFG.me ? CFG.me.pid : 'b', name: 'You', color: '#ffd96b', ms: 44812 },
+             { pid: 'c', name: 'Someone else', color: '#55e08a', ms: 45330 },
+             { pid: 'd', name: 'Not out yet', color: '#8fd6ff', ms: null }],
+    });
+  } else if (p === 'board') {
     await openBoard();
     if (q.has('row')) showBoardRow(parseInt(q.get('row'), 10) || 0);
   }
@@ -855,15 +877,155 @@ function setMode(text, racing) {
 /** The room's phase, said out loud in the top-left corner. */
 const PHASE_LABEL = {
   free: ['Multiplayer - Free practice', false],
+  qualifying: ['Multiplayer - Qualifying', true],
   countdown: ['Multiplayer - Race about to start', true],
   racing: ['Multiplayer - Race in progress', true],
   results: ['Multiplayer - Race finished', false],
 };
 
+/**
+ * Everything that depends on the phase, in one place.
+ *
+ * The buttons in this room are mutually exclusive by phase and there are now
+ * four of them, so they are derived from the phase rather than assigned at
+ * each transition - the same reason `syncPaused` exists. Miss one transition
+ * with the assigning version and the room offers you a race that has already
+ * started.
+ */
 function applyPhase() {
   if (CFG.mode !== 'room') return;
-  const [text, racing] = PHASE_LABEL[S.racePhase] || PHASE_LABEL.free;
+  const p = S.previewPhase || S.racePhase;      // `?panel=qual|racing`
+  const [text, racing] = PHASE_LABEL[p] || PHASE_LABEL.free;
   setMode(text, racing);
+
+  const start = $('btnStartRace'), end = $('btnEndRace'), resign = $('btnResign');
+  const live = p === 'qualifying' || p === 'countdown' || p === 'racing';
+  // Only the host starts or stops one, so only the host is offered either.
+  start.style.display = (S.isHost && (p === 'free' || p === 'qualifying')) ? '' : 'none';
+  start.textContent = p === 'qualifying' ? 'Start race now' : 'Start race';
+  end.style.display = (S.isHost && live) ? '' : 'none';
+  // It cancels before the lights and flags the race after them. Saying which
+  // matters: one of them throws a result away and the other records one.
+  end.textContent = p === 'racing' ? 'End race' : 'Cancel race';
+  disarm(end);
+
+  // You can only retire from something you are in, and only if you are still
+  // in it - a car already home or already out has nothing to resign from.
+  const out = S.raceDone;
+  resign.style.display = ((p === 'countdown' || p === 'racing') && !out) ? '' : 'none';
+  if (resign.style.display === 'none') disarm(resign);
+
+  $('qualCard').style.display = p === 'qualifying' ? '' : 'none';
+  if (p !== 'qualifying') stopQualClock();
+  // Sideways on a phone there is one band of free screen between the top-centre
+  // furniture and the clock, and the start hint sits in the middle of it. When
+  // a session is live that band has buttons in it, so the hint moves down.
+  document.body.classList.toggle('race-live', live);
+  showRematch();
+}
+
+// --- the two irreversible buttons -----------------------------------------
+// Resigning and ending a race both happen mid-drive, one press away from the
+// settings icon, and neither can be taken back. So both arm on the first press
+// and fire on the second, in place: an "are you sure" overlay would cover the
+// race you want to look at before answering it, and the answer is nearly
+// always "no, I misclicked".
+
+const ARM_MS = 3500;
+
+function disarm(btn) {
+  if (!btn) return;
+  clearTimeout(btn._arm);
+  btn._arm = null;
+  btn.classList.remove('armed');
+  if (btn._word) { setLabel(btn, btn._word); btn._word = null; }
+}
+
+/** The label lives in a span on the icon button and is the whole of the text one. */
+function setLabel(btn, text) {
+  const span = btn.querySelector('.hbtn-label');
+  if (span) span.textContent = text; else btn.textContent = text;
+}
+
+function labelOf(btn) {
+  const span = btn.querySelector('.hbtn-label');
+  return span ? span.textContent : btn.textContent;
+}
+
+/** True once the second press lands; the first one only arms it. */
+function armed(btn, prompt) {
+  if (btn._arm) { disarm(btn); return true; }
+  btn._word = labelOf(btn);
+  setLabel(btn, prompt);
+  btn.classList.add('armed');
+  btn._arm = setTimeout(() => disarm(btn), ARM_MS);
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Qualifying
+// ---------------------------------------------------------------------------
+// Ninety seconds of ordinary practice with a clock on it and everyone's best
+// lap on the screen. Nothing about the driving changes - which is the point,
+// since the grid should be set by the thing you were already doing - so this
+// is all presentation plus one message per improved lap.
+
+/** The provisional grid, exactly as the server ordered it. */
+function renderQual(q) {
+  if (!q) return;
+  S.qualEnd = q.ends != null ? performance.now() + (q.ends - serverNow()) : null;
+  const el = $('qualRows');
+  el.innerHTML = (q.rows || []).map((e, i) => `
+    <div class="qual-row${CFG.me && e.pid === CFG.me.pid ? ' me' : ''}">
+      <span class="p">${i + 1}</span>
+      <span class="st-dot" style="background:${esc(e.color || '#888')}"></span>
+      <span class="nm">${esc(e.name)}</span>
+      <span class="ms${e.ms == null ? ' none' : ''}">${e.ms != null ? fmt(e.ms) : '&mdash;'}</span>
+    </div>`).join('');
+  drawQualClock();
+}
+
+function drawQualClock() {
+  const el = $('qualClock');
+  if (!el || S.qualEnd == null) return;
+  const left = Math.max(0, (S.qualEnd - performance.now()) / 1000);
+  el.textContent = Math.floor(left / 60) + ':' + String(Math.floor(left % 60)).padStart(2, '0');
+  el.classList.toggle('urgent', left <= 10);
+}
+
+function startQualClock() {
+  stopQualClock();
+  S.qualTimer = setInterval(() => {
+    if (S.racePhase !== 'qualifying') { stopQualClock(); return; }
+    drawQualClock();
+  }, 250);
+  drawQualClock();
+}
+
+function stopQualClock() {
+  if (S.qualTimer) { clearInterval(S.qualTimer); S.qualTimer = null; }
+}
+
+function onQualStart(d) {
+  S.racePhase = 'qualifying';
+  S.raceMode = false;
+  S.raceDone = false;
+  S.standings = [];
+  // Qualifying is driving, so get the reading matter out of the way.
+  if (S.watch) stopWatching();
+  toggleBoard(false);
+  toggleTracks(false);
+  toggleMenu(false);
+  showSide(false);
+  $('raceOver').style.display = 'none';
+  hideResults();
+  applyPhase();
+  renderQual(d.qual);
+  startQualClock();
+  // You have ninety seconds, so you start the one that counts now rather than
+  // finishing whatever you happened to be part-way through.
+  resetToStart();
+  toast('Qualifying - fastest lap sets the grid');
 }
 
 /** R: throw the run away and line up again. */
@@ -1322,8 +1484,17 @@ async function onFinish() {
   // A race ends with the standings sheet, not this one - and it ends when the
   // last car is in, not when you cross the line.
   const racing = S.raceMode;
+  const qualifying = S.racePhase === 'qualifying';
 
-  if (racing && S.socket) S.socket.emit('finish', { ms: run.time });
+  if (racing && S.socket) {
+    S.socket.emit('finish', { ms: run.time });
+    S.raceDone = true;
+    applyPhase();
+  }
+  // A qualifying lap is an ordinary practice lap that also counts for the
+  // grid, so it goes up the same way any other lap does and the server keeps
+  // the best of them.
+  if (qualifying && S.socket) S.socket.emit('qual_time', { ms: run.time });
 
   // In a room your ghost is the best lap of this practice session. Not your
   // all-time PB: the room is a place you turn up and learn a track together,
@@ -1335,7 +1506,18 @@ async function onFinish() {
   }
 
   if (prev != null) showDelta(run.time - prev);
+  // The full-screen sheet is for a session that has ended. Neither of these
+  // has: a race ends on the standings when the last car is in, and qualifying
+  // ends when the clock does - and covering the road with a results overlay
+  // while there are seconds left to improve is taking the session away.
   if (racing) toast('Finished ' + fmt(run.time));
+  else if (qualifying) {
+    // Straight back out for another. Ninety seconds is two or three laps on
+    // most of these tracks, and making each one cost a keypress on a screen
+    // with a running clock on it is making you spend the session on the menu.
+    toast('Qualifying lap ' + fmt(run.time) + ' - going again');
+    setTimeout(() => { if (S.racePhase === 'qualifying') resetToStart(); }, 1200);
+  }
   else showResults({ time: run.time, medal, pb: improved ? run.time : prev });
 
   try {
@@ -1487,6 +1669,12 @@ function connect() {
     renderRoster(d.players);
     S.racePhase = d.race ? d.race.phase : 'free';
     applyPhase();
+    // Walking in on a session already running: show it rather than pretending
+    // the room is idle until the next message happens to arrive.
+    if (S.racePhase === 'qualifying' && d.race && d.race.qual) {
+      renderQual(d.race.qual);
+      startQualClock();
+    }
     (d.chat || []).forEach(addChat);
   });
   socket.on('roster', (d) => {
@@ -1495,15 +1683,41 @@ function connect() {
   });
   socket.on('poses', onPoses);
   socket.on('track_change', (d) => switchTrack(d.track));
+  socket.on('qual_start', onQualStart);
+  socket.on('qual_progress', (d) => { if (S.racePhase === 'qualifying') renderQual(d.qual); });
   socket.on('race_start', onRaceStart);
   socket.on('race_green', onRaceGreen);
   socket.on('race_progress', (d) => { S.standings = d.finish || []; });
   socket.on('race_result', onRaceResult);
   socket.on('race_reset', () => {
     S.raceMode = false; S.racePhase = 'free'; S.raceT0 = null;
+    S.raceDone = false;
     S.standings = [];
     applyPhase();
     $('countdown').style.display = 'none';
+  });
+  // A race that stopped being a race: called off before the lights, or the
+  // room emptied. Nothing was recorded, so there is no sheet - just the room
+  // back, and a line saying why so it does not look like a glitch.
+  socket.on('race_abort', (d) => {
+    S.raceMode = false; S.racePhase = 'free'; S.raceT0 = null;
+    S.raceDone = false;
+    S.standings = [];
+    S.car.frozen = false;
+    applyPhase();
+    $('countdown').style.display = 'none';
+    $('raceOver').style.display = 'none';
+    toast(d && d.why ? 'Race called off - ' + d.why : 'Race called off');
+    resetToStart();
+  });
+  // Your own resignation, confirmed. Everyone else's shows up in the standings.
+  socket.on('resigned', () => {
+    S.raceMode = false;
+    S.raceDone = true;
+    S.car.frozen = false;
+    applyPhase();
+    toast('Retired - back to practice');
+    resetToStart();
   });
   socket.on('chat', addChat);
   socket.on('kicked', (d) => { if (CFG.me && d.pid === CFG.me.pid) location.href = '/lobbies'; });
@@ -1511,6 +1725,17 @@ function connect() {
   socket.on('room_error', (d) => toast(d.error || 'Error'));
 
   $('btnStartRace').onclick = () => socket.emit('start_race', { code: CFG.room });
+  $('btnEndRace').onclick = (e) => {
+    const b = e.currentTarget;
+    // "Cancel" throws a session away and "End race" writes a result, so the
+    // confirmation says which one the second press is about to do.
+    if (!armed(b, S.racePhase === 'racing' ? 'End it?' : 'Cancel it?')) return;
+    socket.emit('end_race', { code: CFG.room });
+  };
+  $('btnResign').onclick = (e) => {
+    if (!armed(e.currentTarget, 'Sure?')) return;
+    socket.emit('resign', {});
+  };
   $('btnLeave').onclick = () => { socket.emit('leave'); location.href = '/lobbies'; };
   // Every way out of a room is an ordinary link, so it navigates whatever
   // happens; this just gives the room a chance to hear about it first.
@@ -1635,10 +1860,10 @@ function renderRoster(players) {
   S.roster = players;
   const isHost = !!(CFG.me && players.some(p => p.pid === CFG.me.pid && p.is_host));
   S.isHost = isHost;
-  $('btnStartRace').style.display = isHost ? '' : 'none';
-  // The host can change mid-race if the old one leaves, and the rematch button
-  // has to follow them.
-  showRematch();
+  // The host can change mid-race if the old one leaves, and every button that
+  // is the host's has to follow them - which is all of them, so this is the
+  // one call rather than four assignments.
+  applyPhase();
   $('roster').innerHTML = players.map(p => `
     <div class="pl${CFG.me && p.pid === CFG.me.pid ? ' me' : ''}">
       <span class="st-dot" style="background:${esc(p.color)}"></span>
@@ -1692,7 +1917,9 @@ async function switchTrack(slug) {
 function onRaceStart(d) {
   S.raceMode = true;
   S.racePhase = 'countdown';
+  S.raceDone = false;
   S.standings = [];
+  stopQualClock();
   // Everything you might have open belongs to practice, and the lights are
   // about to go out.
   if (S.watch) stopWatching();
@@ -1703,16 +1930,7 @@ function onRaceStart(d) {
   showSide(false);
   applyPhase();
   $('raceOver').style.display = 'none';
-  // Put everyone on a grid behind the start line, two by two.
-  const slot = (d.grid && CFG.me) ? (d.grid[CFG.me.pid] || 0) : 0;
-  const g = S.course.startGate();
-  if (g) {
-    const back = 4 + Math.floor(slot / 2) * 5.5;
-    const lat = (slot % 2 ? 1 : -1) * 2.1;
-    S.car.placeAt([g.p[0] - g.f[0] * back + g.r[0] * lat,
-                   g.p[1] + 0.3,
-                   g.p[2] - g.f[2] * back + g.r[2] * lat], g.f);
-  }
+  placeOnGrid(d);
   S.run.reset();
   S.started = false;
   S.car.frozen = true;
@@ -1720,6 +1938,45 @@ function onRaceStart(d) {
   // Convert the server's green-light time onto our own clock.
   S.raceT0 = performance.now() + (d.t0 - serverNow());
   countdownLoop();
+}
+
+/**
+ * Line up behind the start line, in qualifying order.
+ *
+ * Staggered rather than square, and the sides alternate. Two things were wrong
+ * with the old two-by-two grid, and only one of them was the ordering: cars
+ * side by side at the same distance reach the first corner together, so the
+ * one on the inside of it simply gets there, and which column that is never
+ * changed. Nobody knows which way the first corner goes - not the server, not
+ * this function - but nobody needs to: staggering means the two cars in a row
+ * are not fighting for the same metre of road at the same instant, and the
+ * server flipping `flip` every race means whichever side is the good one is
+ * not the same person's side twice running.
+ *
+ * Pole keeps its advantage. It was earned in qualifying, and taking it away
+ * would make the session pointless.
+ */
+function placeOnGrid(d) {
+  const slot = (d.grid && CFG.me) ? (d.grid[CFG.me.pid] || 0) : 0;
+  const g = S.course.startGate();
+  if (!g) return;
+  const row = Math.floor(slot / 2);
+  // The odd slot of each row sits a little further back, F1 style, so the row
+  // is a staircase rather than a rank - and starts its lap a car length behind
+  // rather than alongside.
+  const back = 4 + row * 5.5 + (slot % 2 ? 2.4 : 0);
+  const side = (slot % 2 ? 1 : -1) * (d.flip ? -1 : 1);
+  const lat = side * 2.1;
+  S.car.placeAt([g.p[0] - g.f[0] * back + g.r[0] * lat,
+                 g.p[1] + 0.3,
+                 g.p[2] - g.f[2] * back + g.r[2] * lat], g.f);
+  if (slot === 0) toast('Pole position');
+  else toast('Starting ' + ordinal(slot + 1));
+}
+
+function ordinal(n) {
+  const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
 function countdownLoop() {
@@ -1764,8 +2021,11 @@ function onRaceGreen(d) {
 function onRaceResult(d) {
   S.racePhase = 'results';
   S.raceMode = false;
+  S.raceDone = false;
   S.car.frozen = false;
   applyPhase();
+  $('raceOverTitle').textContent =
+    d.why === 'ended by the host' ? 'Race ended early' : 'Race result';
   hideResults();
   $('raceStandings').innerHTML = d.standings.map((e, i) => {
     const delta = (d.elo || {})[e.pid];

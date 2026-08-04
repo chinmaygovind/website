@@ -305,14 +305,88 @@ body.playing { overflow: hidden; background: #9ed2f0; }
 .mapbtns { display: flex; gap: 6px; }
 body.touch .mapbtns { display: none; }
 
-/* The host's one decision, where nobody has to look for it. */
+/* The host's one decision, where nobody has to look for it - and, for the
+   ninety seconds it runs, the qualifying board above it. */
 .hud-tc { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px));
-          left: 50%; transform: translateX(-50%); }
+          left: 50%; transform: translateX(-50%);
+          display: flex; flex-direction: column; align-items: center; gap: 8px;
+          max-width: min(340px, calc(100vw - 2rem)); }
+.tc-btns { display: flex; gap: 8px; }
 .btn.start-race {
   background: var(--red); color: #fff; border-color: rgba(0, 0, 0, .35);
   font-size: 1.05rem; padding: .5rem 1.5rem;
   box-shadow: 0 6px 22px rgba(232, 69, 60, .4);
 }
+/* Deliberately quieter than Start race. Ending one is never the thing the
+   room is waiting on, and it sits next to the button that is. */
+.btn.end-race {
+  background: rgba(20, 23, 30, .82); color: #ffb4aa;
+  border: 1px solid rgba(255, 138, 122, .5);
+  font-size: .95rem; padding: .5rem 1rem; backdrop-filter: blur(6px);
+}
+.btn.end-race:hover { background: rgba(232, 69, 60, .9); color: #fff; }
+/* Both confirm in place rather than opening a dialog over the road: an
+   overlay mid-race hides the thing you would want to look at before deciding. */
+.btn.armed, .hbtn.armed {
+  background: var(--red); color: #fff; border-color: #fff;
+  animation: armedpulse 1s ease-in-out infinite;
+}
+@keyframes armedpulse { 50% { box-shadow: 0 0 0 4px rgba(232, 69, 60, .35); } }
+
+/* --- qualifying ----------------------------------------------------------- */
+.card.qual { width: 300px; max-width: calc(100vw - 2rem); padding: .55rem .7rem; }
+.qual-head { display: flex; align-items: baseline; gap: .5rem;
+             border-bottom: 1px solid var(--hud-line); padding-bottom: .35rem; }
+.qual-title { font-family: var(--display); font-weight: 700; font-size: .72rem;
+              text-transform: uppercase; letter-spacing: .14em; color: #ffd96b; }
+.qual-clock { margin-left: auto; font-family: var(--mono); font-size: 1.25rem;
+              font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+/* The last ten seconds are the ones that change what you do with the lap you
+   are on, so they say so. */
+.qual-clock.urgent { color: #ff8a7a; animation: armedpulse 1s ease-in-out infinite; }
+.qual-rows { display: flex; flex-direction: column; padding: .3rem 0;
+             max-height: 42vh; overflow-y: auto; }
+.qual-row { display: flex; align-items: center; gap: .45rem; font-size: .85rem;
+            padding: .14rem 0; }
+.qual-row.me { color: #ffd96b; font-weight: 700; }
+.qual-row .p { width: 1.1rem; text-align: right; font-family: var(--mono);
+               color: #b9c2d0; font-size: .8rem; }
+.qual-row.me .p { color: inherit; }
+.qual-row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qual-row .ms { margin-left: auto; font-family: var(--mono); font-size: .82rem;
+                font-variant-numeric: tabular-nums; }
+/* No lap yet is a different kind of blank from a lap of zero, so it is drawn
+   as an absence rather than as a time. */
+.qual-row .ms.none { color: #7f8b9c; letter-spacing: .1em; }
+.qual-note { font-size: .66rem; color: #9fb0c6; text-transform: uppercase;
+             letter-spacing: .08em; border-top: 1px solid var(--hud-line);
+             padding-top: .35rem; }
+
+/* Sideways on a phone there is about 390px of height and the road has to stay
+   visible through all of it - a board you cannot see past is worse than no
+   board. So the rows keep their size (they are the content) and everything
+   round them goes: the standing instruction, the list past a handful of
+   places, and the gap under the card. */
+@media (max-height: 460px) {
+  .card.qual { width: 260px; padding: .4rem .55rem; }
+  .qual-note { display: none; }
+  .qual-rows { max-height: 30vh; padding: .2rem 0; }
+  .qual-clock { font-size: 1.05rem; }
+  .hud-tc { gap: 5px; }
+  .tc-btns .btn { font-size: .85rem; padding: .35rem .8rem; }
+  /* Out from under the qualifying card and its buttons, into the gap above
+     the clock. Both of these are things you only ever see once - a first run
+     and a session opening - so they must not land on each other on the one
+     screen size where there is no room for both. */
+  body.race-live #startHint { bottom: 36%; font-size: .85rem; }
+}
+
+/* The resign button carries its word as well as its flag: it is the one
+   control here that cannot be undone, and a lone icon would be a guess. */
+.hbtn.danger { width: auto; padding: 0 .6rem; gap: .35rem; color: #ff8a7a;
+               border-color: rgba(255, 138, 122, .45); }
+.hbtn.danger:hover { background: rgba(232, 69, 60, .85); color: #fff; }
+.hbtn-label { font-size: .78rem; font-weight: 600; letter-spacing: .02em; }
 .hud-bc { position: absolute; bottom: calc(12px + env(safe-area-inset-bottom, 0px));
           left: 50%; transform: translateX(-50%); width: 340px; max-width: 60vw;
           text-align: center; }
