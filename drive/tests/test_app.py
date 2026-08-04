@@ -337,6 +337,103 @@ def test_a_track_you_never_finished_still_shows_its_starts(env):
     assert ">7</td>" in html, "with the number of goes it has had out of you"
 
 
+def test_the_world_record_ghost_skips_a_lap_with_no_replay(env):
+    """"World record" used to report that nobody had set a time here at all.
+
+    It took the fastest row and served whatever replay was on it, and a row
+    keeps its time whether or not a ghost was stored beside it - so one old
+    row with no replay made the record ghost unusable on a track with a full
+    board. Every other way in already only offers laps that have one, which is
+    why picking the same lap through "view others" worked.
+    """
+    A = env
+    c = A.app.test_client()
+    uid = _user(A, "chinmay")
+    _login(c, uid)
+    c.post("/api/run", json=_run_payload(A, "sunrise", seconds=30))
+    # Somebody quicker, from before replays were kept.
+    with A.app.app_context():
+        other = A.User(username="ghostless", email="g@example.com")
+        other.set_password("password123")
+        A.db.session.add(other)
+        A.db.session.commit()
+        A.db.session.add(A.DriveTime(user_id=other.id, track="sunrise",
+                                     time_ms=1000, splits_json="[]", ghost=None))
+        A.db.session.commit()
+
+    d = c.get("/api/ghost/sunrise?who=wr").get_json()
+    assert d["ghost"], "the record ghost must be a lap that can actually be shown"
+    assert d["who"] == "chinmay"
+
+
+def test_the_record_ghost_is_still_the_fastest_of_those_with_replays(env):
+    A = env
+    c = A.app.test_client()
+    _login(c, _user(A, "slow"))
+    c.post("/api/run", json=_run_payload(A, "sunrise", seconds=40))
+    c2 = A.app.test_client()
+    _login(c2, _user(A, "quick"))
+    c2.post("/api/run", json=_run_payload(A, "sunrise", seconds=25))
+    d = c.get("/api/ghost/sunrise?who=wr").get_json()
+    assert d["who"] == "quick" and d["time_ms"] == 25000
+
+
+def test_a_track_carries_the_record_on_it(env):
+    """The medals card shows the record above the three medal times, so the
+    record travels with the track rather than in a request of its own."""
+    A = env
+    c = A.app.test_client()
+    empty = c.get("/api/track/sunrise").get_json()
+    assert empty["record_ms"] is None and empty["record_by"] is None
+
+    _login(c, _user(A, "chinmay"))
+    c.post("/api/run", json=_run_payload(A, "sunrise"))
+    got = c.get("/api/track/sunrise").get_json()
+    assert got["record_ms"] > 0
+    assert got["record_by"] == "chinmay", "and says whose it is"
+    # The play page has to have it on the first paint, not after a round trip.
+    assert '"record_ms"' in c.get("/solo/sunrise").get_data(as_text=True)
+
+
+def test_the_track_dicts_are_not_mutated_by_serving_them(env):
+    """`tracks_mod` holds one dict per track for the whole process, so adding
+    the record to a response must never write into it."""
+    import tracks as tracks_mod
+    A = env
+    c = A.app.test_client()
+    c.get("/api/track/sunrise")
+    assert "record_ms" not in tracks_mod.get("sunrise")
+
+
+def test_the_account_tracks_are_in_the_same_order_as_everywhere_else(env):
+    """The pool's order, the one the switcher and the home page use.
+
+    It used to be most-recent-PB first, with the never-finished tracks in a
+    block underneath - so the same track moved every time you drove, and no
+    two pages agreed on where to look for it.
+    """
+    import tracks as tracks_mod
+    A = env
+    c = A.app.test_client()
+    _login(c, _user(A))
+    pool = [t["slug"] for t in tracks_mod.TRACKS]
+    # Finish the last track in the pool first and the first one last, so
+    # "most recent" is the exact reverse of the order that is wanted, and
+    # start a middle one without ever finishing it.
+    for slug in (pool[-1], pool[0]):
+        c.post("/api/run", json=_run_payload(A, slug))
+    c.post("/api/start", json={"track": pool[2]})
+
+    html = c.get("/account").get_data(as_text=True)
+    # The table itself and nothing after it - there is another list of every
+    # track further down the page.
+    table = html.split('acct-tracks', 1)[1].split('</table>', 1)[0]
+    shown = [s for s in pool if tracks_mod.BY_SLUG[s]["name"] in table]
+    seen = sorted(shown, key=lambda s: table.index(tracks_mod.BY_SLUG[s]["name"]))
+    assert set(shown) == {pool[0], pool[2], pool[-1]}, "every driven track is listed"
+    assert seen == [s for s in pool if s in shown], "and in the pool's order"
+
+
 def test_a_race_start_is_counted_like_any_other(env):
     """A lap driven against other people is still a lap.
 
@@ -417,13 +514,18 @@ def test_every_link_that_names_the_track_is_repointable(env):
     html = env.app.test_client().get("/solo/sunrise").get_data(as_text=True)
     assert html.count('class="btn secondary board-link"') == 2, (
         "both leaderboard links must be repointable")
-    assert 'id="helpBlurb"' in html, "the help sheet names the track too"
+    # The help sheet used to name the track as well, and had to be repointed
+    # with the rest. It is the controls table now and names nothing, so the
+    # blurb lives only on the track card - which is rewritten by `loadTrack`
+    # through `trackName` / `trackBlurb`.
+    assert 'id="helpBlurb"' not in html
+    assert 'id="trackBlurb"' in html
 
     src = open(os.path.join(os.path.dirname(__file__), "..",
                             "static", "js", "game.js")).read()
     load = src[src.index("function loadTrack("):]
     load = load[:load.index("\n}\n")]
-    for needle in ("board-link", "document.title", "helpBlurb"):
+    for needle in ("board-link", "document.title", "trackBlurb"):
         assert needle in load, "loadTrack leaves %s stale" % needle
 
 

@@ -59,6 +59,9 @@ const S = {
   previewPhase: null,      // `?panel=qual|racing` pins a phase to look at it
   hintShown: false,
   sessionBest: null,       // rooms only: best practice lap since you arrived
+  qualBest: null,          // your best lap of this qualifying session
+  qualRef: null,           // and its distance/time table, for split deltas
+  raceSplits: {},          // pid -> {checkpoint: ms} for the race being driven
   remotes: new Map(),
   paused: false, menuOpen: false, helpOpen: false,
   isHost: false,
@@ -156,7 +159,7 @@ function boot() {
 }
 
 /**
- * `?panel=settings|tracks|board|qual` opens a panel on load.
+ * `?panel=settings|help|tracks|board|qual|racing` opens a panel on load.
  *
  * There is no browser in CI and a screenshot cannot click, so this is the only
  * way to look at a panel's layout without a person driving the mouse - the same
@@ -174,10 +177,14 @@ async function openPanelParam() {
   const q = new URLSearchParams(location.search);
   const p = q.get('panel');
   if (p === 'settings') toggleMenu(true);
+  else if (p === 'help') toggleHelp(true);
   else if (p === 'tracks') toggleTracks(true);
   else if ((p === 'qual' || p === 'racing') && CFG.mode === 'room') {
     S.previewPhase = p === 'qual' ? 'qualifying' : 'racing';
     S.isHost = true;
+    // A session closes the room drawer on the way in, so a preview of one has
+    // to as well or it photographs a screen that never happens.
+    showSide(false);
     applyPhase();
     if (p === 'qual') renderQual({
       ends: serverNow() + 72000,
@@ -213,7 +220,7 @@ async function openRequestedLap() {
   toast('Chasing ' + d.who + '  ' + fmt(d.time_ms));
 }
 
-function loadTrack(track) {
+function loadTrack(track, opts = {}) {
   S.track = track;
   if (S.view) S.view.dispose();
   if (S.ghostView) { S.ghostView.dispose(); S.ghostView = null; }
@@ -237,8 +244,9 @@ function loadTrack(track) {
   // world underneath it - so a leaderboard link left alone quietly sends you to
   // the board for a track you stopped driving several switches ago.
   document.title = track.name + ' | Drive';
-  const helpBlurb = $('helpBlurb');
-  if (helpBlurb) helpBlurb.textContent = track.blurb;
+  // The help sheet's blurb used to be repointed here too. It is gone: that
+  // sheet is the controls table now, and the blurb is already on the track
+  // card in the corner, where it does not have to be opened to be read.
   document.querySelectorAll('.board-link').forEach((a) => {
     a.href = '/track/' + track.slug;
   });
@@ -248,14 +256,23 @@ function loadTrack(track) {
   showPb();
   drawMinimapBase();
   // A new track is a new set of laps, so whoever you were chasing on the last
-  // one is gone - but *what kind* of ghost you asked for is a preference and
-  // survives. In a room `me` still means this session's best, which by
-  // definition does not exist yet on a track you have just arrived at.
+  // one is gone. Every reference lap belongs to the track it was driven on, so
+  // switching throws all of them away rather than reading this track's splits
+  // against the last one's.
   S.ghost = null; S.ghostTimes = null; S.sessionBest = null;
+  S.qualBest = null; S.qualRef = null; S.raceSplits = {};
   S.ghostRun = null;
   S.mySplits = (CFG.pbSplits && CFG.pbSplits[track.slug]) || [];
-  if (S.ghostMode === 'run') S.ghostMode = 'me';
-  setGhostMode(S.ghostMode, { quiet: true });
+  // **Arriving somewhere new means no ghost.** A track you have just switched
+  // to is one you are looking at rather than attacking, and a car you have
+  // never driven against appearing on your first lap of it is in the way. Not
+  // remembered: it is what this track starts as, not a preference you set, so
+  // the ghost you actually chose is still there next time you open the game.
+  if (opts.switched) setGhostMode('off', { quiet: true, remember: false });
+  else {
+    if (S.ghostMode === 'run') S.ghostMode = 'me';
+    setGhostMode(S.ghostMode, { quiet: true });
+  }
   applyPhase();
   markActiveTrack();
 }
@@ -351,9 +368,12 @@ function bindInput() {
     if (e.code === 'KeyH') toggleHelp();
     if (e.code === 'KeyP') toggleTracks();
     if (e.code === 'KeyM') setSound(!S.sound.enabled);
-    // G is still the quick "get it off the screen", and turning it back on
-    // returns to whichever lap you had chosen.
-    if (e.code === 'KeyG') setGhostMode(S.ghostMode === 'off' ? 'me' : 'off');
+    // G steps through the three ghosts there are rather than toggling the last
+    // one back on: picking between your own lap and the record is the choice
+    // worth having on a key, and it saves opening settings to make it. A lap
+    // chased off the board is not in the cycle - it is not a mode you can
+    // arrive at by pressing a key, so pressing one leaves it.
+    if (e.code === 'KeyG') setGhostMode(nextGhostMode());
   });
   window.addEventListener('keyup', (e) => {
     const k = KEYMAP[e.code];
@@ -532,6 +552,14 @@ function showSide(on) {
 
 const GHOST_LABEL = { off: 'Off', me: 'My best', wr: 'World record', run: 'Chasing' };
 
+// What G steps through. `run` is deliberately not in it - see the key handler.
+const GHOST_CYCLE = ['off', 'me', 'wr'];
+
+function nextGhostMode() {
+  const i = GHOST_CYCLE.indexOf(S.ghostMode);
+  return GHOST_CYCLE[(i + 1) % GHOST_CYCLE.length];
+}
+
 function chooseGhost(mode) {
   if (mode === 'others') { openBoard(); return; }
   setGhostMode(mode);
@@ -541,7 +569,12 @@ function setGhostMode(mode, opts = {}) {
   S.ghostMode = mode;
   S.showGhost = mode !== 'off';
   if (mode !== 'run') S.ghostRun = null;
-  try { localStorage.setItem('drive.ghost', mode === 'run' ? 'me' : mode); } catch (e) {}
+  // `remember: false` is for a mode the game chose rather than you - arriving
+  // on a new track turns the ghost off, and that must not overwrite the ghost
+  // you actually picked.
+  if (opts.remember !== false) {
+    try { localStorage.setItem('drive.ghost', mode === 'run' ? 'me' : mode); } catch (e) {}
+  }
   $('ghostOpts').querySelectorAll('[data-ghost]').forEach(b => {
     // "View others" is a door, not a state - it lights up only while the lap you
     // are chasing is one you opened through it.
@@ -581,8 +614,13 @@ function showGhostNow() {
                     : 'Drive a lap and it becomes your ghost.');
     return;
   }
+  // "Nobody has set a time" was said whenever no ghost loaded, which on a
+  // track with a full board was simply untrue - the record was there, its
+  // replay was not. The two are different facts and only one of them is your
+  // problem.
   el.textContent = S.ghost ? 'The fastest lap on this track.'
-                           : 'Nobody has set a time here yet.';
+    : (S.track.record_ms != null ? 'The record here has no replay stored.'
+                                 : 'Nobody has set a time here yet.');
 }
 
 /**
@@ -916,11 +954,10 @@ function applyPhase() {
   if (resign.style.display === 'none') disarm(resign);
 
   $('qualCard').style.display = p === 'qualifying' ? '' : 'none';
+  // The board takes the right-hand third of a phone screen, and the start hint
+  // is centred across the whole of it, so the two need telling apart.
+  document.body.classList.toggle('qualifying', p === 'qualifying');
   if (p !== 'qualifying') stopQualClock();
-  // Sideways on a phone there is one band of free screen between the top-centre
-  // furniture and the clock, and the start hint sits in the middle of it. When
-  // a session is live that band has buttons in it, so the hint moves down.
-  document.body.classList.toggle('race-live', live);
   showRematch();
 }
 
@@ -1011,6 +1048,10 @@ function onQualStart(d) {
   S.raceMode = false;
   S.raceDone = false;
   S.standings = [];
+  // A new session, so the lap its deltas are read against has not been driven
+  // yet. Until it has, there is no delta - not one against last session's.
+  S.qualBest = null;
+  S.qualRef = null;
   // Qualifying is driving, so get the reading matter out of the way.
   if (S.watch) stopWatching();
   toggleBoard(false);
@@ -1110,11 +1151,12 @@ function frame(now) {
     if (e === 'cp') {
       S.sound.checkpoint();
       toast('Checkpoint ' + S.run.nextCp + '/' + S.run.cps.length + '  ' + fmt(S.run.time));
-      // How this split compares with the same point on your best lap. Shown at
-      // the checkpoint and then faded out, rather than ticking away all lap:
-      // a number that only moves when something happened is a number you read.
-      const gt = ghostTimeAt(S.run.s);
-      if (gt != null) showDelta(S.run.time - gt);
+      // Shown at the checkpoint and then faded out, rather than ticking away
+      // all lap: a number that only moves when something happened is a number
+      // you read. What it is measured against is the whole question, and the
+      // answer is different in each of the three sessions - see splitRef.
+      const ref = splitRef(S.run.nextCp, S.run.s);
+      if (ref != null) showDelta(S.run.time - ref);
     }
     if (e === 'missed') { S.sound.missed(); toast('Missed a checkpoint!'); }
     if (e === 'finish') onFinish();
@@ -1251,8 +1293,12 @@ function hud(now) {
   $('cpCount').textContent = run.nextCp + '/' + run.cps.length;
   $('wrongWay').style.display = run.wrongWay ? '' : 'none';
 
-  // race positions
-  if (S.raceMode || S.remotes.size) {
+  // Race positions - but not during qualifying, which is not a race: running
+  // order by distance means nothing when everybody is on their own lap, and
+  // the qualifying board directly below it already lists the same people in
+  // the order that does mean something.
+  const qualifying = S.racePhase === 'qualifying' || S.previewPhase === 'qualifying';
+  if (!qualifying && (S.raceMode || S.remotes.size)) {
     const order = liveOrder();
     const me = order.findIndex(e => e.self) + 1;
     $('position').style.display = '';
@@ -1268,6 +1314,62 @@ function hud(now) {
   }
   drawMinimap();
   void now;
+}
+
+/**
+ * What this split should be measured against, which depends on the session.
+ *
+ * A delta is only worth reading if the thing on the other side of it is the
+ * thing you are currently trying to beat, and in each of the three sessions
+ * that is something different:
+ *
+ * - **Racing: the leader.** Not your own old lap - in a race the only number
+ *   that matters is the gap to the car in front of everybody, and a lap you
+ *   set alone on a quiet track is not what you are driving against. The
+ *   reference is the quickest anyone *else* has reached this checkpoint, which
+ *   is by definition whoever was leading on the road at this point. If you are
+ *   the one leading, that is the gap back to your nearest rival and shows as a
+ *   gain, which is the same number read the other way round.
+ * - **Qualifying: your best lap of the session.** The one thing qualifying is
+ *   about is improving on your own time here, today, on this track.
+ * - **Free practice: the ghost**, whichever lap you have chosen to chase.
+ *
+ * Returns null when there is nothing honest to compare with - the first car to
+ * a checkpoint, or your first qualifying lap - and the caller then shows no
+ * delta at all rather than one measured against the wrong lap.
+ */
+function splitRef(cp, s) {
+  if (S.raceMode && S.racePhase === 'racing') {
+    if (S.socket) S.socket.emit('split', { cp, ms: S.run.time });
+    return bestRivalSplit(cp);
+  }
+  if (S.racePhase === 'qualifying') {
+    return S.qualRef ? timeAlong(S.qualRef, s) : null;
+  }
+  return ghostTimeAt(s);
+}
+
+/** The quickest anybody else has got round, of those already home. */
+function bestRivalFinish() {
+  const me = CFG.me ? CFG.me.pid : null;
+  let best = null;
+  for (const e of S.standings) {
+    if (e.pid === me || e.ms == null) continue;
+    if (best == null || e.ms < best) best = e.ms;
+  }
+  return best;
+}
+
+/** The quickest anybody else has reached this checkpoint in this race. */
+function bestRivalSplit(cp) {
+  const me = CFG.me ? CFG.me.pid : null;
+  let best = null;
+  for (const pid in S.raceSplits) {
+    if (pid === me) continue;
+    const ms = S.raceSplits[pid][cp];
+    if (ms != null && (best == null || ms < best)) best = ms;
+  }
+  return best;
 }
 
 /** Flash a split delta above the clock, then fade it out. */
@@ -1287,8 +1389,10 @@ function clearDelta() {
   d.textContent = '';
 }
 
-function ghostTimeAt(s) {
-  const arr = S.ghostTimes;
+function ghostTimeAt(s) { return timeAlong(S.ghostTimes, s); }
+
+/** When a recorded lap had got this far. `arr` is a `lapTimeline`. */
+function timeAlong(arr, s) {
   if (!arr || !arr.length) return null;
   // arr[i] = {s, ms}; find the last sample at or before this distance
   let lo = 0, hi = arr.length - 1;
@@ -1342,11 +1446,21 @@ function renderMedalTable() {
   if (!el) return;                  // rooms do not show medal times at all
   const m = S.track.medals;
   const rows = [['gold', 'Gold'], ['silver', 'Silver'], ['bronze', 'Bronze']];
-  // Your own best is not in here any more - it lives under the clock, bottom
-  // left of it, where you look for it while you are driving.
-  el.innerHTML = rows.map(([k, label]) =>
-    `<div class="mrow"><span class="medal ${k}"></span><span>${label}</span>` +
-    `<b>${fmt(m[k] * 1000)}</b></div>`).join('');
+  // The record heads the list, because it is the fourth time on it and the
+  // only one that is somebody's rather than the track's - the medals say what
+  // the track asks of you, and this says what has actually been done here.
+  // Green, and not a medal colour: it is not a medal and cannot be won.
+  const wr = S.track.record_ms;
+  const who = S.track.record_by ? ' &middot; ' + esc(S.track.record_by) : '';
+  // Your own best is not in here - it lives under the clock, bottom left of
+  // it, where you look for it while you are driving.
+  el.innerHTML =
+    `<div class="mrow wr"><span class="medal wr"></span>` +
+    `<span>WR${wr != null ? who : ''}</span>` +
+    `<b>${wr != null ? fmt(wr) : '&mdash;'}</b></div>` +
+    rows.map(([k, label]) =>
+      `<div class="mrow"><span class="medal ${k}"></span><span>${label}</span>` +
+      `<b>${fmt(m[k] * 1000)}</b></div>`).join('');
 }
 
 function showPb() { $('pbTime').textContent = S.bestTime ? fmt(S.bestTime) : '--:--.---'; }
@@ -1427,21 +1541,31 @@ async function loadGhost(who) {
 function useGhost(frames, hz) {
   if (!frames || frames.length < 2) return;
   S.ghost = new Ghost(frames, hz || GHOST_RATE);
-  // Precompute distance-along-track per ghost frame so the live delta can be
-  // "how long did the ghost take to get this far", not "where is it now".
-  S.ghostTimes = [];
+  S.ghostTimes = lapTimeline(S.ghost.frames, S.ghost.hz);
+}
+
+/**
+ * Distance along the track against elapsed time, for one recorded lap.
+ *
+ * This is what a split delta is measured with: "how long did the reference lap
+ * take to get this far", not "where is it now". Shared by the ghost and by the
+ * qualifying reference, which are two different laps answering the same
+ * question and must not be two copies of this loop.
+ */
+function lapTimeline(frames, hz) {
+  const out = [];
   const tmp = new THREE.Vector3();
   const course = new Course(S.built);
-  for (let i = 0; i < S.ghost.frames.length; i++) {
-    const f = S.ghost.frames[i];
+  for (let i = 0; i < frames.length; i++) {
+    const f = frames[i];
     tmp.set(f[0], f[1], f[2]);
-    const loc = course.locate(tmp);
-    S.ghostTimes.push({ s: loc.s, ms: (i / S.ghost.hz) * 1000 });
+    out.push({ s: course.locate(tmp).s, ms: (i / hz) * 1000 });
   }
   // enforce monotonic s so the binary search is valid
-  for (let i = 1; i < S.ghostTimes.length; i++) {
-    if (S.ghostTimes[i].s < S.ghostTimes[i - 1].s) S.ghostTimes[i].s = S.ghostTimes[i - 1].s;
+  for (let i = 1; i < out.length; i++) {
+    if (out[i].s < out[i - 1].s) out[i].s = out[i - 1].s;
   }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -1505,7 +1629,23 @@ async function onFinish() {
     useGhost(run.ghost.slice(), GHOST_RATE);
   }
 
-  if (prev != null) showDelta(run.time - prev);
+  // The finish is the last split, so it is measured the same way the others
+  // were: against the leader in a race, against your best lap of the session
+  // in qualifying, and against your personal best the rest of the time.
+  if (racing) {
+    const lead = bestRivalFinish();
+    if (lead != null) showDelta(run.time - lead);
+  } else if (qualifying) {
+    if (S.qualBest != null) showDelta(run.time - S.qualBest);
+  } else if (prev != null) {
+    showDelta(run.time - prev);
+  }
+  // Your best lap of the qualifying session is the reference every split in it
+  // is read against, so it is kept whole - the lap, not just its time.
+  if (qualifying && (S.qualBest == null || run.time < S.qualBest)) {
+    S.qualBest = run.time;
+    S.qualRef = lapTimeline(run.ghost, GHOST_RATE);
+  }
   // The full-screen sheet is for a session that has ended. Neither of these
   // has: a race ends on the standings when the last car is in, and qualifying
   // ends when the clock does - and covering the road with a results overlay
@@ -1685,6 +1825,11 @@ function connect() {
   socket.on('track_change', (d) => switchTrack(d.track));
   socket.on('qual_start', onQualStart);
   socket.on('qual_progress', (d) => { if (S.racePhase === 'qualifying') renderQual(d.qual); });
+  // Everyone's checkpoint times, so a delta can be measured against the car in
+  // front of the field rather than against a lap you drove on your own.
+  socket.on('race_split', (d) => {
+    (S.raceSplits[d.pid] || (S.raceSplits[d.pid] = {}))[d.cp] = d.ms;
+  });
   socket.on('race_start', onRaceStart);
   socket.on('race_green', onRaceGreen);
   socket.on('race_progress', (d) => { S.standings = d.finish || []; });
@@ -1890,7 +2035,7 @@ async function switchTrack(slug) {
     if (S.watch) stopWatching();
     S.raceMode = false; S.racePhase = 'free'; S.raceT0 = null;
     if ($('raceOver')) $('raceOver').style.display = 'none';
-    loadTrack(t);
+    loadTrack(t, { switched: true });
     toast('Track: ' + t.name);
     // Solo, the URL is one more thing naming the track, and the one people copy
     // out of the bar. `/solo/<slug>` stays a real link, so it has to name the
@@ -1919,6 +2064,7 @@ function onRaceStart(d) {
   S.racePhase = 'countdown';
   S.raceDone = false;
   S.standings = [];
+  S.raceSplits = {};        // this race's checkpoint times, nobody else's
   stopQualClock();
   // Everything you might have open belongs to practice, and the lights are
   // about to go out.

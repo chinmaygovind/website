@@ -284,6 +284,31 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   times did not move when it went, so nobody lost a medal - an old `author` row is
   shown as a gold by `DriveTime.medal_shown`, and `_MEDAL_FIELD` keeps the key so
   improving on one still decrements the right counter.
+- **`MEDAL_MULT` is set against real times, not against the estimate.** It was
+  1.04 / 1.18 / 1.42, calibrated off the simulated driver, and it was far too
+  soft: every record actually set on the site sits between **0.77 and 0.90 of
+  `ideal`** (mean 0.85), so a 1.04 gold was slower than what people were
+  already driving and bronze at 1.42 could not be missed. The spread was the
+  other half of it - gold to silver was 2.8-5.7s and silver to bronze 4.8-9.7s,
+  three unrelated standards rather than three steps of one. Now **0.92 / 0.99 /
+  1.07**: gold is beaten by the standing record on every track but only just on
+  the tightest (Spiral Ascent, by 0.4s), and a step is a second and a half on
+  the short tracks, three on the Gauntlet. Note `ideal` is a worse *per-track*
+  predictor than the mean suggests (0.77 on Chicane Park against 0.90 on Spiral
+  Ascent), so one global multiplier makes some golds harder than others - the
+  fix for that is a better `laptime.py`, not per-track fudge factors. Two tests
+  pin the intent (steps under 0.09 of the lap; gold under `ideal`), and
+  `test_medals_bracket_the_simulated_driver` still requires the headless driver
+  to manage a bronze. **Medals already earned do not move**: `DriveTime.medal`
+  is written when the run is stored.
+- **The record heads the medals card**, above gold/silver/bronze, as a green dot
+  with the holder's name - the fourth time on the same list and the only one
+  that is somebody's rather than the track's. Green because it is not a medal
+  and cannot be won. It rides along on the track payload (`_track_payload`,
+  used by `/api/track/<slug>` *and* the play template) rather than in a request
+  of its own, so it is right on the first paint and follows the switcher. That
+  helper returns a **copy** - the dicts in `tracks_mod` are module-level and
+  shared by every request.
 - **`tuning.py` is the single source of truth for the simulation.** It is embedded in
   the play page as `window.DRIVE_TUNING` and read by the JS physics, and `laptime.py`
   uses the same numbers to derive medal times. There is deliberately no second copy of
@@ -385,10 +410,12 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   The car is now marked `gone` (excluded from `_snapshot` and `_live`, so it
   stops being drawn and stops holding the race open) but kept, so it is still
   in the standings and still rated. `_reset_race` is what finally drops it.
-- **Two buttons for the two ways a race stops early.** Anyone can **Resign**
-  (top right, only while there is a race to resign from): a DNF, rated as one,
+- **Two buttons for the two ways a race stops early**, both top centre with
+  Start race, because they are the same kind of decision: start this, stop
+  this, get out of this. Anyone can **Resign** (only while there is a race to
+  resign from): a DNF, rated as one,
   and you drop straight back into practice without leaving the room. The host
-  gets **End race** (top centre, beside Start race), which is a *cancellation*
+  gets **End race**, which is a *cancellation*
   before the lights - `_abort_race`, nothing recorded - and the chequered flag
   after them, freezing the standings and rating them normally. Both arm on the
   first press and fire on the second, in place: they happen mid-drive, one
@@ -413,6 +440,31 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   side is the good one belonging to the same person twice running. Pole keeps
   its advantage; it was earned in qualifying, and taking it away would make the
   session pointless.
+- **A split delta is measured against whatever that session is about**, which
+  is three different laps - `splitRef` is the only thing that decides, and it
+  returns null rather than comparing with the wrong one. **Racing: the
+  leader**, specifically the quickest anybody *else* reached that checkpoint,
+  which is by definition whoever led on the road at that point; if that is
+  you, the same number read backwards is your gap to the nearest rival. Each
+  client emits `split` and the server fans it straight back out rather than
+  accumulating a table, because "the quickest anybody else" is a different
+  number for every car and the server would have to send a different message
+  per client. **Qualifying: your own best lap of the session**, kept whole as
+  `qualRef` (a `lapTimeline`, the same distance-against-time table the ghost
+  uses) rather than as a time, since a split needs the reference lap's shape.
+  **Free practice: the ghost**, as before. The finish is the last split and
+  follows the same rule.
+- **The qualifying board is top right with the standings**, not top centre:
+  it is the same kind of thing they are - who is where - and top centre is for
+  the one button the room is waiting on, which a board above it pushed down
+  into the road. The live standings are hidden during qualifying, since
+  running order by distance means nothing when everyone is on their own lap
+  and the board below already lists the same people in the order that counts.
+- **On a phone the top-right stack does not slide out from under the drawer.**
+  It does on a desktop, where the drawer is a 300px column. On a phone the
+  drawer is most of the screen and hides the driving controls while it is
+  open, so there is nothing left underneath to keep reachable, and sliding it
+  only walked the icons into the top-centre buttons on the way past.
 - **Guests are invisible to ELO.** They are in the room, on the grid and in the
   standings, but `_rate_race` ranks the logged-in players *among themselves*:
   beating a guest gains nothing, losing to one costs nothing. Anything else is
@@ -533,7 +585,30 @@ field from a dark field.
   four states rather than a toggle, because "is there a ghost" is a dull question and
   "whose lap is it" is not: off / my best / world record / view others. In a room `my
   best` still means your best lap of *this* practice session, and `ghostOn()` still
-  hides every ghost for the whole of a race.
+  hides every ghost for the whole of a race. **`G` steps through the three**
+  (`GHOST_CYCLE`: off, my best, world record) rather than toggling the last one
+  back on - choosing between your own lap and the record is the choice worth
+  having on a key. A lap chased off the board is deliberately not in the cycle,
+  so pressing G leaves it. **Switching track turns the ghost off**: somewhere
+  new is somewhere you are looking at rather than attacking, and a car you have
+  never driven against on your first lap of it is in the way. That one is not
+  remembered (`setGhostMode(..., {remember: false})`) - it is what the track
+  starts as, not a preference, so the ghost you actually chose survives.
+- **The world-record ghost has to be a lap that can be shown.** `?who=wr` took
+  the fastest row and served whatever replay was on it, but a row keeps its
+  time whether or not a ghost was stored beside it, so one old replay-less row
+  made "world record" report that *nobody had set a time here* on a track with
+  a full board. It now filters on `DriveTime.ghost`. Every other way in already
+  only offered laps with a replay - the board sends `has_ghost` and hands back
+  an id - which is exactly why "view others" worked where this did not. The
+  message distinguishes the two facts now: no record at all, or a record with
+  no replay.
+- **The `?` sheet is Controls, and it is the controls and nothing else.** It
+  used to open on the track blurb and close on two paragraphs about grass and
+  crests, which is reading matter in front of somebody who pressed it to find
+  out which key drifts. **The table follows the device** - `body.touch` swaps
+  the keyboard rows for the gestures (`.keys-only` / `.touch-only`, the same
+  mechanism as the start hint), so it never describes controls you do not have.
 - **`/account` is two boxes and the second one is a table.** It was nine bordered
   stat tiles in a grid plus a tenth panel for the medal tally, which made ten pieces
   of furniture out of one thing - who you are and what you have done. Now one
@@ -548,7 +623,12 @@ field from a dark field.
   word as well as the swatch, and the row actions are icon+label buttons - a steering
   wheel for **Play** and a podium for **Leaderboard**, which used to read "drive" and
   "board" and nobody knew what a board was. Icons are inline SVG (`.icn`), never
-  glyphs, for the reason the in-game ones are.
+  glyphs, for the reason the in-game ones are. **The rows are in the pool's
+  order**, the same one the switcher, the home page and the leaderboard use.
+  They used to be most-recent-PB first with the never-finished tracks in a
+  block underneath, so the same track moved every time you drove and no two
+  pages agreed on where to look for it; a track you started and never finished
+  now sits in its own place in the list, muted and without a time or a medal.
 - **`/leaderboard`'s track table is dated, not gold-timed.** The gold time used to be
   the fourth column; it is a property of the track rather than of the record, it is
   already on the track page and in the game, and sitting next to somebody's name it
@@ -580,9 +660,12 @@ field from a dark field.
   they cannot guess; by the second run it is a label floating over the road on every
   restart. Remembered in `sessionStorage`, so a reload does not restart the lecture,
   and the touch and keyboard wordings are two spans switched by `body.touch`.
-- **`?panel=settings|tracks|board` (plus `&row=N`) opens a panel on load**, for the
-  same reason `?touch=1` exists: there is no browser in CI and a screenshot cannot
-  click, so it is the only way to look at a panel's layout.
+- **`?panel=settings|help|tracks|board|qual|racing` (plus `&row=N`) opens a panel
+  on load**, for the same reason `?touch=1` exists: there is no browser in CI and a
+  screenshot cannot click, so it is the only way to look at a panel's layout.
+  `qual` and `racing` also *pin* the phase and fake a session, since neither is a
+  panel you can open and getting a room into either takes two browsers and a
+  stopwatch.
 - **The room drawer's button is a person, not a hamburger.** Three stacked bars sat
   next to the settings icon, which is three stacked sliders, and at a glance they were
   the same button. Chat is the last thing in the drawer so it takes the leftover height

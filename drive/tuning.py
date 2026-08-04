@@ -131,20 +131,42 @@ RESPAWN_DELAY = 0.45       # pause after falling before you pop back
 
 # --- timing / medals ------------------------------------------------------
 # Medal thresholds are multipliers on the calibrated ideal lap from laptime.py,
-# which is tuned to be about what the headless test driver achieves. Gold is
-# therefore about that driver's pace - a lap you have to work at - while bronze
-# should fall out of a careful first attempt.
+# which is tuned to be about what the headless test driver achieves.
+#
+# **These are set against real times, not against the estimate.** They used to
+# be 1.04 / 1.18 / 1.42, which was calibrated off the simulated driver and was
+# far too soft: every record actually set on the site sits between 0.77 and
+# 0.90 of `ideal` (mean 0.85), so a 1.04 gold was a quarter of a minute-lap
+# slower than what people were already driving, and bronze at 1.42 could not be
+# missed. The spread was the other half of the problem - gold to silver was
+# 2.8-5.7s and silver to bronze 4.8-9.7s, so the three medals described three
+# unrelated standards rather than three steps of the same one.
+#
+# Gold is now a lap you have to nail: beaten by the standing record on every
+# track, but only just on the tightest (Spiral Ascent, by 0.4s). Silver and
+# bronze follow about a second and a half behind it on the short tracks and
+# three on the Gauntlet - the gap is a fraction of the lap rather than a fixed
+# number of seconds, because a longer track has proportionally more places to
+# lose the time.
+#
+# Note `ideal` is a *worse* per-track predictor than the mean suggests (0.77 on
+# Chicane Park against 0.90 on Spiral Ascent), so one global multiplier makes
+# some tracks' golds harder than others. Fixing that means improving
+# `laptime.py`'s estimate, not adding per-track fudge factors here.
 #
 # **Gold is the best medal and there are three of them.** There used to be a
 # fourth above it, "author", at 0.94 of the ideal lap. Nobody could tell what it
 # meant from the game - the word names an authority, not a standard, and it sat
 # above a medal everyone already reads as the top one. Three medals that
-# everyone understands beat four where the best one needs explaining. The times
-# below are unchanged, so nobody's medal moved: an old author lap is a gold.
+# everyone understands beat four where the best one needs explaining.
+#
+# A medal already earned is not taken away: `DriveTime.medal` is written when
+# the run is stored, so tightening these only applies to laps driven from here
+# on - the same way nobody's medal moved when `author` was retired.
 MEDAL_MULT = {
-    "gold": 1.04,
-    "silver": 1.18,
-    "bronze": 1.42,
+    "gold": 0.92,
+    "silver": 0.99,
+    "bronze": 1.07,
 }
 # There is deliberately no lower bound on a submitted time. `ideal` is an
 # estimate off a relaxed racing line, not a limit, and it is beatable by anyone

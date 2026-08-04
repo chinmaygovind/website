@@ -52,7 +52,7 @@
 
   <h2>Tracks</h2>
   <div class="panel">
-    {% if times or unfinished %}
+    {% if rows %}
     <div class="tablewrap">
     <table class="board acct-tracks">
       <colgroup>
@@ -61,28 +61,24 @@
       </colgroup>
       <tr><th>Track</th><th class="num">Best</th><th>Medal</th>
         <th class="num">Starts</th><th class="num">Finishes</th><th></th></tr>
-      {% for r in times %}
-      <tr>
-        <td>{{ by_slug[r.track].name if r.track in by_slug else r.track }}</td>
-        <td class="num">{{ '%d:%06.3f'|format((r.time_ms // 60000), (r.time_ms % 60000) / 1000) }}</td>
-        <td><span class="medalcell"><span class="medal {{ r.medal_shown or 'none' }}"></span>
-          {{ r.medal_shown|capitalize if r.medal_shown else 'None' }}</span></td>
-        <td class="num">{{ starts.get(r.track, r.runs) }}</td>
-        <td class="num">{{ r.runs }}</td>
-        <td>{{ track_actions(r.track) }}</td>
-      </tr>
-      {% endfor %}
-      {# Started, never finished. No time and no medal, on purpose - the row is
-         here to say how many goes a track has had out of you, which is the one
-         thing a table of times alone cannot tell you. #}
-      {% for slug, n in unfinished %}
-      <tr class="muted">
-        <td>{{ by_slug[slug].name if slug in by_slug else slug }}</td>
-        <td class="num">—</td>
+      {# In the pool's order, the same as every other page. A track you have
+         started and never finished is here too, muted and without a time or a
+         medal: the row is there to say how many goes it has had out of you,
+         which is the one thing a table of times alone cannot tell you. #}
+      {% for r in rows %}
+      <tr{% if not r.time %} class="muted"{% endif %}>
+        <td>{{ by_slug[r.slug].name if r.slug in by_slug else r.slug }}</td>
+        {% if r.time %}
+        <td class="num">{{ '%d:%06.3f'|format((r.time.time_ms // 60000), (r.time.time_ms % 60000) / 1000) }}</td>
+        <td><span class="medalcell"><span class="medal {{ r.time.medal_shown or 'none' }}"></span>
+          {{ r.time.medal_shown|capitalize if r.time.medal_shown else 'None' }}</span></td>
+        {% else %}
+        <td class="num">&mdash;</td>
         <td></td>
-        <td class="num">{{ n }}</td>
-        <td class="num">0</td>
-        <td>{{ track_actions(slug) }}</td>
+        {% endif %}
+        <td class="num">{{ r.starts }}</td>
+        <td class="num">{{ r.runs }}</td>
+        <td>{{ track_actions(r.slug) }}</td>
       </tr>
       {% endfor %}
     </table>

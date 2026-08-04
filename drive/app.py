@@ -365,7 +365,8 @@ def _play_solo(slug):
     pb = DriveTime.query.filter_by(user_id=user.id, track=slug).first() if user else None
     return render_template(
         "play.html", mode="solo", track=track,
-        track_json=json_mod.dumps(track, separators=(",", ":")),
+        track_json=json_mod.dumps(_track_payload(track["slug"]),
+                                  separators=(",", ":")),
         tuning_json=tuning.as_json(), room=None, me_json="null",
         roster_json="[]", name=get_effective_name(), user=user,
         pb_ms=(pb.time_ms if pb else None), next_slug=_next_slug(slug),
@@ -401,7 +402,8 @@ def room(code):
     pb = DriveTime.query.filter_by(user_id=user.id, track=track["slug"]).first() if user else None
     return render_template(
         "play.html", mode="room", track=track,
-        track_json=json_mod.dumps(track, separators=(",", ":")),
+        track_json=json_mod.dumps(_track_payload(track["slug"]),
+                                  separators=(",", ":")),
         tuning_json=tuning.as_json(), room=game,
         me_json=json_mod.dumps(me.to_dict(), separators=(",", ":")),
         roster_json=json_mod.dumps([p.to_dict() for p in game.players], separators=(",", ":")),
@@ -452,18 +454,35 @@ def account():
     times = (DriveTime.query.filter_by(user_id=user.id)
              .order_by(DriveTime.updated_at.desc()).all())
     starts = _starts_for(user.id, times)
-    # A track you have started and never finished has no `drive_times` row, so it
-    # would be missing from a table listing those - and it is the one the start
-    # count has most to say about. Listed after the times, without one.
-    done = {t.track for t in times}
-    unfinished = sorted(((slug, n) for slug, n in starts.items() if slug not in done),
-                        key=lambda kv: -kv[1])
+    by_track = {t.track: t for t in times}
+
+    def _row(slug):
+        # A track you have started and never finished has no `drive_times` row,
+        # so it has no time and no medal - the row is there to say how many
+        # goes it has had out of you, which is the one thing a table of times
+        # alone cannot tell you.
+        row = by_track.get(slug)
+        return {"slug": slug, "time": row,
+                "starts": starts.get(slug, 0) or (row.runs if row else 0),
+                "runs": (row.runs if row else 0)}
+
+    # One table, in the pool's own order - the same order the switcher, the
+    # home page and the leaderboard all use. It used to be most-recent-PB
+    # first with the never-finished tracks in a block underneath, which meant
+    # the same track moved every time you drove and no two pages agreed on
+    # where to look for it.
+    pool = [t["slug"] for t in tracks_mod.TRACKS]
+    rows = [_row(s) for s in pool if s in by_track or starts.get(s)]
+    # A time or a start on a track that has since left the pool is still
+    # yours, so it goes on the end rather than quietly disappearing.
+    rows += [_row(s) for s in dict.fromkeys(list(by_track) + sorted(starts))
+             if s not in set(pool)]
     # Totalled per track rather than kept in a counter of its own: a track can have
     # starts and no time (never finished) or a time and no starts (driven before
     # the counter existed), and the per-track clamp already knows what to do with
     # both, so summing it cannot disagree with the column underneath.
     return render_template("account.html", user=user, stats=_stats(user),
-                           times=times, starts=starts, unfinished=unfinished,
+                           times=times, starts=starts, rows=rows,
                            total_starts=sum(starts.values()),
                            by_slug=tracks_mod.BY_SLUG,
                            tracks=tracks_mod.summaries(), name=get_effective_name())
@@ -478,9 +497,28 @@ def api_tracks():
     return jsonify({"tracks": tracks_mod.summaries()})
 
 
+def _track_payload(slug):
+    """The track as the game receives it, with the record on it.
+
+    The record belongs with the medal times rather than in a request of its
+    own: it is the fourth time on the same list, and the only one of the four
+    that is somebody's rather than the track's. Sent as a copy - the track
+    dicts in `tracks_mod` are module-level and shared by every request.
+    """
+    track = tracks_mod.get(slug)
+    if not track:
+        return None
+    best = (DriveTime.query.filter_by(track=slug)
+            .order_by(DriveTime.time_ms.asc()).first())
+    out = dict(track)
+    out["record_ms"] = best.time_ms if best else None
+    out["record_by"] = best.user.username if best and best.user else None
+    return out
+
+
 @app.route("/api/track/<slug>")
 def api_track(slug):
-    track = tracks_mod.get(slug)
+    track = _track_payload(slug)
     if not track:
         return jsonify({"error": "no such track"}), 404
     return jsonify(track)
@@ -688,7 +726,17 @@ def api_ghost(slug):
     who = request.args.get("who", "me")
     row = None
     if who == "wr":
-        row = DriveTime.query.filter_by(track=slug).order_by(DriveTime.time_ms.asc()).first()
+        # The fastest lap **that can actually be shown**. Picking the fastest
+        # row and then finding it has no replay is how "world record" came to
+        # report that nobody had set a time here at all, on tracks with a full
+        # board - a row keeps its time whether or not a ghost was stored with
+        # it, and the oldest rows have none. Every other way in already only
+        # offers laps with a replay: the board sends `has_ghost` and hands back
+        # an id, which is why "view others" worked on the very tracks where
+        # this did not.
+        row = (DriveTime.query.filter_by(track=slug)
+               .filter(DriveTime.ghost.isnot(None))
+               .order_by(DriveTime.time_ms.asc()).first())
     elif who.isdigit():
         # Scoped to this track so an id from elsewhere cannot fetch a ghost that
         # would be replayed against geometry it was never driven on.
@@ -884,7 +932,7 @@ def _room(code):
                             "deadline": None, "finish": [], "chat": [],
                             "loop": None, "seq": 0,
                             # qualifying -> grid
-                            "qual": {}, "qual_end": None, "grid": {},
+                            "qual": {}, "qual_end": None, "grid": {}, "splits": {},
                             # Which side of the road pole starts on. Flipped
                             # every race so no slot is permanently the inside
                             # line - see `_start_grid`.
@@ -1121,6 +1169,7 @@ def _reset_race(r):
     r["finish"] = []
     r["qual"] = {}
     r["grid"] = {}
+    r["splits"] = {}
     for pid in list(r["cars"]):
         c = r["cars"][pid]
         if c["gone"]:
@@ -1186,6 +1235,7 @@ def on_start_race(data):
             r["t0"] = r["deadline"] = r["hard_end"] = None
             r["finish"] = []
             r["grid"] = {}
+            r["splits"] = {}
             # Rematch can land inside the twelve seconds the results sheet is
             # up, before the tail of `_close_race` has tidied up, so the cars
             # kept behind to be DNFs in the last race are dropped here too.
@@ -1281,6 +1331,34 @@ def _go_green(code, seq):
         # The backstop. Every other way a race ends depends on somebody doing
         # something; this one does not.
         eventlet.spawn_after(hard / 1000.0, _close_race, code, "time limit", seq)
+
+
+@socketio.on("split")
+def on_split(data):
+    """A checkpoint time, so everyone can be shown their gap to the leader.
+
+    Fanned straight back out rather than accumulated into a leaderboard: each
+    client keeps what it has heard and works out its own reference, because
+    "the quickest anybody *else* got here" is a different number for each of
+    them and the server would have to send a different message per car.
+    """
+    ent = _sid_room.get(request.sid)
+    if not ent:
+        return
+    code, pid = ent
+    r = _rooms.get(code)
+    if not r or r["phase"] != "racing" or pid not in r["grid"]:
+        return
+    cp = int((data or {}).get("cp") or 0)
+    ms = int((data or {}).get("ms") or 0)
+    if cp <= 0 or ms <= 0:
+        return
+    mine = r["splits"].setdefault(pid, {})
+    if cp in mine:
+        return              # a checkpoint is passed once; a second is a replay
+    mine[cp] = ms
+    socketio.emit("race_split", {"pid": pid, "cp": cp, "ms": ms},
+                  room="room:" + code)
 
 
 @socketio.on("finish")

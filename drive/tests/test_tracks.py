@@ -268,6 +268,32 @@ def test_medal_times_are_ordered_and_reachable(track):
 
 
 @pytest.mark.parametrize("track", ALL, ids=IDS)
+def test_the_three_medals_are_close_together(track):
+    """One standard in three steps, not three unrelated ones.
+
+    They used to be 1.04 / 1.18 / 1.42 of the ideal lap, which put gold to
+    silver 2.8-5.7s apart and silver to bronze 4.8-9.7s apart - on a twenty
+    second track, bronze was half a lap slower than gold. A step is now under
+    a tenth of the lap, which is a second or two on most of the pool.
+    """
+    m, ideal = track["medals"], track["ideal"]
+    for a, b in (("gold", "silver"), ("silver", "bronze")):
+        step = m[b] - m[a]
+        assert step < ideal * 0.09, \
+            f"{a} to {b} is {step:.2f}s on a {ideal:.1f}s lap - too far apart"
+        assert step > 0.4, f"{a} and {b} are {step:.2f}s apart - indistinguishable"
+
+
+@pytest.mark.parametrize("track", ALL, ids=IDS)
+def test_gold_is_faster_than_the_estimate(track):
+    """Every record actually set on the site is 0.77-0.90 of `ideal`, so a gold
+    at or above 1.0 was slower than what people were already driving - which is
+    what made the old 1.04 gold trivial. It has to be under the estimate."""
+    assert track["medals"]["gold"] < track["ideal"], \
+        "gold must ask for more than the relaxed-racing-line estimate"
+
+
+@pytest.mark.parametrize("track", ALL, ids=IDS)
 def test_barriers_are_opt_in(track):
     """Rails on every corner look like a bobsleigh run and remove the only
     interesting decision on a corner exit. Ground-level tracks get none."""

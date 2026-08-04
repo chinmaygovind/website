@@ -201,6 +201,8 @@ table.board.rows-open tr.open td { background: #f1efe9; font-weight: 600; }
 .medal.silver { background: var(--silver); }
 .medal.bronze { background: var(--bronze); }
 .medal.none { background: transparent; border-style: dashed; }
+/* The record is not a medal and cannot be won, so it is not a medal colour. */
+.medal.wr { background: #55e08a; }
 
 /* --- tables ------------------------------------------------------------- */
 table.board { width: 100%; border-collapse: collapse; font-family: var(--sans); font-size: .92rem; }
@@ -305,12 +307,9 @@ body.playing { overflow: hidden; background: #9ed2f0; }
 .mapbtns { display: flex; gap: 6px; }
 body.touch .mapbtns { display: none; }
 
-/* The host's one decision, where nobody has to look for it - and, for the
-   ninety seconds it runs, the qualifying board above it. */
+/* The host's one decision, where nobody has to look for it. */
 .hud-tc { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px));
-          left: 50%; transform: translateX(-50%);
-          display: flex; flex-direction: column; align-items: center; gap: 8px;
-          max-width: min(340px, calc(100vw - 2rem)); }
+          left: 50%; transform: translateX(-50%); }
 .tc-btns { display: flex; gap: 8px; }
 .btn.start-race {
   background: var(--red); color: #fff; border-color: rgba(0, 0, 0, .35);
@@ -366,27 +365,33 @@ body.touch .mapbtns { display: none; }
    visible through all of it - a board you cannot see past is worse than no
    board. So the rows keep their size (they are the content) and everything
    round them goes: the standing instruction, the list past a handful of
-   places, and the gap under the card. */
+   places, and some of the padding. */
 @media (max-height: 460px) {
-  .card.qual { width: 260px; padding: .4rem .55rem; }
+  .card.qual { width: 250px; padding: .4rem .55rem; }
   .qual-note { display: none; }
-  .qual-rows { max-height: 30vh; padding: .2rem 0; }
+  .qual-rows { max-height: 34vh; padding: .2rem 0; }
   .qual-clock { font-size: 1.05rem; }
-  .hud-tc { gap: 5px; }
   .tc-btns .btn { font-size: .85rem; padding: .35rem .8rem; }
-  /* Out from under the qualifying card and its buttons, into the gap above
-     the clock. Both of these are things you only ever see once - a first run
-     and a session opening - so they must not land on each other on the one
-     screen size where there is no room for both. */
-  body.race-live #startHint { bottom: 36%; font-size: .85rem; }
+  /* The start hint is one long centred line, and on this screen the right end
+     of it runs underneath the qualifying board. Only while the board is up, it
+     wraps onto two lines and keeps to the left of it - a first-time player
+     needs the whole instruction, so truncating it with an ellipsis or hiding
+     it outright would cost more than the wrap does. */
+  body.qualifying #startHint {
+    white-space: normal; max-width: 50vw; left: 33%; text-align: center;
+    line-height: 1.35;
+  }
 }
 
-/* The resign button carries its word as well as its flag: it is the one
-   control here that cannot be undone, and a lone icon would be a guess. */
-.hbtn.danger { width: auto; padding: 0 .6rem; gap: .35rem; color: #ff8a7a;
-               border-color: rgba(255, 138, 122, .45); }
-.hbtn.danger:hover { background: rgba(232, 69, 60, .85); color: #fff; }
-.hbtn-label { font-size: .78rem; font-weight: 600; letter-spacing: .02em; }
+/* Resign sits with the other race buttons and carries its word as well as its
+   flag: it is the one control up here that cannot be undone, and a lone icon
+   would be a guess. */
+.btn.resign { display: inline-flex; align-items: center; gap: .4rem; }
+.btn.resign svg {
+  width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.hbtn-label { letter-spacing: .02em; }
 .hud-bc { position: absolute; bottom: calc(12px + env(safe-area-inset-bottom, 0px));
           left: 50%; transform: translateX(-50%); width: 340px; max-width: 60vw;
           text-align: center; }
@@ -449,7 +454,10 @@ body.touch .mapbtns { display: none; }
 
 .brow { display: flex; align-items: flex-end; justify-content: space-between; gap: .5rem;
         margin-top: .15rem; }
-.stat { display: flex; flex-direction: column; line-height: 1.05;
+/* White, like the clock above them. Only the labels and the personal best set
+   a colour of their own, so without this the checkpoint count and the speed
+   inherited the page's dark body text and read as black over the road. */
+.stat { display: flex; flex-direction: column; line-height: 1.05; color: #fff;
         text-shadow: 0 2px 8px rgba(0, 0, 0, .6); }
 .stat b { font-family: var(--mono); font-size: 1.05rem; font-weight: 700;
           font-variant-numeric: tabular-nums; }
@@ -475,6 +483,11 @@ body.touch .mapbtns { display: none; }
 
 .mrow { display: flex; align-items: center; gap: .45rem; font-size: .82rem; padding: .1rem 0; }
 .mrow b { margin-left: auto; font-family: var(--mono); }
+/* Ruled off from the three medals under it: it is a different kind of time. */
+.mrow.wr { color: #7ef0ab; border-bottom: 1px solid var(--hud-line);
+           padding-bottom: .28rem; margin-bottom: .28rem; }
+.mrow.wr span:not(.medal) { overflow: hidden; text-overflow: ellipsis;
+                            white-space: nowrap; max-width: 9rem; }
 
 .st-row { display: flex; align-items: center; gap: .45rem; font-size: .85rem; padding: .14rem 0; }
 .st-row.me { color: #ffd96b; font-weight: 700; }
@@ -527,6 +540,13 @@ body.touch .mapbtns { display: none; }
 .hint-touch { display: none; }
 body.touch .hint-keys { display: none; }
 body.touch .hint-touch { display: inline; }
+
+/* And the same idea for the controls sheet: it lists the controls this device
+   actually has rather than both sets with one of them irrelevant. */
+.touch-only { display: none; }
+body.touch .keys-only { display: none; }
+body.touch .touch-only { display: table; }
+.sheet .controls { margin: 0; }
 
 .overlay {
   position: fixed; inset: 0; background: rgba(12, 14, 20, .72);
@@ -783,6 +803,15 @@ body.side-open .side { transform: none; }
    reachable while the room is open, rather than hiding underneath it. */
 .hud-tr { transition: transform .18s ease-out; }
 body.side-open .hud-tr { transform: translateX(calc(-1 * min(300px, 80vw))); }
+/* But not on a phone. There the drawer is most of the screen and it hides the
+   driving controls while it is open, so there is nothing underneath it left to
+   stay reachable - sliding the stack out only walks it into the buttons in the
+   top centre on the way past. It stays where it is and the drawer covers it,
+   which is what a drawer that size is for. */
+body.touch.side-open .hud-tr { transform: none; }
+@media (max-width: 900px) {
+  body.side-open .hud-tr { transform: none; }
+}
 @media (prefers-reduced-motion: reduce) {
   .side, .hud-tr { transition: none; }
 }

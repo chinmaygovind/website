@@ -217,6 +217,51 @@ def test_a_reset_forgets_the_cars_that_left_but_keeps_the_ones_here(env):
 
 
 # ---------------------------------------------------------------------------
+# Splits, which is how everyone gets a gap to the leader
+# ---------------------------------------------------------------------------
+
+def _split(A, code, pid, cp, ms, sid="sid1"):
+    """Drive the real handler, which reads its player off the socket id."""
+    A._sid_room[sid] = (code, pid)
+    with A.app.test_request_context():
+        from flask import request
+        request.sid = sid
+        A.on_split({"cp": cp, "ms": ms})
+
+
+def test_a_checkpoint_time_is_recorded_once(env, monkeypatch):
+    """A second time for the same checkpoint is a replayed message, not a
+    faster lap, and taking it would let a client rewrite its own gap."""
+    A = env
+    monkeypatch.setattr(A.socketio, "emit", lambda *a, **k: None)
+    r = _room(A)
+    _add_car(A, r, "a")
+    _split(A, "TEST", "a", 1, 12000)
+    _split(A, "TEST", "a", 1, 9000)
+    assert r["splits"]["a"] == {1: 12000}
+
+
+def test_only_cars_in_the_race_report_splits(env, monkeypatch):
+    """Somebody practising alongside a race is not in it, and their times
+    must not become anybody's reference."""
+    A = env
+    monkeypatch.setattr(A.socketio, "emit", lambda *a, **k: None)
+    r = _room(A)
+    _add_car(A, r, "tourist", on_grid=False)
+    _split(A, "TEST", "tourist", 1, 5000)
+    assert r["splits"] == {}
+
+
+def test_splits_are_dropped_with_the_race_they_belong_to(env):
+    A = env
+    r = _room(A)
+    _add_car(A, r, "a")
+    r["splits"]["a"] = {1: 12000}
+    A._reset_race(r)
+    assert r["splits"] == {}
+
+
+# ---------------------------------------------------------------------------
 # Rating it
 # ---------------------------------------------------------------------------
 
