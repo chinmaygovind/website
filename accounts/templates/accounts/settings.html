@@ -1,0 +1,197 @@
+{% extends "accounts/base.html" %}
+{% import "accounts/_bits.html" as bits with context %}
+{% block title %}Settings · cgovind{% endblock %}
+
+{% block body %}
+<div class="topbar" style="padding-top:0">
+  <h1 style="font-size:2.2rem">Settings</h1>
+  <nav><a href="{{ url_for('accounts.profile', username=user.username) }}">View my profile →</a></nav>
+</div>
+
+{% if notice %}<div class="note">{{ notice }}</div>{% endif %}
+{% if error %}<div class="warn">{{ error }}</div>{% endif %}
+
+{# ---- who you are -------------------------------------------------------- #}
+<form class="card" method="post" action="{{ url_for('accounts.save_profile') }}"
+      enctype="multipart/form-data">
+  <h2>Profile</h2>
+
+  <div class="row" style="align-items:flex-start;gap:1.4rem;margin-bottom:1.2rem">
+    <div style="flex:0 0 auto">{{ bits.avatar(user, 'lg') }}</div>
+    <div style="flex:1 1 16rem">
+      <div class="field">
+        <label for="avatar">Picture</label>
+        <input type="file" id="avatar" name="avatar" accept="image/*"/>
+        <span class="hint">Square-cropped from the middle and shrunk to 256px.
+          PNG, JPEG, WebP or GIF, up to 5MB.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="field">
+    <label for="display_name">Display name</label>
+    <input type="text" id="display_name" name="display_name" maxlength="30"
+           value="{{ profile.display_name if profile and profile.display_name else '' }}"
+           placeholder="{{ user.username }}"/>
+    <span class="hint">What everyone sees — in lobbies, at the table, on the
+      leaderboards. Leave it empty to go by <b>{{ user.username }}</b>.</span>
+  </div>
+
+  <hr class="sep"/>
+
+  <div class="field">
+    <label for="country">Country</label>
+    <select id="country" name="country">
+      <option value="">— not saying —</option>
+      {% for code, name in countries %}
+      <option value="{{ code }}"
+        {{ 'selected' if profile and profile.country == code }}>{{ name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  {# Only meaningful under the US, so it is only *there* under the US. The
+     server enforces the same thing; this is so the form does not offer a
+     choice that will be thrown away. #}
+  <div id="stateRow" hidden>
+    <div class="field">
+      <label for="us_state">State</label>
+      <select id="us_state" name="us_state">
+        <option value="">— none —</option>
+        {% for code, name in states %}
+        <option value="{{ code }}"
+          {{ 'selected' if profile and profile.us_state == code }}>{{ name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="field" id="flagPrefRow" hidden>
+      <label>Which flag to fly</label>
+      <label class="tiny" style="display:block;margin:.2rem 0">
+        <input type="radio" name="flag_pref" value="country" style="width:auto"
+               {{ 'checked' if not profile or profile.flag_pref != 'state' }}/>
+        Stars and Stripes
+      </label>
+      <label class="tiny" style="display:block">
+        <input type="radio" name="flag_pref" value="state" style="width:auto"
+               {{ 'checked' if profile and profile.flag_pref == 'state' }}/>
+        My state's flag
+      </label>
+    </div>
+  </div>
+
+  {# Drawn at the size the profile hero draws it, not at hint size: the whole
+     job of this line is to show you what other people will see. #}
+  <div class="field" style="display:flex;align-items:center;gap:.5rem">
+    <span class="hint" style="margin:0">Flying now:</span>
+    <img class="flag" id="flagPreview" alt="" style="height:1.8rem;width:2.4rem" hidden/>
+    <span id="flagNone" class="muted">nothing</span>
+  </div>
+
+  <div class="row">
+    <button class="btn primary" type="submit">Save profile</button>
+    {% if profile and profile.avatar %}
+    <button class="btn danger" type="submit" formaction="{{ url_for('accounts.remove_avatar') }}"
+            formnovalidate>Remove picture</button>
+    {% endif %}
+  </div>
+</form>
+
+{# ---- the bits that need your password ------------------------------------ #}
+<div class="card" id="security">
+  <h2>Log in details</h2>
+
+  <p class="muted" style="margin-bottom:1.1rem">
+    Your username is <b>{{ user.username }}</b> and it doesn't change — it's how
+    you log in and it's the address of your profile, so a link to you keeps
+    working. The name on screen is the display name above.
+  </p>
+
+  <hr class="sep"/>
+
+  <form method="post" action="{{ url_for('accounts.change_password') }}">
+    <h3 style="font-size:1.2rem;margin-bottom:.7rem">Change password</h3>
+    <div class="row">
+      <div class="field">
+        <label for="cur1">Current password</label>
+        <input type="password" id="cur1" name="current" autocomplete="current-password" required/>
+      </div>
+      <div class="field">
+        <label for="np">New password</label>
+        <input type="password" id="np" name="new" autocomplete="new-password"
+               minlength="8" required/>
+      </div>
+      <div class="field">
+        <label for="np2">Again</label>
+        <input type="password" id="np2" name="confirm" autocomplete="new-password"
+               minlength="8" required/>
+      </div>
+    </div>
+    <button class="btn" type="submit" style="margin-top:.9rem">Change password</button>
+  </form>
+
+  <hr class="sep"/>
+
+  <form method="post" action="{{ url_for('accounts.change_email') }}">
+    <h3 style="font-size:1.2rem;margin-bottom:.7rem">Change email</h3>
+    <p class="muted tiny" style="margin-bottom:.8rem">
+      Currently <b>{{ user.email }}</b>. Nothing changes until the new address
+      opens the link we send it — that way a typo can't lock you out of your own
+      password resets.
+    </p>
+    <div class="row">
+      <div class="field">
+        <label for="cur2">Current password</label>
+        <input type="password" id="cur2" name="current" autocomplete="current-password" required/>
+      </div>
+      <div class="field">
+        <label for="ne">New email</label>
+        <input type="email" id="ne" name="email" autocomplete="email" required/>
+      </div>
+    </div>
+    <button class="btn" type="submit" style="margin-top:.9rem">Send confirmation</button>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Three things follow the country box: whether there is a state box at all,
+// whether there is a choice of flag to make, and which flag the preview shows.
+// All of it is decoration over a form the server validates anyway.
+(function () {
+  var country = document.getElementById('country');
+  var stateRow = document.getElementById('stateRow');
+  var state = document.getElementById('us_state');
+  var prefRow = document.getElementById('flagPrefRow');
+  var img = document.getElementById('flagPreview');
+  var none = document.getElementById('flagNone');
+
+  function pref() {
+    var on = document.querySelector('input[name=flag_pref]:checked');
+    return on ? on.value : 'country';
+  }
+  function sync() {
+    var isUS = country.value === 'us';
+    stateRow.hidden = !isUS;
+    prefRow.hidden = !(isUS && state.value);
+
+    var src = null;
+    if (isUS && state.value && pref() === 'state') {
+      src = '/assets/flags/us/' + state.value.toLowerCase() + '.png';
+    } else if (country.value) {
+      src = '/assets/flags/country/' + country.value + '.svg';
+    }
+    img.hidden = !src;
+    none.hidden = !!src;
+    if (src) { img.src = src; }
+  }
+  country.addEventListener('change', sync);
+  state.addEventListener('change', sync);
+  document.querySelectorAll('input[name=flag_pref]').forEach(function (r) {
+    r.addEventListener('change', sync);
+  });
+  sync();
+})();
+</script>
+{% endblock %}

@@ -96,6 +96,13 @@ def _lock(code):
 def _now_ms():
     return int(time.time() * 1000)
 
+# The main site, which is where /accounts and the flag art are served from.
+# Deliberately NOT `SITE_URL`: that name is already taken on the box, where it
+# means *this* service's own public address (drive/.env has
+# SITE_URL=https://drive.cgovind.com), and quietly borrowing it would point
+# every flag at the wrong host.
+MAIN_SITE_URL = os.environ.get("MAIN_SITE_URL", "https://cgovind.com").rstrip("/")
+
 
 # ---------------------------------------------------------------------------
 # Auth helpers (shared with TTR/ERS/KoT via the users table + session cookie)
@@ -113,8 +120,15 @@ def get_current_user():
 
 
 def get_effective_name():
+    """The name to put on a seat: theirs if they chose one, else their username.
+
+    Everything that writes a player's name into a game reads it from here, so
+    the display name set on cgovind.com/accounts follows somebody into every
+    lobby without any of the game code knowing that is what happened. A guest
+    is whatever they typed.
+    """
     u = get_current_user()
-    return u.username if u else session.get("guest_name", "Guest")
+    return u.display if u else session.get("guest_name", "Guest")
 
 
 def require_name(f):
@@ -127,7 +141,20 @@ def require_name(f):
     return wrapped
 
 
+# Addresses under cgovind.com/accounts that are pages rather than people.
+# Registering one of these would create an account whose own profile URL - and
+# whose password-reset link - went somewhere else entirely, so it is refused
+# here as well as there. Kept in step with `accounts/naming.py`'s RESERVED by
+# `test_reserved_names_match_the_accounts_site`.
+RESERVED_USERNAMES = {
+    "settings", "forgot", "reset", "login", "logout", "register", "avatar",
+    "confirm-email", "confirm", "me", "admin", "api", "static", "new", "edit",
+}
+
+
 def _valid_username(u):
+    if u.lower() in RESERVED_USERNAMES:
+        return False
     return bool(re.match(r'^[A-Za-z][A-Za-z0-9_\-]{1,29}$', u))
 
 
@@ -153,6 +180,10 @@ def inject_globals():
     return {"current_user": get_current_user(),
             "effective_name": get_effective_name(),
             "track_names": {t["slug"]: t["name"] for t in tracks_mod.TRACKS},
+            # Where the flag art lives. It is one copy on the main site
+            # rather than four, so a game refers to it by absolute URL - see
+            # `UserProfile.flag_path`, which returns the path half.
+            "site_url": MAIN_SITE_URL,
             "asset_version": os.environ.get("ASSET_VERSION", "1")}
 
 
@@ -261,7 +292,7 @@ def _records():
     for slug, best in rows:
         holder = (DriveTime.query.filter_by(track=slug, time_ms=best)
                   .order_by(DriveTime.updated_at.asc()).first())
-        out[slug] = (best, holder.user.username if holder and holder.user else "?",
+        out[slug] = (best, holder.user.display if holder and holder.user else "?",
                      holder.updated_at if holder else None)
     return out
 
@@ -428,7 +459,7 @@ def track_board(slug):
     starts = {r.id: max(started.get(r.user_id, 0), r.runs or 0) for r in rows}
     # The same shape the in-game board uses, so a lap opens the same way in both
     # places rather than each growing its own idea of what a lap is.
-    laps = [{"id": r.id, "name": r.user.username if r.user else "?",
+    laps = [{"id": r.id, "name": r.user.display if r.user else "?",
              "time_ms": r.time_ms, "splits": r.splits,
              "medal": r.medal_shown, "has_ghost": bool(r.ghost)} for r in rows]
     return render_template("track.html", track=track, rows=rows, laps=laps,
@@ -750,7 +781,7 @@ def api_ghost(slug):
         return jsonify({"ok": True, "ghost": None})
     return jsonify({"ok": True, "hz": runcheck.ghost_hz(row.ghost),
                     "id": row.id, "time_ms": row.time_ms, "splits": row.splits,
-                    "who": (row.user.username if row.user else "?"),
+                    "who": (row.user.display if row.user else "?"),
                     "ghost": runcheck.unpack_ghost(row.ghost)})
 
 
@@ -767,7 +798,7 @@ def api_board(slug):
     rows = (DriveTime.query.filter_by(track=slug)
             .order_by(DriveTime.time_ms.asc()).limit(50).all())
     user = get_current_user()
-    return jsonify({"rows": [{"id": r.id, "name": r.user.username if r.user else "?",
+    return jsonify({"rows": [{"id": r.id, "name": r.user.display if r.user else "?",
                               "time_ms": r.time_ms, "medal": r.medal_shown,
                               "splits": r.splits, "has_ghost": bool(r.ghost),
                               "me": bool(user and r.user_id == user.id)}
@@ -810,7 +841,7 @@ def _add_player(game, host=False):
                  CAR_COLORS[len(game.players) % len(CAR_COLORS)])
     seat = max((p.seat_order for p in game.players), default=-1) + 1
     p = DrivePlayer(game_id=game.id, user_id=(user.id if user else None),
-                    session_key=sk, name=(user.username if user else get_effective_name()),
+                    session_key=sk, name=get_effective_name(),
                     color=color, seat_order=seat, is_host=host)
     db.session.add(p)
     db.session.commit()

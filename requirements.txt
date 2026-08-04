@@ -1,2 +1,10 @@
 flask>=3.0
 gunicorn>=21.2
+# The /accounts pages: the shared users table, a .env in a local checkout, and
+# re-encoding an uploaded profile picture into something safe to serve.
+# itsdangerous ships with Flask already; it is named because this app imports
+# it directly rather than reaching it through Flask.
+flask-sqlalchemy>=3.1
+itsdangerous>=2.1
+python-dotenv>=1.0
+Pillow>=10.0

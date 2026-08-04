@@ -21,8 +21,15 @@ multiplayer card game that shares TTR's accounts).
   reach the client: `/api/duolingo-streak`, `/api/spotify/{login,callback,recent,
   top-artists}` (OAuth refresh token in the box `.env`), and `/api/roll/gemini`
   for the `site/games/roll/` game.
+- **`/accounts` is the one thing here that is not static** — the shared profile
+  for all four games. It lives in the `accounts/` package and is attached by
+  `accounts.init_app(app)` at the foot of `app.py`, **only when `DATABASE_URL`
+  is set**, so a checkout that just wants to serve the static tree boots with no
+  database and no database driver. See **Accounts** below.
 - **No build step, no bundler.** Pages are self-contained static HTML with inline
   `<style>`/`<script>`, same as the old GitHub Pages site this was derived from.
+  The one exception is `accounts/`, which is a normal Flask blueprint with
+  templates and a stylesheet, because it is a real application rather than a page.
 - Local: `python app.py` → http://localhost:5002 (`PORT` overrides). Prod:
   gunicorn behind nginx (see `deploy/`), auto-deploys from `main`.
 
@@ -113,6 +120,132 @@ all**, so every page below is reachable only by typing its URL:
   `TTR_URL`, not by mounting TTR under a path.
 - `ttr/` is a **submodule**; edit TTR in its own repo, then bump the pointer here.
 
+## Accounts (`accounts/`)
+
+**Live at `cgovind.com/accounts`.** One profile per person, spanning all four
+games — a blueprint on the website app (port 5002, no service of its own),
+reading the same SQLite file everything else does. It is not a fifth account
+system: `users` and the session cookie were always shared, and these are the
+pages that were missing from the system that already existed.
+
+- **`/accounts/<username>` is public**, and the username in it is **permanent** —
+  it is the login and the address of the profile, so a link to somebody keeps
+  working. The name every screen *shows* is the **display name**, which is
+  editable, unique case-insensitively, and may not collide with anybody else's
+  username either: two rows reading "chinmay" on one leaderboard is the
+  impersonation the constraint exists to stop. It reaches the games through
+  `get_effective_name()`, which now returns `user.display` — one line per game,
+  so a name set here follows somebody into every lobby, table and grid.
+- **The page is a hero, a strip and tabs.** Picture, display name, flag, where
+  they're from and `joined on 9/22/2024`; then all four games as chips whether
+  or not they have been played (a chip that vanishes when it is empty is a chip
+  you go looking for); then one panel per game with that game's own figures and
+  its last few results. Tabs are **links** (`?game=ers`), so a panel is
+  shareable and works with no JavaScript; the script only saves the round trip,
+  and uses `replaceState` — which game you are reading is a setting inside one
+  visit, not somewhere to press Back out of.
+- **The look is the landing page's, not Drive's.** xkcd Script on white with
+  thick drawn borders and the per-game accent colours already in
+  `site/index.html`'s `:root`. Drive's account page is a lovely timing screen,
+  but it is *Drive's*: a page spanning four games cannot wear one of their four
+  faces. Every box's corners are four slightly different radii (`--wobble`), and
+  panels alternate between two of them, so no two outlines repeat.
+- **The settings cog is the only thing that marks your own profile.** It goes to
+  `/accounts/settings`, which is two boxes: who you are (picture, display name,
+  country, state, flag) and how you log in (password, email). Changing a
+  password or an email needs the **current password typed again** — a session
+  cookie gets left behind on shared machines.
+- **Recent games are read four different ways**, because the games record four
+  different things. TTR keeps a row per player per game (`game_results`), so
+  that is the list. ERS and KoT keep a whole-game replay whose finishing order
+  is `state_json['standings']`, keyed by pid — a game with no standings was
+  abandoned rather than finished and is skipped, since reporting it would be
+  inventing a result. Drive's is personal bests interleaved with races, because
+  most of Drive is solo and a history that left the laps out would be a strange
+  one.
+- **`accounts/gamestats.py` reads the games with raw SQL on purpose.** Mapping
+  four more schemas here would be duplication kept in step with four other
+  repos' columns, and worse, a mapped table that does not exist is an error at
+  query time — a game not installed on this box, or a fresh dev database with
+  only `users` in it, is an ordinary state a profile must *render*, not crash
+  on. `_table_exists` makes a missing game a game with no stats.
+
+### Flags
+
+- **Country flags are SVG, US state flags are PNG**, and that is not an
+  oversight. `site/assets/flags/country/` is 254 flags from flag-icons (MIT):
+  most national flags are a few rectangles, so they are 4KB and crisp at any
+  size. State flags are a seal on a blue field — Kansas is 246KB of SVG,
+  California 165KB, and neither survives being drawn 20px wide — so
+  `site/assets/flags/us/` is 56 PNGs rasterised once by Wikimedia at ~330px.
+- **The picker is generated from the directories** (`tools/build_places.py` →
+  `accounts/places.py`), so a code can never be offered without art behind it,
+  and a test asserts both directions. Offered: ISO 3166-1, plus England,
+  Scotland, Wales, Northern Ireland and Kosovo. Not offered: the EU, the UN,
+  ASEAN, Catalonia and the pseudo-codes — flags, but not nationalities.
+- **A US profile can fly its state's flag instead**, and the three conditions
+  (in the US, a state chosen, asked for it) are checked in exactly one place,
+  `places.flag_of`. A stale `flag_pref` left behind by somebody moving country
+  therefore cannot fly a state flag over another country's name.
+- **The art is one copy, on the main site**, and the games reference it by
+  absolute URL through `MAIN_SITE_URL`. That name is deliberately **not**
+  `SITE_URL`: on the box `SITE_URL` already means *this service's own* address
+  (`drive/.env` sets it to `https://drive.cgovind.com`), and borrowing it would
+  point every flag at a host that does not serve them.
+
+### Getting back in
+
+`/accounts/forgot` is what the four login screens link to. **There is no table
+of outstanding tokens**: a link carries a fingerprint of the thing it is allowed
+to change, so *using it destroys it*. A reset link is signed over the current
+password hash — set the password and the link stops validating, which is what
+"single use" has to mean — and an email-change link is signed over the address
+it replaces. That also survives a restore from backup, where a table of spent
+tokens would not.
+
+- **The forgot box answers the same way whatever happens** — sent, not sent, no
+  such account, mail server down. Anything else turns it into a way of asking
+  which addresses have accounts here.
+- **An email change waits for the new address** to open a link before anything
+  moves, so a typo cannot lock somebody out of their own future resets, and the
+  **old** address is told afterwards — a takeover changes the address first, so
+  that notice is the only warning the owner would get.
+- Mail goes over the box's existing Gmail app password (the same account TTR has
+  been sending from). **Unconfigured is a supported state**: with no `SMTP_HOST`
+  the letter is printed to the log, link and all, which is how the flow stays
+  walkable locally and how the tests read it.
+- **TTR's `/account/update` used to change a username or an email outright** — no
+  password, no confirmation. Both branches now refuse and point here. It had to
+  be the *route*, not just the form: leaving it would have been a way round both
+  rules, one page over.
+
+### Pictures
+
+Uploads are decoded, centre-cropped, resized and **re-encoded** by Pillow, and
+only the bytes Pillow writes are kept — an image that survives that round trip
+is not still carrying a payload, and a file that was never an image does not
+survive it at all. The **stored name is ours** (`7-9f3a1c2b.webp`, hashed over
+the finished bytes), because an uploader who picks the filename picks the URL,
+the extension and the content type. That hash is also the whole cache strategy:
+a new picture is a new URL, so nothing is ever invalidated. Files live in
+`AVATAR_DIR`, which in prod is **outside the repo** (`/home/ubuntu/avatars`) so
+the deploy's `git reset --hard` can never be near them.
+
+**No picture is a look, not a gap**: an initial in the site's own font on a
+colour hashed from the username, drawn *in the page* rather than served as an
+image — an `<img>` cannot load a webfont, and the initial is the whole picture.
+
+### Tests
+
+`scripts/tests.sh site` — 108 tests, about 25s, plus the `import app` check the
+deploy used to be. `tests/test_no_drift.py` is the one to know about: five
+services each own a copy of `User` and now of `UserProfile`, which is this
+repo's convention and the right one for five things that deploy separately, but
+a drifted copy is worse than no copy. So every deliberate duplication —
+the rating tiers, Drive's track names, the reserved usernames, the profile
+columns, the display-name wiring, the forgot link, `MAIN_SITE_URL` — has a test
+that **reads the other file** and fails when the two stop agreeing.
+
 ## Egyptian Rat Screw (`ers/`)
 
 **Live at `https://ers.cgovind.com`** (TLS via certbot). A second real-time game in the
@@ -131,15 +264,16 @@ per-game lock wins.
   runs from a **separate clone `/home/ubuntu/TicketToRide`** (systemd `tickettoride`, port
   5001), whose db is `/home/ubuntu/TicketToRide/instance/tickettoride.db` -- that is the
   shared file `ers/.env`'s `DATABASE_URL` points at.
-- **SSO is one-directional in prod:** a login on ERS carries into TTR (ERS sets a
-  `.cgovind.com` cookie signed with the shared key), but TTR -> ERS auto-login is NOT wired
-  because the live TTR clone still sets a host-only cookie. Same credentials work either way.
-- **The `ttr_stats` refactor is NOT deployed.** This repo's `ttr/` submodule has edits that
-  move TTR stats out of `users` into `ttr_stats` (+ cookie-domain SSO), but the running TTR
-  is the separate clone, so in prod **TTR still uses the `users.elo` columns** and ERS uses
-  `ers_stats`; both coexist in the one db. Deploying that refactor means committing it in the
-  `github.com/chinmaygovind/TicketToRide` repo and `git pull` + restart on
-  `/home/ubuntu/TicketToRide` (back up the db first).
+- **SSO:** every service signs the same `.cgovind.com` cookie with the shared `SECRET_KEY`,
+  so one login covers all of them and the accounts pages. This was one-directional for a
+  long time -- TTR's `.env` was missing `SESSION_COOKIE_DOMAIN`, so a login there set a
+  host-only cookie and did not carry out. If TTR logins stop carrying again, that line in
+  `/home/ubuntu/TicketToRide/.env` is the first thing to check.
+- **The `ttr_stats` refactor IS deployed** (this used to say the opposite). The live clone
+  is on the same commit as this repo's submodule pointer and `ttr_stats` is the fresher
+  table -- the legacy `users.elo` columns are still there but stopped being written, so
+  anything reading them is reading a snapshot from whenever the refactor shipped. Read
+  `ttr_stats`.
 - **Layout:** `ers/app.py` (auth + lobby routes ported from TTR, socket game loop, bots,
   ELO/stats finalize, ping, spectators, kick/leave), `ers/game_logic.py` (pure, unit-tested
   rules engine -- `scripts/tests.sh ers`), `ers/models.py` (shared

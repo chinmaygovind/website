@@ -1,0 +1,3 @@
+# Test-only, kept out of requirements.txt so the box never installs a test
+# runner it has no use for - the same split drive/ makes for its JS engine.
+pytest>=8.0

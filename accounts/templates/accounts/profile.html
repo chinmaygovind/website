@@ -1,0 +1,153 @@
+{% extends "accounts/base.html" %}
+{% import "accounts/_bits.html" as bits with context %}
+{% block title %}{{ user.display }} · cgovind{% endblock %}
+
+{% block body %}
+
+{# ---- hero: who this is -------------------------------------------------- #}
+<div class="card">
+  <div class="hero">
+    <div class="hero-av">{{ bits.avatar(user, 'lg') }}</div>
+    <div class="hero-text">
+      <h1 class="hero-name">{{ user.display }} {{ bits.flag(user) }}</h1>
+      {# The username is worth showing even when it is the display name too:
+         it is the login, the profile's address, and the thing that does not
+         change, which is exactly what somebody looking a person up needs. #}
+      <div class="hero-handle">@{{ user.username }}</div>
+      <div class="hero-meta">
+        {% set where = places.place_name(user.profile.country if user.profile else none,
+                                         user.profile.us_state if user.profile else none) %}
+        {% if where %}<span>{{ where }}</span>{% endif %}
+        <span>joined on {{ user.created_at|usdate }}</span>
+        {% set total = blocks|sum(attribute='played') %}
+        <span>{{ total }} game{{ '' if total == 1 else 's' }} played</span>
+      </div>
+    </div>
+    {% if is_me %}{{ bits.cog() }}{% endif %}
+  </div>
+</div>
+
+{# ---- the four games, at a glance ---------------------------------------- #}
+{# Every game gets a chip whether or not it has been played. A tab that
+   disappears when there is nothing in it is a tab you go looking for. #}
+<div class="strip">
+  {% for b in blocks %}
+  <a class="chip{{ ' empty' if not b.played }}" style="--accent: {{ b.accent }}"
+     href="?game={{ b.key }}" data-tab="{{ b.key }}">
+    <div class="chip-name">{{ b.name }}</div>
+    <div class="chip-elo">{{ b.elo if b.played else '—' }}</div>
+    <div class="chip-sub">
+      {%- if b.played -%}
+        {{ b.tier }} · {{ b.played }} played
+      {%- else -%}
+        not played yet
+      {%- endif -%}
+    </div>
+  </a>
+  {% endfor %}
+</div>
+
+{# ---- tabs --------------------------------------------------------------- #}
+{# Links, not buttons, so the panel is shareable, survives no JavaScript and
+   can be reached from the chips above. The script below only makes switching
+   instant. #}
+<div class="tabs" role="tablist">
+  {% for b in blocks %}
+  <a class="tab{{ ' on' if b.key == active }}" style="--accent: {{ b.accent }}"
+     href="?game={{ b.key }}" data-tab="{{ b.key }}" role="tab"
+     aria-selected="{{ 'true' if b.key == active else 'false' }}">{{ b.short }}</a>
+  {% endfor %}
+</div>
+
+{% for b in blocks %}
+<section class="card panel" style="--accent: {{ b.accent }}" data-panel="{{ b.key }}"
+         {% if b.key != active %}hidden{% endif %}>
+  <h3>{{ b.name }}</h3>
+  <div class="rating">
+    {%- if b.played -%}
+      rating {{ b.elo }} · {{ b.tier }}
+    {%- else -%}
+      nothing here yet — <a href="{{ b.url }}">play a game</a>
+    {%- endif -%}
+  </div>
+
+  {% if b.cells %}
+  <div class="grid">
+    {% for label, value in b.cells %}
+    <div class="cell"><b>{{ value }}</b><span>{{ label }}</span></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# Drive is the only one with medals, and they are three more counts of the
+     same kind of thing, so they sit under a hairline in the same panel rather
+     than in a box of their own - the same call its own account page makes. #}
+  {% if b.medals %}
+  <div class="medals">
+    {% for key, n in b.medals %}
+    <div class="mtally"><i class="dot {{ key }}"></i>{{ n }} <span>{{ key }}</span></div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if b.recent %}
+  <div class="recent">
+    <h4>Recent</h4>
+    {% for r in b.recent %}
+    <div class="rec">
+      <div class="rec-when">{{ r.when|shortdate }}</div>
+      <div class="rec-what">
+        {{ r.what }}
+        {%- if r.medal %} <i class="dot {{ r.medal }}" title="{{ r.medal }}"></i>{% endif %}
+      </div>
+      <div class="rec-detail">{{ r.detail }}</div>
+      <div class="rec-place{{ ' win' if r.won }}">
+        {%- if r.place -%}
+          {{ r.place|ordinal }}{% if r.of %} of {{ r.of }}{% endif %}
+        {%- endif -%}
+        {%- if r.delta is not none %}
+          <span class="rec-delta {{ 'up' if r.delta > 0 else 'down' if r.delta < 0 else '' }}">
+            {{ '+' if r.delta > 0 }}{{ r.delta }}</span>
+        {%- endif -%}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+{% endfor %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// The tabs already work as links - each one is a real URL that renders the
+// right panel. This only saves the round trip, and rewrites the address with
+// replaceState rather than pushState: which game you are reading is a setting
+// inside one visit, not somewhere you should have to press Back out of.
+(function () {
+  var panels = document.querySelectorAll('[data-panel]');
+  function show(key) {
+    var found = false;
+    panels.forEach(function (p) {
+      var on = p.dataset.panel === key;
+      p.hidden = !on;
+      found = found || on;
+    });
+    if (!found) return false;
+    document.querySelectorAll('.tab').forEach(function (t) {
+      var on = t.dataset.tab === key;
+      t.classList.toggle('on', on);
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    history.replaceState(null, '', '?game=' + key);
+    return true;
+  }
+  document.querySelectorAll('[data-tab]').forEach(function (el) {
+    el.addEventListener('click', function (e) {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
+      if (show(el.dataset.tab)) e.preventDefault();
+    });
+  });
+})();
+</script>
+{% endblock %}

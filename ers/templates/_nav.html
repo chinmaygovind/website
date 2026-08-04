@@ -2,7 +2,7 @@
   <a class="brand" href="/lobbies"><img src="/static/img/icon.svg" alt="" class="brand-ico"/> Rat Screw <small>· cgovind</small></a>
   <div class="nav-right">
     {% if current_user %}
-      <span class="nav-user">{{ current_user.username }}{% if current_user.ers %} · {{ current_user.ers.elo or 1000 }}{% endif %}</span>
+      <span class="nav-user">{{ current_user.display }}{% if current_user.ers %} · {{ current_user.ers.elo or 1000 }}{% endif %}</span>
     {% elif effective_name and effective_name != 'Guest' %}
       <span class="nav-user">{{ effective_name }} <span class="badge">GUEST</span></span>
     {% endif %}

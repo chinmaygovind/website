@@ -572,3 +572,27 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
   .slap-cd { bottom: 106px; }
   .slog { max-height: 30vh; }
 }
+
+/* A flag on a leaderboard row. The hairline matters: a white field - Japan,
+   and half the US state flags - otherwise dissolves into the page and reads as
+   an image that failed to load. Fixed size rather than `1em`, so a row's
+   height does not depend on whether that player has set one. */
+.flag {
+  height: 13px;
+  width: 18px;
+  object-fit: cover;
+  vertical-align: -1px;
+  margin-right: .38em;
+  border: 1px solid rgba(0, 0, 0, .2);
+  border-radius: 2px;
+  background: #f2f2f2;
+}
+
+/* The one line on the login screen that leads off this site: resetting a
+   password is the shared account's business, so it happens once, at
+   cgovind.com/accounts, rather than four times over. */
+.forgot {
+  margin: .7rem 0 0;
+  text-align: center;
+  font-size: .92rem;
+}

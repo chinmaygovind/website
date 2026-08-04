@@ -1,0 +1,46 @@
+{% extends "accounts/base.html" %}
+{% import "accounts/_bits.html" as bits with context %}
+{% block title %}Players · cgovind{% endblock %}
+
+{% block body %}
+<div class="card">
+  <h2>Everybody who plays here</h2>
+  <p class="muted">One account, four games. Click a name to see how they're
+  getting on.</p>
+
+  <form class="search" method="get" style="margin-top:1.1rem">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search by name…"
+           autocomplete="off" aria-label="Search players"/>
+    <button class="btn" type="submit">Search</button>
+    {% if q %}<a class="btn" href="{{ url_for('accounts.directory') }}">Clear</a>{% endif %}
+  </form>
+</div>
+
+<div class="people">
+  {% for row in rows %}
+  <a class="person" href="{{ url_for('accounts.profile', username=row.user.username) }}">
+    {{ bits.avatar(row.user, 'sm') }}
+    <div>
+      <div class="person-name">{{ row.user.display }} {{ bits.flag(row.user) }}</div>
+      <div class="person-sub">@{{ row.user.username }} · joined {{ row.user.created_at|usdate }}</div>
+    </div>
+    {# Four columns whether or not they are filled: a dash in the KoT column is
+       information, and a row that only shows the games somebody plays cannot be
+       read down the page against the row above it. #}
+    <div class="person-elos">
+      {% for g in games %}
+      {% set elo = row.ratings.get(g.key) %}
+      <div class="pelo{{ '' if elo else ' none' }}">
+        <b>{{ elo if elo else '—' }}</b>
+        <span>{{ g.short|upper }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </a>
+  {% else %}
+  <p class="empty">
+    {% if q %}Nobody here is called “{{ q }}”.{% else %}No accounts yet.{% endif %}
+  </p>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,423 @@
+/* cgovind.com accounts - the landing page's voice, given a table to live in.
+ *
+ * The rest of the site is xkcd Script on white with thick charcoal borders and
+ * one accent colour per thing, and these pages are the same. That is a
+ * deliberate choice against the alternative: Drive's account page is a lovely
+ * timing screen, but it is Drive's, and a page that spans four games cannot
+ * wear one of their four faces without looking like it belongs to that one.
+ * The front door's face is the only one that is nobody's in particular.
+ *
+ * Two devices do most of the work of keeping a page of numbers from reading as
+ * a spreadsheet:
+ *
+ *   `--wobble`  - every box's corners are four slightly different radii, so a
+ *                 border looks drawn rather than specified. Panels alternate
+ *                 between two wobbles (`.card:nth-of-type(even)`) so a column
+ *                 of them never repeats the same outline twice running.
+ *   accents     - the per-game colours already in the landing page's :root
+ *                 (--ttr, --ers, --kot and racing red for Drive), carried on a
+ *                 border rather than a fill, so the games are told apart by
+ *                 outline the way the tiles on the front page are.
+ */
+
+@font-face {
+  font-family: "xkcd Script";
+  /* Served by the main site, which is where the landing page's copy lives -
+     one font file for the whole domain rather than one per blueprint. */
+  src: url("/fonts/xkcd-script.woff") format("woff");
+  font-display: swap;
+}
+
+:root {
+  --ink: #000;
+  --charcoal: #333;
+  --muted: #6a6a6a;
+  --hair: #d9d9d9;
+  --paper: #fff;
+  --link: #1a56ff;
+  --ttr: #6b4226;
+  --ers: #b8860b;
+  --kot: #5c2678;
+  --drive: #c0182b;
+  --good: #1f7a4d;
+  --bad: #c0182b;
+  --gold: #e5b528;
+  --silver: #a9b0bb;
+  --bronze: #c2803f;
+  --wobble: 18px 22px 19px 23px;
+  --wobble-b: 23px 17px 24px 18px;
+  --accent: var(--charcoal);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "xkcd Script", "Comic Sans MS", cursive;
+  -webkit-text-size-adjust: 100%;
+}
+
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+h1, h2, h3 { margin: 0; line-height: 1.05; font-weight: normal; }
+p { margin: 0; }
+
+.page {
+  width: min(1100px, 94vw);
+  margin: 0 auto;
+  padding: 0 0 4rem;
+}
+
+/* ---- top bar ------------------------------------------------------------ */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.1rem 0 1.4rem;
+  font-size: 1.15rem;
+}
+.topbar .home { color: var(--ink); font-size: 1.5rem; }
+.topbar .home:hover { color: var(--link); text-decoration: none; }
+.topbar nav { margin-left: auto; display: flex; align-items: center; gap: 1.2rem; }
+.topbar nav a { color: var(--ink); }
+.topbar nav a.on { color: var(--link); text-decoration: underline; }
+
+/* ---- the box everything sits in ----------------------------------------- */
+
+.card {
+  border: 3px solid var(--charcoal);
+  border-radius: var(--wobble);
+  padding: 1.4rem 1.5rem;
+  margin-bottom: 1.5rem;
+  background: var(--paper);
+}
+.card:nth-of-type(even) { border-radius: var(--wobble-b); }
+.card > h2 {
+  font-size: 1.5rem;
+  margin-bottom: .9rem;
+}
+
+.muted { color: var(--muted); }
+.tiny { font-size: .95rem; }
+
+/* ---- hero --------------------------------------------------------------- */
+
+.hero { display: flex; align-items: flex-start; gap: 1.6rem; position: relative; }
+.hero-av { flex: 0 0 auto; }
+.hero-text { min-width: 0; flex: 1; padding-top: .2rem; }
+
+.hero-name {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  flex-wrap: wrap;
+  font-size: clamp(2rem, 6vw, 3.4rem);
+  line-height: 1;
+}
+.hero-handle { font-size: 1.25rem; color: var(--muted); margin-top: .45rem; }
+.hero-meta { margin-top: .55rem; font-size: 1.1rem; color: var(--charcoal); }
+.hero-meta span + span::before { content: " · "; color: var(--hair); }
+
+/* The cog is the only affordance that separates your own profile from anyone
+   else's, so it is a real button with a real hit area rather than an icon
+   floated into a corner. */
+.cog {
+  position: absolute;
+  top: -.2rem;
+  right: -.2rem;
+  width: 46px; height: 46px;
+  display: grid; place-items: center;
+  border: 3px solid var(--charcoal);
+  border-radius: 14px 17px 13px 16px;
+  background: var(--paper);
+  cursor: pointer;
+  color: var(--ink);
+}
+.cog:hover { color: var(--link); border-color: var(--link); text-decoration: none; }
+.cog svg { width: 22px; height: 22px; }
+
+/* ---- avatars ------------------------------------------------------------ */
+
+.av {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 3px solid var(--charcoal);
+  border-radius: 20px 24px 21px 25px;
+  background: var(--paper);
+  flex: 0 0 auto;
+}
+.av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* No picture is a look, not a gap: the initial in the site's own font on a
+   colour that is always this person's. Drawn in the page rather than served as
+   an image so that it can use that font at all. */
+.av-default {
+  width: 100%; height: 100%;
+  display: grid; place-items: center;
+  background: var(--av-colour, var(--charcoal));
+  color: #fff;
+  line-height: 1;
+}
+.av-lg { width: 132px; height: 132px; }
+.av-lg .av-default { font-size: 4.4rem; }
+.av-sm { width: 46px; height: 46px; border-width: 2px; border-radius: 12px 14px 12px 15px; }
+.av-sm .av-default { font-size: 1.5rem; }
+
+/* ---- flags -------------------------------------------------------------- */
+
+/* A hairline round the flag, because a white field (Japan, and half the state
+   flags) otherwise dissolves into the page and reads as a missing image. */
+.flag {
+  height: 1em;
+  width: 1.34em;
+  object-fit: cover;
+  vertical-align: -.14em;
+  border: 1px solid var(--hair);
+  border-radius: 2px;
+  background: #f4f4f4;
+}
+.hero-name .flag { height: .74em; width: 1em; border-radius: 3px; }
+
+/* ---- the four-game strip ------------------------------------------------ */
+
+.strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: .9rem;
+  margin-bottom: 1.5rem;
+}
+.chip {
+  border: 3px solid var(--accent);
+  border-radius: 16px 20px 17px 21px;
+  padding: .75rem .9rem .85rem;
+  color: var(--ink);
+  display: block;
+}
+.chip:hover { text-decoration: none; transform: translateY(-2px); }
+.chip { transition: transform .12s ease; }
+.chip-name {
+  font-size: 1.02rem;
+  color: var(--accent);
+  letter-spacing: .02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chip-elo { font-size: 2.1rem; line-height: 1.05; }
+.chip-sub { font-size: .95rem; color: var(--muted); }
+/* A game nobody has played keeps its chip - the point of the strip is that it
+   is always the same four. It loses its accent, though, so the games somebody
+   actually plays are the ones with colour on them. The dash stays legible
+   rather than fading to the border colour, where it read as a printing fault
+   rather than as "nothing here". */
+.chip.empty { border-color: var(--hair); }
+.chip.empty .chip-name,
+.chip.empty .chip-elo { color: var(--muted); }
+
+/* ---- tabs --------------------------------------------------------------- */
+
+.tabs { display: flex; flex-wrap: wrap; gap: .6rem; margin-bottom: -3px; }
+.tab {
+  border: 3px solid var(--hair);
+  border-bottom-color: transparent;
+  border-radius: 14px 16px 0 0;
+  background: var(--paper);
+  padding: .5rem 1.1rem .6rem;
+  font: inherit;
+  font-size: 1.15rem;
+  color: var(--muted);
+  cursor: pointer;
+  position: relative;
+}
+.tab:hover { color: var(--ink); }
+/* The selected tab joins the panel below it: same colour border, and a white
+   strip painted over the seam so the two read as one shape. */
+.tab.on {
+  color: var(--accent);
+  border-color: var(--accent);
+  border-bottom-color: var(--paper);
+  z-index: 2;
+}
+.panel { border-color: var(--accent); border-radius: 0 20px 19px 21px; }
+.panel > h3 {
+  font-size: 1.35rem;
+  color: var(--accent);
+  margin-bottom: .2rem;
+}
+.panel .rating { font-size: 1.1rem; color: var(--muted); margin-bottom: 1rem; }
+
+/* ---- stat grid ---------------------------------------------------------- */
+
+/* Five across, and fixed rather than auto-fit on purpose. The games have eight
+   or ten figures each, so a grid that packs as many as will fit gives ERS a row
+   of eight and a row of two - a full line and a shrug. Five divides both into
+   rows that look deliberate, and leaves each number enough width that a
+   thousands separator does not wrap. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: .2rem 1rem;
+}
+.cell { padding: .55rem 0; }
+.cell b { display: block; font-weight: normal; font-size: 1.75rem; line-height: 1.1; }
+.cell span { display: block; font-size: .95rem; color: var(--muted); }
+
+.medals {
+  display: flex;
+  gap: 1.8rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+  padding-top: .9rem;
+  border-top: 2px dashed var(--hair);
+}
+.mtally { display: flex; align-items: center; gap: .45rem; font-size: 1.2rem; }
+.dot {
+  width: 15px; height: 15px; border-radius: 50%;
+  border: 2px solid rgba(0, 0, 0, .28);
+  display: inline-block;
+}
+.dot.gold { background: var(--gold); }
+.dot.silver { background: var(--silver); }
+.dot.bronze { background: var(--bronze); }
+.mtally span { color: var(--muted); font-size: 1rem; }
+
+/* ---- recent ------------------------------------------------------------- */
+
+.recent { margin-top: 1.3rem; padding-top: 1rem; border-top: 2px dashed var(--hair); }
+.recent h4 { margin: 0 0 .5rem; font-size: 1.15rem; font-weight: normal; color: var(--muted); }
+.rec {
+  display: grid;
+  grid-template-columns: 5.4rem 1fr auto auto;
+  align-items: baseline;
+  gap: .3rem .9rem;
+  padding: .42rem 0;
+  border-bottom: 1px solid var(--hair);
+  font-size: 1.08rem;
+}
+.rec:last-child { border-bottom: 0; }
+.rec-when { color: var(--muted); font-size: .95rem; white-space: nowrap; }
+.rec-what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-detail { color: var(--muted); white-space: nowrap; }
+.rec-place { white-space: nowrap; }
+.rec-place.win { color: var(--good); }
+.rec-delta { color: var(--muted); font-size: .95rem; }
+.rec-delta.up { color: var(--good); }
+.rec-delta.down { color: var(--bad); }
+
+/* ---- directory ---------------------------------------------------------- */
+
+.search { display: flex; gap: .7rem; margin-bottom: 1.2rem; }
+.search input { flex: 1; }
+
+.people { display: grid; gap: .7rem; }
+.person {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 1rem;
+  border: 3px solid var(--hair);
+  border-radius: var(--wobble);
+  padding: .7rem .95rem;
+  color: var(--ink);
+}
+.person:nth-child(even) { border-radius: var(--wobble-b); }
+.person:hover { border-color: var(--charcoal); text-decoration: none; }
+.person-name { font-size: 1.35rem; display: flex; align-items: center; gap: .5rem; }
+.person-sub { font-size: .95rem; color: var(--muted); }
+.person-elos { display: flex; gap: .85rem; text-align: right; }
+.pelo { min-width: 3.4rem; }
+.pelo b { display: block; font-weight: normal; font-size: 1.25rem; line-height: 1.1; }
+.pelo span { display: block; font-size: .78rem; color: var(--muted); letter-spacing: .04em; }
+.pelo.none b { color: var(--hair); }
+
+/* ---- forms -------------------------------------------------------------- */
+
+.narrow { width: min(560px, 94vw); }
+
+.field { margin-bottom: 1rem; }
+.field > label {
+  display: block;
+  font-size: 1.05rem;
+  margin-bottom: .3rem;
+}
+.field .hint { display: block; color: var(--muted); font-size: .92rem; margin-top: .3rem; }
+
+input[type=text], input[type=email], input[type=password], input[type=search], select {
+  width: 100%;
+  font: inherit;
+  font-size: 1.1rem;
+  padding: .5rem .7rem;
+  color: var(--ink);
+  background: var(--paper);
+  border: 3px solid var(--charcoal);
+  border-radius: 12px 15px 13px 16px;
+}
+input:focus, select:focus { outline: none; border-color: var(--link); }
+input[type=file] { font: inherit; font-size: 1rem; max-width: 100%; }
+
+.row { display: flex; gap: .8rem; flex-wrap: wrap; align-items: flex-end; }
+.row > .field { flex: 1 1 12rem; margin-bottom: 0; }
+
+.btn {
+  font: inherit;
+  font-size: 1.1rem;
+  padding: .5rem 1.15rem;
+  cursor: pointer;
+  color: var(--ink);
+  background: var(--paper);
+  border: 3px solid var(--charcoal);
+  border-radius: 13px 16px 12px 15px;
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+}
+.btn:hover { border-color: var(--link); color: var(--link); text-decoration: none; }
+.btn.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+.btn.primary:hover { background: var(--link); border-color: var(--link); color: #fff; }
+.btn.danger { border-color: var(--bad); color: var(--bad); }
+.btn.danger:hover { background: var(--bad); color: #fff; }
+.btn.wide { width: 100%; justify-content: center; }
+
+.note, .warn {
+  border: 3px solid var(--good);
+  border-radius: 12px 15px 13px 16px;
+  padding: .6rem .9rem;
+  margin-bottom: 1.2rem;
+  font-size: 1.05rem;
+}
+.warn { border-color: var(--bad); color: var(--bad); }
+
+.sep { border: 0; border-top: 2px dashed var(--hair); margin: 1.4rem 0; }
+
+.empty { color: var(--muted); font-size: 1.1rem; padding: .4rem 0; }
+
+/* ---- narrow ------------------------------------------------------------- */
+
+@media (max-width: 820px) {
+  .strip { grid-template-columns: repeat(2, 1fr); }
+  .grid { grid-template-columns: repeat(4, 1fr); }
+  .person { grid-template-columns: auto 1fr; }
+  .person-elos { grid-column: 1 / -1; justify-content: flex-start; }
+}
+
+@media (max-width: 560px) {
+  .hero { gap: 1rem; }
+  .av-lg { width: 92px; height: 92px; }
+  .av-lg .av-default { font-size: 3rem; }
+  .cog { width: 40px; height: 40px; }
+  /* The cog would otherwise sit on top of a name that has wrapped to two
+     lines, which on a phone it always has. */
+  .hero-text { padding-right: 3rem; }
+  /* One fact per line rather than a run separated by middots. On a phone the
+     run wraps, which both splits a phrase across two lines and leaves a
+     dangling "·" at the end of the first one, reading as a typo. */
+  .hero-meta span { display: block; }
+  .hero-meta span + span::before { content: none; }
+  .rec { grid-template-columns: 1fr auto; }
+  .rec-when { grid-row: 2; grid-column: 1 / -1; }
+  .grid { grid-template-columns: repeat(3, 1fr); }
+  .cell b { font-size: 1.5rem; }
+}

@@ -1,0 +1,14 @@
+{% extends "accounts/base.html" %}
+{% block title %}{{ title }} · cgovind{% endblock %}
+{% block pageclass %} narrow{% endblock %}
+
+{# One page for every "that worked" and "that didn't", because they are the same
+   shape: a heading, a sentence saying what is now true, and the one thing there
+   is to do next. #}
+{% block body %}
+<div class="card">
+  <h2>{{ title }}</h2>
+  <p class="muted" style="margin:.8rem 0 1.3rem">{{ body }}</p>
+  {% if link %}<a class="btn primary" href="{{ link }}">{{ link_text or 'Continue' }}</a>{% endif %}
+</div>
+{% endblock %}

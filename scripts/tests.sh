@@ -70,17 +70,25 @@ py_for() {
 # which is not a test result. CI installs its own deps, so it opts out.
 ensure_venv() {
   m="$1"
-  if [ "$m" = site ] || [ -n "${CI:-}" ] || [ -n "${PYTHON:-}" ] \
-     || [ -x "$ROOT/$m/venv/bin/python" ]; then
+  if [ -n "${CI:-}" ] || [ -n "${PYTHON:-}" ]; then
     return 0
   fi
 
-  echo "no $m/venv yet, creating one"
-  python3 -m venv "$ROOT/$m/venv" || return 1
-  "$ROOT/$m/venv/bin/pip" install -q -r "$ROOT/$m/requirements.txt" || return 1
-  # Optional test-only deps (drive's QuickJS, which runs the game's real JS).
-  if [ -f "$ROOT/$m/requirements-test.txt" ]; then
-    "$ROOT/$m/venv/bin/pip" install -q -r "$ROOT/$m/requirements-test.txt" || return 1
+  # The root app's venv is at the top rather than under a module directory,
+  # since it is the one gunicorn runs in production.
+  if [ "$m" = site ]; then
+    dir="$ROOT/venv"; reqs="$ROOT/requirements.txt"; test_reqs="$ROOT/requirements-test.txt"
+  else
+    dir="$ROOT/$m/venv"; reqs="$ROOT/$m/requirements.txt"; test_reqs="$ROOT/$m/requirements-test.txt"
+  fi
+  [ -x "$dir/bin/python" ] && return 0
+
+  echo "no venv for $m yet, creating one"
+  python3 -m venv "$dir" || return 1
+  "$dir/bin/pip" install -q -r "$reqs" || return 1
+  # Optional test-only deps: pytest for the root app, drive's QuickJS, ...
+  if [ -f "$test_reqs" ]; then
+    "$dir/bin/pip" install -q -r "$test_reqs" || return 1
   fi
 }
 
@@ -90,9 +98,14 @@ run_module() {
   py="$(py_for "$m")"
 
   if [ "$m" = site ]; then
-    # The root server has no suite; what it has is "does it still import",
-    # which is the same thing the deploy checks before it ships.
-    ( cd "$ROOT" && "$py" -c "import app; print('app imports OK')" )
+    # Two things, cheapest first. "Does it still import" is what the deploy
+    # checks before it ships and catches a broken root app on its own; the
+    # accounts suite is the real one. Both, because the import check is the
+    # only thing that runs when there is no pytest to be had.
+    ( cd "$ROOT" && "$py" -c "import app; print('app imports OK')" ) || return 1
+    if [ -d "$ROOT/tests" ]; then
+      ( cd "$ROOT" && "$py" -m pytest tests/ $pytest_args )
+    fi
   else
     ( cd "$ROOT/$m" && "$py" -m pytest tests/ $pytest_args )
   fi

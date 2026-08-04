@@ -1,7 +1,10 @@
 """Personal website server.
 
 Serves the static site under ``site/`` (the Wii menu is the site root) and
-redirects ``/ttr`` to the Ticket to Ride service.
+redirects ``/ttr`` to the Ticket to Ride service. Also hosts ``/accounts``, the
+one page on this domain that is not static: the shared profile for the four
+games, which lives in the ``accounts`` package and is registered at the bottom
+of this file.
 
 The static tree was authored for GitHub Pages, which auto-serves ``foo/index.html``
 for a request to ``/foo/`` and redirects ``/foo`` -> ``/foo/``. Flask does neither
@@ -18,8 +21,15 @@ from urllib import error as urlerror
 from urllib import parse as urlparse
 from urllib import request as urlrequest
 
+import accounts
+from dotenv import load_dotenv
 from flask import Flask, Response, redirect, request, send_from_directory, abort
 from werkzeug.utils import safe_join
+
+# In production systemd passes the box's .env in through EnvironmentFile, so
+# this does nothing there. Locally it is the only way the accounts pages find a
+# database, and the four games all load it the same way.
+load_dotenv()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SITE_DIR = os.path.join(BASE_DIR, "site")
@@ -409,6 +419,17 @@ def serve(path):
 def not_found(_e):
     """Fall back to the custom 404 (a small Mario-style platformer)."""
     return send_from_directory(SITE_DIR, "404.html"), 404
+
+
+# The accounts pages. Registered last, though the order does not matter to the
+# routing - Werkzeug sorts rules by how specific they are, so `/accounts/chinmay`
+# beats the `/<path:path>` catch-all above without either having to know about
+# the other. `test_accounts_beats_the_static_catch_all` pins that.
+#
+# Attaching them is conditional on a DATABASE_URL being set, so a checkout that
+# only wants to serve the static site still boots with no database and no
+# database driver anywhere near it.
+accounts_enabled = accounts.init_app(app)
 
 
 if __name__ == "__main__":

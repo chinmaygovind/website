@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>{% block title %}Accounts · cgovind{% endblock %}</title>
+  <link rel="icon" href="/favicon.ico"/>
+  <link rel="stylesheet" href="{{ url_for('accounts.static', filename='accounts.css') }}"/>
+  {% block head %}{% endblock %}
+</head>
+<body>
+<div class="page{% block pageclass %}{% endblock %}">
+
+  {# One bar, and it says the two things a visitor needs: how to get back to
+     the front page, and who the site currently thinks they are. #}
+  <div class="topbar">
+    <a class="home" href="/">← cgovind.com</a>
+    <nav>
+      <a href="{{ url_for('accounts.directory') }}"
+         class="{{ 'on' if request.endpoint == 'accounts.directory' }}">Players</a>
+      {% if me %}
+        <a href="{{ url_for('accounts.profile', username=me.username) }}">{{ me.display }}</a>
+        <a href="{{ url_for('accounts.logout') }}">Log out</a>
+      {% else %}
+        <a href="{{ url_for('accounts.login') }}">Log in</a>
+      {% endif %}
+    </nav>
+  </div>
+
+  {% block body %}{% endblock %}
+</div>
+{% block scripts %}{% endblock %}
+</body>
+</html>

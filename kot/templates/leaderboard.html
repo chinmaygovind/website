@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_player.html" as p with context %}
 {% block title %}Leaderboard | King of Tokyo{% endblock %}
 {% set active_page = 'leaderboard' %}
 {% block body %}
@@ -17,7 +18,7 @@
       {% for s in stats %}
         <tr class="{% if user and s.user_id == user.id %}me{% endif %}">
           <td class="rank-badge">{{ loop.index }}</td>
-          <td><strong>{{ s.user.username }}</strong></td>
+          <td><strong>{{ p.player(s.user) }}</strong></td>
           <td><span class="tier">{{ s.elo_tier }}</span></td>
           <td><strong>{{ s.elo or 1000 }}</strong></td>
           <td>{{ s.games_played or 0 }}</td>

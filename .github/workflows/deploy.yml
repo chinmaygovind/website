@@ -75,14 +75,17 @@ jobs:
       matrix:
         module: ${{ fromJSON(needs.pick.outputs.modules) }}
     steps:
-      # Just this module. Note the empty line when the module is "site": its
-      # test is `import app`, which does not read site/ (that is 500MB of video
-      # and images, and is only touched per request).
+      # Just this module. "site" is the root app, whose suite is the accounts
+      # pages: that needs `accounts/` and `tests/`, plus the flag art the
+      # picker is generated from - and nothing else under site/, which is
+      # 500MB of video and images only ever read per request.
       - uses: actions/checkout@v4
         with:
           sparse-checkout: |
             scripts
-            ${{ matrix.module != 'site' && matrix.module || '' }}
+            ${{ matrix.module == 'site' && 'accounts' || matrix.module }}
+            ${{ matrix.module == 'site' && 'tests' || '' }}
+            ${{ matrix.module == 'site' && 'site/assets/flags' || '' }}
 
       - uses: actions/setup-python@v5
         with:
@@ -98,6 +101,7 @@ jobs:
           M='${{ matrix.module }}'
           if [ "$M" = site ]; then
             pip install -r requirements.txt
+            pip install -r requirements-test.txt
           else
             pip install -r "$M/requirements.txt"
             # Test-only extras, e.g. drive's QuickJS. Without it test_sim.py

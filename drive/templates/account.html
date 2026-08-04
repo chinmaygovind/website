@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ user.username }} | Drive{% endblock %}
+{% block title %}{{ user.display }} | Drive{% endblock %}
 {% set active_page = 'account' %}
 
 {# Two icons, inline rather than glyphs (see `.icn`). A steering wheel is the
@@ -18,7 +18,7 @@
 {% block body %}
 {% include "_nav.html" %}
 <div class="wrap">
-  <h1>{{ user.username }}</h1>
+  <h1>{{ user.display }}</h1>
   <p class="lede">{{ stats.elo_tier }} · rating {{ stats.elo or 1000 }}</p>
 
   {# One box. The medal tally is three more counts of the same kind, so it lives

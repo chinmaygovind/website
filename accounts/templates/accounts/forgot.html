@@ -1,0 +1,26 @@
+{% extends "accounts/base.html" %}
+{% block title %}Forgot your password · cgovind{% endblock %}
+{% block pageclass %} narrow{% endblock %}
+
+{% block body %}
+<div class="card">
+  <h2>Forgot your password</h2>
+  <p class="muted" style="margin-bottom:1.2rem">
+    Tell us your username or the email address on the account and we'll send a
+    link to set a new one. It works for all four games — they share the one
+    account.
+  </p>
+
+  <form method="post">
+    <div class="field">
+      <label for="u">Username or email</label>
+      <input type="text" id="u" name="username" autocomplete="username" required autofocus/>
+    </div>
+    <button class="btn primary wide" type="submit">Send me a link</button>
+  </form>
+
+  <p class="muted tiny" style="margin-top:1rem">
+    Remembered it? <a href="{{ url_for('accounts.login') }}">Log in</a>.
+  </p>
+</div>
+{% endblock %}

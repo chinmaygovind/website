@@ -1,0 +1,40 @@
+{# The two things drawn in more than one place: a person's picture and their flag.
+
+   Both take the *user* rather than the profile, because a profile row is only
+   made when somebody first saves something, so `user.profile` is None for most
+   accounts and every caller would otherwise have to remember that. #}
+
+{% macro avatar(user, size='lg') -%}
+  {%- set p = user.profile -%}
+  <span class="av av-{{ size }}"{% if p and p.avatar %} title="{{ user.display }}"{% endif %}>
+  {%- if p and p.avatar -%}
+    <img src="{{ url_for('accounts.avatar', name=p.avatar) }}" alt="{{ user.display }}" loading="lazy"/>
+  {%- else -%}
+    {# The initial, in the site's own font, on this person's own colour. #}
+    <span class="av-default" style="--av-colour: {{ avatars.colour_for(user.username) }}"
+          aria-label="{{ user.display }}">{{ avatars.initial_for(user.display) }}</span>
+  {%- endif -%}
+  </span>
+{%- endmacro %}
+
+{% macro flag(user) -%}
+  {%- set p = user.profile -%}
+  {%- set f = places.flag_of(p.country if p else none, p.us_state if p else none,
+                             p.flag_pref == 'state' if p else false) -%}
+  {%- if f -%}
+    <img class="flag" src="{{ f[0] }}" alt="{{ f[1] }}" title="{{ f[1] }}" loading="lazy"/>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro cog() -%}
+  <a class="cog" href="{{ url_for('accounts.settings') }}" title="Account settings"
+     aria-label="Account settings">
+    {# Inline SVG, never a glyph: a gear from the symbol block renders as a
+       full-colour emoji on some platforms and a hairline on others. #}
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="3.2"/>
+      <path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>
+    </svg>
+  </a>
+{%- endmacro %}

@@ -1,0 +1,19 @@
+{# One player's name on a board, with the flag they fly.
+
+   The flag art is one copy, served by the main site, so the src is absolute
+   (`site_url` comes from the context processor). `UserProfile.flag_path`
+   decides *which* flag - country or US state - so this template never has to
+   know that there is a choice.
+
+   `user.display` rather than `user.username`: the username is the login and
+   the address of a profile, the display name is what a person is called. #}
+
+{% macro player(user) -%}
+  {%- if user -%}
+    {%- if user.flag_path %}<img class="flag" src="{{ site_url }}{{ user.flag_path }}"
+      alt="" loading="lazy"/>{% endif -%}
+    {{ user.display }}
+  {%- else -%}
+    ?
+  {%- endif -%}
+{%- endmacro %}

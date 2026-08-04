@@ -86,9 +86,14 @@ while IFS= read -r p; do
     # Docs, deploy plumbing and editor config affect no test suite.
     *.md|.gitignore|deploy/*|.claude/*|.github/*) ;;
 
-    # app.py, requirements.txt, site/ and anything unrecognised: the root app.
-    # Its "suite" is the import check, which is cheap, so an unknown path
-    # landing here costs almost nothing.
+    # app.py, requirements.txt, accounts/, tests/, site/ and anything
+    # unrecognised: the root app. Its suite is the accounts tests plus the
+    # import check the deploy used to be - a couple of seconds either way, so
+    # an unknown path landing here costs almost nothing.
+    #
+    # `accounts/` deliberately is not a module of its own: it is not a service,
+    # it is part of the website app, installed from the root requirements.txt
+    # into the root venv and served by the same gunicorn.
     *) want_site=1 ;;
   esac
 done <<EOF
