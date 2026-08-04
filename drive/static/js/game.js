@@ -211,6 +211,11 @@ async function openRequestedLap() {
   const race = q.get('ghost'), watch = q.get('watch');
   const id = race || watch;
   if (!id) return;
+  // `?ghost=` names a lap by id, but the three standing choices are worth
+  // being able to link to as well - "open this track chasing the record" is a
+  // sentence, and ids are digits so the two cannot be confused. It is also the
+  // only way to look at a ghost setting without a browser to click in.
+  if (race && ['off', 'me', 'wr'].includes(race)) { setGhostMode(race); return; }
   const d = await fetchGhost(id).catch(() => null);
   if (!d) { toast('That lap is no longer there'); return; }
   if (watch) { startWatching(d.ghost, d.hz || GHOST_RATE, d); return; }
@@ -1528,12 +1533,25 @@ function drawMinimap() {
 // ---------------------------------------------------------------------------
 async function loadGhost(who) {
   S.ghost = null; S.ghostTimes = null;
+  // Which ghost this request is for. Click "world record" and then "my best"
+  // before the first answer arrives and the slower reply would otherwise land
+  // on top of the newer choice.
+  const want = S.ghostMode;
+  const slug = S.track.slug;
   try {
-    const r = await fetch('/api/ghost/' + S.track.slug + '?who=' + who);
+    const r = await fetch('/api/ghost/' + slug + '?who=' + who);
     const d = await r.json();
-    if (!d.ghost) return;
-    useGhost(d.ghost, d.hz || GHOST_RATE);
+    if (S.ghostMode !== want || S.track.slug !== slug) return;
+    if (d.ghost) useGhost(d.ghost, d.hz || GHOST_RATE);
   } catch (e) { /* no ghost is fine */ }
+  // **The line has to be written again here.** `setGhostMode` writes it the
+  // instant you click, which is before this request has answered - and the
+  // first thing above is to clear the ghost - so at that moment there is
+  // reliably no ghost loaded and the line said so. That is why picking "world
+  // record" reported that the record had no replay even when it plainly did
+  // and the ghost car then appeared: the message was describing the half
+  // second before the answer arrived, not the answer.
+  if (S.ghostMode === want && S.track.slug === slug) showGhostNow();
 }
 
 /** Race against these frames from now on. */

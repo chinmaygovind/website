@@ -604,7 +604,17 @@ field from a dark field.
   only offered laps with a replay - the board sends `has_ghost` and hands back
   an id - which is exactly why "view others" worked where this did not. The
   message distinguishes the two facts now: no record at all, or a record with
-  no replay.
+  no replay. **There were two bugs wearing the same message**, and the second
+  outlived the first: `loadGhost` clears the ghost and then *awaits* the
+  request, while `setGhostMode` writes the line under the buttons
+  synchronously - so the line was always written during the half second when
+  there was reliably no ghost, and said so however good the answer turned out
+  to be. It is written again when the request settles, guarded on the mode and
+  the track still being the ones that asked (click two ghosts quickly and the
+  slower reply must not land on the newer choice). `?ghost=off|me|wr` picks a
+  standing choice by name - ids are digits, so the two cannot collide - which
+  makes a ghost setting linkable and, with `--dump-dom`, checkable without a
+  browser to click in.
 - **The `?` sheet is Controls, and it is the controls and nothing else.** It
   used to open on the track blurb and close on two paragraphs about grass and
   crests, which is reading matter in front of somebody who pressed it to find
