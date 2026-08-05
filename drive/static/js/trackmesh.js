@@ -227,6 +227,102 @@ const PALETTES = {
                        crustStep: 5, crustCover: 0.86, spireStep: 16, spireDensity: 0.5,
                        lava: 0xff5510, crust: 0x1b1920,
                        above: { deck: 120, cover: 0.5, cloud: 0x2a2731 } } },
+  // Rainbow Road: deep space, and the road is the only light source that
+  // matters. `rainbow` is the hue step per station - the road is drawn unlit
+  // (see `roadBuf`) and swept through the spectrum along its length, so it
+  // glows instead of being dimmed by a key light that is barely there.
+  //
+  // The lighting is the difficult half. An unlit surface lights nothing by
+  // itself, so "well lit from the rainbow stuff" has to come from somewhere
+  // real: `hemi.ground` is a saturated magenta, which is the bounce, and it is
+  // what puts colour on the underside of the car and the inside of every pipe
+  // wall. The key light is cold and weak on purpose - it is starlight, and its
+  // whole job is to keep the geometry readable where the road is not.
+  rainbow:  { road: 0x6a4bd0, kerb: 0xffffff, kerb2: 0x2a2140,
+              ground: 0x090616, rail: 0xf2ecff, prop: 0x2a2150, deco: 0x62f0ff,
+              fog: 0x07060f,
+              rainbow: 15, rainbowBand: 6,
+              sky: {
+                stops: [
+                  [0.00, 0x030309], [0.42, 0x060614], [0.50, 0x0b0a22],
+                  [0.60, 0x0a0a1e], [0.78, 0x060617], [1.00, 0x02020a],
+                ],
+                // A tight cold halo, and it is a distant star rather than a sun
+                // - big and warm here would read as a sunrise, which is the one
+                // thing deep space is not.
+                glow: 0x8fa6ff, glowStrength: 0.3, glowMode: 'radial', glowFocus: 11,
+                stars: { count: 2200, seed: 77, size: 2.3 },
+                sun: { az: 2.1, el: 0.42, color: 0xdfe8ff, size: 150 },
+                // Starlight: cold and weak, but not so weak that the car goes
+                // black. The road is unlit and lights nothing by itself, so
+                // everything solid in the scene is lit by these two alone.
+                light: { color: 0xaebcff, intensity: 1.0,
+                         dir: [Math.sin(2.1) * 0.7, 0.68, Math.cos(2.1) * 0.7] },
+                hemi: { sky: 0x6a5aa8, ground: 0xc0308a, intensity: 1.15 },
+                fog: 0x07060f, fogNear: 300, fogFar: 1500,
+              },
+              below: { kind: 'void' } },
+  // Sandy Cove: a coast road on hot sand. `shore` is what cuts the sea out of
+  // the ground plane - see the ground block in buildTrack. Sand is the run-off
+  // and the water is scenery, so falling in is a fall like any other.
+  cove:     { road: 0x6b6f78, kerb: 0xfffaf0, kerb2: 0x2ab7c8,
+              ground: 0xe8d29a, rail: 0xfff6e8, prop: 0x3f7d4a, deco: 0xffb03a,
+              fog: 0xcfe4ea,
+              // Sparse. A beach is mostly empty sand, and the first pass was a
+              // palm plantation. No `block` either - a green crate on a beach
+              // reads as a crate on a beach.
+              density: 0.035,
+              props: { palm: 0.56, rock: 0.32, deadtree: 0.12 },
+              // Kept in step with SHORE_Z / SHORE_AMP / SHORE_WAVE in tracks.py
+              // by test_the_waterline_agrees_with_the_track: the road is
+              // authored against this line, so a drift inland floods it.
+              shore: { axis: 'z', at: 170, amp: 40, wave: 420, reach: 900,
+                       sea: 0x1f7fa8, deep: 0x11527a, foam: 0x9fe0ea, drop: 3.0 },
+              sky: {
+                stops: [
+                  [0.00, 0x8fb6c4], [0.40, 0xbfe0e8], [0.50, 0xd8eef2],
+                  [0.58, 0xa8d6ee], [0.74, 0x6fb0e4], [1.00, 0x2f7ac4],
+                ],
+                glow: 0xfff0c8, glowStrength: 0.55, glowMode: 'radial', glowFocus: 7,
+                sun: { az: 1.9, el: 0.62, color: 0xfff3d2, size: 260 },
+                light: { color: 0xfff4de, intensity: 1.5,
+                         dir: [Math.sin(1.9) * 0.6, 0.86, Math.cos(1.9) * 0.6] },
+                // Bounce off pale sand, which is what makes everything here
+                // look hot rather than merely bright.
+                hemi: { sky: 0xd6efff, ground: 0xe0c288, intensity: 0.95 },
+                fog: 0xcfe4ea, fogNear: 320, fogFar: 1600,
+              } },
+  // Cloudbreak: rock spires standing up through an overcast, a long way down.
+  pillars:  { road: 0x4a4e5a, kerb: 0xf4f2ee, kerb2: 0xe07a3c,
+              ground: 0x6d6154, rail: 0xf6f2ea, prop: 0x6a5c4c, deco: 0xffc247,
+              fog: 0xc2cdd8,
+              sky: {
+                stops: [
+                  [0.00, 0x9aa8b6], [0.42, 0xc4d2de], [0.50, 0xdce7f0],
+                  [0.60, 0xa9c4de], [0.78, 0x6d97c2], [1.00, 0x3d6a9c],
+                ],
+                glow: 0xfff0d8, glowStrength: 0.5, glowMode: 'radial', glowFocus: 6,
+                sun: { az: 0.7, el: 0.5, color: 0xfff2dc, size: 240 },
+                light: { color: 0xfff0dc, intensity: 1.3,
+                         dir: [Math.sin(0.7) * 0.7, 0.78, Math.cos(0.7) * 0.7] },
+                // Bounce off cloud: bright and neutral, so undersides stay
+                // readable instead of going black over a white floor.
+                hemi: { sky: 0xdcebf8, ground: 0xb8c4d0, intensity: 1.0 },
+                fog: 0xc2cdd8, fogNear: 380, fogFar: 2000,
+              },
+              // Fewer and much bigger. The first pass was a thicket of thin
+              // poles: from road level a spire has to be wide enough to read as
+              // rock and tall enough to stand *beside* you rather than under
+              // you, or the track is not threaded between anything.
+              // The deck is a long way down so you look *onto* it rather than
+              // along it, and `cover` leaves real gaps - an even layer of
+              // anything is the one thing cloud can never be. `floor` is
+              // deliberately absent: see pillarsBelow.
+              below: { kind: 'pillars', deck: 145, reach: 900,
+                       cover: 0.34, cloud: 0xeef4fa,
+                       puff: 2.1, cloudStep: 13,
+                       spireStep: 12, spireDensity: 0.62, rise: 104, root: 110,
+                       rock: 0x5f5244, cap: 0x6e7d5a } },
 };
 
 export function palette(track) {
@@ -507,15 +603,62 @@ export function buildTrack(track, T) {
     col.addQuad(v[3], v[7], v[4], v[0], KIND.WALL);
   }
 
+  // Where the surface is at lateral `u` (-1..+1) across a station. A flat
+  // station is the plane it always was; a profiled one - a half-pipe, a banked
+  // wall - lifts the point along its own normal by the station's baked samples.
+  // Those samples come from tracks.py so there is exactly one description of
+  // any track's cross-section, and it is the one the lap-time model measured.
+  const riseAt = (e, u) => {
+    const pf = e.pf;
+    if (!pf) return 0;
+    if (u <= pf[0][0]) return pf[0][1];
+    for (let j = 0; j + 1 < pf.length; j++) {
+      const [u0, r0] = pf[j], [u1, r1] = pf[j + 1];
+      if (u <= u1) return u1 <= u0 ? r0 : r0 + (r1 - r0) * (u - u0) / (u1 - u0);
+    }
+    return pf[pf.length - 1][1];
+  };
+  const surf = (e, u) => {
+    const r = riseAt(e, u);
+    return [e.p[0] + e.lat[0] * u * e.hw + e.n[0] * r,
+            e.p[1] + e.lat[1] * u * e.hw + e.n[1] * r,
+            e.p[2] + e.lat[2] * u * e.hw + e.n[2] * r];
+  };
+  // The lateral samples to build a pair of stations across. A flat pair is the
+  // two edges it always was - one quad, exactly as before - so nothing about a
+  // track without pipes changes, down to the vertex order.
+  const spanOf = (a, b) => {
+    const pf = a.pf || b.pf;
+    if (!pf) return [-1, 1];
+    return pf.map(s => s[0]);
+  };
+
   // Edge points of the road at a station, and the same points lifted a hair
   // along the normal for the painted kerb (which is drawn, never collided).
-  const edge = (e, s) => [e.p[0] + e.lat[0] * s * e.hw,
-                          e.p[1] + e.lat[1] * s * e.hw,
-                          e.p[2] + e.lat[2] * s * e.hw];
-  const inset = (e, s, d) => [e.p[0] + e.lat[0] * s * (e.hw - d) + e.n[0] * 0.05,
-                              e.p[1] + e.lat[1] * s * (e.hw - d) + e.n[1] * 0.05,
-                              e.p[2] + e.lat[2] * s * (e.hw - d) + e.n[2] * 0.05];
+  const edge = (e, s) => surf(e, s);
+  const inset = (e, s, d) => {
+    const u = s * (e.hw - d) / e.hw;
+    const p = surf(e, u);
+    return [p[0] + e.n[0] * 0.05, p[1] + e.n[1] * 0.05, p[2] + e.n[2] * 0.05];
+  };
   const sink = (p, e, d) => [p[0] - e.n[0] * d, p[1] - e.n[1] * d, p[2] - e.n[2] * d];
+
+  // Rainbow Road's surface is drawn unlit and swept through the spectrum along
+  // its length, so it glows against black space instead of being dimmed by a
+  // key light that is barely there. `pal.rainbow` is the hue span per station.
+  // `rainbow` is degrees of hue per *band*, and `rainbowBand` is how many
+  // stations a band lasts. Stepping per station instead was the obvious first
+  // try and it is wrong: 3.5 units of hue at a time is a smooth gradient, and a
+  // gradient is not what anybody pictures. Rainbow Road is stripes, so the hue
+  // is quantised into bands about twenty units long and the alternating shade
+  // that every other track uses for tarmac rides on top of them.
+  const roadColor = (i) => {
+    if (!pal.rainbow) return i % 8 < 4 ? pal.road : shade(pal.road, 0.045);
+    const band = Math.floor(i / (pal.rainbowBand || 6));
+    return hsl(((band * pal.rainbow) % 360) / 360, 0.78,
+               i % 8 < 4 ? 0.55 : 0.51);
+  };
+  const roadBuf = pal.rainbow ? bright : solid;
 
   // ---- the road: one strip of quads between consecutive stations -----------
   //
@@ -523,22 +666,44 @@ export function buildTrack(track, T) {
   // needed a separate branch for - straights, corners, ramps, kicker lips,
   // loops, bridges - is the same four vertices here, because the stations
   // already carry the position, the normal, the lateral axis and the width.
+  //
+  // A profiled station (a half-pipe, a banked wall) is the one thing that is
+  // not four vertices: it is the quads between one station's cross-section
+  // samples and the next one's. That is still this loop and still ROAD quads,
+  // which is why a car can drive up the wall of a pipe with nothing in the
+  // physics knowing pipes exist - the ground query finds the closest surface
+  // and steering is applied about its normal, exactly as it is inside a loop.
   for (let i = 0; i + 1 < line.length; i++) {
     const a = line[i], b = line[i + 1];
     if (a.air || b.air) continue;          // a gap: no road, by construction
 
     const aL = edge(a, -1), aR = edge(a, 1);
     const bL = edge(b, -1), bR = edge(b, 1);
-    // Wound so the surface normal comes out along `n`, which is what lets the
-    // ground query find the road while the car is upside down inside a corkscrew.
-    col.addQuad(aL, aR, bR, bL, KIND.ROAD);
-    solid.quad(aL, aR, bR, bL, i % 8 < 4 ? pal.road : shade(pal.road, 0.045));
+    const span = spanOf(a, b);
+    const col0 = roadColor(i);
+    for (let j = 0; j + 1 < span.length; j++) {
+      const u0 = span[j], u1 = span[j + 1];
+      const p0 = surf(a, u0), p1 = surf(a, u1);
+      const q0 = surf(b, u0), q1 = surf(b, u1);
+      // Wound so the surface normal comes out along `n`, which is what lets the
+      // ground query find the road while the car is upside down inside a
+      // corkscrew - or high on the wall of a pipe.
+      col.addQuad(p0, p1, q1, q0, KIND.ROAD);
+      roadBuf.quad(p0, p1, q1, q0, col0);
+    }
     note(aL); note(aR);
 
     // Underside: the slab, so the track reads as solid edge-on and from below.
+    // It follows the cross-section rather than cutting straight across, or a
+    // half-pipe seen from below is a flat plate with a trough floating in it.
     const aLu = sink(aL, a, THICK), aRu = sink(aR, a, THICK);
     const bLu = sink(bL, b, THICK), bRu = sink(bR, b, THICK);
-    solid.quad(bLu, bRu, aRu, aLu, shade(pal.road, -0.34));
+    const under = shade(pal.road, -0.34);
+    for (let j = 0; j + 1 < span.length; j++) {
+      const u0 = span[j], u1 = span[j + 1];
+      solid.quad(sink(surf(b, u0), b, THICK), sink(surf(b, u1), b, THICK),
+                 sink(surf(a, u1), a, THICK), sink(surf(a, u0), a, THICK), under);
+    }
     solid.quad(aL, bL, bLu, aLu, shade(pal.road, -0.16));   // left flank
     solid.quad(bR, aR, aRu, bRu, shade(pal.road, -0.16));   // right flank
 
@@ -569,7 +734,8 @@ export function buildTrack(track, T) {
   const legEvery = Math.max(4, Math.round(26 / (track.station || 3.5)));
   for (let i = Math.floor(legEvery / 2); i < line.length; i += legEvery) {
     const e = line[i];
-    if (e.air || e.fix) continue;
+    if (e.air || e.fix || e.pf) continue;       // nor under a pipe, whose edges
+                                                // are walls rather than a deck
     if (e.n[1] < 0.7) continue;                 // not under a banked or rolled bit
     const base = groundY != null ? groundY : e.p[1] - 16;
     const drop = e.p[1] - THICK - base;
@@ -625,7 +791,65 @@ export function buildTrack(track, T) {
   const pad = CELL * 7;
   const gx0 = bbox.x0 - pad, gx1 = bbox.x1 + pad, gz0 = bbox.z0 - pad, gz1 = bbox.z1 + pad;
   let killY;
-  if (groundY != null) {
+  if (groundY != null && pal.shore) {
+    // A coast. The ground plane stops at the waterline instead of running to
+    // the edge of the world, so what is past it is *nothing* - the sea is drawn
+    // and never collided, and driving off the sand is a fall like any other
+    // rather than a slow patch. Sand is still the run-off everywhere it exists,
+    // which is the whole reason this is a ground track.
+    const sh = pal.shore;
+    const seaY = groundY - (sh.drop != null ? sh.drop : 3.0);
+    // `axis` names the coordinate the waterline is a *value of*: 'z' means the
+    // coast runs along x and the sea is everything past some z. `along` is the
+    // way we march down the beach, `cross` is the way the water extends.
+    const onZ = sh.axis !== 'x';
+    const [a0, a1] = onZ ? [gx0, gx1] : [gz0, gz1];
+    // `at` is a world coordinate, not a fraction of the bounding box: the track
+    // is authored against the waterline (see SHORE_Z in tracks.py), so it has
+    // to stay put when the layout changes rather than sliding with the bbox.
+    // The water then extends `reach` past it, since the sea is generally
+    // outside the track's own extent and would otherwise be a sliver.
+    const at = sh.at;
+    const c0 = onZ ? gz0 : gx0;
+    const c1 = Math.max(onZ ? gz1 : gx1, at + (sh.reach != null ? sh.reach : 700));
+    const pt = (a, c, y) => onZ ? [a, y, c] : [c, y, a];
+
+    // Two waves at unrelated wavelengths, so the coast wanders without ever
+    // visibly repeating.
+    const shoreAt = (a) => at + sh.amp * Math.sin(a / sh.wave * Math.PI * 2)
+                              + sh.amp * 0.38 * Math.sin(a / (sh.wave * 0.37) * Math.PI * 2);
+
+    // Open water, drawn unlit so it stays bright into the distance. The sand
+    // goes on top, so this only shows where there is no beach.
+    bright.quad(pt(a0, c0, seaY), pt(a0, c1, seaY),
+                pt(a1, c1, seaY), pt(a1, c0, seaY),
+                sh.sea != null ? sh.sea : 0x1f7fa8);
+    // Deeper water further out, so the sea has somewhere to go.
+    const deepAt = at + sh.amp + 240;
+    if (deepAt < c1) {
+      bright.quad(pt(a0, deepAt, seaY), pt(a0, c1, seaY),
+                  pt(a1, c1, seaY), pt(a1, deepAt, seaY),
+                  sh.deep != null ? sh.deep : 0x11527a);
+    }
+
+    // The beach: one quad per column with its seaward edge on the waterline, so
+    // the coast is a real curve rather than a staircase, at two triangles each.
+    const step = CELL * 2;
+    const fw = 5.5;
+    for (let a = a0; a < a1; a += step) {
+      const aa = a, ab = Math.min(a + step, a1);
+      const wa = shoreAt(aa), wb = shoreAt(ab);
+      const A = pt(aa, c0, groundY), B = pt(aa, wa, groundY);
+      const C = pt(ab, wb, groundY), D = pt(ab, c0, groundY);
+      col.addQuad(A, B, C, D, KIND.OFFROAD);
+      solid.quad(A, B, C, D, pal.ground);
+      // Foam, just seaward of the line and a hair above the water.
+      bright.quad(pt(aa, wa, seaY + 0.06), pt(aa, wa + fw, seaY + 0.06),
+                  pt(ab, wb + fw, seaY + 0.06), pt(ab, wb, seaY + 0.06),
+                  sh.foam != null ? sh.foam : 0x9fe0ea);
+    }
+    killY = groundY - 30;
+  } else if (groundY != null) {
     // The grass sits well below the road surface, so the track is a raised
     // ribbon of tarmac. Coplanar road and grass is what made the ground query a
     // coin toss between the two - the car spent whole laps behaving as if it
@@ -681,6 +905,17 @@ export function buildTrack(track, T) {
 
   return { group, collider: col, gates, line, s, total: s[s.length - 1],
            killY, palette: pal, bbox, minY, maxY };
+}
+
+// Hue/sat/lightness to packed RGB. Only Rainbow Road needs it, and it needs it
+// per station along the whole road, so it is worth not going through three.js.
+function hsl(h, s, l) {
+  const f = (n) => {
+    const k = (n + h * 12) % 12;
+    const a = s * Math.min(l, 1 - l);
+    return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))));
+  };
+  return (f(0) << 16) | (f(8) << 8) | f(4);
 }
 
 function shade(hex, amt) {
@@ -763,6 +998,10 @@ function addWorldBelow(buf, soft, bright, track, pal, bbox, CELL, minY, maxY) {
     downtownBelow(buf, bright, cfg, rnd, bbox, x0, x1, z0, z1, deckY, CELL, clear);
     return;
   }
+  if (cfg.kind === 'pillars') {
+    pillarsBelow(buf, soft, cfg, rnd, x0, x1, z0, z1, deckY, floorY, cap, CELL, clear);
+    return;
+  }
 
   // --- default: a city drowned in cloud ------------------------------------
   //
@@ -834,7 +1073,10 @@ function cloudDeck(soft, cfg, rnd, x0, x1, z0, z1, deckY, CELL) {
         const a = rnd() * TAU, r = R * Math.sqrt(rnd()) * 0.92;
         const t = 1 - r / R;                       // 1 centre, 0 rim
         const w = R * (0.26 + 0.34 * t) * (0.75 + rnd() * 0.5);
-        const h = (4 + 11 * t) * (0.7 + rnd() * 0.6);
+        // `puff` deepens the layer. Flat wide boxes read as floes on water from
+        // anywhere near their own level; a lumpier deck keeps looking like
+        // cloud from a shallower angle, which is what a long track needs.
+        const h = (4 + 11 * t) * (0.7 + rnd() * 0.6) * (cfg.puff != null ? cfg.puff : 1);
         soft.box(cx + Math.cos(a) * r, cy + t * 10 + (rnd() - 0.5) * 5,
                  cz + Math.sin(a) * r,
                  w, h, w * (0.72 + rnd() * 0.55),
@@ -1077,6 +1319,72 @@ function lavaBelow(buf, bright, cfg, rnd, x0, x1, z0, z1, floorY, cap, CELL, cle
   }
 }
 
+/**
+ * Rock spires standing up through an overcast - the world under Cloudbreak.
+ *
+ * The whole point of this one is that the track threads *between* the spires
+ * rather than over a landscape, so unlike the towers and mesas these are
+ * allowed all the way up to the cap - they are meant to stand beside you at
+ * road level and above it. That makes the footprint test load-bearing on its
+ * own (same as Jump City's towers): `clear` is asked about the spire's whole
+ * width, because it is a corner of a wide rock that ends up over a kerb.
+ *
+ * None of it is in the collider. A spire is scenery you drive past, and on a
+ * track where missing the road is a fall anyway, one you could hit would only
+ * ever be an invisible wall the procedural placement put in the racing line.
+ */
+function pillarsBelow(buf, soft, cfg, rnd, x0, x1, z0, z1, deckY, floorY, cap, CELL, clear) {
+  // **No floor plate.** The first version laid one, and from a camera that is
+  // nearly level with the road the result was unmistakably a grey sea with
+  // white floes on it and the spires standing in it like pilings. Leaving the
+  // bottom open means the space under the cloud is the sky dome fading into
+  // fog, which is what being a long way up actually looks like. `floor` is
+  // still honoured if a palette explicitly asks for one.
+  if (cfg.floor != null) solid_plate(buf, x0, x1, z0, z1, floorY, cfg.floor);
+
+  const rock = cfg.rock != null ? cfg.rock : 0x6a5c4c;
+  const capCol = cfg.cap != null ? cfg.cap : 0x7d8a6a;
+  // Spires grow out of the cloud rather than up off a floor, so their base is
+  // just under the deck and their feet are lost in it - which is the whole
+  // image, and also why there is nothing to see where a floor would have been.
+  const root = deckY - (cfg.root != null ? cfg.root : 80);
+  const step = CELL * (cfg.spireStep != null ? cfg.spireStep : 13);
+  for (let x = x0; x < x1; x += step) {
+    for (let z = z0; z < z1; z += step) {
+      if (rnd() > (cfg.spireDensity != null ? cfg.spireDensity : 0.6)) continue;
+      const px = x + rnd() * step, pz = z + rnd() * step;
+      // Wide enough to read as rock at this distance. Thin reads as a piling.
+      const w0 = 26 + rnd() * 38;
+      if (!clear(px, pz, w0 * 0.9)) continue;
+      const top = Math.min(cap, deckY + (cfg.rise != null ? cfg.rise : 58) * (0.35 + rnd()));
+      if (top - root < 40) continue;
+      // Stacked tiers, each narrower and slightly offset, so a spire has a
+      // silhouette instead of being a column.
+      const tiers = 4 + Math.floor(rnd() * 4);
+      let y = root, w = w0;
+      const lx = (rnd() - 0.5) * 0.5, lz = (rnd() - 0.5) * 0.5;
+      for (let t = 0; t < tiers; t++) {
+        const h = (top - root) / tiers * (0.8 + rnd() * 0.45);
+        const u = t / tiers;
+        buf.box(px + lx * (top - root) * u, y + h / 2, pz + lz * (top - root) * u,
+                w / 2, h / 2, w * (0.8 + rnd() * 0.4) / 2,
+                shade(rock, (rnd() - 0.5) * 0.24 - u * 0.06));
+        y += h;
+        w *= 0.72 + rnd() * 0.16;
+        if (w < 1.6) break;
+      }
+      // A green cap on the ones that break the cloud, so the tops read as land
+      // rather than as the end of a rock.
+      if (top > deckY + 6) {
+        buf.box(px + lx * (top - root), y + 0.9, pz + lz * (top - root),
+                w * 0.9, 0.9, w * 0.9, shade(capCol, (rnd() - 0.5) * 0.2));
+      }
+    }
+  }
+
+  cloudDeck(soft, cfg, rnd, x0, x1, z0, z1, deckY, CELL);
+}
+
 function solid_plate(buf, x0, x1, z0, z1, y, color) {
   buf.quad([x0, y, z0], [x0, y, z1], [x1, y, z1], [x1, y, z0], color);
 }
@@ -1204,6 +1512,39 @@ function addScenery(buf, track, pal, bbox, CELL) {
         }
         buf.box(px + lean * base * 1.2, y0 + hgt * 0.76, pz + lean * base * 0.7,
                 base * 0.2, hgt * 0.07, base * 0.2, shade(leaf, 0.18));
+      } else if (kind === 'palm') {
+        // A palm is a lean and a splay, and nothing else reads at this scale: a
+        // straight trunk with a blob on top is a lollipop. So the trunk is a
+        // few stacked segments that drift steadily one way, and the fronds go
+        // out from wherever it ended up, each one much longer than it is thick
+        // and angled down at the tip.
+        const hgt = 7 + rnd() * 6;
+        const a = rnd() * Math.PI * 2;
+        const lean = (0.1 + rnd() * 0.22) * hgt;
+        const segs = 5;
+        let tx = px, tz = pz;
+        for (let k = 0; k < segs; k++) {
+          const u = (k + 0.5) / segs;
+          tx = px + Math.cos(a) * lean * u * u;
+          tz = pz + Math.sin(a) * lean * u * u;
+          buf.box(tx, baseY + hgt * u, tz, 0.3, hgt / segs * 0.62, 0.3,
+                  shade(0x8a6a44, (rnd() - 0.5) * 0.2));
+        }
+        const fronds = 6 + Math.floor(rnd() * 3);
+        for (let k = 0; k < fronds; k++) {
+          const fa = a + Math.PI + (k / fronds) * Math.PI * 2 + rnd() * 0.3;
+          const len = 2.2 + rnd() * 1.9;
+          buf.box(tx + Math.cos(fa) * len * 0.55,
+                  baseY + hgt - 0.4 - rnd() * 0.7,
+                  tz + Math.sin(fa) * len * 0.55,
+                  Math.abs(Math.cos(fa)) * len * 0.55 + 0.3, 0.17,
+                  Math.abs(Math.sin(fa)) * len * 0.55 + 0.3,
+                  shade(pal.prop, (rnd() - 0.4) * 0.3));
+        }
+        // A couple of coconuts, which is most of what says palm rather than fern.
+        if (rnd() < 0.6) {
+          buf.box(tx + 0.3, baseY + hgt - 0.9, tz, 0.34, 0.34, 0.34, 0x6b4a2a);
+        }
       } else if (kind === 'rock') {
         const s = 1 + rnd() * 1.8;
         buf.box(px, baseY + s * 0.5, pz, s, s * 0.5, s * 0.9, shade(pal.ground, -0.25));

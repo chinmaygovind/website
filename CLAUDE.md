@@ -372,8 +372,15 @@ them.
 **Live at `https://drive.cgovind.com`.** The fourth game, same shape as ERS/KoT:
 Flask + Flask-SocketIO, its own eventlet gunicorn `-w 1` on `127.0.0.1:5005`, its own
 venv (`drive/venv`) and `.env` (both gitignored, hand-made on the box), sharing TTR's
-`users` table for accounts. A PolyTrack-style low-poly driving game: nine
+`users` table for accounts. A PolyTrack-style low-poly driving game: twelve
 point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
+
+The last three in the pool are the long ones, all difficulty 5 and all roughly
+twice The Gauntlet: **Sandy Cove** (`cove`, a ground track - a coast road down
+onto the beach and out along a pier over open water), **Cloudbreak** (`pillars`,
+threaded between rock spires above an overcast) and **Rainbow Road** (`rainbow`,
+half-pipes in deep space with almost no barriers - the only member of
+`tracks.EXPOSED`).
 
 - **Guests can play, and a guest's times are not thrown away.** Driving alone needs
   no account at all (`/`, `/solo` and `/solo/<slug>` are open); sharing a room needs
@@ -469,6 +476,21 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   corner radius and road width are free parameters, a gap is just stations flagged
   `air`, a barrier is a `wl`/`wr` flag on an edge, and a loop is a station list whose
   normal rotates.
+- **A station can also carry a cross-section, and that is how half-pipes work.**
+  `pf` is a list of `[u, rise]` samples across the road - `u` from -1 to +1 as a
+  fraction of `hw`, `rise` along that station's own normal - and the road there
+  is the quads between one station's samples and the next one's. Still the same
+  loop, so **the collider, the mesh and the car need no idea a pipe exists**: the
+  ground query finds the closest surface and steering is applied about its
+  normal, which is the identical reason a loop needs no special case. Authored
+  with `Builder.pipe(depth, floor, side)` / `.flat()`, which blend the depth in
+  and out over `PROF_BLEND` units - a pipe at full height in one station is a
+  wall you hit rather than one you ride. `side='l'`/`'r'` gives a one-sided
+  banked wall on a corner's outside. Two things to know: **the samples are baked
+  in Python** and the JS only reads them, so there is no second copy of the
+  curve to drift; and **a gate may not sit on a profiled station** (`_gate`
+  raises), because a gate is a flat plane of fixed width and hanging one across
+  a trough puts its posts up the walls and its mouth out of reach.
 - **The collision surface IS the render surface.** Every driveable quad goes into both
   the mesh and a spatial hash, so hills, banks, loops, crests and crossings all work
   through one closest-point query with no per-shape special cases - and nothing can look
@@ -526,6 +548,21 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   the ground are not, so running wide there costs grass time instead of a respawn. The
   road sits ~1.2 above the grass plane, which is both why it reads as a raised ribbon
   and why the two never z-fight.
+- **A floating track can opt out of rails, and Rainbow Road is the one that
+  does.** `tracks.EXPOSED` is the set where falling off is the point rather than
+  a gap in the barriers, and `test_barriers_are_opt_in` then checks the claim in
+  *both* directions - a track wearing the flag with rails all down it fails just
+  as loudly as a normal floating track without them, which is the more likely
+  mistake, since the flag outlives whoever railed the track for safety. Loops
+  keep their rails even there: a loop without them is a fall at the top rather
+  than a corner, which is not exposure, it is a broken corner.
+- **The three long tracks are ~2500-2800 units and 56-64s of ideal lap**, against
+  The Gauntlet's 1667 and 40s. Two ceilings bound that: `test_tracks` caps an
+  ideal lap at 120s, and `test_sim` caps the *simulated driver* at 90s - and the
+  autopilot runs about 1.04x ideal, so ~64s ideal is roughly the practical limit.
+  Every one of them still has to be driven to the finish with **zero respawns**
+  (`test_a_clean_lap_needs_no_respawns`), so "easy to fall off" has to mean
+  punishing when you leave the line, never that the line itself is marginal.
 - **The ghost is a practice tool, so in a room it belongs to the phases you drive
   alone in** - free practice and qualifying - and to neither of the others. It is
   not rendered at all from the countdown to the flag, whatever the setting says:
@@ -840,10 +877,29 @@ idea which track it is looking at:
   wants. A sun drawn on the horizon must still have its *light* come from much
   higher, or nothing in the world gets lit.
 - **`below`** - what is under a track that floats, dispatched on `kind`: a city
-  drowned in cloud, a desert, a downtown, a lava field, or `void` (which also
-  suppresses the distant floor plate). Ground tracks use `props`/`density`
-  instead, which pick from the scenery vocabulary (conifer, bigpine, deadtree,
-  rock, block) and `snow` turns on snow caps.
+  drowned in cloud, a desert, a downtown, a lava field, `pillars` (rock spires
+  through an overcast, Cloudbreak) or `void` (which also suppresses the distant
+  floor plate). Ground tracks use `props`/`density` instead, which pick from the
+  scenery vocabulary (conifer, bigpine, deadtree, palm, rock, block) and `snow`
+  turns on snow caps.
+- **`shore`** - Sandy Cove only. It cuts the sea out of the ground plane, so the
+  beach stops at the waterline and past it there is *nothing*: the water is
+  drawn and never collided, and driving off the sand is a fall rather than a
+  slow patch. `at` is an absolute world coordinate rather than a fraction of the
+  bounding box, because **the track is authored against the waterline** and it
+  has to stay put when the layout moves; `SHORE_Z`/`SHORE_AMP`/`SHORE_WAVE` in
+  tracks.py are the other copy, and two tests hold them together -
+  `test_the_waterline_agrees_with_the_track` and
+  `test_only_the_pier_is_over_the_water`, which requires the crossing to be a
+  single run (the pier) and the coast road to keep 25 units of clearance. Drift
+  those apart and the sea floods a road that was authored to be dry.
+- **`rainbow`** - degrees of hue per band, with `rainbowBand` stations to a band,
+  and it moves the road into the *unlit* buffer so it glows against black space.
+  Stepping the hue per station was the obvious first try and is wrong: 3.5 units
+  of hue at a time is a smooth gradient, and nobody pictures Rainbow Road as a
+  gradient. Note an unlit road lights nothing by itself, so the colour in the
+  scene has to come from `hemi.ground` - a saturated magenta there is what puts
+  rainbow on the underside of the car and the inside of the pipes.
 
 Rules learned the hard way, all from the same fact - **you look down on a world
 below from a hundred units up, so you mostly read footprints**:
@@ -855,7 +911,14 @@ below from a hundred units up, so you mostly read footprints**:
   overlapping boxes accumulate into something dense in the middle and wispy at
   the rim. That is the whole difference between cloud and polystyrene;
 - cloud only works when you look *down* on it. As a sky it reads as pale
-  rectangles however it is shaded, which is why there is none in the dome.
+  rectangles however it is shaded, which is why there is none in the dome;
+- and the corollary, learned on Cloudbreak: **a cloud deck that is only a little
+  way below a long track is seen almost edge-on**, and then it reads as a sea
+  with floes on it however good the clumping is. The fix was to put the deck
+  145 units down so you look onto it, deepen the puffs (`puff`), and **draw no
+  floor plate at all** - an open bottom fading into fog is what being a long way
+  up looks like, where a plate was unmistakably grey water. `pillars` spires
+  therefore grow from `root`, just under the deck, rather than up off a floor.
 
 **Nothing below is in the collider**, so the only thing keeping it out of the
 track is the corridor test - and where scenery rises *above* road level (Jump
@@ -926,8 +989,15 @@ field from a dark field.
 - **The switcher's cards are photographs, not diagrams.** `tools/shoot_tracks.py`
   drives headless Chrome over every track with `?shot=1` (`S.shot` in game.js: HUD off,
   car hidden, camera behind the start line) and writes `static/img/tracks/<slug>.png`;
-  the home page uses the same nine. **Re-run it after changing a track's geometry or
-  sky** - a test asserts the files exist but nothing can notice that one is stale.
+  the home page uses the same twelve. **Re-run it after changing a track's geometry
+  or sky** - a test asserts the files exist but nothing can notice that one is stale.
+  **It must run on ANGLE's software GL** (`--use-gl=angle --use-angle=swiftshader`),
+  which is what `GL_FLAGS` is for: plain `--use-gl=swiftshader` is *rejected* by
+  current Chrome rather than ignored, the GPU process dies, and Chrome still
+  writes a PNG - of a half-built frame, which in practice was a photograph of
+  some other track. Nothing downstream can tell a wrong picture from a right one,
+  so this is the worst failure the tool has. The same flags are what to use for
+  any by-hand screenshot check.
   Fitting the *whole* track in frame was tried first and is much worse: from far enough
   back to hold a point-to-point the road is a thread, and on Jump City it vanished into
   the towers entirely. Aiming level from 40 units up fails the same way - it photographs
@@ -1163,7 +1233,7 @@ field from a dark field.
 
 ### Tests
 
-`scripts/tests.sh drive` - 404 tests, about 3:00. `test_tracks.py` and
+`scripts/tests.sh drive` - 478 tests, about 4:40. `test_tracks.py` and
 `test_runcheck.py` are pure Python; `test_app.py` runs the real routes against a
 throwaway SQLite file (the `/solo` memory, the board and ghost APIs, and a guest's run
 being replayed after login). **`test_race.py` covers the room's race machine** -
