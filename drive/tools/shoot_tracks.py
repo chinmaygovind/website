@@ -33,8 +33,18 @@ PORT = int(os.environ.get("SHOT_PORT", "5077"))
 # enough that nine of them are not a burden in the repo.
 SIZE = (960, 540)
 # Long enough for the track mesh, the sky and the scenery below to be built and
-# for the first frames to settle - these are rendered on a software GL stack.
-BUDGET_MS = 9000
+# for the first frames to settle - these are rendered on a software GL stack,
+# and the longest tracks in the pool are three times the size of the shortest.
+BUDGET_MS = 16000
+
+# Software GL, spelled the way current Chrome wants it. Plain
+# `--use-gl=swiftshader` is *rejected* rather than ignored ("not found in
+# allowed implementations: [(gl=egl-angle,angle=default)]"), the GPU process
+# dies, and Chrome still writes a PNG - of a half-initialised frame, which in
+# practice meant a picture of some *other* track. A silently wrong photograph is
+# the worst possible failure for this tool, since nothing downstream can tell.
+GL_FLAGS = ["--use-gl=angle", "--use-angle=swiftshader",
+            "--enable-unsafe-swiftshader"]
 
 CHROME = next((c for c in ("google-chrome", "chromium", "chromium-browser")
                if subprocess.run(["which", c], capture_output=True).returncode == 0), None)
@@ -54,11 +64,10 @@ def wait_for_server(url, timeout=30):
 def shoot(slug):
     out = os.path.join(OUT, slug + ".png")
     url = "http://127.0.0.1:%d/solo/%s?shot=1" % (PORT, slug)
-    cmd = [CHROME, "--headless=new", "--use-gl=swiftshader",
-           "--enable-unsafe-swiftshader", "--hide-scrollbars",
-           "--window-size=%d,%d" % SIZE,
-           "--virtual-time-budget=%d" % BUDGET_MS,
-           "--screenshot=" + out, url]
+    cmd = ([CHROME, "--headless=new"] + GL_FLAGS +
+           ["--hide-scrollbars", "--window-size=%d,%d" % SIZE,
+            "--virtual-time-budget=%d" % BUDGET_MS,
+            "--screenshot=" + out, url])
     subprocess.run(cmd, capture_output=True)
     if not os.path.exists(out):
         return None

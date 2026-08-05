@@ -36,6 +36,26 @@ def _dist(a, b):
     return math.sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2])
 
 
+def _rise_at(pf, u):
+    """Interpolate a station's baked cross-section samples at lateral ``u``.
+
+    Reads the samples rather than re-deriving the curve. ``tracks`` imports this
+    module at the foot of itself to get the medal times, so importing its
+    ``rise_at`` back would be a cycle - and reading the same baked numbers is
+    what stops the two answers differing anyway.
+    """
+    if not pf:
+        return 0.0
+    u = max(-1.0, min(1.0, u))
+    for i in range(len(pf) - 1):
+        u0, r0 = pf[i]
+        u1, r1 = pf[i + 1]
+        if u <= u1:
+            t = 0.0 if u1 <= u0 else (u - u0) / (u1 - u0)
+            return r0 + (r1 - r0) * t
+    return pf[-1][1]
+
+
 def _omega(v):
     """Yaw rate the car can sustain at speed v - the same lerp the JS uses."""
     t = min(1.0, max(0.0, v / T.MAX_SPEED))
@@ -77,6 +97,12 @@ def racing_line(line, iterations=320, relax=0.34, margin=2.4):
     the line can never leave the track no matter how many iterations run. Air
     and ``fix`` sections are pinned: you cannot choose a line mid-flight, and
     inside a corkscrew the line is fixed by the geometry.
+
+    Where the road has a cross-section - a half-pipe, a banked wall - sliding
+    sideways also means climbing, so the point is lifted onto the surface by the
+    station's own samples. Leaving it on the floor plane would measure a corner
+    radius along a road that is not there, and the whole reason to relax the
+    line at all is to measure the one that is.
     """
     pts = [list(e["p"]) for e in line]
     n = len(pts)
@@ -86,7 +112,18 @@ def racing_line(line, iterations=320, relax=0.34, margin=2.4):
     pinned = [bool(e.get("air") or e.get("fix")) for e in line]
     base = [list(e["p"]) for e in line]
     lat = [e["lat"] for e in line]
+    nrm = [e["n"] for e in line]
+    hw = [e["hw"] for e in line]
+    prof = [e.get("pf") for e in line]
     lim = [max(0.0, e["hw"] - margin) for e in line]
+
+    def place(i, o):
+        p = [base[i][k] + lat[i][k] * o for k in range(3)]
+        if prof[i] and hw[i] > 0:
+            r = _rise_at(prof[i], o / hw[i])
+            if r:
+                p = [p[k] + nrm[i][k] * r for k in range(3)]
+        return p
 
     for _ in range(iterations):
         new = list(off)
@@ -103,7 +140,7 @@ def racing_line(line, iterations=320, relax=0.34, margin=2.4):
             new[i] = max(-lim[i], min(lim[i], o))
         off = new
         for i in range(n):
-            pts[i] = [base[i][k] + lat[i][k] * off[i] for k in range(3)]
+            pts[i] = place(i, off[i])
     return pts
 
 

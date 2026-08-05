@@ -6,6 +6,7 @@ broken - which is exactly the kind of thing a test should be holding down.
 """
 
 import math
+import re
 import os
 import sys
 
@@ -302,6 +303,15 @@ def test_barriers_are_opt_in(track):
     if track["ground"] is not None:
         assert walled == 0, \
             f"{track['slug']} sits on the ground but has {walled} walled stations"
+    elif track["exposed"]:
+        # A track may declare that falling off is the point rather than a gap in
+        # its barriers - but then it has to actually be exposed. A track wearing
+        # the flag with rails all down it is as wrong as a normal floating track
+        # without them, and it is the more likely mistake of the two: the flag
+        # stays behind long after somebody has railed the track for safety.
+        assert walled < len(line) * 0.25, (
+            f"{track['slug']} is marked exposed but {walled} of {len(line)} "
+            f"stations are walled - either unrail it or drop it from EXPOSED")
     else:
         # floating tracks do want them: there is nothing to catch a wide moment
         assert walled > len(line) * 0.5, \
@@ -395,6 +405,64 @@ def test_pool_has_a_difficulty_spread():
     diffs = sorted(t["difficulty"] for t in ALL)
     assert diffs[0] <= 2 and diffs[-1] >= 4, "no easy or no hard tracks"
     assert len(ALL) >= 8
+
+
+def _cove_shore_from_js():
+    """The `shore` block out of the `cove` palette in trackmesh.js."""
+    js = open(os.path.join(os.path.dirname(__file__), "..", "static", "js",
+                           "trackmesh.js")).read()
+    i = js.index("shore: {")
+    block = js[i:js.index("}", i)]
+    return {k: float(v) for k, v in re.findall(r"(at|amp|wave):\s*(-?[\d.]+)", block)}
+
+
+def test_the_waterline_agrees_with_the_track():
+    """tracks.py authors Sandy Cove against a waterline that trackmesh.js draws.
+
+    Two copies of one number, which is this repo's convention and the right one
+    here - Python cannot draw the sea and the JS cannot lay the road. But the
+    road is placed *relative* to this line, so if the two drift the water moves
+    inland over a road that was authored to be dry.
+    """
+    js = _cove_shore_from_js()
+    assert js["at"] == tracks_mod.SHORE_Z
+    assert js["amp"] == tracks_mod.SHORE_AMP
+    assert js["wave"] == tracks_mod.SHORE_WAVE
+
+
+def test_only_the_pier_is_over_the_water():
+    """Sandy Cove's sea is scenery and is never in the collider, so anywhere the
+    road crosses the waterline has *nothing* under it - run wide there and you
+    fall instead of landing on sand.
+
+    That is exactly what the pier is for, and it must be the only place it
+    happens: everywhere else the beach is the run-off, which is the whole reason
+    this is a ground track. A layout change that walks the coast road out over
+    the sea would otherwise only show up as people falling off it.
+    """
+    t = tracks_mod.get("cove")
+    line = t["line"]
+
+    def shore(x):
+        return (tracks_mod.SHORE_Z
+                + tracks_mod.SHORE_AMP * math.sin(x / tracks_mod.SHORE_WAVE * 2 * math.pi)
+                + tracks_mod.SHORE_AMP * 0.38
+                * math.sin(x / (tracks_mod.SHORE_WAVE * 0.37) * 2 * math.pi))
+
+    over = [i for i, e in enumerate(line)
+            if not e.get("air") and e["p"][2] > shore(e["p"][0])]
+    assert over, "nothing is over the water - the pier has come back inland"
+    # One contiguous run, and it is the pier.
+    assert over == list(range(over[0], over[-1] + 1)), \
+        f"the road crosses the waterline in more than one place: {over}"
+    # Both ends of the track are firmly on the sand.
+    assert min(e["p"][2] for e in line) < tracks_mod.SHORE_Z - 100
+    # And the road either side of the pier has real clearance from the water,
+    # so it is dry land rather than dry by a metre.
+    dry = [shore(e["p"][0]) - e["p"][2] for i, e in enumerate(line)
+           if i < over[0] - 12 or i > over[-1] + 12]
+    assert min(dry) > 25, \
+        f"the coast road comes within {min(dry):.0f} units of the waterline"
 
 
 def test_summaries_do_not_ship_station_lists():

@@ -70,6 +70,81 @@ GATE_CEIL_MAX = 14.0
 GATE_CEIL_MIN = 5.0
 GATE_CEIL_MARGIN = 4.0
 
+# Lateral profile
+# ---------------
+# A station is normally a flat strip, and the road is the quad between one
+# station's two edges and the next one's. A *profiled* station carries ``pf``:
+# samples ``[u, rise]`` across the road, ``u`` running -1 to +1 as a fraction of
+# ``hw`` and ``rise`` measured along that station's own normal. The road there
+# is the ``len(pf)-1`` quads between one station's samples and the next one's.
+#
+# That is the whole change. It is still quads and still one loop, so the
+# collision soup, the mesh and the car all work inside a half-pipe without
+# knowing they are in one - for exactly the reason a loop needs no special case,
+# which is that steering is applied about the surface normal rather than world
+# up. Riding up a pipe wall is the same code as driving round the inside of a
+# loop.
+#
+# The samples are baked here rather than written as a formula the JS
+# re-evaluates. Everything else in a station is baked too, and a second copy of
+# the cross-section is a second thing that can drift out of step with this one.
+PROF_SAMPLES = 9
+
+# How far a profile takes to reach full depth. A pipe that starts at its full
+# height in one station is a wall you hit rather than a wall you ride, so the
+# depth is smoothstepped in and out over this distance at each end.
+PROF_BLEND = 14.0
+
+
+def _profile(depth, floor, side, samples=PROF_SAMPLES):
+    """Cross-section samples for a trough ``depth`` deep with a flat floor.
+
+    ``floor`` is the fraction of the half-width that stays flat; outside it the
+    surface curves up to ``depth`` at the lip. The curve is ``1 - cos``, which
+    leaves the floor tangentially and steepens toward the top - the shape of a
+    real half-pipe wall, and more to the point a shape with no crease at the
+    bottom to unsettle a car dropping back in.
+
+    ``side`` is ``'lr'``, ``'l'`` or ``'r'``: a one-sided wall is how a fast
+    corner gets a bank you can take a high line on.
+    """
+    out = []
+    for i in range(samples):
+        u = -1.0 + 2.0 * i / (samples - 1)
+        a = abs(u)
+        wants = side == "lr" or (side == "l" and u < 0) or (side == "r" and u > 0)
+        rise = 0.0
+        if wants and a > floor:
+            t = (a - floor) / (1.0 - floor)
+            rise = depth * (1.0 - math.cos(t * math.pi / 2.0))
+        out.append([round(u, 4), round(rise, 3)])
+    return out
+
+
+def rise_at(e, u):
+    """Height of the surface above a station's floor plane at lateral ``u``.
+
+    Reads the station's baked samples rather than re-deriving the curve, so the
+    lap-time model, the tests and the mesh all measure the same road.
+    """
+    pf = e.get("pf")
+    if not pf:
+        return 0.0
+    u = max(-1.0, min(1.0, u))
+    for i in range(len(pf) - 1):
+        u0, r0 = pf[i]
+        u1, r1 = pf[i + 1]
+        if u <= u1:
+            t = 0.0 if u1 <= u0 else (u - u0) / (u1 - u0)
+            return r0 + (r1 - r0) * t
+    return pf[-1][1]
+
+
+def surface_at(e, u):
+    """The 3D point on a station's surface at lateral ``u`` (-1..+1)."""
+    r = rise_at(e, u)
+    return [e["p"][k] + e["lat"][k] * u * e["hw"] + e["n"][k] * r for k in range(3)]
+
 
 def _norm(v):
     m = math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
@@ -132,14 +207,43 @@ class Builder:
         self.spawn = None
         self.n_cp = 0
         self.sections = []      # authored primitives, in order - for an editor
+        # Cross-section. `prof` is what we are heading toward (None = flat) and
+        # `_pb` is how far into the blend we are, so a pipe rises out of the
+        # road over PROF_BLEND units and sinks back into it the same way.
+        self.prof = None
+        self.prof_last = None
+        self._pb = 0.0
 
     # -- internals ---------------------------------------------------------
+    def _pf(self):
+        """The cross-section for the station about to be laid, part-blended.
+
+        Called once per station, so the blend advances with the road rather than
+        with the number of primitives - a pipe opened mid-corner ramps in over
+        the same distance as one opened on a straight.
+        """
+        step = STATION / PROF_BLEND
+        if self.prof:
+            self._pb = min(1.0, self._pb + step)
+            shape = self.prof
+        else:
+            self._pb = max(0.0, self._pb - step)
+            shape = self.prof_last      # still shrinking the last one away
+        if not shape or self._pb <= 1e-3:
+            return None
+        depth, floor, side = shape
+        return _profile(depth * _smooth(self._pb), floor, side)
+
     def _emit(self, p, n, lat, hw=None, air=False, fix=False, curv=0.0,
               wl=None, wr=None, kick=False):
         e = {"p": [round(v, 2) for v in p],
              "n": [round(v, 4) for v in n],
              "lat": [round(v, 4) for v in lat],
              "hw": round(hw if hw is not None else self.hw, 2)}
+        pf = self._pf()
+        # A gap has no surface, so it has no cross-section either.
+        if pf and not air:
+            e["pf"] = pf
         if air:
             e["air"] = 1
         if fix:
@@ -186,6 +290,31 @@ class Builder:
     def bank(self, degrees):
         """Roll the road. Positive raises the right-hand edge."""
         self.roll = math.radians(degrees)
+        return self
+
+    def pipe(self, depth=4.5, floor=0.34, side="lr"):
+        """Curve the road's cross-section up into walls, from here on.
+
+        ``bank`` tilts the whole road as one plane; this bends it. The middle
+        ``floor`` of the width stays flat and the rest sweeps up to ``depth`` at
+        the lip, so ``side='lr'`` is a half-pipe you can swing up either wall of
+        and drop back into, and ``side='l'`` or ``'r'`` is a single banked wall
+        on the outside of a corner that lets you take a high line through it.
+
+        It blends in and out over ``PROF_BLEND`` units at each end, so a pipe is
+        opened and closed where you want it rather than where a station happens
+        to fall. Stays on until ``flat()``.
+        """
+        self.prof = (depth, floor, side)
+        self.prof_last = self.prof
+        self.sections.append({"t": "pipe", "depth": depth, "floor": floor,
+                              "side": side})
+        return self
+
+    def flat(self):
+        """Back to a flat cross-section, sinking away over ``PROF_BLEND`` units."""
+        self.prof = None
+        self.sections.append({"t": "flat"})
         return self
 
     @property
@@ -387,6 +516,14 @@ class Builder:
         if not self.nodes:
             raise ValueError("a gate needs road under it")
         e = self.nodes[-1]
+        # A gate is a plane of a fixed width and height across a flat road (see
+        # `_withinGate` in course.js). Hang one across a pipe and its mouth is
+        # the chord of a curve, so the car passes through the *posts* on the
+        # walls and misses the gate - which is a checkpoint you cannot reach.
+        # Loud here beats undrivable later.
+        if e.get("pf"):
+            raise ValueError("a gate cannot sit on a profiled station - "
+                             "call flat() and run out the blend first")
         f = _norm(_cross(e["n"], e["lat"]))
         gi = 0
         if kind == "cp":
@@ -793,6 +930,244 @@ def _gauntlet():
     return b
 
 
+def _rainbow():
+    """Rainbow Road: half-pipes, a loop, and almost nothing to stop you falling.
+
+    The three long tracks are meant to be endurance tests, and this one takes
+    its difficulty from exposure. It is deliberately the only track in the pool
+    with barriers almost nowhere (see ``EXPOSED``): the pipes catch you where
+    there are pipes, and everywhere else running wide is a fall.
+    """
+    b = Builder(0, 0, 0, yaw=0, width=13.0, rails=False)
+    b.start(run=44)
+    b.straight(58)
+    b.cp()
+
+    # A long open half-pipe. Swing up either wall and drop back in - the walls
+    # are the only barrier along here, which is the whole idea.
+    b.pipe(5.5).straight(96).arc(-38, 95).straight(64)
+    b.flat().straight(32)
+    b.cp()
+
+    # A fast left with a wall only on its outside, so the high line exists.
+    b.pipe(4.8, floor=0.28, side="r").arc(-98, 48).flat().straight(38)
+    b.cp()
+
+    # Out over nothing.
+    b.straight(34)
+    b.jump(rise=3.6, gap=27, drop=0.0)
+    b.straight(34)
+    b.cp()
+
+    # The loop keeps its rails - a loop without them is a fall at the top
+    # rather than a corner, and that is not exposure, it is a broken corner.
+    b.loop(radius=22.0, dir="r", w="lr")
+    b.rail("").straight(44)
+    b.cp()
+
+    # A pipe through a long right-hander: the bank is the corner.
+    b.width(15.0)
+    b.pipe(6.2).arc(76, 58).straight(72)
+    b.flat().width(12.0).straight(34)
+    b.cp()
+
+    # Then the exposed part, with nothing either side of it.
+    b.arc(-128, 23).straight(42)
+    b.hump(4.2, 34).straight(30)
+    b.cp()
+
+    # A chicane out in the open, then a climb away.
+    b.arc(58, 30).arc(-62, 28).straight(60, rise=9.0)
+    b.arc(96, 40, rise=6.0).straight(52)
+    b.cp()
+
+    # Second pipe, tighter and deeper than the first, with the corner inside it.
+    b.width(14.0)
+    b.pipe(6.8, floor=0.26).straight(58).arc(-84, 44).straight(66)
+    b.flat().width(12.0).straight(34)
+    b.cp()
+
+    # The second loop, then the long exposed run home.
+    b.loop(radius=24.0, dir="l", w="lr")
+    b.rail("").straight(66, rise=-11.0)
+    b.cp()
+
+    b.arc(-142, 21).straight(48)
+    b.arc(78, 54, rise=-8.0).straight(62)
+    b.hump(3.8, 32).straight(34)
+    b.cp()
+
+    b.arc(92, 42).straight(56)
+    b.arc(-64, 68).straight(34)
+    b.finish()
+    return b
+
+
+# Sandy Cove's waterline, as a world Z. The track is authored against it rather
+# than the other way round: a shoreline can only read as a coast if the road
+# runs *along* it, so the outbound half is pinned to a band just inland of this
+# and the pier is the one thing that crosses it. `SHORE_Z` is duplicated in the
+# `cove` palette in trackmesh.js, which draws the water - and a test pins the
+# two together, because a waterline that drifts inland puts the road in the sea.
+SHORE_Z = 170.0
+SHORE_AMP = 40.0
+SHORE_WAVE = 420.0
+
+
+def _cove():
+    """Sandy Cove: a coast road along the water, out onto a pier, then inland.
+
+    A ground track, so running wide costs you sand rather than your lap, which
+    is the right penalty on a long one. The sea is scenery and is never in the
+    collider, so the pier has nothing at all under it: run off that and you fall.
+
+    The geography is the point and it constrains the layout. The outbound half
+    runs along the beach with the water on its left, close enough to see the
+    whole way; the pier is a loop out over it and back; then the road turns
+    inland and the return half is dunes, which is what lets it have the hairpins
+    a coast road cannot.
+    """
+    b = Builder(0, 0, -20, yaw=0, width=12.0, rails=False)
+    b.start(run=40)
+    b.straight(70, rise=9.0)                     # up onto the low headland
+    b.cp()
+
+    # Along the top, bending out toward the water and back.
+    b.arc(30, 66, rise=4.0).straight(52)
+    b.arc(-38, 58, rise=-5.0).straight(44)
+    b.cp()
+
+    b.width(14.0)
+    b.arc(44, 46, bank=14).straight(72, rise=-8.0)     # down onto the sand
+    b.arc(-40, 52).straight(40)
+    b.cp()
+
+    # Two inlets cut into the beach.
+    b.width(11.0)
+    b.straight(30)
+    b.jump(rise=2.8, gap=22, drop=0.0)
+    b.straight(28)
+    b.jump(rise=3.0, gap=25, drop=0.0)
+    b.straight(34)
+    b.cp()
+
+    # The pier: out over open water and back. Narrow, flat, no barriers, and
+    # the only part of the track with nothing whatever underneath it.
+    b.width(9.5)
+    b.arc(58, 34).straight(210)
+    b.arc(-116, 28).straight(150)
+    b.cp()
+    b.arc(-58, 34).straight(46)                        # back onto the sand
+    b.width(13.0)
+    b.arc(52, 60).straight(58)
+    b.cp()
+
+    # Turn inland. Everything from here is dunes, so it can be tighter.
+    b.width(11.0)
+    b.arc(-128, 24).straight(48, rise=6.0)
+    b.arc(96, 30, rise=5.0).straight(44)
+    b.cp()
+
+    b.width(14.0)
+    b.arc(-62, 78, rise=6.0).straight(82)
+    b.hump(3.4, 30).straight(30)
+    b.cp()
+
+    # Round the rocky point: three corners and no straight worth the name.
+    b.width(10.5)
+    b.arc(116, 26).straight(30)
+    b.arc(-102, 24).straight(28)
+    b.arc(128, 22).straight(40)
+    b.cp()
+
+    # A last drop to the sand for the third inlet, then the climb to the line.
+    b.width(12.0)
+    b.arc(-70, 48, rise=-11.0).straight(56)
+    b.jump(rise=3.2, gap=26, drop=0.0)
+    b.straight(36)
+    b.cp()
+
+    b.width(13.0)
+    b.arc(88, 40, rise=8.0).straight(64, rise=6.0)
+    b.arc(-66, 50).straight(42)
+    b.finish()
+    return b
+
+
+def _pillars():
+    """Cloudbreak: threaded between rock spires, a long way above anything.
+
+    The spires are scenery (see the ``pillars`` world in trackmesh.js) - they
+    are placed clear of the road, so what actually catches you out here is the
+    elevation and the corner radii, not hitting one.
+    """
+    b = Builder(0, 0, 0, yaw=0, width=11.5, rails=True)
+    b.start(run=40)
+    b.straight(56, rise=7.0)
+    b.cp()
+
+    b.arc(-92, 38, rise=5.0).straight(44)
+    b.arc(104, 30, rise=-3.0).straight(36)
+    b.cp()
+
+    b.width(13.0)
+    b.arc(-74, 56, bank=17).straight(70, rise=10.0)
+    b.cp()
+
+    b.width(10.5)
+    b.arc(148, 18, rise=4.0).straight(40)              # hairpin between spires
+    b.arc(-136, 20).straight(58, rise=-8.0)
+    b.cp()
+
+    b.straight(28)
+    b.jump(rise=4.0, gap=30, drop=6.0)                 # across the gorge
+    b.straight(36)
+    b.cp()
+
+    b.width(13.5)
+    b.arc(88, 52, rise=-6.0).straight(58)
+    b.hump(4.4, 34).straight(30)
+    b.cp()
+
+    b.arc(-116, 26).straight(60, rise=-9.0)
+    b.arc(96, 34).straight(40)
+    b.cp()
+
+    # A long banked spiral down between the spires.
+    b.width(12.5)
+    b.arc(-132, 42, rise=-14.0, bank=19).straight(54, rise=-6.0)
+    b.arc(-118, 38, rise=-11.0, bank=17).straight(52)
+    b.cp()
+
+    # The narrow bridge, and the second gorge.
+    b.width(9.5)
+    b.straight(72)
+    b.arc(86, 28).straight(34)
+    b.jump(rise=3.6, gap=28, drop=0.0)
+    b.straight(34)
+    b.cp()
+
+    b.width(13.0)
+    b.arc(-98, 44, rise=7.0).straight(66, rise=8.0)
+    b.hump(4.0, 32).straight(30)
+    b.cp()
+
+    b.width(11.5)
+    b.arc(-68, 60, rise=-5.0).straight(62)
+    b.arc(74, 44).straight(38)
+    b.finish()
+    return b
+
+
+# Tracks where falling off is the point rather than a gap in the barriers.
+# `test_barriers_are_opt_in` requires a floating track to catch a wide moment
+# somehow, because with no ground under it running wide is a respawn rather
+# than a penalty. These declare that they deliberately do not, and the test
+# checks the claim in both directions - an "exposed" track with rails all over
+# it is as wrong as a normal one without them.
+EXPOSED = {"rainbow"}
+
+
 _POOL = [
     ("sunrise", "Sunrise Circuit", "Wide, flowing and forgiving - the one to learn the car on.",
      "sunrise", -1.2, 1, _sunrise),
@@ -812,6 +1187,12 @@ _POOL = [
      "winter", -1.2, 2, _figure_eight),
     ("gauntlet", "The Gauntlet", "Loops, gaps, hairpins, elevation. Everything, twice over.",
      "gauntlet", None, 5, _gauntlet),
+    ("cove", "Sandy Cove", "A coast road down to the beach and out along the pier. Long.",
+     "cove", -1.2, 5, _cove),
+    ("pillars", "Cloudbreak", "Threaded between rock spires, miles above the cloud.",
+     "pillars", None, 5, _pillars),
+    ("rainbow", "Rainbow Road", "Half-pipes in deep space, and almost no barriers. Do not fall.",
+     "rainbow", None, 5, _rainbow),
 ]
 
 
@@ -821,6 +1202,7 @@ def _assemble():
         built = fn().build()
         t = {"slug": slug, "name": name, "blurb": blurb, "palette": palette,
              "ground": ground, "difficulty": difficulty,
+             "exposed": slug in EXPOSED,
              "cell": CELL, "level": LEVEL, "station": STATION}
         t.update(built)
         # Both derived from the ribbon rather than authored, so a new track gets
