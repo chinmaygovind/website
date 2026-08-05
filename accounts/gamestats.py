@@ -65,6 +65,9 @@ DRIVE_TRACKS = {
     "spiral": "Spiral Ascent",
     "eight": "Figure Eight",
     "gauntlet": "The Gauntlet",
+    "cove": "Sandy Cove",
+    "pillars": "Cloudbreak",
+    "rainbow": "Rainbow Road",
 }
 
 
