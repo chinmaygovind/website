@@ -79,6 +79,21 @@ export class Sound {
     this.wind.connect(this.windFilter).connect(this.windGain).connect(this.master);
     this.wind.start();
 
+    // --- slipstream ------------------------------------------------------
+    // The tow has its own air, separate from the wind: a narrow band that opens
+    // up as the charge fills, so you can hear it coming before it arrives.
+    this.draftSrc = ctx.createBufferSource();
+    this.draftSrc.buffer = whiteNoise(ctx, 2);
+    this.draftSrc.loop = true;
+    this.draftFilter = ctx.createBiquadFilter();
+    this.draftFilter.type = 'bandpass';
+    this.draftFilter.frequency.value = 500;
+    this.draftFilter.Q.value = 3.2;
+    this.draftGain = ctx.createGain();
+    this.draftGain.gain.value = 0;
+    this.draftSrc.connect(this.draftFilter).connect(this.draftGain).connect(this.master);
+    this.draftSrc.start();
+
     this.ready = true;
   }
 
@@ -144,6 +159,25 @@ export class Sound {
     this._blip({ freq: 420 - f * 110, to: 120, type: 'square', dur: 0.1 + f * 0.1,
                  gain: 0.09 + f * 0.2 });
     this._burst({ freq: 2600, q: 0.8, dur: 0.07 + f * 0.07, gain: 0.1 + f * 0.16 });
+  }
+
+  /**
+   * The tow itself, every frame: rushing air that fills with the charge.
+   *
+   * The point of it is that you can *hear* the boost coming - the band opens
+   * and rises as the tow fills, so sitting behind somebody is a sound that goes
+   * somewhere rather than a bar you have to look down at. While the boost pays
+   * it is wide open, and it falls away with the boost rather than stopping.
+   */
+  draft(charge, boostFrac) {
+    if (!this.ready) return;
+    const t = this.ctx.currentTime;
+    const set = (p, v, tc = 0.09) => p.setTargetAtTime(v, t, tc);
+    const boosting = boostFrac > 0;
+    const a = boosting ? Math.pow(boostFrac, 0.45) : Math.min(1, charge);
+    set(this.draftGain.gain, a * (boosting ? 0.15 : 0.075), 0.08);
+    set(this.draftFilter.frequency, 420 + a * (boosting ? 2600 : 1500), 0.1);
+    set(this.draftFilter.Q, boosting ? 1.3 : 3.4, 0.12);
   }
 
   // The tow letting go: a rising whoosh with a bright top on it. It has to be

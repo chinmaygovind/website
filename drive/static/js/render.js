@@ -205,6 +205,145 @@ class Particles {
   }
 }
 
+/**
+ * The slipstream, drawn round the car instead of on the HUD.
+ *
+ * The tow is a thing that happens to your car in the world - you are sitting in
+ * a hole in the air - so it is drawn there, the way Mario Kart draws it: streaks
+ * of air running past you, thickening as the tow fills and then going amber and
+ * flat out when it pays. A bar in the corner said the same thing in a place you
+ * cannot look at while you are two metres off somebody's bumper.
+ *
+ * Each streak is one camera-facing quad, and the whole trick is its
+ * orientation: its long axis is the direction of flow (the car's own forward,
+ * so this works upside down in a loop with no special case) and its face is
+ * turned to whatever is left over pointing at the camera. Turning it to the
+ * camera the ordinary way would spin the streak on screen and it would stop
+ * reading as motion; leaving it unturned makes it vanish edge-on.
+ *
+ * They live in the car's frame rather than the world's - front to back, in a
+ * ring that closes in slightly as it goes - which is what makes them read as
+ * air going past *you* rather than as scenery you are going past.
+ */
+class Draft {
+  constructor(scene, count = 44) {
+    this.items = [];
+    const geo = new THREE.PlaneGeometry(1, 1);
+    for (let i = 0; i < count; i++) {
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+        color: 0xffffff, transparent: true, opacity: 0, depthWrite: false,
+        blending: THREE.AdditiveBlending }));
+      m.visible = false;
+      scene.add(m);
+      this.items.push({ mesh: m, t: 1, ang: 0, rad: 0, spd: 1, len: 1 });
+    }
+    this._m = new THREE.Matrix4();
+    this._x = new THREE.Vector3();
+    this._y = new THREE.Vector3();
+    this._z = new THREE.Vector3();
+    this._p = new THREE.Vector3();
+  }
+
+  _launch(p, boosting) {
+    p.t = 0;
+    // Over the top and round the sides, never underneath: the air under a car
+    // is the road, and a streak drawn there is a bright bar lying on the
+    // tarmac. The arc runs from just below one waistline to just below the
+    // other, which is 0.64pi of the circle skipped and none of it missed.
+    p.ang = -0.2 * Math.PI + Math.random() * 1.4 * Math.PI;
+    // A slow curl about the car as it goes by, which is what stops the ring
+    // reading as a cage of static rails. The boost curls harder.
+    p.spin = (Math.random() < 0.5 ? -1 : 1) * (boosting ? 0.9 : 0.3)
+             * (0.6 + Math.random() * 0.8);
+    // The boost draws its air in tighter and longer: the same effect, harder.
+    p.rad = (boosting ? 1.9 : 2.3) + Math.random() * (boosting ? 1.1 : 1.2);
+    p.spd = 0.85 + Math.random() * 0.45;
+    p.len = (boosting ? 2.4 : 1.4) + Math.random() * (boosting ? 2.0 : 1.4);
+    p.hot = boosting;
+    p.mesh.material.color.set(boosting ? 0xffc35a : 0xcfe9ff);
+    p.mesh.visible = true;
+  }
+
+  update(car, dt, camera) {
+    const T = car.T;
+    const boosting = car.slipBoost > 0;
+    const bf = boosting ? Math.min(1, car.slipBoost / (T.SLIP_BOOST || 1.6)) : 0;
+    /*
+     * One number drives the whole thing, and it is the bar this replaced:
+     * while the tow fills it *is* the charge, so the air thickens around you
+     * gradually and you can see the boost coming. When it pays it goes straight
+     * to full and then peters out with the boost rather than being switched
+     * off - the streaks already in the air finish their run either way.
+     */
+    const level = boosting ? Math.pow(bf, 0.45) : Math.min(1, car.slipCharge);
+    const want = car.respawnIn > 0 ? 0
+               : Math.round(level * this.items.length * (boosting ? 1 : 0.45));
+    // Faster air the faster you are going, and much faster once it is paying.
+    const flow = (boosting ? 3.2 : 1.3 + level * 0.9) * (0.55 + car.speed / 80);
+    // It stops well short of the chase camera. Air blowing through the lens is
+    // not a slipstream, it is a windscreen, and it hides the car it is about.
+    const FRONT = 7.0, BACK = -5.5;
+
+    let live = 0;
+    for (const p of this.items) if (p.t < 1) live++;
+
+    for (const p of this.items) {
+      if (p.t >= 1) {
+        if (live >= want) continue;
+        this._launch(p, boosting);
+        live++;
+      }
+      p.t += dt * flow * p.spd;
+      if (p.t >= 1) { p.t = 1; p.mesh.visible = false; live--; continue; }
+
+      /*
+       * The cone. A streak comes in wide off the nose, is drawn in tight
+       * against the flank as it passes the car, and spills out wide again
+       * behind - which is both what air does around a body and the shape that
+       * keeps it off the bodywork you are trying to look at. The waist is
+       * about 1.1 units off centre at its narrowest, just outside the car.
+       */
+      const z = FRONT + (BACK - FRONT) * p.t;
+      const r = p.rad * (1 - 0.42 * Math.sin(Math.PI * p.t));
+      const a = p.ang + p.spin * p.t;
+      const c = Math.cos(a), s = Math.sin(a);
+      // The ring is an ellipse sitting a little high, because a car is wider
+      // than it is tall and the interesting air goes over the roof.
+      this._p.copy(car.pos)
+        .addScaledVector(car.fwd, z)
+        .addScaledVector(car.right, c * r)
+        // Floored just under the sills: what the arc does not catch, this
+        // does, and nothing is ever drawn through the road.
+        .addScaledVector(car.up, Math.max(-0.15, s * r * 0.78) + 0.35);
+      p.mesh.position.copy(this._p);
+
+      // Long axis along the flow; face whatever is left over at the camera.
+      this._y.copy(car.fwd);
+      this._z.subVectors(camera.position, this._p);
+      this._z.addScaledVector(this._y, -this._z.dot(this._y));
+      if (this._z.lengthSq() < 1e-6) this._z.set(0, 0, 1);
+      this._z.normalize();
+      this._x.crossVectors(this._y, this._z);
+      this._m.makeBasis(this._x, this._y, this._z);
+      p.mesh.quaternion.setFromRotationMatrix(this._m);
+
+      p.mesh.scale.set(p.hot ? 0.075 : 0.05, p.len, 1);
+      /*
+       * In at the front, out at the back: a streak that popped into existence
+       * beside you would read as a flash rather than as air arriving. `level`
+       * is on it as well, so the tail of a boost fades the air already flying.
+       *
+       * These are additive, so they stack: what looks discreet on its own is a
+       * slab where four of them cross. The envelope is deliberately steeper
+       * than a plain sine (squared) so each one is only briefly at full, which
+       * is what keeps the effect a suggestion of air rather than a curtain.
+       */
+      const fade = Math.sin(Math.PI * p.t) ** 2;
+      p.mesh.material.opacity = fade * (p.hot ? 0.5 : 0.3) * level;
+    }
+  }
+}
+
 export class Renderer {
   constructor(canvas) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -222,6 +361,7 @@ export class Renderer {
 
     this.sky = null;
     this.particles = new Particles(this.scene);
+    this.draftFx = new Draft(this.scene);
     this.trackGroup = null;
 
     // camera state, all smoothed
@@ -324,8 +464,10 @@ export class Renderer {
     this.camera.up.copy(this.camUp);
     this.camera.lookAt(this.camLook);
 
-    // A little FOV with speed - cheap, and it does a lot.
-    const fov = this.baseFov + Math.min(13, speed * 0.16);
+    // A little FOV with speed - cheap, and it does a lot. A slipstream boost
+    // adds a punch of its own on top, which is most of what makes it feel like
+    // more speed rather than a different number.
+    const fov = this.baseFov + Math.min(13, speed * 0.16) + (car.slipBoost > 0 ? 7 : 0);
     if (Math.abs(this.camera.fov - fov) > 0.05) {
       this.camera.fov += (fov - this.camera.fov) * (1 - Math.exp(-6 * dt));
       this.camera.updateProjectionMatrix();
@@ -340,6 +482,9 @@ export class Renderer {
   }
 
   kick(amount) { this.shake = Math.min(2.2, this.shake + amount); }
+
+  /** The air round the car while the tow fills and while it pays out. */
+  draft(car, dt) { this.draftFx.update(car, dt, this.camera); }
 
   smoke(pos, vel, kind) {
     if (kind === 'spark') {

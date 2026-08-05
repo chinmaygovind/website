@@ -2,7 +2,7 @@
    three.js bundle is not refetched every session. It deliberately never
    intercepts pages, POSTs or socket.io traffic, so live racing and time
    submission always go straight to the network. */
-const CACHE = "drive-v4";
+const CACHE = "drive-v5";
 const ASSETS = [
   "/static/css/style.css",
   "/static/js/game.js",

@@ -554,10 +554,34 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   `DRAG`, so `SLIP_ACCEL_MULT` 1.5 lifts it by its square root (about a fifth,
   50 -> 61) and you have to accelerate up to it. Nothing accumulates while a
   boost runs, so the cadence is charge, fire, charge rather than a permanent tow
-  behind a car you cannot pass. It pays out with nobody pressing anything, so it
-  announces itself: a bar under the speed bar filling, then the whole bar amber
-  with the word on it, a rising whoosh and a toast. `FLAG.SLIP` rides along in
-  the pose - wired for, and like `FLAG.DRIFT` not yet drawn on a rival.
+  behind a car you cannot pass. `FLAG.SLIP` rides along in the pose - wired for,
+  and like `FLAG.DRIFT` not yet drawn on a rival.
+- **The slipstream is drawn round the car, not on the HUD.** `Draft` in
+  `render.js`: streaks of air running past you, one camera-facing quad each,
+  **thickening with the charge** - the same number the bar under the speed bar
+  used to show, so you watch the boost coming without looking away from the
+  road - and then going amber and flat out when it pays, petering out with the
+  boost rather than being switched off. A bar said the same thing in a corner
+  you cannot look at while you are two car lengths off somebody's bumper, and a
+  "Slipstream!" toast said it a third time over the middle of the screen. The
+  effect *is* the announcement now, with a whoosh, a camera kick and 7 degrees
+  of FOV. Four things keep it a suggestion of air rather than a curtain: the
+  streaks' long axis is the car's **own** forward (so a loop needs no special
+  case) with only what is left over turned to the camera - turn them to it the
+  ordinary way and they spin on screen and stop reading as motion, leave them
+  and they vanish edge-on; the ring is an **arc over the top and round the
+  sides, never underneath**, because the air under a car is the road and a
+  streak drawn there is a bright bar lying on the tarmac; it is a **cone** -
+  wide off the nose, drawn in tight against the flank, spilling out behind -
+  which is both what air does around a body and what keeps it off the bodywork;
+  and it **stops well short of the chase camera**, since air blowing through
+  the lens is a windscreen. They are additive, so they stack: the fade envelope
+  is deliberately steeper than a sine so each one is only briefly at full.
+  **`?draft=charge|boost` pins the tow** so the whole thing can be
+  photographed - same reason as `?panel=` and `?touch=1`, since otherwise it
+  takes two browsers and somebody driving eight car lengths ahead of the
+  shutter. The sound is the same story: `Sound.draft` opens a band of rushing
+  air as the charge fills, so you can *hear* the boost coming.
 - **Only `FLAG.RESPAWN` takes a rival off the track.** Both the visibility line
   and `collidables()` used to test `flags & 8`, which is `FLAG.BRAKE` - copied
   off the brake-light line directly above them, and commented "respawning". So
@@ -873,7 +897,8 @@ field from a dark field.
   screenshot cannot click, so it is the only way to look at a panel's layout.
   `qual` and `racing` also *pin* the phase and fake a session, since neither is a
   panel you can open and getting a room into either takes two browsers and a
-  stopwatch.
+  stopwatch. **`?draft=charge|boost`** is the same idea for the slipstream: it
+  pins the tow so the air round the car can be photographed without a rival.
 - **The room drawer's button is a person, not a hamburger.** Three stacked bars sat
   next to the settings icon, which is three stacked sliders, and at a glance they were
   the same button. Chat is the last thing in the drawer so it takes the leftover height

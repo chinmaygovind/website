@@ -304,11 +304,13 @@ function wireCarEvents() {
   car.onFall = () => { S.sound.fall(); toast('Off the track'); };
   car.onRespawned = () => S.sound.respawn();
   // The tow pays out on its own, with no button pressed, so it has to announce
-  // itself: the bar under the speed bar has been filling, and this is it going.
+  // itself - and it does that in the world rather than in words: the air round
+  // the car goes amber and flat out (see Draft in render.js), the camera takes
+  // a punch, and there is a whoosh. A toast said "Slipstream!" over the top of
+  // all three, in the middle of the one moment you are looking at the road.
   car.onSlipstream = () => {
     S.sound.slipstream();
     S.renderer.kick(0.35);
-    toast('Slipstream!');
   };
 }
 
@@ -509,6 +511,11 @@ function bindInput() {
     S.view.setVisible(false);
     document.body.classList.add('shot');
   }
+  // Read off `location.search` directly, like `shot=1` above and unlike the
+  // panel params: this line is inside the slice `test_touch.py` lifts into a
+  // stub DOM, which has a `location` and no `URLSearchParams`.
+  const dm = /[?&]draft=(charge|boost)\b/.exec(location.search);
+  S.draftDemo = dm ? dm[1] : null;
   if ('ontouchstart' in window || location.search.indexOf('touch=1') >= 0 ||
       (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) {
     S.touch = true;
@@ -1125,6 +1132,11 @@ function frame(now) {
   // input, no physics, no clock of yours, and the camera belongs to them.
   if (S.watch) {
     updateWatch(dt);
+    // Your car is parked for the replay, so nothing is stepping it - and a tow
+    // you were in when you pressed Watch would otherwise hang in the air over
+    // somebody else's lap. Bleed it, and let the streaks fly themselves out.
+    S.car.draft(null, dt);
+    S.renderer.draft(S.car, dt);
     S.renderer.follow(S.watch.subject, dt);
     S.renderer.render(dt);
     return;
@@ -1146,6 +1158,15 @@ function frame(now) {
     S.run.start(S.raceT0);
     noteStart();
     markHintSeen();
+  }
+
+  // `?draft=charge|boost` pins the tow, for the same reason `?panel=` and
+  // `?touch=1` exist: the air round the car is the whole of what a slipstream
+  // looks like, and photographing it otherwise takes two browsers, two people
+  // and somebody driving eight car lengths ahead of the shutter.
+  if (S.draftDemo) {
+    if (S.draftDemo === 'boost') S.car.slipBoost = T.SLIP_BOOST;
+    else S.car.slipCharge = 1;
   }
 
   // Rivals are brought up to now *before* the physics that has to hit them.
@@ -1199,6 +1220,9 @@ function drive(inp) {
   // Engine, tyres and wind, driven from the car's own state every frame.
   S.sound.engine(Math.min(1, car.speed / T.MAX_SPEED), inp.throttle, car.slip,
                  !car.grounded);
+  // The tow's own air, on the same tick: it fills with the charge and falls
+  // away with the boost, so the whole thing is audible without being looked at.
+  S.sound.draft(car.slipCharge, car.slipBoost / T.SLIP_BOOST);
   // tyre smoke while sliding, dust when off the road
   if (car.grounded && (car.slip > 0.3 || (car.offroad && car.speed > 8))) {
     const back = new THREE.Vector3().copy(car.pos)
@@ -1220,6 +1244,7 @@ function render(dt, now) {
     braking: car.braking,
   });
   S.view.setVisible(car.respawnIn <= 0);
+  S.renderer.draft(car, dt);
 
   // own-best ghost
   if (ghostOn() && S.started) {
@@ -1309,12 +1334,6 @@ function hudFast() {
   // Over MAX_SPEED means a descent is doing the work, which is worth showing.
   $('speedFill').classList.toggle('over', car.speed > T.MAX_SPEED);
   $('time').textContent = fmt(run.state === 'ready' ? 0 : run.time);
-  const slip = $('slipBar');      // rooms only; solo has nobody to tow off
-  if (slip) {
-    slip.classList.toggle('on', contactOn());
-    slip.classList.toggle('boost', car.slipBoost > 0);
-    $('slipFill').style.width = (car.slipCharge * 100) + '%';
-  }
 }
 
 function hud(now) {
