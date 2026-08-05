@@ -1355,7 +1355,7 @@ def on_join_lobbies():
 
 
 @socketio.on("join_room_")
-def on_join_room(data):
+def on_join_room(data=None):
     code = (data or {}).get("code", "").upper()
     game = DriveGame.query.filter_by(code=code).first()
     if not game:
@@ -1385,13 +1385,13 @@ def on_join_room(data):
 
 
 @socketio.on("clock")
-def on_clock(data):
+def on_clock(data=None):
     """Round-trip clock sync so a countdown lands at the same instant for all."""
     emit("clock", {"c": (data or {}).get("c"), "s": _now_ms()})
 
 
 @socketio.on("pose")
-def on_pose(data):
+def on_pose(data=None):
     """A car's own report of where it is. Client-authoritative by design."""
     ent = _sid_room.get(request.sid)
     if not ent or not data:
@@ -1415,7 +1415,7 @@ def on_pose(data):
 
 
 @socketio.on("set_track")
-def on_set_track(data):
+def on_set_track(data=None):
     code = (data or {}).get("code", "").upper()
     slug = (data or {}).get("track", "")
     if not tracks_mod.get(slug):
@@ -1441,7 +1441,7 @@ def on_set_track(data):
 
 
 @socketio.on("set_setting")
-def on_set_setting(data):
+def on_set_setting(data=None):
     """The host changing what the next race will be.
 
     Between races only, for the same reason the track is: it decides what
@@ -1548,7 +1548,7 @@ def _open_race(r):
 
 
 @socketio.on("start_race")
-def on_start_race(data):
+def on_start_race(data=None):
     """The host's one button, and it means different things by phase.
 
     In free practice it starts the five seconds before qualifying - or, with
@@ -1620,7 +1620,7 @@ def _open_qual(code, seq):
 
 
 @socketio.on("qual_time")
-def on_qual_time(data):
+def on_qual_time(data=None):
     """A practice lap set during qualifying. Best one counts, as it should.
 
     The replay comes up with it, because the lap on provisional pole is a ghost
@@ -1686,7 +1686,7 @@ def _pole_meta(r):
 
 
 @socketio.on("qual_pole_req")
-def on_qual_pole_req(data):
+def on_qual_pole_req(data=None):
     """Somebody has asked to chase the provisional pole lap. Send it to them."""
     ent = _sid_room.get(request.sid)
     if not ent:
@@ -1797,7 +1797,7 @@ def _go_green(code, seq):
 
 
 @socketio.on("split")
-def on_split(data):
+def on_split(data=None):
     """A checkpoint time, so everyone can be shown their gap to the leader.
 
     Fanned straight back out rather than accumulated into a leaderboard: each
@@ -1825,7 +1825,7 @@ def on_split(data):
 
 
 @socketio.on("finish")
-def on_finish(data):
+def on_finish(data=None):
     """A car crossed the line. First one home starts the clock on everyone else."""
     ent = _sid_room.get(request.sid)
     if not ent:
@@ -1930,7 +1930,7 @@ def _close_race(code, why, seq=None):
 
 
 @socketio.on("resign")
-def on_resign(data):
+def on_resign(data=None):
     """Retire from the race and go back to practice, without leaving the room.
 
     A DNF, and it is rated as one. Quitting the race has to cost the same as
@@ -1956,7 +1956,7 @@ def on_resign(data):
 
 
 @socketio.on("end_race")
-def on_end_race(data):
+def on_end_race(data=None):
     """The host stopping a race that is not going to end on its own.
 
     Before the lights it is a cancellation and rates nothing. Once the race is
@@ -2047,7 +2047,7 @@ def _rate_race(game, standings):
 
 
 @socketio.on("chat")
-def on_chat(data):
+def on_chat(data=None):
     ent = _sid_room.get(request.sid)
     if not ent:
         return
@@ -2067,7 +2067,18 @@ def on_chat(data):
 
 
 @socketio.on("leave")
-def on_leave(data):
+def on_leave(data=None):
+    """Leaving on purpose: the row goes, not just the car.
+
+    `data=None` is load-bearing. Every button that leaves a room emits this
+    with no payload at all, so Socket.IO called the handler with no arguments
+    and it raised a TypeError before doing anything - which meant pressing
+    Leave took you to the lobbies page and left your name in the room you had
+    just left, sitting there until the sweep noticed. Every handler here takes
+    the same default now, since they all already cope with `(data or {})` and
+    a client that emits without a payload should be a non-event rather than a
+    line in the log.
+    """
     _drop(request.sid, hard=True)
 
 
@@ -2123,7 +2134,7 @@ def _drop(sid, hard):
 
 
 @socketio.on("kick")
-def on_kick(data):
+def on_kick(data=None):
     code = (data or {}).get("code", "").upper()
     pid = (data or {}).get("pid")
     with _lock(code):

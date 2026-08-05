@@ -445,8 +445,11 @@
       <tr><td>Change track</td><td>P</td></tr>
       <tr><td>Ghost</td><td>G</td></tr>
       <tr class="solo-only"><td>Mute</td><td>M</td></tr>
-      <tr class="room-only"><td>Chat</td><td>M, then Enter to send</td></tr>
-      <tr><td>Settings / help</td><td>Esc / H</td></tr>
+      <tr class="room-only"><td>Chat</td><td>M</td></tr>
+      {# One row each. They are two different sheets and two different keys,
+         and "Esc / H" made you work out which half went with which. #}
+      <tr><td>Settings</td><td>Esc</td></tr>
+      <tr><td>Controls (this sheet)</td><td>H</td></tr>
       {% if mode == 'room' %}
       <tr><td>Start qualifying / the race <span class="muted">(host)</span></td><td>Enter</td></tr>
       {% endif %}

@@ -388,9 +388,9 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
 - **Starts are counted as well as finishes**, because a board of finishes cannot
   say how many goes a track took out of you - and on a hard one that is most of
   the story. An attempt is *the clock starting*: `/api/start` is posted from the
-  one place in `game.js` that calls `run.start()`, which is why a race counts
-  too (the green light is a start like any other) and why loading the page does
-  not. They live in their own `drive_starts` table, one row per (user, track) -
+  one place in `game.js` that calls `run.start()`, which is why loading the
+  page does not count as one. A lap in a **room** is not counted at either end
+  - see the leaderboard rule below. They live in their own `drive_starts` table, one row per (user, track) -
   `create_all` creates tables and not columns, so a new table lands on the live
   database by itself where a new column would need a migration, and a track you
   have started fifty times and never finished has no `drive_times` row to keep
@@ -406,6 +406,19 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   deploy that creates the table**, `--dry-run` first. It is a `max` per row, so
   it is safe to run twice. `_starts_for` still clamps on read, now only as cover
   for a database the backfill has not reached.
+- **The leaderboard is for laps driven alone against the clock, so nothing set
+  in a room reaches it.** No time, no medal, no ghost, no distance, and no
+  attempt either: `countsForTheBoard()` in `game.js` is the single answer, and
+  both `/api/run` and `/api/start` read it, so the two halves of a lap counting
+  cannot disagree and leave a track with more finishes than goes. It applies to
+  a room's free practice as much as to a race, because there are other cars on
+  the road in every phase of one - **a tow down a straight is worth the better
+  part of a second**, contact moves you, and a race starts from a rolling grid
+  rather than a standing lap. A time set that way is a record of the traffic
+  rather than of the driving, and it was going on the board next to laps that
+  were not. It cost a real record: a Jump City lap set in a race sat top of the
+  board until the holder asked for it to be taken off. The room's own ghost is
+  unaffected - your best lap *here, today* is what a room is for.
 - **Being fast is not evidence of cheating.** There used to be a floor here:
   `tuning.MIN_PLAUSIBLE`, rejecting any time under 0.8 of `ideal`. But `ideal` is an
   estimate off a relaxed racing line and anyone who learns a track beats it, so the
@@ -554,10 +567,10 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   initial on a profile with no picture. A room seat takes it if it is free and
   falls back to first-free if somebody got there first, because two identical
   cars on a grid is worse than being the wrong red for one race.
-- **A ghost lights its own lamps**, because the flag byte is recorded with the
-  pose. A ghost frame is eight values now, not seven, and `pack_ghost` writes
-  the stride into the blob: every lap already on the board is seven wide, still
-  unpacks, and simply has no lamps until it is driven again.
+- **A ghost lights its own brake lights**, because the flag byte is recorded
+  with the pose. A ghost frame is eight values now, not seven, and `pack_ghost`
+  writes the stride into the blob: every lap already on the board is seven
+  wide, still unpacks, and simply has no lamps until it is driven again.
 - **A ghost frame is the pose at its own timestamp.** `Run._recordGhost` interpolates
   to exact multiples of `1/GHOST_HZ`. It used to accumulate dt and push a sample every
   time an interval had gone by, which meant the accumulator had to fill before frame 0
@@ -620,7 +633,7 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   50 -> 61) and you have to accelerate up to it. Nothing accumulates while a
   boost runs, so the cadence is charge, fire, charge rather than a permanent tow
   behind a car you cannot pass. `FLAG.SLIP` rides along in the pose - wired for,
-  not yet drawn on a rival. `FLAG.DRIFT` **is** drawn now: see the tail lamps.
+  and like `FLAG.DRIFT` not drawn on a rival.
 - **The slipstream is drawn round the car, not on the HUD.** `Draft` in
   `render.js`: streaks of air running past you, one camera-facing quad each,
   **thickening with the charge** - the same number the bar under the speed bar
@@ -708,6 +721,13 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   The car is now marked `gone` (excluded from `_snapshot` and `_live`, so it
   stops being drawn and stops holding the race open) but kept, so it is still
   in the standings and still rated. `_reset_race` is what finally drops it.
+- **Every socket handler takes `data=None`.** Not a style choice: every button
+  that leaves a room emits `leave` with no payload, so Socket.IO called
+  `on_leave(data)` with no arguments and it raised before doing anything -
+  pressing Leave took you to the lobbies page and left your name in the room
+  behind you until the sweep noticed. They all already cope with `(data or {})`,
+  so the default costs nothing and makes a payload-less emit a non-event rather
+  than a line in the log.
 - **Two buttons for the two ways a race stops early**, both top centre with
   Start race, because they are the same kind of decision: start this, stop
   this, get out of this. Anyone can **Resign** (only while there is a race to
@@ -965,6 +985,12 @@ field from a dark field.
   standing choice by name - ids are digits, so the two cannot collide - which
   makes a ghost setting linkable and, with `--dump-dom`, checkable without a
   browser to click in.
+- **Escape closes what is in front of you before it opens anything.** It works
+  innermost first - a replay, then a panel opened from another panel, then the
+  panel itself - and *then* means "open settings". The controls sheet was
+  missing from that list, so pressing Escape while reading it opened the
+  settings sheet on top: the one key everybody presses to get out of something
+  put something else in the way.
 - **The `?` sheet is Controls, and it is the controls and nothing else.** It
   used to open on the track blurb and close on two paragraphs about grass and
   crests, which is reading matter in front of somebody who pressed it to find
@@ -1099,16 +1125,16 @@ field from a dark field.
   invalidating them, and one test pins the intent directly: a 150ms re-grab is
   never a drift.
   The button that is drifting goes **amber** (`.tbtn.drifting`, `#ffd96b`) so it
-  is obvious you asked for something different, and **the car's tail lamps go the
-  same amber** - `DRIFT_ON` in `render.js`, the same colour on purpose. They are
-  three-state now: dark, red on the brakes, amber sliding, with **amber winning**
-  when both are true. Both are true constantly, because `Car.braking` is
-  `braking || handbrake`; and of the two, braking is what every car does into
-  every corner and tells you nothing, while a car sideways in front of you is
-  the thing worth reading off its lamps. It comes off `FLAG.DRIFT`, which was
-  computed and packed into the pose and consumed nowhere - so this is drawn on
-  your car, on every rival, on a ghost and in a replay, all through one
-  `lampsOf`.
+  is obvious you asked for something different - that is the drift indicator,
+  and it is on the on-screen button, *not* on the car. **The car's tail lamps
+  are two-state red** (`BRAKE_ON`/`BRAKE_OFF`), and an amber drift state was
+  tried and taken out again: `Car.braking` is `braking || handbrake`, so a
+  slide does not *light* the lamps, it changes the colour of lamps that are
+  already lit - and a car that goes yellow every time it steps out reads as a
+  fault rather than as a driver. `FLAG.DRIFT` is still computed and still
+  packed into the pose and the ghost; nothing draws it. What `lampsOf` answers
+  is braking and only braking, for your car, every rival, a ghost and a
+  replay.
   Three earlier attempts are worth not repeating: a DRIFT button beside the pedals,
   which was literally unpressable; **brake-while-steering, which is unusable** -
   braking into a corner *is* steering, so it fired on essentially every corner and

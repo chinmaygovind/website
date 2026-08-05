@@ -13,9 +13,6 @@ import { mulberry } from './trackmesh.js';
 
 const BRAKE_OFF = 0x521218;
 const BRAKE_ON = 0xff2b2b;
-// Amber, the same amber the drifting touch button goes, so the on-screen
-// control and the car agree about what is happening.
-const DRIFT_ON = 0xffd96b;
 // How see-through a car is when it is not something you can hit. The ghost, a
 // replay and a rival you are about to drive through are all the same statement
 // - this car is not solid - so they are one number rather than three amounts
@@ -101,17 +98,16 @@ export class CarView {
     this.shadow.rotation.x = -Math.PI / 2;
     scene.add(this.shadow);
 
-    // Tail lamps. Two panels on the tail, unlit material so they read as
+    // Brake lights. Two panels on the tail, unlit material so they read as
     // emissive without a second light in the scene: dark red at rest, full red
-    // the instant you touch the brakes, **amber while the car is sliding**.
-    // They are on the *car*, not the HUD, so you can see what the driver ahead
-    // of you is doing - which is the only reason a detail like this is worth
-    // any geometry at all.
+    // the instant you touch the brakes. They are on the *car*, not the HUD, so
+    // you can see the driver ahead of you braking - which is the only reason a
+    // detail like this is worth any geometry at all.
     //
-    // Amber wins over red when both are true, and both are true often: the
-    // handbrake counts as braking. Braking is what every car does into every
-    // corner and tells you nothing; a car sideways in front of you is the thing
-    // worth reading off its lamps.
+    // Two states and no third one. Drifting had an amber state for a while and
+    // it is gone: the handbrake counts as braking, so a slide meant the lamps
+    // changed colour rather than coming on, and a car that goes yellow every
+    // time it steps out reads as a fault rather than as a driver.
     this.brakeMats = [];
     for (const s of [-1, 1]) {
       const m = new THREE.MeshBasicMaterial({
@@ -122,9 +118,7 @@ export class CarView {
       this.brakeMats.push(m);
       this._mats.push(m);
     }
-    // The lamps have three states now, so what is cached is the colour rather
-    // than a boolean.
-    this._lamp = null;
+    this._braking = false;
     this._ghostly = ghost;
 
     scene.add(this.group);
@@ -177,10 +171,10 @@ export class CarView {
     } else {
       this.shadow.visible = false;
     }
-    const lamp = opts.drifting ? DRIFT_ON : (opts.braking ? BRAKE_ON : BRAKE_OFF);
-    if (lamp !== this._lamp) {
-      this._lamp = lamp;
-      for (const m of this.brakeMats) m.color.setHex(lamp);
+    const braking = !!opts.braking;
+    if (braking !== this._braking) {
+      this._braking = braking;
+      for (const m of this.brakeMats) m.color.setHex(braking ? BRAKE_ON : BRAKE_OFF);
     }
   }
 

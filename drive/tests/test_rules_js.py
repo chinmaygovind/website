@@ -15,6 +15,7 @@ What they have in common is that all three used to be bugs:
   way the first corner went, so half the time the fastest qualifier lined up on
   the outside of it.
 * a ghost has no lamps of its own; it wears the flags of the lap it recorded.
+* a lap driven in a room used to go on the leaderboard, tow and all.
 """
 
 import os
@@ -89,6 +90,10 @@ def test_refusing_is_silent():
 # --- the tail lamps a recorded flag byte asks for ---------------------------
 
 def test_the_lamps_come_off_the_recorded_flags():
+    """Red or dark, and nothing else. Drifting is in the byte and deliberately
+    not on the lamps: the handbrake counts as braking, so an amber drift state
+    changed the colour of lamps that were already lit rather than turning any
+    on, and a car that goes yellow whenever it steps out looks broken."""
     import json
     ctx = _ctx()
     ctx.eval("var FLAG = {DRIFT: 1, AIR: 2, RESPAWN: 4, BRAKE: 8, SLIP: 16};")
@@ -96,14 +101,12 @@ def test_the_lamps_come_off_the_recorded_flags():
     out = json.loads(ctx.eval("JSON.stringify([lampsOf(0), lampsOf(8), lampsOf(1), "
                               "lampsOf(9), lampsOf(undefined)])"))
     dark, braking, drifting, both, old = out
-    assert dark == {"braking": False, "drifting": False}
-    assert braking == {"braking": True, "drifting": False}
-    assert drifting == {"braking": False, "drifting": True}
-    # The handbrake counts as braking, so both is the common case and drift has
-    # to win it - CarView paints amber over red.
-    assert both == {"braking": True, "drifting": True}
+    assert dark == {"braking": False}
+    assert braking == {"braking": True}
+    assert drifting == {"braking": False}
+    assert both == {"braking": True}
     # A lap recorded before flags existed has none, which is lamps off.
-    assert old == {"braking": False, "drifting": False}
+    assert old == {"braking": False}
 
 
 # --- pole starts on the inside, every race, on every track ------------------
@@ -155,3 +158,72 @@ def test_the_side_does_not_depend_on_the_race_number():
     outside every other race. Same track, same slot, same side, always."""
     assert _place(1, 0) == _place(1, 0)
     assert _place(-1, 2)[0] < 0 and _place(1, 2)[0] > 0
+
+
+# --- a lap in a room never reaches the leaderboard --------------------------
+
+@pytest.mark.parametrize("mode,want", [
+    ("solo", True),      # alone against the clock, which is what a time is
+    ("room", False),     # other cars on the road in every phase of one
+    ("replay", False),   # not a lap of yours at all
+])
+def test_only_a_lap_driven_alone_counts_for_the_board(mode, want):
+    """A record set with a tow is a record of the traffic. Both halves of a lap
+    counting - the attempt and the time - read this one answer, so they cannot
+    disagree and leave a track with more finishes than goes."""
+    ctx = jsrt.quickjs.Context()
+    ctx.eval("var CFG = {mode: '%s'};" % mode)
+    ctx.eval(_fn("countsForTheBoard"))
+    assert bool(ctx.eval("countsForTheBoard()")) is want
+
+
+def test_an_attempt_in_a_room_is_not_counted_either():
+    """`noteStart` is the other half, and it asks the same question."""
+    import json
+    ctx = jsrt.quickjs.Context()
+    ctx.eval("var posted = [];")
+    ctx.eval("function fetch(u) { posted.push(u); return {catch: () => {}}; }")
+    ctx.eval(_fn("countsForTheBoard"))
+    ctx.eval(_fn("noteStart"))
+    for mode in ("room", "solo"):
+        ctx.eval("var CFG = {mode: '%s', loggedIn: true};" % mode)
+        ctx.eval("var S = {track: {slug: 'sunrise'}};")
+        ctx.eval("noteStart();")
+    assert json.loads(ctx.eval("JSON.stringify(posted)")) == ["/api/start"]
+
+
+# --- Escape closes things before it opens one -------------------------------
+
+ESC_STUB = """
+var did = [];
+var shut = {board: true, tracks: true};
+var S = {watch: null, helpOpen: false};
+function $(id) {
+  return {style: {display: shut[id === 'boardOv' ? 'board' : 'tracks'] ? 'none' : ''}};
+}
+function stopWatching() { did.push('stopWatching'); }
+function toggleBoard(v) { did.push('board:' + v); }
+function toggleTracks(v) { did.push('tracks:' + v); }
+function toggleHelp(v) { did.push('help:' + v); }
+function toggleMenu() { did.push('menu'); }
+"""
+
+
+@pytest.mark.parametrize("open_what,want", [
+    ("S.watch = {}", "stopWatching"),
+    ("shut.board = false", "board:false"),
+    ("shut.tracks = false", "tracks:false"),
+    ("S.helpOpen = true", "help:false"),
+    ("", "menu"),
+])
+def test_escape_closes_what_is_in_front_of_you_before_opening_settings(open_what, want):
+    """Help was missing from the chain, so Escape put the settings sheet on top
+    of the controls instead of closing them."""
+    import json
+    ctx = jsrt.quickjs.Context()
+    ctx.eval(ESC_STUB)
+    ctx.eval(_fn("onEscape"))
+    if open_what:
+        ctx.eval(open_what + ";")
+    ctx.eval("onEscape();")
+    assert json.loads(ctx.eval("JSON.stringify(did)")) == [want]

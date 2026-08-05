@@ -735,3 +735,42 @@ def test_somebody_leaving_between_the_flag_and_the_grid_is_not_lined_up(live):
     A._light_grid("LIVE", r["race_seq"], "sunrise", grid)
     assert r["grid"] == {pids["host"]: 0}
     assert r["phase"] == "countdown"
+
+
+# ---------------------------------------------------------------------------
+# Leaving
+# ---------------------------------------------------------------------------
+
+def test_leaving_takes_your_name_with_you(env, monkeypatch):
+    """Every button that leaves a room emits `leave` with no payload at all, so
+    the handler has to be callable with no arguments - it was not, and it threw
+    before deleting anything. You left the room and your name stayed in it.
+
+    The same default is on every handler here now, so a client that emits
+    without a payload is a non-event rather than a line in the log.
+    """
+    A = env
+    monkeypatch.setattr(A.socketio, "emit", lambda *a, **k: None)
+    monkeypatch.setattr(A, "_broadcast_lobbies", lambda *a, **k: None)
+    with A.app.app_context():
+        game = A.DriveGame(code="BYE", track="sunrise")
+        A.db.session.add(game)
+        A.db.session.commit()
+        stay = A.DrivePlayer(game_id=game.id, session_key="sk-stay", name="stay",
+                             color="#fff", seat_order=0, is_host=True)
+        go = A.DrivePlayer(game_id=game.id, session_key="sk-go", name="go",
+                           color="#0f0", seat_order=1)
+        A.db.session.add_all([stay, go])
+        A.db.session.commit()
+        gid, gone_pid = game.id, go.pid
+        r = _room(A, "BYE", phase="free")
+        _add_car(A, r, gone_pid, on_grid=False)
+        A._sid_room["sid-go"] = ("BYE", gone_pid)
+        with A.app.test_request_context():
+            from flask import request, session
+            request.sid = "sid-go"
+            session["session_key"] = "sk-go"
+            A.on_leave()                      # exactly how the client calls it
+        left = [p.name for p in A.DriveGame.query.get(gid).players]
+        assert left == ["stay"]
+        assert gone_pid not in r["cars"]

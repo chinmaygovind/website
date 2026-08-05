@@ -422,14 +422,7 @@ function bindInput() {
     // corner and nothing else.
     if (e.code === 'KeyT') { e.preventDefault(); backToCheckpoint(); }
     if (e.code === 'Enter') { e.preventDefault(); hostStart(); }
-    // Escape means "close whatever is in front of me", innermost first - a
-    // replay, then a panel opened from another panel, then the panel itself.
-    if (e.code === 'Escape') {
-      if (S.watch) stopWatching();
-      else if ($('boardOv').style.display !== 'none') toggleBoard(false);
-      else if ($('tracksOv').style.display !== 'none') toggleTracks(false);
-      else toggleMenu();
-    }
+    if (e.code === 'Escape') onEscape();
     if (e.code === 'KeyH') toggleHelp();
     // The track switcher, from the road. Changing track is the most common
     // thing there is to do that is not driving, and reaching for it should not
@@ -1449,6 +1442,23 @@ function hostStart() {
   S.socket.emit('start_race', { code: CFG.room });
 }
 
+/**
+ * Escape: close whatever is in front of me.
+ *
+ * Innermost first - a replay, then a panel opened from another panel, then the
+ * panel itself - and only when there is nothing left does it mean "open
+ * settings". The controls sheet was missing from that list, so pressing Escape
+ * while reading it opened settings on top of it: the one key everybody presses
+ * to get out of something put something else in the way.
+ */
+function onEscape() {
+  if (S.watch) stopWatching();
+  else if ($('boardOv').style.display !== 'none') toggleBoard(false);
+  else if ($('tracksOv').style.display !== 'none') toggleTracks(false);
+  else if (S.helpOpen) toggleHelp(false);
+  else toggleMenu();
+}
+
 function readInput() {
   const on = (k) => keys.has(k) || touchKeys.has(k);
   input.throttle = on('up') ? 1 : 0;
@@ -2042,6 +2052,9 @@ function lapTimeline(frames, hz) {
  */
 function noteStart() {
   if (!CFG.loggedIn || typeof fetch !== 'function') return;
+  // A start is one half of "how many goes did this track take out of you", and
+  // its other half is a finish that counts. In a room neither does.
+  if (!countsForTheBoard()) return;
   try {
     fetch('/api/start', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2121,6 +2134,17 @@ async function onFinish() {
   }
   else showResults({ time: run.time, medal, pb: improved ? run.time : prev });
 
+  // Nothing from a room goes up: no time, no medal, no ghost, no distance, no
+  // attempt - see countsForTheBoard. The session ghost above still gets it,
+  // because that is what the room is for.
+  if (!countsForTheBoard()) {
+    if (!racing && !qualifying) {
+      showResults({ time: run.time, medal, pb: S.bestTime, wr: S.track.record_ms,
+                    note: 'Practice lap - times set in a room stay in the room.' });
+    }
+    return;
+  }
+
   try {
     const r = await fetch('/api/run', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2183,10 +2207,15 @@ async function onFinish() {
  * One place, because three different things read one: the ghost, a replay, and
  * a rival's pose. Laps recorded before flags existed hand in `undefined` here,
  * which is a car with its lamps off rather than an error.
+ *
+ * Only braking. `FLAG.DRIFT` is in the byte and stays there, but the lamps are
+ * red or dark and nothing else: the handbrake counts as braking, so an amber
+ * drift state did not turn the lamps *on*, it changed the colour of lamps that
+ * were already lit - and a car that goes yellow every time it steps out reads
+ * as a fault rather than as a driver.
  */
 function lampsOf(flags) {
-  const f = flags | 0;
-  return { braking: !!(f & FLAG.BRAKE), drifting: !!(f & FLAG.DRIFT) };
+  return { braking: !!((flags | 0) & FLAG.BRAKE) };
 }
 
 function medalFor(ms) {
@@ -2577,6 +2606,24 @@ function updateRemotes(dt) {
 function contactOn() {
   if (CFG.mode !== 'room') return false;
   return S.racePhase === 'free' || (S.raceMode && S.racePhase === 'racing');
+}
+
+/**
+ * Does a lap driven right now belong on the leaderboard?
+ *
+ * **No lap driven in a room does.** There are other cars on the road in every
+ * phase of one: a tow down a straight is worth the better part of a second,
+ * contact moves you, and a race starts from a rolling grid rather than a
+ * standing lap. A time set that way is a record of the traffic rather than of
+ * the driving, and it was going on the board next to laps driven alone against
+ * the clock - which is what a time trial is, and what /solo is for.
+ *
+ * One answer in one place, like `contactOn` and `ghostOn`, because the two
+ * halves of a lap counting - the attempt and the time - must never disagree
+ * about it.
+ */
+function countsForTheBoard() {
+  return CFG.mode === 'solo';
 }
 
 function collidables() {
