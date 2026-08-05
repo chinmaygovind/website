@@ -1084,6 +1084,14 @@ HARD_RACE_MAX_MS = 900000
 # and every one of them is guarded by a race sequence number - see `_race_seq`.
 LIVE_PHASES = ("qual_countdown", "qualifying", "countdown", "racing")
 
+# What the host can change about the next race, and what it is if they change
+# nothing. Deliberately in the live room state rather than on `DriveGame`: a
+# room's settings are about the next few minutes, `create_all` makes tables and
+# not columns (so a new one would need a hand migration on the live database),
+# and a room that has been empty long enough for its state to be dropped is not
+# a room anybody is still setting up.
+ROOM_DEFAULTS = {"qualifying": True}
+
 _rooms = {}       # code -> live room state
 _sid_room = {}    # socket id -> (code, pid)
 
@@ -1096,10 +1104,6 @@ def _room(code):
                             "loop": None, "seq": 0,
                             # qualifying -> grid
                             "qual": {}, "qual_end": None, "grid": {}, "splits": {},
-                            # Whether there is a qualifying session at all. The
-                            # host's switch, and on by default: a grid somebody
-                            # drove for is better than a grid handed out.
-                            "qual_on": True,
                             # The replay of whoever is provisionally on pole,
                             # which is a ghost anybody in the room can chase.
                             "pole": None,
@@ -1114,7 +1118,8 @@ def _room(code):
                             "races_run": 0,
                             # Bumped by every race so a timer armed for one race
                             # can never close the next one.
-                            "race_seq": 0, "hard_end": None}
+                            "race_seq": 0, "hard_end": None,
+                            "settings": dict(ROOM_DEFAULTS)}
     return r
 
 
@@ -1150,7 +1155,7 @@ def _snapshot(r):
 def _race_state(r):
     return {"phase": r["phase"], "t0": r["t0"], "deadline": r["deadline"],
             "finish": r["finish"], "qual": _qual_state(r),
-            "qual_on": r["qual_on"], "pole": _pole_meta(r),
+            "settings": dict(r["settings"]), "pole": _pole_meta(r),
             "order": [pid for pid, _ in sorted(r["cars"].items(),
                                                key=lambda kv: -kv[1]["prog"])]}
 
@@ -1374,6 +1379,7 @@ def on_join_room(data):
     emit("room_hello", {"track": game.track, "me": me.to_dict(),
                         "players": [p.to_dict() for p in game.players],
                         "race": _race_state(r), "chat": r["chat"][-30:],
+                        "settings": dict(r["settings"]),
                         "server_ms": _now_ms()})
     _broadcast_roster(game)
 
@@ -1434,12 +1440,43 @@ def on_set_track(data):
     _broadcast_lobbies()
 
 
+@socketio.on("set_setting")
+def on_set_setting(data):
+    """The host changing what the next race will be.
+
+    Between races only, for the same reason the track is: it decides what
+    everybody is about to spend the next few minutes doing, and moving it out
+    from under a session already running would be changing the rules mid-game.
+    The whole set is sent back to the whole room, so nobody is looking at a
+    switch that says something different from the one the host is holding.
+    """
+    code = (data or {}).get("code", "").upper()
+    key = (data or {}).get("key")
+    if key not in ROOM_DEFAULTS:
+        return
+    with _lock(code):
+        game = DriveGame.query.filter_by(code=code).first()
+        if not game:
+            return
+        me = DrivePlayer.query.filter_by(game_id=game.id,
+                                         session_key=get_session_key()).first()
+        if not me or not me.is_host:
+            return
+        r = _room(code)
+        if r["phase"] in LIVE_PHASES:
+            emit("room_error", {"error": "Can't change the settings mid-race."})
+            return
+        r["settings"][key] = bool((data or {}).get("value"))
+        out = dict(r["settings"])
+    socketio.emit("room_settings", out, room="room:" + code)
+
+
 def _reset_race(r):
     """Put the room back to free practice with nothing left over.
 
-    `last_order` and `qual_on` deliberately survive: one is the result of the
-    race that just happened and is the next grid, the other is a setting the
-    host made about the room.
+    `last_order` and `settings` deliberately survive: one is the result of the
+    race that just happened and is the next grid, the other is what the host
+    has said about the room.
     """
     r["phase"] = "free"
     r["t0"] = r["deadline"] = r["hard_end"] = r["qual_end"] = None
@@ -1480,34 +1517,34 @@ def _abort_race(code, why):
         _broadcast_lobbies()
 
 
-@socketio.on("set_qual")
-def on_set_qual(data):
-    """The host turning the qualifying session on or off for this room.
+def _open_race(r):
+    """Wind a free room up for a new race, and say whether qualifying will run.
 
-    On by default, because a grid people drove for beats a grid handed out.
-    Off is for a room that just wants to race, where ninety seconds of everyone
-    circulating alone is ninety seconds of not racing - and then the grid comes
-    from the last result instead (see `_reverse_grid`).
-
-    Only between races: changing it mid-session would either take a session
-    away from people driving it or invent one nobody was told about.
+    Both answers end in five seconds of lights; what they are counting down to
+    is the difference. With qualifying on that is the session, and the grid is
+    the order it produces. With it off it is the race itself, and the grid is
+    the last result reversed - see `_reverse_grid`.
     """
-    code = (data or {}).get("code", "").upper()
-    on = bool((data or {}).get("on"))
-    with _lock(code):
-        game = DriveGame.query.filter_by(code=code).first()
-        if not game:
-            return
-        me = DrivePlayer.query.filter_by(game_id=game.id,
-                                         session_key=get_session_key()).first()
-        if not me or not me.is_host:
-            return
-        r = _room(code)
-        if r["phase"] in LIVE_PHASES:
-            emit("room_error", {"error": "Not in the middle of a race."})
-            return
-        r["qual_on"] = on
-    socketio.emit("room_opts", {"qual_on": on}, room="room:" + code)
+    quali = bool(r["settings"].get("qualifying", True))
+    r["race_seq"] += 1
+    r["qual"] = {}
+    r["pole"] = None
+    r["qual_end"] = None
+    r["t0"] = r["deadline"] = r["hard_end"] = None
+    r["finish"] = []
+    r["grid"] = {}
+    r["splits"] = {}
+    r["rec"] = None
+    # Rematch can land inside the twelve seconds the results sheet is up,
+    # before the tail of `_close_race` has tidied up, so the cars kept behind
+    # to be DNFs in the last race are dropped here too.
+    for pid in [p for p, c in r["cars"].items() if c["gone"]]:
+        r["cars"].pop(pid, None)
+    for c in r["cars"].values():
+        c["ms"], c["dnf"] = None, False
+    r["phase"] = "qual_countdown" if quali else "countdown"
+    r["t0"] = _now_ms() + COUNTDOWN_MS
+    return quali
 
 
 @socketio.on("start_race")
@@ -1515,10 +1552,10 @@ def on_start_race(data):
     """The host's one button, and it means different things by phase.
 
     In free practice it starts the five seconds before qualifying - or, with
-    qualifying switched off, the five seconds before the race itself. During
-    qualifying it is "go now", because ninety seconds is the right length for a
-    session nobody wants to cut short and the wrong length for four people who
-    are ready.
+    qualifying switched off in the room settings, the five seconds before the
+    race itself. During qualifying it is "go now", because ninety seconds is
+    the right length for a session nobody wants to cut short and the wrong
+    length for four people who are ready.
     """
     code = (data or {}).get("code", "").upper()
     skip = go = None
@@ -1539,37 +1576,18 @@ def on_start_race(data):
             if not _live(r):
                 emit("room_error", {"error": "Nobody is here to race."})
                 return
-            r["race_seq"] += 1
-            r["qual"] = {}
-            r["pole"] = None
-            r["qual_end"] = None
-            r["t0"] = r["deadline"] = r["hard_end"] = None
-            r["finish"] = []
-            r["grid"] = {}
-            r["splits"] = {}
-            r["rec"] = None
-            # Rematch can land inside the twelve seconds the results sheet is
-            # up, before the tail of `_close_race` has tidied up, so the cars
-            # kept behind to be DNFs in the last race are dropped here too.
-            for pid in [p for p, c in r["cars"].items() if c["gone"]]:
-                r["cars"].pop(pid, None)
-            for c in r["cars"].values():
-                c["ms"], c["dnf"] = None, False
+            quali = _open_race(r)
             game.status = "playing"
             game.last_activity_at = datetime.utcnow()
             db.session.commit()
-            # Five seconds of lights either way. What they are counting down to
-            # is the only difference: a session, or the race itself.
-            r["phase"] = "qual_countdown" if r["qual_on"] else "countdown"
-            r["t0"] = _now_ms() + COUNTDOWN_MS
-            go = (r["race_seq"], r["phase"], r["t0"], game.track)
+            go = (r["race_seq"], quali, r["t0"], game.track)
     if skip is not None:
         _close_qual(code, skip)
         return
     if go is None:
         return
-    seq, phase, t0, track = go
-    if phase == "qual_countdown":
+    seq, quali, t0, track = go
+    if quali:
         # Nobody is placed anywhere for this one. Qualifying is not a start
         # line - everyone leaves the pits when they like, on their own lap -
         # so the lights are simply "the session opens now", counted down from

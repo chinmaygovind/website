@@ -16,9 +16,10 @@ const BRAKE_ON = 0xff2b2b;
 // Amber, the same amber the drifting touch button goes, so the on-screen
 // control and the car agree about what is happening.
 const DRIFT_ON = 0xffd96b;
-// One opacity for everything you can see through: the ghost, a replay, and a
-// rival during qualifying. They are all the same statement - this car is not
-// solid - so they should not be three different amounts of see-through.
+// How see-through a car is when it is not something you can hit. The ghost, a
+// replay and a rival you are about to drive through are all the same statement
+// - this car is not solid - so they are one number rather than three amounts
+// of see-through.
 const GHOST_OPACITY = 0.42;
 
 export class CarView {
@@ -30,16 +31,21 @@ export class CarView {
     const col = new THREE.Color(color);
     const dark = col.clone().multiplyScalar(0.55);
 
-    // Every material this car owns, so `setGhostly` can fade the whole thing
-    // later. They are per-view rather than shared, so one car going translucent
-    // cannot take the others with it.
-    this.mats = [];
-    this.solidOpacity = ghost ? GHOST_OPACITY : 1;
+    // Every material the car is built from, kept so it can be turned
+    // translucent and back at run time - see setGhostly. The label is
+    // deliberately not one of them: a name has to stay readable whatever the
+    // car under it is doing.
+    //
+    // `_solid` is what "not translucent" means for *this* car, which is not
+    // always opaque: a ghost is born translucent, so making one solid because a
+    // phase changed would turn the ghost into a fifth real-looking car.
+    this._mats = [];
+    this._solid = ghost ? GHOST_OPACITY : 1;
     const mat = (c, extra = {}) => {
       const m = new THREE.MeshLambertMaterial(
         Object.assign({ color: c, flatShading: true,
-                        transparent: ghost, opacity: this.solidOpacity }, extra));
-      this.mats.push(m);
+                        transparent: ghost, opacity: this._solid }, extra));
+      this._mats.push(m);
       return m;
     };
 
@@ -87,11 +93,11 @@ export class CarView {
     }
 
     // contact shadow: one dark disc laid on the surface under the car
-    this.shadowBase = ghost ? 0.1 : 0.24;
+    this._shadowOpacity = ghost ? 0.1 : 0.24;
     this.shadow = new THREE.Mesh(
       new THREE.CircleGeometry(1.5, 14),
       new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true,
-                                    opacity: this.shadowBase, depthWrite: false }));
+                                    opacity: this._shadowOpacity, depthWrite: false }));
     this.shadow.rotation.x = -Math.PI / 2;
     scene.add(this.shadow);
 
@@ -109,14 +115,17 @@ export class CarView {
     this.brakeMats = [];
     for (const s of [-1, 1]) {
       const m = new THREE.MeshBasicMaterial({
-        color: BRAKE_OFF, transparent: ghost, opacity: this.solidOpacity });
+        color: BRAKE_OFF, transparent: ghost, opacity: this._solid });
       const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.22, 0.1), m);
       lamp.position.set(s * 0.6, 0.5, 1.73);
       this.body.add(lamp);
       this.brakeMats.push(m);
-      this.mats.push(m);
+      this._mats.push(m);
     }
+    // The lamps have three states now, so what is cached is the colour rather
+    // than a boolean.
     this._lamp = null;
+    this._ghostly = ghost;
 
     scene.add(this.group);
     this.scene = scene;
@@ -164,7 +173,7 @@ export class CarView {
         this.shadow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), opts.groundN);
       }
       const fade = Math.max(0, 1 - Math.abs(pos.y - opts.groundY) / 7);
-      this.shadow.material.opacity = this.shadowBase * fade;
+      this.shadow.material.opacity = this._shadowOpacity * fade;
     } else {
       this.shadow.visible = false;
     }
@@ -176,24 +185,31 @@ export class CarView {
   }
 
   /**
-   * Fade the whole car, or bring it back.
+   * Solid, or a translucent shell of the same car.
    *
-   * Used for qualifying, where every other car on the road is one you drive
-   * straight through. Seeing through them is the only honest way to say so -
-   * a solid-looking car you cannot touch is a bug until somebody explains it -
-   * and it is the same look the ghost has, for the same reason.
+   * Colour is the whole of how you tell one rival from another, so it is not
+   * touched: only opacity moves, and the name above the car does not fade at
+   * all. `transparent` is part of a material's program key in three.js, so
+   * flipping it recompiles a shader - hence the early return, since this is
+   * called from the frame loop and the answer changes about twice a race.
+   *
+   * "Solid" is `_solid` rather than 1, because a ghost is born translucent and
+   * turning one opaque would make it a fifth real-looking car.
    */
   setGhostly(on) {
-    const o = on ? GHOST_OPACITY : this.solidOpacity;
-    if (this._ghostly === on) return;
+    on = !!on;
+    if (on === this._ghostly) return;
     this._ghostly = on;
-    for (const m of this.mats) {
+    const o = on ? GHOST_OPACITY : this._solid;
+    for (const m of this._mats) {
       m.transparent = o < 1;
       m.opacity = o;
       m.needsUpdate = true;
     }
-    // Set through the base, since `update` redraws the disc every frame.
-    this.shadowBase = on ? 0.1 : (this.solidOpacity < 1 ? 0.1 : 0.24);
+    // Through the stored opacity, since `update` redraws the disc every frame
+    // from it and would otherwise put it straight back.
+    this._shadowOpacity = (on || this._solid < 1) ? 0.1 : 0.24;
+    this.shadow.material.opacity = this._shadowOpacity;
   }
 
   setVisible(v) {

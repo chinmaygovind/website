@@ -75,6 +75,7 @@ function toggleHelp() {} function setSound() {} function showSide() {}
 function resetToStart() {} function chooseGhost() {} function setGhostMode() {}
 function toggleTracks() {} function toggleBoard() {} function openBoard() {}
 function stopWatching() {} function renderTrackCards() {}
+function renderSettings() {} function openChat() {} function closeChat() {}
 """
 
 # A thumb: every press and release advances the clock by a millisecond, so the

@@ -78,7 +78,6 @@ const S = {
   started: false,          // has the local run clock been started
   raceMode: false,         // are we in a synced race right now
   racePhase: 'free',
-  qualOn: true,            // does this room hold a qualifying session at all
   pole: null,              // {pid,name,color,ms} of the provisional pole lap
   qualAgain: null,         // the "line up again" timer after a qualifying lap
   raceT0: null,            // local perf-clock ms of the green light
@@ -86,6 +85,7 @@ const S = {
   raceDone: false,         // finished or retired: out of the race, still in the room
   qualEnd: null,           // local perf-clock ms qualifying closes
   standings: [],
+  settings: { qualifying: true },   // rooms only: what the next race will be
   lastPose: 0,
   socket: null,
   clockOffset: 0, bestRtt: Infinity,
@@ -431,8 +431,19 @@ function bindInput() {
       else toggleMenu();
     }
     if (e.code === 'KeyH') toggleHelp();
+    // The track switcher, from the road. Changing track is the most common
+    // thing there is to do that is not driving, and reaching for it should not
+    // mean finding a small icon in the corner first.
     if (e.code === 'KeyP') toggleTracks();
-    if (e.code === 'KeyM') setSound(!S.sound.enabled);
+    // M is the one key that means two things, and it is the right two. Alone
+    // there is nobody to talk to and the sound is worth a key; in a room the
+    // chat is the thing you want without taking a hand off the wheel to find,
+    // and muting is still in settings with every other preference.
+    // preventDefault or the keypress that opened the box types an "m" into it.
+    if (e.code === 'KeyM') {
+      if (CFG.mode === 'room') { e.preventDefault(); openChat(); }
+      else setSound(!S.sound.enabled);
+    }
     // G steps through the three ghosts there are rather than toggling the last
     // one back on: picking between your own lap and the record is the choice
     // worth having on a key, and it saves opening settings to make it. A lap
@@ -597,6 +608,20 @@ function bindInput() {
   if ($('side')) {
     $('btnRoom').onclick = () => showSide(!document.body.classList.contains('side-open'));
     $('btnRoomClose').onclick = () => showSide(false);
+    const qual = $('optQual');
+    qual.onclick = () => {
+      if (!S.isHost || !S.socket) return;
+      S.socket.emit('set_setting', { code: CFG.room, key: 'qualifying',
+                                     value: !S.settings.qualifying });
+    };
+    // Escape gets you out of the message box and back to the car. It never
+    // reaches the window handler - that one ignores anything typed into an
+    // input, which is what keeps WASD from driving while you write - so the
+    // way out has to be bound here.
+    $('chatInput').addEventListener('keydown', (e) => {
+      if (e.code === 'Escape') { e.preventDefault(); closeChat(); }
+    });
+    renderSettings();
     showSide(true);           // you arrive in a lobby, so start with it open
   }
 }
@@ -604,6 +629,51 @@ function bindInput() {
 function showSide(on) {
   document.body.classList.toggle('side-open', on);
   $('btnRoom').classList.toggle('on', on);
+  if (!on) closeChat();
+}
+
+/**
+ * M: the cursor in the message box, without leaving the road.
+ *
+ * Anything held goes with it. The keyup for a key you were holding when you
+ * started typing is delivered to the input and swallowed, so without this the
+ * car would drive itself into the barrier at full throttle for as long as the
+ * sentence took - and the window handler ignores keystrokes aimed at an input,
+ * which is exactly what stops WASD steering while you write.
+ */
+function openChat() {
+  const inp = $('chatInput');
+  if (!inp) return;
+  showSide(true);
+  keys.clear();
+  inp.focus();
+}
+
+function closeChat() {
+  const inp = $('chatInput');
+  if (inp) inp.blur();
+}
+
+/**
+ * The room's race settings, as the server last described them.
+ *
+ * One switch so far. It is drawn for everybody and pressable only by the host,
+ * rather than being the host's panel: what the next race will be is something
+ * you are about to drive, so it cannot be a rule only one person can read.
+ * Locked while a session is live for the same reason the track is - the server
+ * refuses it there anyway, and a switch that moved under your finger without
+ * changing anything would be worse than one that does not move.
+ */
+function renderSettings() {
+  const b = $('optQual');
+  if (!b) return;
+  const on = !!S.settings.qualifying;
+  b.classList.toggle('on', on);
+  b.setAttribute('aria-checked', on ? 'true' : 'false');
+  b.disabled = !S.isHost || livePhase();
+  $('qualNote').textContent = on
+    ? 'Ninety seconds of practice first - your fastest lap sets the grid.'
+    : 'No qualifying: the grid is the last race, reversed.';
 }
 
 // ---------------------------------------------------------------------------
@@ -1124,6 +1194,13 @@ const PHASE_LABEL = {
 // seconds, then something begins that everybody is in.
 const COUNTDOWN_PHASES = ['qual_countdown', 'countdown', 'racing'];
 
+/** A session is actually running, so nothing about the room may change. */
+function livePhase() {
+  const p = S.previewPhase || S.racePhase;
+  return p === 'qual_countdown' || p === 'qualifying' ||
+         p === 'countdown' || p === 'racing';
+}
+
 /**
  * Everything that depends on the phase, in one place.
  *
@@ -1140,7 +1217,7 @@ function applyPhase() {
   setMode(text, racing);
 
   const start = $('btnStartRace'), end = $('btnEndRace'), resign = $('btnResign');
-  const live = COUNTDOWN_PHASES.includes(p) || p === 'qualifying';
+  const live = livePhase();
   // Only the host starts or stops one, so only the host is offered either.
   // Not during `results`: the sheet covering the screen has Rematch on it, and
   // the same offer twice - once behind the sheet making it - is one too many.
@@ -1152,7 +1229,7 @@ function applyPhase() {
   // start the race itself. A button labelled "Start race" that opens ninety
   // seconds of practice is a button that lied.
   setLabel(start, p === 'qualifying' ? 'Start race now'
-                : (S.qualOn ? 'Start qualifying' : 'Start race'));
+                : (S.settings.qualifying ? 'Start qualifying' : 'Start race'));
   end.style.display = (S.isHost && live) ? '' : 'none';
   // It cancels before the lights and flags the race after them. Saying which
   // matters: one of them throws a result away and the other records one.
@@ -1170,16 +1247,10 @@ function applyPhase() {
   // is centred across the whole of it, so the two need telling apart.
   document.body.classList.toggle('qualifying', p === 'qualifying');
   if (p !== 'qualifying') stopQualClock();
-  // The host's switch, and everyone else's read-only view of it. It cannot be
-  // touched while a session is on: turning it off under people who are driving
-  // one takes their session away.
-  const qbox = $('qualToggle');
-  if (qbox) {
-    qbox.checked = !!S.qualOn;
-    qbox.disabled = !S.isHost || live;
-    $('qualSetting').classList.toggle('locked', qbox.disabled);
-  }
   showHostOnly();
+  // The host can change mid-room and a session locks the switch, so the
+  // settings follow the phase rather than being set when either happens.
+  renderSettings();
 }
 
 // --- the two irreversible buttons -----------------------------------------
@@ -2209,8 +2280,9 @@ function connect() {
   });
   socket.on('room_hello', (d) => {
     renderRoster(d.players);
+    if (d.settings) S.settings = d.settings;
+    else if (d.race && d.race.settings) S.settings = d.race.settings;
     S.racePhase = d.race ? d.race.phase : 'free';
-    S.qualOn = !d.race || d.race.qual_on !== false;
     S.pole = (d.race && d.race.pole) || null;
     applyPhase();
     // Walking in on a session already running: show it rather than pretending
@@ -2221,10 +2293,6 @@ function connect() {
       if (S.ghostMode === 'pole') loadPoleGhost();
     }
     (d.chat || []).forEach(addChat);
-  });
-  socket.on('room_opts', (d) => {
-    S.qualOn = d.qual_on !== false;
-    applyPhase();
   });
   socket.on('roster', (d) => {
     renderRoster(d.players);
@@ -2285,6 +2353,17 @@ function connect() {
     toast('Retired - back to practice');
     resetToStart();
   });
+  // The host moved a switch. Said out loud as well as drawn, because the
+  // drawer is usually shut and this changes what everybody is about to do.
+  socket.on('room_settings', (d) => {
+    const was = S.settings.qualifying;
+    S.settings = d || S.settings;
+    renderSettings();
+    if (!!S.settings.qualifying !== !!was) {
+      toast(S.settings.qualifying ? 'Qualifying on - a lap sets the grid'
+                                  : 'Qualifying off - last race, reversed');
+    }
+  });
   socket.on('chat', addChat);
   socket.on('kicked', (d) => { if (CFG.me && d.pid === CFG.me.pid) location.href = '/lobbies'; });
   socket.on('room_closed', () => { location.href = '/lobbies'; });
@@ -2336,8 +2415,10 @@ function connect() {
   $('btnWatchRace').onclick = () => {
     if (S.lastRaceId) location.href = '/race/' + S.lastRaceId;
   };
-  $('qualToggle').onchange = (e) => {
-    socket.emit('set_qual', { code: CFG.room, on: e.currentTarget.checked });
+  $('optQual').onclick = (e) => {
+    if (e.currentTarget.disabled) return;
+    socket.emit('set_setting', { code: CFG.room, key: 'qualifying',
+                                 value: !S.settings.qualifying });
   };
   $('shareLink').value = location.origin + '/j/' + CFG.room;
   $('btnShareCopy').onclick = async () => {
@@ -2352,11 +2433,15 @@ function connect() {
       toast('Press copy on your keyboard');
     }
   };
+  // Enter sends it and hands the keyboard back to the car. Staying in the box
+  // is what a chat window does; this is a driving game, and the next thing you
+  // do after saying something is drive.
   $('chatForm').onsubmit = (e) => {
     e.preventDefault();
     const inp = $('chatInput');
     if (inp.value.trim()) socket.emit('chat', { text: inp.value.trim() });
     inp.value = '';
+    inp.blur();
   };
   // Track picking is the switcher's job in both modes now - see pickTrack.
 }
@@ -2466,9 +2551,10 @@ function updateRemotes(dt) {
     const off = !!(r.flags & FLAG.RESPAWN);
     r.view.update(r.pos, r.rq, Object.assign({ spin: 0 }, lampsOf(r.flags)));
     r.view.group.visible = !off;
-    // See-through for the ninety seconds you drive through them - see
-    // CarView.setGhostly and contactOn().
-    r.view.setGhostly(S.racePhase === 'qualifying');
+    // Solid cars are solid-looking, and the same question decides both: being
+    // able to see through a rival is the only warning that you are about to
+    // drive through one.
+    r.view.setGhostly(!contactOn());
   }
 }
 

@@ -655,6 +655,15 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   at the one moment you were closest. Braking is the flag that must change
   nothing except the lamps. `FLAG` is imported into `game.js` now rather than
   the bits being written by hand.
+- **A car you cannot hit does not look like one you can.** `contactOn()` is read
+  by the drawing as well as by `collidables()`, so what you can hit and what you
+  can see through can never disagree: where there is no contact the rivals go
+  translucent at the ghost's `GHOST_OPACITY`, keeping their own colour and their
+  name at full strength, since colour is the whole of how you tell one from
+  another. That is `CarView.setGhostly`, and it early-returns when nothing has
+  changed because `transparent` is part of a material's program key in three.js
+  - flipping it recompiles a shader, and this is called from the frame loop for
+  an answer that moves about twice a race.
 - **A remote car chases its target, except when no car could have driven it.**
   `updateRemotes` extrapolates the last packet forward on its velocity and
   chases exponentially, which is right for the small corrections between
@@ -729,15 +738,21 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   were already in it and a lap in progress that no longer counted. Nobody is
   *placed* for it, though: a session has no start line - everyone leaves when
   they like, on their own lap - so it counts down over wherever you are sitting.
-- **The host can switch qualifying off**, from the room drawer, and it is on by
-  default: a grid people drove for beats a grid handed out. With it off, Start
-  race means start the race, and the grid is **the last race's finishing order,
-  reversed** (`_reverse_grid`) - the arbitrary ordering that is at least about
-  the racing, so a room of mixed ability keeps having close races instead of one
-  procession after another. Anyone who was not in that race lines up behind it,
-  shuffled, and the first race of a room is shuffled entirely. The switch cannot
-  be moved mid-session, and everybody can see it: a rule four people out of five
-  cannot see is not a rule they can plan around.
+- **Qualifying can be switched off, and then the grid is the last race
+  reversed.** It is the room's one setting so far (`ROOM_DEFAULTS`, on by
+  default) and it lives in the live room state rather than on `DriveGame`: it is
+  about the next few minutes, and `create_all` makes tables and not columns, so
+  a column would need a hand migration on the live database for something a room
+  forgets anyway. With it off, `_open_race` sends the room straight to
+  `countdown` and the order comes from `_reverse_grid` - whoever was beaten
+  starts ahead of whoever beat them, which is the arbitrary ordering that is at
+  least *about* the racing, so a room of mixed ability keeps having close races
+  instead of one procession after another. Anyone who was not in that race lines
+  up behind it, shuffled, and a room's first race is shuffled entirely. The host
+  moves the switch from the room drawer, the server refuses it mid-session
+  (`LIVE_PHASES`, same as the track), and the whole set is fanned back out as
+  `room_settings` so nobody is reading a switch that says something different
+  from the host's.
 - **The grid is staggered and pole starts on the inside of the first corner.**
   Ordering alone does not fix a two-by-two grid: cars level with each other
   reach the first corner together and the one on the inside of it simply gets
@@ -879,6 +894,13 @@ field from a dark field.
   `top`: an absolutely positioned box with both is stretched between them, which put
   the map on top of the track card on any screen short enough for that rule but too
   wide for the narrow one.
+- **The home page is a headline, two doors and how to play.** "Race online!", then
+  a red **Drive now** (`/solo`) beside a yellow **Race your friends** (`/lobbies`) -
+  two halves of the game rather than a primary and a fallback, which is why the
+  second one is a colour of its own rather than the white secondary. There is no
+  grey standfirst under the headline: it restated the three paragraphs below it.
+  Those are one each - what a run is, what Solo is, what Multiplayer is - and the
+  track cards follow, so the page is read once and clicked from thereafter.
 - **Solo is `/solo`, and the track is something you change from inside it.** There is
   no "pick a track" page any more: `/solo` opens whatever you were last driving (kept
   in the session, so the first paint is right) and the **track switcher** - the map
@@ -1009,8 +1031,17 @@ field from a dark field.
   pins the tow so the air round the car can be photographed without a rival.
 - **The room drawer's button is a person, not a hamburger.** Three stacked bars sat
   next to the settings icon, which is three stacked sliders, and at a glance they were
-  the same button. Chat is the last thing in the drawer so it takes the leftover height
-  and the box you type into sits on the floor of the panel.
+  the same button. The drawer reads top to bottom as who is here, what the next
+  race will be, the way out, and then the talking: **chat is last and the box you
+  type into is on the floor of the panel**, which is `#chatLog` stretching rather
+  than the block being pushed down - capping the log left the input floating half
+  way up with a hole under it.
+- **Race settings are in the drawer, drawn for everybody and pressable by the
+  host.** One switch so far (Qualifying), not a host-only panel: what the next
+  race will be is something everyone is about to drive, so it cannot be a rule
+  only one person can read. `renderSettings` is called from `applyPhase`, so it
+  follows both the phase (a live session locks it) and the host changing
+  mid-room, rather than being assigned at either event.
 - **The room panel is a drawer at every screen size**, opened by that button. It
   used to be pinned open - a 274px column on a desktop, a 46vh slab across the bottom
   of a phone - so the multiplayer furniture sat on top of the road and the driving
@@ -1107,9 +1138,21 @@ field from a dark field.
   grid, a respawn puts the car on the *start gate*, which is in front of every
   slot on it, so pressing either during the countdown walked you up the road; a
   world record was set that way. A message would turn a non-event into an event,
-  so there is none. `P` opens the track switcher (it always did, and was written
-  down nowhere until now), and in a room **Enter is the host's start button** -
-  which is why it is no longer a third way to press T, along with Backspace.
+  so there is none. `P` opens the track switcher, which is the most common thing
+  there is to do that is not driving. **Enter is the host's start button** in a
+  room, which is why it is no longer a third way to press T, along with
+  Backspace - and inside the chat box it still sends the message.
+- **`M` is the one key that means two things, and it is the right two.** Solo it
+  mutes; in a room it puts the cursor in the chat box (opening the drawer), and
+  Enter sends and hands the keyboard straight back to the car - staying in the box
+  is what a chat window does, and this is a driving game. Muting is still in
+  settings with every other preference, and the Controls sheet lists whichever M
+  you have (`.room-only` / `.solo-only`, the same mechanism as `.touch-only`).
+  Opening it clears `keys`: the keyup for anything you were holding is delivered
+  to the input and swallowed, so without that the car drives itself into the
+  barrier at full throttle for as long as the sentence takes. Escape is bound on
+  the input itself, because the window handler ignores keystrokes aimed at an
+  input - which is exactly what stops WASD steering while you type.
 - **The type is Titillium Web**, self-hosted in `static/fonts/` at four weights
   (~46KB total, no CDN). It replaced xkcd Script, which is a good joke on the landing
   page and the wrong voice entirely for a timing screen. Titillium is the closest
@@ -1120,18 +1163,18 @@ field from a dark field.
 
 ### Tests
 
-`scripts/tests.sh drive` - 399 tests, about 3:00. `test_tracks.py` and
+`scripts/tests.sh drive` - 404 tests, about 3:00. `test_tracks.py` and
 `test_runcheck.py` are pure Python; `test_app.py` runs the real routes against a
 throwaway SQLite file (the `/solo` memory, the board and ghost APIs, and a guest's run
 being replayed after login). **`test_race.py` covers the room's race machine** -
 the ways a race used to strand a room (no finisher, the last car leaving, a
-stale timer closing the wrong race), the grid rules, the rating rules, and the
-replay recorder. Most of it builds the live room state directly, since it is
-plain dicts and what is under test is the bookkeeping rather than the wire; the
-last group is different and drives the **real socket handlers** from `free` all
-the way to the green light, with the emits captured and the timers fired by
-hand, because the thing worth pinning about a phase machine is the order it
-goes through them in. **`test_sim.py` runs the game's real JavaScript
+stale timer closing the wrong race), the grid rules, the room's settings, the
+rating rules, and the replay recorder. Most of it builds the live room state
+directly, since it is plain dicts and what is under test is the bookkeeping
+rather than the wire; the last group is different and drives the **real socket
+handlers** from `free` all the way to the green light, with the emits captured
+and the timers fired by hand, because the thing worth pinning about a phase
+machine is the order it goes through them in. **`test_sim.py` runs the game's real JavaScript
 headlessly**: `tests/jsrt.py` strips the ES module syntax, swaps three.js for
 `tests/three_stub.js` (real Vector3/Quaternion maths, inert graphics), and runs it in
 QuickJS, then `tests/autopilot.js` *drives every track to the finish*. That is the test

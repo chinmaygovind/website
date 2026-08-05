@@ -136,6 +136,11 @@ p { line-height: 1.55; }
 .btn.dark { background: var(--ink); color: var(--paper); }
 .btn.dark:hover { background: #33333a; }
 .btn.ghost { background: transparent; color: var(--ink); }
+/* Yellow is the other cars - the multiplayer half of the home page. Ink on it
+   rather than white: gold is a light colour and white text on it is unreadable
+   at any size, which is also why the medal swatches are never labelled. */
+.btn.yellow { background: var(--gold); color: var(--ink); }
+.btn.yellow:hover { background: #f0c235; }
 .btn.big { font-size: 1.3rem; padding: .7rem 1.4rem; }
 .row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
 /* Equal columns instead of a wrapping flex row, so a longer label widens every
@@ -563,6 +568,11 @@ body.touch .hint-touch { display: inline; }
 .touch-only { display: none; }
 body.touch .keys-only { display: none; }
 body.touch .touch-only { display: table; }
+/* And the same again for the one key that means something different in a room:
+   the sheet lists the M you actually have rather than both of them. */
+.room-only { display: none; }
+body.room .room-only { display: table-row; }
+body.room .solo-only { display: none; }
 .sheet .controls { margin: 0; }
 
 .overlay {
@@ -874,23 +884,44 @@ body.touch.side-open .hud-tr { transform: none; }
   border: 1px solid var(--hud-line); border-radius: 8px;
 }
 .share-row .btn.small { width: auto; flex: 0 0 auto; }
-/* The host's one pre-race setting. Greyed rather than hidden for everybody
-   else: what the room is about to do is everybody's business, and a checkbox
-   that vanishes for four people out of five is a rule nobody can see. */
-.qual-setting label { display: flex; align-items: center; gap: .5rem; cursor: pointer;
-                      font-size: .9rem; }
-.qual-setting input { width: 16px; height: 16px; accent-color: #ffd96b; }
-.qual-setting p { margin: .25rem 0 0 1.9rem; font-size: .76rem; line-height: 1.35; }
-.qual-setting.locked label { cursor: default; opacity: .65; }
 .pl { display: flex; align-items: center; gap: .4rem; font-size: .88rem; padding: .15rem 0; }
 .pl.me { color: #ffd96b; }
 .pl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pl-elo { margin-left: auto; font-family: var(--mono); font-size: .75rem; color: #b9c2d0; }
 .kick { background: none; border: 0; color: #ff8a7a; cursor: pointer; font-size: 1rem; }
+
+/* --- the room's race settings --------------------------------------------
+   A switch rather than a button that says what it will do next: this is a
+   state of the room, and the useful thing to see at a glance is which way it
+   is set, not what pressing it would change it to. Everyone gets the same row;
+   for everyone but the host it is simply not pressable, so the room is one
+   thing described one way rather than a host's panel and a guest's. */
+.setting {
+  display: flex; align-items: center; gap: .5rem; width: 100%;
+  background: none; border: 0; padding: .2rem 0; cursor: pointer;
+  color: inherit; font-family: var(--sans); font-size: .92rem; text-align: left;
+}
+.setting-name { flex: 1; }
+.switch {
+  flex: none; width: 38px; height: 21px; border-radius: 999px;
+  background: rgba(255, 255, 255, .18); border: 1px solid var(--hud-line);
+  position: relative; transition: background .14s;
+}
+.switch i {
+  position: absolute; top: 2px; left: 2px; width: 15px; height: 15px;
+  border-radius: 50%; background: #fff; transition: transform .14s;
+}
+.setting.on .switch { background: #55e08a; }
+.setting.on .switch i { transform: translateX(17px); }
+.setting:disabled { cursor: default; opacity: .75; }
+.setting-note { font-size: .76rem; color: #b9c2d0; line-height: 1.35; }
 /* Chat is the last block in the drawer and takes whatever height is left, so
-   the input sits on the floor of the panel however many players are listed. */
+   the box you type into is on the floor of the panel however many players are
+   listed and whatever else is above it. The log itself is what stretches -
+   capping it left the input floating half way up the drawer with a hole under
+   it, which is exactly what "chat at the bottom" is not. */
 .side-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: auto; }
-#chatLog { flex: 1; min-height: 70px; max-height: 190px; overflow: auto; font-size: .82rem; }
+#chatLog { flex: 1; min-height: 70px; overflow: auto; font-size: .82rem; }
 .cm { padding: .1rem 0; line-height: 1.35; word-break: break-word; }
 #chatInput { font-family: var(--sans); font-size: .85rem; padding: .3rem .45rem; border-width: 1px; }
 
@@ -968,7 +999,6 @@ body.side-open #touch { display: none; }
 }
 
 @media (max-width: 860px) {
-  #chatLog { max-height: 32vh; }
   /* Minimap out of the bottom-left corner - that is the steering thumb's. */
   .hud-bl { bottom: auto; top: calc(84px + env(safe-area-inset-top, 0px)); }
   #minimap { width: 118px; height: 92px; }

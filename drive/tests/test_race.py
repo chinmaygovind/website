@@ -163,7 +163,7 @@ def test_the_first_race_of_a_room_is_not_lined_up_the_same_way_twice(env):
 
 def test_a_room_qualifies_unless_the_host_says_otherwise(env):
     A = env
-    assert A._room("NEW")["qual_on"] is True
+    assert A._room("NEW")["settings"]["qualifying"] is True
 
 
 def test_the_settings_and_the_last_result_survive_a_race(env):
@@ -171,11 +171,11 @@ def test_the_settings_and_the_last_result_survive_a_race(env):
     host's setting and the other is the next grid."""
     A = env
     r = _room(A)
-    r["qual_on"] = False
+    r["settings"]["qualifying"] = False
     r["last_order"] = ["a", "b"]
     A._reset_race(r)
     assert r["phase"] == "free"
-    assert r["qual_on"] is False and r["last_order"] == ["a", "b"]
+    assert r["settings"]["qualifying"] is False and r["last_order"] == ["a", "b"]
 
 
 def test_the_qualifying_countdown_is_a_phase_a_race_can_be_called_off_in(env):
@@ -187,6 +187,47 @@ def test_the_qualifying_countdown_is_a_phase_a_race_can_be_called_off_in(env):
     _add_car(A, r, "a", on_grid=False)
     A._abort_race("TEST", "testing")
     assert r["phase"] == "free"
+
+
+# ---------------------------------------------------------------------------
+# The room's settings
+# ---------------------------------------------------------------------------
+
+def test_qualifying_is_on_unless_the_host_turns_it_off(env):
+    A = env
+    assert A._room("SET1")["settings"]["qualifying"] is True
+
+
+def test_a_room_owns_its_settings(env):
+    """A copy of the defaults, not the defaults - one host must not set every
+    other room's rules along with their own."""
+    A = env
+    A._room("SET2")["settings"]["qualifying"] = False
+    assert A._room("SET3")["settings"]["qualifying"] is True
+    assert A.ROOM_DEFAULTS["qualifying"] is True
+
+
+def test_opening_a_race_lights_the_session(env):
+    """Both answers end in five seconds of lights. With qualifying on, what
+    they are counting down to is the session; the clock on it is not started
+    until they have run out, so the ninety seconds are ninety seconds of
+    driving rather than eighty-five."""
+    A = env
+    r = _room(A, phase="free")
+    assert A._open_race(r) is True
+    assert r["phase"] == "qual_countdown"
+    assert r["qual_end"] is None and r["t0"] is not None
+
+
+def test_opening_a_race_without_qualifying_goes_straight_to_the_grid(env):
+    """With it off the room never enters the session at all - the same five
+    seconds of lights, counting down to the race itself."""
+    A = env
+    r = _room(A, phase="free")
+    r["settings"]["qualifying"] = False
+    assert A._open_race(r) is False
+    assert r["phase"] == "countdown"
+    assert r["qual"] == {} and r["qual_end"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -595,7 +636,8 @@ def test_with_qualifying_off_the_lights_are_the_races_own(live):
     """Nobody wants ninety seconds of driving alone before every race, so the
     session can be switched off - and then Start race means start the race."""
     A, r, pids, sent, fired = live
-    _as_host(A, A.on_set_qual, {"code": "LIVE", "on": False})
+    _as_host(A, A.on_set_setting,
+             {"code": "LIVE", "key": "qualifying", "value": False})
     _as_host(A, A.on_start_race, {"code": "LIVE"})
     assert r["phase"] == "countdown"
     assert "race_start" in [e for e, _ in sent]
@@ -609,11 +651,12 @@ def test_the_qualifying_switch_is_the_hosts_and_only_between_races(live):
     with A.app.test_request_context():
         from flask import session
         session["session_key"] = "sk-other"
-        A.on_set_qual({"code": "LIVE", "on": False})
-    assert r["qual_on"] is True, "anybody could turn qualifying off"
+        A.on_set_setting({"code": "LIVE", "key": "qualifying", "value": False})
+    assert r["settings"]["qualifying"] is True, "anybody could turn it off"
     _as_host(A, A.on_start_race, {"code": "LIVE"})
-    _as_host(A, A.on_set_qual, {"code": "LIVE", "on": False})
-    assert r["qual_on"] is True, "changed under people already qualifying"
+    _as_host(A, A.on_set_setting,
+             {"code": "LIVE", "key": "qualifying", "value": False})
+    assert r["settings"]["qualifying"] is True, "changed under a live session"
 
 
 def test_a_qualifying_lap_puts_its_replay_on_pole(live):
