@@ -1,9 +1,17 @@
 {# One player's name on a board: their flag, their name, and a way to them.
 
-   The flag art and the profile both live on the main site, so both are
-   absolute (`site_url` comes from the context processor).
-   `UserProfile.flag_path` decides *which* flag - country or US state - so this
-   template never has to know that there is a choice.
+   **The way to them is Drive's own account page**, not the profile on the main
+   site. A name on a board here is a driver, and what you want off the back of
+   a lap time is their other lap times - so the click that is one step away
+   goes to the page with those on it, and that page carries the link on to the
+   rest of them (see account.html). It used to jump straight to `/accounts/`,
+   which answered a question about King of Tokyo when the one being asked was
+   about this track.
+
+   The flag art still lives on the main site, so it stays absolute (`site_url`
+   comes from the context processor). `UserProfile.flag_path` decides *which*
+   flag - country or US state - so this template never has to know that there
+   is a choice.
 
    `user.display` rather than `user.username`: the username is the login and
    the address of a profile, the display name is what a person is called. The
@@ -15,7 +23,7 @@
   {%- if user -%}
     {%- if user.flag_path %}<img class="flag" src="{{ site_url }}{{ user.flag_path }}"
       alt="" loading="lazy"/>{% endif -%}
-    <a class="player-link" href="{{ site_url }}/accounts/{{ user.username }}"
+    <a class="player-link" href="/account/{{ user.username }}"
        >{{ user.display }}</a>
   {%- else -%}
     ?

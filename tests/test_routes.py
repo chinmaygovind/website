@@ -84,6 +84,33 @@ def test_a_nonsense_tab_falls_back_rather_than_erroring(client, make_user):
     assert client.get("/accounts/tabbed?game=chess").status_code == 200
 
 
+def test_a_recent_result_says_what_time_of_day_it_happened(client, make_user, db):
+    """A date on its own puts two games from the same evening on the same row
+    twice, and "when did I actually set that" is what this list is read for.
+
+    Served in UTC, which is what the database holds and what is right before
+    any script runs; the script at the foot of the profile rewrites it into the
+    reader's own timezone. The `<time datetime>` is what it rewrites from, so
+    both halves are pinned here.
+    """
+    from sqlalchemy import text
+    uid = make_user("driver")
+    # Drive's own tables are not in this app's metadata - `gamestats` reads the
+    # games with raw SQL for exactly that reason - so the row goes in the same
+    # way it is read back out.
+    db.session.execute(text(
+        "CREATE TABLE drive_times (user_id INT, track TEXT, time_ms INT,"
+        " medal TEXT, updated_at TEXT)"))
+    db.session.execute(text(
+        "INSERT INTO drive_times VALUES (:u, 'sunrise', 21480, 'gold',"
+        " '2024-03-04T14:23:05')"), {"u": uid})
+    db.session.commit()
+
+    page = body(client.get("/accounts/driver?game=drive"))
+    assert "3/4/24 \u00b7 14:23:05" in page, "the date, and the clock time it happened at"
+    assert 'datetime="2024-03-04T14:23:05Z"' in page, "which the script rewrites from"
+
+
 def test_the_cog_is_only_on_your_own_profile(client, make_user, logged_in):
     make_user("someone-else")
     assert "Account settings" not in body(client.get("/accounts/someone-else"))

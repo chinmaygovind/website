@@ -159,7 +159,25 @@ def test_the_flag_url_does_not_borrow_the_wrong_site(game):
 def test_every_board_can_reach_a_profile(game):
     """A flag next to a name is the moment somebody wonders who that is. The
     link uses the *username*, which is the permanent one - a display name can
-    change and would break every link the moment it did."""
+    change and would break every link the moment it did.
+
+    Drive is one step longer on purpose: a name on one of its boards goes to
+    its *own* account page, since the question a lap time raises is about that
+    driver's other laps. What must not drift is that the step out to the shared
+    profile still exists - see the test below.
+    """
     src = source(game, "templates", "_player.html")
-    assert "/accounts/{{ user.username }}" in src, game
+    target = "/account/" if game == "drive" else "/accounts/"
+    assert target + "{{ user.username }}" in src, game
     assert "user.display" in src, game
+
+
+def test_drives_own_account_page_leads_on_to_the_shared_profile():
+    """The one board that does not link straight out has to link out somewhere.
+
+    Drive's boards point at Drive's account page instead, which is right - but
+    it makes that page the only remaining route from a Drive leaderboard to the
+    profile spanning all four games. By username, for the same reason every
+    other link is."""
+    src = source("drive", "templates", "account.html")
+    assert "{{ site_url }}/accounts/{{ user.username }}" in src

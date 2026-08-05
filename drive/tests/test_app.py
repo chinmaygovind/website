@@ -569,3 +569,68 @@ def test_a_track_with_no_record_still_lists(env):
     import tracks as tracks_mod
     for t in tracks_mod.TRACKS:
         assert t["name"] in html
+
+
+# --- the boards point at Drive's own account page ---------------------------
+
+def test_a_name_on_a_board_opens_that_driver_on_drive(env):
+    """A lap time raises a question about that driver's *other* laps.
+
+    The boards used to jump straight out to the profile on the main site, which
+    is the right page for "who is this across four games" and the wrong one for
+    "how do they go round here". They point at `/account/<username>` now, and
+    that page carries the link on to the shared profile.
+    """
+    c = env.app.test_client()
+    _login(c, _user(env, "quick"))
+    c.post("/api/run", json=_run_payload(env, "sunrise", seconds=22))
+    for page in ("/leaderboard", "/track/sunrise"):
+        html = env.app.test_client().get(page).get_data(as_text=True)
+        assert 'href="/account/quick"' in html, page
+        assert "/accounts/quick" not in html, "%s links here first" % page
+
+
+def test_somebody_elses_drive_page_is_public_and_leads_on(env):
+    """No login needed to read it, and the one link off it is the main site."""
+    c = env.app.test_client()
+    _login(c, _user(env, "quick"))
+    c.post("/api/run", json=_run_payload(env, "sunrise", seconds=22))
+
+    html = env.app.test_client().get("/account/quick").get_data(as_text=True)
+    import tracks as tracks_mod
+    assert tracks_mod.BY_SLUG["sunrise"]["name"] in html, (
+        "a stranger sees the record, not a login page")
+    assert "/accounts/quick" in html, "and a way on to all four games"
+    assert "@quick on cgovind" in html
+    assert "Your cgovind account" not in html, "it is not your page"
+
+
+def test_your_own_name_lands_on_your_own_account_page(env):
+    """One canonical address for your own record - `/account`, where the nav
+    sends you - rather than a second copy of it by name."""
+    c = env.app.test_client()
+    _login(c, _user(env, "quick"))
+    resp = c.get("/account/quick")
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith("/account")
+    assert "Your cgovind account" in c.get("/account").get_data(as_text=True)
+
+
+def test_a_drive_profile_has_one_spelling_and_has_to_exist(env):
+    c = env.app.test_client()
+    _user(env, "Quick")
+    resp = c.get("/account/QUICK")
+    assert resp.status_code == 301
+    assert resp.headers["Location"].endswith("/account/Quick")
+    assert c.get("/account/nobody-at-all").status_code == 404
+
+
+def test_reading_a_stranger_writes_nothing(env):
+    """`_stats` makes a row on first touch, which is right for your own page and
+    wrong for a stranger opening somebody else's: a GET by a passer-by would
+    otherwise leave a `drive_stats` row behind for every account ever looked at.
+    """
+    uid = _user(env, "quick")
+    assert env.app.test_client().get("/account/quick").status_code == 200
+    with env.app.app_context():
+        assert env.DriveStats.query.filter_by(user_id=uid).first() is None

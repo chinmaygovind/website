@@ -189,11 +189,19 @@ def _make_code():
             return code
 
 
-def _stats(user):
-    """The user's DriveStats row, created on first touch."""
+def _stats(user, create=True):
+    """The user's DriveStats row, created on first touch.
+
+    ``create=False`` is for reading somebody *else's* page: a stranger opening a
+    profile should not write a row, so it hands back an unattached
+    ``DriveStats`` instead - every figure on it is zero, which is exactly what
+    a driver with no races has, and nothing is committed.
+    """
     if not user:
         return None
     if user.drive is None:
+        if not create:
+            return DriveStats()
         user.drive = DriveStats()
         db.session.commit()
     return user.drive
@@ -589,6 +597,35 @@ def account():
     user = get_current_user()
     if not user:
         return redirect(url_for("login_page", next="/account"))
+    return _account_page(user, is_me=True)
+
+
+@app.route("/account/<username>")
+def account_for(username):
+    """Somebody else's Drive record, which is where the boards point.
+
+    A name on a Drive leaderboard is a driver, and the next thing to know about
+    a driver is their laps, their medals and how many goes each track has had
+    out of them - which is this page, here, rather than four games away on the
+    main site. The way on to the rest of them is a link *on* it, so the two
+    profiles are a step apart in the order somebody actually reads them.
+    """
+    user = User.query.filter(func.lower(User.username) == username.lower()).first()
+    if user is None:
+        abort(404)
+    # One canonical spelling per profile, and one canonical address for your
+    # own: `/account` is where the nav sends you and where the settings live,
+    # so a link to yourself by name lands on the same page rather than a
+    # second copy of it that quietly cannot be edited.
+    me = get_current_user()
+    if me and me.id == user.id:
+        return redirect(url_for("account"))
+    if user.username != username:
+        return redirect(url_for("account_for", username=user.username), code=301)
+    return _account_page(user, is_me=False)
+
+
+def _account_page(user, is_me):
     times = (DriveTime.query.filter_by(user_id=user.id)
              .order_by(DriveTime.updated_at.desc()).all())
     starts = _starts_for(user.id, times)
@@ -619,7 +656,8 @@ def account():
     # starts and no time (never finished) or a time and no starts (driven before
     # the counter existed), and the per-track clamp already knows what to do with
     # both, so summing it cannot disagree with the column underneath.
-    return render_template("account.html", user=user, stats=_stats(user),
+    return render_template("account.html", user=user, is_me=is_me,
+                           stats=_stats(user, create=is_me),
                            times=times, starts=starts, rows=rows,
                            total_starts=sum(starts.values()),
                            by_slug=tracks_mod.BY_SLUG,
@@ -1126,7 +1164,7 @@ def _room(code):
 def _car(r, pid):
     return r["cars"].setdefault(pid, {
         "p": [0.0, 0.0, 0.0], "q": [0.0, 0.0, 0.0, 1.0], "v": [0.0, 0.0, 0.0],
-        "prog": 0.0, "cp": 0, "flags": 0, "ts": 0, "name": "", "color": "#fff",
+        "prog": 0.0, "cp": 0, "flags": 0, "sl": 0.0, "ts": 0, "name": "", "color": "#fff",
         "ms": None, "dnf": False, "gone": False,
     })
 
@@ -1135,10 +1173,17 @@ def _snapshot(r):
     """Everyone's latest pose, merged, with each one's own age.
 
     `t` is when the snapshot went out; a car's pose in it is whatever arrived
-    last, which can be a whole pose-interval older. The last field is that gap,
+    last, which can be a whole pose-interval older. Field 13 is that gap,
     because the client extrapolates each car forward from when it reported and
     reading them all as fresh leaves every car short by a different amount every
     tick - jitter that looks like the network and is actually arithmetic.
+
+    Field 14 is how full that car's tow is, 0..1, with `FLAG.SLIP` in the flags
+    saying whether it is the charge or what is left of the boost. It is here so
+    a rival's slipstream can be *drawn* and *heard* rather than only known
+    about. Both of the trailing fields are appended rather than inserted and the
+    client guards on the array's length, so a page left open across a deploy
+    degrades to no tow rather than to a car in the wrong place.
     """
     now = _now_ms()
     cars = {}
@@ -1148,7 +1193,8 @@ def _snapshot(r):
         cars[pid] = [round(c["p"][0], 2), round(c["p"][1], 2), round(c["p"][2], 2),
                      round(c["q"][0], 3), round(c["q"][1], 3), round(c["q"][2], 3), round(c["q"][3], 3),
                      round(c["v"][0], 2), round(c["v"][1], 2), round(c["v"][2], 2),
-                     round(c["prog"], 1), c["cp"], c["flags"], max(0, now - c["ts"])]
+                     round(c["prog"], 1), c["cp"], c["flags"], max(0, now - c["ts"]),
+                     round(c.get("sl", 0.0), 2)]
     return {"t": now, "cars": cars}
 
 
@@ -1411,6 +1457,10 @@ def on_pose(data=None):
     c["prog"] = float(data.get("prog") or 0.0)
     c["cp"] = int(data.get("cp") or 0)
     c["flags"] = int(data.get("flags") or 0)
+    # How full the tow is. Clamped rather than trusted: it is fanned straight
+    # back out to everybody else, and it is the loudness of an effect on their
+    # screens, so a client sending 400 would be a car in a permanent boost.
+    c["sl"] = min(1.0, max(0.0, float(data.get("sl") or 0.0)))
     c["ts"] = _now_ms()
 
 

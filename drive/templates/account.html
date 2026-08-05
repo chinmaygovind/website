@@ -1,12 +1,19 @@
 {% extends "base.html" %}
 {% block title %}{{ user.display }} | Drive{% endblock %}
-{% set active_page = 'account' %}
+{# Only your own page is the nav's "Account". Lighting that tab up on somebody
+   else's profile says you are looking at yours, which is the one thing this
+   page must never be ambiguous about. #}
+{% set active_page = 'account' if is_me else '' %}
 
 {# Two icons, inline rather than glyphs (see `.icn`). A steering wheel is the
    only thing that says "drive this" without a word, and a podium is the shape
    of a leaderboard whatever language you read. #}
 {% macro icon_wheel() %}<svg class="icn" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.6"/><path d="M12 9.4V3M9.75 13.3 4.2 16.5M14.25 13.3 19.8 16.5"/></svg>{% endmacro %}
 {% macro icon_board() %}<svg class="icn" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 20.5h17"/><path d="M5.5 20.5v-7h4v7"/><path d="M9.5 20.5v-12h5v12"/><path d="M14.5 20.5v-5h4v5"/></svg>{% endmacro %}
+{# The box-with-an-arrow-out-of-it, which is the one shape that says "this
+   leaves Drive" without a word - and it does leave: the profile it points at
+   is on the main site. #}
+{% macro icon_out() %}<svg class="icn" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 4.5H19.5V10.5"/><path d="M19.5 4.5 11 13"/><path d="M18 14.5v4a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6h4"/></svg>{% endmacro %}
 
 {% macro track_actions(slug) %}
 <div class="acct-actions">
@@ -18,8 +25,23 @@
 {% block body %}
 {% include "_nav.html" %}
 <div class="wrap">
-  <h1>{{ user.display }}</h1>
+  {# The flag is the one thing on here that is not about driving, and it is
+     what tells two pages about two people apart at a glance now that this one
+     is public. Same art the boards use, one copy on the main site. #}
+  <h1>{% if user.flag_path %}<img class="flag flag-big" src="{{ site_url }}{{ user.flag_path }}"
+    alt="" loading="lazy"/>{% endif %}{{ user.display }}</h1>
   <p class="lede">{{ stats.elo_tier }} · rating {{ stats.elo or 1000 }}</p>
+
+  {# The way out of Drive, and the only link on the page that leaves it. This
+     page is Drive's record of somebody; the profile it points at is the same
+     person across all four games, which is a question this page cannot answer
+     and should not try to. It reads as one sentence rather than a button
+     because it is somewhere to go afterwards, not the thing the page is for.
+     `username`, not `display`: the display name is editable and the address of
+     a profile is not. #}
+  <p class="elsewhere"><a href="{{ site_url }}/accounts/{{ user.username }}"
+    >{{ icon_out() }}{% if is_me %}Your cgovind account{% else %}@{{ user.username }} on cgovind{% endif %}</a>
+    <span class="muted">— all four games, in one place.</span></p>
 
   {# One box. The medal tally is three more counts of the same kind, so it lives
      under a hairline in here rather than in a panel of its own. The total
@@ -84,7 +106,9 @@
     </table>
     </div>
     {% else %}
-    <p class="muted">Nothing driven yet. <a href="/">Pick a track.</a></p>
+    {# "Pick a track" is an instruction, so it is only offered to the person it
+       is an instruction for. #}
+    <p class="muted">Nothing driven yet.{% if is_me %} <a href="/">Pick a track.</a>{% endif %}</p>
     {% endif %}
   </div>
 </div>

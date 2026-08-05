@@ -83,6 +83,27 @@ def _shortdate(value):
     return "%d/%d/%02d" % (value.month, value.day, value.year % 100)
 
 
+@bp.app_template_filter("shortstamp")
+def _shortstamp(value):
+    """8/2 · 14:23:05 - the date, and the clock time it actually happened at.
+
+    A list of recent games is read for its order, which the date alone gives -
+    but two games on the same evening are the same row twice without the time,
+    and "when did I set that" is the whole question somebody scrolling this is
+    asking. Rendered in UTC, because that is what the database holds and what
+    is right with no JavaScript; the script at the foot of the profile rewrites
+    it into the reader's own timezone, the same way Drive's records table does.
+
+    24-hour on purpose: it is the same width before and after that script
+    lands, where an AM/PM stamp is two characters wider and makes the whole
+    column jump as the page settles.
+    """
+    if not value:
+        return ""
+    return "%s · %02d:%02d:%02d" % (_shortdate(value), value.hour,
+                                    value.minute, value.second)
+
+
 @bp.app_template_filter("ordinal")
 def _ordinal(n):
     if n is None:

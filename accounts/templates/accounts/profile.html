@@ -95,7 +95,10 @@
     <h4>Recent</h4>
     {% for r in b.recent %}
     <div class="rec">
-      <div class="rec-when">{{ r.when|shortdate }}</div>
+      {# Stored UTC, rendered UTC so the row is right before any script runs,
+         then rewritten into the reader's own timezone below. #}
+      <div class="rec-when">{% if r.when %}<time datetime="{{ r.when.isoformat() }}Z"
+        >{{ r.when|shortstamp }}</time>{% endif %}</div>
       <div class="rec-what">
         {{ r.what }}
         {%- if r.medal %} <i class="dot {{ r.medal }}" title="{{ r.medal }}"></i>{% endif %}
@@ -147,6 +150,25 @@
       if (e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
       if (show(el.dataset.tab)) e.preventDefault();
     });
+  });
+})();
+
+// Every stamp in the recent lists is stored and served in UTC, which is right
+// and reads like somebody else's clock. Rewrite it into the reader's own - in
+// the same shape it was served in, so nothing moves as the page settles, and
+// only if it parses, so a browser that cannot keeps the UTC it was given. The
+// panels are all in the DOM whether or not they are the open tab, so this runs
+// once rather than on every switch. The title carries the year and the zone.
+(function () {
+  var thisYear = new Date().getFullYear();
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  document.querySelectorAll('.rec-when time[datetime]').forEach(function (el) {
+    var d = new Date(el.getAttribute('datetime'));
+    if (isNaN(d.getTime())) return;
+    var year = d.getFullYear() === thisYear ? '' : '/' + pad(d.getFullYear() % 100);
+    el.textContent = (d.getMonth() + 1) + '/' + d.getDate() + year + ' · ' +
+      pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+    el.title = d.toString();
   });
 })();
 </script>

@@ -288,9 +288,13 @@ p { margin: 0; }
 
 .recent { margin-top: 1.3rem; padding-top: 1rem; border-top: 2px dashed var(--hair); }
 .recent h4 { margin: 0 0 .5rem; font-size: 1.15rem; font-weight: normal; color: var(--muted); }
+/* The first column is a fixed width rather than `auto` because every row is its
+   own grid, so nothing lines any of them up except the number written here. It
+   holds a date and a clock time now (8/2 · 14:23:05), which is what widened it
+   - and it has to fit the widest one, which is a stamp from another year. */
 .rec {
   display: grid;
-  grid-template-columns: 5.4rem 1fr auto auto;
+  grid-template-columns: 9.4rem 1fr auto auto;
   align-items: baseline;
   gap: .3rem .9rem;
   padding: .42rem 0;
@@ -549,6 +553,11 @@ input[type=file] { font: inherit; font-size: 1rem; max-width: 100%; }
 }
 
 @media (max-width: 640px) {
+  /* The stamp drops to a line of its own. It moved up from 560px when it grew
+     a clock time: a busy row is a date, a game, a score, a placing and a
+     rating change, and at 600px those were touching the panel's edge. */
+  .rec { grid-template-columns: 1fr auto; }
+  .rec-when { grid-row: 2; grid-column: 1 / -1; }
   /* The picture goes back on top of the fields rather than beside them: two
      columns in 360px gives the fields about 180, which is narrower than the
      country names that have to fit in them. */
@@ -576,8 +585,6 @@ input[type=file] { font: inherit; font-size: 1rem; max-width: 100%; }
      dangling "·" at the end of the first one, reading as a typo. */
   .hero-meta span { display: block; }
   .hero-meta span + span::before { content: none; }
-  .rec { grid-template-columns: 1fr auto; }
-  .rec-when { grid-row: 2; grid-column: 1 / -1; }
   .grid { grid-template-columns: repeat(3, 1fr); }
   .cell b { font-size: 1.5rem; }
 }

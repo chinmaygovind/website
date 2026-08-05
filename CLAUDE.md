@@ -163,6 +163,17 @@ pages that were missing from the system that already existed.
   inventing a result. Drive's is personal bests interleaved with races, because
   most of Drive is solo and a history that left the laps out would be a strange
   one.
+- **A recent row is dated to the second**, `8/2 · 14:23:05`, not just to the
+  day. A date on its own puts two games from the same evening on the same row
+  twice, and "when did I actually set that" is the question the list is read
+  for. Served in **UTC**, because that is what the database holds and what is
+  right before any script runs, then rewritten into the reader's own timezone
+  by the script at the foot of `profile.html` — the same trick Drive's records
+  table uses, and the `title` keeps the year and the zone. 24-hour on purpose:
+  it is the same width before and after that script lands, where an AM/PM
+  stamp is wider and makes the column jump as the page settles. The column is
+  a **fixed** `9.4rem` rather than `auto` because every row is its own grid,
+  so nothing lines them up except that number.
 - **`accounts/gamestats.py` reads the games with raw SQL on purpose.** Mapping
   four more schemas here would be duplication kept in step with four other
   repos' columns, and worse, a mapped table that does not exist is an error at
@@ -237,14 +248,15 @@ image — an `<img>` cannot load a webfont, and the initial is the whole picture
 
 ### Tests
 
-`scripts/tests.sh site` — 108 tests, about 25s, plus the `import app` check the
+`scripts/tests.sh site` — 122 tests, about 30s, plus the `import app` check the
 deploy used to be. `tests/test_no_drift.py` is the one to know about: five
 services each own a copy of `User` and now of `UserProfile`, which is this
 repo's convention and the right one for five things that deploy separately, but
 a drifted copy is worse than no copy. So every deliberate duplication —
 the rating tiers, Drive's track names, the reserved usernames, the profile
-columns, the display-name wiring, the forgot link, `MAIN_SITE_URL` — has a test
-that **reads the other file** and fails when the two stop agreeing.
+columns, the display-name wiring, the forgot link, the route from a board to a
+profile, `MAIN_SITE_URL` — has a test that **reads the other file** and fails
+when the two stop agreeing.
 
 **Its TTR checks skip unless the submodule is checked out**, which it is not in
 CI (nor in a plain clone), so six of them read as passes there. That is on
@@ -1139,6 +1151,22 @@ field from a dark field.
   block underneath, so the same track moved every time you drove and no two
   pages agreed on where to look for it; a track you started and never finished
   now sits in its own place in the list, muted and without a time or a medal.
+- **A name on a board opens that driver's Drive page, and that page is the way
+  out to the rest of the site.** `_player.html` used to link straight to
+  `cgovind.com/accounts/<username>`, which is the right page for "who is this
+  across four games" and the wrong one for the question a lap time actually
+  raises, which is how they go round *here*. So it points at `/account/
+  <username>` - the same page as your own, public, no login - and that page
+  carries one link on to the shared profile (`.elsewhere`, the only link on it
+  that leaves Drive). Three things fall out of making it public: your own name
+  redirects to plain `/account`, so there is one address for your own record
+  rather than a second copy of it that quietly cannot be edited; the nav's
+  "Account" tab only lights on your own; and `_stats(user, create=False)` hands
+  back an unattached row for a stranger, since the creating version would leave
+  a `drive_stats` row behind for every account a passer-by ever looked at.
+  `tests/test_no_drift.py` checks *both* halves - the board links by username,
+  and Drive's account page still links on - because the second one is now the
+  only route from a Drive leaderboard to the shared profile.
 - **`/leaderboard`'s track table is dated, not gold-timed.** The gold time used to be
   the fourth column; it is a property of the track rather than of the record, it is
   already on the track page and in the game, and sitting next to somebody's name it
@@ -1311,7 +1339,7 @@ field from a dark field.
 
 ### Tests
 
-`scripts/tests.sh drive` - 488 tests, about 4:50. `test_tracks.py` and
+`scripts/tests.sh drive` - 521 tests, about 5:30. `test_tracks.py` and
 `test_runcheck.py` are pure Python; `test_app.py` runs the real routes against a
 throwaway SQLite file (the `/solo` memory, the board and ghost APIs, and a guest's run
 being replayed after login). **`test_race.py` covers the room's race machine** -

@@ -1061,9 +1061,30 @@ body.side-open #touch { display: none; }
   background: #f2f2f2;
 }
 
+/* The same flag beside a 2.3rem name. Scaled rather than re-cropped, so the
+   country flags stay 3:2 and the state PNGs stay recognisable. */
+.flag-big {
+  height: 22px; width: 31px;
+  vertical-align: 2px;
+  margin-right: .34em;
+  border-radius: 3px;
+}
+
 /* A name on a board is a link now, but it is still first of all a name: it
    takes the colour of the row it is in and only underlines when you go for it.
    A board is a table of results, and forty blue underlines down a column read
    as navigation rather than as standings. */
 .player-link { color: inherit; text-decoration: none; }
 .player-link:hover { text-decoration: underline; }
+
+/* The one link on an account page that leaves Drive. A link in the site's own
+   red rather than a button: it is somewhere to go after reading the page, not
+   the thing the page is for, and a fourth button up here would compete with
+   the two on every track row below. */
+.elsewhere { margin: -.1rem 0 1.2rem; font-size: .95rem; }
+.elsewhere a {
+  display: inline-flex; align-items: center; gap: .34rem;
+  font-weight: 600;
+}
+.elsewhere a:hover { text-decoration: underline; }
+.elsewhere .muted { margin-left: .3rem; }
