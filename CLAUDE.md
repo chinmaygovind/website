@@ -379,8 +379,8 @@ The last three in the pool are the long ones, all difficulty 5 and all roughly
 twice The Gauntlet: **Sandy Cove** (`cove`, a ground track - a coast road down
 onto the beach and out along a pier over open water), **Cloudbreak** (`pillars`,
 threaded between rock spires above an overcast) and **Rainbow Road** (`rainbow`,
-half-pipes in deep space with almost no barriers - the only member of
-`tracks.EXPOSED`).
+half-pipes in deep space with almost no barriers). Cloudbreak and Rainbow
+Road are both in `tracks.EXPOSED`.
 
 - **Guests can play, and a guest's times are not thrown away.** Driving alone needs
   no account at all (`/`, `/solo` and `/solo/<slug>` are open); sharing a room needs
@@ -499,7 +499,11 @@ half-pipes in deep space with almost no barriers - the only member of
   with `Builder.pipe(depth, floor, side)` / `.flat()`, which blend the depth in
   and out over `PROF_BLEND` units - a pipe at full height in one station is a
   wall you hit rather than one you ride. `side='l'`/`'r'` gives a one-sided
-  banked wall on a corner's outside. Two things to know: **the samples are baked
+  banked wall on a corner's outside, and **that is the shape the pool mostly
+  uses**: Rainbow Road has exactly one full trough and two one-sided banks, on
+  the outside of the corner each time. A V taking up the whole road is a thing
+  you sit in rather than a line you pick, so one of them is a feature and three
+  of them is a bobsleigh run. Two things to know: **the samples are baked
   in Python** and the JS only reads them, so there is no second copy of the
   curve to drift; and **a gate may not sit on a profiled station** (`_gate`
   raises), because a gate is a flat plane of fixed width and hanging one across
@@ -568,7 +572,15 @@ half-pipes in deep space with almost no barriers - the only member of
   as loudly as a normal floating track without them, which is the more likely
   mistake, since the flag outlives whoever railed the track for safety. Loops
   keep their rails even there: a loop without them is a fall at the top rather
-  than a corner, which is not exposure, it is a broken corner.
+  than a corner, which is not exposure, it is a broken corner. Cloudbreak is in
+  the set for the same reason it was worth building: railing every corner of a
+  track whose whole subject is how far down the ground is takes the height away
+  and leaves a bobsleigh run. The rails it keeps are for where going off is not
+  an avoidable mistake - the two jump landings, where you arrive with no
+  steering, and the narrow bridge. **Pulling rails off is a change the autopilot
+  has to survive**: Cloudbreak went from 98% walled to 9%, and
+  `test_a_clean_lap_needs_no_respawns` is what says the line was always
+  drivable rather than being held in by the barriers.
 - **The three long tracks are ~2500-2800 units and 56-64s of ideal lap**, against
   The Gauntlet's 1667 and 40s. Two ceilings bound that: `test_tracks` caps an
   ideal lap at 120s, and `test_sim` caps the *simulated driver* at 90s - and the
@@ -913,13 +925,19 @@ idea which track it is looking at:
   `test_only_the_pier_is_over_the_water`, which requires the crossing to be a
   single run (the pier) and the coast road to keep 25 units of clearance. Drift
   those apart and the sea floods a road that was authored to be dry.
-- **`rainbow`** - degrees of hue per band, with `rainbowBand` stations to a band,
-  and it moves the road into the *unlit* buffer so it glows against black space.
-  Stepping the hue per station was the obvious first try and is wrong: 3.5 units
-  of hue at a time is a smooth gradient, and nobody pictures Rainbow Road as a
-  gradient. Note an unlit road lights nothing by itself, so the colour in the
-  scene has to come from `hemi.ground` - a saturated magenta there is what puts
-  rainbow on the underside of the car and the inside of the pipes.
+- **`rainbow`** - degrees of hue per station, and it moves the road into the
+  *unlit* buffer so it glows. **Two gradients, not one.** Along the road the hue
+  sweeps slowly; across it the lightness falls toward the kerbs, the saturation
+  rises, and the hue skews slightly either side. The cross-road half is the one
+  that matters - a hue sweep on its own reads as a flat carpet, because a
+  gradient with no shading across it has no shape. Hard bands were the first fix
+  for that and are too loud. A quad has one colour, so the flat road is split
+  into `rainbowLanes` lateral strips purely to have something to shade; profiled
+  stations already have their samples. An unlit road lights nothing by itself,
+  so the colour in the scene comes from `hemi.ground` - a saturated magenta
+  there is what puts rainbow on the car's underside and the pipe walls. The sky
+  is deep violet rather than black: against true black the road is the only
+  colour anywhere and the world around it reads as nothing.
 
 Rules learned the hard way, all from the same fact - **you look down on a world
 below from a hundred units up, so you mostly read footprints**:
@@ -1259,7 +1277,7 @@ field from a dark field.
 
 ### Tests
 
-`scripts/tests.sh drive` - 478 tests, about 4:40. `test_tracks.py` and
+`scripts/tests.sh drive` - 488 tests, about 4:50. `test_tracks.py` and
 `test_runcheck.py` are pure Python; `test_app.py` runs the real routes against a
 throwaway SQLite file (the `/solo` memory, the board and ghost APIs, and a guest's run
 being replayed after login). **`test_race.py` covers the room's race machine** -

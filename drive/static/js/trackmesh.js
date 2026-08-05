@@ -239,18 +239,28 @@ const PALETTES = {
   // wall. The key light is cold and weak on purpose - it is starlight, and its
   // whole job is to keep the geometry readable where the road is not.
   rainbow:  { road: 0x6a4bd0, kerb: 0xffffff, kerb2: 0x2a2140,
-              ground: 0x090616, rail: 0xf2ecff, prop: 0x2a2150, deco: 0x62f0ff,
-              fog: 0x07060f,
-              rainbow: 15, rainbowBand: 6,
+              ground: 0x140a2e, rail: 0xf2ecff, prop: 0x3a2470, deco: 0x62f0ff,
+              fog: 0x120a28,
+              // Degrees of hue per station, and no banding. Hard bands were the
+              // fix for a per-station step that looked like a flat gradient
+              // carpet, but the real problem was the *rate*: at this much
+              // slower sweep the road is a long smooth wash of colour, and the
+              // shading across its width (see `roadColor`) is what stops it
+              // reading flat.
+              rainbow: 2.2,
               sky: {
+                // Purple rather than black. A true black dome makes the road
+                // the only colour anywhere and the world around it reads as
+                // nothing; a deep violet keeps it space while giving the stars
+                // and the ribbon something to sit against.
                 stops: [
-                  [0.00, 0x030309], [0.42, 0x060614], [0.50, 0x0b0a22],
-                  [0.60, 0x0a0a1e], [0.78, 0x060617], [1.00, 0x02020a],
+                  [0.00, 0x0d0620], [0.42, 0x1a0c38], [0.50, 0x271252],
+                  [0.60, 0x22104a], [0.78, 0x150932], [1.00, 0x080418],
                 ],
-                // A tight cold halo, and it is a distant star rather than a sun
-                // - big and warm here would read as a sunrise, which is the one
+                // A tight halo, and it is a distant star rather than a sun -
+                // big and warm here would read as a sunrise, which is the one
                 // thing deep space is not.
-                glow: 0x8fa6ff, glowStrength: 0.3, glowMode: 'radial', glowFocus: 11,
+                glow: 0xb98cff, glowStrength: 0.38, glowMode: 'radial', glowFocus: 10,
                 stars: { count: 2200, seed: 77, size: 2.3 },
                 sun: { az: 2.1, el: 0.42, color: 0xdfe8ff, size: 150 },
                 // Starlight: cold and weak, but not so weak that the car goes
@@ -258,15 +268,15 @@ const PALETTES = {
                 // everything solid in the scene is lit by these two alone.
                 light: { color: 0xaebcff, intensity: 1.0,
                          dir: [Math.sin(2.1) * 0.7, 0.68, Math.cos(2.1) * 0.7] },
-                hemi: { sky: 0x6a5aa8, ground: 0xc0308a, intensity: 1.15 },
-                fog: 0x07060f, fogNear: 300, fogFar: 1500,
+                hemi: { sky: 0x8a6ad0, ground: 0xc0308a, intensity: 1.15 },
+                fog: 0x120a28, fogNear: 300, fogFar: 1500,
               },
               below: { kind: 'void' } },
   // Sandy Cove: a coast road on hot sand. `shore` is what cuts the sea out of
   // the ground plane - see the ground block in buildTrack. Sand is the run-off
   // and the water is scenery, so falling in is a fall like any other.
   cove:     { road: 0x6b6f78, kerb: 0xfffaf0, kerb2: 0x2ab7c8,
-              ground: 0xe8d29a, rail: 0xfff6e8, prop: 0x3f7d4a, deco: 0xffb03a,
+              ground: 0xffe87a, rail: 0xfff6e8, prop: 0x3f7d4a, deco: 0xffb03a,
               fog: 0xcfe4ea,
               // Sparse. A beach is mostly empty sand, and the first pass was a
               // palm plantation. No `block` either - a green crate on a beach
@@ -289,7 +299,7 @@ const PALETTES = {
                          dir: [Math.sin(1.9) * 0.6, 0.86, Math.cos(1.9) * 0.6] },
                 // Bounce off pale sand, which is what makes everything here
                 // look hot rather than merely bright.
-                hemi: { sky: 0xd6efff, ground: 0xe0c288, intensity: 0.95 },
+                hemi: { sky: 0xd6efff, ground: 0xffdc72, intensity: 1.08 },
                 fog: 0xcfe4ea, fogNear: 320, fogFar: 1600,
               } },
   // Cloudbreak: rock spires standing up through an overcast, a long way down.
@@ -322,7 +332,7 @@ const PALETTES = {
                        cover: 0.34, cloud: 0xeef4fa,
                        puff: 2.1, cloudStep: 13,
                        spireStep: 12, spireDensity: 0.62, rise: 104, root: 110,
-                       rock: 0x5f5244, cap: 0x6e7d5a } },
+                       rock: 0x5f5244 } },
 };
 
 export function palette(track) {
@@ -629,8 +639,16 @@ export function buildTrack(track, T) {
   // track without pipes changes, down to the vertex order.
   const spanOf = (a, b) => {
     const pf = a.pf || b.pf;
-    if (!pf) return [-1, 1];
-    return pf.map(s => s[0]);
+    if (pf) return pf.map(s => s[0]);
+    // Rainbow Road shades its road across the width as well as along it, and a
+    // single quad has one colour, so its flat sections are split into lanes
+    // purely to have something to put a gradient on. Every other track gets the
+    // two edges it always had - one quad, same vertex order, no change at all.
+    if (pal.rainbow) {
+      const n = pal.rainbowLanes || 8;
+      return Array.from({ length: n + 1 }, (_, k) => -1 + 2 * k / n);
+    }
+    return [-1, 1];
   };
 
   // Edge points of the road at a station, and the same points lifted a hair
@@ -644,19 +662,22 @@ export function buildTrack(track, T) {
   const sink = (p, e, d) => [p[0] - e.n[0] * d, p[1] - e.n[1] * d, p[2] - e.n[2] * d];
 
   // Rainbow Road's surface is drawn unlit and swept through the spectrum along
-  // its length, so it glows against black space instead of being dimmed by a
-  // key light that is barely there. `pal.rainbow` is the hue span per station.
-  // `rainbow` is degrees of hue per *band*, and `rainbowBand` is how many
-  // stations a band lasts. Stepping per station instead was the obvious first
-  // try and it is wrong: 3.5 units of hue at a time is a smooth gradient, and a
-  // gradient is not what anybody pictures. Rainbow Road is stripes, so the hue
-  // is quantised into bands about twenty units long and the alternating shade
-  // that every other track uses for tarmac rides on top of them.
-  const roadColor = (i) => {
+  // its length, so it glows against a violet sky instead of being dimmed by a
+  // key light that is barely there.
+  //
+  // Two gradients, not one. Along the road `pal.rainbow` degrees of hue per
+  // station gives a slow wash - hard bands were tried first and are too loud,
+  // and a *fast* per-station sweep was tried before that and read as a flat
+  // carpet, because a gradient with no shading across it has no shape. Across
+  // the road the lightness falls off toward the kerbs and the saturation comes
+  // up, which is what gives the ribbon a lit centre and a deep edge; the small
+  // hue skew either side is the iridescence, and it is what stops the two
+  // halves of the road looking like one flat colour.
+  const roadColor = (i, u) => {
     if (!pal.rainbow) return i % 8 < 4 ? pal.road : shade(pal.road, 0.045);
-    const band = Math.floor(i / (pal.rainbowBand || 6));
-    return hsl(((band * pal.rainbow) % 360) / 360, 0.78,
-               i % 8 < 4 ? 0.55 : 0.51);
+    const a = Math.abs(u);
+    const h = (i * pal.rainbow) / 360 + 0.038 * u;
+    return hsl((h % 1 + 1) % 1, Math.min(1, 0.70 + 0.24 * a), 0.62 - 0.19 * a * a);
   };
   const roadBuf = pal.rainbow ? bright : solid;
 
@@ -680,7 +701,6 @@ export function buildTrack(track, T) {
     const aL = edge(a, -1), aR = edge(a, 1);
     const bL = edge(b, -1), bR = edge(b, 1);
     const span = spanOf(a, b);
-    const col0 = roadColor(i);
     for (let j = 0; j + 1 < span.length; j++) {
       const u0 = span[j], u1 = span[j + 1];
       const p0 = surf(a, u0), p1 = surf(a, u1);
@@ -689,7 +709,7 @@ export function buildTrack(track, T) {
       // ground query find the road while the car is upside down inside a
       // corkscrew - or high on the wall of a pipe.
       col.addQuad(p0, p1, q1, q0, KIND.ROAD);
-      roadBuf.quad(p0, p1, q1, q0, col0);
+      roadBuf.quad(p0, p1, q1, q0, roadColor(i, (u0 + u1) / 2));
     }
     note(aL); note(aR);
 
@@ -1343,7 +1363,6 @@ function pillarsBelow(buf, soft, cfg, rnd, x0, x1, z0, z1, deckY, floorY, cap, C
   if (cfg.floor != null) solid_plate(buf, x0, x1, z0, z1, floorY, cfg.floor);
 
   const rock = cfg.rock != null ? cfg.rock : 0x6a5c4c;
-  const capCol = cfg.cap != null ? cfg.cap : 0x7d8a6a;
   // Spires grow out of the cloud rather than up off a floor, so their base is
   // just under the deck and their feet are lost in it - which is the whole
   // image, and also why there is nothing to see where a floor would have been.
@@ -1373,12 +1392,10 @@ function pillarsBelow(buf, soft, cfg, rnd, x0, x1, z0, z1, deckY, floorY, cap, C
         w *= 0.72 + rnd() * 0.16;
         if (w < 1.6) break;
       }
-      // A green cap on the ones that break the cloud, so the tops read as land
-      // rather than as the end of a rock.
-      if (top > deckY + 6) {
-        buf.box(px + lx * (top - root), y + 0.9, pz + lz * (top - root),
-                w * 0.9, 0.9, w * 0.9, shade(capCol, (rnd() - 0.5) * 0.2));
-      }
+      // No green cap. These were meant to read as land on top of the taller
+      // spires, and at this distance a flat green slab on a grey rock reads as
+      // a slab on a rock - it made the good ones look like they were wearing
+      // hats. The silhouette does the work instead.
     }
   }
 

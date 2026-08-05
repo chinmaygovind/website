@@ -943,8 +943,11 @@ def _rainbow():
     b.straight(58)
     b.cp()
 
-    # A long open half-pipe. Swing up either wall and drop back in - the walls
-    # are the only barrier along here, which is the whole idea.
+    # The one full half-pipe on the track: walls both sides, swing up either and
+    # drop back in. Everywhere else the profile is one-sided (see below), which
+    # is a corner you can lean on rather than a trough you sit in - so this is
+    # the section that shows what the cross-section can do, and it is deliberately
+    # the only one of its kind.
     b.pipe(5.5).straight(96).arc(-38, 95).straight(64)
     b.flat().straight(32)
     b.cp()
@@ -965,9 +968,10 @@ def _rainbow():
     b.rail("").straight(44)
     b.cp()
 
-    # A pipe through a long right-hander: the bank is the corner.
+    # A long right-hander banked up its outside - the left - so the high line
+    # through it is a real choice rather than a wall to avoid.
     b.width(15.0)
-    b.pipe(6.2).arc(76, 58).straight(72)
+    b.pipe(6.2, side="l").arc(76, 58).straight(72)
     b.flat().width(12.0).straight(34)
     b.cp()
 
@@ -981,9 +985,12 @@ def _rainbow():
     b.arc(96, 40, rise=6.0).straight(52)
     b.cp()
 
-    # Second pipe, tighter and deeper than the first, with the corner inside it.
+    # The deepest wall on the track, and again only on the corner's outside. It
+    # opens at the corner rather than on the straight before it, so the bank
+    # arrives with the turn.
     b.width(14.0)
-    b.pipe(6.8, floor=0.26).straight(58).arc(-84, 44).straight(66)
+    b.straight(58)
+    b.pipe(6.8, floor=0.26, side="r").arc(-84, 44).straight(66)
     b.flat().width(12.0).straight(34)
     b.cp()
 
@@ -1100,8 +1107,16 @@ def _pillars():
     The spires are scenery (see the ``pillars`` world in trackmesh.js) - they
     are placed clear of the road, so what actually catches you out here is the
     elevation and the corner radii, not hitting one.
+
+    Barriers are the exception rather than the rule here (it is in ``EXPOSED``).
+    Railing the whole thing made it a bobsleigh run: on a track whose entire
+    subject is how far down the ground is, a wall along every corner is the one
+    thing that takes the height away. So they are kept for the three places
+    where going off is not a mistake you could have avoided - the two jump
+    landings, where you arrive with no steering, and the narrow bridge, which is
+    barely wider than the car.
     """
-    b = Builder(0, 0, 0, yaw=0, width=11.5, rails=True)
+    b = Builder(0, 0, 0, yaw=0, width=11.5, rails=False)
     b.start(run=40)
     b.straight(56, rise=7.0)
     b.cp()
@@ -1119,10 +1134,12 @@ def _pillars():
     b.arc(-136, 20).straight(58, rise=-8.0)
     b.cp()
 
+    # Across the gorge. Rails on the landing only: you come down with no
+    # steering authority, which is not a mistake, it is the jump.
     b.straight(28)
-    b.jump(rise=4.0, gap=30, drop=6.0)                 # across the gorge
-    b.straight(36)
-    b.cp()
+    b.jump(rise=4.0, gap=30, drop=6.0)
+    b.rail("lr").straight(36)
+    b.rail("").cp()
 
     b.width(13.5)
     b.arc(88, 52, rise=-6.0).straight(58)
@@ -1139,13 +1156,13 @@ def _pillars():
     b.arc(-118, 38, rise=-11.0, bank=17).straight(52)
     b.cp()
 
-    # The narrow bridge, and the second gorge.
+    # The narrow bridge - 9.5 wide, so it keeps its rails - and the second gorge.
     b.width(9.5)
-    b.straight(72)
+    b.rail("lr").straight(72)
     b.arc(86, 28).straight(34)
-    b.jump(rise=3.6, gap=28, drop=0.0)
-    b.straight(34)
-    b.cp()
+    b.rail("").jump(rise=3.6, gap=28, drop=0.0)
+    b.rail("lr").straight(34)
+    b.rail("").cp()
 
     b.width(13.0)
     b.arc(-98, 44, rise=7.0).straight(66, rise=8.0)
@@ -1165,7 +1182,7 @@ def _pillars():
 # than a penalty. These declare that they deliberately do not, and the test
 # checks the claim in both directions - an "exposed" track with rails all over
 # it is as wrong as a normal one without them.
-EXPOSED = {"rainbow"}
+EXPOSED = {"rainbow", "pillars"}
 
 
 _POOL = [
