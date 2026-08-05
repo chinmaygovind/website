@@ -333,17 +333,126 @@ p { margin: 0; }
 .pelo span { display: block; font-size: .78rem; color: var(--muted); letter-spacing: .04em; }
 .pelo.none b { color: var(--hair); }
 
+/* ---- the profile editor ------------------------------------------------- */
+
+/* Picture left with its own button under it, words right. Stacking the fields
+   beside the picture rather than below it is most of what turns this panel
+   from a tall column into a short block. */
+.profile-edit {
+  display: grid;
+  grid-template-columns: 168px 1fr;
+  gap: 1.6rem;
+  align-items: start;
+}
+.pic-col { display: flex; flex-direction: column; align-items: center; gap: .45rem; }
+/* One line each, under a 132px picture - hence the smaller type. The button is
+   the size of the thing it acts on rather than the size of the panel. */
+.pic-col .btn {
+  width: 100%;
+  justify-content: center;
+  font-size: .95rem;
+  padding: .35rem .5rem;
+  white-space: nowrap;
+}
+/* Removing a picture is the rarer, undo-ish half of the pair, so it is quiet:
+   a line of text rather than a second bordered button competing with the first. */
+.pic-col .btn.danger {
+  border: 0;
+  padding: .1rem;
+  font-size: .92rem;
+  background: none;
+}
+.pic-col .btn.danger:hover { background: none; color: var(--bad); text-decoration: underline; }
+.pic-hint { text-align: center; line-height: 1.35; margin-top: .15rem; }
+.say-col > .field:last-of-type { margin-bottom: 1rem; }
+
+.pic-note {
+  font-size: .95rem;
+  text-align: center;
+  margin: 0;
+  color: var(--good);
+}
+.pic-note.bad { color: var(--bad); }
+
+/* A file input the button opens for it. Off-screen rather than display:none,
+   which some browsers refuse to open programmatically. */
+.offscreen {
+  position: absolute;
+  width: 1px; height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.flying { display: flex; align-items: center; gap: .5rem; }
+.flying .hint { margin: 0; }
+.flying .flag { height: 1.7rem; width: 2.3rem; }
+
+/* ---- the crop sheet ----------------------------------------------------- */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 4vh 4vw;
+}
+.sheet[hidden] { display: none; }
+.sheet-back { position: absolute; inset: 0; background: rgba(0, 0, 0, .5); }
+.sheet-box {
+  position: relative;
+  background: var(--paper);
+  border: 3px solid var(--charcoal);
+  border-radius: var(--wobble);
+  padding: 1.3rem 1.4rem;
+  width: min(400px, 92vw);
+}
+.sheet-box h3 { font-size: 1.5rem; margin-bottom: .3rem; }
+.sheet-do { display: flex; gap: .7rem; justify-content: flex-end; margin-top: 1rem; }
+
+/* The square hole is the whole point: it says which part survives the crop,
+   which a plain preview leaves you guessing at. Drawn as a ring rather than a
+   mask so the rest of the picture stays visible while you drag it. */
+.cropper {
+  position: relative;
+  width: 320px;
+  max-width: 100%;
+  aspect-ratio: 1;
+  margin: .9rem auto 0;
+  overflow: hidden;
+  border-radius: 20px 24px 21px 25px;
+  border: 3px solid var(--charcoal);
+  background: repeating-conic-gradient(#eee 0 25%, #fff 0 50%) 0 0 / 22px 22px;
+  cursor: grab;
+  touch-action: none;
+}
+.cropper:active { cursor: grabbing; }
+.cropper canvas { width: 100%; height: 100%; display: block; }
+
+.zoom { display: flex; align-items: center; gap: .7rem; margin-top: .8rem; }
+.zoom .hint { margin: 0; }
+.zoom input[type=range] { flex: 1; width: auto; accent-color: var(--link); }
+
 /* ---- forms -------------------------------------------------------------- */
 
-.narrow { width: min(560px, 94vw); }
+.narrow { width: min(430px, 94vw); }
 
-.field { margin-bottom: 1rem; }
+.field { margin-bottom: .85rem; }
 .field > label {
   display: block;
-  font-size: 1.05rem;
-  margin-bottom: .3rem;
+  font-size: 1.02rem;
+  margin-bottom: .25rem;
 }
-.field .hint { display: block; color: var(--muted); font-size: .92rem; margin-top: .3rem; }
+.field .hint { display: block; color: var(--muted); font-size: .9rem; margin-top: .25rem; }
+
+/* A login card is four short lines and a button; at the page's usual rhythm it
+   spreads over a screen and a half of nothing. Tighter type, tighter fields
+   and a narrower card make it read as one small thing to fill in. */
+.narrow .card { padding: 1.2rem 1.25rem; }
+.narrow .card > h2 { font-size: 1.35rem; margin-bottom: .5rem; }
+.narrow .field { margin-bottom: .7rem; }
+.narrow input { font-size: 1.02rem; padding: .42rem .6rem; }
+.narrow .btn { padding: .45rem 1rem; }
 
 input[type=text], input[type=email], input[type=password], input[type=search], select {
   width: 100%;
@@ -401,6 +510,17 @@ input[type=file] { font: inherit; font-size: 1rem; max-width: 100%; }
   .grid { grid-template-columns: repeat(4, 1fr); }
   .person { grid-template-columns: auto 1fr; }
   .person-elos { grid-column: 1 / -1; justify-content: flex-start; }
+}
+
+@media (max-width: 640px) {
+  /* The picture goes back on top of the fields rather than beside them: two
+     columns in 360px gives the fields about 180, which is narrower than the
+     country names that have to fit in them. */
+  .profile-edit { grid-template-columns: 1fr; gap: 1.1rem; }
+  .pic-col { flex-direction: row; flex-wrap: wrap; justify-content: flex-start; }
+  .pic-col .btn { width: auto; }
+  .pic-hint { text-align: left; flex-basis: 100%; }
+  .pic-note { text-align: left; flex-basis: 100%; }
 }
 
 @media (max-width: 560px) {

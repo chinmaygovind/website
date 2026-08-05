@@ -11,33 +11,41 @@
 {% if notice %}<div class="note">{{ notice }}</div>{% endif %}
 {% if error %}<div class="warn">{{ error }}</div>{% endif %}
 
-{# ---- who you are -------------------------------------------------------- #}
-<form class="card" method="post" action="{{ url_for('accounts.save_profile') }}"
-      enctype="multipart/form-data">
+{# ---- who you are --------------------------------------------------------
+
+   Two columns: the picture and its own button on the left, the words on the
+   right. The picture is one thing you change in one place, so its button
+   belongs under it rather than across the panel from it - and stacking the
+   fields beside it instead of below turns a tall page into a short one. #}
+<div class="card">
   <h2>Profile</h2>
 
-  <div class="row" style="align-items:flex-start;gap:1.4rem;margin-bottom:1.2rem">
-    <div style="flex:0 0 auto">{{ bits.avatar(user, 'lg') }}</div>
-    <div style="flex:1 1 16rem">
-      <div class="field">
-        <label for="avatar">Picture</label>
-        <input type="file" id="avatar" name="avatar" accept="image/*"/>
-        <span class="hint">Square-cropped from the middle and shrunk to 256px.
-          PNG, JPEG, WebP or GIF, up to 5MB.</span>
-      </div>
+  <div class="profile-edit">
+    <div class="pic-col">
+      <div id="avatarSlot">{{ bits.avatar(user, 'lg') }}</div>
+      <button type="button" class="btn mini" id="pickPic">Change picture</button>
+      <button type="button" class="btn mini danger" id="dropPic"
+              {% if not (profile and profile.avatar) %}hidden{% endif %}>Remove</button>
+      <span class="hint pic-hint">Square, 256px.<br/>PNG, JPEG, WebP or GIF.</span>
+      {# The confirmation lives under the picture rather than in the banner at
+         the top of the page: it is about the thing an inch above it, and by
+         the time a notice at the top has been read the picture has already
+         changed under your eyes anyway. #}
+      <p class="pic-note" id="picNote" hidden></p>
+      {# Off-screen rather than hidden: a display:none input cannot be opened
+         by a click on some browsers, and the button is the real control. #}
+      <input type="file" id="picFile" accept="image/*" class="offscreen"/>
     </div>
-  </div>
 
-  <div class="field">
-    <label for="display_name">Display name</label>
-    <input type="text" id="display_name" name="display_name" maxlength="30"
-           value="{{ profile.display_name if profile and profile.display_name else '' }}"
-           placeholder="{{ user.username }}"/>
-    <span class="hint">What everyone sees — in lobbies, at the table, on the
-      leaderboards. Leave it empty to go by <b>{{ user.username }}</b>.</span>
-  </div>
-
-  <hr class="sep"/>
+    <form class="say-col" method="post" action="{{ url_for('accounts.save_profile') }}">
+      <div class="field">
+        <label for="display_name">Display name</label>
+        <input type="text" id="display_name" name="display_name" maxlength="30"
+               value="{{ profile.display_name if profile and profile.display_name else '' }}"
+               placeholder="{{ user.username }}"/>
+        <span class="hint">What everyone sees — in lobbies, at the table, on the
+          leaderboards. Empty means <b>{{ user.username }}</b>.</span>
+      </div>
 
   <div class="field">
     <label for="country">Country</label>
@@ -87,22 +95,42 @@
     </div>
   </div>
 
-  {# Drawn at the size the profile hero draws it, not at hint size: the whole
-     job of this line is to show you what other people will see. #}
-  <div class="field" style="display:flex;align-items:center;gap:.5rem">
-    <span class="hint" style="margin:0">Flying now:</span>
-    <img class="flag" id="flagPreview" alt="" style="height:1.8rem;width:2.4rem" hidden/>
-    <span id="flagNone" class="muted">nothing</span>
-  </div>
+      {# Drawn at the size a profile draws it, not at hint size: the whole job
+         of this line is to show you what other people will see. #}
+      <div class="field flying">
+        <span class="hint">Flying now:</span>
+        <img class="flag" id="flagPreview" alt="" hidden/>
+        <span id="flagNone" class="muted">nothing</span>
+      </div>
 
-  <div class="row">
-    <button class="btn primary" type="submit">Save profile</button>
-    {% if profile and profile.avatar %}
-    <button class="btn danger" type="submit" formaction="{{ url_for('accounts.remove_avatar') }}"
-            formnovalidate>Remove picture</button>
-    {% endif %}
+      <button class="btn primary" type="submit">Save profile</button>
+    </form>
   </div>
-</form>
+</div>
+
+{# ---- the crop dialog ----------------------------------------------------
+   Drag to move, the slider to zoom, and a square hole showing exactly what
+   will be kept. A preview that only *showed* the picture would leave people
+   guessing which part of it survives the crop. #}
+<div class="sheet" id="cropSheet" hidden>
+  <div class="sheet-back" data-close></div>
+  <div class="sheet-box">
+    <h3>Position your picture</h3>
+    <p class="hint">Drag to move it. The square is what people will see.</p>
+    <div class="cropper" id="cropStage">
+      <canvas id="cropCanvas" width="320" height="320"></canvas>
+    </div>
+    <label class="zoom">
+      <span class="hint">Zoom</span>
+      <input type="range" id="cropZoom" min="1" max="4" step="0.01" value="1"/>
+    </label>
+    <div class="warn" id="cropErr" hidden></div>
+    <div class="sheet-do">
+      <button type="button" class="btn" data-close>Cancel</button>
+      <button type="button" class="btn primary" id="cropSave">Use this picture</button>
+    </div>
+  </div>
+</div>
 
 {# ---- the bits that need your password ------------------------------------ #}
 <div class="card" id="security">
@@ -163,6 +191,190 @@
 
 {% block scripts %}
 <script>
+// ---- the picture ----------------------------------------------------------
+//
+// Cropping happens here rather than on the server because "which part of this
+// photo is my face" is a question only the person looking at it can answer -
+// a centre crop gets a shoulder as often as not. What is uploaded is a square
+// the size the server stores anyway, and the server still decodes and
+// re-encodes it: this is a convenience, not a claim about the bytes.
+(function () {
+  var OUT = 256;                       // what we send; the server stores 256 too
+  var slot = document.getElementById('avatarSlot');
+  var file = document.getElementById('picFile');
+  var sheet = document.getElementById('cropSheet');
+  var stage = document.getElementById('cropStage');
+  var canvas = document.getElementById('cropCanvas');
+  var zoom = document.getElementById('cropZoom');
+  var err = document.getElementById('cropErr');
+  var saveBtn = document.getElementById('cropSave');
+  var dropBtn = document.getElementById('dropPic');
+  var ctx = canvas.getContext('2d');
+  var img = null, view = null, drag = null;
+
+  function say(msg, bad) {
+    var note = document.getElementById('picNote');
+    note.textContent = msg;
+    note.className = 'pic-note ' + (bad ? 'bad' : 'good');
+    note.hidden = false;
+  }
+
+  document.getElementById('pickPic').addEventListener('click', function () {
+    file.click();
+  });
+
+  file.addEventListener('change', function () {
+    var f = file.files && file.files[0];
+    if (!f) return;
+    if (f.size > 5 * 1024 * 1024) {
+      say('That image is larger than 5MB. Try a smaller one.', true);
+      file.value = '';
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      var loaded = new Image();
+      loaded.onload = function () { img = loaded; open(); };
+      loaded.onerror = function () {
+        say("That file isn't an image we can read.", true);
+      };
+      loaded.src = e.target.result;
+    };
+    reader.readAsDataURL(f);
+    // Cleared so that picking the *same* file again still fires `change`.
+    file.value = '';
+  });
+
+  function open() {
+    err.hidden = true;
+    // Start at "fits the square", which is the crop somebody would have got
+    // without this dialog - so the default is never worse than the old one.
+    var box = canvas.width;
+    var base = Math.max(box / img.width, box / img.height);
+    view = {scale: base, base: base, x: box / 2, y: box / 2};
+    zoom.value = 1;
+    draw();
+    sheet.hidden = false;
+  }
+
+  function close() { sheet.hidden = true; img = null; }
+  sheet.querySelectorAll('[data-close]').forEach(function (el) {
+    el.addEventListener('click', close);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !sheet.hidden) close();
+  });
+
+  function clamp() {
+    // The picture may never come away from an edge of the square, or the crop
+    // would include a strip of nothing.
+    var box = canvas.width;
+    var w = img.width * view.scale, h = img.height * view.scale;
+    view.x = Math.min(Math.max(view.x, box - w / 2), w / 2);
+    view.y = Math.min(Math.max(view.y, box - h / 2), h / 2);
+  }
+
+  function draw() {
+    if (!img) return;
+    clamp();
+    var box = canvas.width;
+    var w = img.width * view.scale, h = img.height * view.scale;
+    ctx.clearRect(0, 0, box, box);
+    ctx.drawImage(img, view.x - w / 2, view.y - h / 2, w, h);
+  }
+
+  zoom.addEventListener('input', function () {
+    if (!img) return;
+    view.scale = view.base * parseFloat(zoom.value);
+    draw();
+  });
+
+  function point(e) {
+    var t = e.touches ? e.touches[0] : e;
+    return {x: t.clientX, y: t.clientY};
+  }
+  function startDrag(e) {
+    if (!img) return;
+    drag = point(e);
+    e.preventDefault();
+  }
+  function moveDrag(e) {
+    if (!drag || !img) return;
+    var p = point(e);
+    // The canvas is drawn at 320 and may be laid out smaller, so a pixel of
+    // finger is not a pixel of picture.
+    var k = canvas.width / stage.getBoundingClientRect().width;
+    view.x += (p.x - drag.x) * k;
+    view.y += (p.y - drag.y) * k;
+    drag = p;
+    draw();
+    e.preventDefault();
+  }
+  function endDrag() { drag = null; }
+
+  stage.addEventListener('mousedown', startDrag);
+  window.addEventListener('mousemove', moveDrag);
+  window.addEventListener('mouseup', endDrag);
+  stage.addEventListener('touchstart', startDrag, {passive: false});
+  stage.addEventListener('touchmove', moveDrag, {passive: false});
+  window.addEventListener('touchend', endDrag);
+
+  saveBtn.addEventListener('click', function () {
+    if (!img) return;
+    var out = document.createElement('canvas');
+    out.width = out.height = OUT;
+    var octx = out.getContext('2d');
+    var k = OUT / canvas.width;
+    var w = img.width * view.scale * k, h = img.height * view.scale * k;
+    octx.drawImage(img, view.x * k - w / 2, view.y * k - h / 2, w, h);
+
+    saveBtn.disabled = true;
+    out.toBlob(function (blob) {
+      var body = new FormData();
+      body.append('avatar', blob, 'avatar.png');
+      fetch('{{ url_for("accounts.save_avatar") }}', {method: 'POST', body: body})
+        .then(function (r) { return r.json().then(function (d) { return [r.ok, d]; }); })
+        .then(function (pair) {
+          saveBtn.disabled = false;
+          if (!pair[0] || !pair[1].ok) {
+            err.textContent = pair[1].error || 'That did not save.';
+            err.hidden = false;
+            return;
+          }
+          slot.innerHTML = '<span class="av av-lg"><img src="' + pair[1].url +
+                           '" alt=""/></span>';
+          dropBtn.hidden = false;
+          close();
+          say('Picture updated.');
+        })
+        .catch(function () {
+          saveBtn.disabled = false;
+          err.textContent = 'Could not reach the server. Try again.';
+          err.hidden = false;
+        });
+    }, 'image/png');
+  });
+
+  dropBtn.addEventListener('click', function () {
+    dropBtn.disabled = true;
+    fetch('{{ url_for("accounts.remove_avatar") }}', {method: 'POST'})
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        dropBtn.disabled = false;
+        if (!d.ok) { say(d.error || 'That did not work.', true); return; }
+        slot.innerHTML = '<span class="av av-lg"><span class="av-default" ' +
+                         'style="--av-colour: ' + d.colour + '">' + d.initial +
+                         '</span></span>';
+        dropBtn.hidden = true;
+        say('Picture removed.');
+      })
+      .catch(function () {
+        dropBtn.disabled = false;
+        say('Could not reach the server. Try again.', true);
+      });
+  });
+})();
+
 // Three things follow the country box: whether there is a state box at all,
 // whether there is a choice of flag to make, and which flag the preview shows.
 // All of it is decoration over a form the server validates anyway.

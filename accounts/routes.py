@@ -299,10 +299,13 @@ def _back(ok=None, err=None, anchor=None):
 
 @bp.route("/settings/profile", methods=["POST"])
 def save_profile():
-    """Display name, where you're from, which flag, and the picture.
+    """Display name, where you're from, and which flag.
 
-    One form and one save, because they are one thought - "this is me" - and
-    splitting them would mean three buttons on a panel with four fields.
+    The picture used to be part of this form and is not any more. Cropping it
+    ends in a decision of its own - "use this one" - and having said that, being
+    told the picture is not actually saved until you scroll past the country and
+    press a second button is the wrong answer. So the crop dialog saves it, and
+    this form is the three fields that genuinely are one thought.
     """
     user, bounce = _require_login()
     if bounce:
@@ -345,33 +348,65 @@ def save_profile():
     profile.flag_pref = ("state" if request.form.get("flag_pref") == "state"
                          and profile.us_state else "country")
 
-    upload = request.files.get("avatar")
-    if upload and upload.filename:
-        try:
-            stored = avatars.store(_avatar_dir(), user.id, upload.read())
-        except avatars.AvatarError as exc:
-            return _back(err=str(exc))
-        if profile.avatar and profile.avatar != stored:
-            avatars.remove(_avatar_dir(), profile.avatar)
-        profile.avatar = stored
-
     profile.updated_at = datetime.utcnow()
     db.session.commit()
     return _back(ok="Profile saved.")
 
 
-@bp.route("/settings/avatar/remove", methods=["POST"])
-def remove_avatar():
+@bp.route("/settings/avatar", methods=["POST"])
+def save_avatar():
+    """Take the cropped picture and answer in JSON.
+
+    Its own endpoint because the crop dialog is its own decision: the page
+    swaps the picture in place and says so, rather than sending you back to a
+    reloaded form to look for what changed.
+
+    The crop happens in the browser, so what arrives is already square - and is
+    still decoded, cropped, resized and re-encoded here exactly as before. A
+    client that crops is a convenience, not evidence about the bytes.
+    """
     user, bounce = _require_login()
     if bounce:
-        return bounce
+        # A JSON caller wants a fact, not somebody else's login page.
+        return jsonify({"ok": False, "error": "You're not logged in any more."}), 401
+
+    upload = request.files.get("avatar")
+    if not upload or not upload.filename:
+        return jsonify({"ok": False, "error": "No picture was sent."}), 400
+
+    profile = _profile(user, create=True)
+    try:
+        stored = avatars.store(_avatar_dir(), user.id, upload.read())
+    except avatars.AvatarError as exc:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    if profile.avatar and profile.avatar != stored:
+        avatars.remove(_avatar_dir(), profile.avatar)
+    profile.avatar = stored
+    profile.updated_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({"ok": True, "url": url_for("accounts.avatar", name=stored)})
+
+
+@bp.route("/settings/avatar/remove", methods=["POST"])
+def remove_avatar():
+    """Also JSON, so removing and replacing feel like the same kind of thing.
+
+    Hands back what the default looks like, since taking a picture away means
+    putting the initial back and the page has to draw it without a reload.
+    """
+    user, bounce = _require_login()
+    if bounce:
+        return jsonify({"ok": False, "error": "You're not logged in any more."}), 401
     profile = _profile(user)
     if profile and profile.avatar:
         avatars.remove(_avatar_dir(), profile.avatar)
         profile.avatar = None
         profile.updated_at = datetime.utcnow()
         db.session.commit()
-    return _back(ok="Picture removed.")
+    return jsonify({"ok": True, "url": None,
+                    "initial": avatars.initial_for(user.display),
+                    "colour": avatars.colour_for(user.username)})
 
 
 @bp.route("/settings/password", methods=["POST"])

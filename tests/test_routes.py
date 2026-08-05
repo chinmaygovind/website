@@ -245,47 +245,88 @@ def test_a_country_we_have_no_flag_for_is_refused(client, logged_in):
     assert "isn't a country" in unquote(resp.headers["Location"])
 
 
+def upload(client, blob, name="me.png"):
+    """Post a picture the way the crop dialog does: its own request, JSON back."""
+    return client.post("/accounts/settings/avatar",
+                       data={"avatar": (io.BytesIO(blob), name)},
+                       content_type="multipart/form-data")
+
+
 def test_uploading_and_removing_a_picture(client, logged_in, db):
+    """The picture saves on its own, because cropping ends in a decision of its
+    own - being told afterwards that it is not saved until you press a second
+    button further down the page would be the wrong answer."""
     uid = logged_in("snapper")
-    resp = client.post("/accounts/settings/profile", data={
-        "display_name": "", "country": "",
-        "avatar": (io.BytesIO(png()), "me.png")},
-        content_type="multipart/form-data")
-    assert "err=" not in resp.headers["Location"], resp.headers["Location"]
+    resp = upload(client, png())
+    assert resp.status_code == 200 and resp.get_json()["ok"]
 
     stored = db.session.get(UserProfile, uid).avatar
     assert stored.startswith("%d-" % uid) and stored.endswith(".webp")
+    # The reply carries the new URL, since the page swaps the picture in place.
+    assert resp.get_json()["url"].endswith(stored)
 
     served = client.get("/accounts/avatar/" + stored)
     assert served.status_code == 200
     assert "immutable" in served.headers["Cache-Control"]
     assert served.data[:4] == b"RIFF"                  # a WebP, not the PNG sent
 
-    client.post("/accounts/settings/avatar/remove")
+    gone = client.post("/accounts/settings/avatar/remove")
+    assert gone.get_json()["ok"]
+    # ...and what to draw instead, since the initial has to go back without a reload.
+    assert gone.get_json()["initial"] == "S"
+    assert gone.get_json()["colour"].startswith("#")
     assert db.session.get(UserProfile, uid).avatar is None
     assert client.get("/accounts/avatar/" + stored).status_code == 404
 
 
+def test_replacing_a_picture_takes_the_old_one_off_the_disk(client, logged_in, db):
+    uid = logged_in("swapper")
+    upload(client, png())
+    first = db.session.get(UserProfile, uid).avatar
+    upload(client, png(colour=(220, 40, 40)))
+    second = db.session.get(UserProfile, uid).avatar
+
+    assert second != first
+    assert client.get("/accounts/avatar/" + first).status_code == 404
+    assert client.get("/accounts/avatar/" + second).status_code == 200
+
+
 def test_a_file_that_is_not_an_image_is_turned_away(client, logged_in, db):
+    """The browser crops before sending, so what arrives is normally a canvas
+    export - which is exactly why the server cannot take that on trust."""
     uid = logged_in("chancer")
-    resp = client.post("/accounts/settings/profile", data={
-        "avatar": (io.BytesIO(b"<?php echo 1; ?>"), "shell.php.png")},
-        content_type="multipart/form-data")
-    assert "err=" in resp.headers["Location"]
+    resp = upload(client, b"<?php echo 1; ?>", "shell.php.png")
+    assert resp.status_code == 400
+    assert not resp.get_json()["ok"]
     assert db.session.get(UserProfile, uid) is None or \
         db.session.get(UserProfile, uid).avatar is None
 
 
+def test_a_picture_request_with_no_picture_says_so(client, logged_in):
+    logged_in("empty")
+    resp = client.post("/accounts/settings/avatar", data={},
+                       content_type="multipart/form-data")
+    assert resp.status_code == 400
+    assert not resp.get_json()["ok"]
+
+
+def test_a_logged_out_picture_request_gets_a_fact_not_a_login_page(client):
+    """It is called by script, and a 302 to HTML would be parsed as success."""
+    resp = client.post("/accounts/settings/avatar", data={},
+                       content_type="multipart/form-data")
+    assert resp.status_code == 401
+    assert resp.get_json()["ok"] is False
+
+
 def test_a_failed_save_changes_nothing_at_all(client, logged_in, db):
-    """The form is one save, so a rejected field must not leave the earlier
-    ones half-applied."""
+    """The profile form is one save, so a rejected field must not leave the
+    earlier ones half-applied - and the display name is assigned before the
+    country is checked."""
     uid = logged_in("careful")
     client.post("/accounts/settings/profile",
                 data={"display_name": "Careful", "country": "ie"})
-    client.post("/accounts/settings/profile", data={
-        "display_name": "Renamed", "country": "ie",
-        "avatar": (io.BytesIO(b"not an image"), "x.png")},
-        content_type="multipart/form-data")
+    client.post("/accounts/settings/profile",
+                data={"display_name": "Renamed", "country": "zz"})
 
     profile = db.session.get(UserProfile, uid)
     assert profile.display_name == "Careful"
@@ -508,9 +549,7 @@ def test_an_upload_far_too_large_is_refused_before_it_is_read(client, logged_in)
     """nginx allows 20m through, so without a limit here a request could put
     20MB in memory just to be told the picture is over 5MB."""
     logged_in("hefty")
-    resp = client.post("/accounts/settings/profile", data={
-        "avatar": (io.BytesIO(b"x" * (7 * 1024 * 1024)), "huge.png")},
-        content_type="multipart/form-data")
+    resp = upload(client, b"x" * (7 * 1024 * 1024), "huge.png")
     assert resp.status_code == 413
     assert "under 5MB" in body(resp)
 
