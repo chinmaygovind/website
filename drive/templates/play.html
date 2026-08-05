@@ -167,16 +167,30 @@
     <h4>Room {{ room.code }}<button class="side-close" id="btnRoomClose" title="Hide">&times;</button></h4>
     <div id="roster"></div>
   </div>
-  <!-- The track lives in the switcher at the top with every other track, so
-       there is one place tracks are chosen whether you are alone or not. What
-       is left in here is the people and the talking. -->
+  <!-- What the next race will be.
+       The track is not here - it lives in the switcher at the top with every
+       other track, so there is one place tracks are chosen whether you are
+       alone or not. What is here is the shape of the race itself, which is the
+       host's to set and everybody's to see: you are about to drive it, so a
+       switch only the host can read would be a rule nobody else knows. -->
+  <div class="side-race">
+    <h4>Race settings</h4>
+    <button class="setting" id="optQual" role="switch" aria-checked="true">
+      <span class="setting-name">Qualifying</span>
+      <span class="switch"><i></i></span>
+    </button>
+    <div class="setting-note" id="qualNote"></div>
+  </div>
   <button class="btn ghost" id="btnLeave" style="border-color:#ff8a7a;color:#ff8a7a">Leave room</button>
-  <!-- Chat last, so it takes the leftover height and the box you type into is
-       at the bottom of the drawer where a chat box belongs. -->
+  <!-- Chat last, and pinned to the floor of the drawer: it takes whatever
+       height is left over, so the box you type into is at the bottom however
+       many people are in the room. M puts the cursor in it from the road. -->
   <div class="side-chat">
     <h4>Chat</h4>
     <div id="chatLog"></div>
-    <form id="chatForm" autocomplete="off"><input id="chatInput" placeholder="Say something" maxlength="200"/></form>
+    <form id="chatForm" autocomplete="off">
+      <input id="chatInput" placeholder="Message (Enter to send)" maxlength="200"/>
+    </form>
   </div>
 </aside>
 {% endif %}
@@ -376,13 +390,20 @@
         <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
       </button>
     </div>
+    <!-- M is the one key that means two things, because the two modes want
+         different things from it: alone there is nothing to say and the sound
+         is worth a key, and in a room the chat is. Muting is still a click away
+         in settings, where every other preference is. -->
     <table class="board controls keys-only">
       <tr><td>Steer</td><td>&larr; &rarr; or A / D</td></tr>
       <tr><td>Throttle / brake</td><td>&uarr; &darr; or W / S</td></tr>
       <tr><td>Drift</td><td>Space or Shift</td></tr>
       <tr><td>Restart the run</td><td>R</td></tr>
       <tr><td>Back to last checkpoint</td><td>T</td></tr>
-      <tr><td>Ghost / mute</td><td>G / M</td></tr>
+      <tr><td>Change track</td><td>P</td></tr>
+      <tr><td>Ghost</td><td>G</td></tr>
+      <tr class="solo-only"><td>Mute</td><td>M</td></tr>
+      <tr class="room-only"><td>Chat</td><td>M, then Enter to send</td></tr>
       <tr><td>Settings / help</td><td>Esc / H</td></tr>
     </table>
     <table class="board controls touch-only">

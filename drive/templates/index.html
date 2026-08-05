@@ -8,28 +8,32 @@
    lets you change it from in there. So this page leads with what the game is,
    and keeps the track list underneath as a way of going to a specific one. #}
 <div class="wrap">
-  <h1>Low-poly time trials.</h1>
-  <p class="lede">Nine tracks, three medal times each, and a ghost of your best lap to chase.
-    {% if not current_user %}<a href="/login">Log in</a> to put your times on the board, or just start driving -
-    anything you set as a guest is saved and goes up when you do.{% endif %}
-  </p>
+  <h1>Race online!</h1>
 
+  {# Two ways in, and they are not a primary and a fallback - they are the two
+     halves of the game. Red is the clock, yellow is the other cars. #}
   <div class="row" style="margin:.9rem 0 1.8rem">
     <a class="btn big" href="/solo">Drive now</a>
-    <a class="btn secondary big" href="/lobbies">Race people</a>
+    <a class="btn yellow big" href="/lobbies">Race your friends</a>
   </div>
 
-  <h2>How it works</h2>
+  <h2>How to play</h2>
   <p>Each track is a single run from the start line to the finish, through every
   checkpoint in order. Miss one and the run does not count. Fall off and you
   restart from the last checkpoint you crossed - the clock keeps going.</p>
-  <p>Three medal times per track, from bronze up to <b>gold</b>, which is a lap
-  driven about as well as the track allows. Your best run on each track is saved
-  as a <b>ghost</b> you can race against - so is the fastest lap on the track,
-  and so is anyone else's, straight off the leaderboard.</p>
-  <p>In multiplayer everyone drives the same track together. The host starts a
-  countdown when people are ready; between races you can keep practising in the
-  same room. Cars are solid - bumping is allowed and encouraged.</p>
+  <p><b>Solo</b> is a time trial: you against the clock and nobody else. Every
+  track has three medal times - bronze, silver and then <b>gold</b>, which is a
+  lap driven about as well as the track allows - and your best run is kept as a
+  <b>ghost</b> to chase. So is the fastest lap anyone has set here, and so is
+  anybody else's, straight off the leaderboard. Beat all of them and the world
+  record is yours.</p>
+  <p><b>Multiplayer</b> puts everyone in one room on one track, practising
+  whenever they like. When the host starts a race there is a ninety-second
+  <b>qualifying</b> session first - ordinary practice with a clock on it, where
+  your fastest lap sets your place on the grid, pole for the quickest. The host
+  can switch qualifying off, and then the grid is drawn at random. Then the
+  countdown, then the flag. Cars are solid, so bumping is allowed and
+  encouraged, and where you finish moves your rating.</p>
 
   <h2>Tracks</h2>
   <div class="tracks">

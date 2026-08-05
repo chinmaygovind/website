@@ -14,6 +14,11 @@ import { mulberry } from './trackmesh.js';
 const BRAKE_OFF = 0x521218;
 const BRAKE_ON = 0xff2b2b;
 
+// How see-through a car is when it is not something you can hit. The ghost has
+// always used this; a rival in practice is the same idea and so is the same
+// number, which is what makes the two read as one rule rather than two effects.
+const GHOST_OPACITY = 0.42;
+
 export class CarView {
   constructor(scene, color, opts = {}) {
     this.group = new THREE.Group();
@@ -23,9 +28,18 @@ export class CarView {
     const col = new THREE.Color(color);
     const dark = col.clone().multiplyScalar(0.55);
 
-    const mat = (c, extra = {}) => new THREE.MeshLambertMaterial(
-      Object.assign({ color: c, flatShading: true,
-                      transparent: ghost, opacity: ghost ? 0.42 : 1 }, extra));
+    // Every material the car is built from, kept so it can be turned
+    // translucent and back at run time - see setGhostly. The label is
+    // deliberately not one of them: a name has to stay readable whatever the
+    // car under it is doing.
+    this._mats = [];
+    const mat = (c, extra = {}) => {
+      const m = new THREE.MeshLambertMaterial(
+        Object.assign({ color: c, flatShading: true,
+                        transparent: ghost, opacity: ghost ? GHOST_OPACITY : 1 }, extra));
+      this._mats.push(m);
+      return m;
+    };
 
     const bodyMat = mat(col);
     const darkMat = mat(dark);
@@ -71,10 +85,11 @@ export class CarView {
     }
 
     // contact shadow: one dark disc laid on the surface under the car
+    this._shadowOpacity = ghost ? 0.1 : 0.24;
     this.shadow = new THREE.Mesh(
       new THREE.CircleGeometry(1.5, 14),
       new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true,
-                                    opacity: ghost ? 0.1 : 0.24, depthWrite: false }));
+                                    opacity: this._shadowOpacity, depthWrite: false }));
     this.shadow.rotation.x = -Math.PI / 2;
     scene.add(this.shadow);
 
@@ -86,13 +101,15 @@ export class CarView {
     this.brakeMats = [];
     for (const s of [-1, 1]) {
       const m = new THREE.MeshBasicMaterial({
-        color: BRAKE_OFF, transparent: ghost, opacity: ghost ? 0.42 : 1 });
+        color: BRAKE_OFF, transparent: ghost, opacity: ghost ? GHOST_OPACITY : 1 });
       const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.22, 0.1), m);
       lamp.position.set(s * 0.6, 0.5, 1.73);
       this.body.add(lamp);
       this.brakeMats.push(m);
+      this._mats.push(m);
     }
     this._braking = false;
+    this._ghostly = ghost;
 
     scene.add(this.group);
     this.scene = scene;
@@ -140,7 +157,7 @@ export class CarView {
         this.shadow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), opts.groundN);
       }
       const fade = Math.max(0, 1 - Math.abs(pos.y - opts.groundY) / 7);
-      this.shadow.material.opacity = 0.24 * fade;
+      this.shadow.material.opacity = this._shadowOpacity * fade;
     } else {
       this.shadow.visible = false;
     }
@@ -149,6 +166,28 @@ export class CarView {
       this._braking = braking;
       for (const m of this.brakeMats) m.color.setHex(braking ? BRAKE_ON : BRAKE_OFF);
     }
+  }
+
+  /**
+   * Solid, or a translucent shell of the same car.
+   *
+   * Colour is the whole of how you tell one rival from another, so it is not
+   * touched: only opacity moves, and the name above the car does not fade at
+   * all. `transparent` is part of a material's program key in three.js, so
+   * flipping it recompiles a shader - hence the early return, since this is
+   * called from the frame loop and the answer changes about twice a race.
+   */
+  setGhostly(on) {
+    on = !!on;
+    if (on === this._ghostly) return;
+    this._ghostly = on;
+    for (const m of this._mats) {
+      m.transparent = on;
+      m.opacity = on ? GHOST_OPACITY : 1;
+      m.needsUpdate = true;
+    }
+    this._shadowOpacity = on ? 0.1 : 0.24;
+    this.shadow.material.opacity = this._shadowOpacity;
   }
 
   setVisible(v) {

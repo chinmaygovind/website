@@ -119,6 +119,60 @@ def test_pole_side_alternates_between_races(env):
 
 
 # ---------------------------------------------------------------------------
+# The room's settings
+# ---------------------------------------------------------------------------
+
+def test_qualifying_is_on_unless_the_host_turns_it_off(env):
+    A = env
+    assert A._room("SET1")["settings"]["qualifying"] is True
+
+
+def test_a_room_owns_its_settings(env):
+    """A copy of the defaults, not the defaults - one host must not set every
+    other room's rules along with their own."""
+    A = env
+    A._room("SET2")["settings"]["qualifying"] = False
+    assert A._room("SET3")["settings"]["qualifying"] is True
+    assert A.ROOM_DEFAULTS["qualifying"] is True
+
+
+def test_opening_a_race_with_qualifying_starts_a_clock(env):
+    A = env
+    r = _room(A, phase="free")
+    assert A._open_race(r) is True
+    assert r["phase"] == "qualifying"
+    assert r["qual_end"] is not None
+
+
+def test_opening_a_race_without_qualifying_starts_no_clock(env):
+    """With it off the room still passes through the phase - it just does not
+    wait there, and nothing is emitted to say it did."""
+    A = env
+    r = _room(A, phase="free")
+    r["settings"]["qualifying"] = False
+    assert A._open_race(r) is False
+    assert r["qual"] == {} and r["qual_end"] is None
+
+
+def test_no_qualifying_means_a_grid_drawn_at_random(env):
+    """The whole of "no qualifying": an empty session, so `_start_grid` has
+    nothing to sort by and shuffles - which is the same code path a field that
+    set no laps has always taken."""
+    A = env
+    poles = set()
+    for i in range(40):
+        r = _room(A, "RND" + str(i), phase="free")
+        r["settings"]["qualifying"] = False
+        for pid in ("aaa", "bbb", "ccc", "ddd"):
+            _add_car(A, r, pid, on_grid=False)
+        A._open_race(r)
+        grid = A._start_grid(r)
+        assert len(grid) == 4
+        poles.add(next(p for p, i in grid.items() if i == 0))
+    assert len(poles) > 1
+
+
+# ---------------------------------------------------------------------------
 # Ending a race
 # ---------------------------------------------------------------------------
 
