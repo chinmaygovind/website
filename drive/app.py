@@ -3,6 +3,7 @@ eventlet.monkey_patch()
 
 import os
 import re
+import hashlib
 import json as json_mod
 import time
 import uuid
@@ -21,7 +22,7 @@ from sqlalchemy import event, func
 from sqlalchemy.engine import Engine
 
 from models import (db, User, DriveStats, DriveTime, DriveStart,
-                    DriveGame, DrivePlayer)
+                    DriveGame, DrivePlayer, DriveRace)
 import tracks as tracks_mod
 import tuning
 import runcheck
@@ -70,8 +71,8 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 with app.app_context():
     db.create_all()  # creates drive_* tables; never touches the shared users table
 
-# Car colours, handed out by seat. Chosen to stay apart at a distance and on the
-# minimap, since telling cars apart mid-pack is the whole job.
+# Car colours. Chosen to stay apart at a distance and on the minimap, since
+# telling cars apart mid-pack is the whole job.
 CAR_COLORS = [
     "#e8453c",  # red
     "#3d8bfd",  # blue
@@ -82,6 +83,29 @@ CAR_COLORS = [
     "#56ccf2",  # cyan
     "#f178b6",  # pink
 ]
+
+GUEST_COLOR = CAR_COLORS[0]
+
+
+def color_for(username):
+    """The car colour that belongs to a person, wherever they turn up.
+
+    Colours used to be handed out by seat, which meant somebody was red in one
+    room and green in the next and neither was *theirs*. They are hashed from
+    the username instead - the same trick the accounts pages use for the
+    initial on a profile with no picture - so a person is one colour in a
+    lobby, alone on a time trial, and as the ghost of a lap they set months
+    ago. That last one is the reason this exists: a ghost has to be somebody's,
+    and nothing was storing whose colour it was.
+
+    Hashed with sha1 rather than `hash()`, which is salted per process and
+    would give the same person a different colour after every restart.
+    """
+    if not username:
+        return GUEST_COLOR
+    h = hashlib.sha1(username.lower().encode("utf-8")).hexdigest()
+    return CAR_COLORS[int(h[:8], 16) % len(CAR_COLORS)]
+
 
 MAX_ROOM = 8
 
@@ -407,6 +431,7 @@ def _play_solo(slug):
         roster_json="[]", name=get_effective_name(), user=user,
         pb_ms=(pb.time_ms if pb else None), next_slug=_next_slug(slug),
         pb_splits=({slug: pb.splits} if pb else {}),
+        car_color=color_for(user.username if user else None),
         tracks=tracks_mod.summaries(), cards=_track_cards())
 
 
@@ -446,7 +471,84 @@ def room(code):
         name=get_effective_name(), user=user,
         pb_ms=(pb.time_ms if pb else None), next_slug=_next_slug(track["slug"]),
         pb_splits=({track["slug"]: pb.splits} if pb else {}),
+        car_color=color_for(user.username if user else None),
         tracks=tracks_mod.summaries(), cards=_track_cards())
+
+
+@app.route("/j/<code>")
+@require_name
+def join_link(code):
+    """The share link: open it and you are in the room.
+
+    Everything else about joining is a form on the lobbies page, which is fine
+    when you can see the room and wrong when somebody is trying to hand you
+    theirs - "go to drive.cgovind.com, press Join, type A7QK2P" is three
+    instructions where a link is none.
+
+    Holding the link is the invitation, so it opens a private room without the
+    passcode: the passcode exists to keep a room out of a stranger's hands, and
+    a stranger does not have the link. `require_name` is still in the way, so
+    somebody with no account is asked who they are first and lands back here.
+    """
+    code = (code or "").strip().upper()
+    game = DriveGame.query.filter_by(code=code).first()
+    if not game:
+        return redirect(url_for("lobbies"))
+    sk = get_session_key()
+    if not DrivePlayer.query.filter_by(game_id=game.id, session_key=sk).first():
+        if len(game.players) >= game.max_players:
+            return redirect(url_for("lobbies"))
+        _leave_other_rooms(sk)
+        _add_player(game)
+        _broadcast_lobbies()
+    return redirect(url_for("room", code=game.code))
+
+
+@app.route("/race/<int:race_id>")
+def race_replay(race_id):
+    """One finished race, watched again from any car in it.
+
+    The same page the game is played on, in a third mode. A replay is a track,
+    a set of cars and a clock, and the play page is already the only thing that
+    knows how to draw those - reimplementing a lighter version of it would be a
+    second renderer to keep in step with the first.
+
+    The cars themselves are not in the page: eight replays of a two-minute race
+    is most of a megabyte of numbers, so the shell loads and fetches them.
+    """
+    race = DriveRace.query.get(race_id)
+    if not race:
+        return redirect(url_for("index"))
+    track = tracks_mod.get(race.track) or tracks_mod.TRACKS[0]
+    user = get_current_user()
+    return render_template(
+        "play.html", mode="replay", track=track,
+        track_json=json_mod.dumps(_track_payload(track["slug"]),
+                                  separators=(",", ":")),
+        tuning_json=tuning.as_json(), room=None, me_json="null",
+        roster_json="[]", name=get_effective_name(), user=user,
+        pb_ms=None, next_slug=_next_slug(track["slug"]), pb_splits={},
+        car_color=color_for(user.username if user else None),
+        race=race, tracks=tracks_mod.summaries(), cards=_track_cards())
+
+
+@app.route("/api/race/<int:race_id>")
+def api_race(race_id):
+    """Every car in a finished race, unpacked - see `race_replay`."""
+    race = DriveRace.query.get(race_id)
+    if not race:
+        return jsonify({"error": "no such race"}), 404
+    cars = []
+    for c in race.cars:
+        frames = runcheck.unpack_ghost(c.get("ghost"))
+        if not frames:
+            continue
+        cars.append({"pid": c.get("pid"), "name": c.get("name"),
+                     "color": c.get("color"), "ms": c.get("ms"),
+                     "dnf": c.get("dnf"), "frames": frames})
+    return jsonify({"ok": True, "id": race.id, "track": race.track,
+                    "hz": race.hz or REPLAY_HZ, "ms": race.ms,
+                    "why": race.why, "cars": cars})
 
 
 @app.route("/track/<slug>")
@@ -787,6 +889,9 @@ def api_ghost(slug):
     return jsonify({"ok": True, "hz": runcheck.ghost_hz(row.ghost),
                     "id": row.id, "time_ms": row.time_ms, "splits": row.splits,
                     "who": (row.user.display if row.user else "?"),
+                    # A ghost is somebody's lap, so it is driven in their car.
+                    # A grey one is a lap nobody set.
+                    "color": color_for(row.user.username if row.user else None),
                     "ghost": runcheck.unpack_ghost(row.ghost)})
 
 
@@ -842,8 +947,15 @@ def _add_player(game, host=False):
         return existing
     user = get_current_user()
     taken = {p.color for p in game.players}
-    color = next((c for c in CAR_COLORS if c not in taken),
-                 CAR_COLORS[len(game.players) % len(CAR_COLORS)])
+    # Your own colour if it is free, which it nearly always is - so the car
+    # people know you by in one room is the car they know you by in the next,
+    # and is the colour your ghost wears on every track. A collision falls back
+    # to the old first-free rule: two identical cars on a grid is worse than
+    # somebody being the wrong red for one race.
+    mine = color_for(user.username) if user else None
+    color = mine if (mine and mine not in taken) else \
+        next((c for c in CAR_COLORS if c not in taken),
+             CAR_COLORS[len(game.players) % len(CAR_COLORS)])
     seat = max((p.seat_order for p in game.players), default=-1) + 1
     p = DrivePlayer(game_id=game.id, user_id=(user.id if user else None),
                     session_key=sk, name=get_effective_name(),
@@ -945,6 +1057,16 @@ POSE_STALE_MS = 6000
 QUAL_MS = 90000
 COUNTDOWN_MS = 5000
 FINISH_GRACE_MS = 45000
+# The replay: every car, sampled on the same clock as a ghost and packed the
+# same way, from the green light to the flag. Capped at six minutes, which is
+# beyond any honest race on any track in the pool and stops a room left running
+# from eating memory.
+REPLAY_HZ = runcheck.GHOST_HZ
+REPLAY_MAX_FRAMES = REPLAY_HZ * 60 * 6
+# Replays are kept for their own sake - a link to one has to keep working - so
+# they outlive the room. They cannot be kept for ever either, at a couple of
+# hundred kilobytes each.
+REPLAY_KEEP = 300
 # A race must end. The grace clock below only starts when somebody *finishes*,
 # so on its own it cannot save a race nobody finishes - which is the ordinary
 # outcome of everyone crashing out or wandering off, and used to park the room
@@ -952,11 +1074,15 @@ FINISH_GRACE_MS = 45000
 HARD_RACE_MIN_MS = 150000
 HARD_RACE_MAX_MS = 900000
 
-# The phases a room moves through. Everything that can strand a room is a
-# transition out of one of the middle three, so they all go through the same
-# `_close_*` helpers and every one of them is guarded by a race sequence
-# number - see `_race_seq`.
-LIVE_PHASES = ("qualifying", "countdown", "racing")
+# The phases a room moves through:
+#
+#   free -> qual_countdown -> qualifying -> countdown -> racing -> results
+#
+# with `qual_countdown` and `qualifying` skipped entirely when the host has
+# turned qualifying off. Everything that can strand a room is a transition out
+# of one of the middle four, so they all go through the same `_close_*` helpers
+# and every one of them is guarded by a race sequence number - see `_race_seq`.
+LIVE_PHASES = ("qual_countdown", "qualifying", "countdown", "racing")
 
 _rooms = {}       # code -> live room state
 _sid_room = {}    # socket id -> (code, pid)
@@ -970,10 +1096,22 @@ def _room(code):
                             "loop": None, "seq": 0,
                             # qualifying -> grid
                             "qual": {}, "qual_end": None, "grid": {}, "splits": {},
-                            # Which side of the road pole starts on. Flipped
-                            # every race so no slot is permanently the inside
-                            # line - see `_start_grid`.
-                            "flip": False, "races_run": 0,
+                            # Whether there is a qualifying session at all. The
+                            # host's switch, and on by default: a grid somebody
+                            # drove for is better than a grid handed out.
+                            "qual_on": True,
+                            # The replay of whoever is provisionally on pole,
+                            # which is a ghost anybody in the room can chase.
+                            "pole": None,
+                            # Last race's finishing order, which is the grid for
+                            # the next one when there is no qualifying - see
+                            # `_reverse_grid`. Survives a reset; it is history,
+                            # not race state.
+                            "last_order": [],
+                            # Every car's poses through the race being driven,
+                            # written out as a DriveRace when it ends.
+                            "rec": None,
+                            "races_run": 0,
                             # Bumped by every race so a timer armed for one race
                             # can never close the next one.
                             "race_seq": 0, "hard_end": None}
@@ -1012,6 +1150,7 @@ def _snapshot(r):
 def _race_state(r):
     return {"phase": r["phase"], "t0": r["t0"], "deadline": r["deadline"],
             "finish": r["finish"], "qual": _qual_state(r),
+            "qual_on": r["qual_on"], "pole": _pole_meta(r),
             "order": [pid for pid, _ in sorted(r["cars"].items(),
                                                key=lambda kv: -kv[1]["prog"])]}
 
@@ -1086,6 +1225,26 @@ def _start_grid(r):
     return {pid: i for i, pid in enumerate(timed + untimed)}
 
 
+def _reverse_grid(r):
+    """The grid when there is no qualifying: last race's order, reversed.
+
+    Somebody has to start on pole, and with no session to earn it in the only
+    orderings available are arbitrary ones. Reversing the last result is the
+    arbitrary one that is at least *about* the racing: the person who has just
+    been beaten starts ahead of the person who beat them, and a room of mixed
+    ability keeps having close races instead of one procession after another.
+
+    Anyone who was not in the last race - or was not in a last race, because
+    there has not been one - lines up behind the field, shuffled. A grid slot
+    is something the room has seen you earn or lose; turning up is neither.
+    """
+    live = set(_live(r))
+    order = [pid for pid in reversed(r["last_order"]) if pid in live]
+    rest = [pid for pid in live if pid not in set(order)]
+    random.shuffle(rest)
+    return {pid: i for i, pid in enumerate(order + rest)}
+
+
 def _pump(code):
     """Per-room broadcast loop: one merged snapshot per tick while anyone is here."""
     idle = 0
@@ -1095,6 +1254,7 @@ def _pump(code):
         if not r:
             return
         snap = _snapshot(r)
+        _record_race(r)
         if snap["cars"]:
             idle = 0
             socketio.emit("poses", snap, room="room:" + code)
@@ -1108,6 +1268,73 @@ def _pump(code):
             if idle > TICK_HZ * 20:      # nobody has sent a pose in 20s
                 r["loop"] = None
                 return
+
+
+def _record_race(r):
+    """One replay frame per car, on the ghost's clock, while a race is running.
+
+    Sampled off the poses the server already has rather than asked for
+    separately - a replay is the race as everybody else saw it, which is
+    exactly what those poses are.
+
+    Frame `n` is the pose at `n / REPLAY_HZ` seconds after the green light for
+    *every* car, so the rows stay the same length and the whole thing plays
+    back as one moment in time. A car that has stopped reporting (finished,
+    gone, lagging) repeats its last pose rather than leaving a hole, since a
+    hole would shift every frame after it and slew that car's replay against
+    everybody else's.
+    """
+    rec = r.get("rec")
+    if not rec or r["phase"] != "racing":
+        return
+    elapsed = (_now_ms() - rec["t0"]) / 1000.0
+    while rec["n"] / REPLAY_HZ <= elapsed:
+        if rec["n"] >= REPLAY_MAX_FRAMES:
+            return
+        for pid, frames in rec["cars"].items():
+            c = r["cars"].get(pid)
+            if c is None:
+                frames.append(list(frames[-1]) if frames
+                              else [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0])
+                continue
+            frames.append([c["p"][0], c["p"][1], c["p"][2],
+                           c["q"][0], c["q"][1], c["q"][2], c["q"][3],
+                           c["flags"]])
+        rec["n"] += 1
+
+
+def _store_replay(r, game, standings, why):
+    """Write the race that has just finished out as a DriveRace. Lock held.
+
+    Returns its id, or None - a race with nothing recorded (everybody
+    disconnected before the first frame) is not a replay, and offering an
+    empty one from the results sheet would be worse than offering none.
+    """
+    rec = r.get("rec")
+    r["rec"] = None
+    if not rec or not rec["n"]:
+        return None
+    order = {e["pid"]: i for i, e in enumerate(standings)}
+    cars = []
+    for pid, frames in rec["cars"].items():
+        if len(frames) < 2:
+            continue
+        c = r["cars"].get(pid) or {}
+        cars.append({"pid": pid, "name": c.get("name") or "Driver",
+                     "color": c.get("color") or "#8899aa",
+                     "ms": c.get("ms"), "dnf": bool(c.get("dnf")),
+                     "ghost": runcheck.pack_ghost(frames)})
+    if not cars:
+        return None
+    # In finishing order, so the replay opens on the winner rather than on
+    # whoever happens to be first in a dict.
+    cars.sort(key=lambda e: order.get(e["pid"], 99))
+    race = DriveRace(code=r["code"], track=rec["track"] or game.track,
+                     hz=REPLAY_HZ, ms=int(rec["n"] * 1000 / REPLAY_HZ),
+                     why=why, cars_json=json_mod.dumps(cars))
+    db.session.add(race)
+    db.session.commit()
+    return race.id
 
 
 def _ensure_pump(code):
@@ -1208,11 +1435,18 @@ def on_set_track(data):
 
 
 def _reset_race(r):
-    """Put the room back to free practice with nothing left over."""
+    """Put the room back to free practice with nothing left over.
+
+    `last_order` and `qual_on` deliberately survive: one is the result of the
+    race that just happened and is the next grid, the other is a setting the
+    host made about the room.
+    """
     r["phase"] = "free"
     r["t0"] = r["deadline"] = r["hard_end"] = r["qual_end"] = None
     r["finish"] = []
     r["qual"] = {}
+    r["pole"] = None
+    r["rec"] = None
     r["grid"] = {}
     r["splits"] = {}
     for pid in list(r["cars"]):
@@ -1246,16 +1480,48 @@ def _abort_race(code, why):
         _broadcast_lobbies()
 
 
+@socketio.on("set_qual")
+def on_set_qual(data):
+    """The host turning the qualifying session on or off for this room.
+
+    On by default, because a grid people drove for beats a grid handed out.
+    Off is for a room that just wants to race, where ninety seconds of everyone
+    circulating alone is ninety seconds of not racing - and then the grid comes
+    from the last result instead (see `_reverse_grid`).
+
+    Only between races: changing it mid-session would either take a session
+    away from people driving it or invent one nobody was told about.
+    """
+    code = (data or {}).get("code", "").upper()
+    on = bool((data or {}).get("on"))
+    with _lock(code):
+        game = DriveGame.query.filter_by(code=code).first()
+        if not game:
+            return
+        me = DrivePlayer.query.filter_by(game_id=game.id,
+                                         session_key=get_session_key()).first()
+        if not me or not me.is_host:
+            return
+        r = _room(code)
+        if r["phase"] in LIVE_PHASES:
+            emit("room_error", {"error": "Not in the middle of a race."})
+            return
+        r["qual_on"] = on
+    socketio.emit("room_opts", {"qual_on": on}, room="room:" + code)
+
+
 @socketio.on("start_race")
 def on_start_race(data):
     """The host's one button, and it means different things by phase.
 
-    In free practice it opens qualifying. During qualifying it is "go now",
-    because ninety seconds is the right length for a session nobody wants to
-    cut short and the wrong length for four people who are ready.
+    In free practice it starts the five seconds before qualifying - or, with
+    qualifying switched off, the five seconds before the race itself. During
+    qualifying it is "go now", because ninety seconds is the right length for a
+    session nobody wants to cut short and the wrong length for four people who
+    are ready.
     """
     code = (data or {}).get("code", "").upper()
-    seq = qseq = ends = None
+    skip = go = None
     with _lock(code):
         game = DriveGame.query.filter_by(code=code).first()
         if not game:
@@ -1266,21 +1532,22 @@ def on_start_race(data):
             return
         r = _room(code)
         if r["phase"] == "qualifying":
-            seq = r["race_seq"]       # skip the rest of the session
-        elif r["phase"] in ("countdown", "racing"):
+            skip = r["race_seq"]      # skip the rest of the session
+        elif r["phase"] in ("qual_countdown", "countdown", "racing"):
             return
         else:
             if not _live(r):
                 emit("room_error", {"error": "Nobody is here to race."})
                 return
             r["race_seq"] += 1
-            r["phase"] = "qualifying"
             r["qual"] = {}
-            r["qual_end"] = _now_ms() + QUAL_MS
+            r["pole"] = None
+            r["qual_end"] = None
             r["t0"] = r["deadline"] = r["hard_end"] = None
             r["finish"] = []
             r["grid"] = {}
             r["splits"] = {}
+            r["rec"] = None
             # Rematch can land inside the twelve seconds the results sheet is
             # up, before the tail of `_close_race` has tidied up, so the cars
             # kept behind to be DNFs in the last race are dropped here too.
@@ -1291,19 +1558,58 @@ def on_start_race(data):
             game.status = "playing"
             game.last_activity_at = datetime.utcnow()
             db.session.commit()
-            qseq, ends = r["race_seq"], r["qual_end"]
-    if seq is not None:
-        _close_qual(code, seq)
+            # Five seconds of lights either way. What they are counting down to
+            # is the only difference: a session, or the race itself.
+            r["phase"] = "qual_countdown" if r["qual_on"] else "countdown"
+            r["t0"] = _now_ms() + COUNTDOWN_MS
+            go = (r["race_seq"], r["phase"], r["t0"], game.track)
+    if skip is not None:
+        _close_qual(code, skip)
         return
-    socketio.emit("qual_start", {"ends": ends, "qual": _qual_state(_room(code)),
-                                 "server_ms": _now_ms()}, room="room:" + code)
-    eventlet.spawn_after(QUAL_MS / 1000.0, _close_qual, code, qseq)
+    if go is None:
+        return
+    seq, phase, t0, track = go
+    if phase == "qual_countdown":
+        # Nobody is placed anywhere for this one. Qualifying is not a start
+        # line - everyone leaves the pits when they like, on their own lap -
+        # so the lights are simply "the session opens now", counted down from
+        # wherever you happen to be sitting.
+        socketio.emit("qual_countdown", {"t0": t0, "server_ms": _now_ms()},
+                      room="room:" + code)
+        eventlet.spawn_after(COUNTDOWN_MS / 1000.0, _open_qual, code, seq)
+    else:
+        _light_grid(code, seq, track)
     _broadcast_lobbies()
+
+
+def _open_qual(code, seq):
+    """The lights before qualifying have run down: the session is open."""
+    with app.app_context():
+        with _lock(code):
+            r = _rooms.get(code)
+            if not r or r["phase"] != "qual_countdown" or r["race_seq"] != seq:
+                return
+            r["phase"] = "qualifying"
+            r["qual"] = {}
+            r["pole"] = None
+            r["qual_end"] = _now_ms() + QUAL_MS
+            r["t0"] = None
+            ends = r["qual_end"]
+            qual = _qual_state(r)
+        socketio.emit("qual_start", {"ends": ends, "qual": qual,
+                                     "server_ms": _now_ms()}, room="room:" + code)
+        eventlet.spawn_after(QUAL_MS / 1000.0, _close_qual, code, seq)
 
 
 @socketio.on("qual_time")
 def on_qual_time(data):
-    """A practice lap set during qualifying. Best one counts, as it should."""
+    """A practice lap set during qualifying. Best one counts, as it should.
+
+    The replay comes up with it, because the lap on provisional pole is a ghost
+    everybody else in the room can chase - which is the one ghost worth having
+    during a session whose entire purpose is that lap. Only the leader's is
+    kept; the rest are read once to find out they are not quick enough.
+    """
     ent = _sid_room.get(request.sid)
     if not ent:
         return
@@ -1314,14 +1620,72 @@ def on_qual_time(data):
     ms = int((data or {}).get("ms") or 0)
     if ms <= 0:
         return
-    if r["qual"].get(pid) is None or ms < r["qual"][pid]:
-        r["qual"][pid] = ms
-        socketio.emit("qual_progress", {"qual": _qual_state(r)},
-                      room="room:" + code)
+    if r["qual"].get(pid) is not None and ms >= r["qual"][pid]:
+        return
+    r["qual"][pid] = ms
+    socketio.emit("qual_progress", {"qual": _qual_state(r)}, room="room:" + code)
+    frames = (data or {}).get("ghost")
+    if not _sane_frames(frames):
+        return
+    if r["pole"] and r["pole"]["ms"] <= ms:
+        return                   # quick, but not quick enough to be the ghost
+    c = _car(r, pid)
+    r["pole"] = {"pid": pid, "name": c["name"], "color": c["color"], "ms": ms,
+                 "hz": int((data or {}).get("hz") or runcheck.GHOST_HZ),
+                 "frames": frames}
+    # Only who is on pole goes out to everybody. The lap itself is tens of
+    # kilobytes and most of the room is not chasing it, so it is fetched by the
+    # people who are - see `qual_pole_req`.
+    socketio.emit("qual_pole", _pole_meta(r), room="room:" + code)
+
+
+def _sane_frames(frames):
+    """Is this a replay at all?
+
+    The pole lap is the one thing a client sends that the server hands **to
+    other clients** rather than storing, so it is worth a look before it is
+    passed on: a frame of nonsense is a rival's ghost car at coordinates that
+    are not numbers, in somebody else's browser. Only the shape is checked -
+    whether the lap is honest is a question for a leaderboard, and this one
+    never reaches one.
+    """
+    if not isinstance(frames, list) or not 2 <= len(frames) <= runcheck.MAX_GHOST_FRAMES:
+        return False
+    for f in frames:
+        if not isinstance(f, list) or len(f) < 7:
+            return False
+        for v in f[:7]:
+            if not isinstance(v, (int, float)) or isinstance(v, bool) or v != v:
+                return False
+    return True
+
+
+def _pole_meta(r):
+    p = r.get("pole")
+    if not p:
+        return None
+    return {"pid": p["pid"], "name": p["name"], "color": p["color"], "ms": p["ms"]}
+
+
+@socketio.on("qual_pole_req")
+def on_qual_pole_req(data):
+    """Somebody has asked to chase the provisional pole lap. Send it to them."""
+    ent = _sid_room.get(request.sid)
+    if not ent:
+        return
+    code, _pid = ent
+    r = _rooms.get(code)
+    p = (r or {}).get("pole")
+    if not p:
+        emit("qual_pole_ghost", {"ghost": None})
+        return
+    emit("qual_pole_ghost", {"ghost": p["frames"], "hz": p["hz"],
+                             "who": p["name"], "color": p["color"],
+                             "ms": p["ms"], "pid": p["pid"]})
 
 
 def _close_qual(code, seq):
-    """Lock the grid in and light the countdown."""
+    """The session is over: the grid is the order it finished in."""
     with app.app_context():
         with _lock(code):
             r = _rooms.get(code)
@@ -1331,18 +1695,48 @@ def _close_qual(code, seq):
             if not game:
                 return
             grid = _start_grid(r)
+            track = game.track
+        if not grid:
+            _abort_race(code, "Nobody set off.")
+            return
+        _light_grid(code, seq, track, grid)
+
+
+def _light_grid(code, seq, track, grid=None):
+    """Put the field on the grid and light the countdown.
+
+    Both ways into a race come through here - the end of qualifying, and a room
+    with qualifying switched off - so the grid, the lights and the green are one
+    piece of machinery with two ways of deciding the order.
+    """
+    with app.app_context():
+        with _lock(code):
+            r = _rooms.get(code)
+            if not r or r["race_seq"] != seq:
+                return
+            if r["phase"] not in ("qualifying", "countdown"):
+                return
+            game = DriveGame.query.filter_by(code=code).first()
+            if not game:
+                return
+            if grid is None:
+                grid = _reverse_grid(r)
+            # A grid worked out a moment ago, under a different hold of this
+            # lock (see `_close_qual`), can name somebody who has since left -
+            # and during qualifying a leaver's car is dropped rather than kept
+            # as a DNF, because there is no race to be a DNF in yet. Drop them
+            # and close the gap, or the field starts with a hole in it and the
+            # placement below reads a car that is not there.
+            grid = {pid: i for pid, i in grid.items() if pid in r["cars"]}
+            grid = {pid: n for n, (pid, _) in
+                    enumerate(sorted(grid.items(), key=lambda kv: kv[1]))}
             if not grid:
                 r["race_seq"] += 1
                 _reset_race(r)
-                socketio.emit("race_abort", {"why": "Nobody set off."},
+                socketio.emit("race_abort", {"why": "Nobody is here."},
                               room="room:" + code)
                 return
             r["grid"] = grid
-            # Pole's side of the road alternates, so over a session everybody
-            # has driven both. Which side is the *inside* line depends on which
-            # way the first corner goes, and the server has no idea - but it
-            # does not need to know to stop it being the same side every time.
-            r["flip"] = bool(r["races_run"] % 2)
             r["races_run"] += 1
             r["phase"] = "countdown"
             r["t0"] = _now_ms() + COUNTDOWN_MS
@@ -1350,12 +1744,14 @@ def _close_qual(code, seq):
             for pid in grid:
                 c = r["cars"][pid]
                 c["ms"], c["dnf"], c["cp"], c["prog"] = None, False, 0, 0.0
-            track = game.track
             t0 = r["t0"]
-            flip = r["flip"]
+            qual = dict(r["qual"])
+        # No `flip`: which side pole starts on is the inside of the first
+        # corner, which is a property of the track (`pole_side`) and the same
+        # every race. It used to alternate, which meant half the time the car
+        # that earned pole started on the outside of turn one.
         socketio.emit("race_start", {"t0": t0, "grid": grid, "track": track,
-                                     "flip": flip, "qual": dict(r["qual"]),
-                                     "server_ms": _now_ms()},
+                                     "qual": qual, "server_ms": _now_ms()},
                       room="room:" + code)
         eventlet.spawn_after(COUNTDOWN_MS / 1000.0, _go_green, code, seq)
         _broadcast_lobbies()
@@ -1372,6 +1768,10 @@ def _go_green(code, seq):
             hard = _hard_race_ms(game.track if game else "")
             r["hard_end"] = _now_ms() + hard
             t0 = r["t0"]
+            # Start recording from the green light, so frame 0 of every car is
+            # the same instant and the replay's clock is the race's clock.
+            r["rec"] = {"t0": t0, "track": game.track if game else "", "n": 0,
+                        "cars": {pid: [] for pid in r["grid"]}}
         socketio.emit("race_green", {"t0": t0}, room="room:" + code)
         # The backstop. Every other way a race ends depends on somebody doing
         # something; this one does not.
@@ -1484,16 +1884,23 @@ def _close_race(code, why, seq=None):
                 standings.append({"pid": pid, "name": c["name"], "ms": None,
                                   "color": c["color"]})
             elo_delta = {}
+            race_id = None
             if game:
                 elo_delta = _rate_race(game, standings)
-                game.add_result({"t": now, "track": game.track,
+                race_id = _store_replay(r, game, standings, why)
+                game.add_result({"t": now, "track": game.track, "race": race_id,
                                  "standings": standings, "why": why})
                 game.status = "waiting"
                 game.last_activity_at = datetime.utcnow()
                 db.session.commit()
+            # The order this race finished in is the grid for the next one when
+            # the room is not qualifying - so it is kept here rather than
+            # derived later, while the standings are in front of us.
+            r["last_order"] = [e["pid"] for e in standings]
             closed_seq = r["race_seq"]
             socketio.emit("race_result", {"standings": standings, "why": why,
-                                          "elo": elo_delta}, room="room:" + code)
+                                          "elo": elo_delta, "race": race_id},
+                          room="room:" + code)
         eventlet.sleep(12)
         with _lock(code):
             r = _rooms.get(code)
@@ -1750,6 +2157,15 @@ def _stale_cleanup():
             for code in list(_rooms):
                 if not DriveGame.query.filter_by(code=code).first():
                     _rooms.pop(code, None)
+            # Replays outlive the rooms they were driven in, on purpose - a link
+            # to one has to keep working - but not for ever, at a couple of
+            # hundred kilobytes each. The newest REPLAY_KEEP stay.
+            old = (DriveRace.query.order_by(DriveRace.id.desc())
+                   .offset(REPLAY_KEEP).all())
+            if old:
+                for race in old:
+                    db.session.delete(race)
+                db.session.commit()
             if changed:
                 _broadcast_lobbies()
 

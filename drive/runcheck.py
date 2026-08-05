@@ -41,7 +41,18 @@ SPEED_CEIL = T.MAX_SPEED * 2.2
 
 
 def pack_ghost(frames):
-    """frames: [[x,y,z,qx,qy,qz,qw], ...] floats -> compact base64 string."""
+    """frames: [[x,y,z,qx,qy,qz,qw(,flags)], ...] -> compact base64 string.
+
+    The eighth value is the car's flag byte at that instant, which is how a
+    ghost knows to light its brake lamps and go amber in a slide. A pose says
+    where a car was and nothing about what the driver was doing, so without it
+    every replay is a car coasting silently round the lap.
+
+    Laps recorded before it existed are seven wide and stay that way, so the
+    stride is written into the blob rather than assumed: an old ghost still
+    unpacks, it simply has no lamps.
+    """
+    stride = 8 if frames and len(frames[0]) >= 8 else 7
     ints = []
     for f in frames:
         ints.append(int(round(f[0] * POS_Q)))
@@ -49,7 +60,9 @@ def pack_ghost(frames):
         ints.append(int(round(f[2] * POS_Q)))
         for k in range(3, 7):
             ints.append(int(round(f[k] * ROT_Q)))
-    raw = json.dumps({"hz": GHOST_HZ, "q": [POS_Q, ROT_Q], "d": ints},
+        if stride == 8:
+            ints.append(int(f[7] or 0) & 0xFF)
+    raw = json.dumps({"hz": GHOST_HZ, "q": [POS_Q, ROT_Q], "n": stride, "d": ints},
                      separators=(",", ":")).encode()
     return base64.b64encode(zlib.compress(raw, 9)).decode()
 
@@ -62,10 +75,17 @@ def unpack_ghost(blob):
         obj = json.loads(zlib.decompress(base64.b64decode(blob)))
         d = obj["d"]
         pq, rq = obj.get("q", [POS_Q, ROT_Q])
+        # Ghosts written before flags existed have no `n` and are seven wide.
+        stride = int(obj.get("n", 7))
+        if stride not in (7, 8):
+            return None
         out = []
-        for i in range(0, len(d) - 6, 7):
-            out.append([d[i] / pq, d[i + 1] / pq, d[i + 2] / pq,
-                        d[i + 3] / rq, d[i + 4] / rq, d[i + 5] / rq, d[i + 6] / rq])
+        for i in range(0, len(d) - stride + 1, stride):
+            f = [d[i] / pq, d[i + 1] / pq, d[i + 2] / pq,
+                 d[i + 3] / rq, d[i + 4] / rq, d[i + 5] / rq, d[i + 6] / rq]
+            if stride == 8:
+                f.append(d[i + 7])
+            out.append(f)
         return out
     except Exception:
         return None

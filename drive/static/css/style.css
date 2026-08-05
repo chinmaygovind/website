@@ -300,6 +300,16 @@ body.playing { overflow: hidden; background: #9ed2f0; }
 .hud-bl { position: absolute; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
           left: calc(14px + env(safe-area-inset-left, 0px));
           display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+/* The bottom-left corner belongs to the steering thumb whenever there is one,
+   and that is a question about the device rather than about the width of the
+   window: a tablet is 1180px wide and drives with its thumbs, so the map was
+   sitting underneath the arrows. Bottom has to be released as well as top set,
+   or an absolutely positioned box with both is stretched between them. */
+body.touch .hud-bl { bottom: auto; top: calc(84px + env(safe-area-inset-top, 0px)); }
+body.touch #minimap { width: 118px; height: 92px; }
+/* Which puts the map directly under the track card, so the blurb goes - it is
+   the one thing up there you read once and never again, and the map is not. */
+body.touch .trackblurb { display: none; }
 /* Restart and last-checkpoint, sitting on the minimap. Both are things you reach
    for mid-run after a mistake, so they cannot be behind a menu - and this is the
    corner your eye is already in when you have just gone off. On a phone the
@@ -310,10 +320,20 @@ body.touch .mapbtns { display: none; }
 /* The host's one decision, where nobody has to look for it. */
 .hud-tc { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px));
           left: 50%; transform: translateX(-50%); }
-.tc-btns { display: flex; gap: 8px; }
+.tc-btns { display: flex; gap: 8px; align-items: stretch; }
+/* One size for all three, whichever of them the phase is showing. They are the
+   same kind of decision taken at the same moment - start this, stop this, get
+   out of this - and a row of three different heights reads as three unrelated
+   controls that happen to be next to each other. Weight carries the difference
+   instead: the red one is the thing the room is waiting on, the others are not.
+   `min-width` rather than a fixed one, so "Start qualifying" and "Start race
+   now" do not resize the row as the phase changes. */
+.tc-btns .btn {
+  font-size: 1rem; padding: .5rem 1.1rem; min-width: 9.5rem;
+  display: flex; align-items: center; justify-content: center; gap: .4rem;
+}
 .btn.start-race {
   background: var(--red); color: #fff; border-color: rgba(0, 0, 0, .35);
-  font-size: 1.05rem; padding: .5rem 1.5rem;
   box-shadow: 0 6px 22px rgba(232, 69, 60, .4);
 }
 /* Deliberately quieter than Start race. Ending one is never the thing the
@@ -321,8 +341,10 @@ body.touch .mapbtns { display: none; }
 .btn.end-race {
   background: rgba(20, 23, 30, .82); color: #ffb4aa;
   border: 1px solid rgba(255, 138, 122, .5);
-  font-size: .95rem; padding: .5rem 1rem; backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
 }
+.btn.end-race svg { width: 17px; height: 17px; fill: none; stroke: currentColor;
+                    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .btn.end-race:hover { background: rgba(232, 69, 60, .9); color: #fff; }
 /* Both confirm in place rather than opening a dialog over the road: an
    overlay mid-race hides the thing you would want to look at before deciding. */
@@ -371,7 +393,7 @@ body.touch .mapbtns { display: none; }
   .qual-note { display: none; }
   .qual-rows { max-height: 34vh; padding: .2rem 0; }
   .qual-clock { font-size: 1.05rem; }
-  .tc-btns .btn { font-size: .85rem; padding: .35rem .8rem; }
+  .tc-btns .btn { font-size: .85rem; padding: .35rem .8rem; min-width: 7rem; }
   /* The start hint is one long centred line, and on this screen the right end
      of it runs underneath the qualifying board. Only while the board is up, it
      wraps onto two lines and keeps to the left of it - a first-time player
@@ -560,6 +582,13 @@ body.touch .touch-only { display: table; }
 .sheet-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: .55rem;
                  margin-top: 1.2rem; }
 .sheet-actions .btn { width: 100%; }
+/* The race result offers up to five things and they are five equal choices, so
+   they are one size in one row rather than one big button and four small ones.
+   `auto-fit` rather than a fixed count because two of the five are the host's:
+   everybody else sees three, and three buttons should fill the row they are in
+   rather than leaving two holes where somebody else's buttons would be. */
+.sheet-actions.even { grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); }
+.sheet-actions.even .btn { white-space: nowrap; }
 @media (max-width: 520px) { .sheet-actions { grid-template-columns: 1fr; } }
 
 /* --- panels that close with an X -----------------------------------------
@@ -694,12 +723,30 @@ body.watching #touch, body.watching #startHint { display: none; }
 #watchBar {
   position: fixed; z-index: 40; left: 50%; transform: translateX(-50%);
   bottom: calc(20px + env(safe-area-inset-bottom, 0px));
-  display: flex; align-items: center; gap: .8rem;
+  max-width: min(94vw, 900px);
+  display: flex; flex-direction: column; align-items: center; gap: .5rem;
   background: var(--hud); color: #fff; border: 1px solid var(--hud-line);
-  border-radius: 999px; padding: .45rem .5rem .45rem 1.1rem;
+  border-radius: 22px; padding: .5rem .7rem;
   backdrop-filter: blur(6px); font-family: var(--sans);
 }
+.watch-head { display: flex; align-items: center; gap: .8rem; padding-left: .5rem; }
 #watchBar b { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+/* The cars in a race replay: the camera, as a row of the people who were in it.
+   Scrolls sideways rather than wrapping, so a full grid of eight does not turn
+   the bar into a block covering the race it is about. */
+#watchCars {
+  display: flex; gap: .35rem; max-width: 100%; overflow-x: auto;
+  padding-bottom: .1rem;
+}
+.wcar {
+  display: flex; align-items: center; gap: .4rem; flex: 0 0 auto;
+  background: rgba(255, 255, 255, .07); color: #fff; cursor: pointer;
+  border: 1px solid var(--hud-line); border-radius: 999px;
+  font-family: var(--sans); font-size: .82rem; padding: .25rem .7rem;
+}
+.wcar.on { background: rgba(255, 255, 255, .92); color: #12141c; border-color: #fff; }
+.wcar i { font-style: normal; font-family: var(--mono); opacity: .7; font-size: .78rem; }
+.wcar .st-dot { width: 9px; height: 9px; border-radius: 50%; }
 .btn.small { font-size: .85rem; padding: .3rem .8rem; }
 
 /* Preview-picture mode: the track and the sky, nothing else on the glass. */
@@ -817,6 +864,24 @@ body.touch.side-open .hud-tr { transform: none; }
   color: #ff8a7a; font-size: 1.5rem; line-height: 1; padding: 0 .2rem;
 }
 .side .btn { font-size: 1rem; padding: .4rem .8rem; width: 100%; }
+/* The invite link. Readable as well as copyable: the copy button needs a
+   clipboard permission the browser can refuse, and a link you can read off the
+   screen never can. */
+.share-row { display: flex; gap: .4rem; }
+.share-row input {
+  flex: 1; min-width: 0; font-family: var(--mono); font-size: .78rem;
+  padding: .35rem .5rem; color: #fff; background: rgba(255, 255, 255, .06);
+  border: 1px solid var(--hud-line); border-radius: 8px;
+}
+.share-row .btn.small { width: auto; flex: 0 0 auto; }
+/* The host's one pre-race setting. Greyed rather than hidden for everybody
+   else: what the room is about to do is everybody's business, and a checkbox
+   that vanishes for four people out of five is a rule nobody can see. */
+.qual-setting label { display: flex; align-items: center; gap: .5rem; cursor: pointer;
+                      font-size: .9rem; }
+.qual-setting input { width: 16px; height: 16px; accent-color: #ffd96b; }
+.qual-setting p { margin: .25rem 0 0 1.9rem; font-size: .76rem; line-height: 1.35; }
+.qual-setting.locked label { cursor: default; opacity: .65; }
 .pl { display: flex; align-items: center; gap: .4rem; font-size: .88rem; padding: .15rem 0; }
 .pl.me { color: #ffd96b; }
 .pl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -837,13 +902,24 @@ body.touch.side-open .hud-tr { transform: none; }
 body.touch #touch { display: block; }
 .tpad {
   position: fixed; z-index: 35; bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-  display: flex; flex-direction: column; gap: 10px; align-items: center;
+  display: flex; flex-direction: column; gap: clamp(10px, 2.4vh, 20px);
+  align-items: center;
 }
 .tpad.left { left: calc(16px + env(safe-area-inset-left, 0px)); align-items: flex-start; }
 .tpad.right { right: calc(16px + env(safe-area-inset-right, 0px)); align-items: flex-end; }
-.pedals, .steerpad, .utils { display: flex; gap: 10px; }
+.pedals, .steerpad, .utils { display: flex; gap: clamp(10px, 2.4vh, 20px); }
+/* Sized off the height of the screen, not off a breakpoint.
+   A phone in landscape is about 390px tall and a tablet nearly 800, and both
+   land in "not a desktop" - so a fixed 76px is a thumb-sized button on the
+   phone and a postage stamp held at arm's length on the iPad. Height is the
+   right dimension: it is what the thumbs' reach is limited by in landscape,
+   and it is what the buttons have to fit inside stacked. Clamped at both ends,
+   because past about 112px a button stops being easier to hit and starts being
+   a thing in front of the road. `svg { width: 45% }` keeps the glyph in
+   proportion instead of needing its own set of sizes. */
 .tbtn {
-  width: 76px; height: 76px; border-radius: 50%;
+  width: clamp(66px, 17vh, 112px); height: clamp(66px, 17vh, 112px);
+  border-radius: 50%;
   /* Dark fill, light stroke. A white wash reads fine against tarmac and
      vanishes completely against a bright sky or a sunlit kerb, and half of
      every track is one of those. */
@@ -861,7 +937,7 @@ body.touch #touch { display: block; }
   box-shadow: 0 0 14px rgba(255, 217, 107, .55);
 }
 .tbtn svg {
-  width: 34px; height: 34px; fill: none; stroke: currentColor; stroke-width: 2;
+  width: 45%; height: 45%; fill: none; stroke: currentColor; stroke-width: 2;
   stroke-linecap: round; stroke-linejoin: round;
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .5));
 }
@@ -873,8 +949,7 @@ body.touch #touch { display: block; }
    one is still holding a corner. Kept as a pair and pushed to the right - so
    they sit over the throttle, where the thumb already rests - rather than spread
    across the pad, which put a gap between two buttons that belong together. */
-.tbtn.small { width: 44px; height: 44px; opacity: .8; }
-.tbtn.small svg { width: 21px; height: 21px; }
+.tbtn.small { width: clamp(40px, 10vh, 64px); height: clamp(40px, 10vh, 64px); opacity: .8; }
 #tGas { border-color: rgba(140, 240, 170, .6); }
 #tBrake { border-color: rgba(255, 150, 130, .6); }
 /* With the room drawer out you are reading, not driving - and the pedals would
@@ -901,10 +976,6 @@ body.side-open #touch { display: none; }
   .hud-bc { width: 300px; max-width: 46vw; }
   .hud-bc .timer { font-size: 1.9rem; }
   .stat.spd b { font-size: 1.5rem; }
-  .tbtn { width: 66px; height: 66px; }
-  .tbtn svg { width: 30px; height: 30px; }
-  .tbtn.small { width: 40px; height: 40px; }
-  .tbtn.small svg { width: 19px; height: 19px; }
   #startHint { bottom: 46%; font-size: .9rem; }
 }
 

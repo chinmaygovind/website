@@ -418,7 +418,10 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   relaxation + speed profile → medal times), `runcheck.py` (ghost packing, time
   validation), `models.py`, `app.py`, `static/js/` (`trackmesh.js`, `physics.js`,
   `course.js`, `render.js`, `sound.js`, `game.js`, `pending.js`, vendored
-  `three.module.js`), `tools/shoot_tracks.py` (the preview pictures).
+  `three.module.js`), `tools/shoot_tracks.py` (the preview pictures). The play
+  page has three modes - `solo`, `room` and `replay` - and they are one template
+  and one `game.js`, because a replay is a track, some cars and a clock and that
+  is what the game already draws.
 - **Three medals, and gold is the best one.** There used to be a fourth above it,
   `author`, at 0.94 of the ideal lap. The word names an authority rather than a
   standard, and it sat above the medal everybody already reads as the top one. The
@@ -490,6 +493,19 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   collider as well as the mesh, and sit just outside the kerb so the full road stays
   usable. `test_checkpoint_posts_are_solid_and_the_gate_is_not` pins both halves: the
   posts stop a car, and the mouth of the gate stays completely open.
+- **How high a checkpoint counts is the track's business, not a constant.** A gate
+  is credited on a plane crossing inside a window, and the roof of that window
+  used to be a flat 5 units on every track - lower than the car actually gets, so
+  landing a jump long or coming over a crest in a tow flew you *over* a
+  checkpoint without being credited for it, losing a lap you had driven. It
+  cannot simply be raised: the roof is what stops a car on a bridge triggering
+  the gate on the road underneath it. So `tracks.gate_ceiling` derives it per
+  track from the one number that decides the answer - the closest this track ever
+  passes over itself. Tracks that never cross themselves (most of them, including
+  the one made of jumps) get the full 14; Spiral Ascent, whose helix stacks 10
+  units above itself, gets 6.4 and stays honest. A test asserts the ceiling is
+  below every crossing on every track, which is what makes the generous number
+  safe.
 - **The car is not glued to slopes.** `SNAP` is a 0.12-unit seam tolerance, nothing
   more, and there is no term scrubbing velocity along the surface normal - so a crest
   throws the car, as it should. `STICK_FORCE` only engages past `STICK_TILT` (about 32
@@ -510,12 +526,38 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   the ground are not, so running wide there costs grass time instead of a respawn. The
   road sits ~1.2 above the grass plane, which is both why it reads as a raised ribbon
   and why the two never z-fight.
-- **The ghost is a practice tool, so in a room it only exists in practice.** Solo it
-  is the replay of your PB, fetched from the server. In a room it is your best lap of
-  *that* practice session and nothing else - not your all-time PB, which was set on a
-  different day against nobody - and it is not rendered at all from the countdown to
-  the flag, whatever the setting says. A translucent car on a line nobody drove is one
-  more thing to mistake for a rival.
+- **The ghost is a practice tool, so in a room it belongs to the phases you drive
+  alone in** - free practice and qualifying - and to neither of the others. It is
+  not rendered at all from the countdown to the flag, whatever the setting says:
+  a translucent car on a line nobody drove is one more thing to mistake for a
+  rival. Qualifying is the opposite case and used to be lumped in with the race,
+  which was wrong for the same reason - it is the session where you are alone
+  against a clock, which is exactly what a ghost is for.
+- **A room's four ghosts are not solo's four.** Off, **your best lap of this
+  practice session** (not your all-time PB, which was set on a different day
+  against nobody), **provisional pole**, and the world record. "View others" is
+  not offered in a room: everybody there is on the road with you, and the board
+  is a list of people who are not. `G` steps through all four.
+- **Provisional pole is a live ghost of the lap that is currently taking pole.**
+  A qualifying lap goes up with its replay attached (`qual_time` carries the
+  frames), the server keeps **only the leader's** and throws the rest away, and
+  a change of pole is broadcast as one line - who, and what they did. The lap
+  itself is tens of kilobytes and most of the room is not chasing it, so it is
+  fetched by the people who are (`qual_pole_req`). Chasing yourself is not
+  chasing anybody, so if pole is yours no ghost is loaded - your own best lap of
+  the session is already what `me` means there, and it is the same lap. It is
+  dropped when the session ends: after the flag it is the grid, not a target.
+- **Every ghost is the colour of whoever drove it**, and so is every car that
+  person turns up in. There was no per-person colour at all before - a room
+  handed them out by seat and solo was always red - so `color_for(username)`
+  hashes one out of the palette, the same trick the accounts pages use for the
+  initial on a profile with no picture. A room seat takes it if it is free and
+  falls back to first-free if somebody got there first, because two identical
+  cars on a grid is worse than being the wrong red for one race.
+- **A ghost lights its own lamps**, because the flag byte is recorded with the
+  pose. A ghost frame is eight values now, not seven, and `pack_ghost` writes
+  the stride into the blob: every lap already on the board is seven wide, still
+  unpacks, and simply has no lamps until it is driven again.
 - **A ghost frame is the pose at its own timestamp.** `Run._recordGhost` interpolates
   to exact multiples of `1/GHOST_HZ`. It used to accumulate dt and push a sample every
   time an interval had gone by, which meant the accumulator had to fill before frame 0
@@ -531,6 +573,27 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   resolved Mario-Kart-style (impulse + penetration spring, never positional snapping,
   tangential velocity preserved, per-pair bump cooldown) - see `Car.resolveCars`.
   `FLAG.BRAKE` rides along in the pose so a rival's brake lights work.
+- **A race is recorded off those same poses, and the recording outlives the
+  room.** `_record_race` runs on the broadcast tick and writes one frame per car
+  per `1/REPLAY_HZ` from the green light, so frame *n* of every car is the same
+  instant and the whole thing plays back as one moment in time; a car that has
+  stopped reporting repeats its last pose rather than leaving a hole, because a
+  hole slides every frame after it and slews that car against everybody else's.
+  It lands in **`drive_races`**, its own table - `drive_games` rows are deleted
+  the moment a room empties or goes idle, which is right for a room and wrong
+  for a replay, and a new table arrives on the live database by itself where a
+  new column would need a migration. Each car's frames are packed exactly the
+  way a ghost is, at the same rate and with the same flag byte, so a replay is
+  not a new format: it is several ghosts sharing a clock. The newest
+  `REPLAY_KEEP` are kept and the sweep drops the rest.
+- **`/race/<id>` is the play page in a third mode.** A replay is a track, a set
+  of cars and a clock, and the play page is the only thing that knows how to
+  draw those - so `startReplay` generalises the single-lap watcher to N cars
+  with one of them holding the camera, and the bar along the bottom is the
+  drivers, clickable. The cars are fetched from `/api/race/<id>` rather than
+  rendered into the page: eight replays of a two-minute race is most of a
+  megabyte of numbers. It is offered from the results sheet (**Watch replay**),
+  it is a plain URL, and it is public, so a race can be linked to afterwards.
 - **Contact and the slipstream belong to free practice and the race, and to
   nothing else.** They are the same question - are the cars around you cars you
   are driving against - so they are one answer, `contactOn()` in `game.js`.
@@ -538,9 +601,11 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   a road they are all using at different points of it, so being punted by
   somebody a corner behind would take away the one thing the session is for, and
   a tow off a car you are not racing would hand out a grid slot nobody drove
-  for. For those ninety seconds the rivals are drawn and you go through them.
-  Countdown and the results sheet are outside it too - there is nothing to race
-  there. `test_slipstream.py` pins the phase table.
+  for. For those ninety seconds the rivals are drawn **see-through**
+  (`CarView.setGhostly`, the same opacity the ghost uses) and you go through
+  them: a solid-looking car you cannot touch is a bug until somebody explains
+  it. Countdown and the results sheet are outside it too - there is nothing to
+  race there. `test_slipstream.py` pins the phase table.
 - **The slipstream is Mario Kart Wii's draft: it charges, then it pays.**
   `Car.draft` measures the tow in the *following* car's own frame - ahead along
   your forward axis, inside a narrow corridor either side of and above/below it,
@@ -555,7 +620,7 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   50 -> 61) and you have to accelerate up to it. Nothing accumulates while a
   boost runs, so the cadence is charge, fire, charge rather than a permanent tow
   behind a car you cannot pass. `FLAG.SLIP` rides along in the pose - wired for,
-  and like `FLAG.DRIFT` not yet drawn on a rival.
+  not yet drawn on a rival. `FLAG.DRIFT` **is** drawn now: see the tail lamps.
 - **The slipstream is drawn round the car, not on the HUD.** `Draft` in
   `render.js`: streaks of air running past you, one camera-facing quad each,
   **thickening with the charge** - the same number the bar under the speed bar
@@ -611,8 +676,10 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   contact against a frame-old position - about a car length at racing speed,
   all of it in the direction of travel.
 - **A room is a phase machine, and every way out of a phase is guarded.** The
-  phases are `free` -> `qualifying` (90s) -> `countdown` (5s) -> `racing` ->
-  `results` -> `free`. **A race must end**, and for a long time one could not:
+  phases are `free` -> `qual_countdown` (5s) -> `qualifying` (90s) ->
+  `countdown` (5s) -> `racing` -> `results` -> `free`, with the two qualifying
+  phases skipped entirely when the host has switched qualifying off.
+  **A race must end**, and for a long time one could not:
   the only thing that armed the finish clock was somebody *finishing*
   (`FINISH_GRACE_MS`), so a race nobody finished never ended, and the room sat
   in `racing` for ever with the host unable to start another or change track -
@@ -649,19 +716,42 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   with a clock on it: `qual_time` per improved lap, best one counts, a lap
   finishes into a toast and an automatic restart rather than the results sheet
   (covering the road while there are seconds left to improve is taking the
-  session away). No lap at all means the back of the grid, shuffled. The host's
-  Start race means "open qualifying" in `free` and "go now" during it, so
-  ninety seconds never traps four people who are ready.
-- **The grid is staggered and its sides alternate.** Ordering alone does not
-  fix a two-by-two grid: cars level with each other reach the first corner
-  together and the one on the inside of it simply gets there. So the odd slot
-  of each row sits back 2.4 units (F1 style), and the server flips `flip` every
-  race. **Nothing in the code knows which way the first corner goes** - not the
-  server, not `placeOnGrid` - and nothing needs to: staggering stops the pair
-  fighting for the same metre at the same instant, and flipping stops whichever
-  side is the good one belonging to the same person twice running. Pole keeps
-  its advantage; it was earned in qualifying, and taking it away would make the
-  session pointless.
+  session away). That automatic restart is cancelled by any restart of your
+  own - `resetToStart` clears the timer - or it threw away the lap you had
+  already begun a second later, which looked like the game restarting you at
+  random. No lap at all means the back of the grid, shuffled. The host's Start
+  race means "open qualifying" in `free` and "go now" during it, so ninety
+  seconds never traps four people who are ready, and **Enter** is that button
+  on the keyboard.
+- **Qualifying starts on lights, like the race does.** `qual_countdown` is five
+  seconds with the same overlay, the same sounds and the cars held still. It
+  used to simply begin, so the first anyone knew of it was a toast saying they
+  were already in it and a lap in progress that no longer counted. Nobody is
+  *placed* for it, though: a session has no start line - everyone leaves when
+  they like, on their own lap - so it counts down over wherever you are sitting.
+- **The host can switch qualifying off**, from the room drawer, and it is on by
+  default: a grid people drove for beats a grid handed out. With it off, Start
+  race means start the race, and the grid is **the last race's finishing order,
+  reversed** (`_reverse_grid`) - the arbitrary ordering that is at least about
+  the racing, so a room of mixed ability keeps having close races instead of one
+  procession after another. Anyone who was not in that race lines up behind it,
+  shuffled, and the first race of a room is shuffled entirely. The switch cannot
+  be moved mid-session, and everybody can see it: a rule four people out of five
+  cannot see is not a rule they can plan around.
+- **The grid is staggered and pole starts on the inside of the first corner.**
+  Ordering alone does not fix a two-by-two grid: cars level with each other
+  reach the first corner together and the one on the inside of it simply gets
+  there. The stagger deals with "at the same instant" - the odd slot of each row
+  sits back 2.4 units, F1 style. The side used to be dealt with by alternating
+  it every race, on the grounds that nothing knew which way the track turned
+  first, which meant half the time the car that qualified fastest lined up on
+  the *outside* of turn one and lost the place it had earned. The track knows
+  perfectly well: `tracks.pole_side` integrates the ribbon's own `curv` from the
+  start line until the heading has committed one way (`FIRST_TURN_DEG`), and a
+  loop contributes nothing to it because a loop is pitch rather than yaw. So
+  pole gets that side, every race, on every track, and `flip` is gone. Pole
+  keeps its advantage; it was earned, and taking it away would make earning it
+  pointless.
 - **A split delta is measured against whatever that session is about**, which
   is three different laps - `splitRef` is the only thing that decides, and it
   returns null rather than comparing with the wrong one. **Racing: the
@@ -697,11 +787,29 @@ point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
   **Two DNFs draw** (0.5), because their order is whichever they happened to
   give up in. Still needs two accounts - one has nobody to be rated against,
   and its race count no longer creeps up on races that were never rated.
-- `?panel=qual|racing` pins a phase and fakes a session, for the same reason
-  the other `?panel=` values exist: neither is a panel you can open, and
-  getting a room into either takes two browsers and a stopwatch. Pinned rather
-  than assigned - the room reports `free` the moment the socket connects, so a
-  phase merely set at boot is gone before the shutter.
+- `?panel=qcount|qual|racing|result` pins a phase and fakes a session, for the
+  same reason the other `?panel=` values exist: none of them is a panel you can
+  open, and getting a room into any of them takes two browsers, a stopwatch and
+  somebody willing to lose a race. Pinned rather than assigned - the room
+  reports `free` the moment the socket connects, so a phase merely set at boot
+  is gone before the shutter.
+- **The room drawer holds the invitation.** A share field with
+  `<origin>/j/<CODE>` in it and a copy button, and `/j/<CODE>` joins whoever
+  opens it - asking for a login or a guest name first if they have none. The
+  link opens a *private* room without its passcode: the passcode is there to
+  keep a room out of a stranger's hands and a stranger does not have the link.
+  The field is readable as well as copyable, because the clipboard needs a
+  permission the browser can refuse and a link you can read off the screen
+  cannot fail. The URL is built from `location.origin` in the browser rather
+  than from `request.url_root`, which is http on a laptop and does not
+  necessarily know it is https behind nginx.
+- **The results sheet is five equal buttons**: Practice, Watch replay, Change
+  track (host), Rematch (host), Quit - Quit last, because leaving is the last
+  thing to offer. One size for all of them, wrapping rather than shrinking, and
+  `auto-fit` columns so the three a non-host sees fill the row instead of
+  leaving two holes where somebody else's buttons would be. The top-centre race
+  buttons are one size as well now: they are the same kind of decision taken at
+  the same moment, and a row of three heights read as three unrelated controls.
 
 ### Look: skies and worlds
 
@@ -918,6 +1026,15 @@ field from a dark field.
   Practice, Quit, and Rematch for the host. Note that `/api/run`'s `medal`, `rank` and
   `is_record` all describe your stored PB row, not the lap you just drove: the lap's
   own medal is computed client-side and its own placing is the separate `run_rank`.
+- **The touch buttons are sized off the height of the screen**, not off a
+  breakpoint: `clamp(66px, 17vh, 112px)`, with the glyph a percentage of the
+  button so it needs no sizes of its own. A phone in landscape is about 390px
+  tall and a tablet nearly 800, and both land in "not a desktop", so one fixed
+  76px was a thumb-sized button on the phone and a postage stamp held at arm's
+  length on the iPad. The bottom-left corner belongs to the steering thumb
+  whenever there is one - `body.touch`, not a width, since a tablet is 1180px
+  wide and still drives with its thumbs - so the minimap moves up under the
+  track card there and the blurb goes with it.
 - **Touch controls: four driving buttons and no handbrake button.** Steering left,
   throttle and brake right, checkpoint and restart small above the steering. There
   is deliberately no fifth button, because there is nowhere a thumb can reach one:
@@ -951,13 +1068,16 @@ field from a dark field.
   invalidating them, and one test pins the intent directly: a 150ms re-grab is
   never a drift.
   The button that is drifting goes **amber** (`.tbtn.drifting`, `#ffd96b`) so it
-  is obvious you asked for something different - that is the drift indicator, and
-  it is on the on-screen button, *not* on the car. The car's tail lamps are
-  two-state red (`BRAKE_ON`/`BRAKE_OFF` in `render.js`), and since `Car.braking`
-  is `braking || handbrake` a handbrake slide lights them plain red like any
-  other braking. `FLAG.DRIFT` is computed in `physics.js` and packed into the
-  multiplayer pose but **consumed nowhere** - so amber tail lights on drifting
-  cars, local and remote, are already wired for and just not drawn.
+  is obvious you asked for something different, and **the car's tail lamps go the
+  same amber** - `DRIFT_ON` in `render.js`, the same colour on purpose. They are
+  three-state now: dark, red on the brakes, amber sliding, with **amber winning**
+  when both are true. Both are true constantly, because `Car.braking` is
+  `braking || handbrake`; and of the two, braking is what every car does into
+  every corner and tells you nothing, while a car sideways in front of you is
+  the thing worth reading off its lamps. It comes off `FLAG.DRIFT`, which was
+  computed and packed into the pose and consumed nowhere - so this is drawn on
+  your car, on every rival, on a ghost and in a replay, all through one
+  `lampsOf`.
   Three earlier attempts are worth not repeating: a DRIFT button beside the pedals,
   which was literally unpressable; **brake-while-steering, which is unusable** -
   braking into a corner *is* steering, so it fired on essentially every corner and
@@ -979,8 +1099,17 @@ field from a dark field.
   hairline outline on others, so it can be neither styled nor trusted. The touch
   buttons are dark-fill/light-stroke for the same reason a white wash did not work:
   it vanishes against a bright sky or a sunlit kerb, and half of every track is one.
-- `R` restarts the run; `T` (or Enter) goes back to the last checkpoint **with the
-  clock still running** - the difference between "that lap is gone" and "I fell off".
+- `R` restarts the run; `T` goes back to the last checkpoint **with the clock
+  still running** - the difference between "that lap is gone" and "I fell off".
+  **Neither does anything until the clock is running**, and silently: before you
+  have set off there is no run to throw away and no checkpoint to go back to, so
+  refusing costs nothing - and it closes a hole that was worth real time. On a
+  grid, a respawn puts the car on the *start gate*, which is in front of every
+  slot on it, so pressing either during the countdown walked you up the road; a
+  world record was set that way. A message would turn a non-event into an event,
+  so there is none. `P` opens the track switcher (it always did, and was written
+  down nowhere until now), and in a room **Enter is the host's start button** -
+  which is why it is no longer a third way to press T, along with Backspace.
 - **The type is Titillium Web**, self-hosted in `static/fonts/` at four weights
   (~46KB total, no CDN). It replaced xkcd Script, which is a good joke on the landing
   page and the wrong voice entirely for a timing screen. Titillium is the closest
@@ -991,14 +1120,18 @@ field from a dark field.
 
 ### Tests
 
-`scripts/tests.sh drive` - 349 tests, about 2:40. `test_tracks.py` and
+`scripts/tests.sh drive` - 399 tests, about 3:00. `test_tracks.py` and
 `test_runcheck.py` are pure Python; `test_app.py` runs the real routes against a
 throwaway SQLite file (the `/solo` memory, the board and ghost APIs, and a guest's run
 being replayed after login). **`test_race.py` covers the room's race machine** -
 the ways a race used to strand a room (no finisher, the last car leaving, a
-stale timer closing the wrong race), the grid rules, and the rating rules. The
-live room state is plain dicts, so it builds them directly rather than driving
-a socket: what is under test is the bookkeeping, not the wire. **`test_sim.py` runs the game's real JavaScript
+stale timer closing the wrong race), the grid rules, the rating rules, and the
+replay recorder. Most of it builds the live room state directly, since it is
+plain dicts and what is under test is the bookkeeping rather than the wire; the
+last group is different and drives the **real socket handlers** from `free` all
+the way to the green light, with the emits captured and the timers fired by
+hand, because the thing worth pinning about a phase machine is the order it
+goes through them in. **`test_sim.py` runs the game's real JavaScript
 headlessly**: `tests/jsrt.py` strips the ES module syntax, swaps three.js for
 `tests/three_stub.js` (real Vector3/Quaternion maths, inert graphics), and runs it in
 QuickJS, then `tests/autopilot.js` *drives every track to the finish*. That is the test
@@ -1023,10 +1156,22 @@ rather than line number, and `test_touch.py`'s stub deliberately lists every fun
 testing nothing. `test_slipstream.py` does both halves: `Car.draft` runs for real
 in QuickJS (it only reads the body's own frame and the rivals it is handed, so it
 needs no world and no lap), and `contactOn` is lifted out of `game.js` by name and
-run against a stubbed phase.
+run against a stubbed phase. `test_rules_js.py` is the same lift-by-name trick on
+three rules that were each a bug: that `R` and `T` do nothing (and say nothing)
+until the clock is running, that `placeOnGrid` puts pole on the track's own
+`pole_side` and the row behind it on the other, and that `lampsOf` reads a
+recorded flag byte with drift winning over brake.
 
-There is no browser in CI, so **check rendering by hand** before shipping a geometry
-change: run the app on a spare port and screenshot it with headless Chrome
+There is no browser in CI, so **check rendering by hand** before shipping a
+geometry change - and a *room* needs one more step than a solo track does,
+because `/room/<code>` redirects anyone who is not already a player in it. The
+cheapest way in is a scratch harness that imports the real app and adds a
+login-and-join route, so headless Chrome can reach a room in one navigation;
+`/j/<CODE>` then does the joining for real. A persistent `--user-data-dir` keeps
+the session across shots, which is what makes `?panel=` reachable afterwards.
+Templates are cached, so restart the dev server after editing one.
+
+Run the app on a spare port and screenshot it with headless Chrome
 (`google-chrome --headless=new --use-gl=swiftshader --enable-unsafe-swiftshader
 --virtual-time-budget=9000 --screenshot=out.png http://127.0.0.1:5055/solo/twist`). That
 is how the forest of bridge piers and the dark undersides were found - both invisible to

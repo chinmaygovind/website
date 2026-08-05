@@ -308,6 +308,63 @@ def test_barriers_are_opt_in(track):
             f"{track['slug']} floats in the void with only {walled} walled stations"
 
 
+@pytest.mark.parametrize("track", ALL, ids=IDS)
+def test_pole_starts_on_the_inside_of_the_first_corner(track):
+    """`pole_side` has to agree with the corner the grid is pointing at.
+
+    Derived independently of `tracks.pole_side` here: walk the road from the
+    start line and take the sign of the first heading change worth the name,
+    measured off the station positions rather than off the `curv` field the
+    real one integrates. Two ways of asking the same question, so a sign error
+    in either shows up as a disagreement.
+    """
+    line = track["line"]
+    start = next(g for g in track["gates"] if g["kind"] == "start")
+    i0 = start["si"]
+    turn = 0.0
+    for i in range(i0 + 1, len(line) - 1):
+        a, b, c = line[i - 1]["p"], line[i]["p"], line[i + 1]["p"]
+        # Yaw only: a loop pitches through 360 degrees without turning at all.
+        h0 = math.atan2(b[2] - a[2], b[0] - a[0])
+        h1 = math.atan2(c[2] - b[2], c[0] - b[0])
+        d = (h1 - h0 + math.pi) % (2 * math.pi) - math.pi
+        turn += d
+        if abs(turn) >= math.radians(tracks_mod.FIRST_TURN_DEG):
+            break
+    expect = 1 if turn > 0 else -1
+    assert track["pole_side"] == expect, (
+        f"{track['slug']} turns {'right' if expect > 0 else 'left'} first but "
+        f"puts pole on the {'right' if track['pole_side'] > 0 else 'left'}")
+
+
+@pytest.mark.parametrize("track", ALL, ids=IDS)
+def test_a_gate_can_never_be_credited_from_the_road_above_it(track):
+    """The checkpoint window's roof is what stops a car on a bridge triggering
+    the gate underneath it, so it must stay clear of anything passing overhead.
+
+    This is the guard on `gate_ceiling` being generous: raise the ceiling past
+    a track's own crossing clearance and Figure Eight starts crediting laps
+    from the wrong level.
+    """
+    ceil = track["gate_ceil"]
+    assert tracks_mod.GATE_CEIL_MIN <= ceil <= tracks_mod.GATE_CEIL_MAX
+    line = track["line"]
+    for i, j in tracks_mod.crossings(track):
+        dy = abs(line[i]["p"][1] - line[j]["p"][1])
+        assert ceil < dy, \
+            f"{track['slug']} credits gates {ceil} up but crosses itself at {dy:.1f}"
+
+
+def test_the_ceiling_is_high_enough_to_catch_a_jump():
+    """The tracks that made this necessary are the ones you fly on.
+
+    Jump City is four gaps with nothing under them and never crosses itself, so
+    there is nothing above a gate to protect and no reason for its checkpoints
+    to stop counting five units up.
+    """
+    assert tracks_mod.get("jumpcity")["gate_ceil"] == tracks_mod.GATE_CEIL_MAX
+
+
 def test_the_pool_uses_the_whole_vocabulary():
     """Loops, gaps, hills, banking and width changes should all be in use."""
     kinds = set()

@@ -13,6 +13,13 @@ import { mulberry } from './trackmesh.js';
 
 const BRAKE_OFF = 0x521218;
 const BRAKE_ON = 0xff2b2b;
+// Amber, the same amber the drifting touch button goes, so the on-screen
+// control and the car agree about what is happening.
+const DRIFT_ON = 0xffd96b;
+// One opacity for everything you can see through: the ghost, a replay, and a
+// rival during qualifying. They are all the same statement - this car is not
+// solid - so they should not be three different amounts of see-through.
+const GHOST_OPACITY = 0.42;
 
 export class CarView {
   constructor(scene, color, opts = {}) {
@@ -23,9 +30,18 @@ export class CarView {
     const col = new THREE.Color(color);
     const dark = col.clone().multiplyScalar(0.55);
 
-    const mat = (c, extra = {}) => new THREE.MeshLambertMaterial(
-      Object.assign({ color: c, flatShading: true,
-                      transparent: ghost, opacity: ghost ? 0.42 : 1 }, extra));
+    // Every material this car owns, so `setGhostly` can fade the whole thing
+    // later. They are per-view rather than shared, so one car going translucent
+    // cannot take the others with it.
+    this.mats = [];
+    this.solidOpacity = ghost ? GHOST_OPACITY : 1;
+    const mat = (c, extra = {}) => {
+      const m = new THREE.MeshLambertMaterial(
+        Object.assign({ color: c, flatShading: true,
+                        transparent: ghost, opacity: this.solidOpacity }, extra));
+      this.mats.push(m);
+      return m;
+    };
 
     const bodyMat = mat(col);
     const darkMat = mat(dark);
@@ -71,28 +87,36 @@ export class CarView {
     }
 
     // contact shadow: one dark disc laid on the surface under the car
+    this.shadowBase = ghost ? 0.1 : 0.24;
     this.shadow = new THREE.Mesh(
       new THREE.CircleGeometry(1.5, 14),
       new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true,
-                                    opacity: ghost ? 0.1 : 0.24, depthWrite: false }));
+                                    opacity: this.shadowBase, depthWrite: false }));
     this.shadow.rotation.x = -Math.PI / 2;
     scene.add(this.shadow);
 
-    // Brake lights. Two panels on the tail, unlit material so they read as
+    // Tail lamps. Two panels on the tail, unlit material so they read as
     // emissive without a second light in the scene: dark red at rest, full red
-    // the instant you touch the brakes. They are on the *car*, not the HUD, so
-    // you can see the driver ahead of you braking - which is the only reason a
-    // detail like this is worth any geometry at all.
+    // the instant you touch the brakes, **amber while the car is sliding**.
+    // They are on the *car*, not the HUD, so you can see what the driver ahead
+    // of you is doing - which is the only reason a detail like this is worth
+    // any geometry at all.
+    //
+    // Amber wins over red when both are true, and both are true often: the
+    // handbrake counts as braking. Braking is what every car does into every
+    // corner and tells you nothing; a car sideways in front of you is the thing
+    // worth reading off its lamps.
     this.brakeMats = [];
     for (const s of [-1, 1]) {
       const m = new THREE.MeshBasicMaterial({
-        color: BRAKE_OFF, transparent: ghost, opacity: ghost ? 0.42 : 1 });
+        color: BRAKE_OFF, transparent: ghost, opacity: this.solidOpacity });
       const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.22, 0.1), m);
       lamp.position.set(s * 0.6, 0.5, 1.73);
       this.body.add(lamp);
       this.brakeMats.push(m);
+      this.mats.push(m);
     }
-    this._braking = false;
+    this._lamp = null;
 
     scene.add(this.group);
     this.scene = scene;
@@ -140,15 +164,36 @@ export class CarView {
         this.shadow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), opts.groundN);
       }
       const fade = Math.max(0, 1 - Math.abs(pos.y - opts.groundY) / 7);
-      this.shadow.material.opacity = 0.24 * fade;
+      this.shadow.material.opacity = this.shadowBase * fade;
     } else {
       this.shadow.visible = false;
     }
-    const braking = !!opts.braking;
-    if (braking !== this._braking) {
-      this._braking = braking;
-      for (const m of this.brakeMats) m.color.setHex(braking ? BRAKE_ON : BRAKE_OFF);
+    const lamp = opts.drifting ? DRIFT_ON : (opts.braking ? BRAKE_ON : BRAKE_OFF);
+    if (lamp !== this._lamp) {
+      this._lamp = lamp;
+      for (const m of this.brakeMats) m.color.setHex(lamp);
     }
+  }
+
+  /**
+   * Fade the whole car, or bring it back.
+   *
+   * Used for qualifying, where every other car on the road is one you drive
+   * straight through. Seeing through them is the only honest way to say so -
+   * a solid-looking car you cannot touch is a bug until somebody explains it -
+   * and it is the same look the ghost has, for the same reason.
+   */
+  setGhostly(on) {
+    const o = on ? GHOST_OPACITY : this.solidOpacity;
+    if (this._ghostly === on) return;
+    this._ghostly = on;
+    for (const m of this.mats) {
+      m.transparent = o < 1;
+      m.opacity = o;
+      m.needsUpdate = true;
+    }
+    // Set through the base, since `update` redraws the disc every frame.
+    this.shadowBase = on ? 0.1 : (this.solidOpacity < 1 ? 0.1 : 0.24);
   }
 
   setVisible(v) {

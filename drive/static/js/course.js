@@ -144,6 +144,11 @@ export class Run {
     this.track = track;
     this.cps = course.checkpoints();
     this.finish = course.finishGate();
+    // How high above a gate still counts as going through it - see _withinGate.
+    // Per track, because how much room there is over a checkpoint is a fact
+    // about the track. The fallback is the old flat roof, which is safe on any
+    // geometry.
+    this.gateCeil = (track && track.gate_ceil) || 5.0;
     this.reset();
   }
 
@@ -197,9 +202,12 @@ export class Run {
    * be holding also takes the frame rate out of it, so a ghost recorded at
    * 30fps lines up with the same lap replayed at 144.
    */
-  _recordGhost(pos, quat) {
+  _recordGhost(pos, quat, flags) {
     const t = this.time / 1000;
-    const cur = [pos.x, pos.y, pos.z, quat.x, quat.y, quat.z, quat.w];
+    // The eighth value is what the driver was doing - braking, sliding, off the
+    // track - so a replay can light its own lamps. It is the one value here
+    // that must not be interpolated: half a brake is not a state.
+    const cur = [pos.x, pos.y, pos.z, quat.x, quat.y, quat.z, quat.w, flags | 0];
     while (this._ghostN / GHOST_HZ <= t) {
       const want = this._ghostN / GHOST_HZ;
       const prev = this._prevPose;
@@ -218,6 +226,9 @@ export class Run {
           p[0] + (cur[0] - p[0]) * u, p[1] + (cur[1] - p[1]) * u, p[2] + (cur[2] - p[2]) * u,
           p[3] + (cur[3] * sgn - p[3]) * u, p[4] + (cur[4] * sgn - p[4]) * u,
           p[5] + (cur[5] * sgn - p[5]) * u, p[6] + (cur[6] * sgn - p[6]) * u,
+          // Whichever end of the interval this sample is nearer to. A flag byte
+          // has no midpoint, so it is picked rather than blended.
+          u < 0.5 ? (p[7] | 0) : cur[7],
         ]);
       }
       this._ghostN++;
@@ -234,18 +245,22 @@ export class Run {
    * Is the car actually passing *through* the gate, rather than merely crossing
    * the infinite plane it sits in?
    *
-   * The vertical window has to be tight. A track that crosses over itself (the
-   * figure-eight's bridge is two levels up) would otherwise let a car on the
-   * bridge trigger the checkpoint on the road underneath it - which is exactly
-   * what happened before this was clamped. It still has to be tall enough to
-   * credit a car that flies through a gate slightly airborne.
+   * The roof of the window is the interesting number, and it is the track's
+   * (`gate_ceil`, derived in tracks.py) rather than a constant. Too low and a
+   * car that is simply in the air over the gate - off a jump, over a crest,
+   * out of a tow - flies through the checkpoint without being credited, which
+   * loses a lap that was actually driven. Too high and a car on a bridge
+   * triggers the gate on the road underneath it, which is what the flat
+   * five-unit roof was there to prevent. So each track is allowed exactly as
+   * much room as it has clear above itself: everything with no crossing at all
+   * gets the lot.
    */
   _withinGate(gate, pos) {
     const lx = (pos.x - gate.p[0]) * gate.r[0] + (pos.z - gate.p[2]) * gate.r[2];
     const dy = pos.y - gate.p[1];
     // Laterally generous by a bit more than a car's width past the kerb, so
     // running two wheels onto the grass through a gate still counts.
-    return Math.abs(lx) <= gate.hw + 2.5 && dy > -2.5 && dy < 5.0;
+    return Math.abs(lx) <= gate.hw + 2.5 && dy > -2.5 && dy < this.gateCeil;
   }
 
   /**
@@ -272,7 +287,7 @@ export class Run {
                                     pos.z - this._lastPos[2]);
       }
       // Record the ghost at a fixed rate regardless of frame rate.
-      this._recordGhost(pos, car.quat);
+      this._recordGhost(pos, car.quat, car.flags());
 
       // Gate crossings.
       //
@@ -350,7 +365,14 @@ export class Ghost {
     this.t = 0;
   }
   get duration() { return this.frames.length / this.hz; }
-  /** Sample at time t seconds. Returns null past the end. */
+  /**
+   * Sample at time t seconds. Returns null past the end.
+   *
+   * The pose is interpolated; the flag byte on the end (which lap it was
+   * recorded with - see Run._recordGhost) is taken from the frame we are in,
+   * because it is a state rather than a quantity. Laps recorded before flags
+   * existed are seven wide and simply have none.
+   */
   at(t) {
     if (!this.frames.length) return null;
     const f = t * this.hz;
@@ -358,8 +380,10 @@ export class Ghost {
     if (i < 0) return this.frames[0];
     if (i >= this.frames.length - 1) return this.frames[this.frames.length - 1];
     const a = this.frames[i], b = this.frames[i + 1], u = f - i;
-    return [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u,
-            a[3] + (b[3] - a[3]) * u, a[4] + (b[4] - a[4]) * u,
-            a[5] + (b[5] - a[5]) * u, a[6] + (b[6] - a[6]) * u];
+    const out = [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u,
+                 a[3] + (b[3] - a[3]) * u, a[4] + (b[4] - a[4]) * u,
+                 a[5] + (b[5] - a[5]) * u, a[6] + (b[6] - a[6]) * u];
+    if (a.length > 7) out.push(a[7]);
+    return out;
   }
 }

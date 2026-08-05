@@ -32,11 +32,18 @@ const fmt = (ms) => {
 };
 const fmtDelta = (ms) => (ms >= 0 ? '+' : '') + (ms / 1000).toFixed(3);
 
-/** The ghost you picked last time is the ghost you probably still want. */
+/**
+ * The ghost you picked last time is the ghost you probably still want.
+ *
+ * Provisional pole is only a thing in a room, so it is only remembered into
+ * one: arriving alone on a time trial with the ghost set to a session that is
+ * not happening would be a setting that cannot come true.
+ */
 function storedGhostMode() {
+  const ok = CFG.mode === 'room' ? ['off', 'me', 'pole', 'wr'] : ['off', 'me', 'wr'];
   try {
     const v = localStorage.getItem('drive.ghost');
-    return ['off', 'me', 'wr'].includes(v) ? v : 'me';
+    return ok.includes(v) ? v : 'me';
   } catch (e) { return 'me'; }
 }
 
@@ -48,6 +55,9 @@ const S = {
   built: null, course: null, run: null, car: null,
   renderer: null, sound: new Sound(), stepper: new Stepper(T),
   view: null, ghostView: null, ghost: null, ghostTimes: null,
+  // Whose lap the ghost is, and what colour the car drawing it currently is.
+  // Two fields because the view is rebuilt only when the answer changes.
+  ghostColor: null, ghostViewColor: null,
   // Which lap the ghost is: off | me | wr | run (one picked off the board).
   ghostMode: storedGhostMode(),
   ghostRun: null,          // {id, who, time_ms} while chasing somebody's lap
@@ -68,7 +78,11 @@ const S = {
   started: false,          // has the local run clock been started
   raceMode: false,         // are we in a synced race right now
   racePhase: 'free',
+  qualOn: true,            // does this room hold a qualifying session at all
+  pole: null,              // {pid,name,color,ms} of the provisional pole lap
+  qualAgain: null,         // the "line up again" timer after a qualifying lap
   raceT0: null,            // local perf-clock ms of the green light
+  cdT0: null,              // and what the lights on screen are counting down to
   raceDone: false,         // finished or retired: out of the race, still in the room
   qualEnd: null,           // local perf-clock ms qualifying closes
   standings: [],
@@ -153,6 +167,14 @@ function boot() {
   loadTrack(S.track);
   bindInput();
   if (CFG.mode === 'room') connect();
+  if (CFG.mode === 'replay') {
+    // Straight away, not when the cars arrive: the HUD is about a run of yours
+    // that does not exist here, so it should never be on the screen at all.
+    document.body.classList.add('watching');
+    S.car.frozen = true;
+    S.view.setVisible(false);
+    openRaceReplay();
+  }
   openRequestedLap();
   openPanelParam();
   requestAnimationFrame(frame);
@@ -165,13 +187,13 @@ function boot() {
  * way to look at a panel's layout without a person driving the mouse - the same
  * reason `?touch=1` exists.
  *
- * `qual` and `racing` are the odd ones out: neither is a panel you can open,
- * they appear because the room said so, and getting a room into either needs
- * two browsers and a stopwatch. So they pin the phase and fake a session,
- * which is enough to look at - and looking at it is the whole point here.
- * Pinned rather than assigned, because the room reports "free practice" the
- * moment the socket connects and a phase merely set here would be gone before
- * the shutter.
+ * `qcount`, `qual`, `racing` and `result` are the odd ones out: none of them is
+ * a panel you can open, they appear because the room said so, and getting a
+ * room into any of them needs two browsers, a stopwatch and somebody willing to
+ * lose a race. So they pin the phase and fake a session, which is enough to
+ * look at - and looking at it is the whole point here. Pinned rather than
+ * assigned, because the room reports "free practice" the moment the socket
+ * connects and a phase merely set here would be gone before the shutter.
  */
 async function openPanelParam() {
   const q = new URLSearchParams(location.search);
@@ -179,8 +201,22 @@ async function openPanelParam() {
   if (p === 'settings') toggleMenu(true);
   else if (p === 'help') toggleHelp(true);
   else if (p === 'tracks') toggleTracks(true);
-  else if ((p === 'qual' || p === 'racing') && CFG.mode === 'room') {
-    S.previewPhase = p === 'qual' ? 'qualifying' : 'racing';
+  else if (p === 'result' && CFG.mode === 'room') {
+    // The sheet at the end of a race, which otherwise takes a race to look at.
+    S.isHost = true;
+    showSide(false);
+    onRaceResult({
+      standings: [
+        { pid: 'a', name: 'Chinmay', color: '#e8453c', ms: 41208 },
+        { pid: CFG.me ? CFG.me.pid : 'b', name: 'You', color: '#ffd96b', ms: 42980 },
+        { pid: 'c', name: 'Someone else', color: '#55e08a', ms: 44117 },
+        { pid: 'd', name: 'Gave up', color: '#8fd6ff', ms: null }],
+      elo: CFG.me ? { [CFG.me.pid]: { before: 1000, after: 1012, delta: 12 } } : {},
+      why: 'all in', race: 1,
+    });
+  } else if ((p === 'qual' || p === 'racing' || p === 'qcount') && CFG.mode === 'room') {
+    S.previewPhase = p === 'qual' ? 'qualifying'
+                   : (p === 'qcount' ? 'qual_countdown' : 'racing');
     S.isHost = true;
     // A session closes the room drawer on the way in, so a preview of one has
     // to as well or it photographs a screen that never happens.
@@ -219,7 +255,7 @@ async function openRequestedLap() {
   const d = await fetchGhost(id).catch(() => null);
   if (!d) { toast('That lap is no longer there'); return; }
   if (watch) { startWatching(d.ghost, d.hz || GHOST_RATE, d); return; }
-  useGhost(d.ghost, d.hz || GHOST_RATE);
+  useGhost(d.ghost, d.hz || GHOST_RATE, d.color);
   S.ghostRun = { id: d.id, who: d.who, time_ms: d.time_ms };
   setGhostMode('run', { quiet: true });
   toast('Chasing ' + d.who + '  ' + fmt(d.time_ms));
@@ -228,7 +264,7 @@ async function openRequestedLap() {
 function loadTrack(track, opts = {}) {
   S.track = track;
   if (S.view) S.view.dispose();
-  if (S.ghostView) { S.ghostView.dispose(); S.ghostView = null; }
+  if (S.ghostView) { S.ghostView.dispose(); S.ghostView = null; S.ghostViewColor = null; }
   for (const r of S.remotes.values()) r.view.dispose();
   S.remotes.clear();
 
@@ -238,7 +274,10 @@ function loadTrack(track, opts = {}) {
   S.run = new Run(S.course, track);
   S.car = new Car(T, S.built);
   S.car.id = CFG.me ? CFG.me.pid : 'me';
-  S.view = new CarView(S.renderer.scene, CFG.me ? CFG.me.color : '#e8453c');
+  // Your seat's colour in a room, and your own everywhere else - which are the
+  // same colour unless somebody in this room got there first.
+  S.view = new CarView(S.renderer.scene,
+                       (CFG.me && CFG.me.color) || CFG.carColor || '#e8453c');
   wireCarEvents();
   resetToStart();
 
@@ -264,8 +303,11 @@ function loadTrack(track, opts = {}) {
   // one is gone. Every reference lap belongs to the track it was driven on, so
   // switching throws all of them away rather than reading this track's splits
   // against the last one's.
-  S.ghost = null; S.ghostTimes = null; S.sessionBest = null;
+  S.ghost = null; S.ghostTimes = null; S.ghostColor = null; S.sessionBest = null;
   S.qualBest = null; S.qualRef = null; S.raceSplits = {};
+  // Pole belongs to a session on the track it was set on, so it does not follow
+  // the room somewhere else.
+  S.pole = null;
   S.ghostRun = null;
   S.mySplits = (CFG.pbSplits && CFG.pbSplits[track.slug]) || [];
   // **Arriving somewhere new means no ghost.** A track you have just switched
@@ -315,6 +357,11 @@ function wireCarEvents() {
 }
 
 function resetToStart() {
+  // Any reset cancels the automatic one queued after a qualifying lap. That was
+  // "line up again in a moment", and this *is* lining up again - leaving it
+  // armed threw away the lap you had already started: finish, press R, drive,
+  // and a second later the session restarted you for no visible reason.
+  if (S.qualAgain) { clearTimeout(S.qualAgain); S.qualAgain = null; }
   const sp = S.track.spawn;
   S.car.placeAt(sp.p, sp.fwd);
   S.run.reset();
@@ -366,11 +413,15 @@ function bindInput() {
     if (k) { keys.add(k); e.preventDefault(); }
     // R starts the whole run again; T only puts you back on the road at the last
     // checkpoint and leaves the clock running, which is the difference between
-    // "that lap is gone" and "I just fell off".
+    // "that lap is gone" and "I just fell off". Both do nothing until you have
+    // actually set off - see restartRun.
     if (e.code === 'KeyR') restartRun();
-    if (e.code === 'KeyT' || e.code === 'Enter' || e.code === 'Backspace') {
-      e.preventDefault(); backToCheckpoint();
-    }
+    // T and only T. Enter and Backspace used to do this as well, and Enter is
+    // worth more as the host's key than as a third way to press T: starting the
+    // session is the one thing a room waits on, and it was a button in the top
+    // corner and nothing else.
+    if (e.code === 'KeyT') { e.preventDefault(); backToCheckpoint(); }
+    if (e.code === 'Enter') { e.preventDefault(); hostStart(); }
     // Escape means "close whatever is in front of me", innermost first - a
     // replay, then a panel opened from another panel, then the panel itself.
     if (e.code === 'Escape') {
@@ -569,14 +620,23 @@ function showSide(on) {
 // somebody else's lap are new, and they are still hidden for the whole of a
 // race by ghostOn(), where a translucent extra car is just a fake rival.
 
-const GHOST_LABEL = { off: 'Off', me: 'My best', wr: 'World record', run: 'Chasing' };
+const GHOST_LABEL = { off: 'Off', me: 'My best', wr: 'World record',
+                      pole: 'Provisional pole', run: 'Chasing' };
 
-// What G steps through. `run` is deliberately not in it - see the key handler.
+// What G steps through, and it is not the same list in the two places. `run` is
+// deliberately in neither - it is not a mode you can arrive at by pressing a
+// key, so pressing one leaves it (see the key handler).
+//
+// In a room the lap worth chasing is the one that is about to take pole, and
+// picking somebody off the leaderboard is not: everybody in the room is on the
+// road with you and the board is a list of people who are not.
 const GHOST_CYCLE = ['off', 'me', 'wr'];
+const GHOST_CYCLE_ROOM = ['off', 'me', 'pole', 'wr'];
 
 function nextGhostMode() {
-  const i = GHOST_CYCLE.indexOf(S.ghostMode);
-  return GHOST_CYCLE[(i + 1) % GHOST_CYCLE.length];
+  const cycle = CFG.mode === 'room' ? GHOST_CYCLE_ROOM : GHOST_CYCLE;
+  const i = cycle.indexOf(S.ghostMode);
+  return cycle[(i + 1) % cycle.length];
 }
 
 function chooseGhost(mode) {
@@ -604,6 +664,7 @@ function setGhostMode(mode, opts = {}) {
   if (mode === 'off') { S.ghost = null; S.ghostTimes = null; }
   else if (mode === 'me') { if (CFG.mode !== 'room') loadGhost('me'); }
   else if (mode === 'wr') loadGhost('wr');
+  else if (mode === 'pole') loadPoleGhost();
   showGhostNow();
   if (!opts.quiet) toast('Ghost: ' + ghostDescription());
 }
@@ -613,6 +674,9 @@ function ghostDescription() {
     return S.ghostRun.who + '  ' + fmt(S.ghostRun.time_ms);
   }
   if (S.ghostMode === 'me' && CFG.mode === 'room') return 'your best lap here';
+  if (S.ghostMode === 'pole' && S.pole) {
+    return S.pole.name + '  ' + fmt(S.pole.ms);
+  }
   return GHOST_LABEL[S.ghostMode] || 'Off';
 }
 
@@ -633,6 +697,20 @@ function showGhostNow() {
                     : 'Drive a lap and it becomes your ghost.');
     return;
   }
+  if (S.ghostMode === 'pole') {
+    // Three different facts, and only the last one is a shrug: somebody is on
+    // pole and you have their lap, somebody is on pole and it is you, or the
+    // session has not had a lap in it yet.
+    if (S.pole && S.ghost) {
+      el.innerHTML = 'The lap on provisional pole &middot; <b>' +
+                     esc(S.pole.name) + '</b> ' + fmt(S.pole.ms);
+    } else if (S.pole) {
+      el.textContent = 'Provisional pole is yours - nobody to chase yet.';
+    } else {
+      el.textContent = 'Nobody has set a qualifying lap yet.';
+    }
+    return;
+  }
   // "Nobody has set a time" was said whenever no ghost loaded, which on a
   // track with a full board was simply untrue - the record was there, its
   // replay was not. The two are different facts and only one of them is your
@@ -645,16 +723,37 @@ function showGhostNow() {
 /**
  * Should the ghost car be on the road right now?
  *
- * In a room it belongs to free practice and nowhere else. A race is against the
- * cars that are actually there, and a translucent fourth car drifting through
- * the pack on a line nobody drove is just something else to mistake for a
- * rival - so the ghost is off for the whole race no matter what the setting
- * says. It comes back the moment the room is practising again.
+ * In a room it belongs to the two phases you drive alone in - free practice and
+ * qualifying - and to neither of the others. A race is against the cars that
+ * are actually there, and a translucent extra one drifting through the pack on
+ * a line nobody drove is just something else to mistake for a rival, so the
+ * ghost is off for the whole race no matter what the setting says.
+ *
+ * Qualifying is the opposite case and used to be lumped in with the race. It is
+ * the session where you are alone against a clock, which is exactly what a
+ * ghost is for - and the lap on provisional pole is only a ghost you can chase
+ * if it is on the road while there is still time to beat it.
  */
 function ghostOn() {
   if (!S.showGhost || !S.ghost) return false;
   if (CFG.mode !== 'room') return true;
-  return !S.raceMode && S.racePhase === 'free';
+  return !S.raceMode && (S.racePhase === 'free' || S.racePhase === 'qualifying');
+}
+
+/**
+ * Fetch the lap currently on provisional pole.
+ *
+ * Who is on pole is pushed to the whole room the moment it changes, because it
+ * is one line; the lap itself is tens of kilobytes and most of the room is not
+ * chasing it, so it is asked for by the people who are.
+ */
+function loadPoleGhost() {
+  S.ghost = null; S.ghostTimes = null;
+  if (CFG.mode !== 'room' || !S.socket || !S.pole) return;
+  // Chasing yourself is not chasing anybody. Your own best lap of the session
+  // is already what `me` means here, and it is the same lap.
+  if (CFG.me && S.pole.pid === CFG.me.pid) return;
+  S.socket.emit('qual_pole_req', {});
 }
 
 function setSound(on) {
@@ -772,7 +871,7 @@ async function fetchGhost(id) {
 async function raceGhost(row) {
   const d = await fetchGhost(row.id).catch(() => null);
   if (!d) { toast('Could not load that ghost'); return; }
-  useGhost(d.ghost, d.hz || GHOST_RATE);
+  useGhost(d.ghost, d.hz || GHOST_RATE, d.color);
   S.ghostRun = { id: row.id, who: d.who, time_ms: d.time_ms };
   setGhostMode('run', { quiet: true });
   toggleBoard(false);
@@ -800,55 +899,134 @@ async function watchGhost(row) {
   startWatching(d.ghost, d.hz || GHOST_RATE, d);
 }
 
+/** One lap, watched: a replay of a single car. */
 function startWatching(frames, hz, meta) {
+  startReplay([{ frames, hz, name: meta.who || 'Replay', color: meta.color }]);
+}
+
+/**
+ * Play these cars back together.
+ *
+ * One car is a lap off the leaderboard; several are a whole race, and they run
+ * on one clock because that is what they were recorded on - frame *n* of every
+ * car in a race is the same instant, so watching from inside the pack shows
+ * the pack. The camera belongs to one of them at a time and you can move it,
+ * which is the only thing "from all perspectives" needs to mean.
+ */
+function startReplay(cars, opts = {}) {
   stopWatching();
-  const view = new CarView(S.renderer.scene, '#ffd96b');
-  view.setLabel(meta.who || 'Replay', '#ffd96b');
+  const built = cars.filter(c => c.frames && c.frames.length > 1).map(c => {
+    const color = c.color || '#ffd96b';
+    const view = new CarView(S.renderer.scene, color);
+    view.setLabel(c.name || 'Driver', color);
+    return { g: new Ghost(c.frames, c.hz || GHOST_RATE), view, prev: null,
+             name: c.name || 'Driver', color, ms: c.ms };
+  });
+  if (!built.length) { toast('That replay is empty'); return; }
   S.watch = {
-    g: new Ghost(frames, hz), t: 0, view, meta,
-    dur: frames.length / hz,
+    cars: built, at: 0, t: 0,
+    dur: Math.max(...built.map(c => c.g.duration)),
     subject: { pos: new THREE.Vector3(), fwd: new THREE.Vector3(0, 0, -1),
                up: new THREE.Vector3(0, 1, 0), speed: 0, grounded: true },
-    prev: null,
+    title: opts.title || null,
   };
   S.car.frozen = true;
   S.view.setVisible(false);
   document.body.classList.add('watching');
-  $('watchWho').textContent = 'Watching ' + (meta.who || 'a lap');
+  renderWatchBar();
   $('watchBar').style.display = '';
+}
+
+/** Whose eyes you are watching through, and the buttons to change them. */
+function renderWatchBar() {
+  const w = S.watch;
+  if (!w) return;
+  const me = w.cars[w.at];
+  $('watchWho').textContent = (w.title ? w.title + ' - ' : 'Watching ') + me.name;
+  const bar = $('watchCars');
+  if (!bar) return;
+  // One car is not a choice of camera, so it is not offered as one.
+  bar.style.display = w.cars.length > 1 ? '' : 'none';
+  if (w.cars.length < 2) { bar.innerHTML = ''; return; }
+  bar.innerHTML = w.cars.map((c, i) => `
+    <button class="wcar${i === w.at ? ' on' : ''}" data-cam="${i}">
+      <span class="st-dot" style="background:${esc(c.color)}"></span>
+      <span>${esc(c.name)}</span>
+      <i>${c.ms != null ? fmt(c.ms) : 'DNF'}</i>
+    </button>`).join('');
+  bar.querySelectorAll('[data-cam]').forEach(b => {
+    b.onclick = () => watchFrom(parseInt(b.dataset.cam, 10));
+  });
+}
+
+/** Move the camera to another car, without moving the clock. */
+function watchFrom(i) {
+  const w = S.watch;
+  if (!w || !w.cars[i]) return;
+  w.at = i;
+  w.cars[i].prev = null;      // its speed is measured between frames, so restart it
+  renderWatchBar();
 }
 
 function stopWatching() {
   if (!S.watch) return;
-  S.watch.view.dispose();
+  for (const c of S.watch.cars) c.view.dispose();
   S.watch = null;
   S.car.frozen = false;
   S.view.setVisible(true);
   document.body.classList.remove('watching');
   $('watchBar').style.display = 'none';
+  // On the replay page there is no run to go back to - the whole page is the
+  // replay - so leaving it is leaving the page.
+  if (CFG.mode === 'replay') { location.href = '/lobbies'; return; }
   resetToStart();
 }
 
-/** Advance the replay and point the camera at it. */
+/** Advance the replay and point the camera at whoever it is following. */
 function updateWatch(dt) {
   const w = S.watch;
   w.t += dt;
-  if (w.t > w.dur) { w.t = 0; w.prev = null; }
-  const f = w.g.at(w.t);
-  if (!f) return;
-  const p = new THREE.Vector3(f[0], f[1], f[2]);
-  const q = new THREE.Quaternion(f[3], f[4], f[5], f[6]).normalize();
-  const s = w.subject;
-  // The camera wants a speed and a frame to orbit in, which a replay does not
-  // carry - so both are read back off the motion itself.
-  s.speed = w.prev ? p.distanceTo(w.prev) / Math.max(1e-3, dt) : 0;
-  s.pos.copy(p);
-  s.fwd.set(0, 0, -1).applyQuaternion(q);
-  s.up.set(0, 1, 0).applyQuaternion(q);
-  w.prev = p.clone();
-  w.view.update(p, q, {});
-  w.view.group.visible = true;
+  if (w.t > w.dur) { w.t = 0; for (const c of w.cars) c.prev = null; }
+  for (let i = 0; i < w.cars.length; i++) {
+    const c = w.cars[i];
+    const f = c.g.at(w.t);
+    if (!f) { c.view.group.visible = false; continue; }
+    const p = new THREE.Vector3(f[0], f[1], f[2]);
+    const q = new THREE.Quaternion(f[3], f[4], f[5], f[6]).normalize();
+    c.view.update(p, q, lampsOf(f[7]));
+    c.view.group.visible = true;
+    if (i === w.at) {
+      const s = w.subject;
+      // The camera wants a speed and a frame to orbit in, which a replay does
+      // not carry - so both are read back off the motion itself.
+      s.speed = c.prev ? p.distanceTo(c.prev) / Math.max(1e-3, dt) : 0;
+      s.pos.copy(p);
+      s.fwd.set(0, 0, -1).applyQuaternion(q);
+      s.up.set(0, 1, 0).applyQuaternion(q);
+    }
+    c.prev = p.clone();
+  }
   $('watchClock').textContent = fmt(w.t * 1000);
+}
+
+/**
+ * The replay page: a whole race, from any car in it.
+ *
+ * The cars are fetched rather than rendered into the page because eight
+ * replays of a two-minute race is most of a megabyte of numbers.
+ */
+async function openRaceReplay() {
+  const id = CFG.race;
+  if (!id) return;
+  let d = null;
+  try {
+    const r = await fetch('/api/race/' + id);
+    d = await r.json();
+  } catch (e) { d = null; }
+  if (!d || !d.cars || !d.cars.length) { toast('That replay is not there'); return; }
+  startReplay(d.cars.map(c => ({
+    frames: c.frames, hz: d.hz, name: c.name, color: c.color, ms: c.ms,
+  })), { title: 'Race replay' });
 }
 
 // ---------------------------------------------------------------------------
@@ -934,11 +1112,17 @@ function setMode(text, racing) {
 /** The room's phase, said out loud in the top-left corner. */
 const PHASE_LABEL = {
   free: ['Multiplayer - Free practice', false],
+  qual_countdown: ['Multiplayer - Qualifying about to start', true],
   qualifying: ['Multiplayer - Qualifying', true],
   countdown: ['Multiplayer - Race about to start', true],
   racing: ['Multiplayer - Race in progress', true],
   results: ['Multiplayer - Race finished', false],
 };
+
+// The phases the lights belong to. `qual_countdown` uses the same overlay and
+// the same sounds as the start of a race, because it is the same thing: five
+// seconds, then something begins that everybody is in.
+const COUNTDOWN_PHASES = ['qual_countdown', 'countdown', 'racing'];
 
 /**
  * Everything that depends on the phase, in one place.
@@ -956,14 +1140,23 @@ function applyPhase() {
   setMode(text, racing);
 
   const start = $('btnStartRace'), end = $('btnEndRace'), resign = $('btnResign');
-  const live = p === 'qualifying' || p === 'countdown' || p === 'racing';
+  const live = COUNTDOWN_PHASES.includes(p) || p === 'qualifying';
   // Only the host starts or stops one, so only the host is offered either.
-  start.style.display = (S.isHost && (p === 'free' || p === 'qualifying')) ? '' : 'none';
-  start.textContent = p === 'qualifying' ? 'Start race now' : 'Start race';
+  // Not during `results`: the sheet covering the screen has Rematch on it, and
+  // the same offer twice - once behind the sheet making it - is one too many.
+  // Enter still works there, since it is that sheet's Rematch by another name.
+  start.style.display = (S.isHost && (p === 'free' || p === 'qualifying'))
+    ? '' : 'none';
+  // The button says what pressing it does, which is three different things:
+  // open the session, skip the rest of it, or - with qualifying switched off -
+  // start the race itself. A button labelled "Start race" that opens ninety
+  // seconds of practice is a button that lied.
+  setLabel(start, p === 'qualifying' ? 'Start race now'
+                : (S.qualOn ? 'Start qualifying' : 'Start race'));
   end.style.display = (S.isHost && live) ? '' : 'none';
   // It cancels before the lights and flags the race after them. Saying which
   // matters: one of them throws a result away and the other records one.
-  end.textContent = p === 'racing' ? 'End race' : 'Cancel race';
+  setLabel(end, p === 'racing' ? 'End race' : 'Cancel race');
   disarm(end);
 
   // You can only retire from something you are in, and only if you are still
@@ -977,7 +1170,16 @@ function applyPhase() {
   // is centred across the whole of it, so the two need telling apart.
   document.body.classList.toggle('qualifying', p === 'qualifying');
   if (p !== 'qualifying') stopQualClock();
-  showRematch();
+  // The host's switch, and everyone else's read-only view of it. It cannot be
+  // touched while a session is on: turning it off under people who are driving
+  // one takes their session away.
+  const qbox = $('qualToggle');
+  if (qbox) {
+    qbox.checked = !!S.qualOn;
+    qbox.disabled = !S.isHost || live;
+    $('qualSetting').classList.toggle('locked', qbox.disabled);
+  }
+  showHostOnly();
 }
 
 // --- the two irreversible buttons -----------------------------------------
@@ -1062,6 +1264,41 @@ function stopQualClock() {
   if (S.qualTimer) { clearInterval(S.qualTimer); S.qualTimer = null; }
 }
 
+/**
+ * Five seconds, then qualifying opens.
+ *
+ * The same lights and the same sounds as the start of a race, because it is
+ * the same event: something everybody is in is about to begin, and everybody
+ * should be sitting still and looking at the road when it does. Qualifying
+ * used to simply start, which meant the first anyone knew of it was the toast
+ * saying they were already in it and a lap in progress that no longer counted.
+ *
+ * Nobody is placed anywhere. A qualifying session has no start line - everyone
+ * leaves when they like, on their own lap - so the countdown runs down over
+ * wherever you were, with the car held still so it cannot be jumped.
+ */
+function onQualCountdown(d) {
+  S.racePhase = 'qual_countdown';
+  S.raceMode = false;
+  S.raceDone = false;
+  S.standings = [];
+  S.qualBest = null;
+  S.qualRef = null;
+  if (S.watch) stopWatching();
+  toggleBoard(false);
+  toggleTracks(false);
+  toggleMenu(false);
+  showSide(false);
+  $('raceOver').style.display = 'none';
+  hideResults();
+  applyPhase();
+  resetToStart();
+  S.car.frozen = true;
+  S.cdT0 = performance.now() + (d.t0 - serverNow());
+  countdownLoop();
+  toast('Qualifying is about to start');
+}
+
 function onQualStart(d) {
   S.racePhase = 'qualifying';
   S.raceMode = false;
@@ -1085,11 +1322,33 @@ function onQualStart(d) {
   // You have ninety seconds, so you start the one that counts now rather than
   // finishing whatever you happened to be part-way through.
   resetToStart();
+  // Released from the countdown that has just run out - see onQualCountdown.
+  S.car.frozen = false;
+  // Nobody is on pole yet, so a ghost of it is a ghost of nothing.
+  S.pole = null;
+  S.poleGhost = null;
+  if (S.ghostMode === 'pole') { S.ghost = null; S.ghostTimes = null; showGhostNow(); }
   toast('Qualifying - fastest lap sets the grid');
 }
 
-/** R: throw the run away and line up again. */
-function restartRun() { resetToStart(); toast('Restart'); }
+/**
+ * R: throw the run away and line up again.
+ *
+ * Both this and the checkpoint below do **nothing until the clock is running**,
+ * silently. Before that there is no run to throw away and no checkpoint to go
+ * back to, so nothing is lost by refusing - and it closes a hole that was worth
+ * real time: on a grid, pressing either of them moved the car forward to the
+ * start gate, which is ahead of every grid slot, so a driver could shuffle
+ * themselves up the road while the lights were still counting down.
+ *
+ * No toast on the refusal. A message would make a non-event into an event, and
+ * the answer to "why did nothing happen" is that you have not set off yet.
+ */
+function restartRun() {
+  if (!S.started) return;
+  resetToStart();
+  toast('Restart');
+}
 
 /**
  * T: back to the last checkpoint with the clock still running.
@@ -1097,7 +1356,27 @@ function restartRun() { resetToStart(); toast('Restart'); }
  * This is the same path a fall takes, so there is only ever one respawn rule -
  * `Run.update` keeps the car's respawn target pinned to the last gate reached.
  */
-function backToCheckpoint() { S.car.requestRespawn(); }
+function backToCheckpoint() {
+  if (!S.started) return;
+  S.car.requestRespawn();
+}
+
+/**
+ * Enter: whatever the host's button says right now.
+ *
+ * Deliberately routed through the same guard the button is behind rather than
+ * emitting on its own - the server refuses a non-host anyway, and a key that
+ * silently does nothing for everybody except one person is easier to explain
+ * than one that sends a message nobody acts on. Silent for everyone else, and
+ * silent mid-race: there is no third thing Enter could mean there.
+ */
+function hostStart() {
+  if (CFG.mode !== 'room' || !S.isHost || !S.socket) return;
+  if (S.racePhase !== 'free' && S.racePhase !== 'results' &&
+      S.racePhase !== 'qualifying') return;
+  $('raceOver').style.display = 'none';
+  S.socket.emit('start_race', { code: CFG.room });
+}
 
 function readInput() {
   const on = (k) => keys.has(k) || touchKeys.has(k);
@@ -1146,7 +1425,12 @@ function frame(now) {
 
   // In solo, the clock starts the moment you ask the car to move. In a race it
   // starts on the green light, which the server picks for everyone.
-  if (!S.started && !S.raceMode && (inp.throttle || inp.brake || inp.steer)) {
+  // Not while a countdown is running. The car is held still for those five
+  // seconds either way, but the *clock* would start on the first press and post
+  // an attempt that nobody drove. A race countdown is already excluded by
+  // `raceMode`; qualifying's is not, because qualifying is not a race.
+  if (!S.started && !S.raceMode && S.racePhase !== 'qual_countdown' &&
+      (inp.throttle || inp.brake || inp.steer)) {
     S.started = true;
     S.run.start(now);
     noteStart();
@@ -1241,21 +1525,25 @@ function render(dt, now) {
     spin: car.wheelSpin,
     groundY: car.groundY,
     groundN: car.grounded ? car.groundN : null,
-    braking: car.braking,
+    // Read off the same flags the network and the ghost recorder use, so your
+    // own car's lamps and the ones every rival sees are the same lamps.
+    ...lampsOf(car.flags()),
   });
   S.view.setVisible(car.respawnIn <= 0);
   S.renderer.draft(car, dt);
 
-  // own-best ghost
+  // the ghost you are chasing, in its owner's colour and showing its lamps
   if (ghostOn() && S.started) {
-    if (!S.ghostView) S.ghostView = new CarView(S.renderer.scene, '#9aa7b8', { ghost: true });
+    const gv = ghostView();
     const t = (S.run.state === 'running' ? S.run.time : 0) / 1000;
     const f = S.ghost.at(t);
     if (f) {
-      S.ghostView.group.visible = true;
+      gv.group.visible = true;
       const q = new THREE.Quaternion(f[3], f[4], f[5], f[6]).normalize();
-      S.ghostView.update(new THREE.Vector3(f[0], f[1], f[2]), q, {});
-      S.ghostView.shadow.visible = false;
+      // The eighth value is what the driver was doing at that instant, if the
+      // lap is new enough to have been recorded with it (see Run._recordGhost).
+      gv.update(new THREE.Vector3(f[0], f[1], f[2]), q, lampsOf(f[7]));
+      gv.shadow.visible = false;
     } else if (S.ghostView) {
       S.ghostView.group.visible = false;
       S.ghostView.shadow.visible = false;
@@ -1585,7 +1873,7 @@ async function loadGhost(who) {
     const r = await fetch('/api/ghost/' + slug + '?who=' + who);
     const d = await r.json();
     if (S.ghostMode !== want || S.track.slug !== slug) return;
-    if (d.ghost) useGhost(d.ghost, d.hz || GHOST_RATE);
+    if (d.ghost) useGhost(d.ghost, d.hz || GHOST_RATE, d.color);
   } catch (e) { /* no ghost is fine */ }
   // **The line has to be written again here.** `setGhostMode` writes it the
   // instant you click, which is before this request has answered - and the
@@ -1597,11 +1885,44 @@ async function loadGhost(who) {
   if (S.ghostMode === want && S.track.slug === slug) showGhostNow();
 }
 
-/** Race against these frames from now on. */
-function useGhost(frames, hz) {
+/**
+ * Race against these frames from now on.
+ *
+ * The colour belongs to whoever drove them. A ghost used to be the same grey
+ * whoever it was, which made "my best", the world record and somebody you
+ * picked off the board three indistinguishable cars - and the one thing you
+ * want to know about the car you are chasing is whose it is.
+ */
+function useGhost(frames, hz, color) {
   if (!frames || frames.length < 2) return;
   S.ghost = new Ghost(frames, hz || GHOST_RATE);
   S.ghostTimes = lapTimeline(S.ghost.frames, S.ghost.hz);
+  S.ghostColor = color || null;
+}
+
+// A lap with nobody attached to it - a guest's, or one from before colours
+// belonged to people.
+const GHOST_GREY = '#9aa7b8';
+
+/** The colour of your own car: your seat's in a room, your own everywhere else. */
+function myColor() {
+  return (CFG.me && CFG.me.color) || CFG.carColor || '#e8453c';
+}
+
+/**
+ * The translucent car, in the colour of whoever is being chased.
+ *
+ * Rebuilt when the colour changes rather than recoloured, because a CarView
+ * bakes its colour into half a dozen materials at construction and this
+ * happens once per ghost rather than once per frame.
+ */
+function ghostView() {
+  const c = S.ghostColor || GHOST_GREY;
+  if (S.ghostView && S.ghostViewColor === c) return S.ghostView;
+  if (S.ghostView) S.ghostView.dispose();
+  S.ghostView = new CarView(S.renderer.scene, c, { ghost: true });
+  S.ghostViewColor = c;
+  return S.ghostView;
 }
 
 /**
@@ -1677,8 +1998,13 @@ async function onFinish() {
   }
   // A qualifying lap is an ordinary practice lap that also counts for the
   // grid, so it goes up the same way any other lap does and the server keeps
-  // the best of them.
-  if (qualifying && S.socket) S.socket.emit('qual_time', { ms: run.time });
+  // the best of them - with its replay, because the lap on provisional pole is
+  // the one ghost worth having in a session whose whole purpose is that lap.
+  // The server throws away every replay but the leader's.
+  if (qualifying && S.socket) {
+    S.socket.emit('qual_time', { ms: run.time, ghost: run.ghost,
+                                 hz: GHOST_RATE });
+  }
 
   // In a room your ghost is the best lap of this practice session. Not your
   // all-time PB: the room is a place you turn up and learn a track together,
@@ -1686,7 +2012,8 @@ async function onFinish() {
   if (CFG.mode === 'room' && !racing &&
       (S.sessionBest == null || run.time < S.sessionBest)) {
     S.sessionBest = run.time;
-    useGhost(run.ghost.slice(), GHOST_RATE);
+    // Your lap, so your car - the same colour you are driving.
+    useGhost(run.ghost.slice(), GHOST_RATE, myColor());
   }
 
   // The finish is the last split, so it is measured the same way the others
@@ -1716,7 +2043,10 @@ async function onFinish() {
     // most of these tracks, and making each one cost a keypress on a screen
     // with a running clock on it is making you spend the session on the menu.
     toast('Qualifying lap ' + fmt(run.time) + ' - going again');
-    setTimeout(() => { if (S.racePhase === 'qualifying') resetToStart(); }, 1200);
+    S.qualAgain = setTimeout(() => {
+      S.qualAgain = null;
+      if (S.racePhase === 'qualifying') resetToStart();
+    }, 1200);
   }
   else showResults({ time: run.time, medal, pb: improved ? run.time : prev });
 
@@ -1774,6 +2104,18 @@ async function onFinish() {
   }
   renderMedalTable();
   showPb();
+}
+
+/**
+ * The tail-lamp state packed into a recorded flag byte.
+ *
+ * One place, because three different things read one: the ghost, a replay, and
+ * a rival's pose. Laps recorded before flags existed hand in `undefined` here,
+ * which is a car with its lamps off rather than an error.
+ */
+function lampsOf(flags) {
+  const f = flags | 0;
+  return { braking: !!(f & FLAG.BRAKE), drifting: !!(f & FLAG.DRIFT) };
 }
 
 function medalFor(ms) {
@@ -1868,14 +2210,21 @@ function connect() {
   socket.on('room_hello', (d) => {
     renderRoster(d.players);
     S.racePhase = d.race ? d.race.phase : 'free';
+    S.qualOn = !d.race || d.race.qual_on !== false;
+    S.pole = (d.race && d.race.pole) || null;
     applyPhase();
     // Walking in on a session already running: show it rather than pretending
     // the room is idle until the next message happens to arrive.
     if (S.racePhase === 'qualifying' && d.race && d.race.qual) {
       renderQual(d.race.qual);
       startQualClock();
+      if (S.ghostMode === 'pole') loadPoleGhost();
     }
     (d.chat || []).forEach(addChat);
+  });
+  socket.on('room_opts', (d) => {
+    S.qualOn = d.qual_on !== false;
+    applyPhase();
   });
   socket.on('roster', (d) => {
     renderRoster(d.players);
@@ -1883,8 +2232,20 @@ function connect() {
   });
   socket.on('poses', onPoses);
   socket.on('track_change', (d) => switchTrack(d.track));
+  socket.on('qual_countdown', onQualCountdown);
   socket.on('qual_start', onQualStart);
   socket.on('qual_progress', (d) => { if (S.racePhase === 'qualifying') renderQual(d.qual); });
+  // Pole changed hands. Everyone is told who; the lap itself is fetched by
+  // whoever is chasing it.
+  socket.on('qual_pole', (d) => {
+    S.pole = d || null;
+    if (S.ghostMode === 'pole') { loadPoleGhost(); showGhostNow(); }
+  });
+  socket.on('qual_pole_ghost', (d) => {
+    if (S.ghostMode !== 'pole' || S.racePhase !== 'qualifying') return;
+    if (d && d.ghost) useGhost(d.ghost, d.hz || GHOST_RATE, d.color);
+    showGhostNow();
+  });
   // Everyone's checkpoint times, so a delta can be measured against the car in
   // front of the field rather than against a lap you drove on your own.
   socket.on('race_split', (d) => {
@@ -1961,6 +2322,35 @@ function connect() {
   $('btnRematch').onclick = () => {
     $('raceOver').style.display = 'none';
     socket.emit('start_race', { code: CFG.room });
+  };
+  // Somewhere else, chosen from the sheet that has just told you this race is
+  // over. It is the same switcher as always - the host picks and everybody's
+  // world changes - so this opens it rather than being a second way to choose.
+  $('btnRaceTrack').onclick = () => {
+    $('raceOver').style.display = 'none';
+    S.racePhase = 'free';
+    applyPhase();
+    resetToStart();
+    toggleTracks(true);
+  };
+  $('btnWatchRace').onclick = () => {
+    if (S.lastRaceId) location.href = '/race/' + S.lastRaceId;
+  };
+  $('qualToggle').onchange = (e) => {
+    socket.emit('set_qual', { code: CFG.room, on: e.currentTarget.checked });
+  };
+  $('shareLink').value = location.origin + '/j/' + CFG.room;
+  $('btnShareCopy').onclick = async () => {
+    const inp = $('shareLink');
+    inp.select();
+    try {
+      await navigator.clipboard.writeText(inp.value);
+      toast('Link copied');
+    } catch (e) {
+      // No clipboard permission, which is ordinary on a phone browser and over
+      // plain http. The link is selected, so there is still something to do.
+      toast('Press copy on your keyboard');
+    }
   };
   $('chatForm').onsubmit = (e) => {
     e.preventDefault();
@@ -2074,8 +2464,11 @@ function updateRemotes(dt) {
     // out and be driven through at exactly the moment you are closest to it.
     // Only RESPAWN takes a car off the track.
     const off = !!(r.flags & FLAG.RESPAWN);
-    r.view.update(r.pos, r.rq, { braking: !!(r.flags & FLAG.BRAKE), spin: 0 });
+    r.view.update(r.pos, r.rq, Object.assign({ spin: 0 }, lampsOf(r.flags)));
     r.view.group.visible = !off;
+    // See-through for the ninety seconds you drive through them - see
+    // CarView.setGhostly and contactOn().
+    r.view.setGhostly(S.racePhase === 'qualifying');
   }
 }
 
@@ -2174,6 +2567,11 @@ function onRaceStart(d) {
   S.standings = [];
   S.raceSplits = {};        // this race's checkpoint times, nobody else's
   stopQualClock();
+  // Qualifying is over, so the lap that was on provisional pole is not
+  // provisional or pole any more - it is the grid. Keeping it loaded would put
+  // last session's ghost on the road the next time the room practises.
+  S.pole = null;
+  if (S.ghostMode === 'pole') { S.ghost = null; S.ghostTimes = null; }
   // Everything you might have open belongs to practice, and the lights are
   // about to go out.
   if (S.watch) stopWatching();
@@ -2190,25 +2588,30 @@ function onRaceStart(d) {
   S.car.frozen = true;
   hideResults();
   // Convert the server's green-light time onto our own clock.
-  S.raceT0 = performance.now() + (d.t0 - serverNow());
+  S.raceT0 = S.cdT0 = performance.now() + (d.t0 - serverNow());
   countdownLoop();
 }
 
 /**
  * Line up behind the start line, in qualifying order.
  *
- * Staggered rather than square, and the sides alternate. Two things were wrong
- * with the old two-by-two grid, and only one of them was the ordering: cars
- * side by side at the same distance reach the first corner together, so the
- * one on the inside of it simply gets there, and which column that is never
- * changed. Nobody knows which way the first corner goes - not the server, not
- * this function - but nobody needs to: staggering means the two cars in a row
- * are not fighting for the same metre of road at the same instant, and the
- * server flipping `flip` every race means whichever side is the good one is
- * not the same person's side twice running.
+ * Staggered rather than square, and **pole is always on the inside of the first
+ * corner**. Two things were wrong with the old two-by-two grid and only one of
+ * them was the ordering: cars side by side at the same distance reach the first
+ * corner together, so the one on the inside of it simply gets there.
  *
- * Pole keeps its advantage. It was earned in qualifying, and taking it away
- * would make the session pointless.
+ * The stagger fixes the "at the same instant" half - the odd slot of each row
+ * sits a car length back, F1 style, so the pair are not fighting for the same
+ * metre of road at the same moment. The side used to be dealt with by
+ * alternating it every race, on the grounds that nobody knew which side was the
+ * good one, which meant half the time the car that qualified fastest lined up
+ * on the outside of turn one and lost the place it had earned. The track knows
+ * perfectly well which way it turns first (`pole_side`, worked out from the
+ * ribbon in tracks.py), so pole simply gets that side, every race, everywhere.
+ *
+ * Pole keeps its advantage. It was earned in qualifying - or by being beaten
+ * last time, in a room that does not qualify - and taking it away would make
+ * either pointless.
  */
 function placeOnGrid(d) {
   const slot = (d.grid && CFG.me) ? (d.grid[CFG.me.pid] || 0) : 0;
@@ -2219,7 +2622,8 @@ function placeOnGrid(d) {
   // is a staircase rather than a rank - and starts its lap a car length behind
   // rather than alongside.
   const back = 4 + row * 5.5 + (slot % 2 ? 2.4 : 0);
-  const side = (slot % 2 ? 1 : -1) * (d.flip ? -1 : 1);
+  const inside = S.track.pole_side || -1;
+  const side = (slot % 2 ? -inside : inside);
   const lat = side * 2.1;
   S.car.placeAt([g.p[0] - g.f[0] * back + g.r[0] * lat,
                  g.p[1] + 0.3,
@@ -2238,8 +2642,8 @@ function countdownLoop() {
   el.style.display = '';
   let lastShown = null;
   const tick = () => {
-    if (S.racePhase !== 'countdown' && S.racePhase !== 'racing') { el.style.display = 'none'; return; }
-    const left = (S.raceT0 - performance.now()) / 1000;
+    if (!COUNTDOWN_PHASES.includes(S.racePhase)) { el.style.display = 'none'; return; }
+    const left = (S.cdT0 - performance.now()) / 1000;
     if (left > 0) {
       const n = Math.ceil(left);
       el.textContent = n;
@@ -2296,14 +2700,27 @@ function onRaceResult(d) {
   const elo = $('raceElo');
   elo.style.display = mine ? '' : 'none';
   if (mine) elo.innerHTML = `Rating ${mine.before} &rarr; <b>${mine.after}</b>`;
+  // The race that has just been driven, watchable from any car in it. There is
+  // no replay if nobody was on the road long enough to record one, and a button
+  // leading to an empty one is worse than no button.
+  S.lastRaceId = d.race || null;
+  $('btnWatchRace').style.display = S.lastRaceId ? '' : 'none';
   $('raceOver').style.display = '';
-  showRematch();
+  showHostOnly();
 }
 
-/** Only the host can start one, so only the host is offered one. */
-function showRematch() {
-  const b = $('btnRematch');
-  if (b) b.style.display = S.isHost ? '' : 'none';
+/**
+ * The two things on the results sheet only the host can do.
+ *
+ * Going again and changing where - both of them are the host's, and the host
+ * can change mid-race if the old one leaves, so they are shown from the same
+ * place everything else phase-dependent is.
+ */
+function showHostOnly() {
+  for (const id of ['btnRematch', 'btnRaceTrack']) {
+    const b = $(id);
+    if (b) b.style.display = S.isHost ? '' : 'none';
+  }
 }
 
 function addChat(m) {

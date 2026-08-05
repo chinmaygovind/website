@@ -57,6 +57,19 @@ STATION = 3.5
 # is a deliberate crossing, in which case it must clear it by CROSS_CLEAR.
 CROSS_CLEAR = 5.0
 
+# How much of the road's heading has to have gone one way before that counts as
+# the first corner - see `pole_side`. Small enough to catch a gentle opening
+# sweep, large enough that a station's worth of noise is not a corner.
+FIRST_TURN_DEG = 25.0
+
+# Bounds on the checkpoint window's roof - see `gate_ceiling`. The margin is
+# what keeps the window clear of a road passing overhead: a car on the upper
+# level sits at the crossing clearance above the gate, so the roof stays that
+# far below it.
+GATE_CEIL_MAX = 14.0
+GATE_CEIL_MIN = 5.0
+GATE_CEIL_MARGIN = 4.0
+
 
 def _norm(v):
     m = math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
@@ -466,6 +479,60 @@ def self_proximity(track, clearance=None):
     return bad
 
 
+def pole_side(track):
+    """Which side of the road the inside of the first corner is on.
+
+    ``-1`` is the left-hand side, ``+1`` the right - the same sign the starting
+    grid places cars with, so pole always lines up on the inside of the corner
+    it is about to reach. That used to be nobody's decision: the grid simply
+    alternated sides every race, which meant half the time the car that earned
+    pole started on the outside of turn one and lost the place it had qualified
+    for.
+
+    Nothing here has to understand corners. Every station already carries
+    ``curv``, signed the way ``arc`` is (positive turns right) and left at zero
+    by hills, crests and loops - a loop is pitch, not yaw - so this is just
+    "integrate the road's heading from the start line until it has committed to
+    a direction". A track that never commits gets the left, arbitrarily and
+    harmlessly.
+    """
+    line = track["line"]
+    start = next((g for g in track["gates"] if g["kind"] == "start"), None)
+    i0 = start["si"] if start else 0
+    limit = math.radians(FIRST_TURN_DEG)
+    total = 0.0
+    for e in line[i0:]:
+        total += e.get("curv", 0.0) * STATION
+        if abs(total) >= limit:
+            break
+    return 1 if total > 0 else -1
+
+
+def gate_ceiling(track):
+    """How far above a checkpoint's centre still counts as passing through it.
+
+    A gate is credited on a plane crossing inside a window, and the window's
+    roof used to be a flat 5 units on every track. That is lower than the car
+    gets: land a jump slightly long, or come out of a tow over a crest, and you
+    fly straight over a checkpoint without being credited for it - which loses
+    a lap you actually drove.
+
+    It cannot simply be raised, because the roof is what stops a car on a
+    bridge triggering the gate on the road underneath it. So it is per track,
+    and it is derived from the one number that decides the answer: the closest
+    any part of this track passes over any other part of itself. Tracks that
+    never cross themselves - which is most of them, including the one made of
+    jumps - get the full ceiling; Spiral Ascent, whose helix stacks 10 units
+    above itself, gets a low one and keeps it honest.
+    """
+    line = track["line"]
+    clears = [abs(line[i]["p"][1] - line[j]["p"][1]) for i, j in crossings(track)]
+    if not clears:
+        return GATE_CEIL_MAX
+    return round(max(GATE_CEIL_MIN, min(GATE_CEIL_MAX,
+                                        min(clears) - GATE_CEIL_MARGIN)), 2)
+
+
 def crossings(track):
     """Station pairs that legitimately pass over each other, for the piers."""
     line = track["line"]
@@ -756,6 +823,10 @@ def _assemble():
              "ground": ground, "difficulty": difficulty,
              "cell": CELL, "level": LEVEL, "station": STATION}
         t.update(built)
+        # Both derived from the ribbon rather than authored, so a new track gets
+        # them for free and cannot get them wrong.
+        t["pole_side"] = pole_side(t)
+        t["gate_ceil"] = gate_ceiling(t)
         out.append(t)
     return out
 

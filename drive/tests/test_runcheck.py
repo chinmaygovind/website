@@ -38,6 +38,25 @@ def test_ghost_round_trips():
         assert abs(a[6] - b[6]) < 0.001
 
 
+def test_a_ghost_carries_the_flags_it_was_driven_with():
+    """The lamps on a replay are the driver's, not a guess at the driver's."""
+    frames = synth_run(TRACK, seconds=4)
+    for i, f in enumerate(frames):
+        f.append(9 if i % 2 else 0)       # BRAKE|DRIFT on alternate frames
+    out = runcheck.unpack_ghost(runcheck.pack_ghost(frames))
+    assert [f[7] for f in out] == [f[7] for f in frames]
+
+
+def test_a_ghost_from_before_flags_existed_still_unpacks():
+    """Every lap already on the board is seven wide, records included. They keep
+    working and simply have no lamps - which is why the stride is stored rather
+    than assumed."""
+    frames = synth_run(TRACK, seconds=4)
+    assert all(len(f) == 7 for f in frames)
+    out = runcheck.unpack_ghost(runcheck.pack_ghost(frames))
+    assert len(out) == len(frames) and all(len(f) == 7 for f in out)
+
+
 def test_ghost_packing_is_compact():
     """A ghost is stored per player per track, so it has to stay small."""
     frames = synth_run(TRACK, seconds=60)

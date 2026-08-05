@@ -223,6 +223,41 @@ class DriveStart(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+class DriveRace(db.Model):
+    """One finished race, with every car's replay - so it can be watched again.
+
+    Deliberately not part of ``drive_games``. A lobby is deleted the moment it
+    empties or goes idle, taking its ``results_json`` with it, which is right
+    for a room and wrong for a race: the whole point of a replay is that it is
+    still there tomorrow and the link to it still works. Its own table also
+    means ``create_all`` brings it into being on the live database with no
+    migration, the same reason ``drive_starts`` is a table.
+
+    ``cars_json`` is one entry per car - name, colour, finishing time - each
+    with a ``ghost`` packed exactly the way a lap's ghost is packed, at the
+    same rate and with the same flag byte. So a replay is not a new format,
+    it is several ghosts that share a clock: frame *n* of every car in here is
+    the same instant, ``n / hz`` seconds after the lights went out.
+    """
+    __tablename__ = "drive_races"
+
+    id         = db.Column(db.Integer, primary_key=True)
+    code       = db.Column(db.String(6), nullable=False, index=True)
+    track      = db.Column(db.String(32), nullable=False, index=True)
+    hz         = db.Column(db.Integer, default=15)
+    ms         = db.Column(db.Integer, default=0)          # how long it ran
+    why        = db.Column(db.String(32), nullable=True)   # how it ended
+    cars_json  = db.Column(db.Text, default="[]")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    @property
+    def cars(self):
+        try:
+            return json.loads(self.cars_json or "[]")
+        except Exception:
+            return []
+
+
 class DriveGame(db.Model):
     __tablename__ = "drive_games"
 

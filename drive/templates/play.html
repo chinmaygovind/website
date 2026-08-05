@@ -9,7 +9,7 @@
   <div class="hud-tl">
     <div class="card">
       <div class="trackname" id="trackName">{{ track.name }}</div>
-      <div class="mode" id="modeLabel">{% if mode == 'room' %}Multiplayer - Free practice{% else %}Solo time trial{% endif %}</div>
+      <div class="mode" id="modeLabel">{% if mode == 'room' %}Multiplayer - Free practice{% elif mode == 'replay' %}Race replay{% else %}Solo time trial{% endif %}</div>
       <div class="trackblurb" id="trackBlurb">{{ track.blurb }}</div>
     </div>
     <div class="card" id="position" style="display:none">
@@ -155,9 +155,15 @@
   <!-- Watching somebody's lap. The whole HUD would be lying during a replay -
        it is not your clock and not your speed - so this replaces it. -->
   <div id="watchBar" style="display:none">
-    <span id="watchWho">Watching</span>
-    <b id="watchClock">0:00.000</b>
-    <button class="btn small" id="btnWatchStop">Stop watching</button>
+    <div class="watch-head">
+      <span id="watchWho">Watching</span>
+      <b id="watchClock">0:00.000</b>
+      <button class="btn small" id="btnWatchStop">{% if mode == 'replay' %}Leave{% else %}Stop watching{% endif %}</button>
+    </div>
+    <!-- Whose car the camera is in. A race replay is only worth having if you
+         can watch it from inside the fight rather than from one seat, and the
+         cars all run on one clock, so this moves the camera and nothing else. -->
+    <div id="watchCars" style="display:none"></div>
   </div>
 </div>
 
@@ -166,6 +172,35 @@
   <div>
     <h4>Room {{ room.code }}<button class="side-close" id="btnRoomClose" title="Hide">&times;</button></h4>
     <div id="roster"></div>
+  </div>
+  <!-- The invitation.
+       Everything else about joining is a form on the lobbies page, which is
+       fine when you can see the room and useless when you are trying to hand
+       somebody yours: "go to the site, press Join, type A7QK2P" is three
+       instructions where a link is none. The field is selectable as well as
+       copyable, because the copy button needs a clipboard permission and a
+       link you can read off the screen never fails. -->
+  <div class="share">
+    <h4>Invite</h4>
+    <div class="share-row">
+      {# Filled in by the script from `location.origin`, which is the only thing
+         that is right in every case - behind nginx Flask does not necessarily
+         know it is being served over https, and on a laptop it is not. #}
+      <input id="shareLink" readonly value="/j/{{ room.code }}"/>
+      <button class="btn small" id="btnShareCopy" title="Copy the link">Copy</button>
+    </div>
+  </div>
+  <!-- The one thing about a race the host sets before starting it. On by
+       default: a grid people drove for beats a grid handed out. Off is for a
+       room that just wants to race, and then the grid is the last result
+       reversed. Everyone can see the setting; only the host can move it, and
+       nobody can move it in the middle of a session. -->
+  <div class="qual-setting" id="qualSetting">
+    <label>
+      <input type="checkbox" id="qualToggle" checked/>
+      <span>Qualifying session</span>
+    </label>
+    <p class="muted">90 seconds to set the grid. Off: the last race's order, reversed.</p>
   </div>
   <!-- The track lives in the switcher at the top with every other track, so
        there is one place tracks are chosen whether you are alone or not. What
@@ -286,10 +321,17 @@
     <h2 id="raceOverTitle">Race result</h2>
     <div class="res-standings" id="raceStandings"></div>
     <div class="elo-line" id="raceElo" style="display:none"></div>
-    <div class="sheet-actions">
+    <!-- What there is to do next, in the order you are likely to want it, and
+         all one size: these are five equal choices rather than one big one and
+         four small ones. Quit is last because leaving is the last thing you
+         want offered, and the two host-only buttons sit between - they are the
+         decisions the room is waiting on. -->
+    <div class="sheet-actions even">
       <button class="btn dark" id="btnPractice">Practice</button>
-      <a class="btn secondary" id="btnRaceQuit" href="/lobbies">Quit</a>
+      <button class="btn secondary" id="btnWatchRace" style="display:none">Watch replay</button>
+      <button class="btn secondary" id="btnRaceTrack" style="display:none">Change track</button>
       <button class="btn secondary" id="btnRematch" style="display:none">Rematch</button>
+      <a class="btn secondary" id="btnRaceQuit" href="/lobbies">Quit</a>
     </div>
   </div>
 </div>
@@ -312,13 +354,23 @@
 
     <!-- The ghost is the one setting with more than two states, so it is a set
          of choices rather than a toggle: off, your own lap, the record, or
-         somebody else's - which is what the board is for. -->
+         somebody else's - which is what the board is for.
+         In a room the fourth choice is different, because the lap worth chasing
+         there is different: whoever is provisionally on pole, live, while there
+         is still time to beat them. Picking somebody off the leaderboard is not
+         that - everybody in the room is on the road with you, and the board is
+         a list of people who are not. -->
     <h3>Ghost</h3>
     <div class="opt-row" id="ghostOpts">
       <button class="opt" data-ghost="off">Off</button>
-      <button class="opt" data-ghost="me">My best</button>
+      <button class="opt" data-ghost="me">{% if mode == 'room' %}My best here{% else %}My best{% endif %}</button>
+      {% if mode == 'room' %}
+      <button class="opt" data-ghost="pole">Provisional pole</button>
+      {% endif %}
       <button class="opt" data-ghost="wr">World record</button>
+      {% if mode != 'room' %}
       <button class="opt" data-ghost="others">View others</button>
+      {% endif %}
     </div>
     <div class="ghost-now" id="ghostNow"></div>
 
@@ -382,8 +434,14 @@
       <tr><td>Drift</td><td>Space or Shift</td></tr>
       <tr><td>Restart the run</td><td>R</td></tr>
       <tr><td>Back to last checkpoint</td><td>T</td></tr>
+      {# P has always changed track and was in no list anywhere, so the only way
+         to find it was to read the tooltip on an icon. #}
+      <tr><td>Change track</td><td>P</td></tr>
       <tr><td>Ghost / mute</td><td>G / M</td></tr>
       <tr><td>Settings / help</td><td>Esc / H</td></tr>
+      {% if mode == 'room' %}
+      <tr><td>Start qualifying / the race <span class="muted">(host)</span></td><td>Enter</td></tr>
+      {% endif %}
     </table>
     <table class="board controls touch-only">
       <tr><td>Steer</td><td>Arrows, left thumb</td></tr>
@@ -405,6 +463,9 @@
     mode: "{{ mode }}",
     room: {% if room %}"{{ room.code }}"{% else %}null{% endif %},
     me: {{ me_json|safe }},
+    {# Your colour, which is yours rather than the seat's - so the car you drive
+       alone is the car people see you in, and the car your ghost is wearing. #}
+    carColor: {{ car_color|tojson }},
     roster: {{ roster_json|safe }},
     name: {{ name|tojson }},
     pbMs: {{ pb_ms if pb_ms else 'null' }},
@@ -413,6 +474,8 @@
     cards: {{ cards|tojson }},
     pbSplits: {{ pb_splits|tojson }},
     loggedIn: {{ 'true' if user else 'false' }},
+    {# Which finished race this page is a replay of, in replay mode only. #}
+    race: {% if race %}{{ race.id }}{% else %}null{% endif %},
     nextTrack: {{ next_slug|tojson }}
   };
   {% if pb_ms %}window.DRIVE_CFG.pbs["{{ track.slug }}"] = {{ pb_ms }};{% endif %}

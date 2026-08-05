@@ -106,16 +106,87 @@ def test_the_grid_is_never_ordered_by_name(env):
     assert len(poles) > 1, "an unqualified field must not always line up the same way"
 
 
-def test_pole_side_alternates_between_races(env):
-    """Which column is the inside line never changes, so who gets it must."""
+def test_the_grid_knows_which_side_the_inside_line_is(env):
+    """Pole always starts on the inside of the first corner, so the client has
+    to be told which side that is - and it comes with the track, because it is a
+    fact about the track rather than about the race.
+
+    It used to alternate instead, on the grounds that nobody knew which side was
+    the good one. Half the time that put the car which had just qualified
+    fastest on the outside of turn one.
+    """
     A = env
-    sides = []
+    with A.app.app_context():
+        for slug in ("sunrise", "spiral"):
+            assert A._track_payload(slug)["pole_side"] in (-1, 1)
+
+
+def test_without_qualifying_the_grid_reverses_the_last_result(env):
+    """No session to earn a slot in, so the room's own last answer is used:
+    whoever was beaten starts ahead of whoever beat them."""
+    A = env
     r = _room(A, phase="free")
-    for _ in range(4):
-        r["flip"] = bool(r["races_run"] % 2)
-        r["races_run"] += 1
-        sides.append(r["flip"])
-    assert sides == [False, True, False, True]
+    for pid in ("won", "second", "last"):
+        _add_car(A, r, pid, on_grid=False)
+    r["last_order"] = ["won", "second", "last"]
+    grid = A._reverse_grid(r)
+    assert [p for p, _ in sorted(grid.items(), key=lambda kv: kv[1])] == \
+        ["last", "second", "won"]
+
+
+def test_somebody_who_was_not_in_the_last_race_lines_up_behind_it(env):
+    """A grid slot is something the room has watched you earn or lose. Turning
+    up is neither, so a newcomer starts behind the field."""
+    A = env
+    r = _room(A, phase="free")
+    for pid in ("won", "lost", "newcomer"):
+        _add_car(A, r, pid, on_grid=False)
+    r["last_order"] = ["won", "lost"]
+    grid = A._reverse_grid(r)
+    assert grid["lost"] == 0 and grid["won"] == 1 and grid["newcomer"] == 2
+
+
+def test_the_first_race_of_a_room_is_not_lined_up_the_same_way_twice(env):
+    """With no last result there is nothing to reverse, and the one thing the
+    order must not be is stable - that is the bug the name sort was."""
+    A = env
+    poles = set()
+    for n in range(40):
+        r = _room(A, "R" + str(n), phase="free")
+        r["cars"], r["grid"], r["last_order"] = {}, {}, []
+        for pid in ("aaa", "bbb", "ccc", "ddd"):
+            _add_car(A, r, pid, on_grid=False)
+        grid = A._reverse_grid(r)
+        poles.add(next(p for p, i in grid.items() if i == 0))
+    assert len(poles) > 1
+
+
+def test_a_room_qualifies_unless_the_host_says_otherwise(env):
+    A = env
+    assert A._room("NEW")["qual_on"] is True
+
+
+def test_the_settings_and_the_last_result_survive_a_race(env):
+    """`_reset_race` clears the race. These two are not the race: one is the
+    host's setting and the other is the next grid."""
+    A = env
+    r = _room(A)
+    r["qual_on"] = False
+    r["last_order"] = ["a", "b"]
+    A._reset_race(r)
+    assert r["phase"] == "free"
+    assert r["qual_on"] is False and r["last_order"] == ["a", "b"]
+
+
+def test_the_qualifying_countdown_is_a_phase_a_race_can_be_called_off_in(env):
+    """It is one of the live phases, so the track cannot be changed underneath
+    it and the host calling it off has something to call off."""
+    A = env
+    assert "qual_countdown" in A.LIVE_PHASES
+    r = _room(A, phase="qual_countdown")
+    _add_car(A, r, "a", on_grid=False)
+    A._abort_race("TEST", "testing")
+    assert r["phase"] == "free"
 
 
 # ---------------------------------------------------------------------------
@@ -371,3 +442,253 @@ def test_finishing_beats_retiring(env):
         out = A._rate_race(game, _standings(pids, ("alice", 41000), ("bob", None)))
         assert out[pids["alice"]]["delta"] > 0
         assert out[pids["bob"]]["delta"] < 0
+
+
+# ---------------------------------------------------------------------------
+# The replay
+# ---------------------------------------------------------------------------
+# Recorded off the poses the server already has, on the ghost's clock, so that
+# frame `n` of every car in a race is the same instant. The rows therefore have
+# to stay the same length whatever the cars do - a car that finishes, drops out
+# or simply goes quiet must not leave a hole, because a hole slides everything
+# after it and slews that car's replay against everybody else's.
+
+def _recording(A, code="REC", cars=("a", "b")):
+    r = _room(A, code, phase="racing")
+    for pid in cars:
+        _add_car(A, r, pid)
+    r["rec"] = {"t0": A._now_ms() - 1000, "track": "sunrise", "n": 0,
+                "cars": {pid: [] for pid in cars}}
+    return r
+
+
+def test_a_race_is_recorded_on_the_ghosts_clock(env):
+    A = env
+    r = _recording(A)
+    A._record_race(r)
+    # A second of race at the ghost rate, and every car has all of it.
+    lens = {pid: len(f) for pid, f in r["rec"]["cars"].items()}
+    assert set(lens.values()) == {A.REPLAY_HZ + 1}
+
+
+def test_a_car_that_stops_reporting_still_fills_its_row(env):
+    """It has finished, or left, or its connection went. Either way the replay
+    has to stay rectangular or every car after it plays back out of step."""
+    A = env
+    r = _recording(A)
+    A._record_race(r)
+    del r["cars"]["b"]
+    r["rec"]["t0"] -= 1000
+    A._record_race(r)
+    a, b = (r["rec"]["cars"][k] for k in ("a", "b"))
+    assert len(a) == len(b)
+    assert b[-1] == b[len(b) - A.REPLAY_HZ - 1], "a gone car should hold its last pose"
+
+
+def test_nothing_is_recorded_outside_a_race(env):
+    A = env
+    r = _recording(A)
+    r["phase"] = "results"
+    A._record_race(r)
+    assert all(not f for f in r["rec"]["cars"].values())
+
+
+def test_a_finished_race_is_stored_as_one_replay_per_car(env):
+    A = env
+    with A.app.app_context():
+        game = A.DriveGame(code="REC", track="sunrise")
+        A.db.session.add(game)
+        A.db.session.commit()
+        r = _recording(A)
+        A._record_race(r)
+        standings = [{"pid": "b", "name": "b", "ms": 41000, "color": "#fff"},
+                     {"pid": "a", "name": "a", "ms": None, "color": "#fff"}]
+        rid = A._store_replay(r, game, standings, "all in")
+        race = A.DriveRace.query.get(rid)
+        assert race.track == "sunrise" and race.hz == A.REPLAY_HZ
+        cars = race.cars
+        assert [c["pid"] for c in cars] == ["b", "a"], "opens on the winner"
+        for c in cars:
+            frames = A.runcheck.unpack_ghost(c["ghost"])
+            assert len(frames) == A.REPLAY_HZ + 1 and len(frames[0]) == 8
+
+
+def test_a_race_with_nothing_recorded_stores_no_replay(env):
+    """Everybody vanished before the first frame. An empty replay offered from
+    the results sheet is worse than no replay at all."""
+    A = env
+    with A.app.app_context():
+        game = A.DriveGame(code="REC", track="sunrise")
+        A.db.session.add(game)
+        A.db.session.commit()
+        r = _recording(A)
+        assert A._store_replay(r, game, [], "all in") is None
+        assert A.DriveRace.query.count() == 0
+
+
+# ---------------------------------------------------------------------------
+# The whole way in: free -> qualifying -> the grid
+# ---------------------------------------------------------------------------
+# The phase machine grew a fourth live phase (the five seconds before
+# qualifying) and a way to skip two of them, so the transitions are driven here
+# through the real handlers rather than by setting `phase` by hand. Timers are
+# fired immediately: what is under test is the order things happen in, not
+# eventlet.
+
+@pytest.fixture()
+def live(env, monkeypatch):
+    """A room with a host, a guest, and every emit and timer captured."""
+    A = env
+    sent = []
+    monkeypatch.setattr(A.socketio, "emit",
+                        lambda ev, *a, **k: sent.append((ev, a[0] if a else None)))
+    monkeypatch.setattr(A, "emit", lambda *a, **k: None)
+    monkeypatch.setattr(A, "_broadcast_lobbies", lambda *a, **k: None)
+    fired = []
+    monkeypatch.setattr(A.eventlet, "spawn_after",
+                        lambda delay, fn, *a: fired.append((fn, a)))
+    with A.app.app_context():
+        game = A.DriveGame(code="LIVE", track="sunrise")
+        A.db.session.add(game)
+        A.db.session.commit()
+        host = A.DrivePlayer(game_id=game.id, session_key="sk-host", name="host",
+                             color="#fff", seat_order=0, is_host=True)
+        other = A.DrivePlayer(game_id=game.id, session_key="sk-other", name="other",
+                              color="#0f0", seat_order=1)
+        A.db.session.add_all([host, other])
+        A.db.session.commit()
+        r = A._room("LIVE")
+        for p in (host, other):
+            c = A._car(r, p.pid)
+            c["name"], c["color"], c["ts"] = p.name, p.color, A._now_ms()
+        yield A, r, {"host": host.pid, "other": other.pid}, sent, fired
+
+
+def _as_host(A, fn, *args):
+    """Run a host-only handler as the host of the LIVE room."""
+    with A.app.test_request_context():
+        from flask import session
+        session["session_key"] = "sk-host"
+        fn(*args)
+
+
+def _run(fired):
+    """Fire every timer armed so far, in order, and clear the queue."""
+    todo, fired[:] = list(fired), []
+    for fn, args in todo:
+        fn(*args)
+
+
+def test_starting_runs_the_lights_before_qualifying_not_after(live):
+    """The session used to simply begin, so the first anyone knew of it was a
+    toast saying they were already in it and a lap that no longer counted."""
+    A, r, pids, sent, fired = live
+    _as_host(A, A.on_start_race, {"code": "LIVE"})
+    assert r["phase"] == "qual_countdown"
+    assert [e for e, _ in sent] == ["qual_countdown"]
+    _run(fired)
+    assert r["phase"] == "qualifying"
+    assert "qual_start" in [e for e, _ in sent]
+
+
+def test_with_qualifying_off_the_lights_are_the_races_own(live):
+    """Nobody wants ninety seconds of driving alone before every race, so the
+    session can be switched off - and then Start race means start the race."""
+    A, r, pids, sent, fired = live
+    _as_host(A, A.on_set_qual, {"code": "LIVE", "on": False})
+    _as_host(A, A.on_start_race, {"code": "LIVE"})
+    assert r["phase"] == "countdown"
+    assert "race_start" in [e for e, _ in sent]
+    assert set(r["grid"]) == set(pids.values())
+    _run(fired)
+    assert r["phase"] == "racing"
+
+
+def test_the_qualifying_switch_is_the_hosts_and_only_between_races(live):
+    A, r, pids, sent, fired = live
+    with A.app.test_request_context():
+        from flask import session
+        session["session_key"] = "sk-other"
+        A.on_set_qual({"code": "LIVE", "on": False})
+    assert r["qual_on"] is True, "anybody could turn qualifying off"
+    _as_host(A, A.on_start_race, {"code": "LIVE"})
+    _as_host(A, A.on_set_qual, {"code": "LIVE", "on": False})
+    assert r["qual_on"] is True, "changed under people already qualifying"
+
+
+def test_a_qualifying_lap_puts_its_replay_on_pole(live):
+    """The lap that is provisionally on pole is the one ghost worth having in a
+    session that exists to set it, so it comes up with the time."""
+    A, r, pids, sent, fired = live
+    _as_host(A, A.on_start_race, {"code": "LIVE"})
+    _run(fired)
+    frames = [[0, 0, 0, 0, 0, 0, 1, 0]] * 40
+    A._sid_room["s1"] = ("LIVE", pids["other"])
+    with A.app.test_request_context():
+        from flask import request
+        request.sid = "s1"
+        A.on_qual_time({"ms": 44000, "ghost": frames})
+    assert r["pole"]["pid"] == pids["other"] and r["pole"]["ms"] == 44000
+    # Only who is on pole is broadcast; the lap is fetched by whoever wants it.
+    pole = [d for e, d in sent if e == "qual_pole"][-1]
+    assert "ghost" not in pole and pole["name"] == "other"
+
+
+def test_a_slower_lap_does_not_take_pole(live):
+    A, r, pids, sent, fired = live
+    _as_host(A, A.on_start_race, {"code": "LIVE"})
+    _run(fired)
+    frames = [[0, 0, 0, 0, 0, 0, 1, 0]] * 40
+
+    def lap(sid, pid, ms):
+        A._sid_room[sid] = ("LIVE", pid)
+        with A.app.test_request_context():
+            from flask import request
+            request.sid = sid
+            A.on_qual_time({"ms": ms, "ghost": frames})
+
+    lap("s1", pids["other"], 42000)
+    lap("s2", pids["host"], 47000)
+    assert r["pole"]["pid"] == pids["other"]
+    lap("s2", pids["host"], 41000)
+    assert r["pole"]["pid"] == pids["host"]
+
+
+def test_the_session_ends_on_the_grid_it_set(live):
+    A, r, pids, sent, fired = live
+    _as_host(A, A.on_start_race, {"code": "LIVE"})
+    _run(fired)                       # the lights -> qualifying
+    r["qual"] = {pids["other"]: 42000, pids["host"]: 44000}
+    _run(fired)                       # the session clock -> the grid
+    assert r["phase"] == "countdown"
+    assert r["grid"][pids["other"]] == 0
+    _run(fired)                       # the countdown -> green
+    assert r["phase"] == "racing" and r["rec"] is not None
+
+
+def test_the_host_can_skip_the_rest_of_the_session(live):
+    """Ninety seconds is the right length for a session nobody wants cut short
+    and the wrong length for two people who are ready."""
+    A, r, pids, sent, fired = live
+    _as_host(A, A.on_start_race, {"code": "LIVE"})
+    _run(fired)
+    r["qual"] = {pids["host"]: 43000}
+    _as_host(A, A.on_start_race, {"code": "LIVE"})
+    assert r["phase"] == "countdown"
+
+
+def test_somebody_leaving_between_the_flag_and_the_grid_is_not_lined_up(live):
+    """The grid is worked out at the end of qualifying and used a moment later,
+    under a second hold of the room lock. During qualifying a leaver's car is
+    dropped outright - there is no race for them to be a DNF in - so the list
+    can name somebody who is no longer there, and the slots have to close up
+    rather than start the race with a hole in the field."""
+    A, r, pids, sent, fired = live
+    _as_host(A, A.on_start_race, {"code": "LIVE"})
+    _run(fired)
+    r["qual"] = {pids["other"]: 42000, pids["host"]: 44000}
+    grid = A._start_grid(r)
+    r["cars"].pop(pids["other"])          # they close the tab on their in-lap
+    A._light_grid("LIVE", r["race_seq"], "sunrise", grid)
+    assert r["grid"] == {pids["host"]: 0}
+    assert r["phase"] == "countdown"
