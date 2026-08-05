@@ -1077,14 +1077,15 @@ body.side-open #touch { display: none; }
 .player-link { color: inherit; text-decoration: none; }
 .player-link:hover { text-decoration: underline; }
 
-/* The one link on an account page that leaves Drive. A link in the site's own
-   red rather than a button: it is somewhere to go after reading the page, not
-   the thing the page is for, and a fourth button up here would compete with
-   the two on every track row below. */
-.elsewhere { margin: -.1rem 0 1.2rem; font-size: .95rem; }
-.elsewhere a {
+/* The one link on an account page that leaves Drive, sitting on the end of the
+   rating line. A link in the site's own red rather than a button: it is
+   somewhere to go after reading the page, not the thing the page is for, and a
+   third button up here would compete with the two on every track row below.
+   Smaller than the line it rides on, so the rating still reads first. */
+.elsewhere {
   display: inline-flex; align-items: center; gap: .34rem;
-  font-weight: 600;
+  margin-left: .95rem;
+  font-size: .95rem; font-weight: 600;
+  vertical-align: 1px;
 }
-.elsewhere a:hover { text-decoration: underline; }
-.elsewhere .muted { margin-left: .3rem; }
+.elsewhere:hover { text-decoration: underline; }

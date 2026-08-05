@@ -1158,8 +1158,13 @@ field from a dark field.
   raises, which is how they go round *here*. So it points at `/account/
   <username>` - the same page as your own, public, no login - and that page
   carries one link on to the shared profile (`.elsewhere`, the only link on it
-  that leaves Drive). Three things fall out of making it public: your own name
-  redirects to plain `/account`, so there is one address for your own record
+  that leaves Drive). It rides on the **end of the rating line** rather than a
+  line of its own, because it is who this is and that line already says so; a
+  row to itself made a one-link paragraph out of a page whose next line is a
+  panel. There is no standfirst under it either - "all four games, in one
+  place" restated the destination the link already names. Three things fall out
+  of making the page public: your own name redirects to plain `/account`, so
+  there is one address for your own record
   rather than a second copy of it that quietly cannot be edited; the nav's
   "Account" tab only lights on your own; and `_stats(user, create=False)` hands
   back an unattached row for a stranger, since the creating version would leave

@@ -30,18 +30,16 @@
      is public. Same art the boards use, one copy on the main site. #}
   <h1>{% if user.flag_path %}<img class="flag flag-big" src="{{ site_url }}{{ user.flag_path }}"
     alt="" loading="lazy"/>{% endif %}{{ user.display }}</h1>
-  <p class="lede">{{ stats.elo_tier }} · rating {{ stats.elo or 1000 }}</p>
-
-  {# The way out of Drive, and the only link on the page that leaves it. This
-     page is Drive's record of somebody; the profile it points at is the same
-     person across all four games, which is a question this page cannot answer
-     and should not try to. It reads as one sentence rather than a button
-     because it is somewhere to go afterwards, not the thing the page is for.
-     `username`, not `display`: the display name is editable and the address of
-     a profile is not. #}
-  <p class="elsewhere"><a href="{{ site_url }}/accounts/{{ user.username }}"
-    >{{ icon_out() }}{% if is_me %}Your cgovind account{% else %}@{{ user.username }} on cgovind{% endif %}</a>
-    <span class="muted">— all four games, in one place.</span></p>
+  {# The way out of Drive, and the only link on the page that leaves it. It
+     rides on the rating line rather than on a line of its own: it is who this
+     is, which is what that line already says, and a row to itself made a
+     one-link paragraph out of a page whose next line is a panel. There is no
+     standfirst under it - "all four games, in one place" restated the
+     destination the link already names. `username`, not `display`: the display
+     name is editable and the address of a profile is not. #}
+  <p class="lede">{{ stats.elo_tier }} · rating {{ stats.elo or 1000 }}
+    <a class="elsewhere" href="{{ site_url }}/accounts/{{ user.username }}"
+      >{{ icon_out() }}{% if is_me %}Your cgovind account{% else %}@{{ user.username }} on cgovind{% endif %}</a></p>
 
   {# One box. The medal tally is three more counts of the same kind, so it lives
      under a hairline in here rather than in a panel of its own. The total
