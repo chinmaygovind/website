@@ -566,3 +566,32 @@ def test_the_country_dropdown_opens_on_the_united_states(client, logged_in):
     assert options.index("<option disabled") > options.index('<option value="us"')
     # It is not also down in the alphabet.
     assert options.count('<option value="us"') == 1
+
+
+def test_the_flag_controls_are_always_in_the_page_so_it_cannot_reflow(client, logged_in):
+    """The state picker and the flag choice are rendered for everybody, faded
+    rather than absent, and the script only ever changes a class. Rendering
+    them conditionally here - or toggling `hidden` there - is what made the
+    form jump: choosing the United States used to push everything below the
+    country box down by two rows."""
+    logged_in("steady")
+    page = body(client.get("/accounts/settings"))
+
+    for part in ('id="stateCol"', 'id="flagPrefRow"', 'id="us_state"'):
+        assert part in page, part
+    # Faded, not hidden: `hidden` takes a box out of the layout.
+    assert 'class="field fade" id="stateCol"' in page
+    assert 'id="flagPrefRow"' in page and "flagchoice fade" in page
+    assert "hidden" not in page.split('id="stateCol"')[0][-120:]
+
+
+def test_the_flag_choice_names_the_flags(client, logged_in):
+    """"USA Flag" and "<state> Flag" - the two pictures on offer, one of which
+    is about to be next to your name. The state's own name is filled in by the
+    script from whichever state is selected."""
+    logged_in("namer")
+    page = body(client.get("/accounts/settings"))
+    assert "Choose flag" in page
+    assert "USA Flag" in page
+    assert 'id="stateFlagLabel"' in page
+    assert "Displayed Flag:" in page

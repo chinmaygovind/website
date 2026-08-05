@@ -47,60 +47,68 @@
           leaderboards. Empty means <b>{{ user.username }}</b>.</span>
       </div>
 
-  <div class="field">
-    <label for="country">Country</label>
-    {# The common answer first, then a rule, then the alphabet. Without the
-       rule the top entry just looks like the list is sorted wrong. #}
-    <select id="country" name="country">
-      <option value="">— not saying —</option>
-      {% for code, name in pinned_countries %}
-      <option value="{{ code }}"
-        {{ 'selected' if profile and profile.country == code }}>{{ name }}</option>
-      {% endfor %}
-      <option disabled>──────────</option>
-      {% for code, name in countries %}
-      <option value="{{ code }}"
-        {{ 'selected' if profile and profile.country == code }}>{{ name }}</option>
-      {% endfor %}
-    </select>
-  </div>
+      {# Country and state side by side, and the state's column is *always*
+         there - it fades rather than appearing, so choosing the US never
+         shoves everything below it down the page. Same for the flag choice
+         and the preview underneath: each of them owns its space whether or
+         not it currently has anything to say. A form that resizes under the
+         cursor is a form you have to re-find your place in. #}
+      <div class="pair">
+        <div class="field">
+          <label for="country">Country</label>
+          {# The common answer first, then a rule, then the alphabet. Without
+             the rule the top entry just looks like the list is sorted wrong. #}
+          <select id="country" name="country">
+            <option value="">— not saying —</option>
+            {% for code, name in pinned_countries %}
+            <option value="{{ code }}"
+              {{ 'selected' if profile and profile.country == code }}>{{ name }}</option>
+            {% endfor %}
+            <option disabled>──────────</option>
+            {% for code, name in countries %}
+            <option value="{{ code }}"
+              {{ 'selected' if profile and profile.country == code }}>{{ name }}</option>
+            {% endfor %}
+          </select>
+        </div>
 
-  {# Only meaningful under the US, so it is only *there* under the US. The
-     server enforces the same thing; this is so the form does not offer a
-     choice that will be thrown away. #}
-  <div id="stateRow" hidden>
-    <div class="field">
-      <label for="us_state">State</label>
-      <select id="us_state" name="us_state">
-        <option value="">— none —</option>
-        {% for code, name in states %}
-        <option value="{{ code }}"
-          {{ 'selected' if profile and profile.us_state == code }}>{{ name }}</option>
-        {% endfor %}
-      </select>
-    </div>
+        <div class="field fade" id="stateCol">
+          <label for="us_state">State</label>
+          <select id="us_state" name="us_state">
+            <option value="">— none —</option>
+            {% for code, name in states %}
+            <option value="{{ code }}"
+              {{ 'selected' if profile and profile.us_state == code }}>{{ name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
 
-    <div class="field" id="flagPrefRow" hidden>
-      <label>Which flag to fly</label>
-      <label class="tiny" style="display:block;margin:.2rem 0">
-        <input type="radio" name="flag_pref" value="country" style="width:auto"
-               {{ 'checked' if not profile or profile.flag_pref != 'state' }}/>
-        Stars and Stripes
-      </label>
-      <label class="tiny" style="display:block">
-        <input type="radio" name="flag_pref" value="state" style="width:auto"
-               {{ 'checked' if profile and profile.flag_pref == 'state' }}/>
-        My state's flag
-      </label>
-    </div>
-  </div>
+      {# Named after the flags themselves rather than after the idea of them:
+         "USA Flag" and "California Flag" are the two pictures on offer, and
+         one of them is about to be next to your name. #}
+      <div class="field flagchoice fade" id="flagPrefRow">
+        <label>Choose flag</label>
+        <div class="choices">
+          <label>
+            <input type="radio" name="flag_pref" value="country"
+                   {{ 'checked' if not profile or profile.flag_pref != 'state' }}/>
+            USA Flag
+          </label>
+          <label>
+            <input type="radio" name="flag_pref" value="state"
+                   {{ 'checked' if profile and profile.flag_pref == 'state' }}/>
+            <span id="stateFlagLabel">State Flag</span>
+          </label>
+        </div>
+      </div>
 
       {# Drawn at the size a profile draws it, not at hint size: the whole job
          of this line is to show you what other people will see. #}
       <div class="field flying">
-        <span class="hint">Flying now:</span>
+        <span class="hint">Displayed Flag:</span>
         <img class="flag" id="flagPreview" alt="" hidden/>
-        <span id="flagNone" class="muted">nothing</span>
+        <span id="flagNone" class="muted">none</span>
       </div>
 
       <button class="btn primary" type="submit">Save profile</button>
@@ -375,14 +383,18 @@
   });
 })();
 
-// Three things follow the country box: whether there is a state box at all,
-// whether there is a choice of flag to make, and which flag the preview shows.
-// All of it is decoration over a form the server validates anyway.
+// Three things follow the country box: whether the state picker beside it is
+// live, whether there is a choice of flag to make, and which flag the preview
+// shows. All of it is decoration over a form the server validates anyway.
+//
+// Nothing here is shown or hidden - everything already occupies its space and
+// only fades, so choosing the United States never moves anything on the page.
 (function () {
   var country = document.getElementById('country');
-  var stateRow = document.getElementById('stateRow');
+  var stateCol = document.getElementById('stateCol');
   var state = document.getElementById('us_state');
   var prefRow = document.getElementById('flagPrefRow');
+  var stateLabel = document.getElementById('stateFlagLabel');
   var img = document.getElementById('flagPreview');
   var none = document.getElementById('flagNone');
 
@@ -390,10 +402,24 @@
     var on = document.querySelector('input[name=flag_pref]:checked');
     return on ? on.value : 'country';
   }
+  function stateName() {
+    var opt = state.options[state.selectedIndex];
+    return state.value && opt ? opt.text : null;
+  }
+  function show(el, on) {
+    el.classList.toggle('on', on);
+    // Faded-out controls are still in the layout, so they have to be taken out
+    // of the tab order too, or Tab walks into a box nobody can see.
+    el.querySelectorAll('input, select').forEach(function (f) { f.disabled = !on; });
+  }
+
   function sync() {
     var isUS = country.value === 'us';
-    stateRow.hidden = !isUS;
-    prefRow.hidden = !(isUS && state.value);
+    show(stateCol, isUS);
+    show(prefRow, isUS && !!state.value);
+
+    // "California Flag", not "my state's flag" - the label names the picture.
+    stateLabel.textContent = (stateName() || 'State') + ' Flag';
 
     var src = null;
     if (isUS && state.value && pref() === 'state') {
@@ -405,6 +431,7 @@
     none.hidden = !!src;
     if (src) { img.src = src; }
   }
+
   country.addEventListener('change', sync);
   state.addEventListener('change', sync);
   document.querySelectorAll('input[name=flag_pref]').forEach(function (r) {

@@ -383,7 +383,43 @@ p { margin: 0; }
   pointer-events: none;
 }
 
-.flying { display: flex; align-items: center; gap: .5rem; }
+/* Country and state, side by side. The state's column exists whether or not
+   anybody is in the US, so choosing it never widens or reflows the row. */
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .9rem;
+}
+
+/* The whole anti-reflow device. Something faded is *still in the layout* - it
+   has its size, it just cannot be seen or reached - so the controls that only
+   apply to one country never push the rest of the form around when they turn
+   up. Everything below them stays exactly where the eye left it. */
+.fade {
+  opacity: 0;
+  transition: opacity .16s ease;
+  pointer-events: none;
+}
+.fade.on { opacity: 1; pointer-events: auto; }
+
+/* Reserved rather than measured: the row is one label and one line of radios
+   whether or not it is currently showing them, so it is given that height for
+   good. Without this the flag choice appearing would move the preview and the
+   Save button down by its own height. */
+.flagchoice { min-height: 3.5rem; }
+.choices { display: flex; gap: 1.3rem; flex-wrap: wrap; margin-top: .1rem; }
+.choices label {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.choices input[type=radio] { width: auto; margin: 0; accent-color: var(--link); }
+
+/* Same idea: the row keeps the flag's height whether there is a flag in it or
+   not, so picking a country does not nudge the button under it. */
+.flying { display: flex; align-items: center; gap: .5rem; min-height: 2.1rem; }
 .flying .hint { margin: 0; }
 .flying .flag { height: 1.7rem; width: 2.3rem; }
 
@@ -521,6 +557,10 @@ input[type=file] { font: inherit; font-size: 1rem; max-width: 100%; }
   .pic-col .btn { width: auto; }
   .pic-hint { text-align: left; flex-basis: 100%; }
   .pic-note { text-align: left; flex-basis: 100%; }
+  /* Two selects in 360px would be narrower than the country names inside
+     them. Stacked, but the state keeps its row whether or not it is live, so
+     the no-reflow rule still holds. */
+  .pair { grid-template-columns: 1fr; gap: 0; }
 }
 
 @media (max-width: 560px) {
