@@ -279,11 +279,20 @@ class Particles {
  * They live in the car's frame rather than the world's - front to back, in a
  * ring that closes in slightly as it goes - which is what makes them read as
  * air going past *you* rather than as scenery you are going past.
+ *
+ * One of these belongs to your car and one to every rival, because a tow is a
+ * thing that happens to a car and not a thing that happens to you: the driver
+ * winding up behind your gearbox is the only person on the track who cannot see
+ * it, and the whole of what makes it a move you can answer is watching somebody
+ * else's air thicken. It reads whatever it is handed - position, the three axes,
+ * speed and the two tow numbers - so a remote car is a car as far as this is
+ * concerned, and it needed no idea that one of them is arriving over a wire.
  */
-class Draft {
+export class Draft {
   constructor(scene, count = 44) {
+    this.scene = scene;
     this.items = [];
-    const geo = new THREE.PlaneGeometry(1, 1);
+    const geo = this.geo = new THREE.PlaneGeometry(1, 1);
     for (let i = 0; i < count; i++) {
       const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
         color: 0xffffff, transparent: true, opacity: 0, depthWrite: false,
@@ -397,7 +406,20 @@ class Draft {
       p.mesh.material.opacity = fade * (p.hot ? 0.5 : 0.3) * level;
     }
   }
+
+  dispose() {
+    for (const p of this.items) {
+      this.scene.remove(p.mesh);
+      p.mesh.material.dispose();
+    }
+    this.geo.dispose();
+    this.items.length = 0;
+  }
 }
+
+// A rival's air is thinner than your own: it is drawn at a distance, there can
+// be seven of them, and the one whose tow you have to read is yours.
+const RIVAL_STREAKS = 26;
 
 export class Renderer {
   constructor(canvas) {
@@ -538,8 +560,16 @@ export class Renderer {
 
   kick(amount) { this.shake = Math.min(2.2, this.shake + amount); }
 
-  /** The air round the car while the tow fills and while it pays out. */
-  draft(car, dt) { this.draftFx.update(car, dt, this.camera); }
+  /**
+   * The air round a car while its tow fills and while it pays out.
+   *
+   * Yours by default; a rival passes the effect it owns, since the streaks have
+   * to fly their own run out and cannot be shared between cars.
+   */
+  draft(car, dt, fx) { (fx || this.draftFx).update(car, dt, this.camera); }
+
+  /** A tow effect for somebody else's car, to be disposed of with it. */
+  makeDraft() { return new Draft(this.scene, RIVAL_STREAKS); }
 
   smoke(pos, vel, kind) {
     if (kind === 'spark') {

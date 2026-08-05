@@ -329,6 +329,61 @@ def test_a_reset_forgets_the_cars_that_left_but_keeps_the_ones_here(env):
 
 
 # ---------------------------------------------------------------------------
+# The pose snapshot, which is the only thing a rival is drawn and heard from
+# ---------------------------------------------------------------------------
+
+def _pose(A, code, pid, sid="sid1", **fields):
+    """Drive the real handler, which reads its player off the socket id."""
+    A._sid_room[sid] = (code, pid)
+    with A.app.test_request_context():
+        from flask import request
+        request.sid = sid
+        A.on_pose(dict({"p": [1.0, 2.0, 3.0], "q": [0, 0, 0, 1], "v": [0, 0, -40],
+                        "prog": 12.5, "cp": 2, "flags": 0}, **fields))
+
+
+def test_the_snapshot_carries_how_full_a_cars_tow_is(env):
+    """A rival's slipstream is drawn and heard from this one number, with the
+    flag byte saying whether it is the charge or the boost. Without it the only
+    thing a rival's tow could be is on or off - and the half worth watching is
+    the second and a half it spends filling behind you."""
+    A = env
+    r = _room(A)
+    _add_car(A, r, "a")
+    _pose(A, "TEST", "a", sl=0.4)
+    row = A._snapshot(r)["cars"]["a"]
+    assert row[12] == 0 and row[14] == pytest.approx(0.4)
+    _pose(A, "TEST", "a", sl=0.75, flags=16)
+    row = A._snapshot(r)["cars"]["a"]
+    assert row[12] & 16 and row[14] == pytest.approx(0.75)
+
+
+def test_the_tow_and_the_age_are_appended_not_inserted(env):
+    """Both trailing fields arrived after the format did, and the client guards
+    on the array's length - so a page left open across a deploy loses the tow
+    rather than reading a car's velocity as its position."""
+    A = env
+    r = _room(A)
+    _add_car(A, r, "a")
+    _pose(A, "TEST", "a")
+    row = A._snapshot(r)["cars"]["a"]
+    assert row[:3] == [1.0, 2.0, 3.0] and row[7:10] == [0, 0, -40.0]
+    assert row[10] == 12.5 and row[11] == 2
+    assert len(row) == 15
+
+
+def test_a_client_cannot_claim_a_tow_it_does_not_have(env):
+    """It is fanned straight back out and it is the loudness of an effect on
+    everybody else's screen, so it is clamped rather than trusted."""
+    A = env
+    r = _room(A)
+    _add_car(A, r, "a")
+    for sent, want in ((400, 1.0), (-3, 0.0), (None, 0.0)):
+        _pose(A, "TEST", "a", sl=sent)
+        assert A._snapshot(r)["cars"]["a"][14] == want
+
+
+# ---------------------------------------------------------------------------
 # Splits, which is how everyone gets a gap to the leader
 # ---------------------------------------------------------------------------
 

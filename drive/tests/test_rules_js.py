@@ -5,7 +5,13 @@ stub, the same trick `test_touch.py` and `test_slipstream.py` use: there is no
 browser in CI, and these are the kind of rule that is one character away from
 being silently wrong.
 
-What they have in common is that all three used to be bugs:
+The last group is not a fixed bug but a contract between two files: the tow
+level goes out over the wire as one number and comes back as the two things a
+rival's slipstream is drawn and heard from, and the flag byte is what says
+which. Getting that backwards is silent - every rival simply looks like it is
+permanently boosting - so both ends are pinned here.
+
+What the rest have in common is that they used to be bugs:
 
 * R and T fired before the clock was running, which on a grid moved the car
   *forward* to the start gate - ahead of every grid slot - so a driver could
@@ -227,3 +233,135 @@ def test_escape_closes_what_is_in_front_of_you_before_opening_settings(open_what
         ctx.eval(open_what + ";")
     ctx.eval("onEscape();")
     assert json.loads(ctx.eval("JSON.stringify(did)")) == [want]
+
+
+# --- the tow, over the wire and back ----------------------------------------
+
+FLAGS = "var FLAG = {DRIFT: 1, AIR: 2, RESPAWN: 4, BRAKE: 8, SLIP: 16};"
+
+POSE_STUB = FLAGS + """
+var POSE_HZ = 30;
+var T = {SLIP_BOOST: 1.6};
+var sent = null;
+var S = {
+  socket: {emit: (ev, d) => { sent = d; }},
+  lastPose: 0,
+  run: {bestS: 12.5, nextCp: 2},
+  car: {
+    pos: {x: 0, y: 0, z: 0}, quat: {x: 0, y: 0, z: 0, w: 1}, vel: {x: 0, y: 0, z: 0},
+    slipCharge: 0, slipBoost: 0,
+    flags: function () { return this.slipBoost > 0 ? FLAG.SLIP : 0; },
+  },
+};
+"""
+
+
+def _pose(charge=0.0, boost=0.0):
+    import json
+    ctx = jsrt.quickjs.Context()
+    ctx.eval(POSE_STUB)
+    ctx.eval(_fn("sendPose"))
+    ctx.eval("S.car.slipCharge = %s; S.car.slipBoost = %s; sendPose(100000);"
+             % (charge, boost))
+    return json.loads(ctx.eval("JSON.stringify(sent)"))
+
+
+def test_the_tow_goes_out_as_one_number_the_flag_disambiguates():
+    """`sl` is 0..1 either way and `FLAG.SLIP` says which of the two it is - the
+    charge while it fills, what is left of the boost while it pays. Two fields
+    would have been the obvious thing and the flag was already on the wire for
+    the tail lamps, so there is one."""
+    filling = _pose(charge=0.62)
+    assert filling["sl"] == pytest.approx(0.62)
+    assert not filling["flags"] & 16
+
+    paying = _pose(boost=0.8)                       # half of SLIP_BOOST left
+    assert paying["sl"] == pytest.approx(0.5)
+    assert paying["flags"] & 16
+
+
+def test_a_boost_beats_a_stale_charge_on_the_wire():
+    """The charge is zeroed when the boost fires, but nothing about `sl` should
+    depend on that: the boost is the answer whenever there is one."""
+    assert _pose(charge=0.9, boost=1.6)["sl"] == pytest.approx(1.0)
+
+
+RIVAL_STUB = FLAGS + """
+var CFG = {mode: 'room'};
+var T = {MAX_SPEED: 44, SLIP_BOOST: 1.6};
+var S = {
+  racePhase: 'free', raceMode: false,
+  renderer: {camera: {position: {x: 0, y: 0, z: 0}}},
+  remotes: new Map(),
+};
+function car(pid, z, opts) {
+  const o = opts || {};
+  S.remotes.set(pid, {
+    pid, pos: {x: 0, y: 0, z: z},
+    speed: o.speed == null ? 40 : o.speed, flags: o.flags || 0,
+    slipCharge: o.charge || 0, slipBoost: o.boost || 0,
+  });
+}
+"""
+
+
+def _rivals(setup="", phase="free", race="false", mode="room"):
+    import json
+    ctx = jsrt.quickjs.Context()
+    ctx.eval(RIVAL_STUB)
+    ctx.eval(_fn("contactOn"))
+    ctx.eval(_fn("rivalSound"))
+    ctx.eval("CFG.mode = '%s'; S.racePhase = '%s'; S.raceMode = %s;"
+             % (mode, phase, race))
+    if setup:
+        ctx.eval(setup)
+    return json.loads(ctx.eval("JSON.stringify(rivalSound())"))
+
+
+@pytest.mark.parametrize("mode,phase,race,heard", [
+    ("room", "free", "false", True),        # cars you are driving among
+    ("room", "racing", "true", True),
+    ("room", "qualifying", "false", False), # everybody alone on their own lap
+    ("room", "countdown", "true", False),
+    ("room", "results", "false", False),
+    ("solo", "free", "false", False),       # nobody out there at all
+])
+def test_you_only_hear_the_cars_you_are_driving_among(mode, phase, race, heard):
+    """The same gate contact and the tow read. In qualifying a car howling past
+    your ear is somebody a corner behind you on an out lap - a rival you are not
+    racing, arriving as though you were."""
+    out = _rivals("car('a', -10);", phase, race, mode)
+    assert (out is not None and len(out) == 1) is heard
+
+
+def test_a_respawning_car_is_not_out_there_to_be_heard():
+    """It is not drawn and cannot be hit either: it is off the track."""
+    out = _rivals("car('a', -10, {flags: FLAG.RESPAWN}); car('b', -20);")
+    assert [c["id"] for c in out] == ["b"]
+
+
+def test_the_closest_cars_get_the_voices():
+    """Only the nearest few are given one, so a full grid seen from the back
+    spends them on the cars close enough to be worth hearing."""
+    out = _rivals("car('far', -90); car('near', -8); car('mid', -30);")
+    assert [c["id"] for c in out] == ["near", "mid", "far"]
+
+
+def test_a_rival_on_the_power_is_one_that_is_not_braking():
+    """There is no throttle on the wire and there does not need to be: an engine
+    note only has to know whether the car is on it."""
+    out = _rivals("car('drive', -10); car('slowing', -20, {flags: FLAG.BRAKE}); "
+                  "car('parked', -30, {speed: 0});")
+    by = {c["id"]: c for c in out}
+    assert by["drive"]["throttle"] and not by["slowing"]["throttle"]
+    assert not by["parked"]["throttle"]
+
+
+def test_the_tow_comes_back_as_the_two_numbers_it_is_drawn_from():
+    """`updateRemotes` has already split `sl` on the flag by the time this reads
+    it, so the boost is a fraction of SLIP_BOOST exactly as your own car's is."""
+    out = _rivals("car('filling', -10, {charge: 0.4}); "
+                  "car('paying', -20, {boost: 0.8});")
+    by = {c["id"]: c for c in out}
+    assert by["filling"]["charge"] == pytest.approx(0.4) and by["filling"]["boost"] == 0
+    assert by["paying"]["boost"] == pytest.approx(0.5) and by["paying"]["charge"] == 0

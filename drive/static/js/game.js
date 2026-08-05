@@ -265,7 +265,7 @@ function loadTrack(track, opts = {}) {
   S.track = track;
   if (S.view) S.view.dispose();
   if (S.ghostView) { S.ghostView.dispose(); S.ghostView = null; S.ghostViewColor = null; }
-  for (const r of S.remotes.values()) r.view.dispose();
+  for (const r of S.remotes.values()) dropRemote(r);
   S.remotes.clear();
 
   S.built = buildTrack(track, T);
@@ -1497,7 +1497,18 @@ function frame(now) {
     // somebody else's lap. Bleed it, and let the streaks fly themselves out.
     S.car.draft(null, dt);
     S.renderer.draft(S.car, dt);
+    // And everybody else's, for the same reason: nothing steps a rival while a
+    // replay is on, so a tow one of them was in would hang in the air over
+    // somebody else's lap for as long as you watched it.
+    for (const r of S.remotes.values()) {
+      r.slipCharge = 0; r.slipBoost = 0;
+      S.renderer.draft(r, dt, r.draftFx);
+    }
     S.renderer.follow(S.watch.subject, dt);
+    // Watching is not driving, and it takes the field with it: the room is
+    // still going round out there, but a camera on somebody else's lap is not
+    // where any of it is happening, so hearing it from here would be noise.
+    S.sound.rivals(null);
     S.renderer.render(dt);
     return;
   }
@@ -1600,6 +1611,12 @@ function drive(inp) {
 function render(dt, now) {
   const car = S.car;
   S.renderer.follow(car, dt);
+  // The ears ride the camera, so they are moved the moment it has been - and
+  // the field is spatialised against where it has just gone rather than where
+  // it was last frame. Your own car stays out of this: it is the thing you are
+  // sitting in, and it has no direction to arrive from.
+  S.sound.listener(S.renderer.camera);
+  S.sound.rivals(rivalSound());
   S.view.update(car.pos, car.quat, {
     lean: car.bumpLean + (-car.steer * Math.min(1, car.speed / T.MAX_SPEED) * 0.06),
     steer: car.steer,
@@ -2484,6 +2501,13 @@ function sendPose(now) {
     q: [c.quat.x, c.quat.y, c.quat.z, c.quat.w],
     v: [c.vel.x, c.vel.y, c.vel.z],
     prog: S.run.bestS, cp: S.run.nextCp, flags: c.flags(),
+    // How full the tow is, 0..1 - and `FLAG.SLIP` in the byte above says which
+    // of the two things that is: the charge while it fills, the fraction of the
+    // boost left while it pays. One number rather than two, because the flag
+    // that disambiguates it was already on the wire for the tail lamps. Without
+    // it a rival's slipstream could only ever be drawn as on or off, and the
+    // half of it worth watching is the second and a half it spends filling.
+    sl: c.slipBoost > 0 ? c.slipBoost / T.SLIP_BOOST : c.slipCharge,
   });
 }
 
@@ -2504,15 +2528,24 @@ function onPoses(snap) {
     r.q.set(a[3], a[4], a[5], a[6]);
     r.vel.set(a[7], a[8], a[9]);
     r.prog = a[10]; r.cp = a[11]; r.flags = a[12];
+    // The tow level, guarded the same way the age above it is: a client left
+    // open across a deploy simply has no tow to draw rather than a NaN one.
+    r.tow = a.length > 14 ? a[14] : 0;
     r.lastSeen = performance.now();
   }
   // drop anyone who stopped reporting
   for (const [pid, r] of S.remotes) {
     if (!(pid in snap.cars) && performance.now() - r.lastSeen > 3000) {
-      r.view.dispose();
+      dropRemote(r);
       S.remotes.delete(pid);
     }
   }
+}
+
+/** Everything a rival owns in the scene. Its voice goes when it leaves the list. */
+function dropRemote(r) {
+  r.view.dispose();
+  r.draftFx.dispose();
 }
 
 function addRemote(pid) {
@@ -2521,10 +2554,17 @@ function addRemote(pid) {
     pid, name: meta.name || 'Driver', color: meta.color || '#8899aa',
     pos: new THREE.Vector3(), vel: new THREE.Vector3(), fwd: new THREE.Vector3(0, 0, -1),
     q: new THREE.Quaternion(), rq: new THREE.Quaternion(),
-    px: 0, py: 0, pz: 0, prog: 0, cp: 0, flags: 0,
+    px: 0, py: 0, pz: 0, prog: 0, cp: 0, flags: 0, tow: 0,
     packetT: 0, lastSeen: performance.now(), primed: false,
     view: new CarView(S.renderer.scene, meta.color || '#8899aa'),
     mass: 1, id: pid,
+    // A remote car is a car as far as the tow effect is concerned, so it carries
+    // the same fields the local one does and `Draft` needs no idea which is
+    // which: the three axes it draws its ring about, how fast it is going, and
+    // the two halves of the tow. All of them are filled in by updateRemotes.
+    right: new THREE.Vector3(1, 0, 0), up: new THREE.Vector3(0, 1, 0),
+    speed: 0, slipCharge: 0, slipBoost: 0, respawnIn: 0, T,
+    draftFx: S.renderer.makeDraft(),
   };
   r.view.setLabel(r.name, r.color);
   S.remotes.set(pid, r);
@@ -2552,6 +2592,10 @@ const REMOTE_SNAP = 12;               // units; ~3.5 car lengths, well past a fr
 
 function updateRemotes(dt) {
   const nowS = serverNow();
+  // The tow is drawn on a rival for exactly the phases it can happen in, and it
+  // is the same answer contact and your own tow read - so a car cannot be seen
+  // winding up a boost in a session where nobody can get one.
+  const towOn = contactOn();
   for (const r of S.remotes.values()) {
     const ahead = Math.min(0.35, Math.max(0, (nowS - r.packetT) / 1000));
     const tx = r.px + r.vel.x * ahead;
@@ -2571,6 +2615,18 @@ function updateRemotes(dt) {
       r.rq.slerp(r.q, 1 - Math.exp(-18 * dt));
     }
     r.fwd.set(0, 0, -1).applyQuaternion(r.rq);
+    // The other two axes, for the ring of air the tow is drawn as. Off the
+    // smoothed rotation rather than the raw packet, so it is the frame the car
+    // is actually being drawn in and the streaks cannot sit at an angle to it.
+    r.right.set(1, 0, 0).applyQuaternion(r.rq);
+    r.up.set(0, 1, 0).applyQuaternion(r.rq);
+    r.speed = r.vel.length();
+    // `FLAG.SLIP` says which of the two things `sl` is - see sendPose. Zeroed
+    // outright where there is no tow to have, so a boost that was running when
+    // the lights went out on practice does not hang in the air over qualifying.
+    const boosting = towOn && !!(r.flags & FLAG.SLIP);
+    r.slipBoost = boosting ? r.tow * T.SLIP_BOOST : 0;
+    r.slipCharge = boosting || !towOn ? 0 : r.tow;
     // Remote cars show their brake lights too, which is most of what tells you a
     // rival is slowing. Braking is the one flag that changes nothing else about
     // them: it is what a rival does in every corner, so a car that stopped being
@@ -2578,13 +2634,60 @@ function updateRemotes(dt) {
     // out and be driven through at exactly the moment you are closest to it.
     // Only RESPAWN takes a car off the track.
     const off = !!(r.flags & FLAG.RESPAWN);
+    r.respawnIn = off ? 1 : 0;
     r.view.update(r.pos, r.rq, Object.assign({ spin: 0 }, lampsOf(r.flags)));
     r.view.group.visible = !off;
     // Solid cars are solid-looking, and the same question decides both: being
     // able to see through a rival is the only warning that you are about to
     // drive through one.
-    r.view.setGhostly(!contactOn());
+    r.view.setGhostly(!towOn);
+    // Their air, in their own frame. Always stepped, even with the tow zeroed
+    // above: that is what lets streaks already flying finish their run rather
+    // than blinking out, which is the same thing your own car does.
+    S.renderer.draft(r, dt, r.draftFx);
   }
+}
+
+/**
+ * The other cars, as things to hear.
+ *
+ * Every car out there is a voice at its own position - engine, tyres, and the
+ * tow winding up - so where somebody is is something you know before you look.
+ * That matters most for the one place you cannot look: the car sitting in your
+ * gearbox filling a slipstream is directly behind you, and the sound of it
+ * arriving is the only warning you get.
+ *
+ * **Bounded by the same rule contact is**, `contactOn`: free practice and the
+ * race, and nothing else. In qualifying everybody is alone on their own lap on a
+ * road they are all using at different points of it, so a car howling past your
+ * ear is somebody a corner behind you on their out lap - a rival you are not
+ * racing, arriving as though you were. Hand back nothing there and the field
+ * goes quiet on its own (see `Sound.rivals`).
+ *
+ * What a rival is doing comes off the flags already in its pose. There is no
+ * throttle on the wire and there does not need to be one: a car that is not
+ * braking and is not crawling is on the power, which is what an engine note has
+ * to know. Sorted near-to-far, because only the closest few get a voice.
+ */
+function rivalSound() {
+  if (!contactOn()) return null;
+  const cam = S.renderer.camera.position;
+  const out = [];
+  for (const r of S.remotes.values()) {
+    if (r.flags & FLAG.RESPAWN) continue;   // not on the track: nothing to hear
+    const dx = r.pos.x - cam.x, dy = r.pos.y - cam.y, dz = r.pos.z - cam.z;
+    out.push({
+      id: r.pid, x: r.pos.x, y: r.pos.y, z: r.pos.z,
+      d2: dx * dx + dy * dy + dz * dz,
+      speedFrac: r.speed / T.MAX_SPEED,
+      throttle: !(r.flags & FLAG.BRAKE) && r.speed > 3,
+      drift: !!(r.flags & FLAG.DRIFT),
+      air: !!(r.flags & FLAG.AIR),
+      charge: r.slipCharge, boost: r.slipBoost / T.SLIP_BOOST,
+    });
+  }
+  out.sort((a, b) => a.d2 - b.d2);
+  return out;
 }
 
 /**

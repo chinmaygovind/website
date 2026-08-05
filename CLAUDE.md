@@ -709,6 +709,40 @@ Road are both in `tracks.EXPOSED`.
   takes two browsers and somebody driving eight car lengths ahead of the
   shutter. The sound is the same story: `Sound.draft` opens a band of rushing
   air as the charge fills, so you can *hear* the boost coming.
+- **Every car's tow is drawn, not just yours.** A `Draft` belongs to each remote
+  as well, because the driver winding up behind your gearbox is the only person
+  on the track who cannot see it - watching somebody else's air thicken is the
+  whole of what makes a tow a move you can answer. It cost **one number on the
+  wire**: `sl` in the pose, 0..1, with the `FLAG.SLIP` bit that was already
+  there for the tail lamps saying whether it is the charge or what is left of
+  the boost. Field 14 of the snapshot, appended like the age before it, and the
+  client guards on the array's length, so a page open across a deploy loses the
+  tow rather than reading a car's velocity as its position. `Draft` needed no
+  idea any of this exists: a remote carries `pos`/`fwd`/`right`/`up`/`speed` and
+  the two tow numbers, which is what a car is as far as the effect is concerned.
+- **Other cars are heard as well as seen, and a rival is a place rather than a
+  channel.** Engine, tyres and tow all go through one `PannerNode` at that car's
+  position (`RivalVoice` in `sound.js`), with the listener riding the **chase
+  camera** - the only frame in which "on my left" is the same statement on
+  screen and in the headphones, and one that rolls through a loop with no
+  special case. **HRTF, not equalpower**: on a chase camera the question that
+  matters is in front or behind, which a left/right pan cannot answer. Your own
+  car stays out of it, on the master, because it is the thing you are sitting in
+  and has no direction to arrive from. A rival is deliberately less machine than
+  yours (two sawtooths, no load whine) and what it is *doing* is read off the
+  flags already in its pose - there is no throttle on the wire and there does
+  not need to be one, since a car that is not braking and is not crawling is on
+  the power. `Sound.rivals(list)` takes the whole state in one call, so a car
+  that drops out of the list loses its voice: that is what makes the phase rule
+  free, and why qualifying, a replay and an empty room all cost one call.
+- **You only hear the cars you are driving among, and it is `contactOn` that
+  says so** - free practice and the race, the same answer contact and your own
+  tow read, so a rival cannot be seen winding up a boost in a session where
+  nobody can get one. In qualifying a car howling past your ear is somebody a
+  corner behind you on an out lap: a rival you are not racing, arriving as
+  though you were. `?panel=qual` is **not** a way to check this - it pins the
+  HUD label and not `S.racePhase` - so the by-hand check needs a real session
+  (a scratch harness plus a socket client that emits poses; see **Tests**).
 - **Only `FLAG.RESPAWN` takes a rival off the track.** Both the visibility line
   and `collidables()` used to test `flags & 8`, which is `FLAG.BRAKE` - copied
   off the brake-light line directly above them, and commented "respawning". So
@@ -1314,18 +1348,41 @@ testing nothing. `test_slipstream.py` does both halves: `Car.draft` runs for rea
 in QuickJS (it only reads the body's own frame and the rivals it is handed, so it
 needs no world and no lap), and `contactOn` is lifted out of `game.js` by name and
 run against a stubbed phase. `test_rules_js.py` is the same lift-by-name trick on
-three rules that were each a bug: that `R` and `T` do nothing (and say nothing)
-until the clock is running, that `placeOnGrid` puts pole on the track's own
-`pole_side` and the row behind it on the other, and that `lampsOf` reads a
-recorded flag byte with drift winning over brake.
+rules that were each a bug or a contract between two files: that `R` and `T` do
+nothing (and say nothing) until the clock is running, that `placeOnGrid` puts
+pole on the track's own `pole_side` and the row behind it on the other, that
+`lampsOf` reads a recorded flag byte with drift winning over brake, and that the
+tow goes out of `sendPose` as one number the flag disambiguates and comes back
+out of `rivalSound` as the two it is drawn and heard from.
+
+**`test_sound.py` is the one file a screenshot cannot stand in for.**
+`sound.js` builds a graph of nodes and then only moves numbers about inside it,
+so a wrong `connect`, or a voice rebuilt every frame, is completely silent to
+look at and completely wrong to listen to. It runs the real module in QuickJS
+against a fake `AudioContext` that records what was connected to what, and pins
+the wiring and the bookkeeping: one voice per car and kept, a car dropped from
+the list torn down rather than forgotten, everything a rival makes going through
+its own panner and the panner through the bus under the master (so muting still
+mutes the field), and the listener's forward and up coming off the camera's own
+quaternion - including rolled upside down, which is a loop.
 
 There is no browser in CI, so **check rendering by hand** before shipping a
 geometry change - and a *room* needs one more step than a solo track does,
 because `/room/<code>` redirects anyone who is not already a player in it. The
 cheapest way in is a scratch harness that imports the real app and adds a
 login-and-join route, so headless Chrome can reach a room in one navigation;
-`/j/<CODE>` then does the joining for real. A persistent `--user-data-dir` keeps
-the session across shots, which is what makes `?panel=` reachable afterwards.
+`/j/<CODE>` then does the joining for real. Set `session.permanent` in that
+route or the cookie dies with the headless run and the second navigation lands
+on the login page. A persistent `--user-data-dir` keeps the session across
+shots, which is what makes `?panel=` reachable afterwards.
+
+**Anything about a second car needs a second car**, and the cheapest one is a
+`python-socketio` client: log in as a guest with `requests`, `POST /create`,
+`GET /j/<CODE>`, then connect with the same cookie, `join_room_`, and emit
+`pose` 30 times a second with whatever position and flags the shot needs. That
+is how the rival slipstream was checked. It is also the only way to see a phase
+rule, since **`?panel=qual` pins the HUD label and not `S.racePhase`** - the bot
+is the host, so it can emit `start_race` and open a real qualifying session.
 Templates are cached, so restart the dev server after editing one.
 
 Run the app on a spare port and screenshot it with headless Chrome
