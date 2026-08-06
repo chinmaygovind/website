@@ -101,6 +101,7 @@ const S = {
   raceT0: null,            // local perf-clock ms of the green light
   cdT0: null,              // and what the lights on screen are counting down to
   raceDone: false,         // finished or retired: out of the race, still in the room
+  catchupDemo: null,       // `?catchup=<s>` pins the gap, to look at the effect
   qualEnd: null,           // local perf-clock ms qualifying closes
   standings: [],
   settings: { qualifying: true },   // rooms only: what the next race will be
@@ -607,6 +608,11 @@ function bindInput() {
   // stub DOM, which has a `location` and no `URLSearchParams`.
   const dm = /[?&]draft=(charge|boost)\b/.exec(location.search);
   S.draftDemo = dm ? dm[1] : null;
+  // `?catchup=<seconds>` pins the gap to the leader, for the same reason: the
+  // only thing catching up looks like is the speed bar, and photographing it
+  // otherwise takes two browsers and somebody driving five seconds up the road.
+  const cu = /[?&]catchup=([0-9.]+)\b/.exec(location.search);
+  S.catchupDemo = cu ? parseFloat(cu[1]) : null;
   if ('ontouchstart' in window || location.search.indexOf('touch=1') >= 0 ||
       (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) {
     S.touch = true;
@@ -1612,6 +1618,9 @@ function frame(now) {
     // you were in when you pressed Watch would otherwise hang in the air over
     // somebody else's lap. Bleed it, and let the streaks fly themselves out.
     S.car.draft(null, dt);
+    // Same for the help you had for being behind: the race you were in is not
+    // the one on the screen, and nothing steps the car while a replay runs.
+    S.car.catchup(null, dt);
     S.renderer.draft(S.car, dt);
     // And everybody else's, for the same reason: nothing steps a rival while a
     // replay is on, so a tow one of them was in would hang in the air over
@@ -1673,6 +1682,10 @@ function frame(now) {
   // One list per frame rather than one per substep: the remote cars are
   // interpolated above and do not move again inside the fixed-step loop.
   const rivals = contactOn() ? collidables() : null;
+  // Same again for the gap to the leader: it is read off the poses that were
+  // brought up to date above and cannot change between substeps. `?catchup=`
+  // pins it, the way `?draft=` pins a tow.
+  const gap = S.catchupDemo != null ? S.catchupDemo : gapToLeader();
   if (!S.paused) {
     S.stepper.run(dt, (h) => {
       S.car.step(h, inp);
@@ -1681,6 +1694,10 @@ function frame(now) {
       // charge away when you drop out of the hole, or when the phase changes
       // under you and the other cars stop being there at all.
       S.car.draft(rivals, h);
+      // And always called with the gap, `null` included, for the same reason:
+      // taking the lead or the race ending has to bleed the help away rather
+      // than leave the last value of it running.
+      S.car.catchup(gap, h);
     });
   }
 
@@ -1838,6 +1855,13 @@ function hudFast() {
   $('speedFill').style.width = Math.min(100, (car.speed / T.MAX_SPEED) * 100) + '%';
   // Over MAX_SPEED means a descent is doing the work, which is worth showing.
   $('speedFill').classList.toggle('over', car.speed > T.MAX_SPEED);
+  // And being helped along for being behind is worth showing over the top of
+  // it, because it is the one of the two you can do something about. A car that
+  // is quietly faster than it was a lap ago and cannot say why is a bug report;
+  // the bar is where the engine already is, so it is where this goes. (The tow
+  // is drawn in the air round the car instead - it is a move somebody makes,
+  // and it belongs out on the road where the car it is aimed at can see it.)
+  $('speedFill').classList.toggle('catchup', car.catchupBoost > 0.05);
   $('time').textContent = fmt(run.state === 'ready' ? 0 : run.time);
 }
 
@@ -2828,6 +2852,64 @@ function rivalSound() {
 function contactOn() {
   if (CFG.mode !== 'room') return false;
   return S.racePhase === 'free' || (S.raceMode && S.racePhase === 'racing');
+}
+
+/**
+ * Is anybody being helped along for being behind right now?
+ *
+ * **The race and nothing else** - which makes this a deliberately different
+ * answer from `contactOn`, the only other phase gate here, and the difference
+ * is the whole justification for the mechanic. Catching up is help with a
+ * *result*: there has to be a leader, a position to lose and a race that a
+ * three-second gap would otherwise have decided. In free practice there is no
+ * such thing as first place, in qualifying everybody is alone on their own lap
+ * and the grid is the one thing the session exists to decide, and a countdown
+ * or a results sheet has nobody driving. Handing out engine in any of them
+ * would be a car going faster for no reason it could name.
+ *
+ * It never touches a leaderboard lap either, and by two independent rules: no
+ * lap driven in a room counts (`countsForTheBoard`), and no lap driven outside
+ * a race gets this at all.
+ */
+function catchupOn() {
+  if (CFG.mode !== 'room') return false;
+  return S.raceMode && S.racePhase === 'racing';
+}
+
+/**
+ * How far behind the leader you are, in seconds, or null if that is not a
+ * question this session is asking.
+ *
+ * **Measured in distance and reported in time.** What the room knows about
+ * every car is `prog`, how far round it has got - it is on the wire already,
+ * it is what the standings are ordered by, and it is the same number for
+ * everybody. What a *gap* means, though, is time, and dividing by MAX_SPEED is
+ * the honest conversion: how long it would take to make that ground up flat
+ * out. Nobody averages MAX_SPEED, so the answer is a floor on the real gap -
+ * which is the right way for it to be wrong, since it is deciding how much help
+ * to hand out.
+ *
+ * **The leader here is the leader on the road**, not the winner. A car that is
+ * already home is not being caught, and once it has crossed the line the race
+ * left out there is for the places behind it - so a finisher is skipped, and
+ * whoever is furthest round of those still driving sets the mark. If that is
+ * you, the gap is zero and you get nothing, which is the same thing said twice.
+ *
+ * A car that has fallen off keeps its place until it drives back past where it
+ * was, because `prog` is the best distance reached and not the current one.
+ * That is on purpose: it is the number the standings on the screen are built
+ * from, and a gap that disagreed with the board would be unexplainable.
+ */
+function gapToLeader() {
+  if (!catchupOn()) return null;
+  const home = new Set();
+  for (const e of S.standings) if (e.ms != null && e.pid) home.add(e.pid);
+  let lead = S.run.bestS;
+  for (const [pid, r] of S.remotes) {
+    if (home.has(pid)) continue;
+    if (r.prog > lead) lead = r.prog;
+  }
+  return Math.max(0, lead - S.run.bestS) / T.MAX_SPEED;
 }
 
 /**

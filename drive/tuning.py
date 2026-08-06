@@ -151,6 +151,40 @@ SLIP_DECAY = 1.6           # seconds for a full charge to bleed away once you le
 SLIP_BOOST = 1.6           # seconds the boost lasts
 SLIP_ACCEL_MULT = 1.5      # engine force while boosting; top speed x sqrt(1.5)
 
+# --- catching up -----------------------------------------------------------
+# A race where somebody drops three seconds is over, and everyone still in it
+# spends the rest of the lap driving alone. So a car behind the leader gets a
+# little more engine, in proportion to how far behind it is. Four decisions:
+#
+# - **The gap is measured in seconds, not in metres.** Distance along the ribbon
+#   is what the room actually knows about every car (it is `prog` on the wire),
+#   but the same 100 units is half a lap of Chicane Park and a corner of Sandy
+#   Cove. Dividing by MAX_SPEED turns it into the one thing that means the same
+#   on every track: how long it would take you to make that ground up flat out.
+#   It is a *floor* on the real gap - nobody averages MAX_SPEED - so 1.5 here is
+#   about two seconds of driving, which is the point at which a race stops being
+#   one.
+# - **Nothing at all inside the deadzone.** Under CATCHUP_DEAD you are still
+#   racing the car in front and the last thing that should decide it is a
+#   handout. Past it the help ramps in linearly and reaches all of itself at
+#   CATCHUP_FULL - about seven seconds of real driving, which on any track in
+#   the pool is most of a corner and change.
+# - **More engine, not a raised limit**, the same way the slipstream is: top
+#   speed is where ACCEL fights the quadratic DRAG, so 1.22 lifts it by its
+#   square root - about a tenth, MAX_SPEED 50 -> 55 - and the car has to
+#   accelerate up to it. Deliberately less than half of what a tow is worth:
+#   the tow is a move you lined up and this is one you were given, and being
+#   given the bigger of the two would make dropping back the fast way round.
+#   It stacks with a tow, because a car eight seconds down that has finally
+#   caught somebody is exactly the car that should be able to make the pass.
+# - **Nothing is taken off the leader.** A rubber band that slows the car in
+#   front takes away the race it is trying to create; this only ever gives, so
+#   the driver in the lead is driving the same car they qualified.
+CATCHUP_DEAD = 1.5         # seconds of gap that are worth nothing
+CATCHUP_FULL = 5.0         # gap at which the whole of it is on
+CATCHUP_ACCEL_MULT = 1.22  # engine force at full help; top speed x sqrt(1.22)
+CATCHUP_SMOOTH = 2.5       # how fast the help follows the gap, per second
+
 # --- simulation ------------------------------------------------------------
 FIXED_DT = 1.0 / 120.0     # physics step; render interpolates between steps
 MAX_STEPS = 8              # catch-up cap so a tab-out cannot fast-forward you
@@ -213,6 +247,7 @@ _EXPORT = [
     "MAX_STEPS", "RESPAWN_DELAY",
     "SLIP_RANGE", "SLIP_HALF_W", "SLIP_ALIGN", "SLIP_MIN_SPEED", "SLIP_CHARGE",
     "SLIP_DECAY", "SLIP_BOOST", "SLIP_ACCEL_MULT",
+    "CATCHUP_DEAD", "CATCHUP_FULL", "CATCHUP_ACCEL_MULT", "CATCHUP_SMOOTH",
 ]
 
 

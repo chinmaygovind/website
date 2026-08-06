@@ -59,6 +59,7 @@ export class Car {
     this.towed = false;        // in another car's hole right now
     this.slipCharge = 0;       // 0..1, how full the tow is
     this.slipBoost = 0;        // seconds of boost left
+    this.catchupBoost = 0;     // 0..1, how much help for being down the road
     this._bumpCooldown = new Map();
     this._wallHit = 0;
   }
@@ -80,6 +81,11 @@ export class Car {
     this.towed = false;
     this.slipCharge = 0;
     this.slipBoost = 0;
+    // Nor does the help for being behind: a car being placed is a car on the
+    // grid or one that has just been picked up, and neither is a moment to hand
+    // out engine. It is derived from the gap every frame, so it is back inside
+    // half a second if the gap is still there.
+    this.catchupBoost = 0;
   }
 
   _syncAxes() {
@@ -215,7 +221,16 @@ export class Car {
         // ACCEL fights DRAG, so the multiplier lifts it by its square root and
         // the car has to accelerate up to the new one. On the throttle only -
         // a tow is a bigger top end, not free speed while you coast.
-        const eng = this.slipBoost > 0 ? T.ACCEL * T.SLIP_ACCEL_MULT : T.ACCEL;
+        //
+        // Being down the road is the same kind of help and so it is the same
+        // kind of term, and the two multiply: a car that spent the last minute
+        // alone and has finally caught somebody is precisely the one that
+        // should have enough to come past. See `catchup` below for the gap it
+        // is read off, and tuning.py for why it is much the smaller of the two.
+        let eng = this.slipBoost > 0 ? T.ACCEL * T.SLIP_ACCEL_MULT : T.ACCEL;
+        if (this.catchupBoost > 0) {
+          eng *= 1 + this.catchupBoost * (T.CATCHUP_ACCEL_MULT - 1);
+        }
         a = (vLong < -0.5 ? T.BRAKE : eng) * throttle;
       } else if (brake > 0) {
         a = vLong > 0.5 ? -T.BRAKE * brake
@@ -466,6 +481,51 @@ export class Car {
     } else if (this.slipCharge > 0) {
       this.slipCharge = Math.max(0, this.slipCharge - dt / T.SLIP_DECAY);
     }
+  }
+
+  /**
+   * A little more engine for being behind, in proportion to how far behind.
+   *
+   * A race in which somebody drops a few seconds is decided, and everybody in
+   * it drives the rest of the lap alone - so a car down the road gets some of
+   * the deficit back as engine, and the gap that was going to end the race
+   * closes into a fight instead. `gapS` is how far behind the leader you are,
+   * in seconds; the caller decides who the leader is and whether there is a
+   * race at all, and hands `null` when there is not.
+   *
+   * Three things this deliberately is not:
+   *
+   * - **Not a cliff.** Nothing at all inside `CATCHUP_DEAD`, then a linear ramp
+   *   to the whole of it at `CATCHUP_FULL`. A step change in engine force at a
+   *   threshold is a car that surges every time the gap wobbles across it.
+   * - **Not instant.** The gap arrives 30 times a second, rounded, off a car
+   *   whose own position is being extrapolated - so the help *follows* it at
+   *   `CATCHUP_SMOOTH` rather than tracking it exactly. Half a second of lag on
+   *   a number that is meant to describe the last ten seconds costs nothing and
+   *   is the difference between more engine and a car that hunts.
+   * - **Not a raised limit.** Like the tow, it multiplies the throttle term in
+   *   `step`, so it is worth its square root in top speed and only while you
+   *   are actually on the power.
+   *
+   * Call it every frame, `null` included: that is what bleeds the help away
+   * when the race ends or you take the lead, rather than leaving the last value
+   * live on a car nobody is racing.
+   */
+  catchup(gapS, dt) {
+    const T = this.T;
+    let want = 0;
+    if (gapS != null && gapS > T.CATCHUP_DEAD) {
+      want = Math.min(1, (gapS - T.CATCHUP_DEAD) / (T.CATCHUP_FULL - T.CATCHUP_DEAD));
+    }
+    this.catchupBoost += (want - this.catchupBoost) * (1 - Math.exp(-T.CATCHUP_SMOOTH * dt));
+    // An exponential approach never actually arrives, so the last hundredth of
+    // the way *down* is snapped off: below that it is a fifth of a percent of
+    // engine - not a thing anybody could drive - and without the snap the
+    // multiplier in `step` is live for ever on a car that stopped being helped
+    // minutes ago. Only on the way down, and that is not a detail: every ramp
+    // up starts at zero and passes through the same hundredth, so snapping it
+    // in both directions pins the help at nothing and it never climbs at all.
+    if (want === 0 && this.catchupBoost < 0.01) this.catchupBoost = 0;
   }
 
   requestRespawn() {
