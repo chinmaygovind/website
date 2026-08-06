@@ -988,7 +988,13 @@ Road are both in `tracks.EXPOSED`.
   open, and getting a room into any of them takes two browsers, a stopwatch and
   somebody willing to lose a race. Pinned rather than assigned - the room
   reports `free` the moment the socket connects, so a phase merely set at boot
-  is gone before the shutter.
+  is gone before the shutter. **`racing` pins a field as well as the phase**, and
+  it has to: the position card and the standings are shown when there are rivals
+  on the road rather than when the phase says `racing`, so a pinned race drew
+  neither of the two things that phase is *for* - and that is how the minimap
+  came to be sitting on top of the position card on every phone with nobody able
+  to photograph it. `S.previewOrder` is six cars, the same trick `qual` already
+  used with `renderQual`, and `hud` reads it in place of `liveOrder()`.
 - **The room drawer holds the invitation.** A share field with
   `<origin>/j/<CODE>` in it and a copy button, and `/j/<CODE>` joins whoever
   opens it - asking for a login or a guest name first if they have none. The
@@ -1102,11 +1108,29 @@ field from a dark field.
 - **Bottom left is the minimap with restart and last-checkpoint above it.** Those two
   used to head the settings sheet, which meant a menu you had to open to restart a run
   - which is the most common thing you do. They are hidden on touch, where the real
-  buttons are under a thumb already. Note `@media (max-height: 460px)` moves `.hud-bl`
-  to the *top* left under the track card, and has to release `bottom` as well as set
-  `top`: an absolutely positioned box with both is stretched between them, which put
-  the map on top of the track card on any screen short enough for that rule but too
-  wide for the narrow one.
+  buttons are under a thumb already.
+- **The whole left-hand side is one flex column (`.hud-l`), and where the map goes
+  is a `margin-top`.** `.hud-tl` and `.hud-bl` used to be two separately anchored
+  boxes sharing that edge, so neither could know how tall the other was - and
+  every layout that brings the map up out of the steering thumb's corner (touch,
+  and `@media (max-height: 460px)`) had to clear the cards above it with a
+  hardcoded `top`. **84px cleared the track card, and the Position card
+  underneath it did not exist when that number was written**, so the map sat
+  squarely on top of your race position on every phone, in every race. It
+  survived because the position card is only shown once there are rivals on the
+  road, so every screenshot anybody could take of the phone HUD was of a solo
+  session and looked perfect. Now the map is simply the last item in the column:
+  `margin-top: auto` puts it on the floor for a desktop and `margin-top: 0` lets
+  it follow the last card everywhere else, both magic numbers are gone, and the
+  overlap has stopped being a thing that can be expressed. Two things to know.
+  **`.hud-bl` has to sit next to `.hud-tl` in the template**, not where it reads
+  naturally in top-left/top-right/bottom-left order - `.hud-tr` was between them,
+  and a wrapper spanning both makes `.hud-l` the containing block for its
+  `right: 14px`, which puts the top-right stack 14px from the right of a 200px
+  column. And `.hud > *` is what turns pointer events back on, so the wrapper is
+  now that child rather than the cards: without `pointer-events: none` on it and
+  `auto` on its children, a full-height column swallows every click down the left
+  of the screen.
 - **The home page is a headline, two doors and how to play.** "Race online!", then
   a red **Drive now** (`/solo`) beside a yellow **Race your friends** (`/lobbies`) -
   two halves of the game rather than a primary and a fallback, which is why the
