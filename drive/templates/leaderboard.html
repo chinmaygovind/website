@@ -43,7 +43,14 @@
   <div class="panel">
     {% if tt %}
     <table class="board">
-      <tr><th>#</th><th>Driver</th><th class="num">Score</th>
+      {# The one heading on the page that is not self-explanatory, so it carries
+         the mark that says there is something to hover. A `title` and not a
+         styled tooltip because that is how every other hover on Drive works,
+         from the HUD buttons to the record dates - one convention, no script. #}
+      <tr><th>#</th><th>Driver</th>
+        <th class="num"><span class="whatsthis"
+          title="Time Trial Score is the sum of your best lap's rank on each track"
+          >Score<span class="q">?</span></span></th>
         <th class="num">Tracks</th><th class="num">Best</th></tr>
       {% for r in tt %}
       <tr {% if user and r.user.id == user.id %}class="me"{% endif %}>

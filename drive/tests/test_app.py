@@ -745,6 +745,26 @@ def test_the_time_trials_board_reaches_the_page(env):
     assert "1/%d" % len(tracks_mod.TRACKS) in tt, "one track driven of the pool"
 
 
+def test_the_score_heading_carries_its_own_explanation(env):
+    """"Score" is the one heading here that does not explain itself.
+
+    It says so where it stands, rather than the board growing a line of small
+    print underneath that neither of the other two has - and as a `title`,
+    which is how every other hover on Drive works.
+    """
+    A = env
+    _pbs(A, "quick", {"sunrise": 20000})
+    html = A.app.test_client().get("/leaderboard").get_data(as_text=True)
+    tt = html[html.index("Time Trials Leaderboard"):html.index("Multiplayer Leaderboard")]
+    assert ('title="Time Trial Score is the sum of your best lap\'s rank on '
+            'each track"') in tt
+    assert 'class="whatsthis"' in tt, "and it has to look like something to hover"
+
+    here = os.path.dirname(__file__)
+    css = open(os.path.join(here, "..", "static", "css", "style.css")).read()
+    assert ".whatsthis {" in css, "a mark nobody can see is not a mark"
+
+
 # --- the boards point at Drive's own account page ---------------------------
 
 def test_a_name_on_a_board_opens_that_driver_on_drive(env):

@@ -1207,6 +1207,15 @@ field from a dark field.
   missed. Twelve tracks is one query. Bots and accounts with no times are off it
   (the join is what drops them), and since only laps driven alone are in
   `drive_times` at all, nothing set in a room reaches this board either.
+  **The `Score` heading explains itself where it stands** - a dotted rule, a
+  raised `?` and a `title` (`.whatsthis`) - rather than the board carrying a
+  line of small print neither of the other two has, which is the thing the
+  multiplayer board just had taken away. A `title` because that is how every
+  hover on Drive works, from the HUD buttons to the record dates: one
+  convention, no script. Its limit is the usual one - a `title` does nothing on
+  a touchscreen - which is why the mark sits next to a column whose figures are
+  still ordered top to bottom, and is not the only place the rule is written
+  down.
 - **The board is in the game.** "View others" opens the leaderboard over the track;
   clicking a row opens that lap - its checkpoint splits against your own PB's, who set
   it, and **Watch it** / **Race this ghost**. Picking somebody to chase is something you
