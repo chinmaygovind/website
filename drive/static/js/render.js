@@ -6,7 +6,9 @@
 // than the world's - its up vector and its idea of "behind" both come from the
 // car - so a loop looks like a loop from the driver's seat instead of the world
 // flipping over. Everything about it is exponentially smoothed, and the
-// smoothing is frame-rate independent, so it never whips or judders.
+// smoothing is frame-rate independent, so it never whips or judders. The two
+// views you can hold a key for are the same orbit asked two questions: where the
+// eye sits, and which way it looks.
 
 import * as THREE from './vendor/three.module.js';
 import { mulberry } from './trackmesh.js';
@@ -421,6 +423,20 @@ export class Draft {
 // be seven of them, and the one whose tow you have to read is yours.
 const RIVAL_STREAKS = 26;
 
+// The driver's eye, in the car's own frame: at the top of the cabin, forward at
+// the windscreen. It is *inside* the cabin rather than perched on the roof, and
+// that is what keeps the view clear rather than something to work around - a box
+// is invisible from within, so the roof, the glass and the pillars are simply not
+// there from in here, and what is left is the bonnet and the road.
+//
+// Forward matters as much as up. Sat back at the cabin's middle, the eye is only
+// 0.4 above a bonnet 1.9 wide that runs 1.9 in front of it, and the car's own
+// bodywork takes a third of the screen - the view you asked for is mostly of the
+// car you are sitting in. At the windscreen it is a fifth, which reads as a car
+// rather than as an obstruction.
+const EYE_UP = 0.98;
+const EYE_FWD = 0.5;
+
 export class Renderer {
   constructor(canvas) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -448,6 +464,8 @@ export class Renderer {
     this.camFwd = new THREE.Vector3(0, 0, -1);
     this.shake = 0;
     this.started = false;
+    // Which of the views the camera is in, so that follow() can tell a change of
+    // view from a frame of the same one and cut rather than sweep.
     this.mode = 'chase';
 
     this._onResize = () => this.resize();
@@ -502,33 +520,67 @@ export class Renderer {
     this.started = false;
   }
 
-  /** Chase camera. `car` is the local Car; dt is real seconds. */
+  /**
+   * Chase camera. `car` is the local Car; dt is real seconds.
+   *
+   * `opts.first` and `opts.rear` are the two views you can hold a key for, and
+   * they are two questions rather than a list of three cameras: `first` is where
+   * you are sitting and `rear` is which way you are looking. Holding both is
+   * therefore a glance over your shoulder from the driver's seat, which is the
+   * only thing both keys at once could sensibly mean.
+   */
   follow(car, dt, opts = {}) {
     const speed = car.speed;
+    const first = !!opts.first;
+    const dir = opts.rear ? -1 : 1;
     const back = 8.2 + Math.min(3.4, speed * 0.075);
     const up = 3.2 + Math.min(1.1, speed * 0.02);
 
     // Smooth the frame we orbit in, not the final position: that is what keeps a
     // loop from throwing the camera around while still following the car over it.
+    // It is the *car's* frame, which is why it is the same frame in all four
+    // views and why a view can be taken up mid-loop without the horizon moving.
     const kf = 1 - Math.exp(-(car.grounded ? 9 : 4.5) * dt);
     const ku = 1 - Math.exp(-(car.grounded ? 7 : 3.0) * dt);
     this.camFwd.lerp(car.fwd, kf).normalize();
     this.camUp.lerp(car.up, ku).normalize();
 
-    const want = new THREE.Vector3().copy(car.pos)
-      .addScaledVector(this.camFwd, -back)
-      .addScaledVector(this.camUp, up);
+    // Looking behind you moves the chase camera to the far side of the car
+    // rather than turning it where it stands: reversed in place it would be
+    // pointing away from the one thing that has to stay in the frame, which is
+    // your own car - it is what everything back there is closing on. The seat
+    // does not move when you look back out of it, so the driver's does not.
+    const want = new THREE.Vector3().copy(car.pos);
+    if (first) {
+      want.addScaledVector(this.camFwd, EYE_FWD).addScaledVector(this.camUp, EYE_UP);
+    } else {
+      want.addScaledVector(this.camFwd, -back * dir).addScaledVector(this.camUp, up);
+    }
 
-    if (!this.started) { this.camPos.copy(want); this.started = true; }
-    // Track the target position hard enough to feel connected, softly enough to
-    // absorb kerbs. Faster = tighter, so high speed does not feel laggy.
-    const kp = 1 - Math.exp(-(11 + speed * 0.16) * dt);
-    this.camPos.lerp(want, kp);
+    const look = new THREE.Vector3().copy(first ? want : car.pos)
+      .addScaledVector(this.camFwd, (7 + speed * 0.16) * dir)
+      .addScaledVector(this.camUp, first ? 0 : 1.1);
 
-    const look = new THREE.Vector3().copy(car.pos)
-      .addScaledVector(this.camFwd, 7 + speed * 0.16)
-      .addScaledVector(this.camUp, 1.1);
-    this.camLook.lerp(look, 1 - Math.exp(-12 * dt));
+    // Two reasons to put the camera where it goes instead of easing it there.
+    // Changing view is a cut: the views are metres apart, and easing between
+    // them drags the camera through the car and out through the road for a
+    // glance that is over before it arrives. And the driver's seat is a fixed
+    // point in the car, so it cannot trail the car - the smoothing below sits a
+    // couple of metres behind its target at speed, which from in here would be
+    // a couple of metres behind the driver.
+    const view = (first ? 'first' : 'chase') + (dir < 0 ? '-rear' : '');
+    const cut = !this.started || view !== this.mode;
+    this.mode = view;
+    this.started = true;
+    if (cut || first) {
+      this.camPos.copy(want);
+      this.camLook.copy(look);
+    } else {
+      // Track the target position hard enough to feel connected, softly enough to
+      // absorb kerbs. Faster = tighter, so high speed does not feel laggy.
+      this.camPos.lerp(want, 1 - Math.exp(-(11 + speed * 0.16) * dt));
+      this.camLook.lerp(look, 1 - Math.exp(-12 * dt));
+    }
 
     this.camera.position.copy(this.camPos);
     if (this.shake > 0) {
@@ -555,7 +607,6 @@ export class Renderer {
     this.sun.position.copy(car.pos).add(this.lightDir);
     this.sun.target.position.copy(car.pos);
     this.sun.target.updateMatrixWorld();
-    void opts;
   }
 
   kick(amount) { this.shake = Math.min(2.2, this.shake + amount); }

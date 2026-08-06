@@ -1359,6 +1359,39 @@ field from a dark field.
   there is to do that is not driving. **Enter is the host's start button** in a
   room, which is why it is no longer a third way to press T, along with
   Backspace - and inside the chat box it still sends the message.
+- **`Q` looks behind you and `F` puts you in the driver's seat, and both are held
+  rather than pressed.** A glance is a glance: it ends when you let go, so there is
+  no camera state to arrive at a corner still in. They are entries in `KEYMAP`
+  beside the throttle rather than tests beside `R` and `T`, because that is the set
+  that gets emptied on blur and on opening the chat box - a keyup swallowed by a
+  message box would otherwise leave you driving the rest of the lap backwards.
+  `readInput` takes the five names it wants out of that set, so the physics never
+  sees these two. **There are no touch rows to match**: four buttons is everything
+  the thumbs reach, and a view a phone could not let go of would be a fault rather
+  than a feature. They work on a replay as well - somebody else's lap is exactly
+  where seeing what the driver could see is worth something.
+- **Two questions, not three cameras.** `F` is where the eye sits and `Q` is which
+  way it looks, so holding both is a glance over your shoulder from the seat, which
+  is the only thing both at once could sensibly mean - and `Renderer.follow` takes
+  them as two booleans rather than as the name of a view. All of them orbit in the
+  *car's* frame, exactly as the chase camera does, so a view can be taken up
+  mid-loop without the horizon doing anything. Three things are deliberately not
+  the chase camera's, though. **Looking back moves the camera to the far side of
+  the car** rather than turning it where it stands: reversed in place it would be
+  pointing away from your own car, which is the thing everything back there is
+  closing on. **A change of view is a cut**, because the views are metres apart and
+  easing between them drags the camera through the car and out through the road,
+  for a glance that is over before it arrives. And **the driver's seat is not
+  smoothed at all**: the eye is a fixed point in the car, and the position
+  smoothing that absorbs kerbs for the chase camera sits a couple of metres behind
+  its target at speed, which from in there is a couple of metres behind the driver.
+  The eye is *inside* the cabin, which is what keeps that view clear for nothing: a
+  box is invisible from within, so the roof, the glass and the pillars are simply
+  not there. It sits at the windscreen rather than at the cabin's middle because a
+  bonnet 1.9 wide seen from 0.4 above it takes a third of the screen from back
+  there, and the view you asked for would be mostly of the car you are sitting in.
+  **The ears ride the camera**, so a look back also swaps the side a rival arrives
+  from - correctly, since you are looking at them when it happens.
 - **`M` is the one key that means two things, and it is the right two.** Solo it
   mutes; in a room it puts the cursor in the chat box (opening the drawer), and
   Enter sends and hands the keyboard straight back to the car - staying in the box
@@ -1380,7 +1413,7 @@ field from a dark field.
 
 ### Tests
 
-`scripts/tests.sh drive` - 521 tests, about 5:30. `test_tracks.py` and
+`scripts/tests.sh drive` - 537 tests, about 5:30. `test_tracks.py` and
 `test_runcheck.py` are pure Python; `test_app.py` runs the real routes against a
 throwaway SQLite file (the `/solo` memory, the board and ghost APIs, and a guest's run
 being replayed after login). **`test_race.py` covers the room's race machine** -
@@ -1420,9 +1453,12 @@ run against a stubbed phase. `test_rules_js.py` is the same lift-by-name trick o
 rules that were each a bug or a contract between two files: that `R` and `T` do
 nothing (and say nothing) until the clock is running, that `placeOnGrid` puts
 pole on the track's own `pole_side` and the row behind it on the other, that
-`lampsOf` reads a recorded flag byte with drift winning over brake, and that the
+`lampsOf` reads a recorded flag byte with drift winning over brake, that the
 tow goes out of `sendPose` as one number the flag disambiguates and comes back
-out of `rivalSound` as the two it is drawn and heard from.
+out of `rivalSound` as the two it is drawn and heard from, and that the two words
+the camera keys are held under travel from `KEYMAP` through `viewKeys` to the
+`opts` that `Renderer.follow` reads in the other file - a rename at either end is
+a key that quietly does nothing, which no screenshot and no lap can catch.
 
 **`test_sound.py` is the one file a screenshot cannot stand in for.**
 `sound.js` builds a graph of nodes and then only moves numbers about inside it,

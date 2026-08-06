@@ -5,11 +5,13 @@ stub, the same trick `test_touch.py` and `test_slipstream.py` use: there is no
 browser in CI, and these are the kind of rule that is one character away from
 being silently wrong.
 
-The last group is not a fixed bug but a contract between two files: the tow
-level goes out over the wire as one number and comes back as the two things a
-rival's slipstream is drawn and heard from, and the flag byte is what says
-which. Getting that backwards is silent - every rival simply looks like it is
-permanently boosting - so both ends are pinned here.
+Two groups are not fixed bugs but contracts between two files. The tow level
+goes out over the wire as one number and comes back as the two things a rival's
+slipstream is drawn and heard from, and the flag byte is what says which.
+Getting that backwards is silent - every rival simply looks like it is
+permanently boosting - so both ends are pinned here. The camera views are the
+same shape of thing: two words leave the keyboard and are read in render.js, and
+one of them being renamed is a key that quietly does nothing.
 
 What the rest have in common is that they used to be bugs:
 
@@ -365,3 +367,66 @@ def test_the_tow_comes_back_as_the_two_numbers_it_is_drawn_from():
     by = {c["id"]: c for c in out}
     assert by["filling"]["charge"] == pytest.approx(0.4) and by["filling"]["boost"] == 0
     assert by["paying"]["boost"] == pytest.approx(0.5) and by["paying"]["charge"] == 0
+
+
+# --- the two views you hold a key for ---------------------------------------
+#
+# A stuck camera is a silent failure at both ends. The views are held rather than
+# toggled, so a keyup is the only thing that ends one; and the two words travel
+# from KEYMAP through `viewKeys` into `Renderer.follow` in another file, where a
+# name that stopped matching would leave a key that does nothing at all.
+
+def _view(*held):
+    """`viewKeys` with exactly these actions held."""
+    import json
+    ctx = _ctx("var keys = new Set(%s);" % json.dumps(list(held)))
+    ctx.eval(_fn("viewKeys"))
+    return json.loads(ctx.eval("JSON.stringify(viewKeys())"))
+
+
+def test_no_key_held_is_the_chase_camera():
+    assert _view() == {"rear": False, "first": False}
+
+
+@pytest.mark.parametrize("held,want", [
+    ("rear", {"rear": True, "first": False}),
+    ("first", {"rear": False, "first": True}),
+])
+def test_each_key_asks_for_its_own_view(held, want):
+    assert _view(held) == want
+
+
+def test_both_at_once_is_a_look_over_the_shoulder():
+    """They are two questions, not three cameras - where the eye sits, and which
+    way it looks - so both at once composes instead of one of them winning."""
+    assert _view("rear", "first") == {"rear": True, "first": True}
+
+
+def test_the_car_never_sees_the_camera_keys():
+    """They are held in the same set as the throttle, which is what gets emptied
+    on blur and on opening the chat box. `readInput` takes the five it wants by
+    name, so being in there costs the physics nothing."""
+    import json
+    ctx = _ctx("var keys = new Set(['rear', 'first']); var touchKeys = new Set();"
+               "var input = {};")
+    ctx.eval(_fn("readInput"))
+    assert json.loads(ctx.eval("JSON.stringify(readInput())")) == {
+        "throttle": 0, "brake": 0, "steer": 0, "handbrake": False}
+
+
+def test_the_keys_are_bound_where_holding_one_can_be_let_go_of():
+    """In KEYMAP, which blur and the chat box clear. Bound beside R and T instead,
+    a keyup swallowed by the message box would leave the camera looking backwards
+    for the rest of the lap."""
+    src = open(GAME_JS).read()
+    keymap = re.search(r"const KEYMAP = \{(.*?)\};", src, re.S).group(1)
+    assert "KeyQ: 'rear'" in keymap and "KeyF: 'first'" in keymap
+
+
+def test_the_renderer_reads_the_same_two_words():
+    """The far end of the contract, in the other file."""
+    render_js = os.path.join(os.path.dirname(GAME_JS), "render.js")
+    follow = re.search(r"^  follow\(car, dt, opts = \{\}\) \{.*?^  \}$",
+                       open(render_js).read(), re.S | re.M)
+    assert follow, "Renderer.follow is gone, or no longer takes opts"
+    assert "opts.first" in follow.group(0) and "opts.rear" in follow.group(0)
