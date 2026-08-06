@@ -52,6 +52,7 @@ export class Car {
     this.slip = 0;             // how sideways we are, 0..1, for tyre smoke
     this.bumpLean = 0;         // visual roll from the last car contact
     this.bumpTimer = 0;
+    this.bumpSlip = 0;         // seconds of let-go tyres left after a hit
     this.lastBump = null;      // {x,y,z,mag} for sparks, consumed by the renderer
     this.respawnIn = 0;
     this.frozen = false;       // held on the grid during a countdown
@@ -86,6 +87,10 @@ export class Car {
     // out engine. It is derived from the gap every frame, so it is back inside
     // half a second if the gap is still there.
     this.catchupBoost = 0;
+    // Nor do the tyres a hit let go of. A car being placed has been picked up
+    // and put down; arriving on the grid halfway through somebody else's shunt
+    // would be a slide nobody caused.
+    this.bumpSlip = 0;
   }
 
   _syncAxes() {
@@ -244,6 +249,19 @@ export class Car {
 
       // --- grip ----------------------------------------------------------
       let grip = handbrake ? T.DRIFT_GRIP : T.GRIP;
+      // A hit lets the tyres go for a moment, and this is the only reason
+      // contact moves a car at all: grip kills lateral velocity at
+      // `1 - exp(-grip*dt)` per step, so a sideways impulse on full grip is
+      // gone inside a tenth of a second however large it is. Ramped out with
+      // the timer rather than switched off, so the car is caught back rather
+      // than snapping straight. See BUMP_SLIP_GRIP in tuning.py.
+      if (this.bumpSlip > 0) {
+        const k = Math.min(1, this.bumpSlip / T.BUMP_SLIP_TIME);
+        grip += (T.BUMP_SLIP_GRIP - grip) * k;
+      }
+      // Grass wins, and it has to be applied after the two above rather than
+      // among them: it is the *worst* surface you are on, not one opinion of
+      // several, so a hit on the grass cannot hand back grip the grass took.
       if (this.offroad) grip = Math.min(grip, T.OFFROAD_GRIP);
       const vLat = this.vel.dot(this.right);
       this.vel.addScaledVector(this.right, -vLat * (1 - Math.exp(-grip * dt)));
@@ -287,6 +305,10 @@ export class Car {
     this.wheelSpin += (this.vel.dot(this.fwd) / 0.45) * dt;
     this.bumpLean *= Math.exp(-7 * dt);
     if (this.bumpTimer > 0) this.bumpTimer -= dt;
+    // Out here with the other timers rather than in the grounded branch that
+    // reads it: a car knocked into the air would otherwise hold the whole of
+    // its let-go tyres frozen for the length of the flight and land on them.
+    if (this.bumpSlip > 0) this.bumpSlip = Math.max(0, this.bumpSlip - dt);
 
     // --- fell off ---------------------------------------------------------
     if (this.pos.y < this.world.killY) this.requestRespawn();
@@ -359,7 +381,7 @@ export class Car {
     const T = this.T;
     const R = T.CAR_RADIUS;
     const half = T.CAR_LEN / 2 - R;
-    const REST = 0.15;                  // barely bouncy: one clean shove
+    const REST = T.CAR_REST;            // barely bouncy: one clean shove
     const myMass = 1;
 
     for (const o of others) {
@@ -396,27 +418,50 @@ export class Car {
         }
       }
 
-      if (hit > 0) {
+      // **A hit is an event, and everything it does happens once.**
+      //
+      // The separation spring and the momentum exchange above are forces and
+      // belong per step. Nothing below is: they are all reactions to a *hit*,
+      // and applying them per step of contact compounds them - which was
+      // already true of the speed scrub (0.88 a frame is nothing after half a
+      // second, hence the cooldown) and quietly true of the other two as well.
+      // The body lean climbed to its own clamp inside a tenth of a second of
+      // rubbing, so a car in sustained contact drove along at 29 degrees of
+      // roll; and the yaw is an angle with no `dt` on it, so at 120 steps a
+      // second it was worth radians a second for as long as the cars touched -
+      // which is the spin this is not supposed to be able to cause. One hit,
+      // one cost, one clank, one nudge.
+      if (hit > T.BUMP_FEEL) {
         const key = o.id || 'x';
-        const cool = this._bumpCooldown.get(key) || 0;
-        // A firm hit scrubs a little speed and leans the body; a light rub does
-        // neither, which is what keeps sustained contact quiet.
-        if (hit > 5) {
+        if ((this._bumpCooldown.get(key) || 0) <= 0) {
+          this._bumpCooldown.set(key, 0.15);
           const side = hx * this.right.x + hy * this.right.y + hz * this.right.z;
           this.bumpLean = Math.max(-0.5, Math.min(0.5, this.bumpLean + side * hit * 0.02));
-          // a whisper of yaw so a side hit reads as a nudge, never a spin
-          this._spin(this.up, -side * Math.min(hit, 20) * 0.0035);
-          // The speed penalty belongs to the *event*, not to every step of
-          // contact. Scrubbing per step compounds - 0.93 a frame is 0.1 after
-          // half a second - so simply driving alongside someone used to bleed a
-          // car almost to a standstill. One hit, one cost.
-          if (cool <= 0) {
-            this._bumpCooldown.set(key, 0.15);
+          // **Told about every touch, charged for the firm ones**, because they
+          // are two questions: there is no contact a driver should not hear,
+          // and a second and a half of gentle rubbing is about ten of these -
+          // charging speed for each would bleed a car for touching somebody.
+          // See BUMP_FEEL / BUMP_COST in tuning.py.
+          if (hit > T.BUMP_COST) {
             this.vel.multiplyScalar(1 - (1 - T.CAR_BUMP_SCRUB) * Math.min(1, hit / 22));
-            this.lastBump = { x: this.pos.x + hx * -1.0, y: this.pos.y, z: this.pos.z + hz * -1.0,
-                              mag: hit };
-            this.onBump && this.onBump(hit);
+            // a whisper of yaw so a side hit reads as a nudge, never a spin
+            this._spin(this.up, -side * Math.min(hit, 20) * 0.0035);
+            // And the tyres let go, which is the only thing here that actually
+            // moves the car - grip eats a sideways impulse inside a tenth of a
+            // second whatever its size.
+            //
+            // Deliberately *not* scaled by how hard the hit was, though every
+            // instinct says it should be: the impulse it is letting through is
+            // already proportional to the hit, so scaling the window as well
+            // squares it, and a firm-but-not-huge shunt ends up moving the car
+            // less than the same shunt on full grip would suggest. One window,
+            // and the physics does the scaling - measured 0.39 units of
+            // displacement at 6 u/s against 1.47 at 20.
+            this.bumpSlip = T.BUMP_SLIP_TIME;
           }
+          this.lastBump = { x: this.pos.x + hx * -1.0, y: this.pos.y, z: this.pos.z + hz * -1.0,
+                            mag: hit };
+          this.onBump && this.onBump(hit);
         }
       }
     }

@@ -170,19 +170,53 @@ def test_it_is_engine_on_the_throttle_and_not_free_speed(rt):
 # --- the numbers, which are the whole of how big this feels ----------------
 
 
-def test_full_help_is_a_slight_lift_and_much_less_than_a_tow():
+# What the HUD draws next to the word km/h, from `hudFast` in game.js. The
+# target is a number on the dial rather than a multiplier, so the multiplier is
+# derived from it and this is the only place the conversion is written down
+# outside the file that draws it.
+DIAL = 3.1
+FULL_HELP_ON_THE_DIAL = 180
+
+
+def test_full_help_reaches_a_hundred_and_eighty_on_the_dial():
     """Top speed is where the engine fights DRAG, so a multiplier is squared.
 
-    The size of this is the entire design: enough that a gap closes over a lap,
-    little enough that being behind is never the fast way round. A tow is a move
-    you lined up and this is one you were handed, so the tow has to be worth
-    more - by a lot, or dropping back becomes a tactic.
+    The size of this is the whole design, and it is expressed as **the number on
+    the speedo** rather than as a lift, because that is the only form of it a
+    driver ever sees. It was 1.22, which read 171 against a base of 155 - about
+    a tenth, which is not a thing you can feel from inside the car, and a
+    mechanic nobody notices is a mechanic that is not doing its job.
+
+    This is deliberately checked as an exact figure rather than a band: it is a
+    round number chosen for the dial, so a change to it is a decision about how
+    fast the game is and should have to be made here as well as in tuning.py.
+    """
+    full = (T.ACCEL * T.CATCHUP_ACCEL_MULT / T.DRAG) ** 0.5
+    assert round(full * DIAL) == FULL_HELP_ON_THE_DIAL
+
+
+def test_dropping_back_is_still_never_the_fast_way_round():
+    """The rule this replaced, kept as the thing it was actually protecting.
+
+    Catch-up used to be pinned under *half a tow*, on the grounds that being
+    handed the bigger of the two would make dropping back a tactic. At 180 it is
+    worth about three quarters of one, so that pin is gone - and the fear it
+    encoded does not survive the arithmetic. Collecting the whole of this means
+    being CATCHUP_FULL seconds down; the help is worth the difference between two
+    top speeds, and no amount of it buys back five seconds inside a lap. The tow
+    is still the better of the two and still the one you plan.
+
+    What is worth pinning is the direction: a tow must remain the larger prize,
+    or the fast way round genuinely would be to lift off and wait.
     """
     full = (T.ACCEL * T.CATCHUP_ACCEL_MULT / T.DRAG) ** 0.5
     tow = (T.ACCEL * T.SLIP_ACCEL_MULT / T.DRAG) ** 0.5
-    lift = full / T.MAX_SPEED - 1
-    assert 0.05 < lift < 0.15, "a slight lift, not a different car"
-    assert lift < (tow / T.MAX_SPEED - 1) / 2, "worth less than half a tow"
+    assert full < tow, "a tow you lined up beats help you were handed"
+    # What the deficit costs against what the help pays back, over the length of
+    # one CATCHUP_FULL. Being that far down is worth several seconds; the extra
+    # top end is worth a fraction of one, so the trade is never on.
+    paid_back = (full - T.MAX_SPEED) * T.CATCHUP_FULL / T.MAX_SPEED
+    assert paid_back < T.CATCHUP_FULL / 2, "the gap always costs more than it pays"
 
 
 def test_the_two_stack_and_still_land_under_the_hard_clamp():

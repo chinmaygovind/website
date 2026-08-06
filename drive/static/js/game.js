@@ -351,7 +351,10 @@ function wireCarEvents() {
   const car = S.car;
   car.onBump = (mag) => {
     S.sound.bump(mag);
-    S.renderer.kick(Math.min(1.4, mag / 18));
+    // Harder than it was (`mag / 18`), because contact is now something that
+    // moves you - see BUMP_SLIP_GRIP in tuning.py - and a shove you can feel in
+    // the steering with a camera that barely notices reads as a fault.
+    S.renderer.kick(Math.min(1.4, mag / 12));
     if (car.lastBump) {
       S.renderer.smoke(new THREE.Vector3(car.lastBump.x, car.lastBump.y, car.lastBump.z),
                        new THREE.Vector3(0, 1, 0), 'spark');
