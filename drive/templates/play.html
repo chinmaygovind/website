@@ -382,14 +382,21 @@
       <div class="set-main">
         <h3>Splits</h3>
         <div class="opt-row" id="ghostOpts">
+          {# Title case on every one of them, and the same words in both modes.
+             It used to read "My best here" in a room, to say that the lap is
+             this session's rather than your all-time PB - which is true, and is
+             already the sentence under the row. It cost the whole row a line:
+             four chips and the ghost switch fit beside each other only without
+             it, and "Provisional pole" is the one word that cannot be shortened
+             because it is what the choice *is*. #}
           <button class="opt" data-ghost="off">Off</button>
-          <button class="opt" data-ghost="me">{% if mode == 'room' %}My best here{% else %}My best{% endif %}</button>
+          <button class="opt" data-ghost="me">My Best</button>
           {% if mode == 'room' %}
-          <button class="opt" data-ghost="pole">Provisional pole</button>
+          <button class="opt" data-ghost="pole">Provisional Pole</button>
           {% endif %}
-          <button class="opt" data-ghost="wr">World record</button>
+          <button class="opt" data-ghost="wr">World Record</button>
           {% if mode != 'room' %}
-          <button class="opt" data-ghost="others">View others</button>
+          <button class="opt" data-ghost="others">View Others</button>
           {% endif %}
         </div>
       </div>
@@ -402,7 +409,7 @@
           <circle cx="9.6" cy="10.4" r="1.1"/>
           <circle cx="14.4" cy="10.4" r="1.1"/>
         </svg>
-        Ghost: <span id="btnGhostState">on</span>
+        Ghost: <span id="btnGhostState">On</span>
       </button>
     </div>
     <div class="ghost-now" id="ghostNow"></div>
@@ -418,7 +425,7 @@
           <path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4z"/>
           <path d="M15.8 9.2a4 4 0 0 1 0 5.6M18.4 6.6a7.6 7.6 0 0 1 0 10.8"/>
         </svg>
-        Sound: <span id="btnSoundState">on</span>
+        Sound: <span id="btnSoundState">On</span>
       </button>
       <button class="btn secondary toggle" id="btnMusic" aria-pressed="false">
         <svg class="icn" viewBox="0 0 24 24" aria-hidden="true">
@@ -426,7 +433,7 @@
           <circle cx="6.6" cy="17.6" r="2.4"/>
           <circle cx="16.6" cy="15.4" r="2.4"/>
         </svg>
-        Music: <span id="btnMusicState">off</span>
+        Music: <span id="btnMusicState">Off</span>
       </button>
     </div>
 
@@ -436,9 +443,9 @@
          only control on this sheet you cannot undo by pressing it again. -->
     <div class="sheet-foot">
       <div class="btn-grid two">
-        <a class="btn secondary board-link" href="/track/{{ track.slug }}">View leaderboard</a>
+        <a class="btn secondary board-link" href="/track/{{ track.slug }}">View Leaderboard</a>
         {% if mode == 'room' %}
-        <a class="btn danger" id="btnQuit" href="/lobbies">Leave room</a>
+        <a class="btn danger" id="btnQuit" href="/lobbies">Leave Room</a>
         {% else %}
         <a class="btn danger" id="btnQuit" href="/">Leave</a>
         {% endif %}

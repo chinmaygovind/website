@@ -1088,9 +1088,14 @@ field from a dark field.
   the horizon. Behind the start line, angled down at the road, is the shot.
 - **Settings is only settings.** Title, an X, and the things you set. The
   session controls moved to the HUD. It is **Splits and the ghost car, then
-  Sound and Music, then the two ways out** - a white *View leaderboard* beside
+  Sound and Music, then the two ways out** - a white *View Leaderboard* beside
   the red *Leave*, the red one last because it is the only control on the sheet
-  that pressing again does not undo.
+  that pressing again does not undo. Every label on it is **Title Case**, down
+  to the state a switch is in (*Ghost: On*). It is also the one sheet wider
+  than `.sheet.wide` (`.sheet.wide.settings`, 720px): its top row is four
+  choices *and* a switch beside them, and in a room the four include
+  *Provisional Pole*, which cannot be said in fewer words - at 620 they wrapped
+  and left a hole under the switch.
 - **Which lap you drive against and whether it is drawn are two switches.** They
   were one - the "Ghost" row, where picking a lap turned the car on and `Off`
   turned both off together - so the only way to stop a translucent car driving
@@ -1322,7 +1327,8 @@ field from a dark field.
   `is_record` all describe your stored PB row, not the lap you just drove: the lap's
   own medal is computed client-side and its own placing is the separate `run_rank`.
 - **The touch buttons are sized off the height of the screen**, not off a
-  breakpoint: `clamp(66px, 17vh, 112px)`, with the glyph a percentage of the
+  breakpoint: `clamp(76px, 19.5vh, 124px)` (and the two small ones above the
+  pedals `clamp(46px, 11.5vh, 72px)`), with the glyph a percentage of the
   button so it needs no sizes of its own. A phone in landscape is about 390px
   tall and a tablet nearly 800, and both land in "not a desktop", so one fixed
   76px was a thumb-sized button on the phone and a postage stamp held at arm's

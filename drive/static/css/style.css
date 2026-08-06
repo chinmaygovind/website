@@ -600,6 +600,11 @@ body.room .solo-only { display: none; }
 /* Settings and the race result both hold rows of buttons, and 460px is not
    enough for three of them side by side. */
 .sheet.wide { max-width: 620px; }
+/* Settings is wider again: its top row is four choices *and* the ghost switch
+   beside them, and at 620 the room's four - one of which is "Provisional
+   Pole", which cannot be said in fewer words - wrapped onto a second line and
+   left a hole under the switch. */
+.sheet.wide.settings { max-width: 720px; }
 .sheet h2 { margin-top: 0; }
 .sheet-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: .55rem;
                  margin-top: 1.2rem; }
@@ -983,11 +988,11 @@ body.touch #touch { display: block; }
    phone and a postage stamp held at arm's length on the iPad. Height is the
    right dimension: it is what the thumbs' reach is limited by in landscape,
    and it is what the buttons have to fit inside stacked. Clamped at both ends,
-   because past about 112px a button stops being easier to hit and starts being
+   because past about 124px a button stops being easier to hit and starts being
    a thing in front of the road. `svg { width: 45% }` keeps the glyph in
    proportion instead of needing its own set of sizes. */
 .tbtn {
-  width: clamp(66px, 17vh, 112px); height: clamp(66px, 17vh, 112px);
+  width: clamp(76px, 19.5vh, 124px); height: clamp(76px, 19.5vh, 124px);
   border-radius: 50%;
   /* Dark fill, light stroke. A white wash reads fine against tarmac and
      vanishes completely against a bright sky or a sunlit kerb, and half of
@@ -1018,7 +1023,7 @@ body.touch #touch { display: block; }
    one is still holding a corner. Kept as a pair and pushed to the right - so
    they sit over the throttle, where the thumb already rests - rather than spread
    across the pad, which put a gap between two buttons that belong together. */
-.tbtn.small { width: clamp(40px, 10vh, 64px); height: clamp(40px, 10vh, 64px); opacity: .8; }
+.tbtn.small { width: clamp(46px, 11.5vh, 72px); height: clamp(46px, 11.5vh, 72px); opacity: .8; }
 #tGas { border-color: rgba(140, 240, 170, .6); }
 #tBrake { border-color: rgba(255, 150, 130, .6); }
 /* With the room drawer out you are reading, not driving - and the pedals would

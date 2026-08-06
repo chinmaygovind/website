@@ -735,8 +735,8 @@ function renderSettings() {
 // somebody else's lap are new, and they are still hidden for the whole of a
 // race by ghostOn(), where a translucent extra car is just a fake rival.
 
-const GHOST_LABEL = { off: 'Off', me: 'My best', wr: 'World record',
-                      pole: 'Provisional pole', run: 'Chasing' };
+const GHOST_LABEL = { off: 'Off', me: 'My Best', wr: 'World Record',
+                      pole: 'Provisional Pole', run: 'Chasing' };
 
 // What G steps through, and it is not the same list in the two places. `run` is
 // deliberately in neither - it is not a mode you can arrive at by pressing a
@@ -799,7 +799,7 @@ function setGhostCar(on, opts = {}) {
   const b = $('btnGhost');
   if (b) {
     b.classList.toggle('on', on);
-    $('btnGhostState').textContent = on ? 'on' : 'off';
+    $('btnGhostState').textContent = on ? 'On' : 'Off';
     b.setAttribute('aria-pressed', on ? 'true' : 'false');
   }
   if (!opts.quiet) toast('Ghost car ' + (on ? 'on' : 'off'));
@@ -906,7 +906,7 @@ function loadPoleGhost() {
 function setSound(on, opts = {}) {
   S.sound.mute(!on);
   if (opts.remember !== false) rememberFlag('drive.sound', on);
-  $('btnSoundState').textContent = on ? 'on' : 'off';
+  $('btnSoundState').textContent = on ? 'On' : 'Off';
   $('btnSound').classList.toggle('on', on);
   $('btnSound').setAttribute('aria-pressed', on ? 'true' : 'false');
 }
@@ -914,7 +914,7 @@ function setSound(on, opts = {}) {
 function setMusic(on, opts = {}) {
   S.sound.setMusic(on);
   if (opts.remember !== false) rememberFlag('drive.music', on);
-  $('btnMusicState').textContent = on ? 'on' : 'off';
+  $('btnMusicState').textContent = on ? 'On' : 'Off';
   $('btnMusic').classList.toggle('on', on);
   $('btnMusic').setAttribute('aria-pressed', on ? 'true' : 'false');
 }
