@@ -647,6 +647,44 @@ Road are both in `tracks.EXPOSED`.
   resolved Mario-Kart-style (impulse + penetration spring, never positional snapping,
   tangential velocity preserved, per-pair bump cooldown) - see `Car.resolveCars`.
   `FLAG.BRAKE` rides along in the pose so a rival's brake lights work.
+- **A hit only moves a car if the tyres let go, and that is not what anybody
+  reaches for first.** Contact felt weightless, and the obvious fix - a bigger
+  `CAR_REST`, a stiffer `CAR_PUSH` - does nothing at all: `GRIP` kills lateral
+  velocity at `1 - exp(-GRIP*dt)` per step, so a sideways impulse is gone inside
+  a tenth of a second *however large it is*. Measured, raising both of those
+  moved a 14 u/s side-swipe from 0.26 units of displacement to 0.25. The car is
+  bolted to its heading and no impulse gets to argue. So a firm hit briefly
+  unsettles the car instead: grip falls to `BUMP_SLIP_GRIP` (4, about halfway to
+  the handbrake's own 2.4) and recovers over `BUMP_SLIP_TIME`, which takes the
+  same swipe to 0.99 and a 20 u/s punt to 1.57 - against a 1.9-wide car on a
+  9-wide road, a place lost rather than a noise. **Neither number is scaled by
+  how hard the hit was**, though every instinct says they should be: the impulse
+  they are letting through already is, so scaling the window on top of it squares
+  the relationship and an ordinary firm shunt comes out moving the car *less*
+  than the same shunt on full grip would suggest. The timer is decayed with the
+  other per-step timers rather than in the grounded branch that reads it, or a
+  car knocked into the air holds the whole of it frozen for the flight and lands
+  on a slide a second after the hit that caused it.
+- **Two thresholds, because there were two questions behind one number.** A
+  single `hit > 5` decided both whether a contact was *reported* and whether it
+  *cost* anything, so every touch under it was completely silent - no clank, no
+  sparks, no camera kick, no lean - and running wheel to wheel down a straight,
+  which is most of what contact in a race actually is, looked and sounded like
+  driving alone. `BUMP_FEEL` (1.5) is when you are told and `BUMP_COST` (5, the
+  old number, unmoved) is when it hurts. The gap between them is where racing
+  side by side lives: heard, and free. Lowering one gate instead would have
+  walked straight back into the compounding `CAR_BUMP_SCRUB`'s own note is
+  about - the per-pair cooldown is 0.15s, so a second and a half of rubbing is
+  about ten events, and charging speed for each of them is a tenth of your speed
+  gone for touching somebody gently. **Everything a hit does now happens once**,
+  on the event rather than per step of contact: that was already true of the
+  scrub and quietly false of the other two, so the body lean climbed to its own
+  clamp inside a tenth of a second (a car rubbing alongside somebody drove along
+  at 29 degrees of roll) and the yaw - an angle with no `dt` on it - was worth
+  radians a second for as long as the cars touched, which is the spin it is
+  explicitly not supposed to be able to cause. `test_bump.py` pins all of it,
+  and pins the grip release against *its own absence* rather than against a
+  figure in a comment, since that comparison is the whole surprise.
 - **A race is recorded off those same poses, and the recording outlives the
   room.** `_record_race` runs on the broadcast tick and writes one frame per car
   per `1/REPLAY_HZ` from the green light, so frame *n* of every car is the same
@@ -756,14 +794,27 @@ Road are both in `tracks.EXPOSED`.
     it; a step change at a threshold is a car that surges every time the gap
     wobbles across it.
   - **More engine, not a raised limit**, the same term the tow multiplies, so
-    `CATCHUP_ACCEL_MULT` 1.22 is worth its square root in top speed (50 -> 55)
-    and only while you are on the power. **Deliberately less than half a tow**:
-    the tow is a move you lined up and this is one you were given, and were it
-    the bigger of the two, dropping back would be the fast way round. They
-    **stack** - a car a long way down that has finally caught somebody is
-    exactly the one that should be able to come past - and the pair of them
-    still lands under the `MAX_SPEED * 1.7` clamp, or the clamp would be setting
-    the top speed instead of the tuning.
+    `CATCHUP_ACCEL_MULT` is worth its square root in top speed and only while
+    you are on the power. They **stack** - a car a long way down that has
+    finally caught somebody is exactly the one that should be able to come
+    past - and the pair of them still lands under the `MAX_SPEED * 1.7` clamp
+    (71 against 85), or the clamp would be setting the top speed instead of the
+    tuning.
+  - **Full help is 180 on the speedo, and that is the form the number is kept
+    in.** The HUD draws `speed * 3.1`, so 1.3486 puts the top of the ramp on
+    exactly that, and `test_full_help_reaches_a_hundred_and_eighty_on_the_dial`
+    pins the figure on the dial rather than a band around the multiplier -
+    changing how fast the game is should have to be said twice. It was 1.22,
+    which read 171 against a base of 155: about a tenth, which is not something
+    you can feel from inside the car, and a mechanic nobody notices is not
+    doing its job. That makes it worth about **three quarters of a tow**, where
+    it used to be pinned deliberately under half on the grounds that being
+    handed the bigger of the two would make dropping back the fast way round.
+    The pin is gone and the fear does not survive the arithmetic: collecting
+    the whole of this means actually *being* `CATCHUP_FULL` seconds down, and
+    no amount of extra top end buys five seconds back inside a lap. What is
+    still pinned is the direction - a tow has to remain the larger prize, or
+    lifting off and waiting genuinely would be a tactic.
   - **Nothing is taken off the leader.** A rubber band that slows the car in
     front takes away the race it is trying to make, and the driver in the lead
     is driving the car they qualified.
@@ -1532,7 +1583,7 @@ field from a dark field.
 
 ### Tests
 
-`scripts/tests.sh drive` - 576 tests, about 1:25 (four workers, split by file). `test_tracks.py` and
+`scripts/tests.sh drive` - 589 tests, about 1:25 (four workers, split by file). `test_tracks.py` and
 `test_runcheck.py` are pure Python; `test_app.py` runs the real routes against a
 throwaway SQLite file (the `/solo` memory, the board and ghost APIs, and a guest's run
 being replayed after login). **`test_race.py` covers the room's race machine** -
@@ -1579,10 +1630,24 @@ catch-up boost**, in the same two halves: `Car.catchup` run for real for the
 deadzone, the ramp and the smoothed follow, and `catchupOn`/`gapToLeader` lifted
 by name for the phase gate and for the gap - that a finisher is not somebody you
 are still catching, that leading is worth nothing, and that the two are one call
-so a caller cannot get a gap it should not have. Two of its tests are only about
-the *numbers*, since the whole design is that this is small: full help must be
-worth under half a tow, and the two of them stacked must still land under the
-hard velocity clamp, or the clamp is what sets the top speed. `test_rules_js.py` is the same lift-by-name trick on
+so a caller cannot get a gap it should not have. Three of its tests are only
+about the *numbers*, since how big this is is the whole design: full help has to
+read **exactly 180 on the speedo** (pinned on the dial rather than as a band
+round the multiplier, so making the game faster has to be said twice), a tow has
+to stay the larger of the two prizes or lifting off and waiting becomes a tactic,
+and the pair of them stacked must still land under the hard velocity clamp, or
+the clamp is what sets the top speed. **`test_bump.py` is that file again for
+car-to-car contact**, and it needs a world where those two do not - contact
+happens between cars on a road, and the grip term the whole thing turns on only
+exists while a car is grounded. It pins the two thresholds (nothing below
+`BUMP_FEEL`, heard-and-free between the two, charged past `BUMP_COST`), that ten
+events of sustained rubbing still cost under 2% of your speed, that the body is
+not leaned over by held contact, that a hit is never a spin or a rollover at any
+closing speed, that the let-go tyres come back on their own clock - and the one
+that is the actual finding, that the displacement comes from `BUMP_SLIP_GRIP` and
+from nothing else, asserted against *the same hit with that one number pinned
+back to `GRIP`* rather than against a figure in a comment that would rot.
+`test_rules_js.py` is the same lift-by-name trick on
 rules that were each a bug or a contract between two files: that `R` and `T` do
 nothing (and say nothing) until the clock is running, that `placeOnGrid` puts
 pole on the track's own `pole_side` and the row behind it on the other, that

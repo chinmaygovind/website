@@ -121,8 +121,60 @@ WALL_SCRUB = 0.86          # tangential speed kept per wall hit
 # --- collision -------------------------------------------------------------
 PROBE = 2.6                # how far to look for a surface under the car
 CAR_RADIUS = 1.25          # collision sphere for walls and other cars
-CAR_PUSH = 26.0            # how hard cars shove each other apart
-CAR_BUMP_SCRUB = 0.93      # speed kept after a car-to-car hit
+CAR_PUSH = 32.0            # how hard cars shove each other apart
+CAR_BUMP_SCRUB = 0.88      # speed kept after a car-to-car hit
+CAR_REST = 0.35            # normal velocity returned by a hit; barely bouncy
+
+# --- what a hit does -------------------------------------------------------
+# Contact used to be decided by one number - a single `hit > 5` in
+# `Car.resolveCars` - and that one number was doing two unrelated jobs. Below it
+# a contact was *completely* silent: no clank, no sparks, no camera, no lean. So
+# running wheel to wheel down a straight, which is most of what contact in a
+# race actually is, both looked and sounded like driving alone. Above it a
+# contact cost speed. Those are two questions and they want two answers:
+#
+# - **`BUMP_FEEL` is when you are told.** Low, because there is no such thing as
+#   a touch that should not register on the driver. `Sound.bump(mag)` already
+#   scales its pitch and level off the magnitude, so the same call covers a
+#   scrape at 2 and a bang at 20 with nothing new written.
+# - **`BUMP_COST` is when it hurts**, and it is deliberately today's number,
+#   unmoved. The per-pair cooldown is 0.15s, so a second and a half of gentle
+#   rubbing is about ten events; charging each of them speed compounds to a
+#   tenth of it gone for touching somebody lightly, which is the trap the note
+#   on CAR_BUMP_SCRUB is about. Rubbing is heard and free; a hit is heard and
+#   expensive.
+BUMP_FEEL = 1.5            # closing speed that is seen and heard
+BUMP_COST = 5.0            # and that also costs speed, yaw and grip
+
+# **A hit has to let the tyres go, or it does not move the car at all.**
+#
+# This is the whole of why bumping felt weightless, and it is not a number that
+# was too small - it is that GRIP kills lateral velocity at
+# `1 - exp(-GRIP*dt)` per step, so *any* sideways impulse is gone inside a tenth
+# of a second. Measured: a 14 u/s side-swipe moved the car 0.26 units, and
+# raising the restitution and the push spring moved it 0.25. The car is bolted
+# to its heading and no impulse gets to argue with that.
+#
+# So a firm hit briefly unsettles the car instead, which is also what a shunt
+# does to a real one: grip falls toward BUMP_SLIP_GRIP - about halfway to
+# DRIFT_GRIP, the handbrake's own - and recovers over BUMP_SLIP_TIME. The same
+# 14 u/s swipe now moves the car 0.84 units and a 20 u/s punt 1.47, which
+# against a 1.9-wide car and a 9-wide road is a place lost rather than a noise.
+#
+# **Neither number is scaled by how hard the hit was**, and the instinct to
+# scale them is wrong twice over. The impulse the let-go tyres are letting
+# through is already proportional to the hit, so scaling the window on top of it
+# squares the relationship and a firm-but-ordinary shunt comes out moving the car
+# less than the same shunt would on full grip - which is the opposite of the
+# point. One window, one depth, and the physics does the scaling: 0.39 units of
+# displacement at 6 u/s, 0.84 at 14, 1.47 at 20.
+#
+# Yaw authority is deliberately **not** part of this. A whisper of it is applied
+# on a side hit so contact reads as a nudge, and it stays a whisper: a car that
+# spins because somebody leaned on it turns the race into a demolition derby,
+# and everything above is about being moved off your line, not off the track.
+BUMP_SLIP_GRIP = 4.0       # grip while the tyres are let go (GRIP is 13.5)
+BUMP_SLIP_TIME = 0.45      # seconds to recover it, scaled by the hit
 
 # --- slipstream ------------------------------------------------------------
 # Sit in the hole another car is punching through the air and, after a moment,
@@ -170,19 +222,28 @@ SLIP_ACCEL_MULT = 1.5      # engine force while boosting; top speed x sqrt(1.5)
 #   CATCHUP_FULL - about seven seconds of real driving, which on any track in
 #   the pool is most of a corner and change.
 # - **More engine, not a raised limit**, the same way the slipstream is: top
-#   speed is where ACCEL fights the quadratic DRAG, so 1.22 lifts it by its
-#   square root - about a tenth, MAX_SPEED 50 -> 55 - and the car has to
-#   accelerate up to it. Deliberately less than half of what a tow is worth:
-#   the tow is a move you lined up and this is one you were given, and being
-#   given the bigger of the two would make dropping back the fast way round.
-#   It stacks with a tow, because a car eight seconds down that has finally
-#   caught somebody is exactly the car that should be able to make the pass.
+#   speed is where ACCEL fights the quadratic DRAG, so the multiplier lifts it
+#   by its square root and the car has to accelerate up to the new one. It
+#   stacks with a tow, because a car eight seconds down that has finally caught
+#   somebody is exactly the car that should be able to make the pass, and the
+#   pair of them still lands under the MAX_SPEED * 1.7 clamp (71 against 85) -
+#   or the clamp would be setting the top speed and this would be decoration.
+# - **Full help is 180 on the speedo**, which is where the number comes from:
+#   the HUD draws speed x 3.1, so 1.3486 puts the top of the ramp on exactly
+#   that. It was 1.22, which read 171 against a base of 155 - a lift you could
+#   not feel from inside the car, which is a poor way to spend a mechanic.
+#   That does make it worth **more than half a tow**, which it deliberately was
+#   not before, on the grounds that being handed the bigger of the two would
+#   make dropping back the fast way round. It does not: collecting the whole of
+#   this means actually *being* five seconds down, and five seconds costs far
+#   more than 8 u/s of top end pays back. The tow is still the better move and
+#   still the one you plan; this is the one that keeps you in sight of it.
 # - **Nothing is taken off the leader.** A rubber band that slows the car in
 #   front takes away the race it is trying to create; this only ever gives, so
 #   the driver in the lead is driving the same car they qualified.
 CATCHUP_DEAD = 1.5         # seconds of gap that are worth nothing
 CATCHUP_FULL = 5.0         # gap at which the whole of it is on
-CATCHUP_ACCEL_MULT = 1.22  # engine force at full help; top speed x sqrt(1.22)
+CATCHUP_ACCEL_MULT = 1.3486  # engine at full help; top speed 50 -> 58.1 (180 on the dial)
 CATCHUP_SMOOTH = 2.5       # how fast the help follows the gap, per second
 
 # --- simulation ------------------------------------------------------------
@@ -243,7 +304,8 @@ _EXPORT = [
     "GRAVITY", "AIR_STEER", "AIR_PITCH", "AIR_ROLL", "ALIGN_GROUND",
     "ALIGN_AIR", "COYOTE", "STICK_TILT", "STICK_SPEED", "STICK_FORCE",
     "SNAP", "SUSP", "OFFROAD_DRAG", "OFFROAD_GRIP", "WALL_BOUNCE", "WALL_SCRUB",
-    "PROBE", "CAR_RADIUS", "CAR_PUSH", "CAR_BUMP_SCRUB", "FIXED_DT",
+    "PROBE", "CAR_RADIUS", "CAR_PUSH", "CAR_BUMP_SCRUB", "CAR_REST",
+    "BUMP_FEEL", "BUMP_COST", "BUMP_SLIP_GRIP", "BUMP_SLIP_TIME", "FIXED_DT",
     "MAX_STEPS", "RESPAWN_DELAY",
     "SLIP_RANGE", "SLIP_HALF_W", "SLIP_ALIGN", "SLIP_MIN_SPEED", "SLIP_CHARGE",
     "SLIP_DECAY", "SLIP_BOOST", "SLIP_ACCEL_MULT",
