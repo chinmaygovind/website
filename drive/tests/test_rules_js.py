@@ -430,3 +430,60 @@ def test_the_renderer_reads_the_same_two_words():
                        open(render_js).read(), re.S | re.M)
     assert follow, "Renderer.follow is gone, or no longer takes opts"
     assert "opts.first" in follow.group(0) and "opts.rear" in follow.group(0)
+
+
+# --- the splits and the ghost car are two switches --------------------------
+
+GHOST_STUB = """
+var toasts = [];
+var els = {};
+function El() { this.cls = {}; this.attrs = {}; this.textContent = ''; }
+El.prototype.classList = null;
+function $(id) {
+  if (!els[id]) {
+    var e = new El();
+    e.classList = {on: false,
+                   toggle: function (c, v) { e.cls[c] = v; }};
+    e.setAttribute = function (k, v) { e.attrs[k] = v; };
+    els[id] = e;
+  }
+  return els[id];
+}
+function toast(t) { toasts.push(t); }
+function rememberFlag() {}
+var S = {showGhost: true, ghostMode: 'wr', ghost: [1], ghostTimes: [{s: 0, ms: 0}]};
+"""
+
+
+def test_hiding_the_ghost_car_leaves_the_lap_it_was_driving():
+    """The whole point of splitting the two: the reference lap is what the
+    split deltas are measured against, and turning off a translucent car used
+    to throw it away with them."""
+    ctx = _ctx(GHOST_STUB)
+    ctx.eval(_fn("setGhostCar"))
+    ctx.eval("setGhostCar(false);")
+    assert ctx.eval("S.showGhost") is False
+    assert ctx.eval("S.ghostMode") == "wr"
+    assert ctx.eval("S.ghostTimes !== null && S.ghostTimes.length > 0")
+
+
+def test_the_ghost_car_is_the_only_thing_that_switch_decides():
+    """`ghostOn` is what the drawing asks, and it reads that flag and the lap.
+    Neither one on its own is a car on the road."""
+    ctx = _ctx(GHOST_STUB)
+    ctx.eval("CFG = {mode: 'solo'};")
+    ctx.eval(_fn("ghostOn"))
+    assert ctx.eval("ghostOn()") is True
+    ctx.eval("S.showGhost = false;")
+    assert ctx.eval("ghostOn()") is False
+    # And a lap that never loaded is no car either, however the switch is set.
+    ctx.eval("S.showGhost = true; S.ghost = null;")
+    assert ctx.eval("ghostOn()") is False
+
+
+def test_picking_a_lap_does_not_turn_the_ghost_car_back_on():
+    """It used to be the same assignment - `showGhost = mode !== 'off'` - so
+    every press on the splits row overrode a switch one button to the right."""
+    src = open(GAME_JS).read()
+    body = re.search(r"^function setGhostMode\(.*?^\}", src, re.S | re.M).group(0)
+    assert "S.showGhost" not in body

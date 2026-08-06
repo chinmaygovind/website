@@ -33,11 +33,11 @@ const fmt = (ms) => {
 const fmtDelta = (ms) => (ms >= 0 ? '+' : '') + (ms / 1000).toFixed(3);
 
 /**
- * The ghost you picked last time is the ghost you probably still want.
+ * The lap you picked last time is the lap you probably still want.
  *
  * Provisional pole is only a thing in a room, so it is only remembered into
- * one: arriving alone on a time trial with the ghost set to a session that is
- * not happening would be a setting that cannot come true.
+ * one: arriving alone on a time trial with the splits set against a session
+ * that is not happening would be a setting that cannot come true.
  */
 function storedGhostMode() {
   const ok = CFG.mode === 'room' ? ['off', 'me', 'pole', 'wr'] : ['off', 'me', 'wr'];
@@ -45,6 +45,18 @@ function storedGhostMode() {
     const v = localStorage.getItem('drive.ghost');
     return ok.includes(v) ? v : 'me';
   } catch (e) { return 'me'; }
+}
+
+/** A remembered on/off, for the three switches in settings. */
+function storedFlag(key, dflt) {
+  try {
+    const v = localStorage.getItem(key);
+    return v == null ? dflt : v === '1';
+  } catch (e) { return dflt; }
+}
+
+function rememberFlag(key, on) {
+  try { localStorage.setItem(key, on ? '1' : '0'); } catch (e) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -58,10 +70,16 @@ const S = {
   // Whose lap the ghost is, and what colour the car drawing it currently is.
   // Two fields because the view is rebuilt only when the answer changes.
   ghostColor: null, ghostViewColor: null,
-  // Which lap the ghost is: off | me | wr | run (one picked off the board).
+  // Which lap you are driving against: off | me | wr | run (one picked off the
+  // board) | pole. It is what the split deltas are measured against, and it is
+  // the lap the ghost car drives if the ghost car is on - two questions, and
+  // the second one is the line below.
   ghostMode: storedGhostMode(),
   ghostRun: null,          // {id, who, time_ms} while chasing somebody's lap
-  showGhost: true,
+  // Whether that lap is *drawn* as a car. Nothing to do with which lap it is:
+  // wanting the splits off a lap you do not want a translucent car driving in
+  // front of you is an ordinary thing to want, and it used to be unaskable.
+  showGhost: storedFlag('drive.ghostcar', true),
   board: null,             // the last board fetched, for the detail pane
   mySplits: [],            // your PB's splits, to compare somebody else's with
   watch: null,             // a replay playing instead of a run
@@ -310,16 +328,20 @@ function loadTrack(track, opts = {}) {
   S.pole = null;
   S.ghostRun = null;
   S.mySplits = (CFG.pbSplits && CFG.pbSplits[track.slug]) || [];
-  // **Arriving somewhere new means no ghost.** A track you have just switched
-  // to is one you are looking at rather than attacking, and a car you have
-  // never driven against appearing on your first lap of it is in the way. Not
-  // remembered: it is what this track starts as, not a preference you set, so
-  // the ghost you actually chose is still there next time you open the game.
-  if (opts.switched) setGhostMode('off', { quiet: true, remember: false });
-  else {
-    if (S.ghostMode === 'run') S.ghostMode = 'me';
-    setGhostMode(S.ghostMode, { quiet: true });
-  }
+  // **Arriving somewhere new means no ghost car.** A track you have just
+  // switched to is one you are looking at rather than attacking, and a car you
+  // have never driven against appearing on your first lap of it is in the way.
+  // Not remembered: it is what this track starts as, not a preference you set,
+  // so the setting you actually chose is still there next time you open the
+  // game.
+  //
+  // It is the *car* that goes and not the reference lap, now that those are
+  // two switches. Nothing about a split delta is in the way - the number you
+  // want on a track you have never driven is precisely how far off the pace
+  // you are - and turning the lap off here used to take that with it.
+  if (opts.switched) setGhostCar(false, { quiet: true, remember: false });
+  if (S.ghostMode === 'run') S.ghostMode = 'me';
+  setGhostMode(S.ghostMode, { quiet: true });
   applyPhase();
   markActiveTrack();
 }
@@ -445,11 +467,17 @@ function bindInput() {
       if (CFG.mode === 'room') { e.preventDefault(); openChat(); }
       else setSound(!S.sound.enabled);
     }
-    // G steps through the three ghosts there are rather than toggling the last
-    // one back on: picking between your own lap and the record is the choice
-    // worth having on a key, and it saves opening settings to make it. A lap
-    // chased off the board is not in the cycle - it is not a mode you can
-    // arrive at by pressing a key, so pressing one leaves it.
+    // G steps through the three laps there are to drive against rather than
+    // toggling the last one back on: picking between your own lap and the
+    // record is the choice worth having on a key, and it saves opening
+    // settings to make it. A lap chased off the board is not in the cycle - it
+    // is not a mode you can arrive at by pressing a key, so pressing one
+    // leaves it.
+    //
+    // It is the reference lap and not the ghost car, which is the switch next
+    // to it in settings: the interesting question has always been *whose lap*,
+    // and "is there a car" is one press in a sheet rather than something to
+    // land on half way round a cycle.
     if (e.code === 'KeyG') setGhostMode(nextGhostMode());
   });
   window.addEventListener('keyup', (e) => {
@@ -594,12 +622,28 @@ function bindInput() {
   $('btnCheckpoint').onclick = () => backToCheckpoint();
   $('btnRetry').onclick = () => resetToStart();
   $('btnSound').onclick = () => setSound(!S.sound.enabled);
-  setSound(S.sound.enabled);
+  $('btnMusic').onclick = () => {
+    setMusic(!S.sound.musicOn);
+    // Pressing this is a user gesture, so it is allowed to be the thing that
+    // builds the audio context - and it has to come after the flag is set,
+    // since `start` declines to build one when there is nothing to hear.
+    S.sound.start(); S.sound.resume();
+  };
+  // Quietly, both of them: the settings sheet is not open yet, so a toast
+  // saying what the stored preference was would be an announcement of nothing
+  // having happened.
+  setSound(storedFlag('drive.sound', true), { remember: false });
+  // Sound defaults on and music defaults off: the engine is what the game
+  // sounds like, and a loop over the top of it is something you ask for.
+  setMusic(storedFlag('drive.music', false), { remember: false });
 
-  // Ghost source, track switcher and the in-game board.
+  // Which lap you drive against, whether it is drawn as a car, the track
+  // switcher and the in-game board.
   $('ghostOpts').querySelectorAll('[data-ghost]').forEach(b => {
     b.onclick = () => chooseGhost(b.dataset.ghost);
   });
+  $('btnGhost').onclick = () => setGhostCar(!S.showGhost);
+  setGhostCar(S.showGhost, { quiet: true, remember: false });
   $('btnTracks').onclick = () => toggleTracks();
   $('btnTracksClose').onclick = () => toggleTracks(false);
   $('btnBoardClose').onclick = () => toggleBoard(false);
@@ -717,7 +761,6 @@ function chooseGhost(mode) {
 
 function setGhostMode(mode, opts = {}) {
   S.ghostMode = mode;
-  S.showGhost = mode !== 'off';
   if (mode !== 'run') S.ghostRun = null;
   // `remember: false` is for a mode the game chose rather than you - arriving
   // on a new track turns the ghost off, and that must not overwrite the ghost
@@ -737,7 +780,29 @@ function setGhostMode(mode, opts = {}) {
   else if (mode === 'wr') loadGhost('wr');
   else if (mode === 'pole') loadPoleGhost();
   showGhostNow();
-  if (!opts.quiet) toast('Ghost: ' + ghostDescription());
+  if (!opts.quiet) toast('Splits: ' + ghostDescription());
+}
+
+/**
+ * The ghost car, which is a different switch from which lap it is.
+ *
+ * It used to be the same one - picking a lap turned the car on and "Off"
+ * turned both off together - so the only way to stop a translucent car
+ * driving the line in front of you was to give up the split deltas as well,
+ * and they are the half of a reference lap you read at racing speed.
+ */
+function setGhostCar(on, opts = {}) {
+  S.showGhost = on;
+  // `remember: false` is for a state the game chose rather than you - arriving
+  // somewhere new hides the car without forgetting that you drive with one.
+  if (opts.remember !== false) rememberFlag('drive.ghostcar', on);
+  const b = $('btnGhost');
+  if (b) {
+    b.classList.toggle('on', on);
+    $('btnGhostState').textContent = on ? 'on' : 'off';
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  if (!opts.quiet) toast('Ghost car ' + (on ? 'on' : 'off'));
 }
 
 function ghostDescription() {
@@ -755,7 +820,7 @@ function ghostDescription() {
 function showGhostNow() {
   const el = $('ghostNow');
   if (!el) return;
-  if (S.ghostMode === 'off') { el.textContent = 'No ghost car.'; return; }
+  if (S.ghostMode === 'off') { el.textContent = 'No lap to drive against.'; return; }
   if (S.ghostMode === 'run' && S.ghostRun) {
     el.innerHTML = 'Chasing <b>' + esc(S.ghostRun.who) + '</b> &middot; ' +
                    fmt(S.ghostRun.time_ms);
@@ -765,7 +830,7 @@ function showGhostNow() {
     el.textContent = CFG.mode === 'room'
       ? 'Your best lap of this practice session.'
       : (S.bestTime ? 'Your personal best, ' + fmt(S.bestTime) + '.'
-                    : 'Drive a lap and it becomes your ghost.');
+                    : 'Drive a lap and it becomes the one to beat.');
     return;
   }
   if (S.ghostMode === 'pole') {
@@ -827,9 +892,31 @@ function loadPoleGhost() {
   S.socket.emit('qual_pole_req', {});
 }
 
-function setSound(on) {
+/**
+ * The two audio switches, which are two switches.
+ *
+ * Sound is the car and the world; music is the loop under it. They are
+ * separate buses inside `Sound`, so one of them off leaves the other alone -
+ * driving to your own music with the game muted, or with the engine and
+ * nothing over the top of it, are both ordinary ways to play.
+ *
+ * Both are remembered. A preference you have to set again on every page is one
+ * you stop setting, and muting a game is not a per-visit decision.
+ */
+function setSound(on, opts = {}) {
   S.sound.mute(!on);
-  $('btnSound').textContent = 'Sound: ' + (on ? 'on' : 'off');
+  if (opts.remember !== false) rememberFlag('drive.sound', on);
+  $('btnSoundState').textContent = on ? 'on' : 'off';
+  $('btnSound').classList.toggle('on', on);
+  $('btnSound').setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+
+function setMusic(on, opts = {}) {
+  S.sound.setMusic(on);
+  if (opts.remember !== false) rememberFlag('drive.music', on);
+  $('btnMusicState').textContent = on ? 'on' : 'off';
+  $('btnMusic').classList.toggle('on', on);
+  $('btnMusic').setAttribute('aria-pressed', on ? 'true' : 'false');
 }
 
 // ---------------------------------------------------------------------------
@@ -1500,6 +1587,12 @@ function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(0.1, (now - lastFrame) / 1000);
   lastFrame = now;
+
+  // The music books its next few notes against the audio clock, and this is
+  // the only thing on the page running often enough to turn that handle. Above
+  // the early returns on purpose: a replay is still the game, and a preview
+  // shot has no sound at all, so neither is a reason for the loop to stop.
+  S.sound.musicTick();
 
   // Shot mode: hold the whole track in frame and render nothing else. This is
   // how the switcher's pictures are taken (tools/shoot_tracks.py), so the

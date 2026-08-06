@@ -166,10 +166,11 @@ def test_everything_a_rival_makes_comes_from_where_the_rival_is(ctx):
     assert _n(ctx, "v.panner.positionZ.value") == -13
     for part in ("engFilter", "tyreGain", "draftGain"):
         assert ctx.eval("v.%s.out.indexOf(v.panner) >= 0" % part), part
-    # and the panner into the bus that sits under the master, so muting - which
-    # is the master's gain - still mutes the whole field.
+    # and the panner into the bus that sits under the effects bus, so muting -
+    # which is that bus's gain - still mutes the whole field.
     assert ctx.eval("v.panner.out.indexOf(snd.rivalBus) >= 0")
-    assert ctx.eval("snd.rivalBus.out.indexOf(snd.master) >= 0")
+    assert ctx.eval("snd.rivalBus.out.indexOf(snd.sfx) >= 0")
+    assert ctx.eval("snd.sfx.out.indexOf(snd.master) >= 0")
 
 
 def test_a_new_car_is_placed_rather_than_slid_in_from_the_last_one(ctx):
@@ -260,3 +261,108 @@ def test_nothing_is_touched_before_the_first_gesture():
     c.eval("snd.listener(camera()); snd.rivals([rival('a', 0, -10)]); snd.engine(1, 1, 0, false);")
     assert _n(c, "LOG.made.length") == 0
     assert _n(c, "snd.voices.size") == 0
+
+
+# --- the two switches -------------------------------------------------------
+
+def test_muting_the_sound_leaves_the_music_playing(ctx):
+    """The whole reason there are two buses. Muting used to be the master's
+    gain, which is above both of them, so a music switch under it would have
+    been a switch the sound switch could silently override."""
+    ctx.eval("snd.setMusic(true); snd.mute(true);")
+    assert _n(ctx, "snd.sfx.gain.value") == 0
+    assert _n(ctx, "snd.master.gain.value") > 0
+    assert _n(ctx, "snd.music.bus.gain.value") > 0
+    # and the other way round: no music, but the car is still audible.
+    ctx.eval("snd.mute(false); snd.setMusic(false);")
+    assert _n(ctx, "snd.sfx.gain.value") > 0
+    assert _n(ctx, "snd.music.bus.gain.value") == 0
+
+
+def test_the_music_is_beside_the_effects_rather_than_under_them(ctx):
+    assert ctx.eval("snd.music.bus.out.indexOf(snd.master) >= 0")
+    assert not ctx.eval("snd.music.bus.out.indexOf(snd.sfx) >= 0")
+
+
+def test_a_muted_driver_who_wants_music_still_gets_a_context():
+    """`start` used to bail on `!enabled` alone, which was the same thing when
+    sound was the only switch and is not now."""
+    c = jsrt.quickjs.Context()
+    c.eval(STUB)
+    c.eval(re.sub(r"^export\s+", "", open(SOUND_JS).read(), flags=re.M))
+    c.eval("var snd = new Sound(); snd.mute(true); snd.setMusic(true); snd.start();")
+    assert c.eval("!!snd.ctx") and c.eval("!!snd.music")
+    assert _n(c, "snd.sfx.gain.value") == 0
+    # And with both off - which is the mute plus the default - there is still
+    # nothing at all to build.
+    c.eval("var q = new Sound(); q.mute(true); q.start();")
+    assert not c.eval("!!q.ctx")
+
+
+def test_the_music_switch_survives_being_set_before_there_is_a_context():
+    """It is read off a stored preference at boot, which is long before the
+    first gesture has built anything for it to be applied to."""
+    c = jsrt.quickjs.Context()
+    c.eval(STUB)
+    c.eval(re.sub(r"^export\s+", "", open(SOUND_JS).read(), flags=re.M))
+    c.eval("var snd = new Sound(); snd.setMusic(true); snd.start();")
+    assert _n(c, "snd.music.bus.gain.value") > 0
+    c.eval("snd.setMusic(false);")
+    assert _n(c, "snd.music.bus.gain.value") == 0
+
+
+# --- the loop ---------------------------------------------------------------
+
+def test_the_music_books_notes_ahead_of_the_clock_and_only_once(ctx):
+    """Scheduled against the audio clock rather than played by a timer, so
+    being called irregularly cannot move where a note lands."""
+    ctx.eval("snd.ctx.currentTime = 0; snd.setMusic(true);")
+    ctx.eval("LOG.made = []; snd.musicTick();")
+    booked = _n(ctx, "LOG.made.length")
+    assert booked > 0
+    # Called again on the same clock, nothing is due: a frame is not a note.
+    ctx.eval("snd.musicTick();")
+    assert _n(ctx, "LOG.made.length") == booked
+    # The clock moves, so more of the loop comes into range.
+    ctx.eval("snd.ctx.currentTime = 1; snd.musicTick();")
+    assert _n(ctx, "LOG.made.length") > booked
+
+
+def test_the_music_off_schedules_nothing(ctx):
+    ctx.eval("snd.ctx.currentTime = 0; LOG.made = [];")   # off is the default
+    for t in range(6):
+        ctx.eval("snd.ctx.currentTime = %d; snd.musicTick();" % t)
+    assert _n(ctx, "LOG.made.length") == 0
+
+
+def test_a_backgrounded_tab_picks_up_rather_than_playing_the_backlog():
+    """A tab with no frames can be minutes behind when one arrives, and
+    catching up honestly would book every note of those minutes at once."""
+    c = jsrt.quickjs.Context()
+    c.eval(STUB)
+    c.eval(re.sub(r"^export\s+", "", open(SOUND_JS).read(), flags=re.M))
+    c.eval("var snd = new Sound(); snd.start(); snd.ctx.currentTime = 0;")
+    c.eval("snd.setMusic(true); snd.musicTick();")
+    c.eval("LOG.made = []; snd.ctx.currentTime = 600; snd.musicTick();")
+    # One tick's worth of lookahead, not ten minutes of it.
+    assert _n(c, "LOG.made.length") < 60
+    assert _n(c, "snd.music.next") >= 600
+
+
+def test_the_loop_is_a_loop(ctx):
+    """It wraps back to the top rather than counting up for ever, which is
+    what keeps the chord lookup honest after an hour of driving."""
+    ctx.eval("snd.ctx.currentTime = 0; snd.setMusic(true);")
+    for t in range(0, 40):
+        ctx.eval("snd.ctx.currentTime = %f; snd.musicTick();" % (t * 0.5))
+    assert 0 <= _n(ctx, "snd.music.step") < 4 * 16
+
+
+def test_music_is_off_until_it_is_asked_for(ctx):
+    """The engine is what the game sounds like; a loop over the top of it is a
+    preference, so it is one you switch on rather than one you switch off."""
+    assert ctx.eval("snd.musicOn") is False
+    assert _n(ctx, "snd.music.bus.gain.value") == 0
+    # and the sound is the other way round.
+    assert ctx.eval("snd.enabled") is True
+    assert _n(ctx, "snd.sfx.gain.value") > 0

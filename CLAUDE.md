@@ -1086,20 +1086,61 @@ field from a dark field.
   back to hold a point-to-point the road is a thread, and on Jump City it vanished into
   the towers entirely. Aiming level from 40 units up fails the same way - it photographs
   the horizon. Behind the start line, angled down at the road, is the shot.
-- **Settings is only settings.** Title, an X, and the things you set. The session
-  controls moved to the HUD, and it ends in one red **Leave**. The **Ghost** row is
-  four states rather than a toggle, because "is there a ghost" is a dull question and
-  "whose lap is it" is not: off / my best / world record / view others. In a room `my
-  best` still means your best lap of *this* practice session, and `ghostOn()` still
-  hides every ghost for the whole of a race. **`G` steps through the three**
-  (`GHOST_CYCLE`: off, my best, world record) rather than toggling the last one
-  back on - choosing between your own lap and the record is the choice worth
-  having on a key. A lap chased off the board is deliberately not in the cycle,
-  so pressing G leaves it. **Switching track turns the ghost off**: somewhere
-  new is somewhere you are looking at rather than attacking, and a car you have
-  never driven against on your first lap of it is in the way. That one is not
-  remembered (`setGhostMode(..., {remember: false})`) - it is what the track
-  starts as, not a preference, so the ghost you actually chose survives.
+- **Settings is only settings.** Title, an X, and the things you set. The
+  session controls moved to the HUD. It is **Splits and the ghost car, then
+  Sound and Music, then the two ways out** - a white *View leaderboard* beside
+  the red *Leave*, the red one last because it is the only control on the sheet
+  that pressing again does not undo.
+- **Which lap you drive against and whether it is drawn are two switches.** They
+  were one - the "Ghost" row, where picking a lap turned the car on and `Off`
+  turned both off together - so the only way to stop a translucent car driving
+  the line in front of you was to give up the split deltas as well, and the
+  deltas are the half of a reference lap you actually read at 200km/h. Now the
+  row is **Splits** (off / my best / world record / view others, and
+  *provisional pole* in a room), named for what it is for, with a **Ghost:
+  on/off** button to the right of it. `S.ghostMode` is the lap and
+  `S.showGhost` is the car; `setGhostMode` no longer touches the second one and
+  a test asserts it (`test_picking_a_lap_does_not_turn_the_ghost_car_back_on`).
+  Both are remembered, under `drive.ghost` and `drive.ghostcar`. In a room `my
+  best` still means your best lap of *this* practice session, and `ghostOn()`
+  still hides every ghost for the whole of a race. **`G` steps through the
+  three** (`GHOST_CYCLE`: off, my best, world record) rather than toggling the
+  last one back on - choosing between your own lap and the record is the choice
+  worth having on a key, and it is the *lap* rather than the car, since "whose
+  lap" is the interesting question and the other is one press in a sheet. A lap
+  chased off the board is deliberately not in the cycle, so pressing G leaves
+  it. **Switching track hides the ghost car**: somewhere new is somewhere you
+  are looking at rather than attacking, and a car you have never driven against
+  on your first lap of it is in the way. It is the car and *not* the reference
+  lap that goes - how far off the pace you are is precisely the number you want
+  on a track you have never driven, and turning the lap off used to take that
+  with it - and it is not remembered (`setGhostCar(false, {remember: false})`),
+  so the setting you chose survives.
+- **Sound and Music are two switches because they are two buses.** `Sound.sfx`
+  carries the car and the world, `Music`'s own bus sits beside it under the
+  master, and `mute` is the sfx gain rather than the master's - so muting the
+  game leaves the music playing and vice versa, which is the only reading of
+  two switches that is not a lie about one of them. Both are remembered
+  (`drive.sound`, `drive.music`), which the mute never used to be. **Sound
+  defaults on and music defaults off**: the engine is what the game sounds
+  like, and a loop over the top of it is something you ask for. `start` now
+  declines to build a context only when *both* are off, since somebody driving
+  muted with the music on still needs one.
+- **The music is synthesised, like everything else here.** There are no audio
+  files on the site and a loop long enough not to wear out is a megabyte of
+  them, so `Music` in `sound.js` is four bars of i - VI - III - VII in A minor
+  under a rolling sixteenth arpeggio, played on the same oscillators the clanks
+  and beeps are. Two things about it are load-bearing. **It is scheduled ahead
+  against `ctx.currentTime`, never played by a timer**: a note placed by a
+  `setTimeout` lands wherever the main thread is, which on the frame that
+  builds a track mesh is tens of milliseconds late and audibly so - `musicTick`
+  books everything due in the next `M_LOOK` and is called from the frame loop,
+  above its early returns, so a replay keeps its music and being called
+  irregularly moves nothing. A tab that stopped getting frames skips forward
+  rather than playing the backlog. And **the chords are inverted rather than
+  stacked from each root** (F is played A-C-F): written the obvious way, each
+  bar starts higher than the last and the figure ratchets up an octave and a
+  half across the loop instead of going round.
 - **The world-record ghost has to be a lap that can be shown.** `?who=wr` took
   the fastest row and served whatever replay was on it, but a row keeps its
   time whether or not a ghost was stored beside it, so one old replay-less row
@@ -1246,9 +1287,15 @@ field from a dark field.
   panel you can open and getting a room into either takes two browsers and a
   stopwatch. **`?draft=charge|boost`** is the same idea for the slipstream: it
   pins the tow so the air round the car can be photographed without a rival.
-- **The room drawer's button is a person, not a hamburger.** Three stacked bars sat
-  next to the settings icon, which is three stacked sliders, and at a glance they were
-  the same button. The drawer reads top to bottom as who is here, what the next
+- **The room drawer's button is three people, not a hamburger and not one
+  person.** Three stacked bars sat next to the settings icon, which is three
+  stacked sliders, and at a glance they were the same button. A single figure
+  replaced it and was wrong in the other direction: one head is the icon every
+  site on the internet uses for *your own account*, so on the one screen where
+  the button means "everybody else who is here" it was saying the opposite of
+  what it opens. It is a head and shoulders with two smaller ones behind, run
+  off the edges of the 24-unit box so it reads as a crowd rather than as three
+  buttons. The drawer reads top to bottom as who is here, what the next
   race will be, the way out, and then the talking: **chat is last and the box you
   type into is on the floor of the panel**, which is `#chatLog` stretching rather
   than the block being pushed down - capping the log left the input floating half
@@ -1413,7 +1460,7 @@ field from a dark field.
 
 ### Tests
 
-`scripts/tests.sh drive` - 537 tests, about 1:35 (four workers, split by file). `test_tracks.py` and
+`scripts/tests.sh drive` - 549 tests, about 1:25 (four workers, split by file). `test_tracks.py` and
 `test_runcheck.py` are pure Python; `test_app.py` runs the real routes against a
 throwaway SQLite file (the `/solo` memory, the board and ghost APIs, and a guest's run
 being replayed after login). **`test_race.py` covers the room's race machine** -
@@ -1473,9 +1520,13 @@ look at and completely wrong to listen to. It runs the real module in QuickJS
 against a fake `AudioContext` that records what was connected to what, and pins
 the wiring and the bookkeeping: one voice per car and kept, a car dropped from
 the list torn down rather than forgotten, everything a rival makes going through
-its own panner and the panner through the bus under the master (so muting still
-mutes the field), and the listener's forward and up coming off the camera's own
-quaternion - including rolled upside down, which is a loop.
+its own panner and the panner through the bus under the effects bus (so muting
+still mutes the field), and the listener's forward and up coming off the
+camera's own quaternion - including rolled upside down, which is a loop. It
+also pins the two switches being two - muting leaves the music's gain alone and
+vice versa - and the music scheduler: nothing booked twice, nothing booked at
+all when it is off, and a tab that was in the background for ten minutes
+picking up rather than firing ten minutes of notes at once.
 
 There is no browser in CI, so **check rendering by hand** before shipping a
 geometry change - and a *room* needs one more step than a solo track does,

@@ -638,6 +638,32 @@ body.room .solo-only { display: none; }
 .btn.danger { background: var(--red); color: #fff; width: 100%; }
 .btn.danger:hover { background: #d13c33; }
 
+/* --- a setting and the switch that goes with it --------------------------
+   The choices on the left and the one switch that belongs to them on the
+   right, bottom-aligned so the button sits level with the row of chips rather
+   than with the heading above them. It wraps below 520px, where a 620px sheet
+   is already down to one column and a switch pushed off the end of the chips
+   would be off the sheet. */
+.set-row { display: flex; align-items: flex-end; gap: .8rem; }
+.set-main { flex: 1 1 auto; min-width: 0; }
+.set-row > .btn { flex: 0 0 auto; }
+@media (max-width: 520px) {
+  .set-row { flex-wrap: wrap; align-items: stretch; }
+  .set-row > .btn { width: 100%; }
+}
+
+/* A switch that says what it is set to, rather than what pressing it does.
+   Every one of them is an icon and a word, and the icon is inline SVG for the
+   reason the ones on the HUD are. Switched on is filled with ink, which is
+   what a chosen `.opt` on this same sheet looks like: one sheet, one way of
+   showing that something is picked. */
+.btn.toggle {
+  display: inline-flex; align-items: center; justify-content: center; gap: .45rem;
+}
+.btn.toggle .icn { width: 17px; height: 17px; stroke-width: 1.9; }
+.btn.secondary.toggle.on { background: var(--ink); color: var(--paper); }
+.btn.secondary.toggle.on:hover { background: #33333a; }
+
 /* --- a row of exclusive choices ------------------------------------------ */
 .opt-row { display: flex; flex-wrap: wrap; gap: .4rem; }
 .opt {

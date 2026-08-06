@@ -66,7 +66,7 @@ var document = {
   body: { classList: { add: function () {} } },
 };
 var S = { sound: { start: function () {}, resume: function () {} }, touch: false,
-          view: { setVisible: function () {} }, car: {} };
+          view: { setVisible: function () {} }, car: {}, showGhost: true };
 var CFG = { mode: 'solo' };
 // Everything bindInput reaches for that is not the input handling itself. If a
 // new one appears, the slice throws rather than silently testing nothing.
@@ -76,6 +76,7 @@ function resetToStart() {} function chooseGhost() {} function setGhostMode() {}
 function toggleTracks() {} function toggleBoard() {} function openBoard() {}
 function stopWatching() {} function renderTrackCards() {}
 function renderSettings() {} function openChat() {} function closeChat() {}
+function setGhostCar() {} function setMusic() {} function storedFlag() {}
 """
 
 # A thumb: every press and release advances the clock by a millisecond, so the
