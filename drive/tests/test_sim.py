@@ -41,8 +41,21 @@ def rt():
 
 
 def _sim(rt, slug, max_t=90):
-    i = next(k for k, t in enumerate(rt.tracks.TRACKS) if t["slug"] == slug)
-    return rt.call("simulate(TRACKS[%d], T, {maxT:%d})" % (i, max_t))
+    """Drive `slug` to the finish, once.
+
+    Seven tests below ask about the same lap - did it finish, did it respawn,
+    how much air, how long - and the autopilot has no randomness in it, so
+    driving it seven times produced seven identical answers at seven times the
+    cost. On the long tracks that was 8s a go and most of the suite's runtime.
+    The cache hangs off `rt` rather than being a module global so it dies with
+    the runtime the laps were driven in.
+    """
+    key = (slug, max_t)
+    cache = rt.__dict__.setdefault("_laps", {})
+    if key not in cache:
+        i = next(k for k, t in enumerate(rt.tracks.TRACKS) if t["slug"] == slug)
+        cache[key] = rt.call("simulate(TRACKS[%d], T, {maxT:%d})" % (i, max_t))
+    return cache[key]
 
 
 def all_slugs():

@@ -1,0 +1,8 @@
+# Test-only dependencies, kept out of requirements.txt so the box never
+# installs a test runner it has no use for - the same split drive/ makes for
+# its JS engine.
+#
+# The three self-play strength tests are most of this suite's runtime and are
+# independent of each other, so scripts/tests.sh spreads them across cores.
+# Absent, it runs them serially rather than failing.
+pytest-xdist>=3.5

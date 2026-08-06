@@ -1,3 +1,8 @@
 # Test-only, kept out of requirements.txt so the box never installs a test
 # runner it has no use for - the same split drive/ makes for its JS engine.
 pytest>=8.0
+
+# The suites are mostly independent test functions doing real work, so they
+# parallelise well: scripts/tests.sh hands them to as many workers as it has
+# cores. Absent, it runs them serially rather than failing.
+pytest-xdist>=3.5

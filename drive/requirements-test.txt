@@ -5,3 +5,7 @@
 # physics, course) and what test_touch.py / test_pending.py drive their stub
 # browsers with. Without it those tests skip, which looks like a pass.
 quickjs==1.19.4
+
+# See the note in the root requirements-test.txt. Drive is distributed by file
+# rather than by test, so test_sim.py's laps stay in one process.
+pytest-xdist>=3.5

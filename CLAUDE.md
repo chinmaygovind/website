@@ -248,7 +248,7 @@ image — an `<img>` cannot load a webfont, and the initial is the whole picture
 
 ### Tests
 
-`scripts/tests.sh site` — 122 tests, about 30s, plus the `import app` check the
+`scripts/tests.sh site` — 122 tests, about 15s, plus the `import app` check the
 deploy used to be. `tests/test_no_drift.py` is the one to know about: five
 services each own a copy of `User` and now of `UserProfile`, which is this
 repo's convention and the right one for five things that deploy separately, but
@@ -1413,7 +1413,7 @@ field from a dark field.
 
 ### Tests
 
-`scripts/tests.sh drive` - 537 tests, about 5:30. `test_tracks.py` and
+`scripts/tests.sh drive` - 537 tests, about 1:35 (four workers, split by file). `test_tracks.py` and
 `test_runcheck.py` are pure Python; `test_app.py` runs the real routes against a
 throwaway SQLite file (the `/solo` memory, the board and ghost APIs, and a guest's run
 being replayed after login). **`test_race.py` covers the room's race machine** -
@@ -1428,7 +1428,13 @@ machine is the order it goes through them in. **`test_sim.py` runs the game's re
 headlessly**: `tests/jsrt.py` strips the ES module syntax, swaps three.js for
 `tests/three_stub.js` (real Vector3/Quaternion maths, inert graphics), and runs it in
 QuickJS, then `tests/autopilot.js` *drives every track to the finish*. That is the test
-that matters. Between them these have caught: road and grass being coplanar (the car
+that matters. **Each track is driven once and the lap kept** (`_sim` caches on the
+`rt` runtime): seven tests ask questions about the same lap - did it finish, did it
+respawn, how much air, how long - and the autopilot has no randomness anywhere in it,
+so driving it seven times bought seven identical answers and three quarters of the
+suite's runtime. Two things follow: a test must **read** that result rather than
+mutate it, since its neighbours are handed the same dict; and test_sim.py has to stay
+on one worker, which is why drive is split by file. Between them these have caught: road and grass being coplanar (the car
 thought it was on grass for whole laps); wall collision geometry being double-sided so
 contacts cancelled velocity twice per step; loops folding back onto themselves tightly
 enough to trap a car forever, and later meeting the road at a 55-degree kink; checkpoint
@@ -1528,9 +1534,9 @@ live site in one go. If the SSH step fails with `dial tcp :22 i/o timeout`, the
 
 ## Tests: run only what changed
 
-The full suite is about five minutes (drive ~2:10, kot ~2:00, ers and the root
-import check a few seconds each) and nearly every change is to exactly one game,
-so **never reach for the whole thing by hand**:
+The full suite is about three minutes (drive ~1:35, kot ~1:10, site ~15s, ers a
+couple of seconds) and nearly every change is to exactly one game, so **never
+reach for the whole thing by hand**:
 
 ```bash
 scripts/tests.sh              # only the modules the working tree touches
@@ -1554,7 +1560,22 @@ scripts/tests.sh drive -- -k ghost -x     # after --, straight to pytest
   is one - that is where drive's `quickjs` lives, kept out of `requirements.txt`
   so the box never compiles a JS engine it has no use for. **Without quickjs,
   `test_sim.py` skips itself, which reads as a pass**, which is why CI installs
-  it explicitly.
+  it explicitly. A venv is rebuilt when its requirements move, keyed on a
+  `.requirements-stamp` of the two files: they are long lived and gitignored, so
+  otherwise a dependency added to `requirements-test.txt` reaches CI and a fresh
+  clone but never the venv you have been using for months - and a *test-only*
+  dependency going missing does not fail, it quietly stops doing its job.
+- **`parallel_for` in `tests.sh` splits each suite across four cores**, which is
+  most of the difference between a three minute full run and a ten minute one.
+  Two things about it are not arbitrary. **drive is split by file, not by test**:
+  `test_sim.py` drives each track once and keeps the lap, so handing those tests
+  to separate workers makes every one of them re-drive it - measured slower than
+  no parallelism at all. And it is **four workers rather than every core**, since
+  past four the critical path is one long file either way, while on a 16 core
+  laptop kot's self-play tests contend badly enough that the suite stops
+  finishing. `ers` opts out (18 tests in 0.05s - workers cost more than they
+  save), an explicit `-n` after `--` wins, and a venv without `pytest-xdist`
+  runs serially rather than refusing to run.
 - **In the Action, `pick` asks the GitHub compare API which files moved rather
   than cloning to find out.** This repo's `.git` is ~484MB of committed media and
   `site/` is ~513MB on disk, so a full-history checkout would cost more than the

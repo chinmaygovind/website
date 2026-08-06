@@ -2,8 +2,10 @@
 #
 # Run the tests for the parts of the site that changed.
 #
-# The full suite is about five minutes (drive ~2:10, kot ~2:00), and almost
+# The full suite is about three minutes (drive ~1:35, kot ~1:10), and almost
 # every change touches one game, so running all of it is nearly always waste.
+#
+# Each suite is split across cores where that helps - see parallel_for.
 #
 # Usage:
 #   scripts/tests.sh                  # only what changed (see changed-modules.sh)
@@ -81,21 +83,65 @@ ensure_venv() {
   else
     dir="$ROOT/$m/venv"; reqs="$ROOT/$m/requirements.txt"; test_reqs="$ROOT/$m/requirements-test.txt"
   fi
-  [ -x "$dir/bin/python" ] && return 0
+  if [ ! -x "$dir/bin/python" ]; then
+    echo "no venv for $m yet, creating one"
+    python3 -m venv "$dir" || return 1
+  fi
 
-  echo "no venv for $m yet, creating one"
-  python3 -m venv "$dir" || return 1
+  # Reinstall when the requirements have actually moved, and not otherwise.
+  # The venvs are long lived and gitignored, so without this a dependency
+  # added to requirements-test.txt reaches CI and a fresh clone but never the
+  # venv you have been running tests in for months - and a missing test-only
+  # dependency does not fail, it quietly stops doing whatever it was for.
+  stamp="$dir/.requirements-stamp"
+  want="$(cat "$reqs" "$test_reqs" 2>/dev/null | cksum)"
+  [ "$(cat "$stamp" 2>/dev/null)" = "$want" ] && return 0
+
   "$dir/bin/pip" install -q -r "$reqs" || return 1
-  # Optional test-only deps: pytest for the root app, drive's QuickJS, ...
+  # Optional test-only deps: pytest for the root app, drive's QuickJS, xdist.
   if [ -f "$test_reqs" ]; then
     "$dir/bin/pip" install -q -r "$test_reqs" || return 1
   fi
+  echo "$want" >"$stamp"
+}
+
+# How many workers to split a suite across, and how to divide it between them.
+# The two suites that cost real time are CPU bound and their tests are
+# independent, so this is most of the speed here: drive goes 5:40 -> 1:35 and
+# kot 2:25 -> 1:10.
+#
+# **drive splits by file, not by test.** test_sim.py drives each track once and
+# keeps the lap, because seven tests ask questions about the same lap; hand
+# those to separate workers and each one re-drives it, which is far slower than
+# not parallelising at all. Everything else splits by test, which packs better.
+#
+# Four workers rather than every core, deliberately. Past four the critical
+# path is one long file either way, so there is nothing left to win - and on a
+# 16 core laptop kot's self-play tests contend badly enough that the suite
+# stops finishing at all.
+parallel_for() {
+  m="$1"; py="$2"
+
+  # 18 tests in a twentieth of a second. Starting workers costs more.
+  [ "$m" = ers ] && return 0
+
+  # Optional, like quickjs: without it the suite runs serially rather than
+  # refusing to run.
+  "$py" -c "import xdist" >/dev/null 2>&1 || return 0
+
+  # An explicit -n after `--` is the caller overriding this.
+  case " $pytest_args " in *" -n "*|*" -p no:xdist "*) return 0 ;; esac
+
+  n="$(nproc 2>/dev/null || echo 4)"
+  [ "$n" -gt 4 ] && n=4
+  [ "$m" = drive ] && echo "-n $n --dist loadfile" || echo "-n $n --dist load"
 }
 
 run_module() {
   m="$1"
   ensure_venv "$m" || { echo "could not set up $m/venv" >&2; return 1; }
   py="$(py_for "$m")"
+  par="$(parallel_for "$m" "$py")"
 
   if [ "$m" = site ]; then
     # Two things, cheapest first. "Does it still import" is what the deploy
@@ -104,10 +150,10 @@ run_module() {
     # only thing that runs when there is no pytest to be had.
     ( cd "$ROOT" && "$py" -c "import app; print('app imports OK')" ) || return 1
     if [ -d "$ROOT/tests" ]; then
-      ( cd "$ROOT" && "$py" -m pytest tests/ $pytest_args )
+      ( cd "$ROOT" && "$py" -m pytest tests/ $par $pytest_args )
     fi
   else
-    ( cd "$ROOT/$m" && "$py" -m pytest tests/ $pytest_args )
+    ( cd "$ROOT/$m" && "$py" -m pytest tests/ $par $pytest_args )
   fi
 }
 

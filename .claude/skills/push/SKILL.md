@@ -14,20 +14,25 @@ says "push", without stopping to ask again.
 1. **Check the diff.** Run `git status --short` and `git --no-pager diff`. Make
    sure nothing secret is staged (`.env` is gitignored; keep it that way).
 
-2. **Run the tests for what changed.** Not the whole suite: `scripts/tests.sh`
-   with no arguments works out which modules the working tree touches and runs
-   only those. The full set is about five minutes; one game is about two.
+2. **Do not run the suite here. The Action is the gate.** It runs
+   `scripts/tests.sh` over the same selection this would, and it will not deploy
+   if that fails - so running it locally first buys nothing except waiting for
+   the same answer twice, which used to be most of what a push cost. Push, and
+   read the result in step 5.
+
+   Run the tests while *working*, which is where a failure is cheap to fix:
    ```bash
-   scripts/tests.sh
+   scripts/tests.sh          # only the modules the working tree touches
    ```
-   Fix failures before committing. The deploy Action runs the same selection
-   server side and will not deploy if it fails, so pushing past a red suite
-   just moves the failure.
+   The exception is a change you have not been able to test at all - one that
+   touches `scripts/` or `.github/workflows/`, since those map to every module
+   and a mistake there is a mistake about what gets checked at all. Run it
+   locally for those.
 
 3. **Commit.** Stage everything and write a human-sounding message:
    - Imperative subject, short body only if it adds something.
    - No em-dashes anywhere. The user cares about this.
-   - End with the trailer `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
+   - End with the trailer `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
    ```bash
    git add -A
    git commit -F - <<'MSG'
@@ -35,7 +40,7 @@ says "push", without stopping to ask again.
 
    <optional short body>
 
-   Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+   Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
    MSG
    ```
 
@@ -46,8 +51,11 @@ says "push", without stopping to ask again.
    to the EC2 box.
    ```bash
    RID=$(gh run list --workflow=deploy.yml --branch main --limit 1 --json databaseId -q '.[0].databaseId')
-   gh run watch "$RID" --exit-status --interval 10
+   gh run watch "$RID" --exit-status --interval 5
    ```
+   About two minutes for a drive change, less for anything else. If a suite goes
+   red, fix it and push again - the deploy did not happen, so the live site is
+   still the last good commit.
 
 6. **Verify live.** The box is at the Elastic IP `54.157.20.148`. The apex can
    negative-cache locally, so pin it and spot-check whatever changed (title, a
