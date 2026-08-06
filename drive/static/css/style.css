@@ -513,6 +513,12 @@ body.touch .mapbtns { display: none; }
    is already as smooth as the screen is. */
 .speed-bar i { display: block; height: 100%; width: 0; background: #fff; }
 .speed-bar i.over { background: #8fd6ff; box-shadow: 0 0 10px #8fd6ff; }
+/* Catching up wins over `over`, which is why it is second: the two are on
+   together most of the time they are on at all (more engine overruns MAX_SPEED
+   on its own), and of the two "you are being helped along" is the one that
+   explains why the car feels different. Gold, the colour the HUD already uses
+   for the row that is you. */
+.speed-bar i.catchup { background: #ffd96b; box-shadow: 0 0 10px #ffd96b; }
 
 #minimap { display: block; width: 190px; height: 150px; }
 

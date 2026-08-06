@@ -732,6 +732,72 @@ Road are both in `tracks.EXPOSED`.
   tow rather than reading a car's velocity as its position. `Draft` needed no
   idea any of this exists: a remote carries `pos`/`fwd`/`right`/`up`/`speed` and
   the two tow numbers, which is what a car is as far as the effect is concerned.
+- **A car behind the leader gets a little more engine, in proportion to how far
+  behind it is.** A race in which somebody drops three seconds is decided, and
+  everybody in it then drives the rest of it alone - which is most of what a
+  four-car room actually looks like, since one mistake or one respawn is all it
+  takes. `Car.catchup(gapS, dt)` in physics.js is the curve and `gapToLeader` in
+  game.js is the number it reads. Six decisions:
+  - **The gap is measured in distance and reported in time.** What the room
+    knows about every car is `prog` - it is on the wire, it is what the
+    standings are ordered by - but the same 100 units is half a lap of Chicane
+    Park and a corner of Sandy Cove. Dividing by `MAX_SPEED` gives the one
+    number that means the same on every track: how long that ground would take
+    flat out. Nobody averages `MAX_SPEED`, so it is a *floor* on the real gap,
+    which is the right direction for a number deciding how much to hand out.
+  - **The leader is the leader on the road, not the winner.** A car already home
+    is not being caught, so a finisher is skipped and whoever is furthest round
+    of those still driving sets the mark - otherwise the whole field gets full
+    help the instant somebody crosses the line. Lead the cars still out there
+    and the gap is zero, which is the same statement.
+  - **Nothing inside `CATCHUP_DEAD`** (1.5s, about two seconds of real driving),
+    then a linear ramp to all of it at `CATCHUP_FULL` (5s). Under the deadzone
+    you are still racing them and a handout is the last thing that should settle
+    it; a step change at a threshold is a car that surges every time the gap
+    wobbles across it.
+  - **More engine, not a raised limit**, the same term the tow multiplies, so
+    `CATCHUP_ACCEL_MULT` 1.22 is worth its square root in top speed (50 -> 55)
+    and only while you are on the power. **Deliberately less than half a tow**:
+    the tow is a move you lined up and this is one you were given, and were it
+    the bigger of the two, dropping back would be the fast way round. They
+    **stack** - a car a long way down that has finally caught somebody is
+    exactly the one that should be able to come past - and the pair of them
+    still lands under the `MAX_SPEED * 1.7` clamp, or the clamp would be setting
+    the top speed instead of the tuning.
+  - **Nothing is taken off the leader.** A rubber band that slows the car in
+    front takes away the race it is trying to make, and the driver in the lead
+    is driving the car they qualified.
+  - **It follows the gap rather than tracking it** (`CATCHUP_SMOOTH`), because
+    `prog` arrives 30 times a second, rounded to 0.1, off a car whose position
+    is being extrapolated. Half a second of lag on a number describing the last
+    ten seconds costs nothing and is the difference between more engine and a
+    car that hunts. The tail of the ramp *down* snaps to zero; **only the way
+    down**, and that is not a detail - every ramp up starts at zero and climbs
+    through the same hundredth, so a snap that did not check the direction pins
+    the help at nothing for ever. A test pins it, having caught it.
+  **`catchupOn()` is the race and only the race**, which makes it deliberately
+  narrower than `contactOn` - the only other phase gate here, and the difference
+  is the justification. Free practice has solid cars and tows, because they are
+  cars on a road with you, but there is no such thing as first place in it;
+  qualifying is the one session whose whole job is deciding the grid; a
+  countdown and a results sheet have nobody driving. It cannot reach the
+  leaderboard by two independent rules - no room lap counts, and no lap outside
+  a race gets this at all. **Nothing new goes on the wire**: unlike a tow it is
+  not a move anybody makes or can answer, so a rival knowing you have it would
+  change nothing they would do, and the gap that produced it is already on the
+  standings board everybody can read.
+- **Catching up is drawn on the speed bar, and the tow is not.** Opposite
+  answers to the same question, for the same reason: the tow is aimed at the car
+  in front, so it belongs in the air out on the road where that car can see it,
+  and this one is aimed at nobody. It is a change in the engine, the bar is
+  where the engine already is, and a car that is quietly faster than it was a
+  lap ago and cannot say why is a bug report. Gold (the colour the HUD already
+  uses for the row that is you), and it **wins over `over`**, which is on at the
+  same time nearly always - more engine overruns `MAX_SPEED` on its own - and is
+  the less useful of the two things to be told. `?catchup=<seconds>` pins the
+  gap the way `?draft=` pins a tow: it is the only visible part, and
+  photographing it otherwise takes two browsers and somebody five seconds up the
+  road.
 - **Other cars are heard as well as seen, and a rival is a place rather than a
   channel.** Engine, tyres and tow all go through one `PannerNode` at that car's
   position (`RivalVoice` in `sound.js`), with the listener riding the **chase
@@ -1466,7 +1532,7 @@ field from a dark field.
 
 ### Tests
 
-`scripts/tests.sh drive` - 549 tests, about 1:25 (four workers, split by file). `test_tracks.py` and
+`scripts/tests.sh drive` - 576 tests, about 1:25 (four workers, split by file). `test_tracks.py` and
 `test_runcheck.py` are pure Python; `test_app.py` runs the real routes against a
 throwaway SQLite file (the `/solo` memory, the board and ghost APIs, and a guest's run
 being replayed after login). **`test_race.py` covers the room's race machine** -
@@ -1508,7 +1574,15 @@ rather than line number, and `test_touch.py`'s stub deliberately lists every fun
 testing nothing. `test_slipstream.py` does both halves: `Car.draft` runs for real
 in QuickJS (it only reads the body's own frame and the rivals it is handed, so it
 needs no world and no lap), and `contactOn` is lifted out of `game.js` by name and
-run against a stubbed phase. `test_rules_js.py` is the same lift-by-name trick on
+run against a stubbed phase. **`test_catchup.py` is the same file for the
+catch-up boost**, in the same two halves: `Car.catchup` run for real for the
+deadzone, the ramp and the smoothed follow, and `catchupOn`/`gapToLeader` lifted
+by name for the phase gate and for the gap - that a finisher is not somebody you
+are still catching, that leading is worth nothing, and that the two are one call
+so a caller cannot get a gap it should not have. Two of its tests are only about
+the *numbers*, since the whole design is that this is small: full help must be
+worth under half a tow, and the two of them stacked must still land under the
+hard velocity clamp, or the clamp is what sets the top speed. `test_rules_js.py` is the same lift-by-name trick on
 rules that were each a bug or a contract between two files: that `R` and `T` do
 nothing (and say nothing) until the clock is running, that `placeOnGrid` puts
 pole on the track's own `pole_side` and the row behind it on the other, that
