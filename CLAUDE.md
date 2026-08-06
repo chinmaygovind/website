@@ -1180,6 +1180,42 @@ field from a dark field.
   set, since a better run replaces the row wholesale and stamps it). It is stored and
   rendered as UTC so the page is right with no JS, then rewritten into the reader's
   own timezone by the script at the foot of the template.
+- **`/leaderboard` is three boards, named for what they rank**: **Track Records**,
+  **Time Trials Leaderboard**, **Multiplayer Leaderboard**. The last was "Race
+  ratings" and was the only heading on the page carrying a line of explanation
+  under it; three boards on one page are a set, and one of them dressed
+  differently reads as a different kind of thing, so none of them has a subtitle
+  now. **Every column heading on a `table.board` is the display face**, which it
+  was not: `th.num` was handed `var(--mono)` along with the cells under it, so a
+  heading row came out in two fonts with the left-hand labels looking pasted in
+  from another table. The cells keep mono, where it does the work - figures line
+  up under each other. `.acct-tracks` had already undone this for itself; that
+  override is gone, since the fix is now in the one rule.
+- **The Time Trial Score is golf scoring: your placing on each of the twelve
+  tracks, added up**, so low is good and a clean sweep of the pool is 12. Ten
+  firsts and two thirds is 16. Three rules make the sum well defined, all of them
+  in `_time_trial_board`. A **tie shares a place**, the answer `_my_rank_map`
+  already gives for one track (strictly faster, plus one). A **track never driven
+  counts as one worse than last on it** - the place you would take by turning up
+  and being slowest - because adding up only the tracks somebody *has* driven
+  makes driving fewer of them the way to a better score, and one lonely first
+  place would beat a full sweep; the `Tracks` column (`9/12`) is what keeps a big
+  score from being a mystery. And it is **derived on every render and stored
+  nowhere**: a personal best does not only change your own score, it demotes
+  everybody it overtook, so a number kept per driver would have to rewrite most
+  of the board on every lap and would be wrong for as long as one write path was
+  missed. Twelve tracks is one query. Bots and accounts with no times are off it
+  (the join is what drops them), and since only laps driven alone are in
+  `drive_times` at all, nothing set in a room reaches this board either.
+  **The `Score` heading explains itself where it stands** - a dotted rule, a
+  raised `?` and a `title` (`.whatsthis`) - rather than the board carrying a
+  line of small print neither of the other two has, which is the thing the
+  multiplayer board just had taken away. A `title` because that is how every
+  hover on Drive works, from the HUD buttons to the record dates: one
+  convention, no script. Its limit is the usual one - a `title` does nothing on
+  a touchscreen - which is why the mark sits next to a column whose figures are
+  still ordered top to bottom, and is not the only place the rule is written
+  down.
 - **The board is in the game.** "View others" opens the leaderboard over the track;
   clicking a row opens that lap - its checkpoint splits against your own PB's, who set
   it, and **Watch it** / **Race this ghost**. Picking somebody to chase is something you
