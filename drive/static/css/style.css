@@ -213,7 +213,14 @@ table.board.rows-open tr.open td { background: #f1efe9; font-weight: 600; }
 table.board { width: 100%; border-collapse: collapse; font-family: var(--sans); font-size: .92rem; }
 table.board th, table.board td { padding: .42rem .55rem; text-align: left; border-bottom: 1px solid #e4e1da; }
 table.board th { font-family: var(--display); font-size: 1rem; color: var(--ink-soft); }
-table.board td.num, table.board th.num { text-align: right; font-family: var(--mono); }
+/* Every heading in the one face. Mono is right in a *cell* - figures want to
+   line up under each other - and wrong in the heading row, which is labels: it
+   split one row into two fonts and left the left-hand headings looking pasted
+   in from another table. So `td.num` keeps it, where it does the real work, and
+   the alignment stays on both. `.acct-tracks` used to undo this for itself,
+   which was the same fix one table at a time. */
+table.board td.num { font-family: var(--mono); }
+table.board td.num, table.board th.num { text-align: right; }
 table.board tr.me { background: #fff6d9; }
 
 /* --- account ------------------------------------------------------------
@@ -255,11 +262,6 @@ table.board tr.me { background: #fff6d9; }
 .acct-tracks td:first-child, .acct-tracks th:first-child { white-space: nowrap; }
 .acct-tracks .medalcell { display: flex; align-items: center; gap: .4rem; }
 .acct-tracks td, .acct-tracks th { padding: .3rem .5rem; }
-/* Every heading in the one face. `th.num` is mono site-wide, which is right in
-   a cell - figures want to line up - but in the heading row it split five
-   labels into two fonts, and left "Medal" looking pasted in from another
-   table. The cells keep the distinction, where it does the real work. */
-.acct-tracks th, .acct-tracks th.num { font-family: var(--display); }
 /* Right, so the last button finishes where the table does. */
 .acct-actions { display: flex; gap: .55rem; justify-content: flex-end; }
 .btn.mini {

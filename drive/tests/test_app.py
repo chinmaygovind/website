@@ -571,6 +571,180 @@ def test_a_track_with_no_record_still_lists(env):
         assert t["name"] in html
 
 
+def test_the_records_page_is_three_named_boards_in_order(env):
+    """Track records, then the time trials, then the multiplayer ratings.
+
+    The middle one is new, and the last one was called "Race ratings" and was
+    the only heading on the page carrying a line of explanation under it. Three
+    boards on one page are a set: one of them dressed differently reads as
+    though it were a different kind of thing.
+    """
+    html = env.app.test_client().get("/leaderboard").get_data(as_text=True)
+    at = [html.index("Track Records"), html.index("Time Trials Leaderboard"),
+          html.index("Multiplayer Leaderboard")]
+    assert at == sorted(at), "the three boards are in that order down the page"
+    assert "Race ratings" not in html, "the multiplayer board is named for the mode"
+    assert "From finishing positions in multiplayer races" not in html, (
+        "no board on this page carries a subtitle")
+
+
+def test_every_column_heading_on_a_board_is_in_the_one_font(env):
+    """A heading row is labels, so every label on it is the display face.
+
+    `table.board th.num` was handed `var(--mono)` along with the cells beneath
+    it, which split one heading row into two fonts and left the left-hand
+    labels looking pasted in from another table. The cells keep the distinction,
+    which is where it does the work - figures line up under each other.
+    """
+    import re
+    here = os.path.dirname(__file__)
+    css = open(os.path.join(here, "..", "static", "css", "style.css")).read()
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)   # prose, not selectors
+    for rule in css.split("}"):
+        if "font-family" not in rule or "var(--mono)" not in rule:
+            continue
+        sel = rule.split("{")[0]
+        assert not re.search(r"\bth\b", sel), (
+            "a column heading must not be mono: %s" % sel.strip())
+    assert "table.board td.num { font-family: var(--mono); }" in css
+
+
+# --- the Time Trials board --------------------------------------------------
+# Golf scoring: your placing on each of the twelve tracks, added up, so low is
+# good and a clean sweep of the pool is 12.
+
+def _pbs(A, name, times, bot=False):
+    """A driver with a personal best on each track in `times` ({slug: ms}).
+
+    Written straight into `drive_times` rather than driven through `/api/run`:
+    these tests are about what a table of times adds up to, and posting a
+    believable replay for each of twelve tracks would put the lap validator in
+    the middle of an arithmetic test.
+    """
+    with A.app.app_context():
+        u = A.User(username=name, email=name + "@example.com", is_bot=bot)
+        u.set_password("password123")
+        A.db.session.add(u)
+        A.db.session.commit()
+        for slug, ms in times.items():
+            A.db.session.add(A.DriveTime(user_id=u.id, track=slug, time_ms=ms,
+                                         splits_json="[]"))
+        A.db.session.commit()
+        return u.id
+
+
+def _tt(A):
+    """The Time Trials board as {username: row}."""
+    with A.app.app_context():
+        return {r["user"].username: r for r in A._time_trial_board()}
+
+
+def _pool(A):
+    import tracks as tracks_mod
+    return [t["slug"] for t in tracks_mod.TRACKS]
+
+
+def test_the_time_trial_score_is_the_sum_of_your_placings(env):
+    """Ten firsts and two thirds is 16."""
+    A = env
+    slugs = _pool(A)
+    # Quickest on the first ten, and beaten by both of the others on the last two.
+    _pbs(A, "sweeper", {s: (1000 if i < 10 else 3000) for i, s in enumerate(slugs)})
+    _pbs(A, "second", {s: 2000 for s in slugs})
+    _pbs(A, "third", {s: 2500 for s in slugs})
+
+    board = _tt(A)
+    assert board["sweeper"]["score"] == 10 * 1 + 2 * 3 == 16
+    assert board["second"]["score"] == 10 * 2 + 2 * 1
+    assert board["third"]["score"] == 10 * 3 + 2 * 2
+    assert [board[n]["pos"] for n in ("sweeper", "second", "third")] == [1, 2, 3], (
+        "low is good"
+    )
+    assert board["sweeper"]["best"] == "1st" and board["third"]["best"] == "2nd"
+
+
+def test_a_track_you_have_never_driven_counts_as_one_worse_than_last(env):
+    """Adding up only the tracks you have driven makes driving fewer the way to win."""
+    A = env
+    slugs = _pool(A)
+    _pbs(A, "everywhere", {s: 2000 for s in slugs})
+    _pbs(A, "oneandgone", {slugs[0]: 1000})     # quickest on one track, nothing else
+
+    board = _tt(A)
+    # On the first track 1000 beats 2000. On the other eleven only one driver has
+    # a time at all, so the missing lap is second of two.
+    assert board["oneandgone"]["score"] == 1 + 11 * 2
+    assert board["everywhere"]["score"] == 2 + 11 * 1
+    assert board["everywhere"]["pos"] == 1, (
+        "one lonely first place must not beat a full sweep")
+    assert board["oneandgone"]["driven"] == 1
+    assert board["everywhere"]["driven"] == board["everywhere"]["of"] == len(slugs)
+
+
+def test_an_equal_time_shares_the_placing(env):
+    """The same rule a placing on one track already uses: strictly faster, plus one."""
+    A = env
+    slugs = _pool(A)
+    for name in ("dead", "heat"):
+        _pbs(A, name, {s: 2000 for s in slugs})
+    _pbs(A, "slower", {s: 3000 for s in slugs})
+
+    board = _tt(A)
+    assert board["dead"]["score"] == board["heat"]["score"] == len(slugs)
+    assert board["dead"]["pos"] == board["heat"]["pos"] == 1, (
+        "an equal score is an equal place")
+    assert board["slower"]["score"] == 3 * len(slugs), "two laps are faster on every track"
+    assert board["slower"]["pos"] == 3, "a shared place still uses up two of them"
+
+
+def test_a_new_personal_best_moves_everybody_it_overtook(env):
+    """Which is why the score is derived on the way to the screen and stored nowhere.
+
+    A PB is not only a change to your own score - it demotes everybody it
+    passed. A number kept per driver would have to rewrite most of the board on
+    every lap; derived, both halves land on the next page load.
+    """
+    A = env
+    c = A.app.test_client()
+    _pbs(A, "slowcoach", {"sunrise": 30000})
+    _login(c, _pbs(A, "quick", {}))
+
+    before = _tt(A)
+    assert "quick" not in before, "a driver with no times has no placings to add up"
+    assert before["slowcoach"]["best"] == "1st"
+
+    c.post("/api/run", json=_run_payload(A, "sunrise", seconds=22))
+
+    after = _tt(A)
+    assert after["quick"]["best"] == "1st"
+    assert after["slowcoach"]["best"] == "2nd", "the driver who was passed moves too"
+    assert after["slowcoach"]["score"] == before["slowcoach"]["score"] + 1
+
+
+def test_a_bot_is_not_a_driver_on_the_time_trials_board(env):
+    """Same filter the ratings board applies: a bot is not somebody's rival here."""
+    A = env
+    slugs = _pool(A)
+    _pbs(A, "human", {s: 2000 for s in slugs})
+    _pbs(A, "botzilla", {s: 1000 for s in slugs}, bot=True)
+
+    board = _tt(A)
+    assert "botzilla" not in board
+    assert board["human"]["score"] == len(slugs), (
+        "and a bot's laps do not push a person down the field either")
+
+
+def test_the_time_trials_board_reaches_the_page(env):
+    """The score, what it is out of, and a way to the driver."""
+    A = env
+    _pbs(A, "quick", {"sunrise": 20000})
+    html = A.app.test_client().get("/leaderboard").get_data(as_text=True)
+    tt = html[html.index("Time Trials Leaderboard"):html.index("Multiplayer Leaderboard")]
+    assert 'href="/account/quick"' in tt, "a name on a board is a way to that driver"
+    import tracks as tracks_mod
+    assert "1/%d" % len(tracks_mod.TRACKS) in tt, "one track driven of the pool"
+
+
 # --- the boards point at Drive's own account page ---------------------------
 
 def test_a_name_on_a_board_opens_that_driver_on_drive(env):

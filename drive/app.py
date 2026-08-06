@@ -347,6 +347,83 @@ def _my_rank_map(pbs=None):
             for slug, row in pbs.items()}
 
 
+def _ordinal(n):
+    """1 -> "1st". A placing wants saying as one; "1" on its own reads as a count."""
+    if n % 100 in (11, 12, 13):
+        return "%dth" % n
+    return "%d%s" % (n, {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th"))
+
+
+def _time_trial_board():
+    """Every driver's Time Trial Score: their placing on each track, added up.
+
+    Golf scoring, so **low is good** and a clean sweep of the pool is 12. Ten
+    firsts and two thirds is 16.
+
+    Three rules make that sum well defined:
+
+    - **A tie shares a place**, which is the answer `_my_rank_map` already gives
+      for one track: a placing is the number of strictly faster laps plus one.
+    - **A track you have never driven scores one worse than last on it** - the
+      place you would take by turning up and being slowest. Adding up only the
+      tracks somebody *has* driven would make driving fewer of them the way to a
+      better score, which is the opposite of what a board is for: one lonely
+      first place would beat a full sweep. A track *nobody* has driven is worth
+      1 to everybody by the same rule, which cannot reorder anyone. The
+      `driven` column is what keeps a big score from being a mystery.
+    - **It is worked out here, on the way to the screen, and stored nowhere.** A
+      personal best does not only change *your* score, it demotes everybody you
+      overtook, so a number kept per driver would have to rewrite most of the
+      board on every lap and would be wrong for as long as one write path was
+      missed. Derived from `drive_times` on each render it cannot go stale, and
+      the pool is twelve tracks.
+
+    Only laps driven alone against the clock are in `drive_times` at all (see
+    `countsForTheBoard` in game.js), so nothing set in a room reaches this
+    board either.
+    """
+    slugs = [t["slug"] for t in tracks_mod.TRACKS]
+    pool = set(slugs)
+
+    # One query for the lot. The join is what drops bots and any row whose
+    # account is gone - the same two things the ratings board filters out.
+    rows = (db.session.query(DriveTime.track, DriveTime.time_ms, User)
+            .join(User, User.id == DriveTime.user_id)
+            .filter(User.is_bot.isnot(True)).all())
+
+    by_track = {}
+    for track, ms, user in rows:
+        if track in pool:      # a retired track's times are not places in the pool
+            by_track.setdefault(track, []).append((ms, user))
+
+    field = {}                 # slug -> how many drivers have a time there
+    places = {}                # user id -> {slug: placing}
+    who = {}                   # user id -> User
+    for slug, entries in by_track.items():
+        field[slug] = len(entries)
+        place = {}
+        for i, ms in enumerate(sorted(e[0] for e in entries)):
+            place.setdefault(ms, i + 1)   # first index wins, so equal times tie
+        for ms, user in entries:
+            who[user.id] = user
+            places.setdefault(user.id, {})[slug] = place[ms]
+
+    board = [{"user": who[uid],
+              "score": sum(mine.get(s, field.get(s, 0) + 1) for s in slugs),
+              "driven": len(mine),
+              "of": len(slugs),
+              "best": _ordinal(min(mine.values()))}
+             for uid, mine in places.items()]
+
+    # The score is the order. Everything after it in the key only decides who
+    # comes first *inside* a tie, which the shared position below then hides.
+    board.sort(key=lambda r: (r["score"], -r["driven"], r["user"].display.lower()))
+    for i, r in enumerate(board):
+        r["pos"] = (board[i - 1]["pos"] if i and r["score"] == board[i - 1]["score"]
+                    else i + 1)
+    return board
+
+
 # The track you were last on, so that "Solo" is a door back into the game rather
 # than a menu. Kept in the session (not localStorage) because the /solo route has
 # to know it server-side to render the right track on the first paint.
@@ -589,6 +666,7 @@ def leaderboard():
            .order_by(DriveStats.elo.desc()).limit(100).all())
     return render_template("leaderboard.html", stats=top,
                            tracks=tracks_mod.summaries(), records=_records(),
+                           tt=_time_trial_board(),
                            user=get_current_user(), name=get_effective_name())
 
 

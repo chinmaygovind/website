@@ -7,7 +7,7 @@
 <div class="wrap">
   <h1>Records</h1>
 
-  <h2>Track records</h2>
+  <h2>Track Records</h2>
   <div class="panel">
     <table class="board">
       {# The gold time used to sit here. It is a property of the track rather
@@ -32,8 +32,37 @@
     </table>
   </div>
 
-  <h2>Race ratings</h2>
-  <p class="muted" style="margin-top:-.4rem">From finishing positions in multiplayer races.</p>
+  {# Golf scoring: a driver's placing on each of the twelve tracks, added up, so
+     low is good and a clean sweep is 12. A track never driven counts as one
+     worse than last on it - see `_time_trial_board`, which is where all of the
+     reasoning lives, including why the score is derived on every render rather
+     than kept in a column. Deliberately no line of explanation under the
+     heading: the three boards on this page are a set, and only one of them had
+     one. #}
+  <h2>Time Trials Leaderboard</h2>
+  <div class="panel">
+    {% if tt %}
+    <table class="board">
+      <tr><th>#</th><th>Driver</th><th class="num">Score</th>
+        <th class="num">Tracks</th><th class="num">Best</th></tr>
+      {% for r in tt %}
+      <tr {% if user and r.user.id == user.id %}class="me"{% endif %}>
+        {# `r.pos` and not `loop.index`: an equal score is an equal place, the
+           same rule that decides a placing on one track. #}
+        <td>{{ r.pos }}</td>
+        <td>{{ p.player(r.user) }}</td>
+        <td class="num">{{ r.score }}</td>
+        <td class="num">{{ r.driven }}/{{ r.of }}</td>
+        <td class="num">{{ r.best }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p class="muted">No times set yet. <a href="/solo">Drive one.</a></p>
+    {% endif %}
+  </div>
+
+  <h2>Multiplayer Leaderboard</h2>
   <div class="panel">
     {% if stats %}
     <table class="board">
