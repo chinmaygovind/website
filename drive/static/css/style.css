@@ -308,21 +308,40 @@ body.playing { overflow: hidden; background: #9ed2f0; }
 
 /* Every anchor is measured from the safe area, so a notch or a home indicator
    never lands on top of the clock or a control. */
-.hud-tl { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px));
-          left: calc(14px + env(safe-area-inset-left, 0px));
-          display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+/* **The whole left-hand side is one column**, and that is not tidiness.
+   `.hud-tl` and `.hud-bl` were two separately anchored boxes sharing this edge,
+   so neither could know how tall the other was - and every layout that brings
+   the map up to the top (a phone, a short screen) had to clear the cards above
+   it with a hardcoded number. It cleared the track card; the Position card
+   underneath it did not exist yet when the number was written, and it only
+   appears once there are rivals on the road, so a solo screenshot of the phone
+   HUD looked perfect while the map sat on top of your race position in every
+   race. Now the map is the last item in a flex column and where it goes is
+   `margin-top`, which is a question about *order* rather than about pixels: the
+   overlap has stopped being a thing you can express. */
+.hud-l { position: absolute;
+         top: calc(12px + env(safe-area-inset-top, 0px));
+         bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+         left: calc(14px + env(safe-area-inset-left, 0px));
+         display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
+         /* `.hud > *` turns pointer events back on, and this box is now that
+            child rather than the cards - so without these two the column would
+            swallow every click and drag down the whole left of the screen. */
+         pointer-events: none; }
+.hud-l > * { pointer-events: auto; }
+.hud-tl { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .hud-tr { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px));
           right: calc(14px + env(safe-area-inset-right, 0px));
           display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
-.hud-bl { position: absolute; bottom: calc(14px + env(safe-area-inset-bottom, 0px));
-          left: calc(14px + env(safe-area-inset-left, 0px));
+/* Bottom of the column, which is the corner it belongs in on a desktop. */
+.hud-bl { margin-top: auto;
           display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 /* The bottom-left corner belongs to the steering thumb whenever there is one,
    and that is a question about the device rather than about the width of the
    window: a tablet is 1180px wide and drives with its thumbs, so the map was
-   sitting underneath the arrows. Bottom has to be released as well as top set,
-   or an absolutely positioned box with both is stretched between them. */
-body.touch .hud-bl { bottom: auto; top: calc(84px + env(safe-area-inset-top, 0px)); }
+   sitting underneath the arrows. Dropping the auto margin is the whole move now
+   - the map stops being pushed to the floor and simply follows the last card. */
+body.touch .hud-bl { margin-top: 0; }
 body.touch #minimap { width: 118px; height: 92px; }
 /* Which puts the map directly under the track card, so the blurb goes - it is
    the one thing up there you read once and never again, and the map is not. */
@@ -1049,7 +1068,7 @@ body.side-open #touch { display: none; }
 
 @media (max-width: 860px) {
   /* Minimap out of the bottom-left corner - that is the steering thumb's. */
-  .hud-bl { bottom: auto; top: calc(84px + env(safe-area-inset-top, 0px)); }
+  .hud-bl { margin-top: 0; }
   #minimap { width: 118px; height: 92px; }
   .trackblurb { display: none; }
   .hud-bc { width: 300px; max-width: 46vw; }
@@ -1083,11 +1102,11 @@ body.side-open #touch { display: none; }
 @media (max-height: 460px) {
   .hud-tr .card.medals { display: none; }
   .countdown { font-size: 4.5rem; }
-  /* `bottom` has to be released as well as `top` set: an absolutely positioned
-     box with both is stretched between them, so the map ended up at the top of
-     a full-height column - directly on top of the track card - on any screen
-     short enough for this rule but too wide for the narrow one. */
-  .hud-bl { top: calc(76px + env(safe-area-inset-top, 0px)); bottom: auto; }
+  /* Up under the cards rather than on the floor, since the floor is where the
+     bottom-centre clock and the pedals are on a screen this short. It used to
+     take a hardcoded top offset and a released `bottom`; in one column it is
+     the same statement as everywhere else - stop pushing it down. */
+  .hud-bl { margin-top: 0; }
   #minimap { width: 96px; height: 74px; }
   .trackname { font-size: 1.05rem; }
   /* The blurb is the first thing to go when the height is what is short. */

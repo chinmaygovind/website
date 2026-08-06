@@ -5,6 +5,17 @@
 <canvas id="gl"></canvas>
 
 <div class="hud">
+  <!-- The left-hand side is ONE column, top to bottom, and that is load-bearing
+       rather than tidy. `.hud-tl` and `.hud-bl` used to be two separately
+       anchored boxes sharing the same left edge, so neither could know the
+       other's height - and the phone layout, which brings the map up out of the
+       steering thumb's corner, had to clear the top card with a hardcoded 84px.
+       That number cleared the *track* card, and the Position card underneath it
+       had not been thought of: it only appears when there are rivals on the
+       road, so every solo screenshot of the phone HUD looked right while the map
+       sat squarely on top of your position in every race. One column, and the
+       overlap is not expressible. -->
+  <div class="hud-l">
   <!-- top left: where you are - which track, and what kind of session -->
   <div class="hud-tl">
     <div class="card">
@@ -17,6 +28,24 @@
       <div class="sub">Position</div>
     </div>
   </div>
+
+  <!-- bottom left: the two session controls, then the minimap.
+       These are the same pair as the touch buttons and they do the same two
+       things, because falling off is common and recovering from it must not
+       cost a trip through a menu. Hidden on touch, where the real buttons are
+       under your thumb instead. -->
+  <div class="hud-bl">
+    <div class="mapbtns">
+      <button class="hbtn" id="btnCheckpoint" title="Back to the last checkpoint (T) - the clock keeps running">
+        <svg viewBox="0 0 24 24"><path d="M6.5 3v18"/><path d="M6.5 4.6 18 8.3 6.5 12z"/></svg>
+      </button>
+      <button class="hbtn" id="btnRestart" title="Restart the run (R)">
+        <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 3.5V9h-5.5"/></svg>
+      </button>
+    </div>
+    <div class="card"><canvas id="minimap" width="190" height="150"></canvas></div>
+  </div>
+  </div><!-- /hud-l -->
 
   <!-- top right: the three things you can open -->
   <div class="hud-tr">
@@ -90,22 +119,6 @@
     </div>
   </div>
 
-  <!-- bottom left: the two session controls, then the minimap.
-       These are the same pair as the touch buttons and they do the same two
-       things, because falling off is common and recovering from it must not
-       cost a trip through a menu. Hidden on touch, where the real buttons are
-       under your thumb instead. -->
-  <div class="hud-bl">
-    <div class="mapbtns">
-      <button class="hbtn" id="btnCheckpoint" title="Back to the last checkpoint (T) - the clock keeps running">
-        <svg viewBox="0 0 24 24"><path d="M6.5 3v18"/><path d="M6.5 4.6 18 8.3 6.5 12z"/></svg>
-      </button>
-      <button class="hbtn" id="btnRestart" title="Restart the run (R)">
-        <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 3.5V9h-5.5"/></svg>
-      </button>
-    </div>
-    <div class="card"><canvas id="minimap" width="190" height="150"></canvas></div>
-  </div>
 
   <!-- bottom centre: the run. Delta above the clock, personal best to its lower
        left, speed to its lower right - Polytrack's arrangement, and the reason

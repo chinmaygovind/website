@@ -85,6 +85,13 @@ const S = {
   watch: null,             // a replay playing instead of a run
   shot: false,             // taking a preview picture, not playing
   previewPhase: null,      // `?panel=qual|racing` pins a phase to look at it
+  // And `?panel=racing` pins a *field* to go with it, because pinning the phase
+  // alone was not enough to photograph the one thing that phase puts on screen:
+  // the position card and the standings are shown when there are rivals on the
+  // road, not when the phase says `racing`, so a pinned race drew neither. The
+  // mobile HUD then had the minimap sitting on top of the position card in every
+  // real race and looking correct in every screenshot anybody could take.
+  previewOrder: null,
   hintShown: false,
   sessionBest: null,       // rooms only: best practice lap since you arrived
   qualBest: null,          // your best lap of this qualifying session
@@ -241,6 +248,17 @@ async function openPanelParam() {
     // to as well or it photographs a screen that never happens.
     showSide(false);
     applyPhase();
+    // A race with nobody in it puts nothing on screen, so the pinned one gets a
+    // field - the same trick `qual` uses one line down. Six cars, because the
+    // question a phone layout asks of this card is how wide the numbers get.
+    if (p === 'racing') S.previewOrder = [
+      { name: 'Chinmay', color: '#e8453c', s: 980, self: false, pid: 'a', ms: null },
+      { name: 'Someone else', color: '#55e08a', s: 902, self: false, pid: 'c', ms: null },
+      { name: CFG.name, color: myColor(), s: 861, self: true, ms: null },
+      { name: 'Fourth', color: '#8fd6ff', s: 774, self: false, pid: 'd', ms: null },
+      { name: 'Fifth', color: '#bb6bd9', s: 640, self: false, pid: 'e', ms: null },
+      { name: 'Sixth', color: '#f2994a', s: 512, self: false, pid: 'f', ms: null },
+    ];
     if (p === 'qual') renderQual({
       ends: serverNow() + 72000,
       rows: [{ pid: 'a', name: 'Chinmay', color: '#e8453c', ms: 42108 },
@@ -1878,8 +1896,8 @@ function hud(now) {
   // the qualifying board directly below it already lists the same people in
   // the order that does mean something.
   const qualifying = S.racePhase === 'qualifying' || S.previewPhase === 'qualifying';
-  if (!qualifying && (S.raceMode || S.remotes.size)) {
-    const order = liveOrder();
+  if (!qualifying && (S.raceMode || S.remotes.size || S.previewOrder)) {
+    const order = S.previewOrder || liveOrder();
     const me = order.findIndex(e => e.self) + 1;
     $('position').style.display = '';
     $('posNum').textContent = me || '-';
