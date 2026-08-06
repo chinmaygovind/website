@@ -397,12 +397,20 @@ function markHintSeen() {
 // ---------------------------------------------------------------------------
 // Input
 // ---------------------------------------------------------------------------
+// Everything you hold rather than press: five actions for the car, and two for
+// the camera. Q and F are in here rather than beside R and T because a held key
+// has to be *let go of*, and this is the set that already knows how: it is
+// emptied on blur and on opening the chat box, which is the difference between
+// looking behind you and driving the rest of the lap backwards because the
+// keyup went to a message. `readInput` reads the five it wants by name, so the
+// physics never sees these two.
 const KEYMAP = {
   ArrowUp: 'up', KeyW: 'up',
   ArrowDown: 'down', KeyS: 'down',
   ArrowLeft: 'left', KeyA: 'left',
   ArrowRight: 'right', KeyD: 'right',
   Space: 'drift', ShiftLeft: 'drift',
+  KeyQ: 'rear', KeyF: 'first',
 };
 
 function bindInput() {
@@ -1468,6 +1476,21 @@ function readInput() {
   return input;
 }
 
+/**
+ * Which camera the keyboard is asking for, in the two words the renderer reads.
+ *
+ * Held, not toggled, and that is the whole design: a look behind you is a glance
+ * you take with a hand you need back, so it ends when you let go and there is no
+ * state left to be stuck in. Nothing here reads `touchKeys` - a phone has four
+ * driving buttons and nowhere for a fifth, and a view you cannot let go of on
+ * the road is worse than no view.
+ *
+ * The names are a contract with `Renderer.follow`, and pinned in test_rules_js.
+ */
+function viewKeys() {
+  return { rear: keys.has('rear'), first: keys.has('first') };
+}
+
 // ---------------------------------------------------------------------------
 // Frame
 // ---------------------------------------------------------------------------
@@ -1504,7 +1527,10 @@ function frame(now) {
       r.slipCharge = 0; r.slipBoost = 0;
       S.renderer.draft(r, dt, r.draftFx);
     }
-    S.renderer.follow(S.watch.subject, dt);
+    // The views work on a replay too, because there is nothing about them that
+    // needs the car to be yours: a lap you are watching is exactly where you
+    // want to see what the driver could see.
+    S.renderer.follow(S.watch.subject, dt, viewKeys());
     // Watching is not driving, and it takes the field with it: the room is
     // still going round out there, but a camera on somebody else's lap is not
     // where any of it is happening, so hearing it from here would be noise.
@@ -1610,7 +1636,7 @@ function drive(inp) {
 
 function render(dt, now) {
   const car = S.car;
-  S.renderer.follow(car, dt);
+  S.renderer.follow(car, dt, viewKeys());
   // The ears ride the camera, so they are moved the moment it has been - and
   // the field is spatialised against where it has just gone rather than where
   // it was last frame. Your own car stays out of this: it is the thing you are
