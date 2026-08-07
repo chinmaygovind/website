@@ -1030,6 +1030,27 @@ def api_start():
     return jsonify({"ok": True, "stored": True, "starts": row.starts})
 
 
+@app.route("/api/ping")
+def api_ping():
+    """The cheapest possible round trip, for the ping readout.
+
+    Solo opens no socket at all - `game.js` only calls `connect()` in a room - so
+    there is nothing in a time trial whose latency could be measured. This is the
+    one thing both modes can measure the same way, and measuring it the same way in
+    both is worth more than measuring the exact transport: what the number is for is
+    "is my connection to this server healthy", and a figure that meant something
+    different in solo than in a room would be worse than one meaning slightly less
+    than a socket round trip in both.
+
+    Deliberately does no work and touches nothing - no session lookup, no query, no
+    presence write. It is polled every couple of seconds by every tab with the
+    counter switched on, so anything it did would be that thing done forever. It is
+    `visits.py`'s heartbeat that is excluded from the visit log for the same reason,
+    and this path is skipped there too.
+    """
+    return jsonify({"ok": True})
+
+
 @app.route("/api/activity", methods=["POST"])
 def api_activity():
     """Driving that will never produce a board entry: an abandoned run, or a room lap.

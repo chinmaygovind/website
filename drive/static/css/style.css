@@ -480,6 +480,28 @@ body.touch .mapbtns { display: none; }
   backdrop-filter: blur(6px);
 }
 
+/* --- frame rate and ping -------------------------------------------------
+   Two rows in one card, and the whole design constraint is that **nothing about
+   it moves**. A counter is read with a flick of the eye, so it has to be in the
+   same pixels every time: the label column is a fixed width, the number column
+   is a fixed width, and the digits are `tabular-nums`, so 9 and 144 and -- all
+   occupy the identical space and the card never changes size. Getting this wrong
+   is what makes a frame counter twitch sideways as it crosses 100.
+   The rows hide independently, so with only one switched on it takes the top
+   slot rather than leaving a hole where the other would have been. */
+.card.meters { padding: .34rem .5rem; display: flex; flex-direction: column; gap: .1rem; }
+.meter { display: grid; grid-template-columns: 2.5rem 2.2rem; align-items: baseline;
+         gap: .3rem; line-height: 1.25; }
+.meter span { font-family: var(--display); font-size: .62rem; font-weight: 700;
+              letter-spacing: .09em; color: rgba(255, 255, 255, .62); }
+.meter b { font-family: var(--mono); font-size: .82rem; font-weight: 700;
+           font-variant-numeric: tabular-nums; text-align: right; }
+/* Amber and red are the two facts worth spotting without reading the number:
+   the frame rate has dropped below what the car is being simulated at, or the
+   round trip is long enough to be the reason a rival is somewhere unexpected. */
+.meter b.warn { color: #ffd96b; }
+.meter b.bad { color: #ff8f7a; }
+
 /* --- the three buttons, top right ----------------------------------------
    Everything that is not driving lives behind one of these: the room, the help
    sheet and the settings sheet. Icon-only and square, so the row is the same
@@ -732,9 +754,21 @@ body.room .solo-only { display: none; }
 .ghost-now { margin: .55rem 0 0; font-size: .9rem; color: var(--ink-soft); }
 
 /* --- the board, in the game ---------------------------------------------- */
-.board-sheet, .tracks-sheet { max-width: 780px; }
+.tracks-sheet { max-width: 780px; }
+/* Wider and taller than the switcher next to it, because it is a table being
+   read rather than a grid being pointed at: more rows on screen at once is the
+   whole of what makes a board useful, and the splits panel beside it wants the
+   room. Still short of filling a laptop, so it reads as a panel over the track
+   and not as a page you navigated to.
+   **`.sheet.wide.board-sheet`, not `.board-sheet`**, and that is not tidiness.
+   The element is `class="sheet wide board-sheet"`, so a single-class selector
+   here loses to `.sheet.wide`'s two however far down the file it sits - which is
+   why the 780px this rule used to ask for **never applied at all** and the board
+   has been 620px the whole time. `.sheet.wide.settings` above works only because
+   it happens to be three classes. Same trap as `.btn.danger`'s width. */
+.sheet.wide.board-sheet { max-width: 960px; }
 .board-split { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem; }
-.board-list { max-height: 52vh; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+.board-list { max-height: 62vh; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
 .brow {
   display: flex; align-items: center; gap: .5rem; width: 100%;
   padding: .35rem .5rem; border-radius: 8px; cursor: pointer;
@@ -766,6 +800,21 @@ body.room .solo-only { display: none; }
 .sp i.ahead { color: #1f9d55; }
 .sp i.behind { color: var(--red); }
 .bd-actions { display: grid; gap: .45rem; }
+/* Bottom right, under both columns. A hairline above it so it reads as the foot
+   of the panel rather than a stray link after the table. */
+.board-foot { display: flex; justify-content: flex-end; margin-top: .85rem;
+              padding-top: .6rem; border-top: 1px solid var(--line); }
+.board-all {
+  display: inline-flex; align-items: center; gap: .35rem;
+  font-family: var(--display); font-size: .92rem; font-weight: 600;
+  color: var(--ink-soft); text-decoration: none;
+}
+.board-all svg { width: 15px; height: 15px; fill: none; stroke: currentColor;
+                 stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.board-all:hover { color: var(--ink); }
+/* The arrow leads the eye out of the panel, so it moves rather than the text. */
+.board-all:hover svg { transform: translateX(2px); }
+.board-all svg { transition: transform .12s ease-out; }
 @media (max-width: 620px) {
   .board-split { grid-template-columns: 1fr; }
   .board-detail { border-left: 0; border-top: 1px solid var(--line); padding: .8rem 0 0; }

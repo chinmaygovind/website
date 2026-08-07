@@ -32,6 +32,20 @@
       <div class="mode" id="modeLabel">{% if mode == 'room' %}Multiplayer - Free practice{% elif mode == 'replay' %}Race replay{% else %}Solo time trial{% endif %}</div>
       <div class="trackblurb" id="trackBlurb">{{ track.blurb }}</div>
     </div>
+    <!-- Frame rate and round trip, off unless asked for.
+         **Above the position card, not below it.** The position card appears the
+         moment there are rivals on the road, so anything under it moves at the
+         green light - and a readout whose whole job is to be glanceable cannot
+         be somewhere that shifts mid-race. Here it is in the same place in solo,
+         in a room, before a race and during one.
+         Two rows rather than one line, and every number in a fixed-width slot:
+         the point of a counter is that you flick your eyes at it, which needs it
+         to be in the same pixels each time rather than growing a digit as the
+         frame rate crosses 100. -->
+    <div class="card meters" id="meters" style="display:none">
+      <div class="meter" id="meterFps"><span>FPS</span><b id="fpsVal">--</b></div>
+      <div class="meter" id="meterPing"><span>PING</span><b id="pingVal">--</b></div>
+    </div>
     <div class="card" id="position" style="display:none">
       <div class="position"><b id="posNum">-</b><span>/<span id="posTot">1</span></span></div>
       <div class="sub">Position</div>
@@ -77,6 +91,22 @@
           <path d="M1 17.1a3.7 3.7 0 0 1 3-3.6"/>
           <circle cx="19.7" cy="8.4" r="2"/>
           <path d="M23 17.1a3.7 3.7 0 0 0-3-3.6"/>
+        </svg>
+      </button>
+      {% else %}
+      <!-- The board takes the slot the room button has in multiplayer, because
+           the two are the same kind of thing: who else is here, and how fast are
+           they. A podium, the same shape the account page uses for a leaderboard,
+           since a podium reads as one whatever language you have. It is the same
+           panel the *View Others* chip in settings opens - picking somebody to
+           chase is a between-runs decision on the track you are already on, so it
+           belongs on a button and not two menus down. -->
+      <button class="hbtn" id="btnBoard" title="Track leaderboard (L)">
+        <svg viewBox="0 0 24 24">
+          <path d="M3.5 20.5h17"/>
+          <path d="M5.5 20.5v-7h4v7"/>
+          <path d="M9.5 20.5v-12h5v12"/>
+          <path d="M14.5 20.5v-5h4v5"/>
         </svg>
       </button>
       {% endif %}
@@ -445,7 +475,9 @@
          the world on one, the music on the other. Driving with the game muted
          and your own music on, or with the engine and nothing over the top of
          it, are both ordinary ways to play and neither was askable. -->
-    <h3>Audio</h3>
+    <!-- No heading over these. Every other row on the sheet is captioned by the
+         thing it does and this one had a word above it saying "Audio" over two
+         buttons that already say Sound and Music. -->
     <div class="btn-grid two">
       <button class="btn secondary toggle" id="btnSound" aria-pressed="true">
         <svg class="icn" viewBox="0 0 24 24" aria-hidden="true">
@@ -461,6 +493,29 @@
           <circle cx="16.6" cy="15.4" r="2.4"/>
         </svg>
         Music: <span id="btnMusicState">Off</span>
+      </button>
+      <!-- The two readouts, in the same grid as the audio pair rather than a
+           second one under it: four switches of the same kind, two to a row, so
+           the grid's own gap separates the rows. Two `.btn-grid`s stacked put
+           the rows flush against each other and four independent switches read
+           as one welded block.
+           Two switches and not one, because wanting to know your frame rate and
+           wanting to know your latency are different questions. Both default
+           off: a number over the road is something you go looking for. -->
+      <button class="btn secondary toggle" id="btnFps" aria-pressed="false">
+        <svg class="icn" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3.5 17.5 8 11l3.6 3.2L15.4 8l5.1 9.5z"/>
+          <path d="M3.5 20.5h17"/>
+        </svg>
+        FPS Counter: <span id="btnFpsState">Off</span>
+      </button>
+      <button class="btn secondary toggle" id="btnPing" aria-pressed="false">
+        <svg class="icn" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 18.4a2 2 0 1 0 0-.1z"/>
+          <path d="M8.1 14.6a5.5 5.5 0 0 1 7.8 0"/>
+          <path d="M4.8 11.1a10.2 10.2 0 0 1 14.4 0"/>
+        </svg>
+        Ping Counter: <span id="btnPingState">Off</span>
       </button>
     </div>
 
@@ -507,6 +562,17 @@
         <p class="muted empty">Pick a time to see its splits.</p>
       </div>
     </div>
+    <!-- The way out to the whole thing. `/api/board` sends the top 50, which is
+         every row this track has today and will not always be, so the page that
+         has all of them is one link away rather than a thing you have to know
+         exists. Bottom right, after the boards, because it is where you go when
+         what you wanted was not in front of you. -->
+    <div class="board-foot">
+      <a class="board-all board-link" href="/track/{{ track.slug }}">
+        See all records
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M12.5 6.5 19 12l-6.5 5.5"/></svg>
+      </a>
+    </div>
   </div>
 </div>
 
@@ -549,6 +615,11 @@
       {# P has always changed track and was in no list anywhere, so the only way
          to find it was to read the tooltip on an icon. #}
       <tr><td>Change track</td><td>P</td></tr>
+      {% if mode != 'room' %}
+      {# Solo only, like the button it doubles for: in a room the drivers whose
+         times you would be reading are on the road with you. #}
+      <tr><td>Track leaderboard</td><td>L</td></tr>
+      {% endif %}
       {# Two switches, two keys. K is *which* lap you drive against, G is whether
          a car is drawn for it - they shared G before, which meant the car could
          only be turned off from the settings sheet. #}

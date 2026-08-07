@@ -80,6 +80,9 @@ const S = {
   // wanting the splits off a lap you do not want a translucent car driving in
   // front of you is an ordinary thing to want, and it used to be unaskable.
   showGhost: storedFlag('drive.ghostcar', true),
+  // Both readouts default off: a number over the road is asked for, not given.
+  showFps: storedFlag('drive.fps', false),
+  showPing: storedFlag('drive.ping', false),
   board: null,             // the last board fetched, for the detail pane
   mySplits: [],            // your PB's splits, to compare somebody else's with
   watch: null,             // a replay playing instead of a run
@@ -502,6 +505,12 @@ function bindInput() {
     // thing there is to do that is not driving, and reaching for it should not
     // mean finding a small icon in the corner first.
     if (e.code === 'KeyP') toggleTracks();
+    // The board, from the road, and solo only for the same reason the button is:
+    // in a room the people whose times you would be reading are on the track
+    // with you. Pressing it again closes it, like every other panel key.
+    if (e.code === 'KeyL' && CFG.mode !== 'room') {
+      if ($('boardOv').style.display === 'none') openBoard(); else toggleBoard(false);
+    }
     // M is the one key that means two things, and it is the right two. Alone
     // there is nobody to talk to and the sound is worth a key; in a room the
     // chat is the thing you want without taking a hand off the wheel to find,
@@ -718,8 +727,17 @@ function bindInput() {
   });
   $('btnGhost').onclick = () => setGhostCar(!S.showGhost);
   setGhostCar(S.showGhost, { quiet: true, remember: false });
+  // The two readouts, wired like the two audio switches above them.
+  $('btnFps').onclick = () => setFpsOn(!S.showFps);
+  $('btnPing').onclick = () => setPingOn(!S.showPing);
+  setFpsOn(S.showFps, { remember: false });
+  setPingOn(S.showPing, { remember: false });
+
   $('btnTracks').onclick = () => toggleTracks();
   $('btnTracksClose').onclick = () => toggleTracks(false);
+  // Solo only - in a room this slot is the room button, and everybody in there
+  // is on the road with you rather than on a board.
+  if ($('btnBoard')) $('btnBoard').onclick = () => openBoard();
   $('btnBoardClose').onclick = () => toggleBoard(false);
   $('btnWatchStop').onclick = () => stopWatching();
   renderTrackCards();          // loadTrack has already set the ghost up
@@ -998,6 +1016,117 @@ function setMusic(on, opts = {}) {
   $('btnMusicState').textContent = on ? 'On' : 'Off';
   $('btnMusic').classList.toggle('on', on);
   $('btnMusic').setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+
+// ---------------------------------------------------------------------------
+// Frame rate and ping
+//
+// Two readouts and two switches, because they answer two questions and only one
+// of them is about the network. Both off unless asked for: a number over the road
+// is something you go looking for, not something everybody should be given.
+//
+// The card is in the top-left column *above* the position card, which is the one
+// placement nothing can push around - the position card appears when there are
+// rivals on the road, so a readout under it would move at the green light.
+// ---------------------------------------------------------------------------
+
+/** Frames are counted over a window rather than taken from one gap.
+ *
+ *  `1 / dt` off a single frame is a number that flickers through a range of
+ *  twenty even on a machine holding a steady rate, because it reports the jitter
+ *  between two particular frames. Averaging over half a second reports what you
+ *  would call the frame rate. */
+const FPS_WINDOW_MS = 500;
+let fpsFrames = 0;
+let fpsSince = 0;
+
+function fpsTick(now) {
+  fpsFrames++;
+  if (!fpsSince) { fpsSince = now; return; }
+  const span = now - fpsSince;
+  if (span < FPS_WINDOW_MS) return;
+  const fps = Math.round(fpsFrames * 1000 / span);
+  fpsFrames = 0;
+  fpsSince = now;
+  if (!S.showFps) return;
+  // Amber under the 60 the car is stepped at twice over, red under 30 - the two
+  // points where what you are seeing stops being what the physics is doing.
+  setMeter('fps', fps, fps < 30 ? 'bad' : (fps < 55 ? 'warn' : ''));
+}
+
+/** How often the round trip is measured. Two seconds is often enough to watch a
+ *  connection go bad and rare enough to be nothing: it is one request that does
+ *  no work, and it only runs at all while the readout is switched on. */
+const PING_EVERY_MS = 2000;
+let pingTimer = null;
+
+async function pingOnce() {
+  const t0 = performance.now();
+  try {
+    // `cache: 'no-store'` matters more than it looks: a cached response is
+    // answered by the browser in under a millisecond and the readout would
+    // proudly report a 0ms connection to a server that is not there.
+    const r = await fetch('/api/ping', { cache: 'no-store' });
+    if (!r.ok) throw new Error('bad status');
+  } catch (e) {
+    setMeter('ping', null, 'bad');       // offline, or the server is gone
+    return;
+  }
+  const ms = Math.round(performance.now() - t0);
+  setMeter('ping', ms, ms > 250 ? 'bad' : (ms > 120 ? 'warn' : ''));
+}
+
+function startPinging() {
+  if (pingTimer) return;
+  pingOnce();
+  pingTimer = setInterval(pingOnce, PING_EVERY_MS);
+}
+
+function stopPinging() {
+  if (pingTimer) clearInterval(pingTimer);
+  pingTimer = null;
+}
+
+/** One row of the card. `null` reads as `--`, which is what an unknown looks
+ *  like - and it occupies the same width as a number, so nothing shifts. */
+function setMeter(which, value, cls) {
+  const el = $(which === 'fps' ? 'fpsVal' : 'pingVal');
+  if (!el) return;
+  el.textContent = value == null ? '--' : String(value);
+  el.className = cls || '';
+}
+
+/** Whether the card is there at all, and which rows are in it.
+ *
+ *  The rows are hidden individually, so with one switch on it takes the top slot
+ *  rather than leaving a gap where the other would have been. */
+function syncMeters() {
+  const card = $('meters');
+  if (!card) return;
+  $('meterFps').style.display = S.showFps ? '' : 'none';
+  $('meterPing').style.display = S.showPing ? '' : 'none';
+  card.style.display = (S.showFps || S.showPing) ? '' : 'none';
+}
+
+function setFpsOn(on, opts = {}) {
+  S.showFps = on;
+  if (opts.remember !== false) rememberFlag('drive.fps', on);
+  $('btnFpsState').textContent = on ? 'On' : 'Off';
+  $('btnFps').classList.toggle('on', on);
+  $('btnFps').setAttribute('aria-pressed', on ? 'true' : 'false');
+  if (!on) setMeter('fps', null, '');
+  syncMeters();
+}
+
+function setPingOn(on, opts = {}) {
+  S.showPing = on;
+  if (opts.remember !== false) rememberFlag('drive.ping', on);
+  $('btnPingState').textContent = on ? 'On' : 'Off';
+  $('btnPing').classList.toggle('on', on);
+  $('btnPing').setAttribute('aria-pressed', on ? 'true' : 'false');
+  // Nothing is polled while nobody is reading it.
+  if (on) startPinging(); else { stopPinging(); setMeter('ping', null, ''); }
+  syncMeters();
 }
 
 // ---------------------------------------------------------------------------
@@ -1744,6 +1873,11 @@ function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(0.1, (now - lastFrame) / 1000);
   lastFrame = now;
+
+  // Above the early returns, so the counter keeps counting in a replay and while
+  // a panel has the game paused - a frame rate that stopped updating the moment
+  // you opened something would look like the number itself had frozen.
+  fpsTick(now);
 
   // The music books its next few notes against the audio clock, and this is
   // the only thing on the page running often enough to turn that handle. Above

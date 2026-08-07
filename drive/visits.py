@@ -66,10 +66,14 @@ COOKIE_MAX_AGE = 60 * 60 * 24 * 730          # two years
 
 # What is furniture rather than a visit. Everything under /static, the
 # websocket transport, the heartbeat itself (it would double the table and say
-# nothing the presence row does not), and anything that is plainly an asset.
+# nothing the presence row does not), the latency probe behind Drive's ping
+# readout (polled every couple of seconds by any tab showing it, and it exists
+# precisely because it does nothing - logging it would be several hundred rows
+# per session saying a browser was still connected), and anything that is
+# plainly an asset.
 # **PDFs are deliberately not in this list**: the resume is the one file on the
 # site whose downloads are worth counting.
-SKIP_PREFIXES = ("/static/", "/socket.io/", "/api/presence")
+SKIP_PREFIXES = ("/static/", "/socket.io/", "/api/presence", "/api/ping")
 ASSET_RE = re.compile(
     r"\.(css|js|mjs|map|json|png|jpe?g|gif|svg|webp|avif|ico|bmp"
     r"|woff2?|ttf|otf|eot|mp3|wav|ogg|m4a|mp4|webm|wasm)$", re.I)
