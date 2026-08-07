@@ -393,12 +393,21 @@ body.touch .mapbtns { display: none; }
 .btn.end-race svg { width: 17px; height: 17px; fill: none; stroke: currentColor;
                     stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .btn.end-race:hover { background: rgba(232, 69, 60, .9); color: #fff; }
-/* Both confirm in place rather than opening a dialog over the road: an
-   overlay mid-race hides the thing you would want to look at before deciding. */
-.btn.armed, .hbtn.armed {
+/* Every one of these confirms in place rather than opening a dialog over the
+   road: an overlay mid-race hides the thing you would want to look at before
+   deciding. Resign, End race, and the restart button.
+
+   Restart is the one that is armed by a *key* as often as by a press, so the
+   pulse is doing more work there than on the other two: it is what says the
+   first R registered once the toast has gone, which it does after 1.6s while the
+   arming lasts longer than that. */
+.btn.armed, .hbtn.armed, .tbtn.armed {
   background: var(--red); color: #fff; border-color: #fff;
   animation: armedpulse 1s ease-in-out infinite;
 }
+/* Beats `.tbtn.down`, which is the finger-is-on-it grey and would otherwise win
+   on the press that arms it and leave the button looking ordinary. */
+.tbtn.armed.down { background: var(--red); color: #fff; }
 @keyframes armedpulse { 50% { box-shadow: 0 0 0 4px rgba(232, 69, 60, .35); } }
 
 /* --- qualifying ----------------------------------------------------------- */

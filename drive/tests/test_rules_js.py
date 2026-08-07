@@ -61,16 +61,57 @@ var calls = [];
 var S = {started: false, car: {requestRespawn: () => calls.push('respawn')}};
 function resetToStart() { calls.push('reset'); }
 function toast(t) { calls.push('toast:' + t); }
+
+// The arming half. No timers in QuickJS, so `setTimeout` records the callback
+// instead of running it and `fire()` below is the clock running out - which is
+// the only way to test an expiry at all without waiting 3.5 real seconds.
+var ARM_MS = 3500, timers = [], restartArm = null;
+function setTimeout(fn, ms) { timers.push(fn); return timers.length; }
+function clearTimeout(t) { if (t) timers[t - 1] = null; }
+function fire() { var t = timers.slice(); timers = []; t.forEach(f => f && f()); }
+var els = {btnRestart: cls(), tRestart: cls()};
+function cls() {
+  var on = false;
+  return {classList: {toggle: (n, v) => { on = v; }, has: () => on}};
+}
+function $(id) { return els[id]; }
+function armedButtons() {
+  return Object.keys(els).filter(k => els[k].classList.has()).sort();
+}
 """
+
+
+# `restartRun` is one of five now: the rule about when to ask, the two halves of
+# the asking, and the button that shows it. Lifted together because they only
+# make sense together.
+RESTART_FNS = ("restartRun", "restartCostsARace", "showRestartArmed",
+               "armRestart", "disarmRestart")
+
+
+def _restart_ctx(phase=None, race=False, touch=False, mode="room"):
+    """A room, mid-race or not, with every door into `restartRun` loaded."""
+    ctx = _ctx(RESTART_STUB)
+    for fn in RESTART_FNS:
+        ctx.eval(_fn(fn))
+    ctx.eval("CFG.mode = '%s';" % mode)
+    ctx.eval("S.started = true; S.touch = %s; S.raceMode = %s; S.racePhase = %s;"
+             % ("true" if touch else "false", "true" if race else "false",
+                "null" if phase is None else "'%s'" % phase))
+    return ctx
+
+
+def _calls(ctx):
+    import json
+    out = json.loads(ctx.eval("JSON.stringify(calls)"))
+    ctx.eval("calls = [];")
+    return out
 
 
 @pytest.mark.parametrize("started,want", [(False, []), (True, ["reset", "toast:Restart"])])
 def test_restart_does_nothing_until_the_clock_is_running(started, want):
-    import json
-    ctx = _ctx(RESTART_STUB)
-    ctx.eval(_fn("restartRun"))
+    ctx = _restart_ctx()
     ctx.eval("S.started = %s; restartRun();" % ("true" if started else "false"))
-    assert json.loads(ctx.eval("JSON.stringify(calls)")) == want
+    assert _calls(ctx) == want
 
 
 @pytest.mark.parametrize("started,want", [(False, []), (True, ["respawn"])])
@@ -87,12 +128,80 @@ def test_the_checkpoint_key_does_nothing_until_the_clock_is_running(started, wan
 def test_refusing_is_silent():
     """No toast, no sound, no flash. It is not an event that you have not set off
     yet - the whole point is that pressing them early does nothing at all."""
-    import json
-    ctx = _ctx(RESTART_STUB)
-    ctx.eval(_fn("restartRun"))
+    ctx = _restart_ctx()
     ctx.eval(_fn("backToCheckpoint"))
-    ctx.eval("restartRun(); backToCheckpoint();")
-    assert json.loads(ctx.eval("JSON.stringify(calls)")) == []
+    ctx.eval("S.started = false; restartRun(); backToCheckpoint();")
+    assert _calls(ctx) == []
+
+
+# --- and mid-race R has to be asked twice -----------------------------------
+
+def test_mid_race_the_first_r_only_asks():
+    """The whole point. R is next to T, T is the key you want when you have just
+    fallen off, and in a race the lap you are on is the only one you get - so one
+    stray press used to put you back on the grid with the field gone."""
+    ctx = _restart_ctx(phase="racing", race=True)
+    ctx.eval("restartRun();")
+    assert _calls(ctx) == ["toast:Press R again to restart"], "asks, does not reset"
+    ctx.eval("restartRun();")
+    assert _calls(ctx) == ["reset", "toast:Restart"], "and the second press does it"
+
+
+def test_the_question_expires_so_two_strays_are_not_a_restart():
+    """Two accidents three seconds apart are two accidents, not a confirmation.
+    Otherwise the guard only moves the problem: an R at the hairpin and another at
+    the next lap's would restart between them."""
+    ctx = _restart_ctx(phase="racing", race=True)
+    ctx.eval("restartRun(); fire();")            # the arming ran out
+    assert _calls(ctx) == ["toast:Press R again to restart"]
+    ctx.eval("restartRun();")
+    assert _calls(ctx) == ["toast:Press R again to restart"], "asks again, no reset"
+
+
+def test_arming_lights_both_restart_buttons_and_then_stops():
+    """R and the two buttons are three doors into one rule, so the state is not
+    the button's - but the button still has to show it, because on a phone the
+    pulse is the only thing that says the first tap landed."""
+    import json
+    ctx = _restart_ctx(phase="racing", race=True, touch=True)
+    ctx.eval("restartRun();")
+    assert json.loads(ctx.eval("JSON.stringify(armedButtons())")) \
+        == ["btnRestart", "tRestart"]
+    assert _calls(ctx) == ["toast:Tap again to restart"], "and it says tap, not press"
+    ctx.eval("restartRun();")
+    assert json.loads(ctx.eval("JSON.stringify(armedButtons())")) == [], \
+        "the restart clears it, so the buttons do not keep pulsing"
+
+
+def test_the_question_expiring_puts_the_buttons_back():
+    import json
+    ctx = _restart_ctx(phase="racing", race=True)
+    ctx.eval("restartRun(); fire();")
+    assert json.loads(ctx.eval("JSON.stringify(armedButtons())")) == []
+
+
+def test_only_a_race_asks():
+    ctx = _restart_ctx(phase="racing", race=True)
+    assert ctx.eval("restartCostsARace()") is True
+
+
+@pytest.mark.parametrize("mode,race,phase", [
+    # Free practice in a room, and qualifying, and the countdown, and solo. R is
+    # the most useful key on the board in all of them: practice is nothing but
+    # restarting, and a qualifying lap thrown away is one of the two or three that
+    # ninety seconds holds - so being asked would be in the way.
+    ("room", False, "free"),
+    ("room", False, "qualifying"),
+    ("room", True, "countdown"),
+    ("room", True, "results"),
+    ("solo", False, None),
+    ("replay", False, None),
+])
+def test_everywhere_else_r_is_still_one_press(mode, race, phase):
+    ctx = _restart_ctx(phase=phase, race=race, mode=mode)
+    assert ctx.eval("restartCostsARace()") is False
+    ctx.eval("restartRun();")
+    assert _calls(ctx) == ["reset", "toast:Restart"]
 
 
 # --- the tail lamps a recorded flag byte asks for ---------------------------
@@ -509,3 +618,40 @@ def test_a_rival_is_labelled_in_its_own_cars_colour():
     for c in calls:
         assert "," not in c or "plateColor" in c, (
             "setLabel(%s) overrides the car's own plate colour" % c)
+
+
+# --- somebody else's lap is driven in somebody else's car --------------------
+
+def test_watching_one_lap_keeps_its_owners_whole_car():
+    """`/api/ghost` answers with the driver's whole car, and this dropped all of
+    it but the body colour - so a lap you *watched* came up on stock wheels with
+    no stripe and a matte finish, while the same lap *chased* came up right. Two
+    ways of looking at one lap, disagreeing about whose car it was.
+    """
+    import json
+    ctx = _ctx()
+    ctx.eval("var got = null; function startReplay(cars) { got = cars; }")
+    ctx.eval(_fn("startWatching"))
+    ctx.eval("""
+      startWatching([1, 2], 15, {who: 'ghosty', color: '#f2c94c',
+        livery: {body: '#f2c94c', rim_style: 'mesh', livery: 'twin'}});
+    """)
+    car = json.loads(ctx.eval("JSON.stringify(got[0])"))
+    assert car["livery"] == {"body": "#f2c94c", "rim_style": "mesh",
+                             "livery": "twin"}, "the whole car, not just a colour"
+    assert car["color"] == "#f2c94c"
+    assert car["name"] == "ghosty"
+
+
+def test_a_lap_with_no_livery_still_gets_a_car():
+    """A guest's lap, or one from before the garage. `startReplay` reads a bare
+    colour as a complete livery, so there is no branch to get wrong - but only if
+    the undefined actually arrives rather than being turned into an object."""
+    import json
+    ctx = _ctx()
+    ctx.eval("var got = null; function startReplay(cars) { got = cars; }")
+    ctx.eval(_fn("startWatching"))
+    ctx.eval("startWatching([1, 2], 15, {who: '?', color: '#9aa7b8'});")
+    car = json.loads(ctx.eval("JSON.stringify(got[0])"))
+    assert "livery" not in car or car["livery"] is None
+    assert car["color"] == "#9aa7b8"

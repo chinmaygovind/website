@@ -1085,9 +1085,19 @@ async function watchGhost(row) {
   startWatching(d.ghost, d.hz || GHOST_RATE, d);
 }
 
-/** One lap, watched: a replay of a single car. */
+/**
+ * One lap, watched: a replay of a single car.
+ *
+ * **The livery goes through, not just the colour.** It is somebody else's lap,
+ * and `/api/ghost` answers with their whole car - so dropping it here put their
+ * body colour on a car with stock wheels, no stripe and a matte finish, which is
+ * nobody's car. The ghost you *chase* off the same endpoint never had this
+ * problem, so the two ways of looking at one lap disagreed about whose car it
+ * was.
+ */
 function startWatching(frames, hz, meta) {
-  startReplay([{ frames, hz, name: meta.who || 'Replay', color: meta.color }]);
+  startReplay([{ frames, hz, name: meta.who || 'Replay', color: meta.color,
+                 livery: meta.livery }]);
 }
 
 /**
@@ -1166,8 +1176,17 @@ function stopWatching() {
   document.body.classList.remove('watching');
   $('watchBar').style.display = 'none';
   // On the replay page there is no run to go back to - the whole page is the
-  // replay - so leaving it is leaving the page.
-  if (CFG.mode === 'replay') { location.href = '/lobbies'; return; }
+  // replay - so leaving it is leaving the page. Back to the room if the watcher
+  // is still in one, which after watching a race from a room they are: leaving
+  // for a replay is a soft disconnect and the seat outlives it (`_seated_room`).
+  // If the room went while they watched, `/room/<code>` sends them on to the
+  // lobby list by itself, so this needs no second opinion about whether it is
+  // still there - which is just as well, since it would be out of date by the
+  // time the page loaded anyway.
+  if (CFG.mode === 'replay') {
+    location.href = CFG.backRoom ? '/room/' + CFG.backRoom : '/lobbies';
+    return;
+  }
   resetToStart();
 }
 
@@ -1536,8 +1555,62 @@ function onQualStart(d) {
  */
 function restartRun() {
   if (!S.started) return;
+  if (restartCostsARace() && !armRestart()) return;
+  disarmRestart();
   resetToStart();
   toast('Restart');
+}
+
+/**
+ * Is a stray R about to throw away something that cannot be driven again?
+ *
+ * **The race and nothing else**, which is the same answer `catchupOn` gives and
+ * for a related reason: a race is the only session where the lap you are on is
+ * the only one you get. Everywhere else R is the most useful key on the board
+ * and asking about it would be in the way - free practice and solo are nothing
+ * but restarting, and a qualifying lap thrown away is one of the two or three
+ * that ninety seconds holds. In a race it is your race, and R is next to T,
+ * which is the key you actually want when you have just fallen off.
+ */
+function restartCostsARace() {
+  return CFG.mode === 'room' && S.raceMode && S.racePhase === 'racing';
+}
+
+/**
+ * The first press of two. True once the second one lands.
+ *
+ * Not the `armed()` helper the Resign and End race buttons use: that one arms a
+ * *button* and says so by rewriting its label, and this is armed by a key that
+ * has no label to rewrite. So the state is here and the button follows it -
+ * which is the right way round anyway, since R and the two restart buttons are
+ * three doors into one rule and only one of them is under a cursor.
+ *
+ * The toast is not decoration, it is the whole of the feedback for the key: a
+ * first press that silently did nothing would read as a dropped keystroke, and
+ * the second press would then be somebody pressing R harder.
+ */
+let restartArm = null;
+
+/** Both restart buttons at once: the HUD one and the touch one. */
+function showRestartArmed(on) {
+  for (const id of ['btnRestart', 'tRestart']) {
+    const el = $(id);
+    if (el) el.classList.toggle('armed', on);
+  }
+}
+
+function armRestart() {
+  if (restartArm) return true;
+  restartArm = setTimeout(disarmRestart, ARM_MS);
+  showRestartArmed(true);
+  toast(S.touch ? 'Tap again to restart' : 'Press R again to restart');
+  return false;
+}
+
+function disarmRestart() {
+  if (restartArm) clearTimeout(restartArm);
+  restartArm = null;
+  showRestartArmed(false);
 }
 
 /**

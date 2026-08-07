@@ -1,6 +1,15 @@
 {% extends "base.html" %}
 {% block title %}{{ track.name }} | Drive{% endblock %}
 {% block bodyclass %}playing{% if mode == 'room' %} room{% endif %}{% endblock %}
+
+{# The room to go back to when a replay is over - see `_seated_room`. Bound once
+   here, and defaulted, because only the replay route sends it and the two
+   buttons that read it are four hundred lines apart: `back_room` on its own is
+   falsy-when-missing today and would be an error under `StrictUndefined`, which
+   is exactly the kind of thing that breaks the *other* two routes long after
+   this line was written. #}
+{% set back = back_room|default(none) %}
+
 {% block body %}
 <canvas id="gl"></canvas>
 
@@ -181,7 +190,12 @@
     <div class="watch-head">
       <span id="watchWho">Watching</span>
       <b id="watchClock">0:00.000</b>
-      <button class="btn small" id="btnWatchStop">{% if mode == 'replay' %}Leave{% else %}Stop watching{% endif %}</button>
+      <!-- Three labels for one button, because it has three destinations: in a
+           room or solo it stops watching and hands the car back, on a replay
+           opened from a room it goes back to that room, and on a replay opened
+           by anyone else it goes to the lobby list. "Leave" for the middle one
+           would be a lie in the direction that matters - it is the way *in*. -->
+      <button class="btn small" id="btnWatchStop">{% if mode != 'replay' %}Stop watching{% elif back %}Back to room{% else %}Leave{% endif %}</button>
     </div>
     <!-- Whose car the camera is in. A race replay is only worth having if you
          can watch it from inside the fight rather than from one seat, and the
@@ -459,6 +473,13 @@
         <a class="btn secondary board-link" href="/track/{{ track.slug }}">View Leaderboard</a>
         {% if mode == 'room' %}
         <a class="btn danger" id="btnQuit" href="/lobbies">Leave Room</a>
+        {% elif back %}
+        {# The other way out of a replay, and it goes where the first one goes -
+           having the two disagree is how somebody finds this button expecting
+           the room and lands on the Drive home page instead. Not red: red on
+           this sheet means the press you cannot undo, and this one is a page
+           load back into a seat that was never given up. #}
+        <a class="btn secondary" id="btnQuit" href="/room/{{ back }}">Back to Room</a>
         {% else %}
         <a class="btn danger" id="btnQuit" href="/">Leave</a>
         {% endif %}
@@ -519,7 +540,11 @@
          reach, and a view you could not let go of would be a fault. #}
       <tr><td>Rear View</td><td>Q</td></tr>
       <tr><td>First Person View</td><td>F</td></tr>
-      <tr><td>Restart the run</td><td>R</td></tr>
+      {# Twice mid-race and once everywhere else, which is worth the words: R is
+         next to T, and T is the key you reach for when you have fallen off. The
+         note is only on the room sheet because solo has no race to protect. #}
+      <tr><td>Restart the run</td><td>R{% if mode == 'room' %}
+        <span class="muted">(twice, mid-race)</span>{% endif %}</td></tr>
       <tr><td>Back to last checkpoint</td><td>T</td></tr>
       {# P has always changed track and was in no list anywhere, so the only way
          to find it was to read the tooltip on an icon. #}
@@ -575,6 +600,9 @@
     loggedIn: {{ 'true' if user else 'false' }},
     {# Which finished race this page is a replay of, in replay mode only. #}
     race: {% if race %}{{ race.id }}{% else %}null{% endif %},
+    {# The room the watcher still holds a seat in, so the way out of a replay can
+       be the way back in. Read by `stopWatching`. #}
+    backRoom: {{ back|tojson }},
     nextTrack: {{ next_slug|tojson }}
   };
   {% if pb_ms %}window.DRIVE_CFG.pbs["{{ track.slug }}"] = {{ pb_ms }};{% endif %}

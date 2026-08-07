@@ -621,9 +621,21 @@ Road are both in `tracks.EXPOSED`.
   chasing anybody, so if pole is yours no ghost is loaded - your own best lap of
   the session is already what `me` means there, and it is the same lap. It is
   dropped when the session ends: after the flag it is the grid, not a target.
-- **Every ghost is the colour of whoever drove it**, and so is every car that
-  person turns up in. There was no per-person colour at all before - a room
-  handed them out by seat and solo was always red - so `color_for(username)`
+- **Every ghost is the whole car of whoever drove it**, not only its colour, and
+  so is every car that person turns up in. That distinction was worth a bug each
+  way round. `/api/ghost` has always answered with the driver's livery, and the
+  ghost you *chase* has always used it - but `startWatching` kept only
+  `meta.color`, so the same lap **watched** came up in their paint on stock
+  wheels with no stripe and a matte finish, which is nobody's car; and
+  `qual_pole_req` sent no livery at all, so the one ghost a whole qualifying
+  session is looking at had the same problem. Both send the livery now, and both
+  answer `color` **off** that livery rather than beside it, which is the
+  `to_dict` rule: it is one fact, and the copy on the live car dict is only as
+  fresh as that driver's last connect. A ghost's livery is resolved *when it is
+  asked for* (`_seat_livery`) and a **replay's** is stored *with the race* - the
+  two rules disagree on purpose, and `_store_replay` says why.
+- **Whose colour, when nobody chose one.** There was no per-person colour at all
+  before - a room handed them out by seat and solo was always red - so `color_for(username)`
   hashes one out of `garage.HASH_COLORS`, the same trick the accounts pages use
   for the initial on a profile with no picture. That is still the answer for
   anybody who has not chosen; what a car looks like once they have is **The
@@ -706,6 +718,32 @@ Road are both in `tracks.EXPOSED`.
   rendered into the page: eight replays of a two-minute race is most of a
   megabyte of numbers. It is offered from the results sheet (**Watch replay**),
   it is a plain URL, and it is public, so a race can be linked to afterwards.
+- **The way out of a replay is the way back into the room**, when there is one.
+  Watching your own race used to cost you the room you were racing in: both exits
+  went to the lobby list, or to Drive's home page. You were never actually out of
+  it - leaving a room's page is a socket disconnect and the *soft* kind, so the
+  car comes off the road and the seat stays in the database - so `_seated_room`
+  looks the seat up, the buttons say **Back to room**, and `on_join_room` clears
+  the `gone` mark on the way in. Told by the seat rather than by `drive_races.code`
+  or a query param, because codes are recycled once a room is swept and a seat
+  resolves to the room that actually exists. `None` for somebody in no room (a
+  shared link, the lobby list) and the buttons fall back to what they did before.
+  If the room went while they were watching, `/room/<code>` sends them on to the
+  lobby list by itself, which is why nothing here checks twice - a second opinion
+  would be out of date by the time the page loaded.
+- **R is two presses mid-race and one everywhere else.** R is next to T, T is the
+  key you reach for the instant you fall off, and in a race the lap you are on is
+  the only one you get - so one stray press put you back on the grid with the
+  field gone. The first press arms and toasts, the second restarts, and it
+  expires after `ARM_MS` so two accidents a corner apart are two accidents rather
+  than a confirmation. `restartCostsARace()` is the gate and it is the race and
+  nothing else, for the reason `catchupOn` gives about the same phase: free
+  practice and solo are *nothing but* restarting, and a qualifying lap thrown
+  away is one of the two or three that ninety seconds holds, so being asked would
+  be in the way. The state is not the button's - R, the HUD button and the touch
+  button are three doors into one rule and only one of them is under a cursor -
+  but both buttons show it, since on a phone the pulse is the only thing that
+  says the first tap landed once the toast has gone.
 - **Contact and the slipstream belong to free practice and the race, and to
   nothing else.** They are the same question - are the cars around you cars you
   are driving against - so they are one answer, `contactOn()` in `game.js`.

@@ -975,6 +975,95 @@ def test_two_guests_in_a_room_are_not_the_same_car(env):
         assert env._livery_for(None)["body"] == garage.GUEST_COLOR
 
 
+def test_the_pole_lap_is_chased_in_its_drivers_car(env):
+    """The one ghost everybody in a qualifying session is looking at, and it went
+    out with a body colour and nothing else - so the pole driver's paint arrived
+    on stock wheels with no stripe. `_seat_livery` answers the whole car, and
+    answers it *now* rather than from the live car dict: that copy is only as
+    fresh as their last connect, and a ghost is a lap you are chasing today.
+    """
+    import garage
+    with env.app.app_context():
+        game = env.DriveGame(code="POLE01", track="sunrise")
+        u = env.User(username="quick", email="q@example.com")
+        u.set_password("password123")
+        env.db.session.add_all([game, u])
+        env.db.session.commit()
+        me = env.DrivePlayer(game_id=game.id, user_id=u.id, session_key="sk-q",
+                             name="quick", color="#fff", seat_order=0)
+        guest = env.DrivePlayer(game_id=game.id, session_key="sk-g", name="dave",
+                                color="#fff", seat_order=1)
+        env.db.session.add_all([me, guest])
+        env.db.session.add(env.DriveGarage(
+            user_id=u.id, earned_json="[]",
+            livery_json=garage.dumps({"body": "#17bfa8", "rim_style": "mesh",
+                                      "livery": "twin"})))
+        env.db.session.commit()
+
+        got = env._seat_livery("POLE01", me.pid)
+        assert got["body"] == "#17bfa8" and got["rim_style"] == "mesh"
+        assert got["livery"] == "twin", "the whole car, not just the colour"
+        # A guest has no garage row and still gets a car rather than a hole,
+        # hashed off the name they typed - the same as their seat.
+        assert env._seat_livery("POLE01", guest.pid)["body"] == \
+            garage.color_for("dave")
+        # And a seat that is not in this room is not a car.
+        assert env._seat_livery("POLE01", "p9999") is None
+        assert env._seat_livery("NOSUCH", me.pid) is None
+
+
+def test_the_pole_ghost_leaves_the_wire_with_a_whole_car(env):
+    """And through an actual socket, which is unusual here - `test_race.py` builds
+    the live room's dicts directly on the grounds that the bookkeeping is what
+    matters. The wire is what mattered this time: `_seat_livery` can be right
+    while the emit next to it still sends only a colour, and that is exactly the
+    bug this pins.
+
+    The car dict is left holding a stale white on purpose. It is only ever as
+    fresh as that driver's last connect, so it is the wrong place to answer from -
+    and `color` coming back as the livery's body rather than the white is what
+    says the two are one answer instead of two.
+    """
+    import garage
+    A = env
+    with A.app.app_context():
+        game = A.DriveGame(code="POLEX", track="sunrise", status="waiting")
+        u = A.User(username="ghosty", email="g@example.com")
+        u.set_password("password123")
+        A.db.session.add_all([game, u])
+        A.db.session.commit()
+        A.db.session.add(A.DriveGarage(
+            user_id=u.id, earned_json="[]",
+            livery_json=garage.dumps({"body": "#17bfa8", "rim_style": "mesh",
+                                      "livery": "twin"})))
+        me = A.DrivePlayer(game_id=game.id, user_id=u.id, session_key="sk-g",
+                           name="ghosty", color="#ffffff", seat_order=0)
+        A.db.session.add(me)
+        A.db.session.commit()
+        uid, pid = u.id, me.pid
+        r = A._room("POLEX")
+        r["phase"] = "qualifying"
+        car = A._car(r, pid)
+        car["name"], car["color"] = "ghosty", "#ffffff"      # the stale copy
+        r["pole"] = {"pid": pid, "name": "ghosty", "color": "#ffffff",
+                     "ms": 20000, "hz": 15,
+                     "frames": [[0, 0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0, 1]]}
+
+    fc = A.app.test_client()
+    with fc.session_transaction() as s:
+        s["session_key"], s["user_id"] = "sk-g", uid
+    cl = A.socketio.test_client(A.app, flask_test_client=fc)
+    cl.emit("join_room_", {"code": "POLEX"})
+    cl.get_received()
+    cl.emit("qual_pole_req", {})
+    sent = [e["args"][0] for e in cl.get_received() if e["name"] == "qual_pole_ghost"]
+    assert sent, "no pole ghost came back at all"
+    d = sent[0]
+    assert d["livery"]["rim_style"] == "mesh" and d["livery"]["livery"] == "twin"
+    assert d["color"] == "#17bfa8", "the colour is the livery's, not the car dict's"
+    assert len(d["ghost"]) == 2 and d["who"] == "ghosty"
+
+
 def test_the_garage_payload_carries_how_far_along_you_are(env):
     """So the page can say `Pinstripe: A gold on every track (9/12)` rather than
     only that it is locked. The numbers come from the server beside the check,
@@ -1006,3 +1095,90 @@ def test_the_garage_page_is_a_stage_and_not_a_document(env):
     assert 'class="garage-page"' in html
     assert '<canvas id="gcanvas">' in html
     assert 'class="wrap' not in html, "the stage is not a document column"
+
+
+# ---------------------------------------------------------------------------
+# The way out of a replay
+# ---------------------------------------------------------------------------
+
+def _seated(env, client, code="BACK42", status="playing"):
+    """A room with this client sat in it, and a finished race to watch."""
+    with client.session_transaction() as s:
+        s["session_key"] = "sk-watcher"
+    with env.app.app_context():
+        game = env.DriveGame(code=code, track="sunrise", status=status)
+        env.db.session.add(game)
+        env.db.session.commit()
+        env.db.session.add(env.DrivePlayer(
+            game_id=game.id, session_key="sk-watcher", name="dave",
+            color="#fff", seat_order=0))
+        race = env.DriveRace(code=code, track="sunrise", cars_json="[]")
+        env.db.session.add(race)
+        env.db.session.commit()
+        return race.id
+
+
+def test_the_way_out_of_a_replay_is_back_into_the_room(env):
+    """A race is watched from the room that drove it, so the way out of the
+    replay should be the way back in. It used to be a one-way trip to the lobby
+    list, which meant watching your own race cost you the room you were racing
+    in - and you were never actually out of it: leaving for the replay is a soft
+    disconnect and the seat stays in the database.
+    """
+    c = env.app.test_client()
+    rid = _seated(env, c)
+    html = c.get("/race/%d" % rid).get_data(as_text=True)
+    assert '"BACK42"' in html, "the room code has to reach the page"
+    assert "Back to room" in html and ">Leave<" not in html
+    assert 'href="/room/BACK42"' in html
+
+
+def test_a_replay_opened_by_nobody_in_particular_still_leads_to_the_lobbies(env):
+    """The other half of the same rule. A replay link outlives the room it was
+    driven in and can be opened by somebody who was never in it, so "back to the
+    room" has to be a thing the page only says when there is one."""
+    c = env.app.test_client()
+    with env.app.app_context():
+        race = env.DriveRace(code="GONE", track="sunrise", cars_json="[]")
+        env.db.session.add(race)
+        env.db.session.commit()
+        rid = race.id
+    html = c.get("/race/%d" % rid).get_data(as_text=True)
+    assert "backRoom: null" in html
+    assert "Back to room" not in html and "/room/GONE" not in html
+
+
+def test_an_ended_room_is_not_somewhere_to_go_back_to(env):
+    """`_seated_room` goes through `_my_players`, which skips ended games. A row
+    can outlive the race it was in by a sweep interval, and sending somebody back
+    to that is a redirect straight out again."""
+    c = env.app.test_client()
+    rid = _seated(env, c, code="DEAD01", status="ended")
+    html = c.get("/race/%d" % rid).get_data(as_text=True)
+    assert "backRoom: null" in html and "Back to room" not in html
+
+
+def test_going_off_to_watch_a_replay_does_not_give_up_the_seat(env):
+    """The claim the whole feature rests on. Closing the room's page is a socket
+    disconnect, and the *soft* kind: the car comes off the road and the seat stays
+    behind. If it did not, the way out of a replay would send everybody to a room
+    that bounced them straight back to the lobby list.
+
+    Driven through `_drop` rather than a socket, like the rest of the room's
+    bookkeeping - and only the soft half, because the hard one reads the session
+    off a request that a disconnect does not have.
+    """
+    A = env
+    c = A.app.test_client()
+    _seated(A, c, code="SOFT01")
+    with A.app.app_context():
+        game = A.DriveGame.query.filter_by(code="SOFT01").first()
+        pid = game.players[0].pid
+        r = A._room("SOFT01")
+        A._car(r, pid)["ts"] = A._now_ms()
+        A._sid_room["sid-watcher"] = ("SOFT01", pid)
+        A._drop("sid-watcher", hard=False)
+        assert pid not in r["cars"], "the car leaves the road"
+        assert A.DriveGame.query.filter_by(code="SOFT01").first().players, \
+            "the seat does not leave the room"
+        assert A._seated_room("sk-watcher") == "SOFT01"

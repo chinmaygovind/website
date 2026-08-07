@@ -723,6 +723,12 @@ def race_replay(race_id):
         # `color_for(None)` is the one guest red.
         car_color=_car_livery(user)["body"],
         car_livery=json_mod.dumps(_car_livery(user), separators=(",", ":")),
+        # Where the way out of the replay goes. A race is watched from the room
+        # that drove it, so the way out of it should be the way back in - and
+        # the seat is still there to go back to, see `_seated_room`. `None` is
+        # somebody who is in no room (a shared link, or the lobby list), and the
+        # buttons fall back to what they always did.
+        back_room=_seated_room(),
         race=race, tracks=tracks_mod.summaries(), cards=_track_cards())
 
 
@@ -1176,6 +1182,25 @@ def _leave_other_rooms(sk, keep_code=None):
                     remaining[0].is_host = True
                     db.session.commit()
                 _broadcast_roster(g)
+
+
+def _seated_room(sk=None):
+    """The room this browser still holds a seat in, if any.
+
+    Opening a replay leaves the room's *page*, and the socket disconnect that
+    goes with it is the soft kind - the car comes off the road, the seat stays
+    in the database - so somebody away watching a replay is, as far as the room
+    is concerned, still in it. Which is what lets the way out of a replay be
+    "back to the room" rather than "out to the lobby list": there is a room to
+    go back to, and going back to it is a page load. `on_join_room` clears the
+    `gone` mark on the way in, so the car returns to the road with it.
+
+    At most one seat, by construction rather than by luck: `_leave_other_rooms`
+    runs on every join. `_my_players` skips ended games, so this can never point
+    at a room that is only still there because nobody has swept it up yet.
+    """
+    seats = _my_players(sk or get_session_key())
+    return seats[0].game.code if seats else None
 
 
 def _roster(players):
@@ -1971,6 +1996,24 @@ def _pole_meta(r):
     return {"pid": p["pid"], "name": p["name"], "color": p["color"], "ms": p["ms"]}
 
 
+def _seat_livery(code, pid):
+    """The car whoever holds this seat drives **now**.
+
+    Looked up when it is asked for rather than kept on the live car dict, which
+    is the ghost rule and not the replay one: a ghost is a lap somebody is
+    chasing at this moment, so it should be the car its owner drives at this
+    moment. `_store_replay` resolves the same thing at the opposite end of the
+    same argument, and says why there.
+    """
+    game = DriveGame.query.filter_by(code=code).first()
+    if not game:
+        return None
+    for pl in game.players:
+        if pl.pid == pid:
+            return _livery_for(pl.linked_user, name=pl.name)
+    return None
+
+
 @socketio.on("qual_pole_req")
 def on_qual_pole_req(data=None):
     """Somebody has asked to chase the provisional pole lap. Send it to them."""
@@ -1983,8 +2026,20 @@ def on_qual_pole_req(data=None):
     if not p:
         emit("qual_pole_ghost", {"ghost": None})
         return
+    # Their whole car, not only its colour: this ghost is the one thing everybody
+    # in a qualifying session is looking at, and a lap that arrived with a body
+    # colour alone was drawn on stock wheels with no stripe - the pole driver's
+    # paint on somebody else's car.
+    #
+    # `color` is answered off the livery for the reason `api_ghost` gives: it is
+    # the same fact twice, and the copy on the live car dict is only as fresh as
+    # that driver's last connect, so computing them separately is how the swatch
+    # and the car come to disagree.
+    livery = _seat_livery(code, p["pid"])
     emit("qual_pole_ghost", {"ghost": p["frames"], "hz": p["hz"],
-                             "who": p["name"], "color": p["color"],
+                             "who": p["name"],
+                             "color": (livery or {}).get("body") or p["color"],
+                             "livery": livery,
                              "ms": p["ms"], "pid": p["pid"]})
 
 
