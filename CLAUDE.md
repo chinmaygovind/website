@@ -553,9 +553,12 @@ Road are both in `tracks.EXPOSED`.
     only record the other finished laps ever happened. Idempotent by
     construction: a marker row in a `drive_backfill` table, made by the tool with
     plain SQL rather than mapped, since nothing in the app reads it.
-    Measured against a copy of the live database: 58 races, 113 cars, **+89.9
-    minutes and +217.0 km across 6 accounts**, two guests skipped. **Run it on the
-    box after the deploy**, `--dry-run` first, and check those figures still.
+    **Applied to the live database 2026-08-07**: 58 races, 113 cars, **+89.9
+    minutes and +217.0 km across 6 accounts**, two guests skipped - identical to the
+    dry run against a downloaded copy, and the marker now refuses a second pass. So
+    it is done and there is nothing to re-run; it is described here because the
+    *method* is the reusable part, and because the figures are the only record of
+    what the totals were before.
 - **The leaderboard is for laps driven alone against the clock, so nothing set
   in a room reaches it.** No time, no medal, no ghost, no distance, and no
   attempt either: `countsForTheBoard()` in `game.js` is the single answer, and
