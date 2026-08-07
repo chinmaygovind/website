@@ -24,9 +24,20 @@ the marker, that is a decision somebody should make on purpose.
 
 import pytest
 
-# Three times the slowest honest test, and less than half the sleep that prompted
-# this. A budget nobody can hit by accident and a sleep nobody can hide under.
-SLOW_TEST_BUDGET_S = 5.0
+# Six times the slowest honest test (`test_a_real_lap_passes_the_anti_cheat[rainbow]`,
+# ~1.6s) and still under the 12s sleep that prompted this.
+#
+# **It was 5s, and 5s produced a false failure.** A wall-clock budget is sensitive to
+# whatever else the machine is doing: with a stuck earlier run competing for cores,
+# the rainbow sim went from 1.6s to over 5s and this guard failed it. Nothing was
+# wrong with the test. CI runners are noisy in exactly that way, and a guard that
+# fails a deploy for load is worse than the slow suite it was added to prevent.
+#
+# 10s keeps the thing it was for - a real sleep is a second or more, and the one that
+# started this was twelve - while leaving enough room that ordinary contention cannot
+# trip it. If it ever false-fails again, raise it rather than deleting it, or mark the
+# offending test `slow`.
+SLOW_TEST_BUDGET_S = 10.0
 
 
 def pytest_configure(config):

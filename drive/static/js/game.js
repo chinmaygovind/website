@@ -1772,16 +1772,40 @@ function frame(now) {
   // seconds either way, but the *clock* would start on the first press and post
   // an attempt that nobody drove. A race countdown is already excluded by
   // `raceMode`; qualifying's is not, because qualifying is not a race.
+  //
+  // **The clock and the car must share a zero, and for a long time they did
+  // not.** The order in this function is: start the clock, step the physics,
+  // then `run.update` - which reads `now - startedAt`, i.e. **0**, and records
+  // the ghost's frame 0 there. So the car had already been accelerated by a
+  // whole frame when the clock said it had not moved, and nobody was charged
+  // for the distance. Worse, `Stepper.acc` carried up to one `FIXED_DT` across
+  // the start, so the number of free substeps was 0 to 4 depending on frame
+  // timing: measured on the real board, laps differed by up to ~33ms of
+  // unrecorded run-up, and it rewarded a *low* frame rate.
+  //
+  // Two lines fix it. `stepper.reset()` drops the carried remainder, and
+  // `clockStarting` skips this frame's physics so `run.update` samples a car
+  // that is genuinely stationary on the line at t=0. The cost is one frame of
+  // throttle (<=17ms) and everybody pays it.
+  let clockStarting = false;
   if (!S.started && !S.raceMode && S.racePhase !== 'qual_countdown' &&
       (inp.throttle || inp.brake || inp.steer)) {
     S.started = true;
+    S.stepper.reset();
     S.run.start(now);
+    clockStarting = true;
     noteStart();
     markHintSeen();
   }
   if (S.raceMode && S.racePhase === 'racing' && !S.started && S.raceT0 != null && now >= S.raceT0) {
     S.started = true;
     S.car.frozen = false;
+    // Reset for the same reason, but **no skipped frame**: the green light is
+    // `raceT0`, which is already in the past by the time this runs, so the clock
+    // is legitimately non-zero and the car is owed that motion. Everyone in the
+    // room shares the one server timestamp, and no lap set in a room reaches the
+    // leaderboard anyway.
+    S.stepper.reset();
     S.run.start(S.raceT0);
     noteStart();
     markHintSeen();
@@ -1809,7 +1833,7 @@ function frame(now) {
   // brought up to date above and cannot change between substeps. `?catchup=`
   // pins it, the way `?draft=` pins a tow.
   const gap = S.catchupDemo != null ? S.catchupDemo : gapToLeader();
-  if (!S.paused) {
+  if (!S.paused && !clockStarting) {
     S.stepper.run(dt, (h) => {
       S.car.step(h, inp);
       if (rivals) S.car.resolveCars(rivals, h);

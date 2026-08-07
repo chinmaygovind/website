@@ -609,6 +609,18 @@ export class Car {
  */
 export class Stepper {
   constructor(T) { this.T = T; this.acc = 0; }
+  /**
+   * Throw away the part-accumulated step.
+   *
+   * Called when a lap clock starts, and it is a fairness fix rather than
+   * housekeeping. `acc` holds up to one `FIXED_DT` of time carried over from the
+   * previous frame; left alone across the start it buys a **whole extra substep**
+   * of throttle before the clock reads zero, on a coin-flip. Measured on the real
+   * board that was worth up to ~33ms of unrecorded distance, and the drivers it
+   * favoured were the ones whose frame happened to be long - so a stutter was an
+   * advantage. See `_recordGhost` and the note in CLAUDE.md.
+   */
+  reset() { this.acc = 0; }
   run(realDt, fn) {
     const T = this.T;
     this.acc += Math.min(realDt, 0.25);

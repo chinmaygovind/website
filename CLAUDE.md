@@ -725,6 +725,34 @@ Road are both in `tracks.EXPOSED`.
   the flag, which is why the ghost appeared to start in front of you.
   `test_the_ghost_is_recorded_where_the_car_actually_was` drives a lap, notes where the
   car really was at each sample time and requires the two to agree.
+- **The lap clock and the car share a zero, and for a long time they did not - a
+  standing start was worth up to ~33ms of unrecorded run-up.** Found from the
+  leaderboard, not from a failure: two drivers flat out from the line to the first
+  checkpoint were finishing that split consistently ~26ms apart on Chicane Park and
+  Sandy Cove. The frame loop ran `S.run.start(now)`, then the physics, then
+  `S.run.update(S.car, now)` - which reads `now - startedAt`, i.e. **0**. So the car
+  had already been accelerated when the clock recorded that it had not moved, and
+  nobody was charged for the distance. `Stepper.acc` made it worse by carrying up to
+  one `FIXED_DT` *across* the start, so the number of free substeps was a coin flip.
+  - **It rewarded a low frame rate**, which is the part worth remembering: the
+    longer your frame when you pressed the throttle, the more free acceleration.
+    Measured on a software-GL browser, the car was doing 13 on the dial at
+    `clock = 0:00.000`.
+  - **It is not `FIXED_DT` per frame for everybody.** `FIXED_DT` is 1/120, so a
+    perfect 1/60 frame is exactly two substeps and leaves nothing behind - at
+    exactly 60Hz the carried remainder can never buy anything. It bites at every
+    refresh rate that is not 60 or 120, and at 60 once vsync jitter is in it. The
+    first version of the test asserting this was written at 60fps and failed.
+  - The fix is `S.stepper.reset()` plus skipping that one frame's physics
+    (`clockStarting`), so `run.update` samples a car that is genuinely stationary.
+    It costs everybody one frame of throttle (<=17ms). The **race** path resets but
+    does *not* skip: `raceT0` is a server timestamp already in the past, so the
+    clock is legitimately non-zero and the car is owed that motion.
+  - **The old times were kept**, deliberately. Every lap on the board predates the
+    fix, so each carries up to ~33ms of run-up that a lap set today does not get -
+    they are not comparable with new ones, and the records are correspondingly
+    harder to beat. `tests/test_start_line.py` pins the mechanism (the real
+    `Stepper` in QuickJS) and the two frame-loop lines.
 - **Live races are in memory, not the DB.** A race ticks 30x/sec: clients are
   authoritative over their own car and emit `pose`, the server merges and fans out one
   snapshot per tick, and only the finished standings are written back. Cars are solid,
