@@ -361,15 +361,17 @@ function loadTrack(track, opts = {}) {
   // **Arriving somewhere new means no ghost car.** A track you have just
   // switched to is one you are looking at rather than attacking, and a car you
   // have never driven against appearing on your first lap of it is in the way.
-  // Not remembered: it is what this track starts as, not a preference you set,
-  // so the setting you actually chose is still there next time you open the
-  // game.
+  // **Switching track no longer hides the ghost car.** It used to, on the
+  // reasoning that somewhere new is somewhere you are looking at rather than
+  // attacking - which is a fair thing to want and the wrong way to get it. The
+  // car is a setting now, with its own key (G) and its own remembered value, and
+  // a setting that turns itself off when you go somewhere is not a setting. It
+  // was also invisible: the stored preference still said *on*, so the switch in
+  // the sheet disagreed with the road, which is the same disagreement the PB bug
+  // caused at the other end.
   //
-  // It is the *car* that goes and not the reference lap, now that those are
-  // two switches. Nothing about a split delta is in the way - the number you
-  // want on a track you have never driven is precisely how far off the pace
-  // you are - and turning the lap off here used to take that with it.
-  if (opts.switched) setGhostCar(false, { quiet: true, remember: false });
+  // A lap chased off the board does not survive the trip, though: `run` names a
+  // specific lap on a specific track, so it cannot mean anything here.
   if (S.ghostMode === 'run') S.ghostMode = 'me';
   setGhostMode(S.ghostMode, { quiet: true });
   applyPhase();
@@ -500,18 +502,24 @@ function bindInput() {
       if (CFG.mode === 'room') { e.preventDefault(); openChat(); }
       else setSound(!S.sound.enabled);
     }
-    // G steps through the three laps there are to drive against rather than
-    // toggling the last one back on: picking between your own lap and the
-    // record is the choice worth having on a key, and it saves opening
-    // settings to make it. A lap chased off the board is not in the cycle - it
-    // is not a mode you can arrive at by pressing a key, so pressing one
-    // leaves it.
+    // **K is which lap, G is whether it is drawn.** Two switches, two keys, and
+    // the split is the whole point: they used to share G, which stepped through
+    // the laps, and the car could only be turned off from the settings sheet.
     //
-    // It is the reference lap and not the ghost car, which is the switch next
-    // to it in settings: the interesting question has always been *whose lap*,
-    // and "is there a car" is one press in a sheet rather than something to
-    // land on half way round a cycle.
-    if (e.code === 'KeyG') setGhostMode(nextGhostMode());
+    // K rather than P because P has always changed track, which is the more
+    // common thing to do and the harder muscle memory to move. K has no
+    // mnemonic - every letter with a claim on "splits" or "lap" is either a
+    // driving key or already spoken for.
+    //
+    // It steps through the laps there are to drive against rather than toggling
+    // the last one back on: picking between your own lap and the record is the
+    // choice worth having on a key. A lap chased off the board is not in the
+    // cycle - it is not a mode you can arrive at by pressing a key, so pressing
+    // one leaves it.
+    if (e.code === 'KeyK') setGhostMode(nextGhostMode());
+    // G is the car. A toggle rather than a cycle, because there are two states
+    // and landing on the one you wanted should not depend on where you started.
+    if (e.code === 'KeyG') setGhostCar(!S.showGhost);
   });
   window.addEventListener('keyup', (e) => {
     const k = KEYMAP[e.code];
@@ -803,8 +811,13 @@ function setGhostMode(mode, opts = {}) {
   // `remember: false` is for a mode the game chose rather than you - arriving
   // on a new track turns the ghost off, and that must not overwrite the ghost
   // you actually picked.
-  if (opts.remember !== false) {
-    try { localStorage.setItem('drive.ghost', mode === 'run' ? 'me' : mode); } catch (e) {}
+  // `run` is deliberately **not** written. It is a lap you opened off the board,
+  // not one of the standing choices, and `storedGhostMode` cannot restore it - so
+  // it used to be filed as `me`, which meant chasing one lap from the leaderboard
+  // quietly and permanently rewrote a `wr` preference to `me`. Your setting is
+  // what you chose, and only you choose it.
+  if (opts.remember !== false && mode !== 'run') {
+    try { localStorage.setItem('drive.ghost', mode); } catch (e) {}
   }
   $('ghostOpts').querySelectorAll('[data-ghost]').forEach(b => {
     // "View others" is a door, not a state - it lights up only while the lap you
@@ -2461,9 +2474,22 @@ async function onFinish() {
         showResults({ time: run.time, medal, rank: d.run_rank,
                       pb: d.pb_ms, pbRank: d.rank, wr: d.record_ms });
       }
-      // Solo, a new PB is a new ghost. In a room the practice ghost is this
-      // session's, and it has already been set above.
-      if (d.improved && CFG.mode !== 'room') loadGhost('me');
+      // Solo, a new PB is a new ghost - **but only if your own lap is the one
+      // you asked to drive against.**
+      //
+      // This used to be an unconditional `loadGhost('me')`, which is the bug
+      // behind "a PB switches my ghost off the record". It never touched
+      // `S.ghostMode`, so the setting still read *World Record* while the car on
+      // the road quietly became your own lap: the mode and the ghost disagreed,
+      // and the setting was the one telling the truth about what you had chosen
+      // and the lie about what you were chasing.
+      //
+      // Taking the record is the one case where a `wr` ghost does need
+      // reloading, because the record it points at is now yours.
+      if (d.improved && CFG.mode !== 'room') {
+        if (S.ghostMode === 'me') loadGhost('me');
+        else if (S.ghostMode === 'wr' && d.is_record) loadGhost('wr');
+      }
     } else {
       if (improved) { S.bestTime = run.time; localBest(run.time); }
       // A guest's lap is kept whole - replay and all - so that logging in later

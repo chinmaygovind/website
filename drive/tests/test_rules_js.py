@@ -598,6 +598,91 @@ def test_picking_a_lap_does_not_turn_the_ghost_car_back_on():
     assert "S.showGhost" not in body
 
 
+# --- your splits choice is yours, and nothing else may write it --------------
+
+def _game_src():
+    return open(GAME_JS).read()
+
+
+def _body(name):
+    m = re.search(r"^(?:async )?function " + name + r"\(.*?^\}", _game_src(),
+                  re.S | re.M)
+    assert m, f"{name} is gone or no longer a top-level function"
+    return m.group(0)
+
+
+def test_a_new_personal_best_does_not_move_the_lap_you_chose():
+    """The bug this pins: after a PB, `/api/run`'s handler called
+    `loadGhost('me')` unconditionally. It never touched `S.ghostMode`, so the
+    settings row still said *World Record* while the car on the road had quietly
+    become your own lap - the setting told the truth about your choice and a lie
+    about what you were chasing, which is the worst of both.
+
+    Read out of the source rather than driven, because reaching this line needs a
+    finished lap, a server and a stored PB row; what is worth pinning is that the
+    reload is *conditional on the mode*, and that is right there in the text.
+    """
+    src = _game_src()
+    reload_site = re.search(r"if \(d\.improved && CFG\.mode !== 'room'\) \{(.*?)\n      \}",
+                            src, re.S)
+    assert reload_site, "the post-run ghost reload moved; re-check this rule"
+    block = reload_site.group(1)
+    assert "S.ghostMode === 'me'" in block, \
+        "a PB reloads the ghost without asking which lap you chose"
+    # Taking the record is the one case where a `wr` ghost is genuinely stale.
+    assert "S.ghostMode === 'wr'" in block and "d.is_record" in block
+
+
+def test_a_lap_chased_off_the_board_is_never_saved_as_your_setting():
+    """`run` is a specific lap on a specific track, and `storedGhostMode` cannot
+    restore it - so it used to be filed under `me`. That meant opening one lap
+    from the leaderboard permanently rewrote a `wr` preference to `me`, which is
+    the same complaint as the PB bug arriving by a different door.
+
+    Asserted against the **guard on the write itself**, not against `mode !== 'run'`
+    appearing somewhere in the function. The looser version of this test passed with
+    the fix reverted, because that same comparison also appears three lines up
+    clearing `S.ghostRun` - a source-reading test that cannot fail is worse than no
+    test, and this one proved it by not failing.
+    """
+    body = _body("setGhostMode")
+    m = re.search(r"if \(([^)]*)\)\s*\{\s*try \{ localStorage\.setItem\("
+                  r"'drive\.ghost', ([^)]+)\)", body)
+    assert m, "the drive.ghost write is no longer a guarded one-liner; re-read this"
+    cond, value = m.group(1), m.group(2)
+    assert "mode !== 'run'" in cond, \
+        f"`run` is still written to storage; guard is: {cond}"
+    assert "'me'" not in value, \
+        f"`run` is still being filed as `me`, which overwrites a real choice: {value}"
+
+
+def test_the_defaults_are_your_best_lap_and_a_car_to_chase():
+    """Both asked for explicitly: splits start on your PB and the ghost car is on,
+    for somebody who has never opened the settings sheet."""
+    assert "return ok.includes(v) ? v : 'me'" in _body("storedGhostMode")
+    assert "storedFlag('drive.ghostcar', true)" in _game_src()
+
+
+def test_switching_track_leaves_the_ghost_car_alone():
+    """It used to turn the car off on arrival with `remember: false`, so the
+    stored preference said *on* while the road had no car - a setting disagreeing
+    with the game, which is the shape of every bug in this group. The car is a
+    remembered switch with its own key now, and a setting that turns itself off
+    when you go somewhere is not a setting."""
+    body = _body("loadTrack")
+    assert "setGhostCar(false" not in body
+
+
+def test_the_two_switches_are_two_keys():
+    """K is which lap, G is whether it is drawn. They shared G, which is why the
+    car could only be turned off from the settings sheet. P is left alone - it has
+    always changed track, and that is the more common thing to do."""
+    src = _game_src()
+    assert "if (e.code === 'KeyK') setGhostMode(nextGhostMode());" in src
+    assert "if (e.code === 'KeyG') setGhostCar(!S.showGhost);" in src
+    assert "if (e.code === 'KeyP') toggleTracks();" in src
+
+
 # --- the nameplate is the car's business, not the roster's -------------------
 
 def test_a_rival_is_labelled_in_its_own_cars_colour():

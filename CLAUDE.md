@@ -683,7 +683,7 @@ Road are both in `tracks.EXPOSED`.
   practice session** (not your all-time PB, which was set on a different day
   against nobody), **provisional pole**, and the world record. "View others" is
   not offered in a room: everybody there is on the road with you, and the board
-  is a list of people who are not. `G` steps through all four.
+  is a list of people who are not. `K` steps through all four (`G` is the car).
 - **Provisional pole is a live ghost of the lap that is currently taking pole.**
   A qualifying lap goes up with its replay attached (`qual_time` carries the
   frames), the server keeps **only the leader's** and throws the rest away, and
@@ -1959,19 +1959,53 @@ field from a dark field.
   a test asserts it (`test_picking_a_lap_does_not_turn_the_ghost_car_back_on`).
   Both are remembered, under `drive.ghost` and `drive.ghostcar`. In a room `my
   best` still means your best lap of *this* practice session, and `ghostOn()`
-  still hides every ghost for the whole of a race. **`G` steps through the
-  three** (`GHOST_CYCLE`: off, my best, world record) rather than toggling the
-  last one back on - choosing between your own lap and the record is the choice
-  worth having on a key, and it is the *lap* rather than the car, since "whose
-  lap" is the interesting question and the other is one press in a sheet. A lap
-  chased off the board is deliberately not in the cycle, so pressing G leaves
-  it. **Switching track hides the ghost car**: somewhere new is somewhere you
-  are looking at rather than attacking, and a car you have never driven against
-  on your first lap of it is in the way. It is the car and *not* the reference
-  lap that goes - how far off the pace you are is precisely the number you want
-  on a track you have never driven, and turning the lap off used to take that
-  with it - and it is not remembered (`setGhostCar(false, {remember: false})`),
-  so the setting you chose survives.
+  still hides every ghost for the whole of a race.
+- **Two switches, two keys: `K` is which lap, `G` is whether it is drawn.** They
+  shared `G`, which stepped through the laps and left the car reachable only from
+  the settings sheet. `K` steps through `GHOST_CYCLE` (off, my best, world record;
+  plus provisional pole in a room) rather than toggling the last one back on, and
+  a lap chased off the board is deliberately not in the cycle, so pressing it
+  leaves that lap. `G` is a plain toggle, because with two states landing on the
+  one you meant should not depend on where you started. **`K` and not `P`** - `P`
+  has always changed track, which is the more common thing to do and the harder
+  muscle memory to move; `K` is admitted to have no mnemonic, and every letter
+  with a claim on "splits" or "lap" is a driving key or already taken.
+- **The defaults are your own best lap and a car to chase**, for somebody who has
+  never opened the sheet: `storedGhostMode()` falls back to `me` and
+  `drive.ghostcar` to `true`.
+- **Nothing but you may write your splits choice, and three things used to.** All
+  three were the same shape - the *setting* said one thing and the road did
+  another, with the setting telling the truth about what you had chosen and a lie
+  about what you were chasing:
+  - **A new PB.** `/api/run`'s handler called `loadGhost('me')` unconditionally, so
+    setting a personal best swapped the ghost to your own lap while the row still
+    read *World Record*. It never touched `S.ghostMode`, which is why it looked
+    like a lost setting rather than a bug. Now it reloads only when the mode is
+    `me`, plus the one genuine case: taking the record makes a `wr` ghost stale.
+  - **Opening a lap off the leaderboard.** `run` is not a standing choice and
+    `storedGhostMode` cannot restore it, so it was filed as `me` - which meant
+    chasing one lap from the board permanently rewrote a `wr` preference. `run` is
+    no longer written at all.
+  - **Switching track.** It hid the ghost car with `remember: false`, so the stored
+    preference still said *on* while the road had no car. That was defended as
+    "somewhere new is somewhere you are looking at rather than attacking", which is
+    a fair thing to want and the wrong way to get it: a setting that turns itself
+    off when you go somewhere is not a setting. Gone.
+
+  Four tests pin this group, and one of them is worth knowing about: the first
+  version of the `run` test asserted `"mode !== 'run'" in body`, which **passed
+  with the fix reverted**, because that comparison also appears three lines up
+  clearing `S.ghostRun`. It now parses the guard on the `localStorage.setItem`
+  itself. A source-reading test that cannot fail is worse than no test, and that
+  one proved it by not failing.
+- **Storage is `localStorage`, not an account setting**, which was a choice rather
+  than the default. It already persists across sessions - the complaint was never
+  that the preference was *lost*, it was that other code overwrote it - and Drive
+  is playable with no account at all, so a per-user table would leave every guest
+  without the setting. The cost is that it is per-browser: clearing site data or
+  moving to another machine starts you back at `me` with the car on. A
+  `drive_prefs` table would fix that (and `create_all` makes tables, so it needs no
+  migration) if it ever matters.
 - **Sound and Music are two switches because they are two buses.** `Sound.sfx`
   carries the car and the world, `Music`'s own bus sits beside it under the
   master, and `mute` is the sfx gain rather than the master's - so muting the
