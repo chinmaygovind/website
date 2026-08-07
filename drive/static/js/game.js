@@ -853,7 +853,9 @@ function setGhostCar(on, opts = {}) {
     $('btnGhostState').textContent = on ? 'On' : 'Off';
     b.setAttribute('aria-pressed', on ? 'true' : 'false');
   }
-  if (!opts.quiet) toast('Ghost car ' + (on ? 'on' : 'off'));
+  // Same shape as the splits toast ("Splits: World Record") so the two switches
+  // read as a pair, and Title Case because every label on these sheets is.
+  if (!opts.quiet) toast('Ghost Car: ' + (on ? 'On' : 'Off'));
 }
 
 function ghostDescription() {
