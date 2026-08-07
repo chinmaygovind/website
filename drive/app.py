@@ -1030,6 +1030,49 @@ def api_start():
     return jsonify({"ok": True, "stored": True, "starts": row.starts})
 
 
+@app.route("/api/activity", methods=["POST"])
+def api_activity():
+    """Driving that will never produce a board entry: an abandoned run, or a room lap.
+
+    **This is where most of the driving was going.** `drive_time` and `distance` were
+    only ever written by `/api/run`, which the client posts when a lap *finishes* -
+    so measured on the live database, 8,134 of 9,758 attempts (83%) contributed zero
+    minutes and zero kilometres, and every race, qualifying lap and room practice lap
+    contributed nothing at all, because `/api/run` and `/api/start` both return early
+    on `countsForTheBoard()`.
+
+    It adds to those two counters and **touches nothing else** - not `runs`, which
+    means laps finished, not `drive_times`, not a medal, not a rating. That is the
+    whole reason this is a separate route rather than a flag on `/api/run`: the
+    leaderboard rule is untouched, and no room lap time reaches the board through
+    here. These are play stats, and "how long have you been driving" and "which laps
+    count as records" are two different questions.
+
+    Both numbers are clamped, because both are the client's word. Guests get an
+    honest ``false`` rather than a 401, the rule `/api/start` already follows - there
+    is no row to count it in and nothing has gone wrong.
+    """
+    # `navigator.sendBeacon` is the only thing that survives the tab going away, and
+    # it sends `text/plain` unless you go out of your way - so `request.json` is None
+    # and the beacon would be silently dropped, which is most of what this route is
+    # for. `force=True` reads the body whatever the header says; `silent=True` makes
+    # a malformed one an empty dict rather than a 400 nobody will ever see.
+    data = request.get_json(force=True, silent=True) or {}
+    track = tracks_mod.get(data.get("track", ""))
+    if not track:
+        return jsonify({"ok": False, "error": "no such track"}), 404
+    user = get_current_user()
+    if not user:
+        return jsonify({"ok": True, "stored": False})
+    ms = runcheck.clamp_run_ms(data.get("ms"))
+    metres = runcheck.clamp_distance(track, data.get("distance"))
+    st = _stats(user)
+    st.drive_time = (st.drive_time or 0.0) + ms / 1000.0
+    st.distance = (st.distance or 0.0) + metres
+    db.session.commit()
+    return jsonify({"ok": True, "stored": True})
+
+
 def _floor_starts(user_id, slug, finishes):
     """Lift a track's start count to at least its finish count, and write it.
 

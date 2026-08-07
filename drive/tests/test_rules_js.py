@@ -922,3 +922,80 @@ def test_no_word_is_left_over_for_something_nobody_offers():
     known = set(garage.FINISHES) | set(garage.LIVERIES) | set(garage.RIM_STYLES) \
         | set(garage.BADGES)
     assert not (words - known), "TITLE has words for %s" % sorted(words - known)
+
+
+# --- every run counts, and no run counts twice ------------------------------
+#
+# `drive_time` and `distance` were written only by `/api/run`, which is posted when a
+# lap finishes - so 83% of attempts on the live board counted for nothing and a whole
+# evening in a room counted for nothing at all. `reportActivity` is the funnel that
+# fixes it, and these rules are what stop it counting anything twice.
+
+
+def test_a_run_is_never_banked_twice():
+    """`run.counted` is the whole correctness of this. `/api/run` adds a finished
+    lap's own time and distance, so an abandon path reporting the same run would make
+    every lap worth double - the two routes are additive on the server (see
+    `test_activity_does_not_count_a_finished_lap_twice`) and the client is the only
+    thing standing between them."""
+    body = _body("reportActivity")
+    assert "run.counted" in body, "reportActivity does not guard on the flag"
+    assert re.search(r"if \([^)]*run\.counted\)[^\n]*return", body), \
+        "the flag is read but does not stop the report"
+    assert "run.counted = true" in body, "the report does not claim the run"
+    # And the board path claims it too, because /api/run is what banks that one.
+    src = _game_src()
+    assert re.search(r"run\.counted = true;\s*\n\s*try \{\s*\n\s*const r = await fetch\("
+                     r"'/api/run'", src), \
+        "the /api/run path does not claim the run before posting it"
+
+
+def test_the_flag_is_cleared_where_a_run_begins():
+    """In `Run.start`, which is the one place a new run starts - and not in `reset`
+    alone, because `start` is what zeroes the time and distance being counted."""
+    course_js = os.path.join(os.path.dirname(GAME_JS), "course.js")
+    src = open(course_js).read()
+    start = re.search(r"^  start\(nowMs\) \{.*?^  \}$", src, re.S | re.M)
+    assert start, "Run.start moved"
+    assert "this.counted = false" in start.group(0)
+
+
+def test_every_way_a_run_ends_reports_it():
+    """The three that end a run for good. Each reads the run *before* the thing that
+    destroys it: `resetToStart` zeroes it, `loadTrack` replaces it wholesale."""
+    reset = _body("resetToStart")
+    assert reset.index("reportActivity") < reset.index("S.run.reset()"), \
+        "resetToStart reports after clearing the run, so it reports zero"
+    load = _body("loadTrack")
+    assert "reportActivity" in load and "opts.switched" in load
+    assert load.index("reportActivity") < load.index("S.run = new Run("), \
+        "loadTrack reports after replacing the run"
+    assert "pagehide" in _game_src()
+
+
+def test_a_room_lap_is_reported_even_though_it_is_not_a_record():
+    """A room lap never reaches `/api/run` - `countsForTheBoard()` sends it back - so
+    without this an evening of racing is nought minutes and nought kilometres. It is
+    the one *finished* lap that reports through `/api/activity`."""
+    src = _game_src()
+    gate = re.search(r"if \(!countsForTheBoard\(\)\) \{(.*?)\n  \}", src, re.S)
+    assert gate, "the room-lap branch in onFinish moved"
+    assert "reportActivity" in gate.group(1)
+
+
+def test_holding_the_page_open_does_not_bank_a_running_lap():
+    """`visibilitychange` and `blur` are deliberately not listeners: both fire on an
+    ordinary alt-tab mid-lap, which people come back from - and a banked run that
+    then finishes is banked again by `/api/run`. Only `pagehide` means the document
+    is really going, and a back/forward-cache restore is caught by `pageshow`."""
+    src = _game_src()
+    # Not "visibilitychange" absent from the file - it is *named* in the comment above
+    # `pagehide` saying why it is not used, and asserting on the mention would fail on
+    # the explanation rather than on the behaviour.
+    assert not re.search(r"addEventListener\(\s*'visibilitychange'", src), \
+        "visibilitychange banks runs that may still be running"
+    assert re.search(r"addEventListener\('pageshow'", src), \
+        "nothing catches a page restored from cache with a banked run"
+    # `blur` exists, but only to drop held keys - it must not report.
+    blur = re.search(r"addEventListener\('blur', \(\) => \{(.*?)\n  \}\);", src, re.S)
+    assert blur and "reportActivity" not in blur.group(1)

@@ -166,3 +166,32 @@ def clamp_distance(track, claimed):
         return 0.0
     import laptime
     return max(0.0, min(d, laptime.line_length(track) * 4.0))
+
+
+# One run cannot sensibly be longer than this. The longest ideal lap in the pool is
+# about 64s and the simulated driver's hard ceiling is 90s, so ten minutes is a very
+# loose bound on somebody pottering about - which is the point: it is not a judgement
+# about driving, it is a ceiling on what one POST can claim.
+MAX_RUN_MS = 10 * 60 * 1000
+
+
+def clamp_run_ms(claimed):
+    """How long a run may claim to have lasted.
+
+    `clamp_distance` has existed since the first version of `/api/run` because
+    distance is a client number. Time was never clamped there, because it was
+    checked a stronger way: `validate` compares it against the replay's own frame
+    count, so a lap that lied about its duration was rejected outright.
+
+    `/api/activity` has no replay to check against - it is the *unfinished* runs,
+    which is exactly the driving nothing was keeping - so the number that the whole
+    "minutes played" figure is made of would be the one field with no ceiling at
+    all. Hence this: the weaker check that the weaker evidence allows.
+    """
+    try:
+        ms = float(claimed)
+    except (TypeError, ValueError):
+        return 0.0
+    if ms != ms or ms in (float("inf"), float("-inf")):   # NaN and infinities
+        return 0.0
+    return max(0.0, min(ms, float(MAX_RUN_MS)))

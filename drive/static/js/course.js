@@ -176,6 +176,12 @@ export class Run {
     if (this.state === 'running') return;
     this.state = 'running';
     this.startedAt = nowMs;
+    // Whether this run's time and distance have been added to the driver's totals
+    // yet - see `reportActivity` in game.js. Cleared here because this is the one
+    // place a new run begins, and a new run has not been counted. It is the thing
+    // that stops a finished lap being counted twice: once by `/api/run` and again
+    // by whatever ends the run afterwards.
+    this.counted = false;
     this.time = 0;
     this.splits = [];
     this.nextCp = 0;

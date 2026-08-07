@@ -309,6 +309,10 @@ async function openRequestedLap() {
 }
 
 function loadTrack(track, opts = {}) {
+  // Driving away mid-run: report it while `S.track` and `S.run` are still the ones
+  // it happened on, because a few lines down `S.run` is replaced wholesale and the
+  // time and distance go with it. Only on a *switch* - arriving is not abandoning.
+  if (opts.switched) reportActivity('switched track');
   S.track = track;
   if (S.view) S.view.dispose();
   if (S.ghostView) { S.ghostView.dispose(); S.ghostView = null; S.ghostViewColor = null; }
@@ -419,6 +423,11 @@ function resetToStart() {
   // armed threw away the lap you had already started: finish, press R, drive,
   // and a second later the session restarted you for no visible reason.
   if (S.qualAgain) { clearTimeout(S.qualAgain); S.qualAgain = null; }
+  // **Before `reset()`**, which zeroes the time and distance being reported. This
+  // is the common abandon: R, or the automatic line-up after a qualifying lap.
+  // `T` is deliberately not here - the clock keeps running, so it is still the
+  // same run and reporting it would count it twice.
+  reportActivity('restart');
   const sp = S.track.spawn;
   S.car.placeAt(sp.p, sp.fwd);
   S.run.reset();
@@ -530,6 +539,25 @@ function bindInput() {
     touchDown.clear(); drifting.clear(); syncTouch();
     document.querySelectorAll('.tbtn').forEach(el =>
       el.classList.remove('down', 'drifting'));
+  });
+
+  // The tab going away is the most common way a run ends, and the one that used to
+  // be worth nothing.
+  //
+  // **`pagehide` only, and neither `visibilitychange` nor `blur`.** This looks
+  // over-cautious and is not: reporting a run banks its time, but a *finished* lap
+  // is banked again by `/api/run`, which sends the whole lap and knows nothing about
+  // a partial report. So anything that fires on a run that might still be running
+  // double-counts it. `visibilitychange` fires on an ordinary alt-tab and `blur` on
+  // clicking another window, both of which people do mid-lap and come back from.
+  // `pagehide` means the document is actually being torn down.
+  window.addEventListener('pagehide', () => reportActivity('page hidden', { beacon: true }));
+  // Except when it is not: a page restored from the back/forward cache fires
+  // `pageshow` with the same `Run` object, already banked. Continuing it would let
+  // the finish bank it a second time, so the run is over - which is honest, since
+  // you left.
+  window.addEventListener('pageshow', () => {
+    if (S.started && S.run && S.run.counted) resetToStart();
   });
 
   // touch: hold-to-act buttons, and a drag anywhere on the left half to steer
@@ -2399,6 +2427,47 @@ function noteStart() {
   } catch (e) { /* no network, no counter, no interruption */ }
 }
 
+// Below this you rolled off the line and changed your mind. A POST per twitch is
+// noise, and half a second of driving is not a minute played.
+const MIN_REPORTED_MS = 500;
+
+/**
+ * Report the run in progress as driving that happened - once, and only once.
+ *
+ * `drive_time` and `distance` used to be written only by `/api/run`, which is
+ * posted when a lap **finishes**. On the live database that meant 83% of attempts
+ * counted for nothing, and a whole evening in a room counted for nothing at all,
+ * because `countsForTheBoard()` gates the board APIs and a room lap fails it. So
+ * every other way a run can end now reports what it was worth.
+ *
+ * **`run.counted` is the correctness of this whole feature.** A finished solo lap is
+ * already counted by `/api/run`; if an abandon path reported it as well, every lap
+ * would be worth double. So the flag is set by whichever path gets there first, and
+ * cleared by `Run.start` - the one place a new run begins.
+ */
+function reportActivity(why, opts = {}) {
+  const run = S.run;
+  if (!CFG.loggedIn || !S.started || !run || run.counted) return;
+  if (run.time < MIN_REPORTED_MS) return;
+  run.counted = true;
+  const body = JSON.stringify({ track: S.track.slug, ms: Math.round(run.time),
+                                distance: Math.round(run.distance), why });
+  // A tab that is going away cannot wait for `fetch`. `sendBeacon` hands the
+  // request to the browser to deliver after the page is gone, which is the only
+  // way a run abandoned *by closing the tab* survives - and that is how most runs
+  // actually end.
+  if (opts.beacon && typeof navigator !== 'undefined' && navigator.sendBeacon) {
+    try { navigator.sendBeacon('/api/activity', body); return; } catch (e) { /* fall through */ }
+  }
+  if (typeof fetch !== 'function') return;
+  try {
+    fetch('/api/activity', {
+      method: 'POST', keepalive: true,
+      headers: { 'Content-Type': 'application/json' }, body,
+    }).catch(() => {});
+  } catch (e) { /* no network, no counter, no interruption */ }
+}
+
 async function onFinish() {
   const run = S.run;
   const medal = medalFor(run.time);
@@ -2474,12 +2543,21 @@ async function onFinish() {
   // attempt - see countsForTheBoard. The session ghost above still gets it,
   // because that is what the room is for.
   if (!countsForTheBoard()) {
+    // The lap does not go on the board, but it was still driven. This is the one
+    // place a *finished* lap reports through `/api/activity` rather than
+    // `/api/run`: a room lap never reaches `/api/run` at all, so without this an
+    // entire evening of racing is nought minutes and nought kilometres.
+    reportActivity('room lap');
     if (!racing && !qualifying) {
       showResults({ time: run.time, medal, pb: S.bestTime, wr: S.track.record_ms,
                     note: 'Practice lap - times set in a room stay in the room.' });
     }
     return;
   }
+  // Past here `/api/run` adds the time and distance itself, so claim the run now:
+  // whatever ends it afterwards (R, switching track, closing the tab) must not
+  // report it a second time.
+  run.counted = true;
 
   try {
     const r = await fetch('/api/run', {

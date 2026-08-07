@@ -497,6 +497,65 @@ Road are both in `tracks.EXPOSED`.
   deploy that creates the table**, `--dry-run` first. It is a `max` per row, so
   it is safe to run twice. `_starts_for` still clamps on read, now only as cover
   for a database the backfill has not reached.
+- **Minutes played and kilometres driven count every run, not the ones that
+  finished.** Both numbers were written in exactly one place - inside `/api/run`,
+  which the client posts *when a lap finishes* - so on the live database **8,134
+  of 9,758 attempts (83%) were worth nought minutes and nought kilometres**, and
+  all multiplayer driving was worth nothing at all, since `countsForTheBoard()`
+  turns both `/api/run` and `/api/start` back before the request is made.
+  `eobard` had 554 starts against 12 finishes, so their "4.0 min" was almost
+  entirely missing. Room driving *does* count here, which is not a contradiction:
+  these are play stats and not records, and the leaderboard rule is untouched -
+  no room lap time reaches the board.
+  - **`/api/activity` is the sibling route for driving that will never produce a
+    board entry**: an abandoned run, or a room lap. It adds to `drive_time` and
+    `distance` and touches nothing else - never `runs`, never a medal, never ELO -
+    and it is honest to a guest (`stored: false`) rather than a 401, the rule
+    `/api/start` already follows. It reuses `clamp_distance` and needed a new
+    `clamp_run_ms` beside it: `/api/run` never had to clamp time because
+    `validate` checks it against the replay's own frame count, and an
+    *unfinished* run has no replay to check against - so without it the one
+    number the whole "minutes played" figure is made of would be the only field
+    with no ceiling.
+  - **`reportActivity()` is the one funnel, and `run.counted` is the whole
+    correctness of it.** A finished lap must not be counted twice, because
+    `/api/run` already sends its time and distance and the two routes are
+    additive on the server. So the solo finish path *claims* the run
+    (`run.counted = true`) and the room path *reports* it, `Run.start` clears the
+    flag, and every abandon path reads the run before the thing that destroys it -
+    `resetToStart` zeroes it and `loadTrack` replaces it wholesale, so reporting
+    after either banks nothing.
+  - **`pagehide` only, and neither `visibilitychange` nor `blur`.** This looks
+    over-cautious and is the opposite: both of those fire on an ordinary alt-tab
+    or click-away *mid-lap*, which people come back from and then finish - and
+    `/api/run` would bank the whole lap on top of the partial report. Only
+    `pagehide` means the document is actually going. A back/forward-cache restore
+    fires `pageshow` with the same already-banked `Run`, so that ends the run
+    rather than continuing it. `T` is deliberately not a call site either: the
+    clock keeps running, so it is the same run.
+  - **What this deliberately misses**, since reporting on abandon was chosen over
+    a heartbeat: a hard kill - crash, force-quit, lost power - loses that one run.
+    Every ordinary ending is caught.
+  - **`tools/backfill_race_activity.py` is the driving from before the route
+    existed, and races are the only recoverable part.** `drive_races.cars_json`
+    packs each car's replay exactly like a ghost, so this is *measurement*:
+    `len(frames) / hz` is the seconds and the summed gaps between consecutive
+    frames are the metres. The abandoned solo runs are the larger undercount and
+    are gone - a run nobody finished left no replay and no row. Three things
+    worth knowing. **A gap wider than `MAX_STEP` (12 units, the same threshold
+    the client uses for a rival) is a respawn and is not distance driven** -
+    including them credited 25.7 km across the field that nobody drove, which is
+    the difference between the tool and the first estimate of it. Identity is
+    matched on `name` against `users.username`, which is sound only because Drive
+    has no display-name column of its own; a name with no account is a guest and
+    is skipped, not guessed at. And it **adds** rather than recomputes, because
+    `drive_times` keeps only the best lap per track, so the existing total is the
+    only record the other finished laps ever happened. Idempotent by
+    construction: a marker row in a `drive_backfill` table, made by the tool with
+    plain SQL rather than mapped, since nothing in the app reads it.
+    Measured against a copy of the live database: 58 races, 113 cars, **+89.9
+    minutes and +217.0 km across 6 accounts**, two guests skipped. **Run it on the
+    box after the deploy**, `--dry-run` first, and check those figures still.
 - **The leaderboard is for laps driven alone against the clock, so nothing set
   in a room reaches it.** No time, no medal, no ghost, no distance, and no
   attempt either: `countsForTheBoard()` in `game.js` is the single answer, and
@@ -2379,7 +2438,7 @@ field from a dark field.
 
 ### Tests
 
-`scripts/tests.sh drive` - **837 tests, about 30s** (four workers, split by file).
+`scripts/tests.sh drive` - **881 tests, about 40s** (four workers, split by file).
 
 **Nothing in this suite may sleep, and there is a test that enforces it.**
 `tests/conftest.py` fails any test whose call phase exceeds `SLOW_TEST_BUDGET_S`
@@ -2577,6 +2636,39 @@ is how the rival slipstream was checked. It is also the only way to see a phase
 rule, since **`?panel=qual` pins the HUD label and not `S.racePhase`** - the bot
 is the host, so it can emit `start_race` and open a real qualifying session.
 Templates are cached, so restart the dev server after editing one.
+
+**Anything driven by a key, a click or a tab closing needs a browser that can send
+one**, which a screenshot cannot - so `tools/_scratch_activity_check.py` drives the
+abandon paths with Playwright (installed into `drive/venv` by hand; deliberately
+**not** in `requirements-test.txt`, since it is a by-hand check and not a test, and
+the box has no use for a browser driver). It is kept because five separate things
+about it are not guessable and each cost a run:
+
+- **There is nothing on `window` to read.** `game.js` is an ES module, so `S` is
+  module-scoped - `page.evaluate("S.run")` throws and `wait_for_function("window.S")`
+  simply times out. Watch the **network and the database** instead, which is the
+  better question anyway: what left the browser and what row moved.
+- **Log the requests server-side, not in Playwright.** `page.on("request")` delivers
+  asynchronously under the sync API, and a request whose effect was already in the
+  database turned up in the *next* step's list - which reads exactly like the wrong
+  path having fired. A `before_request` hook appending JSONL is exact.
+- **`eventlet.monkey_patch()` hangs the app's import here**, so the scratch server
+  is a plain `app.run(threaded=True)`. Solo mode needs no live socket, so that
+  costs nothing.
+- **`#tGrid`'s track cards are attached but not visible** - the switcher overlay is
+  `display:none` until opened - so `wait_for_selector` needs `state="attached"`.
+- **Click the page before sending keys.** Keystrokes go to `window`, but a fresh
+  headless tab is not reliably the thing receiving them, and this failed
+  intermittently until a `mouse.click` went in first. For the same reason the
+  harness holds the throttle in a **loop until `/api/start` actually lands** rather
+  than sleeping a guessed number of seconds: under swiftshader how long the track
+  takes to build is not a constant.
+
+One thing it cannot check, and says so rather than implying otherwise: that a
+*finished* solo lap is not banked twice. Finishing a lap needs the car driven a
+whole lap, which swiftshader is far too slow for. That half is pinned by
+`test_activity_does_not_count_a_finished_lap_twice` on the server and by the
+`run.counted` rules in `test_rules_js.py`, both mutation-checked.
 
 Run the app on a spare port and screenshot it with headless Chrome
 (`google-chrome --headless=new --use-gl=swiftshader --enable-unsafe-swiftshader

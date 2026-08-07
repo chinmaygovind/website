@@ -5,6 +5,7 @@ they exercise the actual routes rather than a description of them. Everything
 that talks to the database gets its own empty one per test.
 """
 
+import json as json_mod
 import os
 import sys
 import tempfile
@@ -1181,3 +1182,136 @@ def test_going_off_to_watch_a_replay_does_not_give_up_the_seat(env):
         assert A.DriveGame.query.filter_by(code="SOFT01").first().players, \
             "the seat does not leave the room"
         assert A._seated_room("sk-watcher") == "SOFT01"
+
+
+# ---------------------------------------------------------------------------
+# /api/activity - the driving that never reached the board
+# ---------------------------------------------------------------------------
+#
+# `drive_time` and `distance` were written only by `/api/run`, which is posted when a
+# lap *finishes*. Measured on the live database that meant 8,134 of 9,758 attempts
+# (83%) counted for nothing, and every room lap counted for nothing at all, because
+# `countsForTheBoard()` gates the board APIs.
+
+
+def _stats_row(A, uid):
+    with A.app.app_context():
+        st = A.DriveStats.query.filter_by(user_id=uid).first()
+        if st is None:
+            return None
+        return {c.name: getattr(st, c.name) for c in st.__table__.columns}
+
+
+def test_activity_adds_driving_and_touches_nothing_else(env):
+    """The counters it is allowed to move, and - the important half - the ones it is
+    not. `runs` means laps *finished*, so an abandoned run must not touch it, and
+    nothing here may reach a medal, a rating or the board."""
+    A = env
+    uid = _user(A)
+    c = A.app.test_client()
+    _login(c, uid)
+    # One post to bring the row into being (`/api/start` writes `DriveStart`, a
+    # different table, so it leaves no stats row behind), then measure the census
+    # across a second - which is the case that matters: an existing row, and only
+    # the two counters on it allowed to move.
+    c.post("/api/activity", json={"track": "sunrise", "ms": 1000, "distance": 10})
+    before = _stats_row(A, uid)
+    assert before is not None
+    r = c.post("/api/activity", json={"track": "sunrise", "ms": 12_000,
+                                      "distance": 400, "why": "restart"})
+    assert r.get_json() == {"ok": True, "stored": True}
+    after = _stats_row(A, uid)
+    assert after["drive_time"] == pytest.approx((before["drive_time"] or 0) + 12.0)
+    assert after["distance"] == pytest.approx((before["distance"] or 0) + 400)
+    # Census, not field by field: a counter added later cannot quietly start moving.
+    moved = {k for k in after if after[k] != before[k]}
+    assert moved == {"drive_time", "distance"}, moved
+    with A.app.app_context():
+        assert A.DriveTime.query.count() == 0, "an abandoned run is not a board entry"
+
+
+def test_activity_does_not_count_a_finished_lap_twice(env):
+    """**The test this feature lives or dies by.**
+
+    `/api/run` adds a finished lap's own time and distance. If an abandon path also
+    reported it, every lap would be worth double - so the client claims the run
+    (`run.counted`) the moment `/api/run` takes it, and `reportActivity` refuses a
+    run it has already banked. Here that contract is checked from the server's side:
+    the two routes are additive, so posting both for one lap *is* the double count,
+    and the client is the only thing that stops it.
+
+    The wiring that enforces it is pinned in `test_rules_js.py`; this test exists so
+    the arithmetic is written down next to the route that does it.
+    """
+    A = env
+    uid = _user(A)
+    c = A.app.test_client()
+    _login(c, uid)
+    payload = _run_payload(A)
+    assert c.post("/api/run", json=payload).get_json()["stored"] is True
+    once = _stats_row(A, uid)
+    assert once["drive_time"] == pytest.approx(payload["time_ms"] / 1000.0)
+    # What a buggy client would do. It has to be visible, or nobody would know the
+    # client-side guard is the only thing standing here.
+    c.post("/api/activity", json={"track": payload["track"],
+                                  "ms": payload["time_ms"], "distance": 500})
+    twice = _stats_row(A, uid)
+    assert twice["drive_time"] == pytest.approx(once["drive_time"] * 2), \
+        "the routes are additive by design; the client must post exactly one of them"
+
+
+def test_activity_clamps_both_numbers(env):
+    """Both are the client's word. `distance` had a clamp already because it always
+    was; `ms` never needed one on `/api/run` (the replay's frame count checks it) and
+    badly needs one here, where there is no replay - it is the number the whole
+    minutes-played figure is made of."""
+    A = env
+    import runcheck
+    uid = _user(A)
+    c = A.app.test_client()
+    _login(c, uid)
+    c.post("/api/activity", json={"track": "sunrise", "ms": 10 ** 9,
+                                  "distance": 10 ** 9})
+    st = _stats_row(A, uid)
+    assert st["drive_time"] == pytest.approx(runcheck.MAX_RUN_MS / 1000.0)
+    assert st["distance"] < 10 ** 9
+    # Rubbish is nought rather than an exception or a NaN in somebody's profile.
+    c.post("/api/activity", json={"track": "sunrise", "ms": "banana",
+                                  "distance": None})
+    st2 = _stats_row(A, uid)
+    assert st2["drive_time"] == pytest.approx(st["drive_time"])
+
+
+def test_activity_is_honest_to_a_guest(env):
+    """The rule `/api/start` already follows: there is no row to count it in and
+    nothing has gone wrong, so it is a `false` and not a 401."""
+    A = env
+    c = A.app.test_client()
+    r = c.post("/api/activity", json={"track": "sunrise", "ms": 5000, "distance": 90})
+    assert r.status_code == 200
+    assert r.get_json() == {"ok": True, "stored": False}
+    with A.app.app_context():
+        assert A.DriveStats.query.count() == 0
+
+
+def test_activity_accepts_a_beacon(env):
+    """`navigator.sendBeacon` sends `text/plain`, so a route reading `request.json`
+    sees nothing and drops it silently - which would undo the one case this feature
+    is mostly for, the run abandoned by closing the tab."""
+    A = env
+    uid = _user(A)
+    c = A.app.test_client()
+    _login(c, uid)
+    r = c.post("/api/activity", data=json_mod.dumps({"track": "sunrise", "ms": 3000,
+                                                     "distance": 50}),
+               content_type="text/plain;charset=UTF-8")
+    assert r.get_json() == {"ok": True, "stored": True}
+    assert _stats_row(A, uid)["drive_time"] == pytest.approx(3.0)
+
+
+def test_activity_refuses_a_track_that_does_not_exist(env):
+    A = env
+    uid = _user(A)
+    c = A.app.test_client()
+    _login(c, uid)
+    assert c.post("/api/activity", json={"track": "nope", "ms": 1000}).status_code == 404
