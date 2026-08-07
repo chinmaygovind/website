@@ -157,7 +157,7 @@ function liveryMesh(L) {
   // front of the roof, floating in the air over the screen.
   const DECK = 0.555 + LIFT, ROOF = 1.03 + LIFT;
   const NOSE = -1.7, TAIL = 1.7;            // the bonnet, end to end
-  const RF = -0.7, RB = 0.9;                // the roof, front and back
+  const RF = -0.15, RB = 0.9;               // the roof, front and back
   // Wound anticlockwise seen from above, so `computeVertexNormals` gives these
   // an upward normal. The obvious order is the other one and it is silently
   // wrong: the decal still draws, and it is lit from underneath, so a bright
@@ -246,36 +246,70 @@ export class CarView {
 
     // chassis: a wedge-ish stack of boxes, Polytrack-simple
     //
-    // **This is the shape Drive has always drawn, and it is deliberately back.**
-    // Three goes were had at giving the front a face - a sloped snout with a
-    // splitter, one flush sloped snout, then no nose piece at all with a raked
-    // windscreen and headlights - and all three looked worse than the plain
-    // stack of boxes they replaced. So the boxes are the boxes again. If
-    // somebody has another go, the useful record is what did not work:
+    // **The body is the whole car and its front face is the front of the car.**
+    // There is no nose piece, no bumper slab and nothing standing out in front:
+    // three separate attempts at a front all read worse than nothing, because a
+    // separate panel meeting the bonnet draws a line across the widest, flattest,
+    // best-lit surface on the car, and the two sides of that line catch the light
+    // differently however carefully the pieces are aligned. Sloped it is a
+    // crease, flat it is a step, inset it is a step down the flanks too.
     //
-    // * **A separate nose panel meeting the bonnet draws a line across the
-    //   widest, flattest, best-lit surface on the car**, and the two sides of it
-    //   catch the light differently however carefully the pieces are aligned.
-    //   Sloped it is a crease, flat it is a step, inset it is a step down the
-    //   flanks too.
-    // * **Deleting the join does not fix it either.** Running the body box the
-    //   full length of the car removes the line and leaves a flat slab with a
-    //   flat face, which is worse than a slab with a bumper on it.
-    // * The one thing nobody objected to was the **raked windscreen** - but it
-    //   only makes sense with a shortened cabin, and it went back with the rest
-    //   rather than leaving the model half-way between two designs.
+    // So the only things on the front are the lamps, and they sit **flush** in the
+    // face rather than proud of it. The overhang goes with the bumper, which
+    // leaves the front about as short as the rear already was - the car reads as
+    // symmetrical now rather than as a long nose with no tail.
     const lower = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.55, 3.4), bodyMat);
     lower.position.y = 0.28;
     this.body.add(lower);
-    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.5, 1.6), cabinMat);
-    cabin.position.set(0, 0.78, 0.1);
+    // Shorter than the body it sits on, because the front of it is the windscreen
+    // rather than a wall - see below.
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.5, 1.05), cabinMat);
+    cabin.position.set(0, 0.78, 0.375);
     this.body.add(cabin);
-    const glass = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.34, 1.1), glassMat);
-    glass.position.set(0, 0.84, -0.1);
-    this.body.add(glass);
-    const nose = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.28, 0.7), darkMat);
-    nose.position.set(0, 0.2, -1.85);
-    this.body.add(nose);
+    // **The raked windscreen.** The cabin used to be a plain box, so the front of
+    // it was a dead-vertical wall rising 0.475 straight out of the bonnet, which
+    // no car has. This is a slab lying along the line from the deck at z = -0.75
+    // up to the roof at z = -0.15: a rise of 0.475 over 0.6, about 52 degrees off
+    // vertical.
+    //
+    // It replaces the old glass box rather than joining it, so the cabin costs no
+    // more than it did. That box was 1.42 wide inside a 1.55 cabin, so its sides
+    // were buried and the only part of it anybody ever saw *was* the windscreen
+    // face - which is exactly what this is, at the right angle.
+    //
+    // **Positioned by its top face, not its centre.** A slab has thickness, and
+    // the thing that has to land on the line from the deck to the roof is the pane
+    // you can see, so the centre sits half a thickness under that line along its
+    // own normal. Put the centre on the line instead and the leading edge stands
+    // an eighth of a unit proud of the bonnet, drawing a dark fin up out of the
+    // paint rather than a windscreen.
+    const screen = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.34, 0.765), glassMat);
+    screen.position.set(0, 0.656, -0.345);
+    screen.rotation.x = -0.667;
+    this.body.add(screen);
+    // Headlights: one mesh, one material, and **the colour is not yours**. The
+    // reasoning is the brake lamps' own, a screen down: the lamps are the only
+    // thing another driver reads off your car, which is why the amber drift state
+    // was taken out again. A headlight somebody can paint black is the same
+    // mistake with a settings page in front of it.
+    //
+    // Unlit and built by hand rather than through `mat()`, for the same reason the
+    // brake lamps are: `mat()` makes a lit material and takes the finish, so a
+    // lens would go glossy with the paint and darken on the side away from the
+    // sun. A lamp is a lamp at every angle. One `MeshBuf` rather than two meshes
+    // because, unlike the brake lamps, these never change independently.
+    //
+    // **Flush, which means 0.01 proud and not 0.** The body's front face is at
+    // z = -1.7; a lens whose own face is at exactly -1.7 is coplanar with it and
+    // the two z-fight into a flicker, and a lens set even a thousandth *behind* it
+    // vanishes inside the bodywork. A hundredth is the same trick the livery
+    // decals use for the same reason, and it is invisible at this scale.
+    const lamps = new MeshBuf();
+    for (const s of [-1, 1]) lamps.box(s * 0.53, 0.36, -1.67, 0.25, 0.07, 0.04, 0xffeccc);
+    const headMat = new THREE.MeshBasicMaterial({
+      color: 0xffeccc, transparent: ghost, opacity: this._solid });
+    this._mats.push(headMat);
+    this.body.add(lamps.toMesh(headMat));
     const wing = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.12, 0.42), darkMat);
     wing.position.set(0, 0.92, 1.72);
     this.body.add(wing);
@@ -376,14 +410,21 @@ export class CarView {
     // from anywhere, and it is what a rival reads when they are deciding whether
     // to try the move.
     if (L.badge === 'laurel') {
-      // Just above the nose slab and clear of the body's front face, which is
-      // where it sits with the nose this shape. It has had to move every time
-      // the front did - one rebuild drew it entirely inside the bodywork, where
-      // nothing errored and nothing looked wrong and the badge was simply not
-      // there - so it is checked by a test rather than by eye.
-      const flash = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.08, 0.24),
+      // A bar across the front face under the lamps, flush the same 0.01 they
+      // are. It has had to move every time the front did, and one of those moves
+      // turned its fixed z from clear air into solid bodywork and drew the badge
+      // *inside* the car - where nothing errored, nothing looked wrong from any
+      // angle, and the badge was simply absent. Left where it was this time it
+      // would have floated 0.16 in front of a car with no bumper to sit on.
+      //
+      // **-1.69 and not -1.67**, which is the whole reason this has a test.
+      // `MeshBuf.box` above takes *half* extents and `BoxGeometry` takes full
+      // ones, so the same-looking z that puts the lamps 0.01 proud of the face
+      // puts a box of this depth 0.01 behind it - inside the bodywork, invisible,
+      // and silent about it.
+      const flash = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.07, 0.04),
                                    mat(RECORD_GREEN));
-      flash.position.set(0, 0.35, -1.86);
+      flash.position.set(0, 0.15, -1.69);
       this.body.add(flash);
     }
     this.plateColor = L.badge === 'laurel'

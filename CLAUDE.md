@@ -1270,57 +1270,63 @@ over a rule that actually wants three is worse than no text at all.
   so there is no second copy of the vocabulary in the JS to drift from
   `garage.py`'s - including the words on a locked row.
 
-### The front of the car, and three attempts at it
+### The front of the car, and four attempts at it
 
-**The car's shape is the one Drive has always drawn, and that is the outcome of
-this rather than the starting point.** The front was called goofy - from behind
-the wing, the stays and the two brake lamps give it a silhouette, and head on it
-is a plain box with a narrow dark slab under it and no lights - and three goes
-were had at fixing it. All three were reverted. Nobody should spend that time
-again without knowing what happened, so:
+The rear was always right - a wing, two stays, two brake lamps give it a
+silhouette. The front was a plain box face with a narrow dark bumper slab under
+it and no lights, and it took four goes to land. The three that were reverted are
+worth writing down, because each one failed for a reason the next one repeated:
 
-1. **A sloped snout in the body colour, a full-width splitter blade, and
-   headlights.** Worse. The snout was 1.84 inside a 1.9 body, which leaves a 0.03
-   step down each flank and reads as a part bolted on; the blade put a second
-   silhouette in front of the first; and the cabin was still a plain box, so its
-   front was a **dead-vertical wall** rising half a unit out of the bonnet, which
-   turned out to be the thing that actually looked wrong.
+1. **A sloped snout in the body colour, a full-width splitter blade, headlights.**
+   The snout was 1.84 inside a 1.9 body - a 0.03 step down each flank, which reads
+   as a part bolted on - and the blade put a second silhouette in front of the
+   first. And the cabin was still a plain box, so its front was a dead-vertical
+   wall out of the bonnet, which turned out to be what actually looked wrong.
 2. **A raked windscreen, and one flush sloped nose.** The screen was right and
-   nobody objected to it. The nose still was not: sloping it put a fold across
-   the widest, flattest, best-lit surface on the car, and the two sides of that
-   fold catch the light differently however well the pieces line up.
-3. **No nose piece at all** - the body box run the full length of the car so
-   there was no join to line up. That does remove the line, and leaves a flat
-   slab with a flat face, which was judged worse than a slab with a bumper on it.
+   survives. The nose was not: sloping it put a fold across the widest, flattest,
+   best-lit surface on the car, and the two sides of a fold catch the light
+   differently however well the pieces line up.
+3. **No nose piece at all**, the body box run the full length so there was no
+   join. That removes the line and leaves a flat slab with a flat face.
 
-The lessons, in case a fourth attempt happens:
+**What is there now: nothing.** The body's own front face *is* the front of the
+car, the bumper is gone with the overhang it carried, and the only things on the
+face are the two lamps, sitting flush in it. The front is about as short as the
+rear already was, so the car reads as symmetrical rather than as a long nose with
+no tail. The raked windscreen from attempt 2 stays, with the shortened cabin it
+needs.
+
+The lessons, in case there is a fifth:
 
 - **A separate panel meeting the bonnet always draws a line across it.** Sloped
-  it is a crease, flat it is a step, inset it is a step down the flanks too.
-  Deleting the join removes the line and does not by itself make the car look
-  better, so the line is a symptom rather than the disease.
-- **A slab is seated by the face you can see, not by its centre.** The raked
-  windscreen has thickness, so what must land on the bonnet-to-roof line is its
-  top face - centred on the line instead, the leading edge stands proud of the
-  bonnet and draws a dark fin out of the paint.
-- **The panels' lengths have to be named, not written out at each use.** The
-  bonnet's length and the roof's each changed twice over the three attempts, and
-  every stripe range with the old number baked in ran off the end of the panel it
+  it is a crease, flat it is a step, inset it is a step down the flanks too. And
+  deleting the join removes the line without making the car look better, so the
+  line was a symptom. The answer in the end was to put nothing there at all.
+- **"Flush" means 0.01 proud, not 0.** A lens whose face is exactly coplanar with
+  the body's z-fights into a flicker; one a thousandth behind it vanishes inside
+  the bodywork. A hundredth is what the livery decals use, for the same reason.
+- **`MeshBuf.box` takes half extents and `BoxGeometry` takes full ones.** The
+  same-looking z that puts the lamps 0.01 proud of the face puts a `BoxGeometry`
+  of the same depth 0.01 *behind* it. That is how the record badge ended up inside
+  the bodywork - invisible, and silent about it.
+- **The record badge has to be re-checked every time the front moves.** It sits at
+  a fixed z, and two of these four rebuilds turned that z from clear air into
+  solid body. Nothing errors, nothing looks wrong from any angle, and the badge is
+  simply absent. Its test asks "is this box enclosed by another one", found by
+  diffing the badged car against the plain one rather than by matching a
+  dimension - matching "1.5 wide" caught the windscreen too.
+- **The panels' lengths must be named, not written out at each use.** The bonnet's
+  length and the roof's each changed twice across the four attempts, and every
+  stripe range with the old number baked in ran off the end of the panel it
   decorates - the roof stripes hung half a unit past the front of the roof,
-  floating in the air over the windscreen. `liveryMesh` has `NOSE`/`TAIL`/`RF`/
-  `RB` and a test walks every livery's vertices against them.
-- **The record badge has to be re-checked every time the front moves.** It sits
-  at a fixed z, and one of these rebuilds turned that z from clear air into solid
-  bodywork, so the badge was drawn *inside* the car. Nothing errored, nothing
-  looked wrong from any angle, and the badge was simply absent. The test for it
-  asks "is this box enclosed by another one", which is what the bug was, rather
-  than "is it the furthest forward", which is a different claim and is false.
+  floating in the air over the windscreen. `liveryMesh` has `NOSE`/`TAIL`/`RF`/`RB`
+  and a test walks every livery's vertices against them.
 
-A plain car is **14 meshes and 6 materials** and a fully loaded one 20 and 9 -
-the same figures as before any of this, which is the useful thing about pinning
-them as literals. A move has to be a deliberate edit: the car is drawn eight
-times on a full grid, so a mesh added carelessly to one is eight more draw calls
-on a phone.
+A plain car is **14 meshes and 7 materials** and a fully loaded one 20 and 10.
+Fourteen is the count the car has always had, which is not a coincidence: the
+windscreen replaced the glass box it was made from, and the headlights replaced
+the bumper that came off. The seventh material is the lamps' own and is the only
+thing this front costs that the old one did not.
 
 ### Look: skies and worlds
 
@@ -1944,8 +1950,8 @@ with assembling a car out of a livery is invisible to both of the checks this
 project otherwise leans on: the autopilot never draws, and a screenshot of one
 car either photographs "the fifth rim style is 24 meshes instead of one"
 correctly or photographs it as something you would have to already suspect. So
-it pins the *construction* - the mesh and material budget (14 and 6 plain, 20
-and 9 fully loaded), that no material escapes `_mats` and therefore
+it pins the *construction* - the mesh and material budget (14 and 7 plain, 20
+and 10 fully loaded), that no material escapes `_mats` and therefore
 `setGhostly`, that a rim style is one geometry shared by four wheels, that every
 decal clears its panel and faces up (the cross product taken from the raw
 positions, since the stub's `computeVertexNormals` does nothing), and that

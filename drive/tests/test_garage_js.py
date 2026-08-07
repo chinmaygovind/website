@@ -118,21 +118,22 @@ def test_a_car_with_no_livery_at_all_still_builds(rt):
 
 
 def test_the_default_car_costs_exactly_what_it_used_to(rt):
-    """**The check this whole file exists for.** Fourteen meshes and six
-    materials is the car Drive has always drawn: chassis, cabin, glass, nose,
-    wing, two stays, four wheels, two brake lamps and the contact shadow, painted
-    out of body, trim, glass, tyre and a material per lamp.
+    """**The check this whole file exists for.** Fourteen meshes and seven
+    materials: chassis, cabin, raked windscreen, headlights, wing, two stays, four
+    wheels, two brake lamps and the contact shadow, painted out of body, trim,
+    glass, tyre, a material per brake lamp, and one unlit white for the headlights.
 
-    It went to sixteen and seven while the front was being rebuilt and is back
-    where it started, which is the useful thing about pinning it as a literal:
-    the number is the same one it was before any of that, so the garage really
-    does cost an untouched account nothing. **A move here has to be a deliberate
-    edit** - the car is drawn eight times on a full grid, so a mesh added
-    carelessly to one is eight more draw calls on a phone.
+    **Fourteen is the same count the car has always had**, which is worth noticing
+    rather than being a coincidence: the windscreen replaced the glass box it was
+    made out of, and the headlights replaced the bumper slab that came off. The
+    seventh material is the lamps' own, and it is the only thing this front costs
+    that the old one did not. **A move here has to be a deliberate edit** - the car
+    is drawn eight times on a full grid, so a mesh added carelessly to one is eight
+    more draw calls on a phone.
     """
     c = census(rt, "null")
     assert c["meshes"] == 14
-    assert c["materials"] == 6
+    assert c["materials"] == 7
     # Matte is `MeshLambertMaterial`, which is what every car was, so the
     # default car has no Phong anywhere on it.
     assert c["phong"] == 0
@@ -321,7 +322,7 @@ def test_a_shiny_finish_is_phong_and_only_on_the_paint(rt, finish):
     shiny tyre is not a thing, and a glossy lamp lens fights the one signal on
     the car that has to be unambiguous."""
     c = census(rt, f"{{finish: '{finish}'}}")
-    assert c["meshes"] == 14 and c["materials"] == 6   # costs no geometry
+    assert c["meshes"] == 14 and c["materials"] == 7   # costs no geometry
     assert c["phong"] == 2                             # body and trim
     assert rt.call(f"(function () {{"
                    f"  const b = build({{finish: '{finish}'}});"
@@ -392,15 +393,15 @@ def test_the_badge_green_is_the_records_own_green(rt):
 
 def test_a_fully_loaded_car_is_still_a_cheap_car(rt):
     """Every slot filled: 20 meshes against the plain car's 14. A full eight-car
-    grid is therefore ~160 meshes rather than the ~112 it was, which is the budget
-    the merged rim geometry buys and the reason it is merged - drawn the obvious
-    way, the rims alone would have been another 160 on top."""
+    grid is therefore ~160 meshes, which is the budget the merged rim geometry
+    buys and the reason it is merged - drawn the obvious way, the rims alone would
+    have been another 160 on top."""
     c = census(rt, "{body: '#7b6cf6', trim: '#111111', glass: '#446688',"
                    " rim: '#c9ced6', stripe: '#ffffff', finish: 'pearl',"
                    " livery: 'twin', rim_style: 'forged', two_tone: true,"
                    " badge: 'laurel'}")
     assert c["meshes"] == 20
-    assert c["materials"] == 9
+    assert c["materials"] == 10
     assert c["untracked"] == 0
 
 
@@ -446,8 +447,11 @@ def test_no_livery_moves_anything_the_simulation_reads(rt):
 
 def test_the_car_did_not_get_longer(rt):
     """A cosmetic may not change what the car *is*. The collision radius lives in
-    `tuning.py` and has not moved, so a nose drawn further forward than this one
-    would have the car looking like it should have hit something before it does.
+    `tuning.py` and has not moved, so anything drawn further forward than the
+    body's own front face would have the car looking like it should have hit
+    something before it does - and with the bumper gone, the body's front face is
+    the front of the car. The lamps and the badge stand 0.01 proud of it, which is
+    the least a coplanar face can stand off without z-fighting.
     """
     reach = rt.call("(function () {"
                     "  let z = 0;"
@@ -458,7 +462,7 @@ def test_the_car_did_not_get_longer(rt):
                     "  }"
                     "  return z;"
                     "})()")
-    assert -2.25 <= reach <= -2.15, reach
+    assert -1.72 <= reach <= -1.69, reach
 
 
 def test_the_record_badge_is_on_the_nose_and_not_inside_it(rt):
@@ -477,8 +481,12 @@ def test_the_record_badge_is_on_the_nose_and_not_inside_it(rt):
                        f".map((c) => [c.position.x, c.position.y, c.position.z,"
                        f"  c.geometry.parameters.width, c.geometry.parameters.height,"
                        f"  c.geometry.parameters.depth])")
+    # Found by difference rather than by a dimension: any literal picked here is
+    # one the badge might legitimately share with a panel, and it already did -
+    # matching on "1.5 wide" caught the windscreen too.
     all_boxes = boxes("{badge: 'laurel'}")
-    flash = [b for b in all_boxes if abs(b[3] - 1.72) < 1e-9]
+    plain = boxes("null")
+    flash = [b for b in all_boxes if b not in plain]
     assert len(flash) == 1, "the nose flash is gone"
 
     def inside(a, b):
@@ -504,7 +512,7 @@ def test_the_decals_reach_the_ends_of_the_panels_they_are_on(rt):
     front of the roof, floating in the air over the windscreen. `liveryMesh` names
     them for that reason; this walks every livery's vertices against the panels.
     """
-    BONNET, ROOF = (-1.7, 1.7), (-0.7, 0.9)
+    BONNET, ROOF = (-1.7, 1.7), (-0.15, 0.9)
     for name in ("centre", "twin", "band", "pinstripe", "fade", "halves"):
         pos = rt.call(f"liveryMesh(liveryOf({{livery: '{name}'}})).pos")
         zs = [(pos[i + 1], pos[i + 2]) for i in range(0, len(pos), 3)]
