@@ -1126,14 +1126,25 @@ over a rule that actually wants three is worse than no text at all.
   that happens to match - a literal would be indistinguishable on the day and
   would stop following the body the first time somebody repainted. Pinned from
   both sides: `test_garage.py` on the resolve, and `test_garage_js.py` on the
-  built car costing exactly 14 meshes and 6 materials.
-- **`HASH_COLORS` is frozen at eight and `PALETTE` is eighteen**, and the split
-  is the whole reason nobody was repainted. `color_for` is
+  built car costing exactly 14 meshes and 7 materials.
+- **`HASH_COLORS` is frozen at eight and `PALETTE` is ten**, and the split is the
+  whole reason nobody was repainted. `color_for` is
   `HASH_COLORS[sha1(name) % len(HASH_COLORS)]`, so the *length of the list it
   indexes* is part of every answer - hashing over the wider palette would have
-  changed the modulus from 8 to 18 and with it the default colour of every
-  account that exists and of every ghost ever recorded. The ten new ones are
+  changed the modulus and with it the default colour of every account that exists
+  and of every ghost ever recorded. Whatever is offered beside those eight is
   choosable and nothing else.
+- **The palette was eighteen and shrinking it needed `RETIRED`.** Eighteen
+  swatches is two rows, which reads as a paint chart rather than as a choice, so
+  eight came out. But a *body* colour is the one slot that is not free hex, so
+  dropping a value from `PALETTE` alone would have made every car wearing one of
+  the eight fail `validate` and be repainted to red on its owner's next visit -
+  silently, and to a colour they did not pick. `RETIRED` holds those eight and
+  `BODY_OK = PALETTE | RETIRED` is what `validate` checks, so a retired colour is
+  **offered to nobody and taken off nobody**. `test_garage.py`'s palette checks
+  run over `BODY_OK` rather than `PALETTE`, because a colour still being worn
+  still has to be one you can pick out mid-pack. This is the shape any future
+  palette change wants: `RETIRED` grows, and nothing in the wild moves.
 - **The body is a curated palette and the detail slots are free hex.** The body
   is what rivals identify you by, so its separation is guaranteed rather than
   left to whoever is choosing: `test_garage.py` checks every pair at least
@@ -1144,33 +1155,50 @@ over a rule that actually wants three is worse than no text at all.
   gold 13.8 from the yellow already there. A trim or a window is not the thing
   you are picked out by, so those are anything you like.
 - **Each detail slot offers its own swatches** (`garage.SWATCHES`), and they are a
-  shortcut rather than a rule - `validate` still takes any hex there. They all
+  shortcut rather than a rule - `validate` still takes any hex there, which is
+  what made trimming these lists free where trimming the body's was not. They all
   offered the *body's* eighteen at first, which is wrong for four slots and absurd
   for one: there was no white, black or grey anywhere in the garage, so a white
-  stripe could not be had, and the glass tint could be pink. Trim, stripe and rim
-  get six neutrals in front of the palette (and the rim gets its metals: silver,
-  gunmetal, gold, bronze); **glass is the one list that replaces the palette
-  rather than extending it**, because glass is dark and neutral or it is not
-  glass. `test_garage.py` measures that - every glass swatch is L* 62 or under and
-  none of them is a body colour. White is offered in the detail slots and still
-  refused on the body, which is the whole point of splitting the lists.
+  stripe could not be had, and the glass tint could be pink. **Every list is now
+  ten or under, which is one row**, because a swatch row that wraps is a block of
+  colour the size of the car it is describing. Trim, stripe, roof and badge get
+  three neutrals in front of a short bright set; the rim gets its metals first
+  (silver, gunmetal, gold, bronze), since a wheel is usually a metal; **glass is
+  the one list that replaces the palette rather than extending it**, because glass
+  is dark and neutral or it is not glass. `test_garage.py` measures that - every
+  glass swatch is L* 62 or under and none of them is a body colour. White is
+  offered in the detail slots and still refused on the body, which is the whole
+  point of splitting the lists.
 - **A finish changes the paint and not only the lighting.** The car is
   `flatShading: true` boxes lit by one sun, so a Phong specular on a face is
   *constant across it* - nothing travels and nothing reflects, and the whole of
   what a shiny finish did was make a sunlit panel slightly lighter. Four finishes
   differing only in how much lighter are four nobody can tell apart, which is what
-  they were. So `FINISH` has a `mat` half and a **`paint`** half: metallic goes
-  lighter and desaturated, pearl lighter and tinted, gloss is your colour with a
-  harder highlight, and matte is untouched because it is the default and must stay
-  byte-identical. The two were also tuned *against each other* rather than against
-  matte - both started out "a bit lighter and slightly off-hue" and were
-  indistinguishable from one another, so the test asserts a minimum distance
-  between them and not merely that they differ. `paintOf` is applied at the two
-  paint call sites and **not** inside `mat`, because the decal material is painted
-  too and is `0xffffff` with `vertexColors`: a pearl tint there would multiply
-  every stripe and badge on the car by a lilac. `L.body` itself is never touched,
-  so the swatch, the minimap dot and the nameplate still show the colour that was
-  chosen rather than the colour the finish made of it.
+  they were. So `FINISH` has a `mat` half and a **`paint`** half, and gloss is a
+  harder highlight *plus* a deeper, more saturated body colour - the same paint
+  read as wet.
+- **`FINISHES` is matte and gloss, and `FINISH` still has four entries.** That is
+  not an oversight and it is the interesting half. Metallic and pearl were offered,
+  and offering four finishes on a flat-shaded car meant two of them were "a bit
+  lighter and slightly off-hue" and nobody could say which was which - so the
+  vocabulary is two, which are the two that read as different *kinds* of paint
+  rather than as two settings of one. But **a stored replay carries an unvalidated
+  livery**: `_store_replay` writes what the driver wore on the day, so a race from
+  before this change has `finish: 'metallic'` in it and the renderer must still
+  know what that means. Deleting the entries would have quietly turned those cars
+  matte. `validate` refuses metallic on a *live* car, so the only thing that can
+  still reach them is a recording, which is exactly the case they are kept for.
+  A pair of tests pins both halves: the two retired finishes still render, and an
+  entirely unknown finish is a matte car rather than a crash.
+- **The finish applies to the whole body.** `paintOf` runs on the body colour, the
+  cabin (whether it is sharing `bodyMat` or wearing its own roof colour) and the
+  trim, so a glossy car is glossy everywhere its paint is - and not on the glass,
+  the tyres or either set of lamps, which stay matte for the reason below. It is
+  applied at those call sites and **not** inside `mat`, because the decal material
+  is `0xffffff` with `vertexColors` and a paint transform there would multiply
+  every stripe and badge on the car. `L.body` itself is never touched, so the
+  swatch, the minimap dot and the nameplate still show the colour that was chosen
+  rather than the colour the finish made of it.
 - **No lamp is customisable, at either end.** They are the only thing a rival
   reads off your car, and the amber drift state was removed for exactly that
   reason; a lamp somebody can recolour is the same mistake with a settings page
@@ -1183,9 +1211,9 @@ over a rule that actually wants three is worse than no text at all.
   `CAR_RADIUS`, not the wheel radius, not a gram of mass. A cosmetic that
   changed how the car drives would make every time on the board mean something
   different depending on what its driver was wearing.
-- **Ten gates, and two of them are past tense.** Pearl at three golds, pinstripe
-  at a gold on every track, split-five rims at finishing every track, and six of
-  the seven badges. Most are counters that cannot go down, so storing them would
+- **Ten gates, and two of them are past tense.** Pinstripe at a gold on every
+  track, split-five rims at finishing every track, and eight badges. Most are
+  counters that cannot go down, so storing them would
   be a second copy of something the database already knows. The **laurel** ("set a
   track record") and the **crown** ("hold the record on 3 tracks at once") are the
   two anybody can have taken off them, so they are earned once and kept - written
@@ -1193,9 +1221,16 @@ over a rule that actually wants three is worse than no text at all.
   used to carry the literal `{"laurel"}`, and the vocabulary belongs with the
   vocabulary. That is also why neither needs a backfill: every current holder
   qualifies the first time anything asks about them.
+- **Retiring the pearl freed a gate, and it went to a badge rather than being
+  deleted.** Pearl was "three golds", which is the most achievable gate on the
+  list and the one most people meet first, so removing the finish would have taken
+  away the first thing the garage ever gives you. `shield` inherited it. There is
+  no rule that the number of gates is fixed - the point is that a gate somebody
+  has already met should keep paying out something, and moving it onto a new item
+  is cheaper than inventing a threshold nobody has tested.
 - **A gate can only ask about something already recorded**, and that is what chose
   the badge set. `DriveStats` already has `wins`, `podiums`, `races`, `elo` and
-  `distance`, all written today, so none of the seven needed a column - which
+  `distance`, all written today, so none of the eight needed a column - which
   matters because `create_all` makes *tables* and not columns, and a new column is
   a migration by hand on the live box. The thresholds are named
   (`ACE_ELO`, `PODIUMS_NEEDED`, `CROWN_RECORDS`, `RIBBON_METRES`) rather than
@@ -1288,7 +1323,7 @@ over a rule that actually wants three is worse than no text at all.
   that is the car's own business**, and `setLabel` is called with no colour so it
   falls back to `CarView.plateColor` - which is now **always the body colour**. It
   used to go record green for the laurel, and that was worth it while the badge was
-  a bar on the bumper nothing could see. With seven badges, green would mean
+  a bar on the bumper nothing could see. With eight badges, green would mean
   "wearing one of the three green ones", which is not a fact worth a colour; and a
   plate per badge takes away the one thing a plate is good at, which is being that
   driver's colour. The badge is on the bonnet now and says what it says by itself.
@@ -1298,22 +1333,37 @@ over a rule that actually wants three is worse than no text at all.
 
 #### The badge case
 
-**Seven badges, each a shape on the bonnet in its own colour**, and each **free**:
-they go into the same `MeshBuf` as the stripes, so a badge costs no mesh and no
-material. It used to be its own mesh with its own material - a whole draw call for
-a shape the size of a hand, on every car on the grid - and that is what made a
-case of seven affordable rather than a choice between them. A fully loaded car went
-from 20 meshes to 19.
+**Eight badges, each a shape on the bonnet**, and each **free**: they go into the
+same `MeshBuf` as the stripes, so a badge costs no mesh and no material. It used to
+be its own mesh with its own material - a whole draw call for a shape the size of a
+hand, on every car on the grid - and that is what made a case of eight affordable
+rather than a choice between them. A fully loaded car went from 20 meshes to 19.
 
 | | earns it | shape |
 |---|---|---|
 | `laurel` | set a track record | a scalloped ring around a **1**, record green |
-| `chequers` | win a multiplayer race | a 4x4 board, green |
-| `chevrons` | Ace rating (elo 1250) | three stacked V's, green |
-| `crown` | hold 3 records at once | a band and three points, green |
+| `checkers` | win a multiplayer race | a 4x4 board, black and white |
+| `chevrons` | Ace rating (elo 1250) | three stacked V's, record green |
+| `crown` | hold 3 records at once | a band and three points, record green |
 | `podium` | 10 podiums | three pips, biggest in the middle, bronze |
 | `sunburst` | a gold on every track | 12 rays and a hub, gold |
 | `ribbon` | 100 km driven | a road's markings converging away, grey |
+| `shield` | a gold on any 3 tracks | a crest, chief and field split by a gap, steel |
+
+- **Every badge has a default colour and every badge can be recoloured.**
+  `BADGE_COLOR` is the default per badge, because a bronze podium and a gold
+  sunburst are part of what those two *are*; `badge_color` overrides it, and
+  `null` (the `Auto` chip) means "whatever this badge normally is" rather than a
+  literal, so a default that moves later moves everybody who never chose.
+- **`checkers` is the one badge with two colours in it**, and that is why it is not
+  simply "the badge colour": a chequered flag is black *and* white or it is a grid.
+  So the dark squares take the badge colour (black by default) and the light ones
+  are a fixed near-white `CHECKER_LIGHT`. Recolouring it therefore recolours half
+  the badge, which is the right half - a red-and-white chequer still reads as a
+  chequered flag where a red-and-pink one would not.
+- **It is spelled `checkers`.** It was `chequers` first, which is the flag's British
+  spelling and is what a chequered flag is called - but the value is also the word
+  on the chip, and nobody looking for the chequered-flag badge types it that way.
 
 **The thing to know before adding one: a decal lying flat on a bonnet has no
 *up*.** What the icons call height is length along the car, pointing away from the
@@ -1323,12 +1373,36 @@ fingers) before becoming three pips of different *sizes* - because size is the o
 thing foreshortening keeps. What works here is anything whose plan view is the
 whole idea: a grid, a radial burst, a ring, a spiked bar, converging lines.
 
+**And there is only one right way round.** Every badge is read by somebody sitting
+behind the car, so an icon's tail has to point at the windscreen and its head at
+the nose - `P` maps icon-space `+v` to `BADGE_Z + v * STRETCH`, i.e. *away* from
+the camera. It was `BADGE_Z - v` first, which put every chevron pointing at the
+driver and every crown upside down, and **it looks perfectly fine in the garage
+from three of the four `?view=` angles** - a symmetric ring like the laurel is
+identical either way, and from the side you cannot tell. It was found by
+photographing `?view=front`, which is the check to make when adding one.
+
+Flipping that mapping also **inverts the handedness of icon space**, so every
+triangle wound correctly before the flip is wound backwards after it. Rather than
+reverse eight hand-drawn shapes, `tri2` computes the *world* normal from the three
+corners it was handed and emits whichever order faces up - so the winding is no
+longer something a caller can get wrong, in either coordinate system. Nine tests
+fail if that is reverted, which is what says it is load-bearing rather than
+defensive.
+
 Two more things that cost iterations:
 
 - **`STRETCH` (1.28) stretches every icon along z**, so a shape described square
   appears square from the chase camera. Its ceiling is the bonnet: 1.88 across and
   only 0.95 long, so the *length* binds and a round badge tops out at about 0.87
   long by 0.68 wide. Going wider is free; going longer runs under the windscreen.
+- **A gap is how a one-colour badge gets internal structure.** The shield was a
+  single solid outline and was the only badge with nothing inside it - a grey blob,
+  and one that looked perfectly fine as a *silhouette*, which is what a shape test
+  measures. It is two pieces now, a chief and a field with the paint showing
+  between them, and that is the general answer here: a second colour is `checkers`'
+  exception rather than a tool, since half a badge that does not follow the colour
+  picker is half a badge somebody cannot customise.
 - **Gaps have to be wider than instinct says.** The crown's three points 0.005
   apart merged into a solid arrowhead; nine separate laurel leaves came out as a
   scatter of specks and had to become one continuous scalloped ring; three podium
@@ -1381,17 +1455,64 @@ Two more things that cost iterations:
   canvas otherwise swallows every drag along that edge, and on this page
   dragging *is* the interface.
 - **Seven tabs and one option row**, so only the active category is on screen and
-  the car keeps the rest of it. The option row has a `min-height` so switching
-  tabs does not walk the car up and down behind the bar. A tab holding something
-  unearned carries a dot, and one line under the row says how many of the four
-  are yours and which is nearest - and says **nothing at all** once they are all
-  yours, rather than sitting there for ever reporting an absence, which is a bar
-  over the car in order to say there is no news. With a **colon**, not "needs": two of the four
-  gate texts are instructions ("Set a track record") and two are noun phrases
-  ("A gold on any 3 tracks"), so anything reading them into a sentence gets half
-  of them wrong. The numbers behind it are `garage.progress`, and `payload`'s
-  `prog` argument is optional because `payload` is also called against a stub
-  user with no database behind it.
+  the car keeps the rest of it: **Body, Detail, Livery, Wheels, Glass, Finish,
+  Badge**. The option row has a `min-height` so switching tabs does not walk the
+  car up and down behind the bar. Two things about the order. **Finish is second to
+  last**, because it is the thing you settle once the paint is chosen rather than a
+  category you browse; and **Badge is last** because it is the only tab that is
+  about you rather than about the car.
+- **A tab is one line at desktop, and that is a constraint on the vocabulary.**
+  Every list wraps rather than clipping, so a long one is not *broken* - it is a
+  block of swatches as tall as the car it is describing, on a page whose entire
+  subject is looking at the car. That is what set the palette at ten and each
+  swatch list at ten or under, and it is checked by measuring `#gopts` at 1280,
+  820 and 430 rather than by counting entries: the row is `flex-wrap`, so how many
+  fit is a fact about the rendered width and not about the length of a Python list.
+- **A slot label is only drawn when a tab has more than one slot.** `Detail` is the
+  only one that does (Spoiler and Roof), so it is the only place `SPOILER` / `ROOF`
+  appear. Wheels, Livery and Glass each had a label too - `RIM`, `STRIPE`, `TRIM` -
+  captioning the single row on a tab already named for it, three words saying what
+  the tab said one line above.
+- **Detail is two slots because a spoiler and a roof are two things.** It was one
+  `trim` colour plus a `two_tone` boolean that put the roof in *that* colour, so a
+  white roof over a black wing could not be asked for at all. `roof` is its own
+  slot; `two_tone` is gone rather than aliased, and a stored `two_tone: true` is
+  inert (there is a test that it paints nothing and does not throw). The roof is
+  **the only slot on the car that costs a material**, since a differently painted
+  cabin cannot share `bodyMat` - no colour means it does, which is the common case
+  and the free one.
+- **A locked chip is greyed and pressable, not disabled and captioned.** The
+  requirement used to be printed *inside* the chip, which made one chip in a row
+  three times the height of its neighbours and turned a row of names into a row of
+  paragraphs. Now a locked chip is the same size as every other chip with just the
+  name on it, at `opacity: .45` with a dashed border, and **pressing it** puts the
+  requirement in the line under the row for four seconds. It is deliberately not
+  `disabled`: a disabled button takes no pointer events, so the natural way to ask
+  what a greyed-out thing needs would do nothing at all.
+- **That line is a reply, not a status.** `S.said` is set by a press and cleared by
+  the next render that has something of its own to say, so it cannot sit there
+  being true about a chip you have moved on from. Its other job is the opposite
+  direction: on the Badge tab, a badge you are *wearing* says **"Laurel: unlocked
+  for setting a track record"** - `garage.GATES` carries a `done` phrase beside the
+  `text` one for exactly this, because "Set a track record" and "unlocked for set a
+  track record" are not the same sentence and deriving one from the other would get
+  half of them wrong. Only the badge tab, and only for a badge you have: it is a
+  caption on the thing you are looking at, and it would be a caption on nothing
+  anywhere else.
+- **There is no "9 of 10 unlocked" line.** The row used to report the count and
+  which gate was nearest. A tally over a car is a completion meter on a page about
+  choosing paint, and the dot on a tab already says where there is something to
+  find; `garage.progress` still exists and still feeds the `(3/10)` in a pressed
+  chip's answer, which is the one place a number is an answer to a question
+  somebody asked.
+- **Every colour slot is swatches**, not an `<input type="color">`. The browser
+  draws that as a ~38px grey rectangle that says nothing about what it is or
+  what colour is in it. Instead: a first chip that writes `null` (which is what
+  the server already means by a missing key - labelled `Auto`, or `Body` on the
+  roof and `None` on a stock wheel, where the absence is really "the body colour"
+  and "no lip"), then **that slot's own swatches** as a shortcut, and last a
+  **conic-gradient tile**, which reads as "any colour" at 26px where a plus sign
+  reads as "add one".
 - **Every colour slot is swatches**, not an `<input type="color">`. The browser
   draws that as a ~38px grey rectangle that says nothing about what it is or
   what colour is in it. Instead: a first chip that writes `null` (which is what
@@ -1526,7 +1647,7 @@ The lessons, in case there is a fifth:
   floating in the air over the windscreen. `liveryMesh` has `NOSE`/`TAIL`/`RF`/`RB`
   and a test walks every livery's vertices against them.
 
-A plain car is **14 meshes and 7 materials** and a fully loaded one 20 and 10.
+A plain car is **14 meshes and 7 materials** and a fully loaded one 19 and 10.
 Fourteen is the count the car has always had, which is not a coincidence: the
 windscreen replaced the glass box it was made from, and the headlights replaced
 the bumper that came off. The seventh material is the lamps' own and is the only
@@ -2155,7 +2276,8 @@ project otherwise leans on: the autopilot never draws, and a screenshot of one
 car either photographs "the fifth rim style is 24 meshes instead of one"
 correctly or photographs it as something you would have to already suspect. So
 it pins the *construction* - the mesh and material budget (14 and 7 plain, 19
-and 9 fully loaded, and 18 and 8 once a stock wheel is painted), that no material escapes `_mats` and therefore
+and 10 fully loaded, 18 and 8 once a stock wheel is painted, and the roof alone
+worth the one material any of this costs), that no material escapes `_mats` and therefore
 `setGhostly`, that a rim style is one geometry shared by four wheels, that every
 decal - stripe *and* badge, since they share a buffer - lies on one of the three
 panels, clears it, and faces out of the car (the cross product taken from the raw
@@ -2170,7 +2292,33 @@ livery's stripes stay on the panel they are drawn on, and that the car did not g
 longer. The badge is checked for being on the *clear* stretch of bonnet ahead of
 the windscreen and for being a readable size - it used to be a bar on the bumper
 line, checked for not being enclosed by the bodywork, which it silently was for as
-long as it took to look at a screenshot.
+long as it took to look at a screenshot. **Its orientation is pinned twice, and only
+one of the two can speak for every badge.** The direct one reads the `BADGE_Z + v`
+mapping out of the source *and* checks a shield's single point is its most nose-ward
+vertex. The other counts where the ink is - which half of the icon holds more of its
+vertices - and that only works on the **two** badges that are lopsided by vertex
+count: the crown, whose band must be furthest from the windscreen, and the shield,
+whose flat top must be nearest it. The chevrons and the ribbon point clearly one way
+to the eye and have as many corners at each end, and the laurel, sunburst, checkers
+and podium are symmetric outright, so listing them here would be six cases that
+cannot fail.
+
+**The mapping and the world-space winding are only safe together, and reverting
+either one alone is caught by different tests** - measured, because this is the kind
+of pair where "the suite is green" means very little. Flip `BADGE_Z + v` back on its
+own and **3** fail: the badges point at the driver, and nothing else breaks, because
+`P` scales `v` by a *positive* `STRETCH` so the icon-space and world-space cross
+products have the same sign. Revert `tri2` to the icon-space cross on its own and
+exactly **1** fails - the one that reads the source - for that same reason: with the
+current mapping the two formulas are literally proportional, so no geometry can tell
+them apart. Revert both, which is the state this batch started from, and **12** fail:
+now the mapping's sign flip makes the icon-space winding face every decal downward,
+and the eight per-badge facing tests light up along with the four above. That is why
+the source-reading test is not redundant padding - it is the only thing standing
+between a future mapping change and eight silently dark badges.
+
+Two more tests say why `FINISH` outlives `FINISHES`: metallic and pearl still render
+(for the replays that carry them), and an entirely unknown finish is a matte car.
 **Both of them exist mainly to say the same thing**: an account with no garage
 row wears the car everybody else's account does. Note this file is also what
 pushed `three_stub.js` twice - materials from one shared `noop` to three real

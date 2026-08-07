@@ -45,9 +45,9 @@ import tracks as tracks_mod
 # colours but they have been theirs for months, and a deploy is not allowed to
 # repaint them.
 #
-# So the hash keeps its own eight for ever. The ten below it are choosable and
-# nothing else. `test_the_hashed_colours_never_move` pins the list and a couple
-# of known name -> colour answers.
+# So the hash keeps its own eight for ever. Whatever is offered beside them is
+# choosable and nothing else. `test_the_hashed_colours_never_move` pins the list
+# and a couple of known name -> colour answers.
 HASH_COLORS = [
     "#e8453c",   # red
     "#3d8bfd",   # blue
@@ -59,33 +59,54 @@ HASH_COLORS = [
     "#f178b6",   # pink
 ]
 
-# Every body colour you may choose. The eight above, then ten more.
+# Every body colour you are *offered*: the eight above, plus two. It was eighteen
+# for a while and eighteen swatches is two rows, which reads as a paint chart
+# rather than as a choice - see `RETIRED` for what happened to the other eight.
 #
-# **This list is checked rather than eyeballed** (`test_garage.py`): every pair is
-# at least DELTA_E_MIN apart in CIELAB so no two cars are confusable mid-pack,
-# every entry is at least BACKDROP_MIN from tarmac, kerb, grass, a bright sky, a
-# dark sky and snow so no car can hide against the world, and every L* sits
+# **This list is checked rather than eyeballed** (`test_garage.py`, over `BODY_OK`):
+# every pair is at least DELTA_E_MIN apart in CIELAB so no two cars are confusable
+# mid-pack, every entry is at least BACKDROP_MIN from tarmac, kerb, grass, a bright
+# sky, a dark sky and snow so no car can hide against the world, and every L* sits
 # inside a band so nothing is near-black or near-white. That check does real work:
 # it threw out a handsome forest green at 14.3 from grass, a sand at 10.8 from a
 # bright sky, and a gold 13.8 from the yellow already here.
-#
-# The tightest pair that survives is orange/rust at 23.3, against 29.8 for the
-# original eight alone - a widened palette is necessarily a closer-packed one, and
-# 23 is still several times the distance at which two colours read as different.
 PALETTE = HASH_COLORS + [
     "#17bfa8",   # teal
+    "#8195b0",   # slate
+]
+
+# **Offered yesterday and still worn today.** The palette was eighteen and is ten,
+# because eighteen swatches is two rows and reads as a paint chart rather than as a
+# choice. These eight are the ones that came out - and `validate` still *accepts*
+# them, which is the whole point of their being here: dropping a colour from the
+# offered list is a change to the garage, and dropping it from the accepted list
+# would repaint the car of anybody wearing one, which is the single thing this file
+# is least allowed to do. They are simply no longer suggested.
+#
+# The visibility rules apply to these exactly as they do to the ten, because a car
+# in one is still a car on the road - `test_garage.py` checks `BODY_OK` and not
+# `PALETTE`.
+RETIRED = [
     "#9fd63c",   # lime
     "#7b6cf6",   # violet
     "#b3a4f7",   # lavender
     "#ff8f7a",   # salmon
-    "#8195b0",   # slate
     "#c65f2e",   # rust
     "#8f9e3d",   # olive
     "#967440",   # bronze
     "#b24d5c",   # rose
 ]
 
+# Every body colour that may be *worn*, as against offered.
+BODY_OK = frozenset(PALETTE) | frozenset(RETIRED)
+
 GUEST_COLOR = HASH_COLORS[0]
+
+# The colour the record is drawn in on the medals card, and so the colour the
+# record's own badges are. Needed up here by the badge swatch list; `RECORD_GREEN`
+# below is the name the rest of the project uses and is checked against
+# `render.js`'s copy by `test_garage.py`.
+RECORD_GREEN_HEX = "#55e08a"
 
 # What the *detail* slots offer, which is not what the body offers.
 #
@@ -98,29 +119,43 @@ GUEST_COLOR = HASH_COLORS[0]
 # was no white, black or grey anywhere in the garage, so a white stripe could not
 # be had at all, and the glass tint could be pink.
 #
-# **A shortcut and not a rule.** `validate` still takes any hex in these four
-# slots (`FREE_HEX`), so these lists say what is worth offering rather than what
-# is allowed - and the picker is right there for everything else.
-NEUTRALS = ["#ffffff", "#e6e9ee", "#9aa3af", "#5b626e", "#2b2f37", "#101216"]
+# **A shortcut and not a rule.** `validate` still takes any hex in these slots
+# (`FREE_HEX`), so these lists say what is worth offering rather than what is
+# allowed - and the picker is right there for everything else.
+#
+# **Ten at most each, so every slot is one row.** They started at twenty-four - six
+# neutrals in front of the whole body palette - which is two rows and reads as a
+# paint chart. Ten is about as many as can be scanned without counting.
+NEUTRALS = ["#ffffff", "#9aa3af", "#101216"]
+BRIGHTS = ["#e8453c", "#3d8bfd", "#f2c94c", "#27ae60", "#bb6bd9", "#f2994a",
+           "#56ccf2"]
 
 SWATCHES = {
-    # Trim and a stripe are contrast against the body, so they want the neutrals
-    # *and* every body colour: a car in one of the eighteen with a stripe in
-    # another is a real car, and picking it should not need the colour picker.
-    "trim":   NEUTRALS + list(PALETTE),
-    "stripe": NEUTRALS + list(PALETTE),
-    # Metals first because that is what a wheel is, then the paint colours,
-    # because a painted rim is a thing people do. `#c9ced6` is second rather
-    # than first only because white sorts before silver; it is the default.
-    "rim":    ["#ffffff", "#c9ced6", "#8d939c", "#d9b45a", "#b5793f", "#101216"]
-              + list(PALETTE),
-    # **Replaced rather than extended**, and it is the only one. Glass is dark
-    # and neutral or it is not glass, so offering eighteen body colours here was
-    # offering eighteen wrong answers - the tint could be pink. Six darks from
-    # limo black up to a light smoke, plus the two the real world actually uses:
-    # a green-blue and a blue-grey. `#2b3240` is render.js's own default.
+    # Trim and a stripe are contrast against the body: three neutrals - white,
+    # grey, near-black - and seven colours across the wheel.
+    "trim":   NEUTRALS + BRIGHTS,
+    "stripe": NEUTRALS + BRIGHTS,
+    # Metals, because that is what a wheel is, then four paint colours because a
+    # painted rim is a thing people do. `#c9ced6` is the default and is second only
+    # because white sorts before silver.
+    "rim":    ["#ffffff", "#c9ced6", "#8d939c", "#101216", "#d9b45a", "#b5793f",
+               "#e8453c", "#3d8bfd", "#f2c94c", "#27ae60"],
+    # **Replaced rather than extended**, and it is the only one. Glass is dark and
+    # neutral or it is not glass, so offering the body colours here was offering
+    # eighteen wrong answers - the tint could be pink. Six darks from limo black up
+    # to a light smoke, plus the two the real world actually uses: a green-blue and
+    # a blue-grey. `#2b3240` is render.js's own default.
     "glass":  ["#101216", "#20242c", "#2b3240", "#1e2c33", "#26333f",
                "#3c4656", "#586475", "#7d8898"],
+    # The roof is a second body colour, so it is offered the paints the car comes
+    # in - a two-tone is two of those - plus white and black, which are the two
+    # roofs real cars come with and which the body may not be. The eight hashed
+    # ones rather than all ten, to keep it to a single row.
+    "roof":   ["#ffffff", "#101216"] + list(HASH_COLORS),
+    # A badge is a mark rather than a panel, so it wants the things a mark is: the
+    # three it already uses by default, then metal, then contrast.
+    "badge_color": [RECORD_GREEN_HEX, "#e8c34a", "#c98b4b", "#ffffff", "#101216",
+                    "#c9ced6", "#e8453c", "#3d8bfd", "#f2c94c", "#56ccf2"],
 }
 
 # The bars the palette is held to, here rather than in the test so the intent
@@ -140,7 +175,7 @@ BACKDROPS = {
 # The colour the record is already drawn in on the medals card, and therefore the
 # only colour the record's own badge can be. Green there because a record "is not
 # a medal and cannot be won"; green here for the same reason.
-RECORD_GREEN = "#55e08a"
+RECORD_GREEN = RECORD_GREEN_HEX
 
 
 def color_for(username):
@@ -167,7 +202,13 @@ def color_for(username):
 # `None` means "whatever the renderer does when nobody has said" and is not the
 # same as a colour that happens to look the same: it is what makes an account
 # with no row indistinguishable from one from before the garage existed.
-FINISHES = ("matte", "gloss", "metallic", "pearl")
+# Two, and they are the two that mean something on a car made of flat-shaded
+# boxes: paint that scatters and paint that reflects. Metallic and pearl were here
+# and are gone - they were distinguishable from each other only after being tuned
+# against each other, and three ways of saying "shiny" is two too many. A stored
+# `metallic` or `pearl` therefore fails `validate` and falls back to matte, which is
+# what every unknown value here has always done.
+FINISHES = ("matte", "gloss")
 LIVERIES = ("none", "centre", "twin", "band", "hoop", "halves", "fade",
             "pinstripe")
 RIM_STYLES = ("stock", "spoke5", "spoke6", "mesh", "dish", "forged")
@@ -177,23 +218,35 @@ RIM_STYLES = ("stock", "spoke5", "spoke6", "mesh", "dish", "forged")
 # podiums, races, elo and distance, all written today, and `create_all` makes
 # tables and not columns, so a badge wanting a new counter would need a migration
 # by hand on the live box.
-BADGES = ("none", "laurel", "chequers", "chevrons", "crown", "podium",
-          "sunburst", "ribbon")
+BADGES = ("none", "laurel", "checkers", "chevrons", "crown", "podium",
+          "sunburst", "ribbon", "shield")
 
 DEFAULTS = {
     "body": None,          # None -> color_for(username)
+    # The spoiler, its stays and the darkened detail. Was called the trim and did
+    # double duty: it painted these *and* the roof, whenever the `two_tone` toggle
+    # was on. The roof is its own slot now, so this is only ever the wing.
     "trim": None,          # None -> body darkened, which is what render.js does
+    # The cabin. `two_tone` was a boolean that put the roof in the trim colour, and
+    # a colour picker says that and more, so the toggle is gone - picking a roof
+    # colour *is* two-tone. A car wearing the old toggle goes back to a
+    # body-coloured roof, which is the one repaint in this change and was asked for.
+    "roof": None,          # None -> the body colour, i.e. no two-tone
     "rim": None,           # None -> the tyre colour, i.e. no rim at all
     "glass": None,         # None -> render.js's own #2b3240
     "stripe": None,        # None -> trim; only read when `livery` is not "none"
+    # None -> the badge's own colour (`BADGE_COLOR` in render.js): green for the
+    # three about records, gold for the sunburst, bronze for the podium. So the
+    # meaning survives for anybody who does not go looking, and a gold laurel is
+    # available to anybody who does.
+    "badge_color": None,
     "finish": "matte",
     "livery": "none",
     "rim_style": "stock",
-    "two_tone": False,
     "badge": "none",
 }
 
-FREE_HEX = ("trim", "rim", "glass", "stripe")
+FREE_HEX = ("trim", "roof", "rim", "glass", "stripe", "badge_color")
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
@@ -223,7 +276,9 @@ def validate(raw):
         if h:
             out[k] = h
     body = _hex_or_none(raw.get("body"))
-    if body in PALETTE:
+    # `BODY_OK` and not `PALETTE`: a colour that is no longer offered is still worn
+    # by whoever chose it while it was. See `RETIRED`.
+    if body in BODY_OK:
         out["body"] = body
     if raw.get("finish") in FINISHES:
         out["finish"] = raw["finish"]
@@ -233,7 +288,6 @@ def validate(raw):
         out["rim_style"] = raw["rim_style"]
     if raw.get("badge") in BADGES:
         out["badge"] = raw["badge"]
-    out["two_tone"] = bool(raw.get("two_tone"))
     return out
 
 
@@ -256,26 +310,46 @@ def validate(raw):
 # for; giving it a different bar to keep the list tidy would be tidiness deciding
 # what the game rewards.
 GATES = {
-    "pearl":     {"slot": "finish",    "value": "pearl",
-                  "text": "A gold on any 3 tracks"},
+    # `text` is what the *locked* chip says: the thing still to do. `done` is what
+    # the *worn* chip says, and it is a separate string rather than the same one
+    # bent into shape, because half of these are instructions ("Finish every
+    # track") and half are noun phrases ("A gold on any 3 tracks") - anything that
+    # reads them into one sentence gets half of them wrong. "Unlocked for finish
+    # every track" is that failure.
     "pinstripe": {"slot": "livery",    "value": "pinstripe",
-                  "text": "A gold on every track"},
+                  "text": "A gold on every track",
+                  "done": "a gold on every track"},
     "forged":    {"slot": "rim_style", "value": "forged",
-                  "text": "Finish every track"},
+                  "text": "Finish every track",
+                  "done": "finishing every track"},
     "laurel":    {"slot": "badge",     "value": "laurel",
-                  "text": "Set a track record"},
-    "chequers":  {"slot": "badge",     "value": "chequers",
-                  "text": "Win a multiplayer race"},
+                  "text": "Set a track record",
+                  "done": "setting a track record"},
+    "checkers":  {"slot": "badge",     "value": "checkers",
+                  "text": "Win a multiplayer race",
+                  "done": "winning a multiplayer race"},
     "podium":    {"slot": "badge",     "value": "podium",
-                  "text": "Finish 10 races in the top three"},
+                  "text": "Finish 10 races in the top three",
+                  "done": "ten top-three finishes"},
     "chevrons":  {"slot": "badge",     "value": "chevrons",
-                  "text": "Reach Ace rating"},
+                  "text": "Reach Ace rating",
+                  "done": "reaching Ace rating"},
     "sunburst":  {"slot": "badge",     "value": "sunburst",
-                  "text": "A gold on every track"},
+                  "text": "A gold on every track",
+                  "done": "a gold on every track"},
     "ribbon":    {"slot": "badge",     "value": "ribbon",
-                  "text": "Drive 100 km"},
+                  "text": "Drive 100 km",
+                  "done": "driving 100 km"},
     "crown":     {"slot": "badge",     "value": "crown",
-                  "text": "Hold the record on 3 tracks at once"},
+                  "text": "Hold the record on 3 tracks at once",
+                  "done": "holding the record on 3 tracks at once"},
+    # **This gate used to be the pearl finish.** Metallic and pearl went, and its
+    # condition - three golds - is a real rung on the ladder that would otherwise
+    # have earned nothing at all, so it moved to a badge rather than being deleted
+    # with the finish it happened to be attached to.
+    "shield":    {"slot": "badge",     "value": "shield",
+                  "text": "A gold on any 3 tracks",
+                  "done": "a gold on any 3 tracks"},
 }
 
 # The gates whose condition can stop being true, and which are therefore written
@@ -377,14 +451,14 @@ def _counts(user, holders):
     n = len(tracks_mod.TRACKS)
     golds = _golds(user)
     return {
-        "pearl":     (min(golds, 3), 3),
+        "shield":    (min(golds, 3), 3),
         "pinstripe": (min(golds, n), n),
         "forged":    (_tracks_finished(user), n),
         # A thing you have or have not done, so 0 or 1 out of 1 - "0/1 records"
         # would be a worse sentence than the text already on the chip, and the
         # garage only shows a count when `need` is more than one.
         "laurel":    (1 if user.id in holders else 0, 1),
-        "chequers":  (min(_stat(user, "wins"), 1), 1),
+        "checkers":  (min(_stat(user, "wins"), 1), 1),
         "podium":    (min(_stat(user, "podiums"), PODIUMS_NEEDED), PODIUMS_NEEDED),
         # Shown as a rating rather than as a distance from one, because Ace is a
         # number people know: "(1180/1250)" says where you are.

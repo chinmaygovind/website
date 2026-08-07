@@ -64,6 +64,14 @@ def _de(a, b):
 # The palette
 # ---------------------------------------------------------------------------
 
+# Every colour a car may be *wearing*, which is the offered ten plus the eight the
+# palette dropped: a retired colour is still on the road, so every rule below has
+# to keep holding for it. Checking `PALETTE` alone would let a retired colour drift
+# into being invisible against snow with nobody noticing, on a car that exists.
+def _worn():
+    return sorted(garage.BODY_OK)
+
+
 def test_no_two_body_colours_are_confusable():
     """The point of choosing a colour is being told apart by it.
 
@@ -71,9 +79,10 @@ def test_no_two_body_colours_are_confusable():
     plainly different on a swatch chart are a different question from two cars
     thirty metres up the road with motion blur on them.
     """
+    worn = _worn()
     worst, pair = 1e9, None
-    for i, a in enumerate(garage.PALETTE):
-        for b in garage.PALETTE[i + 1:]:
+    for i, a in enumerate(worn):
+        for b in worn[i + 1:]:
             d = _de(a, b)
             if d < worst:
                 worst, pair = d, (a, b)
@@ -82,7 +91,7 @@ def test_no_two_body_colours_are_confusable():
 
 def test_no_body_colour_hides_against_the_world():
     """A car has to be visible against everything it is driven over and under."""
-    for c in garage.PALETTE:
+    for c in _worn():
         for name, bg in garage.BACKDROPS.items():
             d = _de(c, bg)
             assert d >= garage.BACKDROP_MIN, f"{c} is {d:.1f} from {name}"
@@ -90,14 +99,15 @@ def test_no_body_colour_hides_against_the_world():
 
 def test_every_body_colour_is_inside_the_luminance_band():
     """Nothing near-black (a hole in the road) or near-white (a kerb)."""
-    for c in garage.PALETTE:
+    for c in _worn():
         L = _lab(c)[0]
         assert garage.L_MIN <= L <= garage.L_MAX, f"{c} has L* {L:.1f}"
 
 
 def test_the_palette_is_well_formed_and_has_no_duplicates():
     assert len(set(garage.PALETTE)) == len(garage.PALETTE)
-    for c in garage.PALETTE:
+    assert not (set(garage.PALETTE) & set(garage.RETIRED)), "offered and retired"
+    for c in _worn():
         assert garage._HEX.match(c) and c == c.lower()
 
 
@@ -150,7 +160,7 @@ def test_validate_never_raises_whatever_it_is_handed():
     """An unknown key is a client from after the next deploy; a bad value is
     somebody poking the endpoint. Neither is a 500."""
     for junk in (None, [], "nope", 7, {"body": []}, {"finish": {"a": 1}},
-                 {"two_tone": "yes"}, {"future_slot": "spoiler"},
+                 {"future_slot": "spoiler"},
                  {"body": "red"}, {"trim": "#12345"}, {"rim": "#gggggg"},
                  {"livery": "stripes"}, {"rim_style": 5}, {"badge": None}):
         out = garage.validate(junk)
@@ -188,6 +198,27 @@ def test_free_hex_slots_are_taken_and_normalised():
 # ---------------------------------------------------------------------------
 # What the detail slots offer, which is not what the body offers
 # ---------------------------------------------------------------------------
+
+def test_a_retired_body_colour_is_still_worn_by_whoever_chose_it():
+    """The palette went from eighteen to ten so a row fits on one line, and this is
+    the half of that which matters: **dropping a colour from the offered list must
+    not repaint the car of anybody wearing it.** `validate` checks `BODY_OK`, so a
+    retired colour round-trips; it is simply no longer suggested."""
+    for c in garage.RETIRED:
+        assert c not in garage.PALETTE, c
+        assert garage.validate({"body": c})["body"] == c, c
+    # And a colour that was never offered at all is still refused.
+    assert garage.validate({"body": "#123456"})["body"] is None
+
+
+def test_every_swatch_row_fits_on_one_line():
+    """Ten is the bar, and it is a layout claim made executable: eighteen and
+    twenty-four wrapped to two rows, which reads as a paint chart rather than as a
+    choice - and made the options bar taller on some tabs than others, so switching
+    tabs walked the car up and down the screen behind it."""
+    for name, colours in list(garage.SWATCHES.items()) + [("body", garage.PALETTE)]:
+        assert len(colours) <= 10, "%s offers %d" % (name, len(colours))
+
 
 def test_every_free_hex_slot_has_swatches_of_its_own():
     """Each of the four is a different question, and they all used to be answered
@@ -252,8 +283,8 @@ def test_storage_keeps_only_what_was_changed():
     touched that slot, which is what a default is for."""
     assert garage.dumps({}) == "{}"
     assert garage.dumps({"finish": "matte"}) == "{}"
-    assert garage.loads(garage.dumps({"finish": "gloss", "two_tone": True})) == \
-        dict(garage.DEFAULTS, finish="gloss", two_tone=True)
+    assert garage.loads(garage.dumps({"finish": "gloss", "roof": "#101216"})) == \
+        dict(garage.DEFAULTS, finish="gloss", roof="#101216")
 
 
 def test_a_corrupt_row_reads_as_the_default_car():
@@ -279,7 +310,8 @@ def test_a_user_with_no_row_is_exactly_todays_car():
     assert out["trim"] is None and out["rim"] is None and out["glass"] is None
     assert out["finish"] == "matte"
     assert out["livery"] == "none" and out["rim_style"] == "stock"
-    assert out["two_tone"] is False and out["badge"] == "none"
+    assert out["roof"] is None and out["badge"] == "none"
+    assert out["badge_color"] is None
 
 
 def test_a_guest_is_the_guest_colour_and_nothing_else():
@@ -305,11 +337,16 @@ def test_an_unearned_item_is_replaced_however_it_arrived(gid):
 
 
 def test_a_gate_only_locks_its_own_value():
-    """`pearl` is one of four finishes: locking the item must not lock the slot,
-    or earning nothing would mean choosing nothing."""
-    for f in ("matte", "gloss", "metallic"):
+    """`shield` is one of nine badges: locking the item must not lock the slot, or
+    earning nothing would mean choosing nothing.
+
+    There are no gated *finishes* any more - the pearl gate moved to a badge when
+    metallic and pearl went - so every finish is free and the slot to check is the
+    badge."""
+    for f in garage.FINISHES:
         assert garage.resolve({"finish": f}, "x", set())["finish"] == f
-    assert garage.resolve({"finish": "pearl"}, "x", set())["finish"] == "matte"
+    assert garage.resolve({"badge": "shield"}, "x", set())["badge"] == "none"
+    assert garage.resolve({"badge": "none"}, "x", set())["badge"] == "none"
 
 
 def test_every_gate_names_a_real_slot_and_a_real_value():
@@ -334,8 +371,8 @@ def test_the_payload_carries_the_words_for_every_gate():
     got = {g["id"]: g for g in data["gates"]}
     assert set(got) == set(garage.GATES)
     assert got["laurel"]["got"] is True
-    assert got["pearl"]["got"] is False
-    assert got["pearl"]["text"] == garage.GATES["pearl"]["text"]
+    assert got["shield"]["got"] is False
+    assert got["shield"]["text"] == garage.GATES["shield"]["text"]
     assert data["palette"] == list(garage.PALETTE)
 
 
@@ -405,18 +442,18 @@ def test_the_gold_gates_open_at_their_own_counts(env):
         assert garage.earned(u, holders={}) == set()
         _stats(env, uid, golds=2)
         env.db.session.expire_all()
-        assert "pearl" not in garage.earned(env.User.query.get(uid), holders={})
+        assert "shield" not in garage.earned(env.User.query.get(uid), holders={})
         env.User.query.get(uid).drive.golds = 3
         env.db.session.commit()
         got = garage.earned(env.User.query.get(uid), holders={})
-        assert got == {"pearl"}
+        assert got == {"shield"}
         env.User.query.get(uid).drive.golds = n
         env.db.session.commit()
         # `sunburst` on purpose: it shares `pinstripe`'s condition, because a gold
         # on every track is the thing the badge was asked for and two items are
         # allowed to want the same achievement.
         assert garage.earned(env.User.query.get(uid), holders={}) == \
-            {"pearl", "pinstripe", "sunburst"}
+            {"shield", "pinstripe", "sunburst"}
 
 
 def test_an_old_author_medal_still_counts_as_a_gold(env):
@@ -426,7 +463,7 @@ def test_an_old_author_medal_still_counts_as_a_gold(env):
     uid = _user(env)
     _stats(env, uid, golds=1, authors=2)
     with env.app.app_context():
-        assert "pearl" in garage.earned(env.User.query.get(uid), holders={})
+        assert "shield" in garage.earned(env.User.query.get(uid), holders={})
 
 
 def test_finishing_every_track_is_scoped_to_the_current_pool(env):
@@ -534,7 +571,7 @@ def test_progress_counts_toward_each_gate(env):
         p = garage.progress(env.User.query.get(uid), holders={})
         # Pearl is already earned, so it reads full rather than 4/3 - a bar past
         # its own end is a bar somebody has to explain.
-        assert p["pearl"] == (3, 3)
+        assert p["shield"] == (3, 3)
         assert p["pinstripe"] == (4, n)
         assert p["forged"] == (9, n)
         assert p["laurel"] == (0, 1)

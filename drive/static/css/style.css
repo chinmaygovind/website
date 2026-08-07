@@ -1241,13 +1241,10 @@ body.garage-page .nav { flex: none; }
   display: flex; flex-wrap: wrap; align-items: center; gap: .4rem;
   padding: .55rem .7rem;
   /* So switching tabs does not walk the car up and down the screen behind the
-     bar. Raised from 3.4rem when the detail slots stopped offering the body's
-     eighteen and started offering their own: trim, stripe and rim are
-     twenty-four plus the picker, which is two swatch rows at any window width
-     rather than one row on a wide one. Glass is eight and Badge is chips, and
-     both are shorter - this is what stops that difference being visible as the
-     car moving. */
-  min-height: 5rem; justify-content: center;
+     bar. Back to one swatch row's worth: it went to 5rem while the detail slots
+     offered twenty-four colours and needed two. A phone still wraps, which is
+     what the media query below is for. */
+  min-height: 3.4rem; justify-content: center;
 }
 .gtab {
   font-family: var(--display); font-weight: 700; font-size: .82rem;
@@ -1275,18 +1272,23 @@ body.garage-page .nav { flex: none; }
 /* A locked chip is shown rather than hidden, so there is something to chase, and
    it carries the reason - which comes from the server beside the check that
    enforces it, never from here where it could promise the wrong thing. */
-.gopt.locked { opacity: .5; cursor: not-allowed; border-style: dashed; }
-.gopt.locked .glock { font-size: .68rem; font-weight: 600; color: #ffd96b; }
+/* Greyed and dashed, and still a button you can press - pressing one is how you
+   ask what it wants, and the answer goes in the line under the bar. It used to
+   carry that sentence *inside* itself, which made one chip in a row three times
+   the height of its neighbours and turned a row of names into a row of
+   paragraphs. So no `cursor: not-allowed` either: it is not a dead control. */
+.gopt.locked { opacity: .45; border-style: dashed; }
+.gopt.locked:hover { opacity: .7; }
 
 /* --- colour slots --------------------------------------------------------- */
 /* One language for every colour on the page. These used to be a raw
    `<input type=color>`, which the browser draws as a ~38px grey rectangle that
    says nothing about what it is or what colour is currently in it. */
-/* Capped at thirteen columns so a slot's swatches wrap into a tidy block rather
-   than a ragged strip whose break moves with the window. Thirteen because the
-   longest lists are twenty-four plus the picker, which is exactly two rows. */
+/* No cap. Every slot is ten swatches plus the picker now, which is one row at any
+   window a swatch row fits in at all - it was capped at thirteen columns to make
+   twenty-four wrap into a tidy block, and there is nothing left to wrap. */
 .gcolors { display: flex; flex-wrap: wrap; align-items: center; gap: .28rem;
-           max-width: 25rem; justify-content: center; }
+           justify-content: center; }
 .gsw {
   width: 26px; height: 26px; padding: 0; border-radius: 7px; cursor: pointer;
   border: 1px solid rgba(255, 255, 255, .28); background-clip: padding-box;

@@ -880,11 +880,11 @@ def test_the_livery_round_trips_through_the_api(env):
     _login(c, _user(env, "quick"))
     got = c.post("/api/garage", json={"body": "#7b6cf6", "finish": "gloss",
                                       "livery": "twin", "rim_style": "spoke5",
-                                      "two_tone": True}).get_json()
+                                      "roof": "#ffffff"}).get_json()
     assert got["ok"] is True
     assert got["livery"]["body"] == "#7b6cf6"
     assert got["livery"]["finish"] == "gloss"
-    assert got["livery"]["two_tone"] is True
+    assert got["livery"]["roof"] == "#ffffff"
     assert c.get("/api/garage").get_json()["livery"] == got["livery"]
 
 
@@ -895,15 +895,14 @@ def test_a_gated_item_is_stored_but_not_worn(env):
     c = env.app.test_client()
     uid = _user(env, "quick")
     _login(c, uid)
-    got = c.post("/api/garage", json={"finish": "pearl", "badge": "laurel",
+    got = c.post("/api/garage", json={"badge": "shield",
                                       "rim_style": "forged"}).get_json()
-    assert got["livery"]["finish"] == "matte"
     assert got["livery"]["badge"] == "none"
     assert got["livery"]["rim_style"] == "stock"
     with env.app.app_context():
         import garage
         row = env.DriveGarage.query.filter_by(user_id=uid).first()
-        assert garage.loads(row.livery_json)["finish"] == "pearl", (
+        assert garage.loads(row.livery_json)["badge"] == "shield", (
             "the ask is kept, so earning it later is not asking twice")
 
 
@@ -1077,7 +1076,7 @@ def test_the_garage_payload_carries_how_far_along_you_are(env):
         env.db.session.commit()
     gates = {g["id"]: g for g in c.get("/api/garage").get_json()["gates"]}
     n = len(tracks_mod.TRACKS)
-    assert gates["pearl"]["got"] is True and gates["pearl"]["have"] == 3
+    assert gates["shield"]["got"] is True and gates["shield"]["have"] == 3
     assert gates["pinstripe"] == dict(gates["pinstripe"],
                                       have=4, need=n, got=False)
     # And the page itself carries it, so the first paint is right.

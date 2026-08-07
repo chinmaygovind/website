@@ -798,3 +798,42 @@ def test_hue_wraps_rather_than_clipping():
     ctx = _pick_ctx()
     assert ctx.eval("hsvToHex(360, 1, 1)") == ctx.eval("hsvToHex(0, 1, 1)")
     assert ctx.eval("hsvToHex(-30, 1, 1)") == ctx.eval("hsvToHex(330, 1, 1)")
+
+
+# --- the garage has a word for everything it offers --------------------------
+
+def test_every_value_in_the_vocabulary_has_a_word_for_it():
+    """`label()` falls back to the raw slug, so a value with no entry in `TITLE`
+    renders as `chequers` or `shield` in lowercase, in a row of properly capitalised
+    chips. It is not an error and it is not a crash - it just looks like a mistake,
+    which is exactly the sort of thing an eye skips over. Two of them shipped that
+    way inside an hour of each other.
+
+    Read out of the two files rather than run, because `garage.js` needs a DOM, a
+    renderer and a payload before it will do anything at all.
+    """
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    import garage
+    src = open(GARAGE_JS).read()
+    block = src[src.index("const TITLE = {"):]
+    block = block[:block.index("};")]
+    words = set(re.findall(r"(\w+):", block))
+    for group in ("FINISHES", "LIVERIES", "RIM_STYLES", "BADGES"):
+        for value in getattr(garage, group):
+            assert value in words, "%s has no word in TITLE (%s)" % (value, group)
+
+
+def test_no_word_is_left_over_for_something_nobody_offers():
+    """The other direction, which is how `Chequers` sat in the map after the value
+    was renamed: harmless, and a lie about what the garage has in it."""
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    import garage
+    src = open(GARAGE_JS).read()
+    block = src[src.index("const TITLE = {"):]
+    block = block[:block.index("};")]
+    words = set(re.findall(r"(\w+):", block))
+    known = set(garage.FINISHES) | set(garage.LIVERIES) | set(garage.RIM_STYLES) \
+        | set(garage.BADGES)
+    assert not (words - known), "TITLE has words for %s" % sorted(words - known)

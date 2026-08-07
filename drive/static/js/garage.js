@@ -45,6 +45,9 @@ const S = {
   spin: true,              // idle rotation, until you take hold of it
   wheel: 0,
   tab: 'body',
+  // What the line under the bar is currently saying, or null. Set by pressing a
+  // locked chip; see `noteLine`.
+  said: null,
   saveTimer: null,
   resetArmed: false,
   // The open colour picker: `{slot, tile, h, s, v}`, or null. Hue/sat/val and not
@@ -55,12 +58,19 @@ const S = {
   pick: null,
 };
 
-// Which slots are locked, from the gates the server sent. `slot|value` because a
-// gate is a value inside a slot, not a slot: `pearl` is one of four finishes and
-// the other three are always yours.
+// Which slots are locked and which were earned, from the gates the server sent.
+// Keyed `slot|value` because a gate is a value inside a slot and not a slot:
+// `shield` is one of nine badges and the other eight are always yours.
+//
+// Two maps rather than one, because the two sentences are different sentences. A
+// locked chip wants the thing still to do ("Win a multiplayer race"); a chip you
+// are *wearing* wants what it was for ("winning a multiplayer race"), and bending
+// one into the other gets half of them wrong - see `GATES` in `garage.py`.
 const LOCKED = new Map();
+const EARNED_FOR = new Map();
 for (const g of G.gates || []) {
   if (!g.got) LOCKED.set(g.slot + '|' + g.value, g.text);
+  else if (g.done) EARNED_FOR.set(g.slot + '|' + g.value, g.done);
 }
 
 // ---------------------------------------------------------------------------
@@ -251,9 +261,13 @@ function set(slot, value) {
 const esc = (s) => (s + '').replace(/[&<>"]/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+// A word for every value the garage offers, and for nothing else. `metallic` and
+// `pearl` were here after the finishes they named were retired - harmless, since
+// `validate` turns a stored one into matte long before the garage sees it, and a
+// lie about what is in the cabinet. `test_rules_js.py` checks both directions.
 const TITLE = {
   none: 'None', stock: 'Stock', matte: 'Matte', gloss: 'Gloss',
-  metallic: 'Metallic', pearl: 'Pearl', centre: 'Centre', twin: 'Twin',
+  centre: 'Centre', twin: 'Twin',
   band: 'Band', hoop: 'Hoop', halves: 'Halves', fade: 'Fade',
   pinstripe: 'Pinstripe', spoke5: '5-spoke', spoke6: '6-spoke', mesh: 'Mesh',
   dish: 'Dish', forged: 'Split 5',
@@ -261,20 +275,29 @@ const TITLE = {
   // gate's own sentence is already on the chip when it is locked and is the wrong
   // thing to read once it is not - "Win a race" on a car you have already won a
   // race in tells you nothing about what is on the bonnet.
-  laurel: 'Laurel', chequers: 'Chequers', chevrons: 'Chevrons', crown: 'Crown',
-  podium: 'Podium', sunburst: 'Sunburst', ribbon: 'Ribbon',
+  laurel: 'Laurel', checkers: 'Checkers', chevrons: 'Chevrons', crown: 'Crown',
+  podium: 'Podium', sunburst: 'Sunburst', ribbon: 'Ribbon', shield: 'Shield',
 };
 const label = (v) => TITLE[v] || v;
 
-/** A row of chips for one enumerated slot. Locked ones are shown, with the cost. */
+/**
+ * A row of chips for one enumerated slot. A locked one is greyed and still there.
+ *
+ * **The cost used to be printed inside the chip**, which made one chip in a row
+ * three times the height of its neighbours and turned a row of names into a row of
+ * paragraphs. The chip is just greyed now, and it is *not* `disabled`: pressing it
+ * is how you find out what it wants, and a disabled button cannot be pressed. It
+ * says so in the line under the bar, which is the one place in this UI that exists
+ * to answer a question you just asked.
+ */
 function chips(slot, values, current) {
   return values.map((v) => {
     const lock = LOCKED.get(slot + '|' + v);
     const on = current === v;
     return `<button class="gopt${on ? ' on' : ''}${lock ? ' locked' : ''}"
              data-slot="${esc(slot)}" data-value="${esc(v)}"
-             ${lock ? `disabled title="${esc(lock)}"` : ''}>${esc(label(v))}${
-      lock ? `<span class="glock">${esc(lock)}</span>` : ''}</button>`;
+             ${lock ? `data-locked="${esc(lock)}" ` : ''}title="${esc(label(v))}"
+             >${esc(label(v))}</button>`;
   }).join('');
 }
 
@@ -289,6 +312,11 @@ function chips(slot, values, current) {
  * choice is not "the standard silver" but *no lip at all*, and calling it Auto
  * would be describing a colour that is not going to appear.
  *
+ * **No slot label.** There used to be a RIM / STRIPE / TRIM caption in front of
+ * each row, which on every tab but one said the name of the tab you were already
+ * on. `label` is still taken, because the tabs that show *two* colour rows need to
+ * say which is which, and those are the only ones that get it.
+ *
  * Then **this slot's own swatches**, as a shortcut rather than a rule -
  * `validate` accepts any hex in these slots - and last a tile that opens the
  * picker for anything else. The tile is a conic sweep because at 26px that reads
@@ -302,13 +330,13 @@ function chips(slot, values, current) {
  * `G.palette` is the fallback rather than the answer, so a slot nobody has
  * written a list for still works.
  */
-function colorSlot(slot, current, autoWord, autoLabel = 'Auto') {
+function colorSlot(slot, current, label = '', autoLabel = 'Auto') {
   const list = (G.swatches && G.swatches[slot]) || G.palette;
   const custom = current && list.indexOf(current) < 0;
   const sw = list.map((c) => `<button class="gsw${current === c ? ' on' : ''}"
       data-slot="${esc(slot)}" data-value="${esc(c)}"
       style="background:${esc(c)}" title="${esc(c)}"></button>`).join('');
-  return `<span class="gslot-label">${esc(autoWord)}</span>
+  return `${label ? `<span class="gslot-label">${esc(label)}</span>` : ''}
     <button class="gopt${current ? '' : ' on'}" data-slot="${esc(slot)}"
             data-value="">${esc(autoLabel)}</button>
     <span class="gcolors">${sw}<button
@@ -318,18 +346,34 @@ function colorSlot(slot, current, autoWord, autoLabel = 'Auto') {
 }
 
 const TABS = [
-  ['body', 'Body', (L) => `<span class="gcolors">${G.palette.map((c) =>
-    `<button class="gsw${L.body === c ? ' on' : ''}" data-slot="body"
-       data-value="${esc(c)}" style="background:${esc(c)}"
-       title="${esc(c)}"></button>`).join('')}</span>`],
-  ['finish', 'Finish', (L) => chips('finish', G.finishes, L.finish)],
-  ['trim', 'Trim', (L) =>
-    `<button class="gopt${L.two_tone ? ' on' : ''}" data-toggle="two_tone"
-      >Two-tone roof</button><span class="gsep"></span>` +
-    colorSlot('trim', L.trim, 'Trim')],
+  // The body has no custom tile - it is the one slot that is a curated list rather
+  // than any hex - so a colour that is *worn* but no longer *offered* would have
+  // nothing lit and no way back to it. It gets appended, for whoever chose one of
+  // the eight the palette dropped (`garage.RETIRED`); it disappears the moment they
+  // pick something else, and it is nobody else's extra swatch.
+  ['body', 'Body', (L) => {
+    const list = G.palette.slice();
+    if (L.body && list.indexOf(L.body) < 0) list.push(L.body);
+    return `<span class="gcolors">${list.map((c) =>
+      `<button class="gsw${L.body === c ? ' on' : ''}" data-slot="body"
+         data-value="${esc(c)}" style="background:${esc(c)}"
+         title="${esc(c)}"></button>`).join('')}</span>`;
+  }],
+  // **Two rows, because they were two things sharing one colour.** This was the
+  // Trim tab: one colour painted the spoiler *and*, if a "Two-tone roof" toggle was
+  // on, the roof. So a two-tone was always spoiler-coloured, and a white roof on a
+  // red car with a black wing could not be asked for at all. Two colours say that
+  // and everything else, and the toggle has nothing left to do.
+  //
+  // The only tab with two colour rows, and therefore the only one whose rows are
+  // labelled - everywhere else the label repeated the name of the tab it was on.
+  ['trim', 'Detail', (L) =>
+    colorSlot('trim', L.trim, 'Spoiler') +
+    `<span class="gsep"></span>` +
+    colorSlot('roof', L.roof, 'Roof', 'Body')],
   ['livery', 'Livery', (L) => chips('livery', G.liveries, L.livery) +
     (L.livery && L.livery !== 'none'
-      ? `<span class="gsep"></span>` + colorSlot('stripe', L.stripe, 'Stripe')
+      ? `<span class="gsep"></span>` + colorSlot('stripe', L.stripe)
       : '')],
   // The Rim colour is offered for **every** style including stock, which is the
   // one that used to hide it. Stock has no rim face until you paint one, so here
@@ -337,9 +381,22 @@ const TABS = [
   // the honest reading of a slot whose absence is a real choice.
   ['rim_style', 'Wheels', (L) => chips('rim_style', G.rim_styles, L.rim_style) +
     `<span class="gsep"></span>` +
-    colorSlot('rim', L.rim, 'Rim', L.rim_style === 'stock' ? 'None' : 'Auto')],
-  ['glass', 'Glass', (L) => colorSlot('glass', L.glass, 'Glass')],
-  ['badge', 'Badge', (L) => chips('badge', G.badges, L.badge)],
+    colorSlot('rim', L.rim, '', L.rim_style === 'stock' ? 'None' : 'Auto')],
+  ['glass', 'Glass', (L) => colorSlot('glass', L.glass)],
+  // **Second to last, before Badge.** It was second in the list, next to Body,
+  // which is where you would put it if a finish were a kind of paint. It is a
+  // property *of* the paint, so it belongs at the end with the other things you
+  // add once the car is the colour you want.
+  ['finish', 'Finish', (L) => chips('finish', G.finishes, L.finish)],
+  // A colour row only once a badge is on, for the livery's reason: a colour for a
+  // thing that is not being drawn is a control with nothing on the other end of it.
+  // `Auto` here means the badge's own colour - green for the three about records,
+  // gold for the sunburst, bronze for the podium - so the meaning survives for
+  // anybody who does not go looking.
+  ['badge', 'Badge', (L) => chips('badge', G.badges, L.badge) +
+    (L.badge && L.badge !== 'none'
+      ? `<span class="gsep"></span>` + colorSlot('badge_color', L.badge_color)
+      : '')],
 ];
 
 /** Whether a tab holds anything this account has not earned yet. */
@@ -347,30 +404,57 @@ function tabLocked(slot) {
   return (G.gates || []).some((g) => !g.got && g.slot === slot);
 }
 
-/** One line: how much of the locked stuff is yours, and the nearest one that is not. */
-function earnLine() {
-  const gates = G.gates || [];
-  if (!gates.length) return '';
-  const left = gates.filter((g) => !g.got);
-  // **Nothing to say, so nothing said.** This used to read "Everything
-  // unlocked", which is a bar taking up screen over the car in order to report
-  // an absence - and it is the *permanent* state for anybody who has finished
-  // the game, so it would sit there for ever. A line about what is left to earn
-  // has no business existing once there is nothing left.
-  if (!left.length) return '';
-  // The nearest one is the one you are furthest along, so it is the one worth
-  // naming - a list of four would be a list, and this is a line.
-  const near = left.slice().sort((a, b) =>
-    (b.need ? b.have / b.need : 0) - (a.need ? a.have / a.need : 0))[0];
-  // A colon rather than "needs", and the gate's text left exactly as the server
-  // wrote it. Two of the four are instructions ("Finish every track", "Set a
-  // track record") and two are noun phrases ("A gold on any 3 tracks"), so
-  // anything that reads them into a sentence gets half of them wrong - "Laurel
-  // needs set a track record". A colon takes either.
-  const prog = near.need > 1 ? ` (${near.have}/${near.need})` : '';
-  return `<span class="gearn">${gates.length - left.length} of ${gates.length}
-    unlocked · <b>${esc(label(near.value))}</b>:
-    ${esc(near.text || '')}${esc(prog)}</span>`;
+/**
+ * The one line under the bar, and what it is for.
+ *
+ * It counted things: "3 of 10 unlocked - Chevrons: Reach Ace rating (1180/1250)".
+ * Nobody asked how many they had, and the nearest-gate half was a fact about a
+ * chip somewhere else on the screen. So it answers **the thing you just did**
+ * instead: what the badge you are wearing was earned for, and what a locked chip
+ * you pressed wants. Empty the rest of the time, which is most of the time.
+ *
+ * `S.said` is set by a press and survives until the next render that has nothing
+ * of its own to say - so it is a reply rather than a status, and it cannot sit
+ * there being true about something you have moved on from.
+ */
+function noteLine() {
+  if (S.said) return `<span class="gearn">${S.said}</span>`;
+  const L = S.livery;
+  // A worn badge says what earned it. Only the badge, and only on its own tab:
+  // this is a line about what you are looking at, and it would be a caption on
+  // nothing anywhere else.
+  if (S.tab === 'badge' && L.badge && L.badge !== 'none') {
+    const done = EARNED_FOR.get('badge|' + L.badge);
+    if (done) {
+      // One line with no break in it: HTML would collapse the newline, but the
+      // text is read as text by `test_garage_js`-style checks and by a screen
+      // reader, and "Laurel:\n        unlocked" is not a sentence.
+      const w = `<b>${esc(label(L.badge))}</b>: unlocked for ${esc(done)}`;
+      return `<span class="gearn">${w}</span>`;
+    }
+  }
+  return '';
+}
+
+/**
+ * What a locked chip says when you press it: the requirement, and how far along.
+ *
+ * The requirement used to be printed *inside* the chip, which made one chip in a
+ * row three times the height of the others and turned a row of names into a row of
+ * paragraphs. Pressing is the natural way to ask, and the answer goes where every
+ * other answer in this UI goes.
+ */
+function sayLocked(slot, value) {
+  const want = LOCKED.get(slot + '|' + value);
+  if (!want) return;
+  const g = (G.gates || []).find((x) => x.slot === slot && x.value === value);
+  const prog = g && g.need > 1 ? ` (${g.have}/${g.need})` : '';
+  S.said = `<b>${esc(label(value))}</b>: ${esc(want)}${esc(prog)}`;
+  render();
+  // Long enough to read twice, and it goes on its own - a requirement is an answer
+  // to a press and not a state the page is in.
+  clearTimeout(sayLocked._t);
+  sayLocked._t = setTimeout(() => { S.said = null; render(); }, 4000);
 }
 
 function render() {
@@ -382,7 +466,7 @@ function render() {
       >${esc(name)}${tabLocked(slot) ? '<i class="glockdot"></i>' : ''}</button>`
   ).join('');
   $('gopts').innerHTML = tab[2](L);
-  $('gearn').innerHTML = earnLine();
+  $('gearn').innerHTML = noteLine();
   $('gviews').innerHTML = VIEWS.map(([name, id, yaw, pitch]) =>
     `<button class="gview${!S.target && Math.abs(shortest(S.yaw, yaw)) < 0.01
                             ? ' on' : ''}" data-view="${esc(id)}"
@@ -395,10 +479,16 @@ function render() {
     b.onclick = () => setView(b.dataset.view);
   }
   for (const b of $('gopts').querySelectorAll('button[data-slot]')) {
-    b.onclick = () => set(b.dataset.slot, b.dataset.value || null);
-  }
-  for (const b of $('gopts').querySelectorAll('button[data-toggle]')) {
-    b.onclick = () => set(b.dataset.toggle, !S.livery[b.dataset.toggle]);
+    // A locked chip is a live button on purpose: pressing it is how you find out
+    // what it wants, and `disabled` would make that impossible.
+    b.onclick = () => {
+      if (b.dataset.locked !== undefined) {
+        sayLocked(b.dataset.slot, b.dataset.value);
+        return;
+      }
+      S.said = null;
+      set(b.dataset.slot, b.dataset.value || null);
+    };
   }
   for (const b of $('gopts').querySelectorAll('button[data-pick]')) {
     b.onclick = () => openPick(b.dataset.pick, b);

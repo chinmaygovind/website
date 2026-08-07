@@ -28,11 +28,16 @@ const BADGE_COLOR = {
   laurel: RECORD_GREEN,
   crown: RECORD_GREEN,
   chevrons: RECORD_GREEN,
-  chequers: RECORD_GREEN,
   sunburst: 0xe8c34a,      // gold
   podium: 0xc98b4b,        // bronze
   ribbon: 0xd8dee8,        // road grey
+  shield: 0xc9ced6,        // silver
+  // The one badge that is two colours. Its dark squares take the colour - so a
+  // picked colour gives you red-and-white checkers - and the light ones are always
+  // white, because a chequered flag with two custom colours is not one.
+  checkers: 0x141821,
 };
+const CHECKER_LIGHT = 0xf2f4f8;
 // How see-through a car is when it is not something you can hit. The ghost, a
 // replay and a rival you are about to drive through are all the same statement
 // - this car is not solid - so they are one number rather than three amounts
@@ -73,7 +78,14 @@ function liveryOf(spec) {
     finish: spec.finish || 'matte',
     livery: spec.livery || 'none',
     rimStyle: spec.rim_style || 'stock',
-    twoTone: !!spec.two_tone,
+    // The cabin's own colour, or null for "the same as the body". Replaced the
+    // `two_tone` boolean, which could only put the roof in the *trim* colour - so a
+    // two-tone was always spoiler-coloured, and a white roof on a red car with a
+    // black wing was not expressible at all.
+    roof: spec.roof ? new THREE.Color(spec.roof) : null,
+    // `null` means the badge's own colour (`BADGE_COLOR`), which is what keeps a
+    // record's badge green for anybody who has not gone looking for the picker.
+    badgeColor: spec.badge_color ? new THREE.Color(spec.badge_color) : null,
     badge: spec.badge || 'none',
   };
 }
@@ -108,14 +120,26 @@ const FINISH = {
   // Untouched, and it has to be: `matte` is the default, so a car wearing it
   // must come out byte-identical to a car from before finishes existed.
   matte:    null,
-  // Same colour, harder highlight. Gloss is "your paint, wet".
-  gloss:    { mat: { shininess: 90,  specular: 0x6d7176 } },
+  // **Wet paint, and not merely a harder highlight.** Gloss carries the whole idea
+  // of a shiny car on its own now that metallic and pearl are gone, and a specular
+  // on a flat-shaded face is a uniform brightening that is easy to miss - so it
+  // deepens and enriches the colour as well, which is what wet paint actually does
+  // to it. Darker rather than lighter, deliberately: lighter is what metallic was,
+  // and the two would have been the same finish again.
+  gloss:    { mat: { shininess: 110, specular: 0x8b9096 },
+              paint: { darken: 0.13, saturate: 0.22 } },
   // **These two are set against each other, not against matte.** Telling either
   // from a flat car was the easy half; the pair started out both "a bit lighter
   // and slightly off-hue" and were nearly indistinguishable *from one another*,
   // which is a finish with two names. So metallic went less pale and more grey
   // and pearl went the other way: on a #3d8bfd body they are now #6893d3 (steel)
   // against #85aafe (pale and bright), which reads at a glance.
+  // **Retired, and kept anyway.** Neither is offered any more - `garage.FINISHES`
+  // is two, so `validate` turns a posted one into matte - but a *stored replay*
+  // carries the livery it was driven in, unvalidated, and a replay is a record of
+  // an afternoon. Deleting these would repaint every car in every race recorded
+  // before today, which is the same rule that keeps a replay's livery stored with
+  // it rather than looked up.
   metallic: { mat: { shininess: 190, specular: 0xcfd4dc },
               paint: { lighten: 0.10, desat: 0.38 } },
   pearl:    { mat: { shininess: 120, specular: 0xf2e6ff },
@@ -153,6 +177,16 @@ function paintOf(color, finish) {
   if (p.desat) {
     const g = _paint.r * 0.299 + _paint.g * 0.587 + _paint.b * 0.114;
     _paint.lerp(_grey.setRGB(g, g, g), p.desat);
+  }
+  // Away from white, which deepens a colour without moving its hue - the mirror of
+  // `lighten` and the reason gloss cannot be mistaken for the metallic that was
+  // here.
+  if (p.darken) _paint.multiplyScalar(1 - p.darken);
+  // Away from its own grey, which is `desat` run backwards: wet paint reads as more
+  // of the colour it is, not less.
+  if (p.saturate) {
+    const g = _paint.r * 0.299 + _paint.g * 0.587 + _paint.b * 0.114;
+    _paint.lerp(_grey.setRGB(g, g, g), -p.saturate);
   }
   if (p.tint) _paint.lerp(_tint.setHex(p.tint), p.amt);
   // Cloned: the scratch colour is reused on the next call, and the caller is
@@ -385,8 +419,10 @@ function decalMesh(L) {
   }
 
   if (badged) {
+    const own = BADGE_COLOR[L.badge];
     badgeShape(buf, L.badge, DECK,
-               linear(BADGE_COLOR[L.badge] || RECORD_GREEN));
+               linear(L.badgeColor ? L.badgeColor.getHex()
+                                   : (own == null ? RECORD_GREEN : own)));
   }
   // A livery or badge value this renderer has never heard of - a client that has
   // not reloaded since the vocabulary grew - draws nothing rather than an empty
@@ -403,7 +439,13 @@ function decalMesh(L) {
 // square, a crown came out as a blob and a podium's three steps read as one
 // smear, because the whole of what distinguishes them is height. So the icons are
 // described square and stretched along z on the way out, which is a single number
-// rather than a bias baked into seven sets of coordinates.
+// rather than a bias baked into eight sets of coordinates.
+//
+// **Which way is up: toward the tail.** A badge on a bonnet is read by somebody
+// standing in front of the car, the way every real one is - so the top of the icon
+// has to be the end nearest the windscreen. Pointing it at the nose instead put
+// every badge upside down to anyone looking at the front of the car, which is the
+// only angle a hood badge is really *for*.
 // The two are set together, and the ceiling is the bonnet: it is 1.88 across and
 // only 0.95 long, so the *length* is what binds. A round badge stretched to appear
 // square therefore tops out at 0.95 long and 0.95/1.28 wide, and these are that
@@ -425,13 +467,21 @@ const TAU = Math.PI * 2;
  * no gain. Describing the corners is the interesting part; their order is not.
  */
 function badgeShape(buf, badge, y, C) {
-  const P = ([u, v]) => [u, y, BADGE_Z - v * STRETCH];
-  const tri2 = (a, b, c) => {
-    const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-    if (cross >= 0) buf.tri(P(a), P(b), P(c), C);
-    else buf.tri(P(a), P(c), P(b), C);
+  const P = ([u, v]) => [u, y, BADGE_Z + v * STRETCH];
+  const tri2 = (a, b, c, color) => {
+    const A = P(a), B = P(b), D = P(c);
+    // The y of (B-A) x (D-A), in **world** space rather than in icon space. That
+    // matters: icon-space handedness depends on which way `P` maps v, so the
+    // icon-space test silently inverted the moment the badges were turned round to
+    // face the front of the car, and every one of them would have gone dark.
+    const ny = (B[2] - A[2]) * (D[0] - A[0]) - (B[0] - A[0]) * (D[2] - A[2]);
+    const col = color == null ? C : color;
+    if (ny >= 0) buf.tri(A, B, D, col);
+    else buf.tri(A, D, B, col);
   };
-  const quad2 = (a, b, c, d) => { tri2(a, b, c); tri2(a, c, d); };
+  const quad2 = (a, b, c, d, color) => {
+    tri2(a, b, c, color); tri2(a, c, d, color);
+  };
   const ring = (r, a) => [Math.cos(a) * r, Math.sin(a) * r];
   const R = BADGE_RAD;
 
@@ -461,15 +511,18 @@ function badgeShape(buf, badge, y, C) {
       quad2([-0.080, -0.15], [0.080, -0.15], [0.080, -0.10], [-0.080, -0.10]);
       break;
     }
-    // Only the dark squares are drawn; the light ones are bare bodywork. Which
-    // is what makes it work on any colour of car, and costs half the triangles.
-    case 'chequers': {
+    // **All sixteen squares, in two colours.** The light ones used to be bare
+    // bodywork, which is cheaper and is not a chequered flag: on a white car it was
+    // half a flag, and on a green one it was green-and-green. So the dark squares
+    // take the badge's colour and the light ones are always white - a flag with two
+    // custom colours is not the thing the flag means.
+    case 'checkers': {
       const W = R * 0.42;
       for (let r = 0; r < 4; r++) {
         for (let c = 0; c < 4; c++) {
-          if ((r + c) % 2) continue;
           const u0 = -2 * W + c * W, v0 = 2 * W - (r + 1) * W;
-          quad2([u0, v0], [u0 + W, v0], [u0 + W, v0 + W], [u0, v0 + W]);
+          quad2([u0, v0], [u0 + W, v0], [u0 + W, v0 + W], [u0, v0 + W],
+                (r + c) % 2 ? linear(CHECKER_LIGHT) : C);
         }
       }
       break;
@@ -567,6 +620,29 @@ function badgeShape(buf, badge, y, C) {
       }
       break;
     }
+    // A crest: flat across the top, shoulders, and a point at the bottom. Chosen
+    // for its silhouette being the crown's turned upside down - flat top and one
+    // point below against a spiked top and a flat base - which is about as far
+    // apart as two shapes get while both still reading as heraldry.
+    case 'shield': {
+      // A crest, drawn as **two** pieces with the paint showing between them: the
+      // chief across the top and the field under it. As one solid outline it was
+      // the only badge here with no internal structure at all - a grey blob, which
+      // a screenshot from the front is the only thing that says out loud. The split
+      // is a *gap* rather than a second colour on purpose: `checkers` needing two
+      // is an exception the flag forces, not a pattern to spread, and a gap keeps
+      // the whole badge one recolourable thing.
+      const W = R * 0.62, TOP = 0.26, WAIST = -0.02, TIP = -0.30;
+      const CHIEF = 0.15, GAP = 0.055;      // GAP is wide for the usual reason
+      // The silhouette tapers from TOP to WAIST, so both pieces have to read off
+      // the same edge or the crest comes out as a box sitting on a spade.
+      const hw = (v) => W * (1 - 0.14 * (TOP - v) / (TOP - WAIST));
+      quad2([-W, TOP], [W, TOP], [hw(CHIEF), CHIEF], [-hw(CHIEF), CHIEF]);
+      const F = CHIEF - GAP;
+      quad2([-hw(F), F], [hw(F), F], [hw(WAIST), WAIST], [-hw(WAIST), WAIST]);
+      tri2([-hw(WAIST), WAIST], [hw(WAIST), WAIST], [0, TIP]);
+      break;
+    }
     default: break;
   }
 }
@@ -610,9 +686,10 @@ export class CarView {
     // painted too and would tint every stripe on the car. See `paintOf`.
     const bodyMat = mat(paintOf(col, L.finish), {}, true);
     const darkMat = mat(paintOf(L.trim, L.finish), {}, true);
-    // Two-tone puts the cabin in the trim colour. One material either way, so it
-    // costs nothing but a choice of which one the roof gets.
-    const cabinMat = L.twoTone ? darkMat : bodyMat;
+    // The roof is `bodyMat` when nobody has picked a colour for it, which is the
+    // one-material case and the common one; a chosen colour is a third painted
+    // material and the only thing on the car that costs one.
+    const cabinMat = L.roof ? mat(paintOf(L.roof, L.finish), {}, true) : bodyMat;
     const glassMat = mat(L.glass);
     const tyreMat = mat(0x1c1f26);
 

@@ -277,8 +277,8 @@ LIVERIES = ["centre", "twin", "band", "hoop", "halves", "fade", "pinstripe"]
 # being its own mesh it inherited all of this - so it is checked by the same
 # tests rather than by copies of them.
 DECALS = ([("livery", n) for n in LIVERIES]
-          + [("badge", b) for b in ["laurel", "chequers", "chevrons", "crown",
-                                    "podium", "sunburst", "ribbon"]])
+          + [("badge", b) for b in ["laurel", "checkers", "chevrons", "crown",
+                                    "podium", "sunburst", "ribbon", "shield"]])
 
 
 @pytest.mark.parametrize("name", LIVERIES)
@@ -491,7 +491,7 @@ def _body_paint(rt, spec):
 
 
 @pytest.mark.parametrize("finish,shine,spec", [
-    ("gloss", 90, 0x6d7176), ("metallic", 190, 0xcfd4dc), ("pearl", 120, 0xf2e6ff),
+    ("gloss", 110, 0x8b9096),
 ])
 def test_each_finish_reaches_the_material_it_names(rt, finish, shine, spec):
     """The half of a finish that is lighting. Pinned because nothing did: the four
@@ -505,30 +505,49 @@ def test_each_finish_reaches_the_material_it_names(rt, finish, shine, spec):
 
 def test_a_finish_paints_itself_and_not_only_lights_itself(rt):
     """The reason the finishes were indistinguishable. The car is `flatShading`
-    boxes lit by one sun, so a specular on a face is *constant across it* -
-    nothing travels and nothing reflects, and the whole of what a shiny finish did
-    was make a sunlit panel slightly lighter. Four finishes differing only in how
-    much lighter are four nobody can tell apart.
+    boxes lit by one sun, so a specular on a face is *constant across it* - nothing
+    travels and nothing reflects, and the whole of what a shiny finish did was make
+    a sunlit panel slightly lighter.
 
-    So metal is lighter and less saturated and pearl is tinted, in the albedo
-    rather than in the lighting, which is what survives flat shading.
+    There are two finishes now rather than four, and gloss carries the shiny idea
+    alone - so it has to be a visible difference on its own, in the albedo as well
+    as in the lighting. Wet paint is deeper and richer than dry, which is what
+    `darken` and `saturate` say.
     """
     body = "#3d8bfd"
     matte = _body_paint(rt, "{body: '%s'}" % body)
     assert matte == body[1:], "matte is the colour you picked, exactly"
-    # Gloss is deliberately in the same camp: "your paint, wet".
-    assert _body_paint(rt, "{body: '%s', finish: 'gloss'}" % body) == body[1:]
-    for finish in ("metallic", "pearl"):
-        assert _body_paint(rt, "{body: '%s', finish: '%s'}" % (body, finish)) \
-            != matte, "%s paints the same colour as matte" % finish
-    # And they differ from *each other* by an amount somebody can see, which is
-    # the assertion that matters: these two started out both "a bit lighter and
-    # slightly off-hue" and were technically different and visually identical,
-    # which is one finish with two names. `!=` would have passed that.
-    met = _body_paint(rt, "{body: '%s', finish: 'metallic'}" % body)
-    prl = _body_paint(rt, "{body: '%s', finish: 'pearl'}" % body)
-    gap = sum(abs(int(met[i:i + 2], 16) - int(prl[i:i + 2], 16)) for i in (0, 2, 4))
-    assert gap >= 60, "metallic %s and pearl %s are the same finish" % (met, prl)
+    wet = _body_paint(rt, "{body: '%s', finish: 'gloss'}" % body)
+    gap = sum(abs(int(wet[i:i + 2], 16) - int(matte[i:i + 2], 16))
+              for i in (0, 2, 4))
+    assert gap >= 40, "gloss %s and matte %s are the same paint" % (wet, matte)
+    # Deeper and not paler. Paler is what metallic was, and the two would have been
+    # one finish under two names - which is the trap the whole finish table fell
+    # into the first time.
+    assert sum(int(wet[i:i + 2], 16) for i in (0, 2, 4)) \
+        < sum(int(matte[i:i + 2], 16) for i in (0, 2, 4)), "gloss went lighter"
+
+
+def test_a_retired_finish_still_draws_the_car_it_was_driven_in(rt):
+    """`metallic` and `pearl` left the vocabulary - `garage.FINISHES` is two, so
+    `validate` turns a posted one into matte - and they are **still in the renderer
+    on purpose**. A stored replay carries the livery it was driven in and is never
+    re-validated, so deleting them would repaint every car in every race recorded
+    before they went. Same rule that stores a replay's livery with it rather than
+    looking it up."""
+    for gone in ("metallic", "pearl"):
+        c = census(rt, "{body: '#3d8bfd', finish: '%s'}" % gone)
+        assert c["phong"] == 2, gone
+        assert _body_paint(rt, "{body: '#3d8bfd', finish: '%s'}" % gone) != "3d8bfd"
+
+
+def test_a_finish_nobody_has_ever_heard_of_is_a_matte_car(rt):
+    """`FINISH[x]` is undefined for anything not in the table, so `paintOf` and
+    `mat` both have to survive being handed one - a client from after the next
+    deploy, or a corrupt row."""
+    c = census(rt, "{body: '#3d8bfd', finish: 'sparkle'}")
+    assert c["meshes"] == 14 and c["phong"] == 0
+    assert _body_paint(rt, "{body: '#3d8bfd', finish: 'sparkle'}") == "3d8bfd"
 
 
 def test_metallic_is_lighter_and_less_saturated_than_the_paint_under_it(rt):
@@ -577,12 +596,18 @@ def test_a_shiny_finish_is_not_standard_material(rt):
     assert rt.call("typeof THREE.MeshStandardMaterial") == "undefined"
 
 
-def test_two_tone_puts_the_cabin_in_the_trim_and_costs_nothing(rt):
-    """One material either way, so it is a choice of which existing one the roof
-    gets rather than a seventh material."""
-    assert census(rt, "{two_tone: true}")["materials"] == census(rt, "null")["materials"]
+def test_a_roof_colour_is_the_one_thing_that_costs_a_material(rt):
+    """`two_tone` was a boolean that put the roof in the *trim* colour, so a
+    two-tone was always spoiler-coloured and a white roof on a red car with a black
+    wing could not be asked for. The roof is its own colour now - which does cost a
+    material, and it is the only slot on the car that costs one, so it is worth
+    saying out loud: no colour means the cabin shares `bodyMat`, which is the common
+    case and the free one.
+    """
+    assert census(rt, "null")["materials"] == 7
+    assert census(rt, "{roof: '#ffffff'}")["materials"] == 8
 
-    def roof(spec):
+    def panels(spec):
         """[body colour, cabin colour], read off the materials themselves."""
         return rt.call("(function () {"
                        f"  const b = build({spec});"
@@ -591,19 +616,24 @@ def test_two_tone_puts_the_cabin_in_the_trim_and_costs_nothing(rt):
                        "})()")
 
     body = "#7b6cf6"
-    trim = "#" + rt.call(f"new THREE.Color('{body}').multiplyScalar(0.55)"
-                         f".getHexString()")
-    assert roof(f"{{body: '{body}'}}") == [body, body]
-    assert roof(f"{{body: '{body}', two_tone: true}}") == [body, trim]
-    # And with a trim of its own, the roof follows that rather than the
-    # darkening - which is the combination that makes it a two-tone rather than
-    # a shaded roof.
-    assert roof(f"{{body: '{body}', trim: '#f2c94c', two_tone: true}}") == \
-        [body, "#f2c94c"]
+    assert panels(f"{{body: '{body}'}}") == [body, body]
+    assert panels(f"{{body: '{body}', roof: '#ffffff'}}") == [body, "#ffffff"]
+    # And the roof is independent of the spoiler, which is the whole reason it is a
+    # slot: a black wing and a white roof at once.
+    assert panels(f"{{body: '{body}', trim: '#101216', roof: '#ffffff'}}") == \
+        [body, "#ffffff"]
 
 
-BADGES = ["laurel", "chequers", "chevrons", "crown", "podium", "sunburst",
-          "ribbon"]
+def test_two_tone_is_gone_and_says_nothing(rt):
+    """It was removed rather than kept as an alias, which was the call: a car
+    wearing it goes back to a body-coloured roof. So the key has to be *inert* -
+    a stored `two_tone: true` must not throw and must not paint anything."""
+    assert census(rt, "{two_tone: true}") == census(rt, "null")
+
+
+
+BADGES = ["laurel", "checkers", "chevrons", "crown", "podium", "sunburst",
+          "ribbon", "shield"]
 
 
 @pytest.mark.parametrize("badge", BADGES)
@@ -674,7 +704,8 @@ def test_the_badges_are_told_apart_by_their_colours(rt):
     for badge in BADGES:
         seen[badge] = rt.call(f"BADGE_COLOR['{badge}']")
     assert seen["sunburst"] != seen["podium"] != seen["ribbon"]
-    assert len(set(seen.values())) == 4      # green x3, gold, bronze, grey
+    # green x3, gold, bronze, road grey, silver, and the checkers' near-black.
+    assert len(set(seen.values())) == 6
 
 
 # ---------------------------------------------------------------------------
@@ -682,21 +713,27 @@ def test_the_badges_are_told_apart_by_their_colours(rt):
 # ---------------------------------------------------------------------------
 
 def test_a_fully_loaded_car_is_still_a_cheap_car(rt):
-    """Every slot filled: **19** meshes against the plain car's 14 - the four rims
-    and one decal mesh carrying the stripes and the badge together. A full eight-car
-    grid is therefore ~150 meshes, which is the budget the merged rim geometry buys
-    and the reason it is merged: drawn the obvious way the rims alone would have
-    been another 160 on top.
+    """Every slot filled, and this spec is deliberately the *current* vocabulary
+    rather than a historical one: **19** meshes against the plain car's 14 - the four
+    rims and one decal mesh carrying the stripes and the badge together. A full
+    eight-car grid is therefore ~150 meshes, which is the budget the merged rim
+    geometry buys and the reason it is merged: drawn the obvious way the rims alone
+    would have been another 160 on top.
 
     It was 20 while the badge was its own mesh. Nineteen is the badge becoming free,
-    which is what made a case of seven of them affordable.
+    which is what made a case of eight of them affordable.
+
+    **Ten materials, not nine**, and the tenth is the roof: it is the only slot on
+    the car that costs one, because a differently painted cabin cannot share
+    `bodyMat`. Everything else here is a colour written into a material that already
+    existed or a vertex colour in the decal buffer.
     """
-    c = census(rt, "{body: '#7b6cf6', trim: '#111111', glass: '#446688',"
-                   " rim: '#c9ced6', stripe: '#ffffff', finish: 'pearl',"
-                   " livery: 'twin', rim_style: 'forged', two_tone: true,"
-                   " badge: 'laurel'}")
+    c = census(rt, "{body: '#7b6cf6', trim: '#111111', roof: '#ffffff',"
+                   " glass: '#446688', rim: '#c9ced6', stripe: '#ffffff',"
+                   " finish: 'gloss', livery: 'twin', rim_style: 'forged',"
+                   " badge: 'laurel', badge_color: '#e8c34a'}")
     assert c["meshes"] == 19
-    assert c["materials"] == 9
+    assert c["materials"] == 10
     assert c["untracked"] == 0
 
 
@@ -787,6 +824,78 @@ def test_a_badge_is_on_the_clear_bonnet_and_nothing_stands_on_it(rt, badge):
         f"{badge} reaches z {max(zs):.3f}, under the windscreen at {SCREEN}"
     assert max(abs(x) for x in xs) <= HALF_W, \
         f"{badge} is {max(abs(x) for x in xs):.3f} wide - past the edge of the deck"
+
+
+@pytest.mark.parametrize("badge,heavy", [
+    # Only the two whose silhouette is genuinely lopsided *by vertex count*, which
+    # is a stricter filter than "looks lopsided". A chevron and the ribbon point
+    # clearly one way to the eye and yet have as many corners at one end as the
+    # other, so counting ink says nothing about them; the laurel, the sunburst and
+    # the checkers are radially or fully symmetric and cannot be flipped at all; and
+    # the podium's three pips are centred, so its halves match whichever way round
+    # it is. Those six are covered by the mapping test directly below, which is the
+    # only thing that *can* speak for them - a test that cannot fail is worse than
+    # no test, so they are not listed here with a no-op expectation.
+    ("crown", "bottom"),     # a full-width band, with three thin points off it
+    ("shield", "top"),       # flat across the top, one point at the bottom
+])
+def test_a_badge_reads_from_in_front_of_the_car(rt, badge, heavy):
+    """A badge on a bonnet is read by somebody standing **in front** of the car, the
+    way every real one is - so the top of the icon has to be the end nearest the
+    windscreen. It pointed at the nose instead, which put all of them upside down
+    from the only angle a hood badge is really for.
+
+    Checked as where the ink is rather than by naming a coordinate: the half of the
+    badge with more triangles in it is the heavy end, and for a crown that is the
+    band, which has to be the end furthest from the windscreen.
+    """
+    pos = rt.call(f"decalMesh(liveryOf({{badge: '{badge}'}})).pos")
+    zs = pos[2::3]
+    mid = (min(zs) + max(zs)) / 2
+    # +z is toward the tail, so "toward the windscreen" is the larger z.
+    near_screen = sum(1 for z in zs if z > mid)
+    near_nose = sum(1 for z in zs if z < mid)
+    if heavy == "top":
+        assert near_screen > near_nose, (
+            f"{badge}: its heavy end is toward the nose, so it is upside down")
+    else:
+        assert near_nose > near_screen, (
+            f"{badge}: its heavy end is toward the windscreen, so it is flipped")
+
+
+def test_the_top_of_a_badge_is_the_end_nearest_the_windscreen(rt):
+    """The mapping every badge shares, checked once and directly rather than through
+    seven silhouettes. `+z` is toward the tail of the car, so an icon coordinate that
+    means "up" has to come out at a larger z than one that means "down" - and it did
+    not: it was `BADGE_Z - v`, which pointed every badge at the nose.
+    """
+    src = jsrt._read(RENDER_JS)
+    assert "BADGE_Z + v * STRETCH" in src, "the icon mapping is not tail-up"
+    # And the same thing read off real geometry, so the constant above cannot be
+    # right while the shape that uses it is wrong. The shield's one point is its
+    # lowest coordinate, so it must be its most nose-ward vertex.
+    pos = rt.call("decalMesh(liveryOf({badge: 'shield'})).pos")
+    zs = pos[2::3]
+    xs = pos[0::3]
+    tip = min(range(len(zs)), key=lambda i: zs[i])
+    assert abs(xs[tip]) < 0.02, "the most nose-ward point of a shield is not its tip"
+
+
+def test_the_badge_winding_is_decided_in_world_space(rt):
+    """`tri2` picks a winding so every decal faces up. It used to do that from the
+    **icon-space** cross product, which depends on which way the mapping sends `v` -
+    so turning the badges round to face the front silently inverted every one of
+    them, and a decal wound face-down draws as a dark smear rather than as a badge.
+
+    Pinned by reading the source, because the failure is a sign flip in a formula
+    that is correct-looking either way: the test above would catch it, but only
+    because these two were written together.
+    """
+    src = jsrt._read(RENDER_JS)
+    body = src[src.index("function badgeShape"):]
+    body = body[:body.index("\n}")]
+    assert "const A = P(a)" in body, "tri2 no longer maps before deciding"
+    assert "B[2] - A[2]" in body, "the winding test is not on world coordinates"
 
 
 @pytest.mark.parametrize("badge", BADGES)
