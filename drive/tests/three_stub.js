@@ -193,7 +193,17 @@ export const MeshPhongMaterial = class extends Mat {};
 export const SpriteMaterial = noop;
 export const Sprite = Obj3;
 export const CanvasTexture = noop;
-export const BoxGeometry = BufferGeometry;
+// `parameters` the way real three.js carries it, so a test can ask how wide a
+// box actually is. Without it the constructor arguments are simply thrown away
+// and a test about the *shape* of the car can only count meshes - which is how
+// "the splitter is as wide as the body" ended up asserted as "there are two
+// things near the front".
+export const BoxGeometry = class extends BufferGeometry {
+  constructor(width = 1, height = 1, depth = 1) {
+    super();
+    this.parameters = { width, height, depth };
+  }
+};
 export const CylinderGeometry = BufferGeometry;
 export const ConeGeometry = BufferGeometry;
 export const CircleGeometry = BufferGeometry;

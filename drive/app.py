@@ -581,7 +581,8 @@ def garage_page():
         return redirect(url_for("login_page", next="/garage"))
     row = _garage_row(user)
     got = _earned_for(user, row)
-    data = garage_mod.payload(user, garage_mod.loads(row.livery_json if row else None), got)
+    data = garage_mod.payload(user, garage_mod.loads(row.livery_json if row else None),
+                              got, garage_mod.progress(user))
     return render_template("garage.html", user=user, name=get_effective_name(),
                            garage_json=json_mod.dumps(data, separators=(",", ":")),
                            tracks=tracks_mod.summaries())
@@ -608,7 +609,8 @@ def api_garage():
         row = _garage_row(user)
     got = _earned_for(user, row)
     return jsonify(dict(garage_mod.payload(
-        user, garage_mod.loads(row.livery_json if row else None), got), ok=True))
+        user, garage_mod.loads(row.livery_json if row else None), got,
+        garage_mod.progress(user)), ok=True))
 
 
 @app.route("/lobbies")

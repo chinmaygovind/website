@@ -973,3 +973,36 @@ def test_two_guests_in_a_room_are_not_the_same_car(env):
         assert env._livery_for(None, name="dave")["body"] != \
             env._livery_for(None, name="erin")["body"]
         assert env._livery_for(None)["body"] == garage.GUEST_COLOR
+
+
+def test_the_garage_payload_carries_how_far_along_you_are(env):
+    """So the page can say `Pinstripe: A gold on every track (9/12)` rather than
+    only that it is locked. The numbers come from the server beside the check,
+    not from the client counting rows it can see."""
+    import tracks as tracks_mod
+    c = env.app.test_client()
+    uid = _user(env, "quick")
+    _login(c, uid)
+    with env.app.app_context():
+        env.db.session.add(env.DriveStats(user_id=uid, golds=4))
+        env.db.session.commit()
+    gates = {g["id"]: g for g in c.get("/api/garage").get_json()["gates"]}
+    n = len(tracks_mod.TRACKS)
+    assert gates["pearl"]["got"] is True and gates["pearl"]["have"] == 3
+    assert gates["pinstripe"] == dict(gates["pinstripe"],
+                                      have=4, need=n, got=False)
+    # And the page itself carries it, so the first paint is right.
+    assert '"have": 4' in c.get("/garage").get_data(as_text=True) or \
+        '"have":4' in c.get("/garage").get_data(as_text=True)
+
+
+def test_the_garage_page_is_a_stage_and_not_a_document(env):
+    """It opts out of `.wrap` entirely: the whole screen under the nav is the
+    car. `body.garage-page` is what turns the page into a flex column, so losing
+    it would silently put a 100dvh canvas inside a scrolling document."""
+    c = env.app.test_client()
+    _login(c, _user(env, "quick"))
+    html = c.get("/garage").get_data(as_text=True)
+    assert 'class="garage-page"' in html
+    assert '<canvas id="gcanvas">' in html
+    assert 'class="wrap' not in html, "the stage is not a document column"

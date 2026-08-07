@@ -290,6 +290,32 @@ def earned(user, already=(), holders=None):
     return got
 
 
+def progress(user, holders=None):
+    """How far along each gate this account is, as ``{gid: (have, need)}``.
+
+    Only for the line the garage shows: "Pinstripe needs a gold on every track
+    (9/12)". The gate's *text* is still the authority on what it wants - this is
+    the count behind it, and the two are built from the same helpers so they
+    cannot describe different rules.
+
+    The record badge has no meaningful count, so it is 0 or 1 out of 1: it is a
+    thing you have or have not done, and "0/1 records" would be a worse sentence
+    than the text already on the chip.
+    """
+    if user is None:
+        return {}
+    n = len(tracks_mod.TRACKS)
+    golds = _golds(user)
+    if holders is None:
+        holders = record_holders()
+    return {
+        "pearl": (min(golds, 3), 3),
+        "pinstripe": (min(golds, n), n),
+        "forged": (_tracks_finished(user), n),
+        "laurel": (1 if user.id in holders else 0, 1),
+    }
+
+
 def resolve(livery, username, got):
     """The livery to actually draw: their choices, minus anything unearned.
 
@@ -307,13 +333,19 @@ def resolve(livery, username, got):
     return out
 
 
-def payload(user, livery, got):
+def payload(user, livery, got, prog=None):
     """Everything the garage screen needs, in one object.
 
     Sent with the page as well as from `/api/garage`, so the car on screen is
     right on the first paint rather than after a request - the same reason
     `_track_payload` is embedded in the play page.
+
+    `prog` is optional, and that is not laziness: this function is also called
+    against a user object with no database behind it, and `progress` runs two
+    queries. Made unconditional it would turn every caller into one that needs a
+    session. A gate with no progress simply has no numbers on it.
     """
+    prog = prog or {}
     return {
         "livery": resolve(livery, user.username if user else None, got),
         "palette": list(PALETTE),
@@ -323,11 +355,13 @@ def payload(user, livery, got):
         "badges": list(BADGES),
         "defaults": dict(DEFAULTS),
         "record_green": RECORD_GREEN,
-        # Every gate, whether it is open, and the words for it. Shown greyed with
-        # this text when it is shut, so the thing to chase is visible - and the
-        # words come from here rather than from the template, so they cannot say
-        # something the server will not honour.
-        "gates": [dict(GATES[g], id=g, got=(g in got)) for g in GATES],
+        # Every gate, whether it is open, the words for it, and how far along it
+        # you are. Shown greyed with this text when it is shut, so the thing to
+        # chase is visible - and the words come from here rather than from the
+        # template, so they cannot say something the server will not honour.
+        "gates": [dict(GATES[g], id=g, got=(g in got),
+                       have=prog.get(g, (0, 0))[0], need=prog.get(g, (0, 0))[1])
+                  for g in GATES],
     }
 
 

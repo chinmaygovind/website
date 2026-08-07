@@ -2,27 +2,38 @@
 {% block title %}Garage | Drive{% endblock %}
 {% set active_page = 'garage' %}
 
+{# The only page on the site that is a viewport rather than a document. `.wrap`
+   and its 1080px column are deliberately not here: the whole of the screen
+   under the nav is the car, and everything you can change about it floats on
+   top. See `.garage-page` in style.css for why that is a flex column and not a
+   `calc(100dvh - <nav height>)`. #}
+{% block bodyclass %}garage-page{% endblock %}
+
 {% block body %}
 {% include "_nav.html" %}
-<div class="wrap garage-wrap">
-  <h1>Garage</h1>
-  <p class="lede">Your car, everywhere you drive it &mdash; on the grid, as your
-    ghost, and in every replay of a race you were in.</p>
+<div class="gstage">
+  <canvas id="gcanvas"></canvas>
 
-  <div class="garage">
-    {# The car. A canvas and nothing else: the point of the screen is the paint,
-       so there is no track, no sky and no scenery to argue with it. #}
-    <div class="garage-view">
-      <canvas id="gcanvas"></canvas>
-      <div class="garage-hint">Drag to spin &middot; scroll to zoom</div>
-      <div class="garage-saved" id="gsaved">Saved</div>
-    </div>
-
-    {# The slots. Filled in by garage.js from the same payload the page was
-       rendered with, so there is no second copy of the vocabulary in here to
-       drift from garage.py's. #}
-    <div class="garage-slots" id="gslots"></div>
+  {# Everything below is over the canvas. `.gtop`/`.gfoot` are pointer-events
+     transparent and their children are not - the same pair the in-game `.hud-l`
+     column needs, and for the same reason: a full-width bar sitting over the
+     canvas would otherwise swallow every drag along that edge of the screen. #}
+  <div class="gtop">
+    <div class="gtabs" id="gtabs"></div>
+    <div class="gopts" id="gopts"></div>
+    <div class="gearn" id="gearn"></div>
   </div>
+
+  <div class="gfoot">
+    <div class="gviews" id="gviews"></div>
+    <div class="ghint">Drag to spin &middot; scroll to zoom</div>
+    <button class="gbtn greset" id="greset">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+      <span id="gresetlabel">Reset</span>
+    </button>
+  </div>
+
+  <div class="gsaved" id="gsaved">Saved</div>
 </div>
 {% endblock %}
 

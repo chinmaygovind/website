@@ -537,6 +537,23 @@ export class MeshBuf {
     for (let i = 0; i < 3; i++) this.col.push(r, g, bl);
   }
   quad(a, b, c, d, color) { this.tri(a, b, c, color); this.tri(a, c, d, color); }
+  /** One colour per corner, so a face can carry a gradient across itself.
+   *
+   *  `tri` above writes the same colour to all three vertices, which is why the
+   *  `fade` livery is ten flat strips rather than a ramp - fine there, where the
+   *  strips are 0.34 long and nobody counts them, and not fine for the garage's
+   *  studio floor, which is metres across and bands visibly. The attribute is
+   *  the one `toGeometry` already publishes; only the writing changes.
+   */
+  triV(a, b, c, ca, cb, cc) {
+    this.pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+    for (const k of [ca, cb, cc]) {
+      this.col.push(((k >> 16) & 255) / 255, ((k >> 8) & 255) / 255, (k & 255) / 255);
+    }
+  }
+  quadV(a, b, c, d, ca, cb, cc, cd) {
+    this.triV(a, b, c, ca, cb, cc); this.triV(a, c, d, ca, cc, cd);
+  }
   box(cx, cy, cz, hx, hy, hz, color) {
     const P = (sx, sy, sz) => [cx + sx * hx, cy + sy * hy, cz + sz * hz];
     const v = [P(-1,-1,-1), P(1,-1,-1), P(1,-1,1), P(-1,-1,1),

@@ -438,3 +438,67 @@ def test_reading_a_strangers_livery_leaves_no_row_behind(env):
     with env.app.app_context():
         env._livery_for(env.User.query.get(uid))
         assert env.DriveGarage.query.count() == 0
+
+
+# ---------------------------------------------------------------------------
+# Progress, for the line that says what is left to earn
+# ---------------------------------------------------------------------------
+
+def test_the_payload_still_works_without_progress():
+    """`prog` is optional, and that is load-bearing rather than lazy: `payload`
+    is called here against a user with no database behind it, and `progress`
+    runs two queries. Made unconditional it would turn every caller into one
+    that needs a session."""
+
+    class U:
+        username = "x"
+
+    data = garage.payload(U(), {}, set())
+    assert {g["id"] for g in data["gates"]} == set(garage.GATES)
+    assert all(g["need"] == 0 for g in data["gates"]), "no numbers, no lies"
+
+
+def test_progress_counts_toward_each_gate(env):
+    uid = _user(env)
+    n = len(tracks_mod.TRACKS)
+    _stats(env, uid, golds=4)
+    pool = [t["slug"] for t in tracks_mod.TRACKS]
+    for slug in pool[:9]:
+        _time(env, uid, slug, 30000)
+    with env.app.app_context():
+        p = garage.progress(env.User.query.get(uid), holders=set())
+        # Pearl is already earned, so it reads full rather than 4/3 - a bar past
+        # its own end is a bar somebody has to explain.
+        assert p["pearl"] == (3, 3)
+        assert p["pinstripe"] == (4, n)
+        assert p["forged"] == (9, n)
+        assert p["laurel"] == (0, 1)
+
+
+def test_the_record_badge_has_no_count_worth_showing(env):
+    """It is a thing you have done or have not, so it is 0 or 1 out of 1 - and
+    the garage hides a `need` of 1, because "0/1 records" is a worse sentence
+    than the text already on the chip."""
+    uid = _user(env)
+    _time(env, uid, "sunrise", 30000)
+    with env.app.app_context():
+        assert garage.progress(env.User.query.get(uid))["laurel"] == (1, 1)
+
+
+def test_progress_and_the_gate_agree(env):
+    """The count and the check are built from the same helpers, so a gate can
+    never read `12/12` next to a chip that is still locked."""
+    uid = _user(env)
+    n = len(tracks_mod.TRACKS)
+    _stats(env, uid, golds=n)
+    with env.app.app_context():
+        u = env.User.query.get(uid)
+        got = garage.earned(u, holders=set())
+        prog = garage.progress(u, holders=set())
+        for gid in garage.GATES:
+            have, need = prog[gid]
+            assert (have >= need) == (gid in got), gid
+
+
+def test_progress_of_a_stranger_is_nothing(env):
+    assert garage.progress(None) == {}

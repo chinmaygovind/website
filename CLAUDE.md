@@ -1105,11 +1105,14 @@ over a rule that actually wants three is worse than no text at all.
   threw out a forest green 14.3 from grass, a sand 10.8 from a bright sky and a
   gold 13.8 from the yellow already there. A trim or a window is not the thing
   you are picked out by, so those are anything you like.
-- **Brake lamps are deliberately not customisable.** They are the only thing a
-  rival reads off your car, and the amber drift state was removed for exactly
-  that reason; a lamp somebody can recolour is the same mistake with a settings
-  page in front of it. Glass, tyres and the lamps also stay matte whatever
-  finish the paint is wearing.
+- **No lamp is customisable, at either end.** They are the only thing a rival
+  reads off your car, and the amber drift state was removed for exactly that
+  reason; a lamp somebody can recolour is the same mistake with a settings page
+  in front of it. That is why the headlights have no slot and are a fixed pale
+  white. Glass, tyres and both sets of lamps also stay matte whatever finish the
+  paint is wearing - a shiny tyre is not a thing, and a glossy lens fights the
+  one signal on the car that has to be unambiguous.
+
 - **Nothing here may touch the simulation** - not ride height, not
   `CAR_RADIUS`, not the wheel radius, not a gram of mass. A cosmetic that
   changed how the car drives would make every time on the board mean something
@@ -1180,19 +1183,82 @@ over a rule that actually wants three is worse than no text at all.
   a second column rather than a key in the blob because the two are different
   kinds of fact - folding a server decision into something the client POSTs is
   how a gate gets bypassed.
+- **The page is a viewport, not a document.** The whole of the screen under the
+  nav is the car and the controls float on it: `body.garage-page` is a **flex
+  column** (nav `flex: none`, `.gstage` `flex: 1`) rather than
+  `height: calc(100dvh - <nav height>)`, because the nav wraps to two lines on a
+  narrow phone so its height is not a number - and a hardcoded one is the exact
+  bug `.hud-l` was rewritten to stop being able to express. It began as a 4:3
+  canvas in the left column of a `.wrap` with seven cards down the right, which
+  had the proportions of the screen backwards: almost none of a page about
+  looking at a car was car.
+- **The controls are the game's HUD, not the site's paper.** Drive already has a
+  language for controls floating over the 3D world - `--hud`, `--hud-line`,
+  `backdrop-filter` - and it is what the track card, the minimap and the settings
+  icons are made of. White paper cards with hard drop shadows are right on a
+  document and wrong on a dark studio, and a third look for one page would be
+  worse than either. `.gtop` and `.gfoot` need `pointer-events: none` with `auto`
+  on their children, the same pair `.hud-l` needs: a full-width bar over the
+  canvas otherwise swallows every drag along that edge, and on this page
+  dragging *is* the interface.
+- **Seven tabs and one option row**, so only the active category is on screen and
+  the car keeps the rest of it. The option row has a `min-height` so switching
+  tabs does not walk the car up and down behind the bar. A tab holding something
+  unearned carries a dot, and one line under the row says how many of the four
+  are yours and which is nearest - with a **colon**, not "needs": two of the four
+  gate texts are instructions ("Set a track record") and two are noun phrases
+  ("A gold on any 3 tracks"), so anything reading them into a sentence gets half
+  of them wrong. The numbers behind it are `garage.progress`, and `payload`'s
+  `prog` argument is optional because `payload` is also called against a stub
+  user with no database behind it.
+- **Every colour slot is swatches**, not an `<input type="color">`. The browser
+  draws that as a ~38px grey rectangle that says nothing about what it is or
+  what colour is in it. Instead: an `Auto` chip (writes `null`, which is what
+  the server already means by a missing key), the same eighteen the body offers
+  as a shortcut - `validate` takes any hex in these slots, so this is UI only -
+  and a **conic-gradient tile** that opens the browser's picker for anything
+  else and then shows the colour it chose. A rainbow tile reads as "any colour"
+  at 26px where a plus sign reads as "add one".
 - **The viewer builds no track.** `Renderer` starts with `trackGroup` and `sky`
   null and `render(dt)` is only particles plus a draw, so a studio costs one
   canvas and the page opens instantly. There is no `OrbitControls` - it is a
-  three.js addon and is not vendored, and what this needs is thirty lines of
-  drag. Two numbers were wrong first time and are worth not re-deriving: the
-  camera is 66 degrees vertical so `dist` 5.9 (not the chase camera's ~9) is
-  what makes the car a third of the frame rather than a tenth, and the studio
-  floor has to be **clearly lighter than the backdrop** or the contact shadow has
-  nothing to be a shadow on and the car floats in a void with a smudge under it.
+  three.js addon and is not vendored, and what this needs is forty lines of
+  drag. Three things about it are worth not re-deriving:
+  - **The distance is not a constant.** The camera is 66 degrees *vertical*, so
+    the frame is `1.3 * dist` tall and `1.3 * dist * aspect` wide - a fixed
+    distance frames a car by its height, and a car is a long low thing framed by
+    its length. A value tuned on a laptop put the nose and tail off both sides of
+    a portrait phone. `fitDist()` keeps the tuned figure for wide stages and
+    backs off below a reference aspect, and the scroll wheel is a *multiplier* on
+    it so a zoom survives a resize instead of becoming a distance that means
+    something else.
+  - **A vertex colour is not a hex colour.** three.js has colour management on
+    (r169): a `THREE.Color` from a hex is converted sRGB to linear on the way in
+    and encoded back on output, so it round-trips, but a raw colour *attribute*
+    is assumed to be linear already and only gets the encode - so `MeshBuf` drew
+    the studio floor about twice as bright as asked for, and its outer ring no
+    longer matched `scene.background`, which put a hard disc rim across the
+    screen. `garage.js` linearises its floor colours for that reason.
+    **`MeshBuf` itself is deliberately left alone**: the twelve tracks' palettes
+    were picked by eye against this exact pipeline, so "fixing" it there would
+    restyle all of them.
+  - **A pool of light wants to be tighter and dimmer than instinct says.** At a
+    low camera the far half of a wide fade piles up against the horizon and
+    becomes a pale wall behind the car with a hard line along the top. The floor
+    is a large `MeshBuf` ring disc fading to *exactly* the backdrop, so there is
+    no edge to see - but it still has to lift enough under the car for the
+    contact shadow to have something to be a shadow on.
   The scene also needs a dim cool fill opposite the sun: the track's rig is one
   hard key plus a hemisphere, which is right outdoors and in a black room leaves
   every face turned away from the key at the same flat shadow, so a flat-shaded
   car reads as a paper cut-out of itself.
+- **`?view=front|34|side|rear` puts the camera on a fixed angle at load**, the
+  same idea as the play page's `?panel=` and `?draft=`: there is no browser in CI
+  and a screenshot cannot drag. The four buttons that set it *ease* rather than
+  cut, and the frame loop calls `render()` once the ease lands - which is the
+  only place the controls are redrawn by the loop rather than by an event.
+  Without it the highlight was computed at the moment of the press, when the
+  answer is still "none of them", and no view button ever lit.
 - **The selected option's highlight outranks its hover, and that took a
   `:not`.** `.gopt:hover:not(:disabled)` is three simple selectors against
   `.gopt.on`'s two, so a chosen option went pale the moment the cursor was over
@@ -1201,6 +1267,48 @@ over a rule that actually wants three is worse than no text at all.
 - Every list on the page is built from the payload the server rendered into it,
   so there is no second copy of the vocabulary in the JS to drift from
   `garage.py`'s - including the words on a locked row.
+
+### The front of the car
+
+The rear was designed - a wing, two stays, two brake lamps - and the front was
+not. It was a single 1.7-wide slab in the trim colour, sitting below the body's
+front face and inset 0.1 from each flank, with nothing above it: a bumper
+somebody had bolted to a rectangle, and no lights anywhere. Three pieces now,
+and each of them is one of the reasons it read badly:
+
+- **A snout in the *body* colour**, tilted nose-down. The trim colour is what
+  says "this part is an attachment", and the nose of a car is not one. The tilt
+  is `rotation.x`, negative - three.js rotates `y' = y cos - z sin` about X, and
+  the car points at -Z, so it takes a negative angle to drop the nose.
+- **A splitter flush with the flanks.** The inset was the other half of why the
+  old nose looked stuck on: a bumper that does not reach the corners of the car
+  is a bumper lying on one.
+- **Headlights**, as one `MeshBuf` and one unlit material. One mesh because,
+  unlike the brake lamps, they never change independently of each other; unlit
+  and built by hand rather than through `mat()` because `mat()` makes a lit
+  material and takes the finish, so a lens would go glossy with the paint and
+  darken on the side away from the sun.
+
+Three things that were got wrong first time and are pinned by tests now:
+
+- **The snout has to be as deep as the body.** At two-thirds height it met the
+  bonnet deck correctly and left its underside a quarter of a unit above the
+  floor, so between the body's front face and the splitter there was a slot of
+  open air you could see daylight through - which is worse than the slab it
+  replaced, and looks fine from every angle except the two that matter.
+- **It may not make the car longer.** The collision radius is `tuning.py`'s and
+  has not moved, so the snout and the blade end where the old slab did.
+- **The laurel's nose flash had to move.** It sat at z -1.86, which was clear air
+  in front of the old slab and is the middle of the snout now, so rebuilding the
+  front drew the badge entirely inside the bodywork. Nothing errored and nothing
+  looked wrong; it was simply not there. It is a bar across the very front now,
+  under the lights and above the splitter, which is the one strip of the nose
+  neither of those uses.
+
+A plain car is **16 meshes and 7 materials** and a fully loaded one 22 and 10.
+Those numbers are pinned in `test_garage_js.py` and a change to them has to be a
+deliberate edit: the car is drawn eight times on a full grid, so a mesh added
+carelessly to one is eight more draw calls on a phone.
 
 ### Look: skies and worlds
 
@@ -1745,7 +1853,7 @@ field from a dark field.
 
 ### Tests
 
-`scripts/tests.sh drive` - 690 tests, about 1:25 (four workers, split by file). `test_tracks.py` and
+`scripts/tests.sh drive` - 704 tests, about 1:25 (four workers, split by file). `test_tracks.py` and
 `test_runcheck.py` are pure Python; `test_app.py` runs the real routes against a
 throwaway SQLite file (the `/solo` memory, the board and ghost APIs, and a guest's run
 being replayed after login). **`test_race.py` covers the room's race machine** -
@@ -1824,18 +1932,27 @@ with assembling a car out of a livery is invisible to both of the checks this
 project otherwise leans on: the autopilot never draws, and a screenshot of one
 car either photographs "the fifth rim style is 24 meshes instead of one"
 correctly or photographs it as something you would have to already suspect. So
-it pins the *construction* - the mesh and material budget (14 and 6 plain, 20
-and 9 fully loaded), that no material escapes `_mats` and therefore
+it pins the *construction* - the mesh and material budget (16 and 7 plain, 22
+and 10 fully loaded), that no material escapes `_mats` and therefore
 `setGhostly`, that a rim style is one geometry shared by four wheels, that every
 decal clears its panel and faces up (the cross product taken from the raw
 positions, since the stub's `computeVertexNormals` does nothing), and that
-nothing a livery does moves any part of the car that was already there.
+nothing a livery does moves any part of the car that was already there. The
+front has its own group: that the headlights are one mesh and never the driver's
+colour, that the splitter is flush with the flanks, that the snout leaves no slot
+under it, that the car did not get longer, and that the laurel's nose flash is
+**on** the nose rather than inside it - which it was, silently, for as long as it
+took to look at a screenshot.
 **Both of them exist mainly to say the same thing**: an account with no garage
-row is byte-identical to one from before the garage existed. Note this is also
-what pushed `three_stub.js`'s materials from one shared `noop` to three real
-classes that keep their options - with all of them the same class,
+row wears the car everybody else's account does. Note this file is also what
+pushed `three_stub.js` twice - materials from one shared `noop` to three real
+classes that keep their options, since with all of them the same class
 `instanceof MeshPhongMaterial` was true of everything on the car and no test
-could tell gloss from matte, which is the entire subject of the finish slot.
+could tell gloss from matte; and `BoxGeometry` to carrying `parameters` the way
+real three.js does, since without it the constructor arguments are thrown away
+and a test about the *shape* of the car can only count meshes. That is how "the
+splitter is as wide as the body" first got written as "there are two things near
+the front", which is not the same claim and would not have caught anything.
 
 `test_rules_js.py` is the same lift-by-name trick on
 rules that were each a bug or a contract between two files: that `R` and `T` do

@@ -1178,97 +1178,177 @@ body.side-open #touch { display: none; }
 /* ---------------------------------------------------------------------------
    Garage
    ---------------------------------------------------------------------------
-   A car and the things you can change about it, side by side on a desktop and
-   stacked on a phone with the car on top - because the car is the answer to
-   every control below it, and a control whose result is off screen is a control
-   you have to scroll to understand.
+   The one page on the site that is a viewport rather than a document: the whole
+   of the screen under the nav is the car, and everything you can change about it
+   floats on top of it.
 
-   The viewer is the one dark surface on an otherwise paper-white site. That is
-   deliberate rather than a theme: paint is judged against what is behind it, and
-   eighteen body colours on a #faf8f4 page would all read as pastel. */
-.garage-wrap { max-width: 1180px; }
-.garage {
-  display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr);
-  gap: 1.1rem; align-items: start; margin-top: 1rem;
-}
-@media (max-width: 900px) {
-  .garage { grid-template-columns: 1fr; }
-  .garage-view { position: static; }
-}
+   It was a 4:3 canvas in the left column of a `.wrap` with seven white cards
+   stacked down the right, which got the proportions of the screen exactly
+   backwards - almost none of a page about looking at a car was car.
 
-.garage-view {
-  /* Sticky, not static. Seven slot sections are taller than any laptop screen,
-     so choosing a badge scrolled the car clean off the top and the one thing
-     the page is for - watching the change - was not on screen at the moment it
-     happened. It also fills the dead space a 4:3 canvas leaves beside a taller
-     column. Turned off below 900px, where the grid is one column and a car
-     pinned to the top would take three quarters of a phone. */
-  position: sticky; top: 1rem;
-  background: #141821;
-  border: 2px solid var(--line); border-radius: 14px; overflow: hidden;
-  box-shadow: 4px 4px 0 rgba(29, 29, 31, .18);
-  /* Landscape, and tall enough that a car seen from a low angle is not cropped
-     at the roof. `aspect-ratio` rather than a height so the canvas keeps its
-     shape at every width without JS. */
-  aspect-ratio: 4 / 3;
-}
-.garage-view canvas { display: block; width: 100%; height: 100%; touch-action: none; }
-.garage-hint {
-  position: absolute; left: .7rem; bottom: .6rem; color: #8794a8;
-  font-size: .78rem; letter-spacing: .02em; pointer-events: none;
-}
-/* Saving is silent until it has happened, then says so once and goes. A
-   spinner on every colour drag would be the loudest thing on the screen. */
-.garage-saved {
-  position: absolute; right: .7rem; bottom: .6rem; color: #55e08a;
-  font-size: .78rem; font-weight: 700; opacity: 0; transition: opacity .18s;
-  pointer-events: none;
-}
-.garage-saved.show { opacity: 1; }
+   **The controls are the game's HUD, not the site's paper.** Drive already has a
+   language for controls floating over the 3D world - `--hud` translucent
+   near-black, a hairline `--hud-line`, `backdrop-filter` - and it is what the
+   track card, the minimap and the settings icons are made of. White paper cards
+   with hard drop shadows are right on a document and wrong sitting on a dark
+   studio, and inventing a third look for one page would be worse than either.
 
-.garage-slots { display: flex; flex-direction: column; gap: .5rem; }
-.gsec {
-  border: 2px solid var(--line); border-radius: 12px; padding: .6rem .7rem;
-  background: #fff; box-shadow: 3px 3px 0 rgba(29, 29, 31, .12);
-}
-.gsec h3 { margin: 0 0 .45rem; font-size: .95rem; letter-spacing: .01em; }
+   The viewer is dark for a reason that is not theme: paint is judged against
+   what is behind it, and eighteen body colours on a #faf8f4 page all read as
+   pastel. */
 
-.gopt {
+/* A flex column rather than `height: calc(100dvh - <nav height>)`. The nav wraps
+   to two lines on a narrow phone, so its height is not a number - and a
+   hardcoded one is the exact bug the in-game `.hud-l` column was rewritten to
+   stop being able to express. `100dvh` and not `100vh` so mobile browser chrome
+   does not push the stage under the fold. */
+body.garage-page { height: 100dvh; overflow: hidden;
+                   display: flex; flex-direction: column; }
+body.garage-page .nav { flex: none; }
+.gstage { position: relative; flex: 1; min-height: 0; background: #0d1016; }
+#gcanvas { position: absolute; inset: 0; width: 100%; height: 100%;
+           display: block; touch-action: none; }
+
+/* Both bars are pointer-transparent and their children are not. Without the
+   pair, a full-width strip over the canvas swallows every drag along that edge -
+   and on this page dragging *is* the interface. */
+.gtop, .gfoot { position: absolute; left: 0; right: 0; pointer-events: none;
+                display: flex; flex-direction: column; gap: .5rem;
+                padding: 0 clamp(.6rem, 2vw, 1.1rem); }
+.gtop { top: calc(.7rem + env(safe-area-inset-top, 0px)); align-items: center; }
+.gfoot { bottom: calc(.7rem + env(safe-area-inset-bottom, 0px));
+         flex-direction: row; align-items: flex-end; gap: .7rem; }
+.gtop > *, .gfoot > * { pointer-events: auto; }
+
+/* --- the two bars --------------------------------------------------------- */
+.gtabs, .gopts {
+  background: var(--hud); border: 1px solid var(--hud-line); border-radius: 12px;
+  backdrop-filter: blur(8px); color: #fff; max-width: 100%;
+}
+.gtabs { display: flex; gap: .2rem; padding: .3rem;
+         overflow-x: auto; scrollbar-width: none; }
+.gtabs::-webkit-scrollbar { display: none; }
+.gopts {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .4rem;
+  padding: .55rem .7rem;
+  /* So switching tabs does not walk the car up and down the screen behind the
+     bar. The tallest tab is two rows (a chip row plus a swatch row). */
+  min-height: 3.4rem; justify-content: center;
+}
+.gtab {
   font-family: var(--display); font-weight: 700; font-size: .82rem;
-  padding: .26rem .6rem; margin: 0 .3rem .3rem 0; border-radius: 8px;
-  border: 2px solid var(--line); background: #fff; color: var(--ink);
-  cursor: pointer; position: relative;
+  letter-spacing: .02em; white-space: nowrap;
+  padding: .34rem .8rem; border-radius: 9px; cursor: pointer;
+  background: none; border: none; color: rgba(255, 255, 255, .62);
 }
-/* `:not(.on)` is load-bearing, not tidiness. `:hover:not(:disabled)` is three
-   simple selectors against `.on`'s two, so it outranked the highlight and the
-   chosen option went pale the moment the cursor was over it - which is exactly
-   where the cursor is, having just clicked it. The selected row appeared to
-   deselect itself on every single press. */
-.gopt:hover:not(:disabled):not(.on) { background: #f1efe9; }
-.gopt.on { background: var(--ink); color: var(--paper); }
-.gopt.on:hover:not(:disabled) { background: #37373a; }
-.gopt.small { font-size: .74rem; padding: .18rem .45rem; }
-/* A locked row is shown rather than hidden, so there is something to chase -
-   and it carries the reason, which comes from the server with the gate rather
-   than being written again here where it could promise the wrong thing. */
-.gopt.locked {
-  opacity: .45; cursor: not-allowed; border-style: dashed;
-  display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px;
-}
-.glock { font-size: .62rem; font-weight: 600; letter-spacing: .01em; }
+.gtab:hover { color: #fff; background: rgba(255, 255, 255, .08); }
+.gtab.on { background: #fff; color: #14171e; }
+/* A tab holding something you have not earned says so without being opened. */
+.gtab .glockdot { display: inline-block; width: 5px; height: 5px; margin-left: .35rem;
+                  border-radius: 50%; background: #ffd96b; vertical-align: 2px; }
 
-/* Eighteen colours in a grid rather than a row: a row wraps into an accidental
-   two-tier layout at exactly the widths a phone uses. */
-.gswatches { display: grid; grid-template-columns: repeat(9, 1fr); gap: .3rem; }
+/* --- chips ---------------------------------------------------------------- */
+.gopt {
+  font-family: var(--display); font-weight: 600; font-size: .82rem;
+  padding: .3rem .7rem; border-radius: 999px; cursor: pointer;
+  background: rgba(255, 255, 255, .07); color: #fff;
+  border: 1px solid var(--hud-line); white-space: nowrap;
+  display: inline-flex; align-items: center; gap: .35rem;
+}
+.gopt:hover:not(:disabled):not(.on) { background: rgba(255, 255, 255, .16); }
+.gopt.on { background: #fff; color: #14171e; border-color: #fff; }
+.gopt.on:hover:not(:disabled) { background: #e8e6e0; }
+/* A locked chip is shown rather than hidden, so there is something to chase, and
+   it carries the reason - which comes from the server beside the check that
+   enforces it, never from here where it could promise the wrong thing. */
+.gopt.locked { opacity: .5; cursor: not-allowed; border-style: dashed; }
+.gopt.locked .glock { font-size: .68rem; font-weight: 600; color: #ffd96b; }
+
+/* --- colour slots --------------------------------------------------------- */
+/* One language for every colour on the page. These used to be a raw
+   `<input type=color>`, which the browser draws as a ~38px grey rectangle that
+   says nothing about what it is or what colour is currently in it. */
+.gcolors { display: flex; flex-wrap: wrap; align-items: center; gap: .28rem; }
 .gsw {
-  aspect-ratio: 1; border: 2px solid var(--line); border-radius: 7px;
-  cursor: pointer; padding: 0;
+  width: 26px; height: 26px; padding: 0; border-radius: 7px; cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, .28); background-clip: padding-box;
 }
-.gsw.on { box-shadow: 0 0 0 3px var(--paper), 0 0 0 5px var(--ink); }
+.gsw:hover { transform: translateY(-1px); }
+.gsw.on { box-shadow: 0 0 0 2px var(--hud), 0 0 0 4px #fff; }
+/* The custom one. A conic sweep reads as "any colour" at 26px where a plus sign
+   reads as "add" - and the tile shows the colour once one is chosen, so it also
+   answers what the current custom colour is. */
+.gsw.gcustom {
+  background: conic-gradient(#ff5a4e, #ffd93d, #4ade80, #38bdf8, #a78bfa, #ff5a4e);
+  position: relative;
+}
+.gsw.gcustom.has::after {
+  content: ''; position: absolute; inset: 5px; border-radius: 3px;
+  background: var(--pick); border: 1px solid rgba(0, 0, 0, .3);
+}
+.gsw input[type=color] { position: absolute; opacity: 0; pointer-events: none;
+                         width: 1px; height: 1px; }
+.gslot { display: inline-flex; align-items: center; gap: .4rem; }
+.gslot-label { font-size: .68rem; letter-spacing: .12em; text-transform: uppercase;
+               color: rgba(255, 255, 255, .5); font-weight: 700; }
+/* A divider between the chips and the colours in the tabs that have both. */
+.gsep { width: 1px; align-self: stretch; margin: 0 .25rem;
+        background: var(--hud-line); }
 
-.gpick { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; margin-top: .35rem; }
-.gpick input[type=color] {
-  width: 38px; height: 28px; padding: 0; cursor: pointer;
-  border: 2px solid var(--line); border-radius: 7px; background: none;
+/* --- what is left to earn ------------------------------------------------- */
+.gearn {
+  font-size: .78rem; color: rgba(255, 255, 255, .66);
+  background: var(--hud); border: 1px solid var(--hud-line);
+  border-radius: 999px; padding: .22rem .8rem; backdrop-filter: blur(8px);
 }
-.gnote { font-size: .72rem; color: var(--ink-soft); flex: 1 1 9rem; }
+.gearn b { color: #ffd96b; font-weight: 700; }
+.gearn.done { color: rgba(255, 255, 255, .5); }
+
+/* --- the floor of the screen ---------------------------------------------- */
+.gviews { display: flex; gap: .3rem; background: var(--hud); padding: .28rem;
+          border: 1px solid var(--hud-line); border-radius: 11px;
+          backdrop-filter: blur(8px); }
+.gview {
+  font-family: var(--display); font-weight: 600; font-size: .76rem;
+  padding: .26rem .6rem; border-radius: 8px; cursor: pointer;
+  background: none; border: none; color: rgba(255, 255, 255, .62);
+}
+.gview:hover { color: #fff; background: rgba(255, 255, 255, .08); }
+.gview.on { background: rgba(255, 255, 255, .16); color: #fff; }
+.ghint { color: rgba(255, 255, 255, .38); font-size: .76rem; letter-spacing: .02em;
+         margin-bottom: .35rem; }
+.gbtn {
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: .4rem;
+  font-family: var(--display); font-weight: 600; font-size: .78rem;
+  padding: .38rem .75rem; border-radius: 10px; cursor: pointer;
+  background: var(--hud); color: rgba(255, 255, 255, .72);
+  border: 1px solid var(--hud-line); backdrop-filter: blur(8px);
+}
+.gbtn svg { width: 15px; height: 15px; fill: none; stroke: currentColor;
+            stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.gbtn:hover { color: #fff; background: rgba(40, 44, 56, .9); }
+/* Arms on the first press and fires on the second, in place - the same shape
+   the in-game Resign and End race buttons use, and for the same reason: an
+   "are you sure" overlay would cover the car you want to look at before
+   answering it. `.armed` and its pulse are already defined up with those. */
+.gbtn.armed { background: var(--red); color: #fff; border-color: #fff; }
+
+/* Silent until it has happened, then says so once and goes. A spinner on every
+   drag of a colour picker would be the loudest thing on the screen. */
+.gsaved {
+  position: absolute; right: clamp(.6rem, 2vw, 1.1rem);
+  top: calc(.85rem + env(safe-area-inset-top, 0px));
+  font-size: .76rem; font-weight: 700; color: #55e08a;
+  opacity: 0; transition: opacity .2s; pointer-events: none;
+}
+.gsaved.show { opacity: 1; }
+
+/* On a phone the hint is the first thing to go: the gesture is discoverable by
+   doing it, and the screen is not wide enough for a row of view buttons, a
+   sentence and a button. */
+@media (max-width: 700px) {
+  .ghint { display: none; }
+  .gopts { min-height: 3rem; padding: .45rem .5rem; }
+  .gsw { width: 24px; height: 24px; }
+}
