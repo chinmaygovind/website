@@ -119,17 +119,17 @@ def test_a_car_with_no_livery_at_all_still_builds(rt):
 
 def test_the_default_car_costs_exactly_what_it_used_to(rt):
     """**The check this whole file exists for.** Fifteen meshes and seven
-    materials is the stock car: chassis, cabin, raked windscreen, snout,
-    headlights, wing, two stays, four wheels, two brake lamps and the contact
+    materials is the stock car: chassis, cabin, raked windscreen, the dark front
+    bar, headlights, wing, two stays, four wheels, two brake lamps and the contact
     shadow, painted out of body, trim, glass, tyre, a material per brake lamp,
     and one unlit white for the headlights.
 
-    It was fourteen and six before the front had a face, briefly sixteen and
-    seven while the front had a separate splitter, and is one fewer than that now
-    the nose is a single flush box. **A number moving here has to be a deliberate
-    edit**, which is the whole point of pinning it: the car is drawn eight times
-    on a full grid, so a mesh added carelessly to one is eight more draw calls on
-    a phone.
+    It was fourteen and six before the front had a face, then sixteen while the
+    front had a snout and a splitter, and is fifteen now the body runs the whole
+    length of the car and the front is its own face plus a bar. **A number moving
+    here has to be a deliberate edit**, which is the whole point of pinning it:
+    the car is drawn eight times on a full grid, so a mesh added carelessly to
+    one is eight more draw calls on a phone.
     """
     c = census(rt, "null")
     assert c["meshes"] == 15
@@ -569,45 +569,66 @@ def test_the_car_did_not_get_longer(rt):
     assert -2.30 <= reach <= -2.15, reach
 
 
-def test_the_snout_is_as_deep_as_the_car_is(rt):
-    """At 0.30 tall it met the bonnet deck correctly and left its underside a
-    quarter of a unit above the floor, so between the body's front face and the
-    ground there was a slot of open air you could see daylight through - which
-    looks worse than the slab it replaced, and looks *fine* from every angle
-    except the two that matter. The nose has to reach down to the floor at its
-    root the way the body does."""
+def test_the_dark_bar_sits_on_the_floor_of_the_car(rt):
+    """The original nose floated 0.055 above the body's underside, which is a
+    misalignment small enough to never notice and big enough to make the bar read
+    as a part resting against the car rather than part of it. Flush at the bottom
+    as well as at the flanks."""
     parts = rt.call("build(null).view.group.children[0].children"
                     ".filter((c) => c.geometry && c.geometry.parameters"
                     "               && c.position.z < -1.5)"
                     ".map((c) => [c.position.y, c.geometry.parameters.height])")
-    # The lowest point of the tallest thing up front, against the chassis floor.
-    tall = max(parts, key=lambda p: p[1])
-    assert tall[0] - tall[1] / 2 < 0.12, "the snout leaves a slot under it"
+    assert len(parts) == 1, "the front is the body's own face plus one bar"
+    y, h = parts[0]
+    assert abs((y - h / 2) - 0.005) < 0.01, "the bar does not sit on the floor"
 
 
-def test_the_record_badge_is_on_the_nose_and_not_inside_it(rt):
-    """It used to sit at z -1.86, which was clear air in front of the old slab
-    and is the middle of the snout now - so rebuilding the front drew the badge
-    entirely inside the bodywork, where it was invisible from every angle and
-    from every screenshot. Nothing about it errored and nothing about it looked
-    wrong; it was simply not there.
+def test_the_bonnet_is_one_unbroken_surface(rt):
+    """**The whole point of the third attempt.** Every version of a separate nose
+    piece drew a line across the widest, flattest, best-lit panel on the car, and
+    the two sides of that line catch the light differently however well the pieces
+    are aligned - sloped it is a crease, flat it is a step. The only way not to
+    have the line is not to have the join, so the body box runs the full length of
+    the car and the front of the car is that box's own front face.
 
-    So: it has to be at least as far forward as the frontmost bodywork.
+    Checked as "nothing in the body colour begins where the body ends", because
+    that is the shape of the mistake rather than one particular instance of it.
     """
-    front = rt.call("(function () {"
-                    "  const parts = build({badge: 'laurel'}).view.group"
-                    "    .children[0].children"
-                    "    .filter((c) => c.geometry && c.geometry.parameters)"
-                    "    .map((c) => [c.position.z - c.geometry.parameters.depth / 2,"
-                    "                 c.geometry.parameters.width]);"
-                    "  return parts;"
-                    "})()")
-    plain = rt.call("(function () {"
-                    "  return build(null).view.group.children[0].children"
-                    "    .filter((c) => c.geometry && c.geometry.parameters)"
-                    "    .map((c) => c.position.z - c.geometry.parameters.depth / 2);"
-                    "})()")
-    # The badge is the box the loaded car has and the plain one does not.
-    badge = [z for z, w in front if abs(w - 1.4) < 1e-9]
-    assert len(badge) == 1, "the nose flash is gone"
-    assert badge[0] <= min(plain) + 0.02, "the badge is buried in the bodywork"
+    boxes = rt.call("build(null).view.group.children[0].children"
+                    ".filter((c) => c.geometry && c.geometry.parameters)"
+                    ".map((c) => [c.position.z, c.geometry.parameters.depth,"
+                    "             c.geometry.parameters.width])")
+    body = max(boxes, key=lambda b: b[1])            # the longest box is the body
+    nose = body[0] - body[1] / 2
+    assert abs(nose - (-2.2)) < 1e-9, "the body no longer reaches the nose"
+    # Nothing else may be a full-width *panel* butting onto the body's front
+    # face, which is what a nose piece is. The dark bar is full width and does
+    # sit there, so depth is what separates the two: a trim strip standing 0.04
+    # off the paint is a detail, and anything a fifth of a unit deep is bodywork
+    # and brings a seam with it.
+    for z, d, w in boxes:
+        if (z, d, w) == tuple(body):
+            continue
+        assert not (w > 1.8 and d > 0.2 and abs((z + d / 2) - nose) < 0.05), \
+            f"a full-width panel butts onto the nose at z={z}"
+
+
+def test_the_decals_reach_the_ends_of_the_panels_they_are_on(rt):
+    """The bonnet and the roof have both changed length once - the bonnet grew to
+    the nose when the body did, and the roof shrank when its front became a raked
+    windscreen. Every stripe range that had those lengths written into it as a
+    literal then ran off the end of its own panel: the roof stripes hung half a
+    unit past the front of the roof, floating in the air over the screen.
+    """
+    BONNET, ROOF = (-2.2, 1.7), (-0.15, 0.9)
+    for name in ("centre", "twin", "band", "pinstripe", "fade", "halves"):
+        pos = rt.call(f"liveryMesh(liveryOf({{livery: '{name}'}})).pos")
+        zs = [(pos[i + 1], pos[i + 2]) for i in range(0, len(pos), 3)]
+        deck = [z for y, z in zs if abs(y - 0.565) < 1e-6]
+        roof = [z for y, z in zs if abs(y - 1.04) < 1e-6]
+        assert deck, name
+        assert min(deck) >= BONNET[0] - 1e-9, f"{name} runs past the nose"
+        assert max(deck) <= BONNET[1] + 1e-9, f"{name} runs past the tail"
+        if roof:
+            assert min(roof) >= ROOF[0] - 1e-9, f"{name} hangs off the roof front"
+            assert max(roof) <= ROOF[1] + 1e-9, f"{name} hangs off the roof back"

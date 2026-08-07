@@ -1273,60 +1273,62 @@ over a rule that actually wants three is worse than no text at all.
 ### The front of the car
 
 The rear was designed - a wing, two stays, two brake lamps - and the front was
-not. It was a single 1.7-wide slab in the trim colour, sitting below the body's
-front face and inset 0.1 from each flank, with nothing above it and no lights
-anywhere: a bumper somebody had bolted to a rectangle. And the cabin was a plain
-box on that slab, so **its front was a dead-vertical wall** rising half a unit
-straight out of the bonnet, which is the thing that actually read as wrong. No
-car has that.
+not. It was a 1.7-wide slab in the trim colour, sitting below the body's front
+face and inset 0.1 from each flank, with nothing above it and no lights anywhere.
+And the cabin was a plain box on that slab, so **its front was a dead-vertical
+wall** rising half a unit straight out of the bonnet.
 
-Three pieces now, and the count went *down*:
+**Three attempts, and two of them were the same mistake.** A sloped nose piece,
+then a flush sloped nose piece - and every one of those was *a separate panel
+meeting the bonnet*. That join is the thing that reads badly: it draws a line
+across the widest, flattest, best-lit surface on the car, and the two sides of the
+line catch the light differently however well the pieces are aligned. Sloped, it
+is a crease. Flat, it is a step. Inset, it is a step down the flanks as well.
 
-- **A raked windscreen**, a slab lying along the line from the bonnet deck up to
-  the roof - a rise of 0.475 over 0.6, about 52 degrees off vertical. It replaces
-  the old glass box rather than joining it, so the cabin costs no more than it
-  did: that box was 1.42 wide inside a 1.55 cabin, so its sides were buried and
-  the only part of it anybody ever saw *was* the windscreen face. The cabin box
-  is shorter by exactly the screen's reach.
-- **One nose box, in the body colour, exactly the body's width**, sloping down
-  out of the bonnet.
-- **Headlights**, as one `MeshBuf` and one unlit material.
+So the answer was to delete the join. What is there now:
 
-Four things that were got wrong on the way, in the order they were got wrong:
+- **The body box runs the whole length of the car**, z -2.2 to 1.7, nose
+  included. The front of the car is that box's own front face, so there is
+  nothing to line up because there is no seam. The test for it asks "does
+  anything full-width and deeper than a trim strip butt onto the nose", which is
+  the shape of the mistake rather than one instance of it.
+- **A low dark bar** on that face, in the trim colour, exactly the body's width,
+  underside flush with the body's floor. This is the original nose's one good
+  idea - the front of a car is dark and low - without the two misalignments it
+  had, which were 1.7 inside a 1.9 body and floating 0.055 above the floor.
+- **The headlights**, above the bar on the same flat face, standing off it by the
+  0.04 the bar does. Fixed pale white, no slot: the rule the brake lamps already
+  follow.
+- **A raked windscreen**, a slab lying along the line from the bonnet up to the
+  roof - a rise of 0.475 over 0.6, about 52 degrees off vertical. It replaces the
+  old glass box rather than joining it, so the cabin costs no more than it did:
+  that box was 1.42 wide inside a 1.55 cabin, so its sides were buried and the
+  only part anybody ever saw *was* the windscreen face. The cabin is shorter by
+  exactly the screen's reach.
 
-- **Not the trim colour, and not inset.** Trim is what says "this part is an
-  attachment", and a nose is not one. 1.84 inside a 1.9 body still leaves a 0.03
-  step down each flank, and 0.03 is enough to read as a separate part from any
-  angle. `test_the_nose_is_exactly_as_wide_as_the_body` asserts equality rather
-  than closeness for that reason.
-- **Nothing may stand in front of it.** The first rebuild put a full-width
-  splitter blade ahead of the nose, which is the opposite of flush: it puts a
-  second silhouette in front of the first. It is gone, and the record badge - the
-  one thing allowed to stand proud down there - runs along the bottom edge of the
-  nose instead.
-- **The slope has to be worth having.** At `rotation.x` -0.16 the tip sat 0.065
-  below the bonnet, which is invisible, so the flanks were the only thing saying
-  anything had changed - and what they were saying was "there is a step here". At
-  -0.30 the drop is 0.15 and it reads as a nose. Negative because three.js
-  rotates `y' = y cos - z sin` about X and the car points at -Z.
+Two traps worth not re-learning:
+
 - **A slab is seated by the face you can see, not by its centre.** The windscreen
-  has thickness, so the thing that must land on the deck-to-roof line is its top
-  face - the centre sits half a thickness under that line along its own normal.
-  Centred on the line instead, the leading edge stands an eighth of a unit proud
-  of the bonnet and draws a dark fin sticking up out of the paint, which looks
-  deliberate and is why it needs a test rather than an eye.
+  has thickness, so the thing that must land on the bonnet-to-roof line is its
+  top face - the centre sits half a thickness under that line along its own
+  normal. Centred on the line instead, the leading edge stands an eighth of a
+  unit proud of the bonnet and draws a dark fin out of the paint, which looks
+  deliberate. Pinned, because an eye slides over it.
+- **The panels' lengths are named, not typed out.** The bonnet grew to the nose
+  when the body did and the roof shrank when its front became a windscreen, and
+  every stripe range with the old length written into it as a literal then ran off
+  the end of the panel it decorates - the roof stripes hung half a unit past the
+  front of the roof, floating in the air over the screen. `liveryMesh` has
+  `NOSE`/`TAIL`/`RF`/`RB` for that reason and a test walks every livery's
+  vertices against them.
 
-Two rules the front may not break, both pinned: **it may not make the car
-longer** (the collision radius is `tuning.py`'s and has not moved, so the nose
-ends where the old slab did), and **the nose has to reach the floor at its root**
-the way the body does - at two-thirds height it met the deck correctly and left a
-slot of open air under it you could see daylight through, which is worse than the
-slab it replaced and looks fine from every angle except the two that matter.
+Nothing here may make the car longer: the collision radius is `tuning.py`'s and
+has not moved, so the drawn car still ends where it always did.
 
 A plain car is **15 meshes and 7 materials** and a fully loaded one 21 and 10.
-Those are pinned in `test_garage_js.py` and a change to them has to be a
-deliberate edit: the car is drawn eight times on a full grid, so a mesh added
-carelessly to one is eight more draw calls on a phone.
+Those are pinned and a change has to be a deliberate edit: the car is drawn eight
+times on a full grid, so a mesh added carelessly to one is eight more draw calls
+on a phone.
 
 ### Look: skies and worlds
 
@@ -1871,7 +1873,7 @@ field from a dark field.
 
 ### Tests
 
-`scripts/tests.sh drive` - 705 tests, about 1:25 (four workers, split by file). `test_tracks.py` and
+`scripts/tests.sh drive` - 706 tests, about 1:25 (four workers, split by file). `test_tracks.py` and
 `test_runcheck.py` are pure Python; `test_app.py` runs the real routes against a
 throwaway SQLite file (the `/solo` memory, the board and ghost APIs, and a guest's run
 being replayed after login). **`test_race.py` covers the room's race machine** -
@@ -1957,8 +1959,10 @@ decal clears its panel and faces up (the cross product taken from the raw
 positions, since the stub's `computeVertexNormals` does nothing), and that
 nothing a livery does moves any part of the car that was already there. The
 front has its own group: that the headlights are one mesh and never the driver's
-colour, that the nose is exactly as wide as the body, that the windscreen is raked
-and seated by its top face, that the nose leaves no slot under it, that the car did not get longer, and that the laurel's nose flash is
+colour, that the bonnet is one unbroken surface with no panel butting onto the nose,
+that the windscreen is raked and seated by its top face, that the dark bar sits
+on the floor of the car, that every livery's stripes stay on the panel they are
+drawn on, that the car did not get longer, and that the laurel's nose flash is
 **on** the nose rather than inside it - which it was, silently, for as long as it
 took to look at a screenshot.
 **Both of them exist mainly to say the same thing**: an account with no garage

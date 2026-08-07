@@ -146,8 +146,18 @@ function liveryMesh(L) {
   const buf = new MeshBuf();
   const S = L.stripe.getHex(), B = L.body.getHex();
   const LIFT = 0.01;
-  // The two panels a stripe can lie on, from the chassis boxes above.
+  // The two panels a stripe can lie on, from the chassis boxes above, and **the
+  // extent of each of them**. These are named rather than typed out at each case
+  // because they are not free numbers - they are the bonnet and the roof, and
+  // when either of those changed shape every literal that quietly encoded the old
+  // one became a stripe running off the end of the panel it decorates. Both have
+  // moved once already: the bonnet now reaches the nose at -2.2 because the body
+  // does, and the roof starts at -0.15 because the front of the cabin became a
+  // raked windscreen. Written out, the roof stripes hung half a unit past the
+  // front of the roof, floating in the air over the screen.
   const DECK = 0.555 + LIFT, ROOF = 1.03 + LIFT;
+  const NOSE = -2.2, TAIL = 1.7;            // the bonnet, end to end
+  const RF = -0.15, RB = 0.9;               // the roof, front and back
   // Wound anticlockwise seen from above, so `computeVertexNormals` gives these
   // an upward normal. The obvious order is the other one and it is silently
   // wrong: the decal still draws, and it is lit from underneath, so a bright
@@ -159,28 +169,28 @@ function liveryMesh(L) {
 
   switch (L.livery) {
     case 'centre':
-      deck(-0.17, 0.17, -1.7, 1.7, S); roof(-0.17, 0.17, -0.7, 0.9, S); break;
+      deck(-0.17, 0.17, NOSE, TAIL, S); roof(-0.17, 0.17, RF, RB, S); break;
     case 'twin':
       for (const x of [-0.42, 0.14]) {
-        deck(x, x + 0.28, -1.7, 1.7, S); roof(x, x + 0.28, -0.7, 0.9, S);
+        deck(x, x + 0.28, NOSE, TAIL, S); roof(x, x + 0.28, RF, RB, S);
       }
       break;
     case 'band':
-      deck(-0.45, 0.45, -1.7, 1.7, S); roof(-0.45, 0.45, -0.7, 0.9, S); break;
+      deck(-0.45, 0.45, NOSE, TAIL, S); roof(-0.45, 0.45, RF, RB, S); break;
     case 'hoop':                          // across the car rather than along it
-      deck(-0.94, 0.94, 0.35, 0.85, S); roof(-0.76, 0.76, -0.7, 0.9, S); break;
+      deck(-0.94, 0.94, 0.35, 0.85, S); roof(-0.76, 0.76, RF, RB, S); break;
     case 'halves':                        // the nose half, so it reads head on
-      deck(-0.94, 0.94, -1.7, 0.05, S); break;
+      deck(-0.94, 0.94, NOSE, 0.05, S); break;
     case 'pinstripe':                     // gated: two hairlines, deliberately fine
       for (const x of [-0.5, 0.44]) {
-        deck(x, x + 0.06, -1.7, 1.7, S); roof(x, x + 0.06, -0.7, 0.9, S);
+        deck(x, x + 0.06, NOSE, TAIL, S); roof(x, x + 0.06, RF, RB, S);
       }
       break;
     case 'fade': {
       // Baked into the vertices: nose in the stripe colour, tail in the body's.
-      const N = 10;
+      const N = 10, LEN = TAIL - NOSE;
       for (let i = 0; i < N; i++) {
-        const z0 = -1.7 + (3.4 * i) / N, z1 = -1.7 + (3.4 * (i + 1)) / N;
+        const z0 = NOSE + (LEN * i) / N, z1 = NOSE + (LEN * (i + 1)) / N;
         const c = new THREE.Color(S).lerp(new THREE.Color(B), i / (N - 1));
         deck(-0.94, 0.94, z0, z1, c.getHex());
       }
@@ -234,9 +244,18 @@ export class CarView {
     const glassMat = mat(L.glass);
     const tyreMat = mat(0x1c1f26);
 
-    // chassis: a wedge-ish stack of boxes, Polytrack-simple
-    const lower = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.55, 3.4), bodyMat);
-    lower.position.y = 0.28;
+    // chassis: a stack of boxes, Polytrack-simple
+    //
+    // **The body runs the whole length of the car, nose included**, from z -2.2
+    // to 1.7 - it used to stop at -1.7 and hand the last half-unit to a separate
+    // nose piece. There is no nose piece now, and that is the point: every
+    // version of one drew a line across the full width of the car where it met
+    // the bonnet, and a fold across the widest, flattest, most-lit panel on the
+    // car catches the light differently on each side of itself. A sloped nose
+    // made it a crease; a flat one made it a step. The only way to not have the
+    // line is to not have the join.
+    const lower = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.55, 3.9), bodyMat);
+    lower.position.set(0, 0.28, -0.25);
     this.body.add(lower);
     // The cabin is shorter than it was, because the front half of it is now the
     // windscreen rather than a wall.
@@ -265,34 +284,35 @@ export class CarView {
     screen.rotation.x = -0.667;
     this.body.add(screen);
     // --- the front ---------------------------------------------------------
-    // The whole front used to be one box: a 1.7-wide slab in the trim colour,
-    // sitting below the body's front face and inset 0.1 from each flank, with
-    // nothing above it - a bumper somebody had bolted to a rectangle. It is one
-    // box again now, but the *body's own* box: same colour, **exactly the body's
-    // width**, and sloping down out of the bonnet rather than hanging off it.
+    // **Three things have been tried here and two of them were the same
+    // mistake.** The front started as a 1.7-wide slab in the trim colour, sitting
+    // below the body's front face and inset 0.1 from each flank with nothing
+    // above it - a bumper bolted to a rectangle, and no lights. Then it was a
+    // sloped snout plus a splitter blade. Then one flush sloped snout.
     //
-    // Three attempts' worth of things not to do again:
+    // Every one of those was a *separate piece of bodywork meeting the bonnet*,
+    // and that join is the thing that reads badly: it draws a line across the
+    // widest, flattest, best-lit panel on the car, and the two sides of that line
+    // catch the light differently however the pieces are aligned. Sloped, it is a
+    // crease. Flat, it is a step. Inset, it is a step down the flanks as well.
     //
-    // * **Not the trim colour.** Trim is what says "this part is an attachment",
-    //   and the nose of a car is not one.
-    // * **Not inset.** 1.84 inside a 1.9 body leaves a 0.03 step down each
-    //   flank, which is enough to read as a separate part from any angle. Flush
-    //   means flush.
-    // * **Not with a blade in front of it.** A splitter protruding past the nose
-    //   is the opposite of flush - it puts a second silhouette in front of the
-    //   first. The record badge sits along that bottom edge when it is earned,
-    //   which is the only thing that has any business sticking out down there.
+    // So there is no separate piece. The body box runs to the nose (see `lower`),
+    // and the front of the car is that box's own front face - which leaves
+    // nothing to line up, because there is no seam. What sits on the face:
     //
-    // The tilt is `rotation.x`, and it is **negative**: three.js rotates
-    // `y' = y cos - z sin` about X, and the car points at -Z, so a negative
-    // angle is what drops the nose. At 0.30 the tip sits 0.15 below the bonnet,
-    // which is a nose; at the 0.16 it started on the drop was 0.065 and the
-    // slope was invisible, so the flanks were the only thing saying anything had
-    // changed - and they were saying "there is a step here".
-    const snout = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.42, 0.50), bodyMat);
-    snout.position.set(0, 0.28, -1.95);
-    snout.rotation.x = -0.30;
-    this.body.add(snout);
+    // * **A low dark bar**, in the trim colour, exactly the body's width and
+    //   with its underside flush with the body's floor. This is the original
+    //   nose's one good idea - the front of a car is dark and low down - and the
+    //   original had it 1.7 wide and floating 0.055 above the floor, which is
+    //   the misalignment that made it look stuck on.
+    // * **The headlights**, above the bar on the same flat face.
+    //
+    // Nothing here is rotated and nothing protrudes more than the 0.04 the lenses
+    // and the bar stand off the paint, so there is no second silhouette in front
+    // of the first.
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.20, 0.08), darkMat);
+    bar.position.set(0, 0.105, -2.22);
+    this.body.add(bar);
     // Headlights: two lenses, one mesh, one material, and **the colour is not
     // yours**. The reasoning is the brake lamps' own, a screen down: the lamps
     // are the only thing another driver reads off your car, which is why the
@@ -304,11 +324,10 @@ export class CarView {
     // a lens would go glossy with the paint and darken on the side away from the
     // sun. A lamp is a lamp at every angle. One `MeshBuf` rather than two meshes
     // because, unlike the brake lamps, these never change independently.
-    // On the sloped face, so they sit a little further back than a flat nose
-    // would want them - the face at this height is at z = -2.20, and these poke
-    // out the same 0.08 the brake lamps do at the other end.
+    // Sitting on the body's own front face at z = -2.2, clear of the dark bar
+    // below them, and standing off it by the same 0.04 the bar does.
     const lamps = new MeshBuf();
-    for (const s of [-1, 1]) lamps.box(s * 0.53, 0.30, -2.23, 0.23, 0.065, 0.05, 0xffeccc);
+    for (const s of [-1, 1]) lamps.box(s * 0.53, 0.37, -2.22, 0.23, 0.065, 0.04, 0xffeccc);
     const headMat = new THREE.MeshBasicMaterial({
       color: 0xffeccc, transparent: ghost, opacity: this._solid });
     this._mats.push(headMat);
@@ -420,13 +439,11 @@ export class CarView {
       // no angle could see it. Nothing errored and nothing looked wrong; it was
       // simply not there.
       //
-      // It runs along the bottom edge of the nose, which is the one line on the
-      // front that nothing else uses and the only place anything is allowed to
-      // stand proud of the bodywork - the splitter that used to live there was
-      // taken out precisely because it was not flush.
-      const flash = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.07, 0.06),
+      // It runs across the front face in the gap between the dark bar and the
+      // headlights, which is the one band up there nothing else uses.
+      const flash = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.055, 0.05),
                                    mat(RECORD_GREEN));
-      flash.position.set(0, 0.12, -2.16);
+      flash.position.set(0, 0.255, -2.22);
       this.body.add(flash);
     }
     this.plateColor = L.badge === 'laurel'
