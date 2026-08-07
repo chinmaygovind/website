@@ -467,7 +467,18 @@ const TAU = Math.PI * 2;
  * no gain. Describing the corners is the interesting part; their order is not.
  */
 function badgeShape(buf, badge, y, C) {
-  const P = ([u, v]) => [u, y, BADGE_Z + v * STRETCH];
+  // Icon space is **as the badge is read**, and both axes are mapped for that
+  // rather than one. A badge on a bonnet is read from in front of the car, and the
+  // front camera sits at negative z looking toward +z - so its screen-right is
+  // world **-x**, not +x. Sending `u` straight through therefore mirrored every
+  // chiral shape: the laurel's numeral came out as a back-to-front 1, and it is the
+  // only badge in the case that can show it, because the other seven are all
+  // symmetric about their own centreline. `v` is negated for the matching reason
+  // one step further on (`BADGE_Z + v`, tail-up).
+  //
+  // So: in here, +u is right and +v is up, *from the reading position*. Anything
+  // added later can be described the way it would be drawn on paper.
+  const P = ([u, v]) => [-u, y, BADGE_Z + v * STRETCH];
   const tri2 = (a, b, c, color) => {
     const A = P(a), B = P(b), D = P(c);
     // The y of (B-A) x (D-A), in **world** space rather than in icon space. That
@@ -521,8 +532,11 @@ function badgeShape(buf, badge, y, C) {
       for (let r = 0; r < 4; r++) {
         for (let c = 0; c < 4; c++) {
           const u0 = -2 * W + c * W, v0 = 2 * W - (r + 1) * W;
+          // `+ 1` compensates for `P` mirroring u: without it the flag comes out
+          // with the light and dark squares swapped, which is still a chequered
+          // flag but is a visual change nobody asked for.
           quad2([u0, v0], [u0 + W, v0], [u0 + W, v0 + W], [u0, v0 + W],
-                (r + c) % 2 ? linear(CHECKER_LIGHT) : C);
+                (r + c + 1) % 2 ? linear(CHECKER_LIGHT) : C);
         }
       }
       break;
@@ -536,49 +550,88 @@ function badgeShape(buf, badge, y, C) {
       }
       break;
     }
-    // A thin band with three tall points standing well clear of it. The first go
-    // had a thick band and short points and came out as a solid arrowhead: the
-    // gaps between the points are the whole of what makes it a crown, so they
-    // have to be taller than the band rather than notches in it.
+    // **One connected silhouette**: a solid band with three points growing out of
+    // it and V notches between them, which is how a crown is drawn.
+    //
+    // It was a thin band with three narrow spikes standing off it, on the theory
+    // that "the gaps are the crown" - and the gaps *were* wide, but they were gaps
+    // between three separate triangles and a bar, so it read as three trees on a
+    // wire rather than as one object. What made that hard to see from inside the
+    // code is foreshortening: the front camera sits at a pitch of 0.14, so the v
+    // axis is squashed by about 7x on screen and a band 0.09 of icon space tall
+    // came out a couple of pixels thick. **A band has to be thick in v to be a band
+    // at all**, which is the general lesson - the axis that reads as height is the
+    // one the camera has almost none of.
+    //
+    // So it is drawn as one outline: a thick band, and above it a zigzag whose
+    // notches stop **short of the band** rather than reaching it. That last part is
+    // what makes it a crown and not a mountain range - cut the V's all the way down
+    // and the three peaks are three triangles standing on a bar again, which is
+    // where this started. Stopping them at `NOTCH` leaves a continuous shoulder, so
+    // the eye follows one silhouette across the top.
+    //
+    // **Two pieces with the paint between them: the circlet, then the points.**
+    //
+    // Making it connected was the easy half. The hard half is that a crown is only a
+    // crown because of the *line* between its band and its points - and in one
+    // colour there is no line, so band-plus-points welded together is a silhouette
+    // with three bumps on it, which is a row of hills. Both connected attempts read
+    // exactly that way, and narrowing them (the badge comes out about 2.5x wider
+    // than it is deep, so a point as tall as it is wide arrives as a shallow peak)
+    // only made a narrower hill.
+    //
+    // So the line is a gap, which is what the shield already does and the reason it
+    // works. Two pieces is not the thing that looked broken before: that was three
+    // separate spikes standing on a bar, four floating shapes with their feet
+    // touching. Here the points are **one** zigzag block - the notches stop halfway
+    // down, so they share a continuous base - sitting over one continuous band. Two
+    // deliberate pieces read as a crown; four incidental ones read as a mistake.
     case 'crown': {
-      const W = R * 0.80, BAND = [-0.20, -0.11];
-      quad2([-W, BAND[0]], [W, BAND[0]], [W, BAND[1]], [-W, BAND[1]]);
-      // Half-width 0.055 against a spacing of 0.18, so the gaps are wider than
-      // the feet of the points. At 0.085 they were 0.005 apart and the three
-      // merged into one solid arrowhead - the gaps *are* the crown.
-      for (const u of [-W * 0.66, 0, W * 0.66]) {
-        tri2([u - 0.055, BAND[1]], [u + 0.055, BAND[1]], [u, 0.22]);
+      const W = R * 0.78, BOT = -0.34, RIM = -0.16;
+      const FOOT = -0.105, NOTCH = 0.06;    // the points' base, and the V's floor
+      const HI = 0.31, LO = 0.22;           // centre point, outer points
+      quad2([-W, BOT], [W, BOT], [W, RIM], [-W, RIM]);
+      // The top edge, left to right: up at the three points, down at the notches.
+      const top = [[-W, FOOT], [-2 * W / 3, LO], [-W / 3, NOTCH], [0, HI],
+                   [W / 3, NOTCH], [2 * W / 3, LO], [W, FOOT]];
+      // One trapezoid per segment of that edge, dropped to the points' own base.
+      // The outline is not convex, so a fan from any single point would fill the
+      // notches in; per-segment is the shape whatever the zigzag does.
+      for (let k = 0; k < top.length - 1; k++) {
+        const a = top[k], b = top[k + 1];
+        // The two outer segments already start (or finish) on the base line, so
+        // their trapezoid is really a triangle - emitted as a quad it carries a
+        // **zero-area** triangle, which has no normal and therefore no facing at
+        // all. `test_every_decal_faces_away_from_the_car` is what says so.
+        if (a[1] === FOOT) tri2([a[0], FOOT], [b[0], FOOT], b);
+        else if (b[1] === FOOT) tri2([a[0], FOOT], [b[0], FOOT], a);
+        else quad2([a[0], FOOT], [b[0], FOOT], b, a);
       }
       break;
     }
-    // Three pips in a row with the middle one biggest - **not** the three steps a
-    // podium actually is, and the reason is worth writing down because it applies
-    // to any badge somebody adds later.
+    // **Three bars on a common baseline**, in the order a podium is: second on the
+    // left, first in the middle and tallest, third on the right and shortest.
     //
-    // This is a decal lying flat on a bonnet, so **there is no up in it**. What the
-    // icons call height is length along the car, pointing away from the camera - so
-    // three blocks of three different heights come out as three blocks of three
-    // different *lengths*, and no arrangement of them reads as a podium. Steps were
-    // tried separated and connected; the first was a bar chart and the second a
-    // blob with fingers.
+    // This went the long way round. Bars were the first attempt and were rejected
+    // as "a bar chart", then it was a staircase, then three discs of different
+    // *sizes* on the reasoning that a decal lying flat has no up in it and size is
+    // the one thing foreshortening keeps. Two things were wrong with that. The
+    // discs read as three dots and not as a podium at all, so the cleverness bought
+    // nothing; and the premise was overstated - the axis is squashed, not gone, and
+    // three bars sharing one baseline are read as a group by their *tops*, which is
+    // exactly the comparison a podium is. It reads as a bar chart because a podium
+    // and a bar chart are the same picture.
     //
-    // What survives being flat is anything whose plan view is the whole idea:
-    // chequers is a grid, sunburst is radial, the wreath is a ring. So the podium
-    // is three pips and a bigger one in the middle, which says first-of-three by
-    // size rather than by height - and size is the one thing foreshortening keeps.
-    // Discs and not diamonds, for the same reason as everything else here: a
-    // diamond tapers to a point at the top and bottom, and a point along the
-    // foreshortened axis is the first thing to disappear - three of them came out
-    // as three horizontal slivers. A disc has no thin part to lose.
+    // The bars are separated (the gap is a third of a bar) rather than touching, or
+    // the three tops read as one stepped block.
     case 'podium': {
-      // Spaced so there is clear bodywork between them: at 0.235 apart the outer
-      // discs overlapped the middle one and the three read as a single blob.
-      for (const [u, s] of [[-0.285, 0.085], [0, 0.145], [0.285, 0.085]]) {
-        for (let i = 0; i < 10; i++) {
-          const a0 = (i / 10) * TAU, a1 = ((i + 1) / 10) * TAU;
-          tri2([u, 0], [u + Math.cos(a0) * s, Math.sin(a0) * s],
-               [u + Math.cos(a1) * s, Math.sin(a1) * s]);
-        }
+      const W = R * 0.80, BW = 0.144, GAP = 0.056, BASE = -0.26;
+      // Left to right *as read*, which is what icon space means here - so this
+      // list is the order somebody standing at the nose sees.
+      const TOPS = [0.10, 0.26, 0.00];      // 2nd, 1st, 3rd
+      for (let k = 0; k < 3; k++) {
+        const l = -W + k * (BW + GAP), r = l + BW;
+        quad2([l, BASE], [r, BASE], [r, TOPS[k]], [l, TOPS[k]]);
       }
       break;
     }
@@ -603,10 +656,17 @@ function badgeShape(buf, badge, y, C) {
     // colour, and a solid road with dashes painted on it in the same colour is a
     // solid road. Converging lines are also what actually says distance; the first
     // go filled the whole strip in and read as an arrowhead.
+    // **It converges toward the nose, not toward the windscreen.** It was the other
+    // way, which is the road you have already driven receding behind you - and every
+    // other badge here faces the reader, so a vanishing point pointing away from
+    // them was the one shape on the car aimed at nobody. Narrow end at the bottom
+    // as read, wide end at the top, so it opens out toward you.
     case 'ribbon': {
-      const BOT = -0.24, TOP = 0.26, WB = 0.21, WT = 0.06;
+      const BOT = -0.24, TOP = 0.26, WB = 0.06, WT = 0.21;
       const vAt = (t) => BOT + (TOP - BOT) * t;
-      const wAt = (t) => 0.050 - 0.030 * t;          // the line narrows with it
+      // The markings widen with the road, or the near end is a thick stub on a
+      // hairline and the taper stops reading as distance.
+      const wAt = (t) => 0.020 + 0.030 * t;
       const strip = (t0, t1, at, scale) => {
         const w0 = wAt(t0) * scale, w1 = wAt(t1) * scale;
         quad2([at(t0) - w0, vAt(t0)], [at(t0) + w0, vAt(t0)],

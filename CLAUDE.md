@@ -1349,10 +1349,10 @@ rather than a choice between them. A fully loaded car went from 20 meshes to 19.
 | `laurel` | set a track record | a scalloped ring around a **1**, record green |
 | `checkers` | win a multiplayer race | a 4x4 board, black and white |
 | `chevrons` | Ace rating (elo 1250) | three stacked V's, record green |
-| `crown` | hold 3 records at once | a band and three points, record green |
-| `podium` | 10 podiums | three pips, biggest in the middle, bronze |
+| `crown` | hold 3 records at once | a circlet and a 3-point crest, split by a gap, green |
+| `podium` | 10 podiums | three bars, tallest in the middle, bronze |
 | `sunburst` | a gold on every track | 12 rays and a hub, gold |
-| `ribbon` | 100 km driven | a road's markings converging away, grey |
+| `ribbon` | 100 km driven | a road's markings opening out toward you, grey |
 | `shield` | a gold on any 3 tracks | a crest, chief and field split by a gap, steel |
 
 - **Every badge has a default colour and every badge can be recoloured.**
@@ -1370,16 +1370,23 @@ rather than a choice between them. A fully loaded car went from 20 meshes to 19.
   spelling and is what a chequered flag is called - but the value is also the word
   on the chip, and nobody looking for the chequered-flag badge types it that way.
 
-**The thing to know before adding one: a decal lying flat on a bonnet has no
-*up*.** What the icons call height is length along the car, pointing away from the
-camera, so anything whose meaning is vertical does not survive. A podium was tried
-as three separated bars (a bar chart), then as a connected staircase (a blob with
-fingers) before becoming three pips of different *sizes* - because size is the one
-thing foreshortening keeps. What works here is anything whose plan view is the
-whole idea: a grid, a radial burst, a ring, a spiked bar, converging lines.
+**The thing to know before adding one: the bonnet is squashed, not flat.** What the
+icons call height is length along the car, and it arrives on screen at about **0.4 of
+its width** - measured off a screenshot, from the front camera at its own pitch. So
+anything drawn as tall as it is wide comes out wide and shallow. That is a scale
+factor, though, and for a long time it was written down here as something stronger:
+"a decal lying flat has no *up* in it", and the podium was built around that. It was
+tried as three separated bars and called a bar chart, then as a staircase, then as
+three discs of different *sizes* on the reasoning that size is the one thing
+foreshortening keeps. The discs read as three dots. **It is bars now**, which is
+where it started: three bars sharing a baseline are compared by their tops, that
+comparison survives being squashed, and a podium and a bar chart are the same
+picture. The rule that actually holds is the weaker one - draw it taller and
+narrower than looks right, and check it in a screenshot.
 
-**And there is only one right way round.** Every badge is read by somebody sitting
-behind the car, so an icon's tail has to point at the windscreen and its head at
+**And there is only one right way round, in both axes.** Every badge is read by
+somebody standing in front of the car, so an icon's tail has to point at the
+windscreen and its head at
 the nose - `P` maps icon-space `+v` to `BADGE_Z + v * STRETCH`, i.e. *away* from
 the camera. It was `BADGE_Z - v` first, which put every chevron pointing at the
 driver and every crown upside down, and **it looks perfectly fine in the garage
@@ -1387,32 +1394,69 @@ from three of the four `?view=` angles** - a symmetric ring like the laurel is
 identical either way, and from the side you cannot tell. It was found by
 photographing `?view=front`, which is the check to make when adding one.
 
-Flipping that mapping also **inverts the handedness of icon space**, so every
-triangle wound correctly before the flip is wound backwards after it. Rather than
-reverse eight hand-drawn shapes, `tri2` computes the *world* normal from the three
-corners it was handed and emits whichever order faces up - so the winding is no
-longer something a caller can get wrong, in either coordinate system. Nine tests
-fail if that is reverted, which is what says it is load-bearing rather than
-defensive.
+**And `u` is mirrored for the same reason `v` is**, which is the half that was
+missed first time. The front camera sits at negative z looking toward +z, so its
+screen-right is world **-x** - meaning a shape drawn with `+u` as "right" comes out
+back-to-front. Only one badge in the case can show it: the laurel's numeral, which
+appeared as a mirrored **1**, since the other seven are symmetric about their own
+centreline and a mirrored symmetric shape is the same shape. `P` negates `u`, so
+inside `badgeShape` **+u is right and +v is up, from the reading position** - a new
+icon can be described the way it would be drawn on paper. One consequence to know:
+the `checkers` parity carries a `+ 1` to cancel the mirror, or its light and dark
+squares swap.
+
+Flipping either axis also **inverts the handedness of icon space**, so every triangle
+wound correctly before comes out backwards after. Rather than reverse eight
+hand-drawn shapes, `tri2` computes the *world* normal from the three corners it was
+handed and emits whichever order faces up - so the winding is not something a caller
+can get wrong, in any coordinate system, and the `u` mirror above cost nothing
+because of it. Measured, since a green suite means little for a pair like this: flip
+the `v` mapping alone and **3** tests fail; revert `tri2` alone and exactly **1**
+does, the one that reads the source, because under the current mapping the two cross
+products are proportional and no geometry can separate them; do both and **12** fail.
+That is why the source-reading test is not padding - it is the only thing between a
+future mapping change and eight silently dark badges.
 
 Two more things that cost iterations:
 
-- **`STRETCH` (1.28) stretches every icon along z**, so a shape described square
-  appears square from the chase camera. Its ceiling is the bonnet: 1.88 across and
-  only 0.95 long, so the *length* binds and a round badge tops out at about 0.87
-  long by 0.68 wide. Going wider is free; going longer runs under the windscreen.
-- **A gap is how a one-colour badge gets internal structure.** The shield was a
-  single solid outline and was the only badge with nothing inside it - a grey blob,
-  and one that looked perfectly fine as a *silhouette*, which is what a shape test
-  measures. It is two pieces now, a chief and a field with the paint showing
-  between them, and that is the general answer here: a second colour is `checkers`'
-  exception rather than a tool, since half a badge that does not follow the colour
-  picker is half a badge somebody cannot customise.
+- **`STRETCH` (1.28) stretches every icon along z, and it is nowhere near enough to
+  make a shape square.** It used to be described as doing exactly that, which is
+  wrong by a factor of two and a half: a square icon still lands on screen about 2.5
+  times wider than it is deep, because most of the squash is the camera's own
+  elevation and not the badge's proportions. It cannot simply be raised either - its
+  ceiling is the bonnet, which is 1.88 across and only 0.95 long, so the length binds
+  and a round badge tops out at about 0.87 long by 0.68 wide. Going wider is free;
+  going longer runs under the windscreen. Treat it as a partial correction and draw
+  the rest of the compensation into the shape, the way the crown does.
+- **A gap is how a one-colour badge gets internal structure, and it is the tool to
+  reach for.** Both badges that needed a line inside them got it this way. The
+  shield was a single solid outline and was the only badge with nothing inside it -
+  a grey blob, and one that looked perfectly fine as a *silhouette*, which is what
+  a shape test measures; it is a chief and a field now. The crown is the sharper
+  case: **a crown is only a crown because of the line between its band and its
+  points**, and in one colour there is no line, so band-welded-to-points is a
+  silhouette with three bumps on it, which is a row of hills. Two connected versions
+  read exactly that way and narrowing them only made a narrower hill. It is a
+  circlet, a gap, and a three-point crest.
+  A second colour is `checkers`' exception rather than a tool: half a badge that
+  does not follow the colour picker is half a badge somebody cannot customise.
+- **Two deliberate pieces read as one object; four incidental ones read as a
+  mistake.** The crown's first version *was* a band with three points, and the
+  complaint about it was that it looked unconnected - which it was, as four separate
+  shapes with their feet touching. The fix is not "connect everything": it is one
+  band and one *zigzag block* whose notches stop halfway down, so the points share a
+  continuous base. Then the only gap on the badge is the one that means something.
 - **Gaps have to be wider than instinct says.** The crown's three points 0.005
   apart merged into a solid arrowhead; nine separate laurel leaves came out as a
   scatter of specks and had to become one continuous scalloped ring; three podium
   discs 0.235 apart overlapped into one blob. Fine articulation dissolves - the
   gaps *are* the shape.
+- **A trapezoid whose short edge sits on the base line is a zero-area triangle
+  waiting to happen.** The crown's zigzag is built one quad per segment of its top
+  edge, dropped to the base - and the two outer segments already start on that base,
+  so the quad collapses. A degenerate triangle has no normal, so it has no *facing*,
+  and `test_every_decal_faces_away_from_the_car` is what said so rather than a
+  screenshot: it draws nothing and looks perfect.
 - **`tri2` fixes its own winding** rather than asking the caller to get it right.
   Seven hand-drawn shapes made of arcs and fans is a lot of chances to reverse an
   order for no gain, and the failure is silent (a decal lit from underneath).
@@ -2306,21 +2350,9 @@ count: the crown, whose band must be furthest from the windscreen, and the shiel
 whose flat top must be nearest it. The chevrons and the ribbon point clearly one way
 to the eye and have as many corners at each end, and the laurel, sunburst, checkers
 and podium are symmetric outright, so listing them here would be six cases that
-cannot fail.
-
-**The mapping and the world-space winding are only safe together, and reverting
-either one alone is caught by different tests** - measured, because this is the kind
-of pair where "the suite is green" means very little. Flip `BADGE_Z + v` back on its
-own and **3** fail: the badges point at the driver, and nothing else breaks, because
-`P` scales `v` by a *positive* `STRETCH` so the icon-space and world-space cross
-products have the same sign. Revert `tri2` to the icon-space cross on its own and
-exactly **1** fails - the one that reads the source - for that same reason: with the
-current mapping the two formulas are literally proportional, so no geometry can tell
-them apart. Revert both, which is the state this batch started from, and **12** fail:
-now the mapping's sign flip makes the icon-space winding face every decal downward,
-and the eight per-badge facing tests light up along with the four above. That is why
-the source-reading test is not redundant padding - it is the only thing standing
-between a future mapping change and eight silently dark badges.
+cannot fail. The mapping and `tri2`'s world-space winding are only safe *together*
+and each is caught by a different test - the numbers are in **The badge case** above,
+measured rather than assumed.
 
 Two more tests say why `FINISH` outlives `FINISHES`: metallic and pearl still render
 (for the replays that carry them), and an entirely unknown finish is a matte car.
