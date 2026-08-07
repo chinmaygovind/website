@@ -28,8 +28,16 @@
   {# The flag is the one thing on here that is not about driving, and it is
      what tells two pages about two people apart at a glance now that this one
      is public. Same art the boards use, one copy on the main site. #}
-  <h1>{% if user.flag_path %}<img class="flag flag-big" src="{{ site_url }}{{ user.flag_path }}"
-    alt="" loading="lazy"/>{% endif %}{{ user.display }}</h1>
+  {# Log out lives here rather than in the nav, and only on your own page. It
+     was the one control on the site whose second press cannot be undone,
+     sitting in the top bar of every page next to things you click all day; here
+     it is beside your own name, which is the one place it reads as being about
+     you rather than as another tab. #}
+  <div class="acct-head">
+    <h1>{% if user.flag_path %}<img class="flag flag-big" src="{{ site_url }}{{ user.flag_path }}"
+      alt="" loading="lazy"/>{% endif %}{{ user.display }}</h1>
+    {% if is_me %}<a class="btn danger mini" href="/logout">Log out</a>{% endif %}
+  </div>
   {# The way out of Drive, and the only link on the page that leaves it. It
      rides on the rating line rather than on a line of its own: it is who this
      is, which is what that line already says, and a row to itself made a

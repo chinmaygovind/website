@@ -274,6 +274,17 @@ table.board tr.me { background: #fff6d9; }
 .acct-tracks td, .acct-tracks th { padding: .3rem .5rem; }
 /* Right, so the last button finishes where the table does. */
 .acct-actions { display: flex; gap: .55rem; justify-content: flex-end; }
+/* Your name and the way out, on one line. `baseline` rather than `center` so the
+   button sits on the name's baseline instead of floating in the middle of a
+   2.3rem cap height, and `wrap` because a long display name next to a flag has
+   already used the row up on a phone. */
+.acct-head { display: flex; align-items: baseline; gap: .7rem; flex-wrap: wrap; }
+.acct-head h1 { margin-right: 0; }
+/* `.btn.mini` is `display: inline-flex`, which blockifies to `flex` as a flex
+   item, so it will happily take a width somebody else set and grow into it.
+   Belt and braces next to the name, where the whole point is that the button is
+   the size of the words in it. */
+.acct-head .btn { flex: none; width: max-content; }
 .btn.mini {
   display: inline-flex; align-items: center; gap: .35rem;
   font-size: .82rem; padding: .24rem .58rem; border-radius: 8px;
@@ -665,7 +676,13 @@ body.room .solo-only { display: none; }
 /* Leaving is the last thing on the sheet and the only red thing on it: it is
    the one control here you cannot undo by pressing it again. */
 .sheet-foot { margin-top: 1.3rem; padding-top: 1rem; border-top: 1px solid var(--line); }
-.btn.danger { background: var(--red); color: #fff; width: 100%; }
+/* A colour and only a colour. It used to carry `width: 100%` as well, which was
+   redundant where it was used - both of its buttons are in a `.btn-grid`, which
+   sets that already - and a trap for the next one: the first `danger` button
+   outside a grid came out as a full-width red bar across the page, because the
+   rule outranks anything a caller sets at the same specificity from earlier in
+   the file. A variant that silently decides layout is not a variant. */
+.btn.danger { background: var(--red); color: #fff; }
 .btn.danger:hover { background: #d13c33; }
 
 /* --- a setting and the switch that goes with it --------------------------
@@ -1157,3 +1174,101 @@ body.side-open #touch { display: none; }
   vertical-align: 1px;
 }
 .elsewhere:hover { text-decoration: underline; }
+
+/* ---------------------------------------------------------------------------
+   Garage
+   ---------------------------------------------------------------------------
+   A car and the things you can change about it, side by side on a desktop and
+   stacked on a phone with the car on top - because the car is the answer to
+   every control below it, and a control whose result is off screen is a control
+   you have to scroll to understand.
+
+   The viewer is the one dark surface on an otherwise paper-white site. That is
+   deliberate rather than a theme: paint is judged against what is behind it, and
+   eighteen body colours on a #faf8f4 page would all read as pastel. */
+.garage-wrap { max-width: 1180px; }
+.garage {
+  display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr);
+  gap: 1.1rem; align-items: start; margin-top: 1rem;
+}
+@media (max-width: 900px) {
+  .garage { grid-template-columns: 1fr; }
+  .garage-view { position: static; }
+}
+
+.garage-view {
+  /* Sticky, not static. Seven slot sections are taller than any laptop screen,
+     so choosing a badge scrolled the car clean off the top and the one thing
+     the page is for - watching the change - was not on screen at the moment it
+     happened. It also fills the dead space a 4:3 canvas leaves beside a taller
+     column. Turned off below 900px, where the grid is one column and a car
+     pinned to the top would take three quarters of a phone. */
+  position: sticky; top: 1rem;
+  background: #141821;
+  border: 2px solid var(--line); border-radius: 14px; overflow: hidden;
+  box-shadow: 4px 4px 0 rgba(29, 29, 31, .18);
+  /* Landscape, and tall enough that a car seen from a low angle is not cropped
+     at the roof. `aspect-ratio` rather than a height so the canvas keeps its
+     shape at every width without JS. */
+  aspect-ratio: 4 / 3;
+}
+.garage-view canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.garage-hint {
+  position: absolute; left: .7rem; bottom: .6rem; color: #8794a8;
+  font-size: .78rem; letter-spacing: .02em; pointer-events: none;
+}
+/* Saving is silent until it has happened, then says so once and goes. A
+   spinner on every colour drag would be the loudest thing on the screen. */
+.garage-saved {
+  position: absolute; right: .7rem; bottom: .6rem; color: #55e08a;
+  font-size: .78rem; font-weight: 700; opacity: 0; transition: opacity .18s;
+  pointer-events: none;
+}
+.garage-saved.show { opacity: 1; }
+
+.garage-slots { display: flex; flex-direction: column; gap: .5rem; }
+.gsec {
+  border: 2px solid var(--line); border-radius: 12px; padding: .6rem .7rem;
+  background: #fff; box-shadow: 3px 3px 0 rgba(29, 29, 31, .12);
+}
+.gsec h3 { margin: 0 0 .45rem; font-size: .95rem; letter-spacing: .01em; }
+
+.gopt {
+  font-family: var(--display); font-weight: 700; font-size: .82rem;
+  padding: .26rem .6rem; margin: 0 .3rem .3rem 0; border-radius: 8px;
+  border: 2px solid var(--line); background: #fff; color: var(--ink);
+  cursor: pointer; position: relative;
+}
+/* `:not(.on)` is load-bearing, not tidiness. `:hover:not(:disabled)` is three
+   simple selectors against `.on`'s two, so it outranked the highlight and the
+   chosen option went pale the moment the cursor was over it - which is exactly
+   where the cursor is, having just clicked it. The selected row appeared to
+   deselect itself on every single press. */
+.gopt:hover:not(:disabled):not(.on) { background: #f1efe9; }
+.gopt.on { background: var(--ink); color: var(--paper); }
+.gopt.on:hover:not(:disabled) { background: #37373a; }
+.gopt.small { font-size: .74rem; padding: .18rem .45rem; }
+/* A locked row is shown rather than hidden, so there is something to chase -
+   and it carries the reason, which comes from the server with the gate rather
+   than being written again here where it could promise the wrong thing. */
+.gopt.locked {
+  opacity: .45; cursor: not-allowed; border-style: dashed;
+  display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px;
+}
+.glock { font-size: .62rem; font-weight: 600; letter-spacing: .01em; }
+
+/* Eighteen colours in a grid rather than a row: a row wraps into an accidental
+   two-tier layout at exactly the widths a phone uses. */
+.gswatches { display: grid; grid-template-columns: repeat(9, 1fr); gap: .3rem; }
+.gsw {
+  aspect-ratio: 1; border: 2px solid var(--line); border-radius: 7px;
+  cursor: pointer; padding: 0;
+}
+.gsw.on { box-shadow: 0 0 0 3px var(--paper), 0 0 0 5px var(--ink); }
+
+.gpick { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; margin-top: .35rem; }
+.gpick input[type=color] {
+  width: 38px; height: 28px; padding: 0; cursor: pointer;
+  border: 2px solid var(--line); border-radius: 7px; background: none;
+}
+.gnote { font-size: .72rem; color: var(--ink-soft); flex: 1 1 9rem; }

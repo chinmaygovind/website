@@ -829,3 +829,149 @@ def test_leaving_takes_your_name_with_you(env, monkeypatch):
         left = [p.name for p in A.DriveGame.query.get(gid).players]
         assert left == ["stay"]
         assert gone_pid not in r["cars"]
+
+
+# ---------------------------------------------------------------------------
+# Two people, one colour
+# ---------------------------------------------------------------------------
+
+def test_two_people_choosing_one_colour_both_keep_it(env):
+    """The deleted first-free rule, asserted from the other side.
+
+    A seat used to take your colour only if nobody in the room had it already,
+    and fall back to the first colour going otherwise. That was the right trade
+    while nobody had chosen anything - a hashed colour is not yours in any sense
+    worth protecting, and two identical cars on a grid is worse than being the
+    wrong red for one race. It is exactly the wrong trade now: being handed a
+    stranger's colour without being told is far worse than sharing one, and the
+    cars have names over them precisely so colour is not the only way to tell
+    them apart.
+
+    So the rule is gone, and this is what says it stays gone.
+    """
+    import garage
+    with env.app.app_context():
+        game = env.DriveGame(code="SAME", track="sunrise")
+        env.db.session.add(game)
+        env.db.session.commit()
+        seats = []
+        for i, name in enumerate(("alice", "bob")):
+            u = env.User(username=name, email=name + "@example.com")
+            u.set_password("password123")
+            env.db.session.add(u)
+            env.db.session.commit()
+            env.db.session.add(env.DriveGarage(
+                user_id=u.id, livery_json=garage.dumps({"body": "#7b6cf6"}),
+                earned_json="[]"))
+            seats.append(env.DrivePlayer(game_id=game.id, user_id=u.id,
+                                         session_key="sk-" + name, name=name,
+                                         color=garage.color_for(name),
+                                         seat_order=i))
+        env.db.session.add_all(seats)
+        env.db.session.commit()
+
+        roster = env._roster(game.players)
+        assert [p["livery"]["body"] for p in roster] == ["#7b6cf6", "#7b6cf6"]
+        # And the dot, the standings row and the nameplate agree with the car -
+        # `color` is answered off the livery, so nothing points at somebody in a
+        # colour they are not driving.
+        assert [p["color"] for p in roster] == ["#7b6cf6", "#7b6cf6"]
+        # The names are what tell them apart, so they had better be there.
+        assert [p["name"] for p in roster] == ["alice", "bob"]
+
+
+def test_a_seat_takes_the_colour_you_chose_and_not_the_one_you_were_given(env):
+    """`_add_player` writes the hashed colour into the column as a seed, and
+    every path that reports a seat answers off the livery instead - so opening
+    the garage changes the car you turn up in, which is the entire point."""
+    import garage
+    with env.app.app_context():
+        game = env.DriveGame(code="MINE", track="sunrise")
+        u = env.User(username="alice", email="a@example.com")
+        u.set_password("password123")
+        env.db.session.add_all([game, u])
+        env.db.session.commit()
+        seat = env.DrivePlayer(game_id=game.id, user_id=u.id, session_key="sk-a",
+                               name="alice", color=garage.color_for("alice"),
+                               seat_order=0)
+        env.db.session.add(seat)
+        env.db.session.commit()
+
+        hashed = garage.color_for("alice")
+        assert env._roster(game.players)[0]["color"] == hashed
+
+        env.db.session.add(env.DriveGarage(
+            user_id=u.id, livery_json=garage.dumps({"body": "#17bfa8"}),
+            earned_json="[]"))
+        env.db.session.commit()
+        assert env._roster(game.players)[0]["color"] == "#17bfa8"
+        assert seat.color == hashed, "the column is the seed, not the answer"
+
+
+def test_a_guest_seat_is_still_hashed_off_the_name_it_typed(env):
+    """Guests spread out for free, which is what let the first-free rule go
+    entirely: they have no account to store a livery against, so the hash is
+    still the whole answer - and `GUEST_COLOR` for all of them would have put
+    every guest in a room in the same car."""
+    import garage
+    assert garage.color_for("dave") != garage.color_for("erin")
+    with env.app.app_context():
+        game = env.DriveGame(code="GST", track="sunrise")
+        env.db.session.add(game)
+        env.db.session.commit()
+        for i, n in enumerate(("dave", "erin")):
+            env.db.session.add(env.DrivePlayer(
+                game_id=game.id, session_key="sk-" + n, name=n,
+                color=garage.color_for(n), seat_order=i))
+        env.db.session.commit()
+        roster = env._roster(game.players)
+        assert roster[0]["color"] != roster[1]["color"]
+        assert all(p["livery"]["body"] == p["color"] for p in roster)
+
+
+def test_a_replay_keeps_the_cars_as_they_were_on_the_day(env):
+    """The livery goes into `drive_races.cars_json` beside the colour rather than
+    being looked up when the replay is watched. A race is a record of an evening,
+    so somebody repainting next week must not repaint themselves in it - which is
+    the opposite of the ghost rule, and deliberately: a ghost is a lap you are
+    chasing *now*, and a replay is a thing that happened.
+    """
+    import garage
+    A = env
+    with A.app.app_context():
+        game = A.DriveGame(code="REC", track="sunrise")
+        u = A.User(username="alice", email="a@example.com")
+        u.set_password("password123")
+        A.db.session.add_all([game, u])
+        A.db.session.commit()
+        alice = A.DrivePlayer(game_id=game.id, user_id=u.id, session_key="sk-a",
+                              name="alice", color="#fff", seat_order=0)
+        bob = A.DrivePlayer(game_id=game.id, session_key="sk-b", name="bob",
+                            color="#0f0", seat_order=1)
+        A.db.session.add_all([alice, bob])
+        A.db.session.commit()
+        A.db.session.add(A.DriveGarage(
+            user_id=u.id, earned_json="[]",
+            livery_json=garage.dumps({"body": "#17bfa8", "rim_style": "mesh"})))
+        A.db.session.commit()
+
+        r = _recording(A, cars=(alice.pid, bob.pid))
+        A._record_race(r)
+        standings = [{"pid": alice.pid, "name": "alice", "ms": 41000,
+                      "color": "#fff"},
+                     {"pid": bob.pid, "name": "bob", "ms": 42000, "color": "#0f0"}]
+        race = A.DriveRace.query.get(A._store_replay(r, game, standings, "all in"))
+        by = {c["pid"]: c for c in race.cars}
+        assert by[alice.pid]["livery"]["body"] == "#17bfa8"
+        assert by[alice.pid]["livery"]["rim_style"] == "mesh"
+        # A guest has no garage row and still gets a car rather than a hole -
+        # hashed off the name they typed, the same as their seat.
+        assert by[bob.pid]["livery"]["body"] == garage.color_for("bob")
+
+        # And it survives the repaint, because it was written down.
+        A.DriveGarage.query.filter_by(user_id=u.id).first().livery_json = \
+            garage.dumps({"body": "#f2c94c"})
+        A.db.session.commit()
+        again = A.DriveRace.query.get(race.id)
+        assert {c["pid"]: c for c in again.cars}[alice.pid]["livery"]["body"] \
+            == "#17bfa8"

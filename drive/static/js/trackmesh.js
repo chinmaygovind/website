@@ -548,13 +548,17 @@ export class MeshBuf {
     this.quad(v[2], v[6], v[7], v[3], color);
     this.quad(v[3], v[7], v[4], v[0], color);
   }
-  toMesh(material) {
+  /** The accumulated triangles as a geometry, for a caller supplying its own
+   *  material - or several meshes sharing one buffer, which is how a wheel rim
+   *  is four wheels' worth of rim without being four geometries. */
+  toGeometry() {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.col, 3));
     g.computeVertexNormals();
-    return new THREE.Mesh(g, material);
+    return g;
   }
+  toMesh(material) { return new THREE.Mesh(this.toGeometry(), material); }
 }
 
 const THICK = 0.9;      // depth of the tarmac slab under the road surface

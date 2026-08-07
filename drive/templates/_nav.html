@@ -13,7 +13,13 @@
     <a href="/leaderboard" class="{% if active_page == 'leaderboard' %}active{% endif %}">Records</a>
     {% if current_user %}
       <a href="/account" class="{% if active_page == 'account' %}active{% endif %}">Account</a>
-      <a href="/logout">Log out</a>
+      {# The slot Log out used to hold. Logging out is a thing you do once, at
+         the end, and it was sitting in the nav of every page being the one
+         control whose second press cannot be undone - so it has moved next to
+         your name on your own account page, where you already go to look at
+         yourself. It costs a click; the slot buys somewhere to build a car.
+         Accounts only, because a livery has to belong to somebody. #}
+      <a href="/garage" class="{% if active_page == 'garage' %}active{% endif %}">Garage</a>
     {% else %}
       <a href="/login">Log in</a>
     {% endif %}

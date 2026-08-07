@@ -69,7 +69,7 @@ const S = {
   view: null, ghostView: null, ghost: null, ghostTimes: null,
   // Whose lap the ghost is, and what colour the car drawing it currently is.
   // Two fields because the view is rebuilt only when the answer changes.
-  ghostColor: null, ghostViewColor: null,
+  ghostColor: null, ghostViewColor: null, ghostLivery: null,
   // Which lap you are driving against: off | me | wr | run (one picked off the
   // board) | pole. It is what the split deltas are measured against, and it is
   // the lap the ghost car drives if the ghost car is on - two questions, and
@@ -292,7 +292,7 @@ async function openRequestedLap() {
   const d = await fetchGhost(id).catch(() => null);
   if (!d) { toast('That lap is no longer there'); return; }
   if (watch) { startWatching(d.ghost, d.hz || GHOST_RATE, d); return; }
-  useGhost(d.ghost, d.hz || GHOST_RATE, d.color);
+  useGhost(d.ghost, d.hz || GHOST_RATE, d.color, d.livery);
   S.ghostRun = { id: d.id, who: d.who, time_ms: d.time_ms };
   setGhostMode('run', { quiet: true });
   toast('Chasing ' + d.who + '  ' + fmt(d.time_ms));
@@ -311,10 +311,11 @@ function loadTrack(track, opts = {}) {
   S.run = new Run(S.course, track);
   S.car = new Car(T, S.built);
   S.car.id = CFG.me ? CFG.me.pid : 'me';
-  // Your seat's colour in a room, and your own everywhere else - which are the
-  // same colour unless somebody in this room got there first.
-  S.view = new CarView(S.renderer.scene,
-                       (CFG.me && CFG.me.color) || CFG.carColor || '#e8453c');
+  // The car you built, from the garage. A room's seat carries its own copy so
+  // that walking into one does not have to wait for a request, and everywhere
+  // else it comes down with the page. The colour behind it is the fallback for
+  // a guest, who has no garage row and drives whatever their name hashes to.
+  S.view = new CarView(S.renderer.scene, myLivery());
   wireCarEvents();
   resetToStart();
 
@@ -1056,7 +1057,7 @@ async function fetchGhost(id) {
 async function raceGhost(row) {
   const d = await fetchGhost(row.id).catch(() => null);
   if (!d) { toast('Could not load that ghost'); return; }
-  useGhost(d.ghost, d.hz || GHOST_RATE, d.color);
+  useGhost(d.ghost, d.hz || GHOST_RATE, d.color, d.livery);
   S.ghostRun = { id: row.id, who: d.who, time_ms: d.time_ms };
   setGhostMode('run', { quiet: true });
   toggleBoard(false);
@@ -1102,8 +1103,11 @@ function startReplay(cars, opts = {}) {
   stopWatching();
   const built = cars.filter(c => c.frames && c.frames.length > 1).map(c => {
     const color = c.color || '#ffd96b';
-    const view = new CarView(S.renderer.scene, color);
-    view.setLabel(c.name || 'Driver', color);
+    // The livery is on the stored race, so a replay shows the cars as they were
+    // that afternoon. A race recorded before the garage has none and falls back
+    // to its colour, which is exactly the car it was driven in.
+    const view = new CarView(S.renderer.scene, c.livery || color);
+    view.setLabel(c.name || 'Driver', view.plateColor);
     return { g: new Ghost(c.frames, c.hz || GHOST_RATE), view, prev: null,
              name: c.name || 'Driver', color, ms: c.ms };
   });
@@ -2135,7 +2139,7 @@ async function loadGhost(who) {
     const r = await fetch('/api/ghost/' + slug + '?who=' + who);
     const d = await r.json();
     if (S.ghostMode !== want || S.track.slug !== slug) return;
-    if (d.ghost) useGhost(d.ghost, d.hz || GHOST_RATE, d.color);
+    if (d.ghost) useGhost(d.ghost, d.hz || GHOST_RATE, d.color, d.livery);
   } catch (e) { /* no ghost is fine */ }
   // **The line has to be written again here.** `setGhostMode` writes it the
   // instant you click, which is before this request has answered - and the
@@ -2155,11 +2159,16 @@ async function loadGhost(who) {
  * picked off the board three indistinguishable cars - and the one thing you
  * want to know about the car you are chasing is whose it is.
  */
-function useGhost(frames, hz, color) {
+function useGhost(frames, hz, color, livery) {
   if (!frames || frames.length < 2) return;
   S.ghost = new Ghost(frames, hz || GHOST_RATE);
   S.ghostTimes = lapTimeline(S.ghost.frames, S.ghost.hz);
   S.ghostColor = color || null;
+  // Their whole car where the server sent one - `/api/ghost` does, the pole lap
+  // does - and just the colour otherwise, which `CarView` reads as a livery of
+  // its own. `ghostView` keys its rebuild on the colour, so this rides alongside
+  // rather than replacing it.
+  S.ghostLivery = livery || null;
 }
 
 // A lap with nobody attached to it - a guest's, or one from before colours
@@ -2172,18 +2181,42 @@ function myColor() {
 }
 
 /**
- * The translucent car, in the colour of whoever is being chased.
+ * Your whole car, not just its colour.
  *
- * Rebuilt when the colour changes rather than recoloured, because a CarView
- * bakes its colour into half a dozen materials at construction and this
+ * A room's seat carries its own copy so that arriving in one draws the right car
+ * on the first frame rather than after the roster lands; everywhere else it came
+ * down with the page. Falls back to the colour, which is what a guest has - and
+ * a colour on its own is a complete livery as far as `CarView` is concerned, so
+ * there is no branch anywhere downstream.
+ */
+function myLivery() {
+  return (CFG.me && CFG.me.livery) || CFG.carLivery || myColor();
+}
+
+/**
+ * The translucent car, in the car of whoever is being chased.
+ *
+ * Rebuilt when that changes rather than recoloured, because a CarView bakes its
+ * livery into half a dozen materials and some geometry at construction, and this
  * happens once per ghost rather than once per frame.
+ *
+ * **Keyed on the whole livery and not just the colour.** It used to be the
+ * colour alone, which was a complete description of a ghost when a colour was
+ * all a car had. It is not one any more: two people on the same body colour with
+ * different wheels would have handed the second one the first one's car, and it
+ * would have been right about the only thing the key was checking.
  */
 function ghostView() {
   const c = S.ghostColor || GHOST_GREY;
-  if (S.ghostView && S.ghostViewColor === c) return S.ghostView;
+  // A ghost wears its owner's *current* car rather than a recorded one: a lap
+  // does not store a livery, and your own ghost turning up in last month's paint
+  // would be a stranger on your line.
+  const spec = S.ghostLivery || c;
+  const key = typeof spec === 'string' ? spec : JSON.stringify(spec);
+  if (S.ghostView && S.ghostViewColor === key) return S.ghostView;
   if (S.ghostView) S.ghostView.dispose();
-  S.ghostView = new CarView(S.renderer.scene, c, { ghost: true });
-  S.ghostViewColor = c;
+  S.ghostView = new CarView(S.renderer.scene, spec, { ghost: true });
+  S.ghostViewColor = key;
   return S.ghostView;
 }
 
@@ -2278,7 +2311,7 @@ async function onFinish() {
       (S.sessionBest == null || run.time < S.sessionBest)) {
     S.sessionBest = run.time;
     // Your lap, so your car - the same colour you are driving.
-    useGhost(run.ghost.slice(), GHOST_RATE, myColor());
+    useGhost(run.ghost.slice(), GHOST_RATE, myColor(), myLivery());
   }
 
   // The finish is the last split, so it is measured the same way the others
@@ -2521,7 +2554,7 @@ function connect() {
   });
   socket.on('qual_pole_ghost', (d) => {
     if (S.ghostMode !== 'pole' || S.racePhase !== 'qualifying') return;
-    if (d && d.ghost) useGhost(d.ghost, d.hz || GHOST_RATE, d.color);
+    if (d && d.ghost) useGhost(d.ghost, d.hz || GHOST_RATE, d.color, d.livery);
     showGhostNow();
   });
   // Everyone's checkpoint times, so a delta can be measured against the car in
@@ -2720,7 +2753,7 @@ function addRemote(pid) {
     q: new THREE.Quaternion(), rq: new THREE.Quaternion(),
     px: 0, py: 0, pz: 0, prog: 0, cp: 0, flags: 0, tow: 0,
     packetT: 0, lastSeen: performance.now(), primed: false,
-    view: new CarView(S.renderer.scene, meta.color || '#8899aa'),
+    view: new CarView(S.renderer.scene, meta.livery || meta.color || '#8899aa'),
     mass: 1, id: pid,
     // A remote car is a car as far as the tow effect is concerned, so it carries
     // the same fields the local one does and `Draft` needs no idea which is
@@ -2730,7 +2763,14 @@ function addRemote(pid) {
     speed: 0, slipCharge: 0, slipBoost: 0, respawnIn: 0, T,
     draftFx: S.renderer.makeDraft(),
   };
-  r.view.setLabel(r.name, r.color);
+  // No colour handed over, so the car answers. `plateColor` is the body colour
+  // for almost everybody and the record green for whoever is wearing the laurel,
+  // and that plate is most of what the badge is *for*: a decal on a low-poly car
+  // is invisible at the distance you see rivals from, where the name over it is
+  // legible from anywhere. Passing `r.color` here overrode it, so the one car on
+  // the track that had earned a green nameplate was the only one that could
+  // never show it.
+  r.view.setLabel(r.name);
   S.remotes.set(pid, r);
   return r;
 }
@@ -2982,7 +3022,10 @@ function renderRoster(players) {
   });
   for (const [pid, r] of S.remotes) {
     const meta = players.find(p => p.pid === pid);
-    if (meta && meta.name !== r.name) { r.name = meta.name; r.view.setLabel(meta.name, meta.color); }
+    // Same as `addRemote`: the plate colour is the car's business, not the
+    // roster's, or a laurel holder loses their green the first time somebody
+    // changes their display name.
+    if (meta && meta.name !== r.name) { r.name = meta.name; r.view.setLabel(meta.name); }
   }
 }
 

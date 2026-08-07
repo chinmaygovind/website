@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Garage | Drive{% endblock %}
+{% set active_page = 'garage' %}
+
+{% block body %}
+{% include "_nav.html" %}
+<div class="wrap garage-wrap">
+  <h1>Garage</h1>
+  <p class="lede">Your car, everywhere you drive it &mdash; on the grid, as your
+    ghost, and in every replay of a race you were in.</p>
+
+  <div class="garage">
+    {# The car. A canvas and nothing else: the point of the screen is the paint,
+       so there is no track, no sky and no scenery to argue with it. #}
+    <div class="garage-view">
+      <canvas id="gcanvas"></canvas>
+      <div class="garage-hint">Drag to spin &middot; scroll to zoom</div>
+      <div class="garage-saved" id="gsaved">Saved</div>
+    </div>
+
+    {# The slots. Filled in by garage.js from the same payload the page was
+       rendered with, so there is no second copy of the vocabulary in here to
+       drift from garage.py's. #}
+    <div class="garage-slots" id="gslots"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  {# The whole payload inline, so the car on screen is right on the first paint
+     rather than after a request lands - the same reason the play page embeds
+     its track. #}
+  window.DRIVE_GARAGE = {{ garage_json|safe }};
+</script>
+<script type="module" src="{{ url_for('static', filename='js/garage.js') }}?v={{ asset_version }}"></script>
+{% endblock %}

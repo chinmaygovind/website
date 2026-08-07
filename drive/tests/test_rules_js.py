@@ -487,3 +487,25 @@ def test_picking_a_lap_does_not_turn_the_ghost_car_back_on():
     src = open(GAME_JS).read()
     body = re.search(r"^function setGhostMode\(.*?^\}", src, re.S | re.M).group(0)
     assert "S.showGhost" not in body
+
+
+# --- the nameplate is the car's business, not the roster's -------------------
+
+def test_a_rival_is_labelled_in_its_own_cars_colour():
+    """`CarView.setLabel(text, color)` lets a caller override the plate, and
+    `game.js` used to pass the roster's colour at both call sites. That is
+    indistinguishable for almost everybody - the plate colour *is* the body
+    colour - and wrong for the one car it matters on: a record holder's plate is
+    the record green, so the only driver who had earned a green nameplate was the
+    only one who could never show it.
+
+    Pinned by reading the calls out of the file rather than by running them,
+    because building a remote needs a renderer, a socket and a track - and what
+    is being checked is that nobody passes a second argument.
+    """
+    src = open(GAME_JS).read()
+    calls = re.findall(r"\.view\.setLabel\(([^)]*)\)", src)
+    assert calls, "the remote label calls are gone from game.js"
+    for c in calls:
+        assert "," not in c or "plateColor" in c, (
+            "setLabel(%s) overrides the car's own plate colour" % c)

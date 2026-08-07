@@ -561,6 +561,10 @@
     {# Your colour, which is yours rather than the seat's - so the car you drive
        alone is the car people see you in, and the car your ghost is wearing. #}
     carColor: {{ car_color|tojson }},
+    {# The whole car, from the garage, with the gates already applied server
+       side - so it is right on the first frame rather than after a request. A
+       guest has none and falls back to `carColor` above. #}
+    carLivery: {{ car_livery|safe }},
     roster: {{ roster_json|safe }},
     name: {{ name|tojson }},
     pbMs: {{ pb_ms if pb_ms else 'null' }},

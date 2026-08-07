@@ -4,8 +4,9 @@ The ``users`` table is shared with Ticket to Ride, Egyptian Rat Screw and King
 of Tokyo - same physical table, same columns - so one account works across
 every game at cgovind.com. This module maps only the account/identity columns of
 ``users``; Drive keeps its own per-user stats in ``drive_stats``, its best times
-in ``drive_times``, its attempt counts in ``drive_starts`` and its lobbies in
-``drive_games`` / ``drive_players``.
+in ``drive_times``, its attempt counts in ``drive_starts``, what each car looks
+like in ``drive_garage`` and its lobbies in ``drive_games`` /
+``drive_players``.
 ``create_all`` uses CREATE TABLE IF NOT EXISTS, so Drive never clobbers the
 shared ``users`` table.
 
@@ -258,6 +259,49 @@ class DriveRace(db.Model):
             return []
 
 
+class DriveGarage(db.Model):
+    """What one account's car looks like, and what it has earned the right to.
+
+    Its own table for the reason ``drive_starts`` and ``drive_races`` are:
+    ``create_all`` makes tables and not columns, so a new table arrives on the
+    live database by itself where a new column on ``drive_stats`` would need a
+    hand migration over SSH.
+
+    ``livery_json`` holds **only the slots that differ from the defaults** (see
+    ``garage.dumps``), which keeps a row small and, more usefully, means changing
+    a default later moves the car of everybody who never touched that slot -
+    which is what a default is for. A missing row is therefore not a special
+    case: it is the same thing as a row full of defaults, and both render exactly
+    the car Drive drew before any of this existed.
+
+    ``earned_json`` is deliberately a **second column rather than a key in the
+    blob**, because the two are different kinds of fact. The livery is what
+    somebody asked for and the client sends it; the earns are what the server has
+    decided about them. Folding a fact into a blob the client POSTs is precisely
+    how a gated item gets worn by somebody who has not earned it. Only the
+    record badge is ever written here - the other three gates are recomputed from
+    counters that cannot go down, and storing those would be a second copy of
+    something the database already knows.
+    """
+    __tablename__ = "drive_garage"
+
+    user_id     = db.Column(db.Integer, db.ForeignKey("users.id"), primary_key=True)
+    livery_json = db.Column(db.Text, default="{}")
+    earned_json = db.Column(db.Text, default="[]")
+    updated_at  = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship("User", backref=db.backref("garage", uselist=False,
+                                                      cascade="all, delete-orphan"))
+
+    @property
+    def earned(self):
+        try:
+            got = json.loads(self.earned_json or "[]")
+            return set(got) if isinstance(got, list) else set()
+        except Exception:
+            return set()
+
+
 class DriveGame(db.Model):
     __tablename__ = "drive_games"
 
@@ -321,7 +365,28 @@ class DrivePlayer(db.Model):
         """Stable player id used inside the live race state."""
         return f"p{self.id}"
 
-    def to_dict(self):
+    def to_dict(self, livery=None):
+        """The seat, as the room sees it.
+
+        ``livery`` is handed in rather than read off ``linked_user`` here,
+        because working it out means applying the gates and this module must not
+        import ``garage`` - ``garage`` imports models, and the cycle would be
+        real. The caller in ``app.py`` has the session anyway, and it computes
+        the record holders once for the whole roster rather than once per seat.
+
+        ``None`` is a car with no livery, which is not a broken one: the renderer
+        falls back to ``color`` and draws exactly the car it always did.
+
+        **``color`` is answered from the livery when there is one**, and that is
+        not tidiness. The car on the road is drawn from ``livery``, but the
+        minimap dot, the standings row, the chat name and the *nameplate over
+        your own car* are all drawn from ``color`` - so with the column reported
+        raw, somebody who had chosen a colour got it on the bodywork and the
+        hashed one on everything that points at them. A nametag in a different
+        colour from the car under it is worse than either colour on its own. The
+        column stays as the seed and the fallback: it is what a guest has, and
+        what a seat joined before any of this existed has.
+        """
         elo = None
         if self.linked_user and self.linked_user.drive:
             elo = self.linked_user.drive.elo
@@ -329,7 +394,8 @@ class DrivePlayer(db.Model):
             "id": self.id,
             "pid": self.pid,
             "name": self.name,
-            "color": self.color,
+            "color": (livery or {}).get("body") or self.color,
+            "livery": livery,
             "seat_order": self.seat_order,
             "is_host": self.is_host,
             "guest": self.user_id is None,

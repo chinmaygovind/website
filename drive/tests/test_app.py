@@ -828,3 +828,148 @@ def test_reading_a_stranger_writes_nothing(env):
     assert env.app.test_client().get("/account/quick").status_code == 200
     with env.app.app_context():
         assert env.DriveStats.query.filter_by(user_id=uid).first() is None
+
+
+# ---------------------------------------------------------------------------
+# The garage
+# ---------------------------------------------------------------------------
+
+def test_the_garage_needs_a_login_and_comes_back_to_itself(env):
+    """A livery is stored against an account, so there is nowhere to put a
+    guest's - and the redirect carries `next`, because being sent to the login
+    page and then dumped on the home page is losing the thing you clicked."""
+    c = env.app.test_client()
+    resp = c.get("/garage")
+    assert resp.status_code == 302
+    assert "/login" in resp.headers["Location"]
+    assert "next=%2Fgarage" in resp.headers["Location"] or \
+        "next=/garage" in resp.headers["Location"]
+
+    _login(c, _user(env, "quick"))
+    assert c.get("/garage").status_code == 200
+
+
+def test_the_nav_offers_the_garage_and_the_account_page_offers_logging_out(env):
+    """The garage took `Log out`'s slot in the nav, so the way out has to be
+    somewhere - beside your own name, on the one page that is about you. Both
+    halves are checked because losing either is losing a door."""
+    c = env.app.test_client()
+    _login(c, _user(env, "quick"))
+    # The nav is on the pages around the game, not on the play page - the HUD is
+    # the play page's navigation.
+    nav = c.get("/leaderboard").get_data(as_text=True)
+    assert 'href="/garage"' in nav
+    assert 'href="/logout"' not in nav, "the nav slot is the garage's now"
+
+    mine = c.get("/account").get_data(as_text=True)
+    assert 'href="/logout"' in mine
+
+    other = env.app.test_client().get("/account/quick").get_data(as_text=True)
+    assert 'href="/logout"' not in other, "not on somebody else's page"
+
+
+def test_a_guest_is_offered_a_login_and_not_a_garage(env):
+    """A garage a guest cannot own would be a door onto a locked room."""
+    html = env.app.test_client().get("/leaderboard").get_data(as_text=True)
+    assert 'href="/garage"' not in html
+    assert 'href="/login"' in html
+
+
+def test_the_livery_round_trips_through_the_api(env):
+    c = env.app.test_client()
+    _login(c, _user(env, "quick"))
+    got = c.post("/api/garage", json={"body": "#7b6cf6", "finish": "gloss",
+                                      "livery": "twin", "rim_style": "spoke5",
+                                      "two_tone": True}).get_json()
+    assert got["ok"] is True
+    assert got["livery"]["body"] == "#7b6cf6"
+    assert got["livery"]["finish"] == "gloss"
+    assert got["livery"]["two_tone"] is True
+    assert c.get("/api/garage").get_json()["livery"] == got["livery"]
+
+
+def test_a_gated_item_is_stored_but_not_worn(env):
+    """The split `validate` and `resolve` exist for. What you asked for is kept,
+    so earning it later puts it on without you having to ask twice - and until
+    then the car wears the default however the request arrived."""
+    c = env.app.test_client()
+    uid = _user(env, "quick")
+    _login(c, uid)
+    got = c.post("/api/garage", json={"finish": "pearl", "badge": "laurel",
+                                      "rim_style": "forged"}).get_json()
+    assert got["livery"]["finish"] == "matte"
+    assert got["livery"]["badge"] == "none"
+    assert got["livery"]["rim_style"] == "stock"
+    with env.app.app_context():
+        import garage
+        row = env.DriveGarage.query.filter_by(user_id=uid).first()
+        assert garage.loads(row.livery_json)["finish"] == "pearl", (
+            "the ask is kept, so earning it later is not asking twice")
+
+
+def test_a_guest_cannot_write_a_livery(env):
+    assert env.app.test_client().post("/api/garage", json={"body": "#7b6cf6"}) \
+        .status_code == 401
+
+
+def test_junk_posted_to_the_garage_is_not_a_five_hundred(env):
+    c = env.app.test_client()
+    _login(c, _user(env, "quick"))
+    for junk in ({"body": []}, {"finish": 7}, {"nothing_like_a_slot": "x"},
+                 {"trim": "#zzzzzz"}, {}):
+        assert c.post("/api/garage", json=junk).status_code == 200
+
+
+def test_the_play_page_carries_the_livery_on_the_first_paint(env):
+    """Embedded rather than fetched, the same reason the track payload is: the
+    car has to be right before any request lands, or it is repainted a frame in."""
+    c = env.app.test_client()
+    _login(c, _user(env, "quick"))
+    c.post("/api/garage", json={"body": "#7b6cf6", "livery": "band"})
+    html = c.get("/solo").get_data(as_text=True)
+    assert "carLivery" in html
+    assert "#7b6cf6" in html and '"livery":"band"' in html
+
+
+def test_a_ghost_wears_its_drivers_car(env):
+    """A lap set before the garage existed has no stored livery and gets its
+    owner's current one, which is right: it is their car."""
+    c = env.app.test_client()
+    _login(c, _user(env, "quick"))
+    c.post("/api/run", json=_run_payload(env, "sunrise", seconds=22))
+    c.post("/api/garage", json={"body": "#17bfa8", "rim_style": "mesh"})
+    got = c.get("/api/ghost/sunrise?who=wr").get_json()
+    assert got["livery"]["body"] == "#17bfa8"
+    assert got["livery"]["rim_style"] == "mesh"
+    assert got["color"] == "#17bfa8", "and the old field agrees with it"
+
+
+def test_the_swatch_and_the_car_are_one_answer(env):
+    """`car_color` predates the garage and is still what a swatch is drawn from -
+    the self dot on the minimap, a standings row in solo - while `car_livery` is
+    what the car is built from. Computing them separately is how they came to
+    disagree for a guest, whose livery is hashed off the name they typed and
+    whose `color_for(None)` is the one guest red."""
+    c = env.app.test_client()
+    _login(c, _user(env, "quick"))
+    c.post("/api/garage", json={"body": "#17bfa8"})
+    html = c.get("/solo").get_data(as_text=True)
+    import re
+    swatch = re.search(r'carColor:\s*"([^"]+)"', html)
+    assert swatch, "carColor is not on the page at all"
+    assert swatch.group(1) == "#17bfa8"
+
+
+def test_two_guests_in_a_room_are_not_the_same_car(env):
+    """Guests have no account to keep a livery against, so their colour is still
+    the hash of the name they typed - and that is exactly what let the first-free
+    colour rule be deleted. Resolve a guest against nothing instead and every one
+    of them comes out `GUEST_COLOR`, which is the bug that rule existed to
+    prevent, arriving from the other end."""
+    import garage
+    with env.app.app_context():
+        assert env._livery_for(None, name="dave")["body"] == \
+            garage.color_for("dave")
+        assert env._livery_for(None, name="dave")["body"] != \
+            env._livery_for(None, name="erin")["body"]
+        assert env._livery_for(None)["body"] == garage.GUEST_COLOR

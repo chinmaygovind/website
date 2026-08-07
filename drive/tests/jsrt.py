@@ -33,6 +33,7 @@ except ImportError:                                   # pragma: no cover
 _THREE_NAMES = [
     "Vector3", "Quaternion", "Group", "Mesh", "BufferGeometry",
     "Float32BufferAttribute", "Color", "MeshLambertMaterial", "MeshBasicMaterial",
+    "MeshPhongMaterial",
     "SpriteMaterial", "Sprite", "CanvasTexture", "BoxGeometry", "CylinderGeometry",
     "ConeGeometry", "CircleGeometry", "PlaneGeometry", "SphereGeometry", "Fog",
     "Scene", "PerspectiveCamera", "WebGLRenderer", "DirectionalLight",

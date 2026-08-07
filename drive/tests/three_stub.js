@@ -139,21 +139,57 @@ export class Float32BufferAttribute {
                                  this.count = array.length / itemSize; }
   getY(i) { return this.array[i * this.itemSize + 1]; }
 }
+// Real colour arithmetic, not a shell. It started as one - `set` took numbers
+// only, `lerp` and `multiplyScalar` returned `this` unchanged - which was fine
+// while nothing here did anything with a colour but hand it to a material. The
+// car is built out of colour arithmetic now (a trim is the body darkened, a fade
+// is a lerp along the car), and a stub that answers white to all of it turns
+// every test about paint into a test that the code does not throw.
 export class Color {
   constructor(c) { this.r = 1; this.g = 1; this.b = 1; if (c != null) this.set(c); }
   set(c) {
+    if (c instanceof Color) { this.r = c.r; this.g = c.g; this.b = c.b; return this; }
     if (typeof c === 'number') {
       this.r = ((c >> 16) & 255) / 255; this.g = ((c >> 8) & 255) / 255; this.b = (c & 255) / 255;
+    } else if (typeof c === 'string') {
+      const m = /^#?([0-9a-f]{6})$/i.exec(c.trim());
+      if (m) return this.set(parseInt(m[1], 16));
     }
     return this;
   }
   clone() { const k = new Color(); k.r = this.r; k.g = this.g; k.b = this.b; return k; }
-  lerp() { return this; }
-  multiplyScalar() { return this; }
+  copy(c) { return this.set(c); }
+  lerp(c, t) {
+    this.r += (c.r - this.r) * t; this.g += (c.g - this.g) * t; this.b += (c.b - this.b) * t;
+    return this;
+  }
+  multiplyScalar(s) { this.r *= s; this.g *= s; this.b *= s; return this; }
+  getHex() {
+    const q = (v) => Math.max(0, Math.min(255, Math.round(v * 255)));
+    return (q(this.r) << 16) | (q(this.g) << 8) | q(this.b);
+  }
+  getHexString() { return this.getHex().toString(16).padStart(6, '0'); }
 }
 const noop = class { constructor() {} dispose() {} };
-export const MeshLambertMaterial = noop;
-export const MeshBasicMaterial = noop;
+// Materials keep the options they were built with, and are three distinct
+// classes rather than three names for one. Both halves are needed and neither
+// was there: they were all the same `noop`, so `instanceof MeshPhongMaterial`
+// was true of every material on the car and a test could not tell gloss from
+// matte - which is the entire subject of the finish slot. `color` is promoted
+// to a real `Color` the way three.js does it, because the brake lamps call
+// `material.color.setHex` every frame.
+class Mat {
+  constructor(o = {}) {
+    Object.assign(this, o);
+    this.color = new Color(o.color == null ? 0xffffff : o.color);
+  }
+  dispose() {}
+}
+export const MeshLambertMaterial = class extends Mat {};
+export const MeshBasicMaterial = class extends Mat {};
+// The three finishes above matte are Phong, since a specular highlight is the
+// only honest way to say "shiny" in a scene with no environment map.
+export const MeshPhongMaterial = class extends Mat {};
 export const SpriteMaterial = noop;
 export const Sprite = Obj3;
 export const CanvasTexture = noop;

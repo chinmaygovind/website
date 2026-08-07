@@ -624,10 +624,10 @@ Road are both in `tracks.EXPOSED`.
 - **Every ghost is the colour of whoever drove it**, and so is every car that
   person turns up in. There was no per-person colour at all before - a room
   handed them out by seat and solo was always red - so `color_for(username)`
-  hashes one out of the palette, the same trick the accounts pages use for the
-  initial on a profile with no picture. A room seat takes it if it is free and
-  falls back to first-free if somebody got there first, because two identical
-  cars on a grid is worse than being the wrong red for one race.
+  hashes one out of `garage.HASH_COLORS`, the same trick the accounts pages use
+  for the initial on a profile with no picture. That is still the answer for
+  anybody who has not chosen; what a car looks like once they have is **The
+  garage** below.
 - **A ghost lights its own brake lights**, because the flag byte is recorded
   with the pose. A ghost frame is eight values now, not seven, and `pack_ghost`
   writes the stride into the blob: every lap already on the board is seven
@@ -1063,6 +1063,144 @@ Road are both in `tracks.EXPOSED`.
   leaving two holes where somebody else's buttons would be. The top-centre race
   buttons are one size as well now: they are the same kind of decision taken at
   the same moment, and a row of three heights read as three unrelated controls.
+
+### The garage
+
+**`/garage` is a turntable and a set of slots**, and `drive/garage.py` owns the
+whole vocabulary - the palette, every slot, every gate and the sentence shown on
+a locked one. One module because a locked row promising "a gold on every track"
+over a rule that actually wants three is worse than no text at all.
+
+- **It took `Log out`'s slot in the nav, and `Log out` moved next to your own
+  name on your own account page.** That makes logging out two clicks instead of
+  one, which is the trade: the nav slot buys a garage, and logging out is a
+  thing you do once a session from a page that is already about you. It is
+  `is_me` only, so it is not on a stranger's page. It also cost a CSS fix worth
+  knowing about: **`.btn.danger` used to set `width: 100%`** as well as the
+  colour. That was redundant where it was used - both of its buttons are inside
+  a `.btn-grid`, which sets it already - and it outranks anything a caller sets
+  at the same specificity from earlier in the file, so the first `danger` button
+  outside a grid came out as a full-width red bar across the page. A variant
+  that silently decides layout is not a variant, so the width is gone from it.
+- **A car with no garage row renders exactly as it did before any of this.**
+  Every default is today's value and `trim`/`rim`/`glass`/`stripe` default to
+  `None` meaning "whatever the renderer already did" rather than to a colour
+  that happens to match - a literal would be indistinguishable on the day and
+  would stop following the body the first time somebody repainted. Pinned from
+  both sides: `test_garage.py` on the resolve, and `test_garage_js.py` on the
+  built car costing exactly 14 meshes and 6 materials.
+- **`HASH_COLORS` is frozen at eight and `PALETTE` is eighteen**, and the split
+  is the whole reason nobody was repainted. `color_for` is
+  `HASH_COLORS[sha1(name) % len(HASH_COLORS)]`, so the *length of the list it
+  indexes* is part of every answer - hashing over the wider palette would have
+  changed the modulus from 8 to 18 and with it the default colour of every
+  account that exists and of every ghost ever recorded. The ten new ones are
+  choosable and nothing else.
+- **The body is a curated palette and the detail slots are free hex.** The body
+  is what rivals identify you by, so its separation is guaranteed rather than
+  left to whoever is choosing: `test_garage.py` checks every pair at least
+  `DELTA_E_MIN` apart in CIELAB, every entry at least `BACKDROP_MIN` from
+  tarmac, kerb, grass, a bright sky, a dark sky and snow, and every L* inside a
+  band so nothing is near-black or near-white. That check does real work - it
+  threw out a forest green 14.3 from grass, a sand 10.8 from a bright sky and a
+  gold 13.8 from the yellow already there. A trim or a window is not the thing
+  you are picked out by, so those are anything you like.
+- **Brake lamps are deliberately not customisable.** They are the only thing a
+  rival reads off your car, and the amber drift state was removed for exactly
+  that reason; a lamp somebody can recolour is the same mistake with a settings
+  page in front of it. Glass, tyres and the lamps also stay matte whatever
+  finish the paint is wearing.
+- **Nothing here may touch the simulation** - not ride height, not
+  `CAR_RADIUS`, not the wheel radius, not a gram of mass. A cosmetic that
+  changed how the car drives would make every time on the board mean something
+  different depending on what its driver was wearing.
+- **Four gates, and the fourth is past tense.** Pearl at three golds, pinstripe
+  at a gold on every track, split-five rims at finishing every track - all three
+  recomputed from counters that cannot go down, so storing them would be a
+  second copy of something the database already knows. The laurel badge is
+  "**set** a track record", earned once and kept: it is the only one anybody can
+  take off you, so it is written into `earned_json` the moment it is true. That
+  is also why it needs no backfill - every current holder qualifies the first
+  time anything asks about them.
+- **`validate` and `resolve` are two functions on purpose.** `validate` stores
+  what was asked for, gates and all, so earning an item later puts it on without
+  having to ask twice; `resolve` decides what may be *worn* and runs on every
+  path that sends a livery anywhere. A client can POST `finish: pearl` all day.
+  `validate` also never raises: an unknown key is a client from after the next
+  deploy, and a bad value falls back to the default rather than to black.
+- **Rims are one merged `BufferGeometry` per style, shared by four wheels.**
+  Five spokes as separate meshes is 24 extra meshes on one car and nearly 200
+  across a grid, which is real draw-call cost on a phone. Built with `MeshBuf`,
+  the project's own triangle accumulator - `mergeGeometries` is a three.js addon
+  and is not vendored. The *style* is what turns a rim on, never the colour:
+  gating on the colour gave `stock` five spokes, which triangle counts caught.
+- **Decals are quads `LIFT` (0.01) above the panel, wound anticlockwise seen
+  from above.** The obvious winding is the other one and is silently wrong - the
+  stripe still draws and is lit from underneath, so a bright stripe comes out as
+  a dark smear on the one surface the sun is hitting. `fade` is why they all go
+  through `MeshBuf`: a per-vertex colour makes a gradient a lerp written into
+  the attribute, in a renderer whose whole look is having no textures.
+- **`color` is answered from the livery everywhere it is sent.** The car is
+  drawn from `livery`, but the minimap dot, the standings row, the chat name and
+  the *nameplate over the car* are all drawn from `color` - so reporting the
+  seat's stored column raw put somebody's chosen colour on the bodywork and
+  their hashed one on everything pointing at them. `DrivePlayer.to_dict`,
+  `/api/ghost` and `car_color` all take it off the resolved livery; the column
+  is the seed and the guest fallback. **The nameplate over a car is the one
+  thing that is the car's own business**, and `setLabel` is called with no
+  colour so it falls back to `CarView.plateColor` - the body colour for almost
+  everybody, and the record green for whoever is wearing the laurel. Both call
+  sites used to pass the roster's colour, which is indistinguishable for
+  everybody except the one driver it matters on: the only car that had earned a
+  green nameplate was the only one that could never show it.
+  `test_rules_js.py` reads the calls out of the file and fails on a second
+  argument, because building a remote to check it needs a renderer, a socket and
+  a track.
+- **A guest is hashed off the name they typed**, not `GUEST_COLOR`, and that is
+  what let the first-free colour rule go. `_livery_for(user, holders, name)`
+  needs that `name` for exactly this: resolve a guest against nothing and four
+  guests in a room are four identical red cars, which is the bug the deleted
+  rule existed to prevent, arriving from the other end.
+- **Two people choosing one colour both keep it.** `_add_player`'s "your colour
+  if free, else first-free" rule is gone. It was the right trade while nobody
+  had chosen - a hashed colour is not yours in any sense worth protecting - and
+  is exactly the wrong one now: being handed a stranger's colour without being
+  told is worse than sharing one, and the cars have names over them precisely so
+  colour is not the only way to tell them apart.
+- **A ghost wears the car its driver drives now; a replay wears what they wore
+  on the day.** Opposite answers, and deliberately: a ghost is a lap you are
+  chasing now and turning up in last month's paint would read as somebody else,
+  where a race is a thing that happened. So `/api/ghost` looks the livery up and
+  `_store_replay` writes it into `drive_races.cars_json`.
+- **Storage is `drive_garage`, two columns.** A new table because `create_all`
+  makes tables and not columns, so it lands on the live database by itself; a
+  JSON blob because every cosmetic after this needs no migration. `livery_json`
+  keeps **only the slots that differ from the defaults**, so a default that moves
+  later moves the car of everybody who never touched that slot. `earned_json` is
+  a second column rather than a key in the blob because the two are different
+  kinds of fact - folding a server decision into something the client POSTs is
+  how a gate gets bypassed.
+- **The viewer builds no track.** `Renderer` starts with `trackGroup` and `sky`
+  null and `render(dt)` is only particles plus a draw, so a studio costs one
+  canvas and the page opens instantly. There is no `OrbitControls` - it is a
+  three.js addon and is not vendored, and what this needs is thirty lines of
+  drag. Two numbers were wrong first time and are worth not re-deriving: the
+  camera is 66 degrees vertical so `dist` 5.9 (not the chase camera's ~9) is
+  what makes the car a third of the frame rather than a tenth, and the studio
+  floor has to be **clearly lighter than the backdrop** or the contact shadow has
+  nothing to be a shadow on and the car floats in a void with a smudge under it.
+  The scene also needs a dim cool fill opposite the sun: the track's rig is one
+  hard key plus a hemisphere, which is right outdoors and in a black room leaves
+  every face turned away from the key at the same flat shadow, so a flat-shaded
+  car reads as a paper cut-out of itself.
+- **The selected option's highlight outranks its hover, and that took a
+  `:not`.** `.gopt:hover:not(:disabled)` is three simple selectors against
+  `.gopt.on`'s two, so a chosen option went pale the moment the cursor was over
+  it - which is where the cursor is, having just clicked it. It looked like
+  every press deselecting itself.
+- Every list on the page is built from the payload the server rendered into it,
+  so there is no second copy of the vocabulary in the JS to drift from
+  `garage.py`'s - including the words on a locked row.
 
 ### Look: skies and worlds
 
@@ -1607,7 +1745,7 @@ field from a dark field.
 
 ### Tests
 
-`scripts/tests.sh drive` - 589 tests, about 1:25 (four workers, split by file). `test_tracks.py` and
+`scripts/tests.sh drive` - 690 tests, about 1:25 (four workers, split by file). `test_tracks.py` and
 `test_runcheck.py` are pure Python; `test_app.py` runs the real routes against a
 throwaway SQLite file (the `/solo` memory, the board and ghost APIs, and a guest's run
 being replayed after login). **`test_race.py` covers the room's race machine** -
@@ -1671,6 +1809,34 @@ closing speed, that the let-go tyres come back on their own clock - and the one
 that is the actual finding, that the displacement comes from `BUMP_SLIP_GRIP` and
 from nothing else, asserted against *the same hit with that one number pinned
 back to `GRIP`* rather than against a figure in a comment that would rot.
+
+**The garage has two test files because it has two halves that fail
+differently.** `test_garage.py` is Python: it checks the palette's claim about
+itself in both directions (every pair far enough apart in CIELAB, every entry
+far enough from every backdrop, every L* inside the band), that `validate` never
+raises on anything, each gate against a stats row that does and does not
+qualify, `resolve` replacing an ungranted item however it arrived, the record
+badge persisting and surviving losing the record, and the two deliberate
+duplications of `RECORD_GREEN` read out of `render.js` and `style.css` rather
+than trusted. **`test_garage_js.py` builds `CarView` for real in QuickJS**, the
+way `test_sim.py` runs the physics, because almost everything that can go wrong
+with assembling a car out of a livery is invisible to both of the checks this
+project otherwise leans on: the autopilot never draws, and a screenshot of one
+car either photographs "the fifth rim style is 24 meshes instead of one"
+correctly or photographs it as something you would have to already suspect. So
+it pins the *construction* - the mesh and material budget (14 and 6 plain, 20
+and 9 fully loaded), that no material escapes `_mats` and therefore
+`setGhostly`, that a rim style is one geometry shared by four wheels, that every
+decal clears its panel and faces up (the cross product taken from the raw
+positions, since the stub's `computeVertexNormals` does nothing), and that
+nothing a livery does moves any part of the car that was already there.
+**Both of them exist mainly to say the same thing**: an account with no garage
+row is byte-identical to one from before the garage existed. Note this is also
+what pushed `three_stub.js`'s materials from one shared `noop` to three real
+classes that keep their options - with all of them the same class,
+`instanceof MeshPhongMaterial` was true of everything on the car and no test
+could tell gloss from matte, which is the entire subject of the finish slot.
+
 `test_rules_js.py` is the same lift-by-name trick on
 rules that were each a bug or a contract between two files: that `R` and `T` do
 nothing (and say nothing) until the clock is running, that `placeOnGrid` puts

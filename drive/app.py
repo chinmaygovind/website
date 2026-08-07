@@ -22,10 +22,14 @@ from sqlalchemy import event, func
 from sqlalchemy.engine import Engine
 
 from models import (db, User, DriveStats, DriveTime, DriveStart,
-                    DriveGame, DrivePlayer, DriveRace)
+                    DriveGame, DrivePlayer, DriveRace, DriveGarage)
 import tracks as tracks_mod
 import tuning
 import runcheck
+import garage as garage_mod
+# The palette and the hash moved into `garage.py`, with the rest of what a car
+# is allowed to look like. Imported by name here because five routes call it.
+from garage import color_for
 
 # ---------------------------------------------------------------------------
 # Config (mirrors ERS/KoT: shared accounts + cross-subdomain SSO)
@@ -71,40 +75,77 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 with app.app_context():
     db.create_all()  # creates drive_* tables; never touches the shared users table
 
-# Car colours. Chosen to stay apart at a distance and on the minimap, since
-# telling cars apart mid-pack is the whole job.
-CAR_COLORS = [
-    "#e8453c",  # red
-    "#3d8bfd",  # blue
-    "#f2c94c",  # yellow
-    "#27ae60",  # green
-    "#bb6bd9",  # purple
-    "#f2994a",  # orange
-    "#56ccf2",  # cyan
-    "#f178b6",  # pink
-]
-
-GUEST_COLOR = CAR_COLORS[0]
+# What a car looks like lives in `garage.py`: the palette, every slot somebody
+# can change, and the gates on the few that are earned. `color_for` above is
+# still the answer for anybody who has not chosen - a guest, or an account that
+# has never opened the garage.
 
 
-def color_for(username):
-    """The car colour that belongs to a person, wherever they turn up.
+def _garage_row(user, create=False):
+    """The `drive_garage` row for a user, or None.
 
-    Colours used to be handed out by seat, which meant somebody was red in one
-    room and green in the next and neither was *theirs*. They are hashed from
-    the username instead - the same trick the accounts pages use for the
-    initial on a profile with no picture - so a person is one colour in a
-    lobby, alone on a time trial, and as the ghost of a lap they set months
-    ago. That last one is the reason this exists: a ghost has to be somebody's,
-    and nothing was storing whose colour it was.
-
-    Hashed with sha1 rather than `hash()`, which is salted per process and
-    would give the same person a different colour after every restart.
+    `create=False` by default for the same reason `_stats` reads that way: a
+    stranger loading somebody's page must not leave a row behind for them.
     """
-    if not username:
-        return GUEST_COLOR
-    h = hashlib.sha1(username.lower().encode("utf-8")).hexdigest()
-    return CAR_COLORS[int(h[:8], 16) % len(CAR_COLORS)]
+    if not user:
+        return None
+    row = DriveGarage.query.filter_by(user_id=user.id).first()
+    if row is None and create:
+        row = DriveGarage(user_id=user.id, livery_json="{}", earned_json="[]")
+        db.session.add(row)
+        db.session.commit()
+    return row
+
+
+def _earned_for(user, row=None, holders=None):
+    """What this account has earned, writing down the record badge if it is new.
+
+    The badge is the one gate that is kept rather than recomputed (a record can
+    be taken off you and the badge cannot), so the moment it is true it has to be
+    persisted or it would be lost the next time somebody beats the lap. Doing it
+    here rather than in a tool is also why no backfill is needed: every current
+    record holder earns it the first time anything asks.
+    """
+    if not user:
+        return set()
+    row = row if row is not None else _garage_row(user)
+    already = row.earned if row else set()
+    got = garage_mod.earned(user, already, holders)
+    keep = got & {"laurel"}
+    if keep - already:
+        row = row or _garage_row(user, create=True)
+        row.earned_json = json_mod.dumps(sorted(already | keep))
+        row.updated_at = datetime.utcnow()
+        db.session.commit()
+    return got
+
+
+def _livery_for(user, holders=None, name=None):
+    """The livery to draw for somebody, gates already applied.
+
+    Every path that sends a car anywhere goes through here - the play page, a
+    room's roster, a ghost, a stored replay - which is what makes a gate real
+    rather than a suggestion the client is trusted to honour.
+
+    `name` is **what a guest is hashed off**, and it is not optional decoration.
+    Guests have no account to keep a livery against, so their colour is still
+    `color_for` of the name they typed - which is what spreads a room's guests
+    out and is precisely what let the first-free colour rule be deleted. Without
+    it every guest resolves to `GUEST_COLOR` and a room of four of them is four
+    identical red cars, which is the bug the deleted rule existed to prevent,
+    reintroduced from the other end.
+    """
+    if not user:
+        return garage_mod.resolve({}, name, set())
+    row = _garage_row(user)
+    got = _earned_for(user, row, holders)
+    return garage_mod.resolve(garage_mod.loads(row.livery_json if row else None),
+                              user.username, got)
+
+
+def _car_livery(user):
+    """The livery for the car *you* are about to drive, guests included."""
+    return _livery_for(user, name=get_effective_name())
 
 
 MAX_ROOM = 8
@@ -516,8 +557,58 @@ def _play_solo(slug):
         roster_json="[]", name=get_effective_name(), user=user,
         pb_ms=(pb.time_ms if pb else None), next_slug=_next_slug(slug),
         pb_splits=({slug: pb.splits} if pb else {}),
-        car_color=color_for(user.username if user else None),
+        # One answer, not two. `car_color` is the older field and is still read
+        # by everything that wants a swatch rather than a car (the self dot on
+        # the minimap, a standings row in solo), so it is taken *from* the
+        # livery: computing it separately is how the two came to disagree for a
+        # guest, whose livery is hashed off the name they typed while
+        # `color_for(None)` is the one guest red.
+        car_color=_car_livery(user)["body"],
+        car_livery=json_mod.dumps(_car_livery(user), separators=(",", ":")),
         tracks=tracks_mod.summaries(), cards=_track_cards())
+
+
+@app.route("/garage")
+def garage_page():
+    """Your car, on a turntable, with everything you can change about it.
+
+    Accounts only, and that is not a paywall: a livery has to be stored against
+    somebody, and a guest is a name in a session that will be gone tomorrow.
+    Guests still drive - they just drive the colour their name hashes to.
+    """
+    user = get_current_user()
+    if not user:
+        return redirect(url_for("login_page", next="/garage"))
+    row = _garage_row(user)
+    got = _earned_for(user, row)
+    data = garage_mod.payload(user, garage_mod.loads(row.livery_json if row else None), got)
+    return render_template("garage.html", user=user, name=get_effective_name(),
+                           garage_json=json_mod.dumps(data, separators=(",", ":")),
+                           tracks=tracks_mod.summaries())
+
+
+@app.route("/api/garage", methods=["GET", "POST"])
+def api_garage():
+    """Read or write the livery. The gates are applied on the way *out*.
+
+    A POST is stored as asked for even where it is not allowed yet - see
+    `garage.validate` against `garage.resolve`. Somebody who picks the pearl
+    before their third gold has said what they want, and it goes on by itself
+    the day they earn it rather than needing to be asked for twice.
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"ok": False, "error": "Log in to use the garage."}), 401
+    if request.method == "POST":
+        row = _garage_row(user, create=True)
+        row.livery_json = garage_mod.dumps(request.json or {})
+        row.updated_at = datetime.utcnow()
+        db.session.commit()
+    else:
+        row = _garage_row(user)
+    got = _earned_for(user, row)
+    return jsonify(dict(garage_mod.payload(
+        user, garage_mod.loads(row.livery_json if row else None), got), ok=True))
 
 
 @app.route("/lobbies")
@@ -551,12 +642,21 @@ def room(code):
         track_json=json_mod.dumps(_track_payload(track["slug"]),
                                   separators=(",", ":")),
         tuning_json=tuning.as_json(), room=game,
-        me_json=json_mod.dumps(me.to_dict(), separators=(",", ":")),
-        roster_json=json_mod.dumps([p.to_dict() for p in game.players], separators=(",", ":")),
+        me_json=json_mod.dumps(me.to_dict(_livery_for(me.linked_user,
+                                                     name=me.name)),
+                               separators=(",", ":")),
+        roster_json=json_mod.dumps(_roster(game.players), separators=(",", ":")),
         name=get_effective_name(), user=user,
         pb_ms=(pb.time_ms if pb else None), next_slug=_next_slug(track["slug"]),
         pb_splits=({track["slug"]: pb.splits} if pb else {}),
-        car_color=color_for(user.username if user else None),
+        # One answer, not two. `car_color` is the older field and is still read
+        # by everything that wants a swatch rather than a car (the self dot on
+        # the minimap, a standings row in solo), so it is taken *from* the
+        # livery: computing it separately is how the two came to disagree for a
+        # guest, whose livery is hashed off the name they typed while
+        # `color_for(None)` is the one guest red.
+        car_color=_car_livery(user)["body"],
+        car_livery=json_mod.dumps(_car_livery(user), separators=(",", ":")),
         tracks=tracks_mod.summaries(), cards=_track_cards())
 
 
@@ -613,7 +713,14 @@ def race_replay(race_id):
         tuning_json=tuning.as_json(), room=None, me_json="null",
         roster_json="[]", name=get_effective_name(), user=user,
         pb_ms=None, next_slug=_next_slug(track["slug"]), pb_splits={},
-        car_color=color_for(user.username if user else None),
+        # One answer, not two. `car_color` is the older field and is still read
+        # by everything that wants a swatch rather than a car (the self dot on
+        # the minimap, a standings row in solo), so it is taken *from* the
+        # livery: computing it separately is how the two came to disagree for a
+        # guest, whose livery is hashed off the name they typed while
+        # `color_for(None)` is the one guest red.
+        car_color=_car_livery(user)["body"],
+        car_livery=json_mod.dumps(_car_livery(user), separators=(",", ":")),
         race=race, tracks=tracks_mod.summaries(), cards=_track_cards())
 
 
@@ -629,7 +736,11 @@ def api_race(race_id):
         if not frames:
             continue
         cars.append({"pid": c.get("pid"), "name": c.get("name"),
-                     "color": c.get("color"), "ms": c.get("ms"),
+                     "color": c.get("color"),
+                     # Absent on any race recorded before the garage existed,
+                     # which the renderer reads as "just the colour" - so an old
+                     # replay plays back on the car it was driven in.
+                     "livery": c.get("livery"), "ms": c.get("ms"),
                      "dnf": c.get("dnf"), "frames": frames})
     return jsonify({"ok": True, "id": race.id, "track": race.track,
                     "hz": race.hz or REPLAY_HZ, "ms": race.ms,
@@ -1002,12 +1113,21 @@ def api_ghost(slug):
             row = DriveTime.query.filter_by(user_id=user.id, track=slug).first()
     if not row or not row.ghost:
         return jsonify({"ok": True, "ghost": None})
+    # A ghost is somebody's lap, so it is driven in their car - and in the car
+    # they drive *now*, not the one they drove then: a livery is not recorded
+    # with a lap, and a ghost of yours turning up in last month's paint would be
+    # somebody else as far as anybody watching is concerned.
+    livery = _livery_for(row.user) if row.user else None
     return jsonify({"ok": True, "hz": runcheck.ghost_hz(row.ghost),
                     "id": row.id, "time_ms": row.time_ms, "splits": row.splits,
                     "who": (row.user.display if row.user else "?"),
-                    # A ghost is somebody's lap, so it is driven in their car.
-                    # A grey one is a lap nobody set.
-                    "color": color_for(row.user.username if row.user else None),
+                    # The old field, answered off the livery so the two cannot
+                    # disagree: it is what a client from before the garage reads,
+                    # and what the watch bar's name is coloured with. A grey one
+                    # is a lap nobody set.
+                    "color": (livery or {}).get("body")
+                             or color_for(row.user.username if row.user else None),
+                    "livery": livery,
                     "ghost": runcheck.unpack_ghost(row.ghost)})
 
 
@@ -1056,25 +1176,43 @@ def _leave_other_rooms(sk, keep_code=None):
                 _broadcast_roster(g)
 
 
+def _roster(players):
+    """Every seat with its livery, working the record holders out once.
+
+    The one place a roster is built, so the gate check cannot be applied on
+    three paths and forgotten on the fourth.
+    """
+    holders = garage_mod.record_holders()
+    return [pl.to_dict(_livery_for(pl.linked_user, holders, pl.name))
+            for pl in players]
+
+
 def _add_player(game, host=False):
     sk = get_session_key()
     existing = DrivePlayer.query.filter_by(game_id=game.id, session_key=sk).first()
     if existing:
         return existing
     user = get_current_user()
-    taken = {p.color for p in game.players}
-    # Your own colour if it is free, which it nearly always is - so the car
-    # people know you by in one room is the car they know you by in the next,
-    # and is the colour your ghost wears on every track. A collision falls back
-    # to the old first-free rule: two identical cars on a grid is worse than
-    # somebody being the wrong red for one race.
-    mine = color_for(user.username) if user else None
-    color = mine if (mine and mine not in taken) else \
-        next((c for c in CAR_COLORS if c not in taken),
-             CAR_COLORS[len(game.players) % len(CAR_COLORS)])
+    name = get_effective_name()
+    # **You always drive the car you chose.**
+    #
+    # A seat used to take your colour only if it was free and fall back to
+    # first-free otherwise, on the grounds that two identical cars on a grid is
+    # worse than being the wrong red for one race. That was the right trade while
+    # nobody had picked anything - a hashed colour is not yours in any sense
+    # worth protecting. It is the wrong trade now: being silently handed a
+    # stranger's colour is far worse than sharing one, and the cars have names
+    # over them precisely so that colour is not the only way to tell them apart.
+    # So the rule is gone and nobody is overridden.
+    #
+    # Guests are hashed off the name they typed rather than all being handed
+    # `GUEST_COLOR`, which is what the fallback used to spread out for them.
+    # Two guests can still collide; so can two accounts, and the answer is the
+    # same one.
+    color = color_for(user.username if user else name)
     seat = max((p.seat_order for p in game.players), default=-1) + 1
     p = DrivePlayer(game_id=game.id, user_id=(user.id if user else None),
-                    session_key=sk, name=get_effective_name(),
+                    session_key=sk, name=name,
                     color=color, seat_order=seat, is_host=host)
     db.session.add(p)
     db.session.commit()
@@ -1144,7 +1282,7 @@ def _broadcast_lobbies():
 
 
 def _broadcast_roster(game):
-    socketio.emit("roster", {"players": [p.to_dict() for p in game.players],
+    socketio.emit("roster", {"players": _roster(game.players),
                              "track": game.track},
                   room="room:" + game.code)
     _broadcast_lobbies()
@@ -1444,6 +1582,15 @@ def _store_replay(r, game, standings, why):
     if not rec or not rec["n"]:
         return None
     order = {e["pid"]: i for i, e in enumerate(standings)}
+    # **The livery is stored with the race rather than looked up when it is
+    # watched**, which is the opposite of what a ghost does one screen over - and
+    # deliberately so. A ghost is a lap of *yours* that you are chasing now, so
+    # it should be the car you drive now. A replay is a record of an afternoon:
+    # repainting everybody in it because somebody changed their mind last week
+    # would make it a record of nothing.
+    holders = garage_mod.record_holders()
+    livery_by_pid = {pl.pid: _livery_for(pl.linked_user, holders, pl.name)
+                     for pl in game.players}
     cars = []
     for pid, frames in rec["cars"].items():
         if len(frames) < 2:
@@ -1451,6 +1598,7 @@ def _store_replay(r, game, standings, why):
         c = r["cars"].get(pid) or {}
         cars.append({"pid": pid, "name": c.get("name") or "Driver",
                      "color": c.get("color") or "#8899aa",
+                     "livery": livery_by_pid.get(pid),
                      "ms": c.get("ms"), "dnf": bool(c.get("dnf")),
                      "ghost": runcheck.pack_ghost(frames)})
     if not cars:
@@ -1492,7 +1640,14 @@ def on_join_room(data=None):
     _sid_room[request.sid] = (code, me.pid)
     r = _room(code)
     c = _car(r, me.pid)
-    c["name"], c["color"], c["ts"] = me.name, me.color, _now_ms()
+    # The livery decides the colour, not the column - the same rule `to_dict`
+    # follows and for the same reason. This dict is what the standings, the chat
+    # line, the pole message and the stored replay all read, so a stale column
+    # here would put somebody's hashed colour on every one of those while their
+    # car on the road wore the one they chose. Taken on every connect rather
+    # than at join, so changing a livery and reloading is enough.
+    seat = me.to_dict(_livery_for(me.linked_user, name=me.name))
+    c["name"], c["color"], c["ts"] = me.name, seat["color"], _now_ms()
     # Coming back clears the "left the room" mark but *not* a DNF: reconnecting
     # mid-race puts you back on the road, it does not put you back in the race
     # you dropped out of.
@@ -1500,8 +1655,9 @@ def on_join_room(data=None):
     _ensure_pump(code)
     game.last_activity_at = datetime.utcnow()
     db.session.commit()
-    emit("room_hello", {"track": game.track, "me": me.to_dict(),
-                        "players": [p.to_dict() for p in game.players],
+    emit("room_hello", {"track": game.track,
+                        "me": seat,
+                        "players": _roster(game.players),
                         "race": _race_state(r), "chat": r["chat"][-30:],
                         "settings": dict(r["settings"]),
                         "server_ms": _now_ms()})

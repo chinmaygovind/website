@@ -11,24 +11,195 @@
 // eye sits, and which way it looks.
 
 import * as THREE from './vendor/three.module.js';
-import { mulberry } from './trackmesh.js';
+import { mulberry, MeshBuf } from './trackmesh.js';
 
 const BRAKE_OFF = 0x521218;
 const BRAKE_ON = 0xff2b2b;
+// The colour the record is drawn in on the medals card, and so the only colour
+// the record's own badge can be. Kept in step with `garage.RECORD_GREEN` by
+// `test_garage.py`, because a badge in a different green from the record it is
+// about is a badge about nothing.
+const RECORD_GREEN = 0x55e08a;
 // How see-through a car is when it is not something you can hit. The ghost, a
 // replay and a rival you are about to drive through are all the same statement
 // - this car is not solid - so they are one number rather than three amounts
 // of see-through.
 const GHOST_OPACITY = 0.42;
 
+/**
+ * A livery, from whatever the caller had.
+ *
+ * **A bare colour string is still a livery**, and that is not a courtesy - it is
+ * what keeps every path that predates the garage working untouched: a ghost from
+ * the board, a car in a replay saved last month, a rival on a client that has
+ * not reloaded. Those all hand over a hex string and get exactly the car Drive
+ * has always drawn them.
+ *
+ * Every `null` below means "whatever the renderer did before anybody could
+ * choose", not a colour that happens to match - so an account with no garage row
+ * is byte-identical to one from before the garage existed, rather than merely
+ * similar. `test_garage.py` pins that from the Python side and
+ * `test_garage_js.py` from this one.
+ */
+function liveryOf(spec) {
+  if (spec == null || typeof spec === 'string') spec = { body: spec || '#8899aa' };
+  const body = new THREE.Color(spec.body || '#8899aa');
+  const trim = spec.trim ? new THREE.Color(spec.trim) : body.clone().multiplyScalar(0.55);
+  return {
+    body, trim,
+    glass: new THREE.Color(spec.glass || 0x2b3240),
+    // The *style* is what turns rims on, not the colour: `stock` is the single
+    // plain cylinder the wheel has always been, and picking a colour for a wheel
+    // that has no rim face should not quietly grow one. Colour only tints.
+    rim: new THREE.Color(spec.rim || 0xc9ced6),
+    stripe: spec.stripe ? new THREE.Color(spec.stripe) : trim.clone(),
+    finish: spec.finish || 'matte',
+    livery: spec.livery || 'none',
+    rimStyle: spec.rim_style || 'stock',
+    twoTone: !!spec.two_tone,
+    badge: spec.badge || 'none',
+  };
+}
+
+// How the paint catches the light. Matte is `MeshLambertMaterial`, which is what
+// every car was until now and so is the only one that may be the default.
+//
+// The other three are `MeshPhongMaterial` and deliberately **not**
+// `MeshStandardMaterial`: standard needs an environment map to read as metal and
+// without one it goes flat and dark, and there is no env map here on purpose -
+// the whole look is flat shading and no textures. Phong's specular highlight is
+// the honest way to say "shiny" in a scene lit by one sun and a hemisphere.
+const FINISH = {
+  matte:    null,
+  gloss:    { shininess: 55,  specular: 0x555555 },
+  metallic: { shininess: 130, specular: 0xa8a8a8 },
+  pearl:    { shininess: 85,  specular: 0xd8d0e8 },
+};
+
+/**
+ * The face of a wheel, as one geometry.
+ *
+ * Everything is white: the colour comes from the material, so all five styles
+ * share this code and a rim colour is a material change rather than a rebuild of
+ * the buffer. Drawn in the wheel's own frame (X is the axle), a hair proud of
+ * the tyre's outer face so it cannot z-fight with it.
+ */
+function rimGeometry(style) {
+  const buf = new MeshBuf();
+  const R = 0.40, W = 0.012, C = 0xffffff;
+  // The centre boss, common to every style: a short polygon disc.
+  const disc = (radius, seg) => {
+    for (let i = 0; i < seg; i++) {
+      const a0 = (i / seg) * Math.PI * 2, a1 = ((i + 1) / seg) * Math.PI * 2;
+      buf.tri([W, 0, 0],
+              [W, Math.sin(a0) * radius, Math.cos(a0) * radius],
+              [W, Math.sin(a1) * radius, Math.cos(a1) * radius], C);
+    }
+  };
+  // One spoke: a thin slab from the boss out to the rim, at `ang`.
+  const spoke = (ang, half) => {
+    const s = Math.sin(ang), c = Math.cos(ang);
+    const p = (r, t) => [W, s * r - c * t, c * r + s * t];
+    buf.quad(p(0.10, -half), p(R, -half), p(R, half), p(0.10, half), C);
+  };
+  const ring = (seg, inner) => {
+    for (let i = 0; i < seg; i++) {
+      const a0 = (i / seg) * Math.PI * 2, a1 = ((i + 1) / seg) * Math.PI * 2;
+      const P = (a, r) => [W, Math.sin(a) * r, Math.cos(a) * r];
+      buf.quad(P(a0, inner), P(a1, inner), P(a1, R), P(a0, R), C);
+    }
+  };
+  if (style === 'dish') {
+    disc(R, 16);                                   // solid: a moon disc
+  } else if (style === 'mesh') {
+    ring(16, R - 0.05); disc(0.13, 12);
+    for (let i = 0; i < 10; i++) spoke((i / 10) * Math.PI * 2, 0.018);
+  } else if (style === 'forged') {
+    ring(16, R - 0.04); disc(0.14, 12);
+    for (let i = 0; i < 5; i++) {                  // split five: paired blades
+      const a = (i / 5) * Math.PI * 2;
+      spoke(a - 0.14, 0.030); spoke(a + 0.14, 0.030);
+    }
+  } else {                                         // spoke5, and the fallback
+    const n = style === 'spoke6' ? 6 : 5;
+    ring(16, R - 0.04); disc(0.13, 12);
+    for (let i = 0; i < n; i++) spoke((i / n) * Math.PI * 2, 0.055);
+  }
+  return buf.toGeometry();
+}
+
+/**
+ * Every stripe on the car, as one `MeshBuf`, or null for a bare one.
+ *
+ * Decals sit `LIFT` above the panel they decorate. That number is the whole of
+ * why this is not a texture: at this scale a hundredth of a unit is invisible
+ * and is far more than enough to keep two coplanar surfaces from tearing into
+ * each other, and the renderer has no textures anywhere else.
+ *
+ * `fade` is the reason all of this goes through `MeshBuf` rather than a handful
+ * of boxes: the buffer carries a colour per vertex, so a gradient is a lerp
+ * written into the attribute and costs nothing. A texture would have been the
+ * only other way, in a renderer whose entire look is that it has none.
+ */
+function liveryMesh(L) {
+  if (!L.livery || L.livery === 'none') return null;
+  const buf = new MeshBuf();
+  const S = L.stripe.getHex(), B = L.body.getHex();
+  const LIFT = 0.01;
+  // The two panels a stripe can lie on, from the chassis boxes above.
+  const DECK = 0.555 + LIFT, ROOF = 1.03 + LIFT;
+  // Wound anticlockwise seen from above, so `computeVertexNormals` gives these
+  // an upward normal. The obvious order is the other one and it is silently
+  // wrong: the decal still draws, and it is lit from underneath, so a bright
+  // stripe comes out as a dark smear on the one surface the sun is hitting.
+  const deck = (x0, x1, z0, z1, color) => buf.quad(
+    [x0, DECK, z0], [x0, DECK, z1], [x1, DECK, z1], [x1, DECK, z0], color);
+  const roof = (x0, x1, z0, z1, color) => buf.quad(
+    [x0, ROOF, z0], [x0, ROOF, z1], [x1, ROOF, z1], [x1, ROOF, z0], color);
+
+  switch (L.livery) {
+    case 'centre':
+      deck(-0.17, 0.17, -1.7, 1.7, S); roof(-0.17, 0.17, -0.7, 0.9, S); break;
+    case 'twin':
+      for (const x of [-0.42, 0.14]) {
+        deck(x, x + 0.28, -1.7, 1.7, S); roof(x, x + 0.28, -0.7, 0.9, S);
+      }
+      break;
+    case 'band':
+      deck(-0.45, 0.45, -1.7, 1.7, S); roof(-0.45, 0.45, -0.7, 0.9, S); break;
+    case 'hoop':                          // across the car rather than along it
+      deck(-0.94, 0.94, 0.35, 0.85, S); roof(-0.76, 0.76, -0.7, 0.9, S); break;
+    case 'halves':                        // the nose half, so it reads head on
+      deck(-0.94, 0.94, -1.7, 0.05, S); break;
+    case 'pinstripe':                     // gated: two hairlines, deliberately fine
+      for (const x of [-0.5, 0.44]) {
+        deck(x, x + 0.06, -1.7, 1.7, S); roof(x, x + 0.06, -0.7, 0.9, S);
+      }
+      break;
+    case 'fade': {
+      // Baked into the vertices: nose in the stripe colour, tail in the body's.
+      const N = 10;
+      for (let i = 0; i < N; i++) {
+        const z0 = -1.7 + (3.4 * i) / N, z1 = -1.7 + (3.4 * (i + 1)) / N;
+        const c = new THREE.Color(S).lerp(new THREE.Color(B), i / (N - 1));
+        deck(-0.94, 0.94, z0, z1, c.getHex());
+      }
+      break;
+    }
+    default: return null;
+  }
+  return buf;
+}
+
 export class CarView {
-  constructor(scene, color, opts = {}) {
+  constructor(scene, livery, opts = {}) {
     this.group = new THREE.Group();
     this.body = new THREE.Group();
     this.group.add(this.body);
     const ghost = !!opts.ghost;
-    const col = new THREE.Color(color);
-    const dark = col.clone().multiplyScalar(0.55);
+    const L = liveryOf(livery);
+    this.livery = L;
+    const col = L.body;
 
     // Every material the car is built from, kept so it can be turned
     // translucent and back at run time - see setGhostly. The label is
@@ -40,24 +211,34 @@ export class CarView {
     // phase changed would turn the ghost into a fifth real-looking car.
     this._mats = [];
     this._solid = ghost ? GHOST_OPACITY : 1;
-    const mat = (c, extra = {}) => {
-      const m = new THREE.MeshLambertMaterial(
-        Object.assign({ color: c, flatShading: true,
-                        transparent: ghost, opacity: this._solid }, extra));
+    // `painted` picks the finish; everything that is not paint - glass, tyres,
+    // the lamps - stays matte whatever the car is wearing, because a shiny tyre
+    // is not a thing and a glossy lamp lens fights the one signal on the car
+    // that has to be unambiguous.
+    const mat = (c, extra = {}, painted = false) => {
+      const spec = painted ? FINISH[L.finish] : null;
+      const opt = Object.assign({ color: c, flatShading: true,
+                                  transparent: ghost, opacity: this._solid },
+                                spec || {}, extra);
+      const m = spec ? new THREE.MeshPhongMaterial(opt)
+                     : new THREE.MeshLambertMaterial(opt);
       this._mats.push(m);
       return m;
     };
 
-    const bodyMat = mat(col);
-    const darkMat = mat(dark);
-    const glassMat = mat(0x2b3240);
+    const bodyMat = mat(col, {}, true);
+    const darkMat = mat(L.trim, {}, true);
+    // Two-tone puts the cabin in the trim colour. One material either way, so it
+    // costs nothing but a choice of which one the roof gets.
+    const cabinMat = L.twoTone ? darkMat : bodyMat;
+    const glassMat = mat(L.glass);
     const tyreMat = mat(0x1c1f26);
 
     // chassis: a wedge-ish stack of boxes, Polytrack-simple
     const lower = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.55, 3.4), bodyMat);
     lower.position.y = 0.28;
     this.body.add(lower);
-    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.5, 1.6), bodyMat);
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.5, 1.6), cabinMat);
     cabin.position.set(0, 0.78, 0.1);
     this.body.add(cabin);
     const glass = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.34, 1.1), glassMat);
@@ -78,6 +259,22 @@ export class CarView {
     // wheels
     const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.34, 10);
     wheelGeo.rotateZ(Math.PI / 2);
+    // A rim is **one geometry for the whole face**, built once here and shared by
+    // all four wheels, not a disc plus N spoke meshes. That is a draw-call
+    // decision rather than a tidiness one: five spokes as separate meshes is
+    // twenty-four extra meshes on one car and nearly two hundred on a full grid,
+    // which is real cost on a phone. Merged, the wheels go from four meshes to
+    // eight whatever style is on them.
+    //
+    // Built with `MeshBuf`, which is the project's own triangle accumulator and
+    // already does exactly this for the entire track. `mergeGeometries` is a
+    // three.js addon and is deliberately not vendored here.
+    const hasRim = L.rimStyle && L.rimStyle !== 'stock';
+    const rimGeo = hasRim ? rimGeometry(L.rimStyle) : null;
+    // Double-sided on purpose: a rim is a flat plate on the outboard face of
+    // each wheel, and the left pair are mirrored, so one of the two sides would
+    // otherwise be facing away and draw nothing at all.
+    const rimMat = hasRim ? mat(L.rim, { side: THREE.DoubleSide }, true) : null;
     this.wheels = [];
     this.steered = [];
     for (const [x, z, front] of [[-1.0, -1.15, true], [1.0, -1.15, true],
@@ -86,9 +283,29 @@ export class CarView {
       hub.position.set(x, 0.4, z);
       const w = new THREE.Mesh(wheelGeo, tyreMat);
       hub.add(w);
+      if (rimGeo) {
+        // One rim per wheel, on the outboard face, and it spins with the tyre -
+        // so it is parented to the wheel rather than to the hub. A rim that
+        // stayed still while the tyre turned would be the only part of the car
+        // that is obviously wrong at any speed.
+        const r = new THREE.Mesh(rimGeo, rimMat);
+        r.position.x = (x < 0 ? -1 : 1) * 0.175;
+        r.rotation.y = x < 0 ? Math.PI : 0;
+        w.add(r);
+      }
       this.body.add(hub);
       this.wheels.push(w);
       if (front) this.steered.push(hub);
+    }
+
+    // The livery, as one mesh however many stripes it is made of - and the same
+    // trick pays for `fade`, which is a colour ramp baked straight into the
+    // vertices rather than a texture the rest of this renderer does not have.
+    const deco = liveryMesh(L);
+    if (deco) {
+      const decoMat = mat(0xffffff, { vertexColors: true }, true);
+      const m = deco.toMesh(decoMat);
+      this.body.add(m);
     }
 
     // contact shadow: one dark disc laid on the surface under the car
@@ -120,12 +337,31 @@ export class CarView {
       this.brakeMats.push(m);
       this._mats.push(m);
     }
+    // The record badge: a flash across the nose, and the name above the car in
+    // the same green. Green because that is the colour the record already wears
+    // on the medals card - "not a medal and cannot be won" - so the badge needs
+    // no explaining to anybody who has read that card.
+    //
+    // The plate is most of the point. A decal on a low-poly car is invisible at
+    // the distance you actually see rivals from; the name over it is legible
+    // from anywhere, and it is what a rival reads when they are deciding whether
+    // to try the move.
+    if (L.badge === 'laurel') {
+      const flash = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.08, 0.24),
+                                   mat(RECORD_GREEN));
+      flash.position.set(0, 0.35, -1.86);
+      this.body.add(flash);
+    }
+    this.plateColor = L.badge === 'laurel'
+      ? '#' + new THREE.Color(RECORD_GREEN).getHexString()
+      : '#' + col.getHexString();
+
     this._braking = false;
     this._ghostly = ghost;
 
     scene.add(this.group);
     this.scene = scene;
-    this.color = color;
+    this.color = '#' + col.getHexString();
     this.label = null;
   }
 
@@ -141,7 +377,9 @@ export class CarView {
     g.lineWidth = 7;
     g.strokeStyle = 'rgba(0,0,0,.75)';
     g.strokeText(text, 128, 34);
-    g.fillStyle = color || '#fff';
+    // The badge speaks through the plate when the caller has no opinion, which
+    // is what makes a record holder recognisable from behind at racing distance.
+    g.fillStyle = color || this.plateColor || '#fff';
     g.fillText(text, 128, 34);
     const tex = new THREE.CanvasTexture(c);
     const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true,
