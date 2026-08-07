@@ -397,8 +397,12 @@ table for accounts. Stats live in `kot_stats`, games in `kot_games` / `kot_playe
 - **Layout:** `kot/game_logic.py` (pure rules engine), `kot/cards.py` (all 66 power
   cards), `kot/bot.py` (the bot brain, also pure), `kot/app.py` (auth, lobby, socket
   game loop, bot orchestration, ELO), `kot/models.py`, `kot/templates/` + `kot/static/`.
-- **Tests:** `scripts/tests.sh kot` - `test_engine.py` covers the
-  rules, `test_bot.py` covers the bot (liveness, legality, latency, strength).
+- **Tests:** `scripts/tests.sh kot` - 218 tests in about 11s. `test_engine.py` covers the
+  rules, `test_bot.py` covers the bot (liveness, legality, latency, strength). The
+  three **strength** tests are gated off the default run - see the deploy section's
+  note - so a plain `scripts/tests.sh kot` does *not* check that the bot is any good.
+  Run `scripts/tests.sh --all kot` after touching `bot.py`, or just leave the file
+  dirty and the runner will do it for you.
 - **A log line's `kind` is what makes the sound.** `LOG_SOUND` in `static/js/game.js`
   maps kinds to stings, and the same `kind` becomes the `.log-<kind>` CSS class, so
   the engine controls audio purely by how it labels a log line - which means adding
@@ -2313,7 +2317,39 @@ field from a dark field.
 
 ### Tests
 
-`scripts/tests.sh drive` - 700 tests, about 1:25 (four workers, split by file). `test_tracks.py` and
+`scripts/tests.sh drive` - **837 tests, about 30s** (four workers, split by file).
+
+**Nothing in this suite may sleep, and there is a test that enforces it.**
+`tests/conftest.py` fails any test whose call phase exceeds `SLOW_TEST_BUDGET_S`
+(5s) unless it is marked `@pytest.mark.slow`. That exists because of the bug that
+prompted it: `_close_race` held an inline `eventlet.sleep(12)`, correct in
+production (it runs in a greenlet) and twelve real seconds in the two tests that
+called it synchronously - **24s of a 56s suite, and every test passed the whole
+time**. There was no failure to chase, only a clock nobody reads. The sleep is now
+`RESULTS_HOLD_S` and the tail of `_close_race` is `_clear_results`, scheduled with
+`spawn_after`, which also stops the host's *End race* handler sitting on a greenlet
+for twelve seconds after the flag. The guard **fails the offending test rather than
+the session**, because under xdist `pytest_sessionfinish` runs per worker and its
+exit status does not reliably reach the controller.
+Note what it cannot do: it measures a test that *finished*, so it catches a sleep
+and not a hang.
+
+**Two of every three drive tests come from parametrisation, not from typing.** 837
+tests are about 400 functions - `test_tracks.py` is 23 functions x 12 tracks = 199
+tests in 3.6s. So the count is a bad proxy for either cost or duplication: deleting
+hand-written tests buys almost no time (`test_garage_js.py` is 141 tests in 1.3s),
+and the per-track multiplication is where the value is. When the suite feels big,
+**profile it** (`--durations=25`) rather than counting it.
+
+**A test only comes out when a mutation proves another test still catches it.**
+Break the behaviour, confirm at least one survivor goes red, then delete. Done this
+way, four candidates picked by *name* turned into two real ones: the finish-material
+values and the rim-lip radius each turned out to have a single guardian, and only
+the badge-alone mesh count (8 other tests catch it) and metallic's paint direction
+(the retired-finish test catches it) were genuinely redundant. Reading test names is
+not evidence.
+
+`test_tracks.py` and
 `test_runcheck.py` are pure Python; `test_app.py` runs the real routes against a
 throwaway SQLite file (the `/solo` memory, the board and ghost APIs, and a guest's run
 being replayed after login). **`test_race.py` covers the room's race machine** -
@@ -2581,6 +2617,33 @@ scripts/tests.sh drive -- -k ghost -x     # after --, straight to pytest
   finishing. `ers` opts out (18 tests in 0.05s - workers cost more than they
   save), an explicit `-n` after `--` wins, and a venv without `pytest-xdist`
   runs serially rather than refusing to run.
+- **xdist occasionally deadlocks, and it is not understood.** Twice on 2026-08-07: a
+  CI `drive` job stalled at 93% for 19 minutes until the 20-minute job timeout killed
+  it, and a local `kot` run stalled at 97% with the controller **and all four workers
+  at 0.0% CPU** for over two minutes. Both times the identical command passed on the
+  next run (70s and 25s), so it is **intermittent, not a bad commit** - the CI stall
+  was first written off here as an infrastructure flake, which the local reproduction
+  disproves. Two things follow. A stalled run costs the full `timeout-minutes: 20`
+  and then reports **cancelled** rather than failed, so the deploy is skipped and the
+  run does not look like a test failure. And the per-test speed guard cannot see it:
+  a deadlocked test never finishes, so it has no duration. The cheap mitigation, not
+  yet applied, is `pytest-timeout` in each `requirements-test.txt` with a per-test
+  `timeout`, which turns a 20-minute stall into a fast, legible failure.
+- **kot's bot self-play tests are gated, because they were 24s of its 31s.** The
+  three `@pytest.mark.strength` tests are deselected by `kot/pytest.ini`'s `addopts`
+  and switched back on by `tests.sh` on `--all` or when `kot/bot.py`/`kot/cards.py`
+  is dirty (`--override-ini=addopts=`, a single token because these args go through
+  unquoted word splitting and an empty `-m ""` cannot survive that). The skip
+  **prints a line**, since a skipped test otherwise reads as a pass. **The gap, said
+  plainly:** the check reads the working tree, so it does not fire in CI, where the
+  checkout is clean and one commit deep - there they run only on the manual
+  "every module" dispatch. Closing it means `pick` passing its changed-file list
+  through, which is a `.github/workflows/` edit, and the token cannot push those.
+  Two of the three had their samples halved after measuring; **`test_wins_a_crowded_table`
+  kept its full 200** because at n=100 it measures sd 0.079 with a worst run of 0.32
+  against its own 0.35 threshold - halving it would have shipped a test that fails
+  some nights. Winning a four-way game is a 1-in-4 event and needs the games a duel
+  can spare.
 - **In the Action, `pick` asks the GitHub compare API which files moved rather
   than cloning to find out.** This repo's `.git` is ~484MB of committed media and
   `site/` is ~513MB on disk, so a full-history checkout would cost more than the

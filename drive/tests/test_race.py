@@ -245,6 +245,44 @@ def test_a_race_nobody_finished_still_ends(env):
     assert r["phase"] == "results"
 
 
+def test_the_results_sheet_comes_down_by_itself(env, monkeypatch):
+    """`_close_race` leaves the room on the results sheet and *schedules* the drop
+    back to practice; `_clear_results` is that drop.
+
+    The two used to be one function with an inline `eventlet.sleep(12)` between
+    them, which meant this half could only be reached by waiting twelve real
+    seconds - so it was never tested, and the two tests that called `_close_race`
+    paid the twelve seconds each. That was 24s of a 56s suite.
+    """
+    A = env
+    monkeypatch.setattr(A.socketio, "emit", lambda *a, **k: None)
+    monkeypatch.setattr(A, "_broadcast_lobbies", lambda *a, **k: None)
+    r = _room(A)
+    _add_car(A, r, "a", ms=41000)
+    A._close_race("TEST", "all in", r["race_seq"])
+    assert r["phase"] == "results"
+    A._clear_results("TEST", r["race_seq"])
+    assert r["phase"] == "free"
+
+
+def test_a_stale_results_timer_leaves_the_next_race_alone(env, monkeypatch):
+    """The guard that matters here: Rematch can start a new race inside
+    RESULTS_HOLD_S, so the timer armed for the *previous* one must not tidy up the
+    one now running. Same rule every deferred close in this file carries."""
+    A = env
+    monkeypatch.setattr(A.socketio, "emit", lambda *a, **k: None)
+    monkeypatch.setattr(A, "_broadcast_lobbies", lambda *a, **k: None)
+    r = _room(A)
+    _add_car(A, r, "a", ms=41000)
+    stale = r["race_seq"]
+    A._close_race("TEST", "all in", stale)
+    r["phase"] = "racing"                 # Rematch, inside the hold
+    r["race_seq"] = stale + 1
+    A._clear_results("TEST", stale)
+    assert r["phase"] == "racing"         # untouched
+    assert r["race_seq"] == stale + 1
+
+
 def test_the_last_car_leaving_ends_the_race(env):
     A = env
     r = _room(A)

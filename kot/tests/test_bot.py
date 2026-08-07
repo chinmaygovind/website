@@ -269,6 +269,7 @@ def _duel_winrate(a, b, n=200):
     return wins / (2 * n)
 
 
+@pytest.mark.strength
 def test_beats_a_random_player_overwhelmingly():
     class Rando:
         name = "random"
@@ -293,19 +294,38 @@ def test_beats_a_random_player_overwhelmingly():
         def buys(state, pid):
             return []
 
-    assert _duel_winrate(Smart, Rando, n=100) > 0.90
+    # Halved from n=100. Measured mean 0.994, sd 0.007 over 8 reps at n=50, so 0.90
+    # is 12.6 sd under it - by far the roomiest of the three, which is why it is the
+    # one that can lose half its games without argument.
+    assert _duel_winrate(Smart, Rando, n=50) > 0.90
 
 
+@pytest.mark.strength
 def test_beats_a_greedy_player():
-    """Measured around 62% over 2000 seat-balanced games; 55% is ~2.8 standard
-    errors below that at this sample size, and still a clear edge over the 50%
-    an evenly-matched pair would score."""
-    assert _duel_winrate(Smart, Greedy) > 0.55
+    """Re-measured 2026-08-07 over 8 repetitions at n=100 (200 seat-balanced games):
+    **mean 0.712, sd 0.031, worst 0.655**, so 0.55 sits 5.3 standard deviations under
+    it and a healthy bot will not fail on a bad night. The sample was halved from
+    n=200 and the margin is still large.
+
+    The previous note here said "around 62% over 2000 games", and both halves of that
+    were wrong: `_duel_winrate` plays `2 * n` games, so the default was 400 rather
+    than 2000, and the bot measures 71% rather than 62%. Stale numbers in a docstring
+    are worse than none, because the next person sets a threshold from them.
+    """
+    assert _duel_winrate(Smart, Greedy, n=100) > 0.55
 
 
+@pytest.mark.strength
 def test_wins_a_crowded_table():
     """Three greedy opponents, the bot's seat rotated so position cannot flatter
-    it. A fair share would be 25%; the bot measures around 47%."""
+    it. A fair share would be 25%; measured mean 0.466, sd 0.043 over 8 reps.
+
+    **This one keeps its full sample deliberately.** Halved to n=100 it measures
+    sd 0.079 with a worst observed run of 0.32 - i.e. *below* its own 0.35
+    threshold, so it would fail outright some nights. At n=200 the threshold sits
+    2.7 sd under the mean. A four-way game is far noisier than a duel because
+    winning is a 1-in-4 event, so it needs the games the duel can spare.
+    """
     n, wins = 200, 0
     for i in range(n):
         seats = [Greedy(), Greedy(), Greedy(), Greedy()]

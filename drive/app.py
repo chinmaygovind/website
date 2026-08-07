@@ -1428,6 +1428,11 @@ POSE_STALE_MS = 6000
 QUAL_MS = 90000
 COUNTDOWN_MS = 5000
 FINISH_GRACE_MS = 45000
+# How long the results sheet stays up before the room drops back to practice.
+# Named rather than buried in `_close_race` for the usual reason - it is one of the
+# numbers most likely to want moving - and because Rematch firing inside it is a
+# real case that `_clear_results`'s `seq` guard exists for.
+RESULTS_HOLD_S = 12
 # The replay: every car, sampled on the same clock as a ghost and packed the
 # same way, from the green light to the flag. Capped at six minutes, which is
 # beyond any honest race on any track in the pool and stops a room left running
@@ -2350,10 +2355,33 @@ def _close_race(code, why, seq=None):
             socketio.emit("race_result", {"standings": standings, "why": why,
                                           "elo": elo_delta, "race": race_id},
                           room="room:" + code)
-        eventlet.sleep(12)
+        # Scheduled rather than slept through inline. Two reasons, one of them
+        # production and one of them the tests.
+        #
+        # `_close_race` is called *directly* for the host's End race (`on_end_race`),
+        # so an inline `eventlet.sleep(RESULTS_HOLD_S)` held that handler's greenlet
+        # for twelve seconds after the flag - cooperative, so nothing else stalled,
+        # but the handler had no business still being on the stack.
+        #
+        # And it made `_close_race` untestable without paying for it: two tests
+        # called it synchronously and slept twelve real seconds each, which was
+        # **24s of a 56s suite** and therefore most of why a deploy felt slow. It
+        # hid well - the tests passed, so the only symptom was the clock.
+        eventlet.spawn_after(RESULTS_HOLD_S, _clear_results, code, closed_seq)
+
+
+def _clear_results(code, seq):
+    """The room going back to practice once the results sheet has had its time.
+
+    The `seq` guard is the same one every deferred close carries: Rematch can fire
+    inside `RESULTS_HOLD_S`, so a timer armed for one race must not tidy up the next
+    one. Kept here rather than left in `_close_race` because this is the half that
+    runs late, which is exactly the half that can be stale.
+    """
+    with app.app_context():
         with _lock(code):
             r = _rooms.get(code)
-            if not r or r["phase"] != "results" or r["race_seq"] != closed_seq:
+            if not r or r["phase"] != "results" or r["race_seq"] != seq:
                 return
             _reset_race(r)
         socketio.emit("race_reset", {}, room="room:" + code)

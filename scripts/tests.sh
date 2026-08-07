@@ -25,10 +25,11 @@ ALL_MODULES="site drive ers kot"
 modules=""
 pytest_args=""
 list_only=0
+run_all=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --all|-a)  modules="$ALL_MODULES" ;;
+    --all|-a)  modules="$ALL_MODULES"; run_all=1 ;;
     --list|-l) list_only=1 ;;
     -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     --) shift; pytest_args="$*"; break ;;
@@ -137,11 +138,48 @@ parallel_for() {
   [ "$m" = drive ] && echo "-n $n --dist loadfile" || echo "-n $n --dist load"
 }
 
+# kot's three bot self-play tests are marked `strength` and deselected by
+# `kot/pytest.ini`, because they were 24s of kot's 31s. They come back on when the
+# thing they measure could actually have changed.
+#
+# **The limit, said out loud rather than discovered later:** this reads the working
+# tree, so it covers the real local loop - edit `bot.py`, run the suite, get the
+# strength tests. It does **not** fire in CI, where the checkout is clean and one
+# commit deep, so there is nothing to diff against. In CI they run only on the
+# manual "run every module's tests" dispatch, whose box is ticked by default.
+# Closing that properly means the `pick` job passing its changed-file list through
+# to here, which is a change to `.github/workflows/` - and the token cannot push
+# workflow files, so it is not done.
+strength_wanted() {
+  [ "$run_all" = 1 ] && return 0
+  # An explicit -m from the caller is the caller's business, not ours.
+  case " $pytest_args " in *" -m "*) return 1 ;; esac
+  for ref in HEAD --cached; do
+    if git -C "$ROOT" diff --name-only $ref -- kot/bot.py kot/cards.py 2>/dev/null \
+         | grep -q .; then return 0; fi
+  done
+  return 1
+}
+
 run_module() {
   m="$1"
   ensure_venv "$m" || { echo "could not set up $m/venv" >&2; return 1; }
   py="$(py_for "$m")"
   par="$(parallel_for "$m" "$py")"
+  sel=""
+  if [ "$m" = kot ]; then
+    if strength_wanted; then
+      # Wipes `addopts` (which is only ever the `-m "not strength"` default), so
+      # everything is selected again. A single token with no spaces on purpose:
+      # this script passes these through unquoted word splitting, and there is no
+      # way to spell an empty `-m ""` that survives that.
+      sel='--override-ini=addopts='
+      echo "  (kot: including the bot strength tests)"
+    else
+      # A skipped test reads as a pass, so say it. Silence here is the trap.
+      echo "  (kot: bot strength tests left out - pass --all, or change bot.py/cards.py)"
+    fi
+  fi
 
   if [ "$m" = site ]; then
     # Two things, cheapest first. "Does it still import" is what the deploy
@@ -153,7 +191,7 @@ run_module() {
       ( cd "$ROOT" && "$py" -m pytest tests/ $par $pytest_args )
     fi
   else
-    ( cd "$ROOT/$m" && "$py" -m pytest tests/ $par $pytest_args )
+    ( cd "$ROOT/$m" && "$py" -m pytest tests/ $par $sel $pytest_args )
   fi
 }
 

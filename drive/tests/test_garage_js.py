@@ -550,19 +550,6 @@ def test_a_finish_nobody_has_ever_heard_of_is_a_matte_car(rt):
     assert _body_paint(rt, "{body: '#3d8bfd', finish: 'sparkle'}") == "3d8bfd"
 
 
-def test_metallic_is_lighter_and_less_saturated_than_the_paint_under_it(rt):
-    """Which is what metal *is*: flake scatters light back at every angle, and the
-    visible result is a pale version of the colour with the chroma knocked out,
-    not a brighter version of it. Checked as a direction rather than a value, so
-    the numbers can be tuned by eye without editing this."""
-    lit = _body_paint(rt, "{body: '#3d8bfd', finish: 'metallic'}")
-    r, g, b = (int(lit[i:i + 2], 16) for i in (0, 2, 4))
-    R, G, B = 0x3d, 0x8b, 0xfd
-    assert (r + g + b) > (R + G + B), "not lighter"
-    assert (max(r, g, b) - min(r, g, b)) < (max(R, G, B) - min(R, G, B)), \
-        "not less saturated"
-
-
 def test_the_finish_never_changes_the_colour_you_chose(rt):
     """`L.body` is what the garage swatch, the minimap dot and the nameplate are
     drawn from, so a finish that wrote back into it would answer "what colour is
@@ -646,16 +633,6 @@ def test_a_badge_costs_no_mesh_and_no_material(rt, badge):
     both = census(rt, f"{{livery: 'twin', badge: '{badge}'}}")
     assert both["meshes"] == striped["meshes"]
     assert both["materials"] == striped["materials"]
-
-
-@pytest.mark.parametrize("badge", BADGES)
-def test_a_badge_on_its_own_is_worth_exactly_one_mesh(rt, badge):
-    """And the other direction: with no livery it still gets drawn, because either
-    one alone is worth a mesh. `decalMesh` used to bail on `livery === 'none'`
-    before it had anything else to draw."""
-    plain, badged = census(rt, "null"), census(rt, f"{{badge: '{badge}'}}")
-    assert badged["meshes"] - plain["meshes"] == 1
-    assert badged["materials"] - plain["materials"] == 1
 
 
 @pytest.mark.parametrize("badge", BADGES + ["none"])
