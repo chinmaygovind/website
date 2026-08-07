@@ -655,3 +655,73 @@ def test_a_lap_with_no_livery_still_gets_a_car():
     car = json.loads(ctx.eval("JSON.stringify(got[0])"))
     assert "livery" not in car or car["livery"] is None
     assert car["color"] == "#9aa7b8"
+
+
+# The ghost *car*, which is not the ghost *switch* two sections up - that one owns
+# the plain `GHOST_STUB` name, and taking it twice silently re-stubbed its tests.
+GHOST_CAR_STUB = """
+var S = {ghostView: null, ghostViewColor: null, ghostColor: null,
+         ghostLivery: null, renderer: {scene: 'scene'}};
+var GHOST_GREY = '#9aa7b8', GHOST_RATE = 15;
+var built = [], disposed = 0;
+function Ghost(frames, hz) { this.frames = frames; this.hz = hz; }
+function lapTimeline() { return []; }
+function CarView(scene, spec, opts) {
+  built.push({spec: spec, ghost: !!(opts && opts.ghost)});
+  this.dispose = () => { disposed++; };
+}
+"""
+
+
+def _ghost_ctx():
+    ctx = _ctx(GHOST_CAR_STUB)
+    ctx.eval(_fn("useGhost"))
+    ctx.eval(_fn("ghostView"))
+    return ctx
+
+
+def test_the_ghost_you_chase_is_built_from_the_whole_livery():
+    """The other half of the same rule as `startWatching` above, and the half that
+    was already right - pinned because nothing covered it, and because the two
+    ways of looking at one lap have to agree about whose car it is."""
+    import json
+    ctx = _ghost_ctx()
+    ctx.eval("""
+      useGhost([1, 2], 15, '#f2c94c',
+               {body: '#f2c94c', rim_style: 'mesh', livery: 'twin'});
+      ghostView();
+    """)
+    built = json.loads(ctx.eval("JSON.stringify(built)"))
+    assert len(built) == 1
+    assert built[0]["spec"] == {"body": "#f2c94c", "rim_style": "mesh",
+                               "livery": "twin"}
+    assert built[0]["ghost"] is True, "and it is see-through, being a ghost"
+
+
+def test_a_ghost_with_only_a_colour_is_still_a_car():
+    """A guest's lap, or one from before the garage: `CarView` reads a bare colour
+    as a complete livery, so there is no branch downstream."""
+    import json
+    ctx = _ghost_ctx()
+    ctx.eval("useGhost([1, 2], 15, '#f2c94c', null); ghostView();")
+    assert json.loads(ctx.eval("JSON.stringify(built[0].spec)")) == "#f2c94c"
+    # And a lap with nobody attached at all falls back to the grey.
+    ctx.eval("useGhost([1, 2], 15, null, null); ghostView();")
+    assert json.loads(ctx.eval("JSON.stringify(built[1].spec)")) == "#9aa7b8"
+
+
+def test_two_drivers_on_one_colour_do_not_share_a_ghost_car():
+    """The rebuild is keyed on the whole livery, not the body colour. Keyed on the
+    colour, the second of two people on the same paint with different wheels was
+    handed the first one's car - and the key was right about the only thing it was
+    checking."""
+    same = "{body: '#f2c94c', rim_style: '%s'}"
+    ctx = _ghost_ctx()
+    ctx.eval("useGhost([1, 2], 15, '#f2c94c', %s); ghostView();" % (same % "mesh"))
+    ctx.eval("useGhost([1, 2], 15, '#f2c94c', %s); ghostView();" % (same % "dish"))
+    assert ctx.eval("built.length") == 2, "different wheels, different car"
+    assert ctx.eval("disposed") == 1, "and the old one is disposed of, not leaked"
+    # The same car twice is not rebuilt: a CarView bakes its livery into half a
+    # dozen materials and some geometry, so this happens per ghost and not per frame.
+    ctx.eval("ghostView(); ghostView();")
+    assert ctx.eval("built.length") == 2
