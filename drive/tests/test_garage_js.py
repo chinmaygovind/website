@@ -118,21 +118,21 @@ def test_a_car_with_no_livery_at_all_still_builds(rt):
 
 
 def test_the_default_car_costs_exactly_what_it_used_to(rt):
-    """**The check this whole file exists for.** Sixteen meshes and seven
-    materials is the stock car: chassis, cabin, glass, snout, splitter,
+    """**The check this whole file exists for.** Fifteen meshes and seven
+    materials is the stock car: chassis, cabin, raked windscreen, snout,
     headlights, wing, two stays, four wheels, two brake lamps and the contact
     shadow, painted out of body, trim, glass, tyre, a material per brake lamp,
     and one unlit white for the headlights.
 
-    It was fourteen and six until the front was given a face. **A number moving
-    here has to be a deliberate edit**, which is the whole point of pinning it -
-    the car is drawn eight times on a full grid, so a mesh added carelessly to
-    one is eight more draw calls on a phone. Two extra is a different order of
-    decision from the twenty-four the merged rim geometry was avoiding, and the
-    reasoning is in `render.js` beside the boxes.
+    It was fourteen and six before the front had a face, briefly sixteen and
+    seven while the front had a separate splitter, and is one fewer than that now
+    the nose is a single flush box. **A number moving here has to be a deliberate
+    edit**, which is the whole point of pinning it: the car is drawn eight times
+    on a full grid, so a mesh added carelessly to one is eight more draw calls on
+    a phone.
     """
     c = census(rt, "null")
-    assert c["meshes"] == 16
+    assert c["meshes"] == 15
     assert c["materials"] == 7
     # Matte is `MeshLambertMaterial`, which is what every car was, so the
     # default car has no Phong anywhere on it.
@@ -322,7 +322,7 @@ def test_a_shiny_finish_is_phong_and_only_on_the_paint(rt, finish):
     shiny tyre is not a thing, and a glossy lamp lens fights the one signal on
     the car that has to be unambiguous."""
     c = census(rt, f"{{finish: '{finish}'}}")
-    assert c["meshes"] == 16 and c["materials"] == 7   # costs no geometry
+    assert c["meshes"] == 15 and c["materials"] == 7   # costs no geometry
     assert c["phong"] == 2                             # body and trim
     assert rt.call(f"(function () {{"
                    f"  const b = build({{finish: '{finish}'}});"
@@ -392,15 +392,15 @@ def test_the_badge_green_is_the_records_own_green(rt):
 # ---------------------------------------------------------------------------
 
 def test_a_fully_loaded_car_is_still_a_cheap_car(rt):
-    """Every slot filled: 22 meshes against the plain car's 16. A full eight-car
-    grid is therefore ~176 meshes, which is the budget the merged rim geometry
+    """Every slot filled: 21 meshes against the plain car's 15. A full eight-car
+    grid is therefore ~168 meshes, which is the budget the merged rim geometry
     buys and the reason it is merged - drawn the obvious way, the rims alone
     would have been another 160 on top."""
     c = census(rt, "{body: '#7b6cf6', trim: '#111111', glass: '#446688',"
                    " rim: '#c9ced6', stripe: '#ffffff', finish: 'pearl',"
                    " livery: 'twin', rim_style: 'forged', two_tone: true,"
                    " badge: 'laurel'}")
-    assert c["meshes"] == 22
+    assert c["meshes"] == 21
     assert c["materials"] == 10
     assert c["untracked"] == 0
 
@@ -417,7 +417,7 @@ def test_no_livery_moves_anything_the_simulation_reads(rt):
     FRAME = "build(%s).view.group.children[0].children.map("\
             "(c) => [c.position.x, c.position.y, c.position.z])"
     plain = rt.call(FRAME % "null")
-    assert len(plain) == 15                # chassis + front + 4 hubs + lamps
+    assert len(plain) == 14                # chassis + front + 4 hubs + lamps
     for livery in ("{finish: 'pearl'}", "{two_tone: true}", "{rim_style: 'forged'}",
                    "{livery: 'band', stripe: '#ffffff'}",
                    "{rim_style: 'mesh', livery: 'fade', badge: 'laurel',"
@@ -492,20 +492,62 @@ def test_the_headlight_lens_fades_with_a_ghost(rt):
                    "})()") is True
 
 
-def test_the_splitter_reaches_the_corners_of_the_car(rt):
-    """The old nose was 1.7 wide against a 1.9 body, so it stopped 0.1 short of
-    each flank - and a bumper that does not reach the corners of the car reads
-    as a bumper lying on top of one. Being flush is half of why the front stopped
-    looking bolted on, and it is a number somebody could round off without
-    noticing what it was for."""
+def test_the_nose_is_exactly_as_wide_as_the_body(rt):
+    """**Flush means flush.** The original nose was 1.7 against a 1.9 body, and
+    the first rebuild made it 1.84 - which still leaves a 0.03 step down each
+    flank, and 0.03 is enough to read as a separate part bolted to the car from
+    any angle you look at it. Equality, not "close".
+
+    There is also nothing in front of it any more. A splitter protruding past the
+    nose is the opposite of flush: it puts a second silhouette ahead of the first,
+    which is what the blade in the first attempt did.
+    """
     parts = rt.call("build(null).view.group.children[0].children"
                     ".filter((c) => c.geometry && c.geometry.parameters)"
-                    ".map((c) => [c.position.z, c.geometry.parameters.width])")
-    body = max(w for z, w in parts)                      # the chassis box
+                    ".map((c) => [c.position.z, c.geometry.parameters.width,"
+                    "             c.geometry.parameters.depth])")
+    body = max(w for z, w, d in parts)
     assert body == 1.9
-    front = [w for z, w in parts if z < -1.5]
-    assert front, "nothing is drawn ahead of the front axle"
-    assert max(front) == body, "the splitter is not flush with the flanks"
+    front = [(z, w, d) for z, w, d in parts if z < -1.5]
+    assert len(front) == 1, "the nose is one box, not a stack of them"
+    assert front[0][1] == body, "the nose is not flush with the flanks"
+
+
+def test_the_windscreen_is_raked_and_not_a_wall(rt):
+    """The thing that was actually jarring. The cabin was a plain box on a plain
+    slab, so its front was a dead-vertical wall rising half a unit straight out of
+    the bonnet - no car has that. The windscreen is a slab lying along the line
+    from the deck up to the roof, which means it has to be *rotated*, and a
+    rotation is the one property a screenshot of a low-poly car makes hard to
+    judge and easy to lose in a refactor.
+
+    It also has to be seated by its **top face**: put the centre on that line
+    instead and the leading edge stands proud of the bonnet, drawing a dark fin
+    out of the paint. That is the failure this pins, because it looks deliberate.
+    """
+    scr = rt.call("(function () {"
+                  "  const c = build(null).view.group.children[0].children"
+                  "    .find((x) => x.geometry && x.geometry.parameters"
+                  "                 && Math.abs(x.rotation.x) > 0.4);"
+                  "  return c ? [c.rotation.x, c.position.y, c.position.z,"
+                  "              c.geometry.parameters.height,"
+                  "              c.geometry.parameters.depth] : null;"
+                  "})()")
+    assert scr, "nothing on the car is raked - the windscreen is a wall again"
+    rot, y, z, h, d = scr
+    assert rot < -0.4, "the screen leans the wrong way"
+
+    # Where its top-front and top-rear corners actually land: the deck is 0.555
+    # and the roof is 1.03, and the pane has to run between them.
+    import math
+    cs, sn = math.cos(rot), math.sin(rot)
+    def corner(ly, lz):
+        return (y + ly * cs - lz * sn, z + ly * sn + lz * cs)
+    lo = corner(h / 2, -d / 2)
+    hi = corner(h / 2, d / 2)
+    assert abs(lo[0] - 0.555) < 0.02, f"the screen does not meet the bonnet: {lo}"
+    assert abs(hi[0] - 1.03) < 0.02, f"the screen does not meet the roof: {hi}"
+    assert lo[1] < hi[1], "the screen leans forward instead of back"
 
 
 def test_the_car_did_not_get_longer(rt):
@@ -530,9 +572,10 @@ def test_the_car_did_not_get_longer(rt):
 def test_the_snout_is_as_deep_as_the_car_is(rt):
     """At 0.30 tall it met the bonnet deck correctly and left its underside a
     quarter of a unit above the floor, so between the body's front face and the
-    splitter there was a slot of open air you could see daylight through -
-    which looks worse than the slab it replaced, and looks *fine* from every
-    angle except the two that matter."""
+    ground there was a slot of open air you could see daylight through - which
+    looks worse than the slab it replaced, and looks *fine* from every angle
+    except the two that matter. The nose has to reach down to the floor at its
+    root the way the body does."""
     parts = rt.call("build(null).view.group.children[0].children"
                     ".filter((c) => c.geometry && c.geometry.parameters"
                     "               && c.position.z < -1.5)"
@@ -565,6 +608,6 @@ def test_the_record_badge_is_on_the_nose_and_not_inside_it(rt):
                     "    .map((c) => c.position.z - c.geometry.parameters.depth / 2);"
                     "})()")
     # The badge is the box the loaded car has and the plain one does not.
-    badge = [z for z, w in front if abs(w - 1.5) < 1e-9]
+    badge = [z for z, w in front if abs(w - 1.4) < 1e-9]
     assert len(badge) == 1, "the nose flash is gone"
     assert badge[0] <= min(plain) + 0.02, "the badge is buried in the bodywork"

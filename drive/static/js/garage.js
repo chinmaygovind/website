@@ -329,9 +329,12 @@ function earnLine() {
   const gates = G.gates || [];
   if (!gates.length) return '';
   const left = gates.filter((g) => !g.got);
-  if (!left.length) {
-    return `<span class="gearn done">Everything unlocked</span>`;
-  }
+  // **Nothing to say, so nothing said.** This used to read "Everything
+  // unlocked", which is a bar taking up screen over the car in order to report
+  // an absence - and it is the *permanent* state for anybody who has finished
+  // the game, so it would sit there for ever. A line about what is left to earn
+  // has no business existing once there is nothing left.
+  if (!left.length) return '';
   // The nearest one is the one you are furthest along, so it is the one worth
   // naming - a list of four would be a list, and this is a line.
   const near = left.slice().sort((a, b) =>

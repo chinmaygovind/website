@@ -21,7 +21,11 @@
   <div class="gtop">
     <div class="gtabs" id="gtabs"></div>
     <div class="gopts" id="gopts"></div>
-    <div class="gearn" id="gearn"></div>
+    {# A bare wrapper: the pill is the span `earnLine` puts inside it, so when
+       there is nothing left to earn this collapses to nothing rather than to an
+       empty pill. It carried `.gearn` itself for a while, which drew a second
+       border round the first. #}
+    <div id="gearn"></div>
   </div>
 
   <div class="gfoot">

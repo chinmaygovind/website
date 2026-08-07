@@ -238,42 +238,61 @@ export class CarView {
     const lower = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.55, 3.4), bodyMat);
     lower.position.y = 0.28;
     this.body.add(lower);
-    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.5, 1.6), cabinMat);
-    cabin.position.set(0, 0.78, 0.1);
+    // The cabin is shorter than it was, because the front half of it is now the
+    // windscreen rather than a wall.
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.5, 1.05), cabinMat);
+    cabin.position.set(0, 0.78, 0.375);
     this.body.add(cabin);
-    const glass = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.34, 1.1), glassMat);
-    glass.position.set(0, 0.84, -0.1);
-    this.body.add(glass);
+    // **A raked windscreen, and this is the one that mattered.** The cabin used
+    // to be a plain box on a plain slab, so the front of it was a dead-vertical
+    // wall rising 0.475 straight out of the bonnet - no car has that, and it was
+    // the single most jarring thing about the model. This is a slab lying along
+    // the line from the deck at z = -0.75 up to the roof at z = -0.15: a rise of
+    // 0.475 over 0.6, which is about 52 degrees off vertical.
+    //
+    // It replaces the old glass box rather than joining it, so the cabin costs
+    // no more than it did. That box was 1.42 wide inside a 1.55 cabin, so its
+    // sides were buried and the only part of it anybody ever saw *was* the
+    // windscreen face - which is exactly what this is, at the right angle.
+    // **Positioned by its top face, not its centre.** A slab has thickness, and
+    // the thing that has to land on the line from the deck to the roof is the
+    // pane you can see - so the centre sits half a thickness *under* that line,
+    // along its own normal. Put the centre on the line instead and the leading
+    // edge stands an eighth of a unit proud of the bonnet, which draws a dark
+    // fin sticking up out of the paint rather than a windscreen.
+    const screen = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.34, 0.765), glassMat);
+    screen.position.set(0, 0.656, -0.345);
+    screen.rotation.x = -0.667;
+    this.body.add(screen);
     // --- the front ---------------------------------------------------------
     // The whole front used to be one box: a 1.7-wide slab in the trim colour,
-    // sitting below the body's front face and inset 0.1 from each flank. It
-    // read as a bumper somebody had bolted on, and above it the body presented
-    // a flat rectangle with nothing on it - so the car had a designed rear
-    // (wing, stays, two lamps) and a blank front. Three pieces instead.
+    // sitting below the body's front face and inset 0.1 from each flank, with
+    // nothing above it - a bumper somebody had bolted to a rectangle. It is one
+    // box again now, but the *body's own* box: same colour, **exactly the body's
+    // width**, and sloping down out of the bonnet rather than hanging off it.
     //
-    // **The snout is in the body colour**, which is most of the fix. The trim
-    // colour is what says "this part is an attachment", and the nose of a car
-    // is not one.
-    // **It ends where the old slab ended**, at z = -2.2 before the blade. The
-    // car's length is what you judge a gap by, and the collision radius has not
-    // moved, so the drawn car must not grow a nose the sim does not know about.
-    // **As deep as the body is**, not a band across the top of it. At 0.30 the
-    // snout met the deck correctly and left its underside 0.26 above the floor,
-    // so between the body's front face and the splitter there was a slot of open
-    // air with daylight through it - which is worse than the slab it replaced.
-    const snout = new THREE.Mesh(new THREE.BoxGeometry(1.84, 0.46, 0.50), bodyMat);
-    snout.position.set(0, 0.30, -1.95);
-    // Tilted nose-down, which is the "wedge-ish stack of boxes" this file
-    // already describes itself as. **Negative**: three.js rotates y' = y cos - z
-    // sin about X, so with the nose at -Z it takes a negative angle to drop it.
-    snout.rotation.x = -0.16;
+    // Three attempts' worth of things not to do again:
+    //
+    // * **Not the trim colour.** Trim is what says "this part is an attachment",
+    //   and the nose of a car is not one.
+    // * **Not inset.** 1.84 inside a 1.9 body leaves a 0.03 step down each
+    //   flank, which is enough to read as a separate part from any angle. Flush
+    //   means flush.
+    // * **Not with a blade in front of it.** A splitter protruding past the nose
+    //   is the opposite of flush - it puts a second silhouette in front of the
+    //   first. The record badge sits along that bottom edge when it is earned,
+    //   which is the only thing that has any business sticking out down there.
+    //
+    // The tilt is `rotation.x`, and it is **negative**: three.js rotates
+    // `y' = y cos - z sin` about X, and the car points at -Z, so a negative
+    // angle is what drops the nose. At 0.30 the tip sits 0.15 below the bonnet,
+    // which is a nose; at the 0.16 it started on the drop was 0.065 and the
+    // slope was invisible, so the flanks were the only thing saying anything had
+    // changed - and they were saying "there is a step here".
+    const snout = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.42, 0.50), bodyMat);
+    snout.position.set(0, 0.28, -1.95);
+    snout.rotation.x = -0.30;
     this.body.add(snout);
-    // A blade, and **flush with the flanks** rather than inset. The inset is
-    // the other half of why the old nose looked stuck on: a bumper that does
-    // not reach the corners of the car is a bumper lying on the car.
-    const splitter = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.09, 0.60), darkMat);
-    splitter.position.set(0, 0.10, -1.95);
-    this.body.add(splitter);
     // Headlights: two lenses, one mesh, one material, and **the colour is not
     // yours**. The reasoning is the brake lamps' own, a screen down: the lamps
     // are the only thing another driver reads off your car, which is why the
@@ -285,8 +304,11 @@ export class CarView {
     // a lens would go glossy with the paint and darken on the side away from the
     // sun. A lamp is a lamp at every angle. One `MeshBuf` rather than two meshes
     // because, unlike the brake lamps, these never change independently.
+    // On the sloped face, so they sit a little further back than a flat nose
+    // would want them - the face at this height is at z = -2.20, and these poke
+    // out the same 0.08 the brake lamps do at the other end.
     const lamps = new MeshBuf();
-    for (const s of [-1, 1]) lamps.box(s * 0.53, 0.40, -2.24, 0.23, 0.07, 0.05, 0xffeccc);
+    for (const s of [-1, 1]) lamps.box(s * 0.53, 0.30, -2.23, 0.23, 0.065, 0.05, 0xffeccc);
     const headMat = new THREE.MeshBasicMaterial({
       color: 0xffeccc, transparent: ghost, opacity: this._solid });
     this._mats.push(headMat);
@@ -393,13 +415,18 @@ export class CarView {
     // to try the move.
     if (L.badge === 'laurel') {
       // **On the nose, not in it.** It used to sit at z -1.86, which was clear
-      // air in front of the old slab and is now the middle of the snout, so the
-      // badge was drawn entirely inside the bodywork and could not be seen from
-      // any angle. Here it is a bar across the very front, under the lights and
-      // above the splitter - the one strip of the nose neither of those uses.
-      const flash = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.08, 0.06),
+      // air in front of the old flat slab and is the middle of the snout now, so
+      // rebuilding the front drew the badge entirely inside the bodywork where
+      // no angle could see it. Nothing errored and nothing looked wrong; it was
+      // simply not there.
+      //
+      // It runs along the bottom edge of the nose, which is the one line on the
+      // front that nothing else uses and the only place anything is allowed to
+      // stand proud of the bodywork - the splitter that used to live there was
+      // taken out precisely because it was not flush.
+      const flash = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.07, 0.06),
                                    mat(RECORD_GREEN));
-      flash.position.set(0, 0.25, -2.21);
+      flash.position.set(0, 0.12, -2.16);
       this.body.add(flash);
     }
     this.plateColor = L.badge === 'laurel'

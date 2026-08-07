@@ -1205,7 +1205,9 @@ over a rule that actually wants three is worse than no text at all.
   the car keeps the rest of it. The option row has a `min-height` so switching
   tabs does not walk the car up and down behind the bar. A tab holding something
   unearned carries a dot, and one line under the row says how many of the four
-  are yours and which is nearest - with a **colon**, not "needs": two of the four
+  are yours and which is nearest - and says **nothing at all** once they are all
+  yours, rather than sitting there for ever reporting an absence, which is a bar
+  over the car in order to say there is no news. With a **colon**, not "needs": two of the four
   gate texts are instructions ("Set a track record") and two are noun phrases
   ("A gold on any 3 tracks"), so anything reading them into a sentence gets half
   of them wrong. The numbers behind it are `garage.progress`, and `payload`'s
@@ -1272,41 +1274,57 @@ over a rule that actually wants three is worse than no text at all.
 
 The rear was designed - a wing, two stays, two brake lamps - and the front was
 not. It was a single 1.7-wide slab in the trim colour, sitting below the body's
-front face and inset 0.1 from each flank, with nothing above it: a bumper
-somebody had bolted to a rectangle, and no lights anywhere. Three pieces now,
-and each of them is one of the reasons it read badly:
+front face and inset 0.1 from each flank, with nothing above it and no lights
+anywhere: a bumper somebody had bolted to a rectangle. And the cabin was a plain
+box on that slab, so **its front was a dead-vertical wall** rising half a unit
+straight out of the bonnet, which is the thing that actually read as wrong. No
+car has that.
 
-- **A snout in the *body* colour**, tilted nose-down. The trim colour is what
-  says "this part is an attachment", and the nose of a car is not one. The tilt
-  is `rotation.x`, negative - three.js rotates `y' = y cos - z sin` about X, and
-  the car points at -Z, so it takes a negative angle to drop the nose.
-- **A splitter flush with the flanks.** The inset was the other half of why the
-  old nose looked stuck on: a bumper that does not reach the corners of the car
-  is a bumper lying on one.
-- **Headlights**, as one `MeshBuf` and one unlit material. One mesh because,
-  unlike the brake lamps, they never change independently of each other; unlit
-  and built by hand rather than through `mat()` because `mat()` makes a lit
-  material and takes the finish, so a lens would go glossy with the paint and
-  darken on the side away from the sun.
+Three pieces now, and the count went *down*:
 
-Three things that were got wrong first time and are pinned by tests now:
+- **A raked windscreen**, a slab lying along the line from the bonnet deck up to
+  the roof - a rise of 0.475 over 0.6, about 52 degrees off vertical. It replaces
+  the old glass box rather than joining it, so the cabin costs no more than it
+  did: that box was 1.42 wide inside a 1.55 cabin, so its sides were buried and
+  the only part of it anybody ever saw *was* the windscreen face. The cabin box
+  is shorter by exactly the screen's reach.
+- **One nose box, in the body colour, exactly the body's width**, sloping down
+  out of the bonnet.
+- **Headlights**, as one `MeshBuf` and one unlit material.
 
-- **The snout has to be as deep as the body.** At two-thirds height it met the
-  bonnet deck correctly and left its underside a quarter of a unit above the
-  floor, so between the body's front face and the splitter there was a slot of
-  open air you could see daylight through - which is worse than the slab it
-  replaced, and looks fine from every angle except the two that matter.
-- **It may not make the car longer.** The collision radius is `tuning.py`'s and
-  has not moved, so the snout and the blade end where the old slab did.
-- **The laurel's nose flash had to move.** It sat at z -1.86, which was clear air
-  in front of the old slab and is the middle of the snout now, so rebuilding the
-  front drew the badge entirely inside the bodywork. Nothing errored and nothing
-  looked wrong; it was simply not there. It is a bar across the very front now,
-  under the lights and above the splitter, which is the one strip of the nose
-  neither of those uses.
+Four things that were got wrong on the way, in the order they were got wrong:
 
-A plain car is **16 meshes and 7 materials** and a fully loaded one 22 and 10.
-Those numbers are pinned in `test_garage_js.py` and a change to them has to be a
+- **Not the trim colour, and not inset.** Trim is what says "this part is an
+  attachment", and a nose is not one. 1.84 inside a 1.9 body still leaves a 0.03
+  step down each flank, and 0.03 is enough to read as a separate part from any
+  angle. `test_the_nose_is_exactly_as_wide_as_the_body` asserts equality rather
+  than closeness for that reason.
+- **Nothing may stand in front of it.** The first rebuild put a full-width
+  splitter blade ahead of the nose, which is the opposite of flush: it puts a
+  second silhouette in front of the first. It is gone, and the record badge - the
+  one thing allowed to stand proud down there - runs along the bottom edge of the
+  nose instead.
+- **The slope has to be worth having.** At `rotation.x` -0.16 the tip sat 0.065
+  below the bonnet, which is invisible, so the flanks were the only thing saying
+  anything had changed - and what they were saying was "there is a step here". At
+  -0.30 the drop is 0.15 and it reads as a nose. Negative because three.js
+  rotates `y' = y cos - z sin` about X and the car points at -Z.
+- **A slab is seated by the face you can see, not by its centre.** The windscreen
+  has thickness, so the thing that must land on the deck-to-roof line is its top
+  face - the centre sits half a thickness under that line along its own normal.
+  Centred on the line instead, the leading edge stands an eighth of a unit proud
+  of the bonnet and draws a dark fin sticking up out of the paint, which looks
+  deliberate and is why it needs a test rather than an eye.
+
+Two rules the front may not break, both pinned: **it may not make the car
+longer** (the collision radius is `tuning.py`'s and has not moved, so the nose
+ends where the old slab did), and **the nose has to reach the floor at its root**
+the way the body does - at two-thirds height it met the deck correctly and left a
+slot of open air under it you could see daylight through, which is worse than the
+slab it replaced and looks fine from every angle except the two that matter.
+
+A plain car is **15 meshes and 7 materials** and a fully loaded one 21 and 10.
+Those are pinned in `test_garage_js.py` and a change to them has to be a
 deliberate edit: the car is drawn eight times on a full grid, so a mesh added
 carelessly to one is eight more draw calls on a phone.
 
@@ -1853,7 +1871,7 @@ field from a dark field.
 
 ### Tests
 
-`scripts/tests.sh drive` - 704 tests, about 1:25 (four workers, split by file). `test_tracks.py` and
+`scripts/tests.sh drive` - 705 tests, about 1:25 (four workers, split by file). `test_tracks.py` and
 `test_runcheck.py` are pure Python; `test_app.py` runs the real routes against a
 throwaway SQLite file (the `/solo` memory, the board and ghost APIs, and a guest's run
 being replayed after login). **`test_race.py` covers the room's race machine** -
@@ -1932,15 +1950,15 @@ with assembling a car out of a livery is invisible to both of the checks this
 project otherwise leans on: the autopilot never draws, and a screenshot of one
 car either photographs "the fifth rim style is 24 meshes instead of one"
 correctly or photographs it as something you would have to already suspect. So
-it pins the *construction* - the mesh and material budget (16 and 7 plain, 22
+it pins the *construction* - the mesh and material budget (15 and 7 plain, 21
 and 10 fully loaded), that no material escapes `_mats` and therefore
 `setGhostly`, that a rim style is one geometry shared by four wheels, that every
 decal clears its panel and faces up (the cross product taken from the raw
 positions, since the stub's `computeVertexNormals` does nothing), and that
 nothing a livery does moves any part of the car that was already there. The
 front has its own group: that the headlights are one mesh and never the driver's
-colour, that the splitter is flush with the flanks, that the snout leaves no slot
-under it, that the car did not get longer, and that the laurel's nose flash is
+colour, that the nose is exactly as wide as the body, that the windscreen is raked
+and seated by its top face, that the nose leaves no slot under it, that the car did not get longer, and that the laurel's nose flash is
 **on** the nose rather than inside it - which it was, silently, for as long as it
 took to look at a screenshot.
 **Both of them exist mainly to say the same thing**: an account with no garage
