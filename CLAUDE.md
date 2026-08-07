@@ -1190,15 +1190,20 @@ over a rule that actually wants three is worse than no text at all.
   still reach them is a recording, which is exactly the case they are kept for.
   A pair of tests pins both halves: the two retired finishes still render, and an
   entirely unknown finish is a matte car rather than a crash.
-- **The finish applies to the whole body.** `paintOf` runs on the body colour, the
-  cabin (whether it is sharing `bodyMat` or wearing its own roof colour) and the
-  trim, so a glossy car is glossy everywhere its paint is - and not on the glass,
-  the tyres or either set of lamps, which stay matte for the reason below. It is
-  applied at those call sites and **not** inside `mat`, because the decal material
-  is `0xffffff` with `vertexColors` and a paint transform there would multiply
-  every stripe and badge on the car. `L.body` itself is never touched, so the
-  swatch, the minimap dot and the nameplate still show the colour that was chosen
-  rather than the colour the finish made of it.
+- **The finish applies to the whole body, and its two halves reach different
+  things.** The **material** half (`spec.mat` - the harder highlight, and Phong
+  rather than Lambert) is what `mat(..., painted = true)` switches on, and that is
+  every painted surface on the car: the body, the cabin, the spoiler and its stays,
+  the rims and the decals. The **paint** half (`paintOf` - the deeper, more
+  saturated colour) is applied at three call sites only: `bodyMat`, `cabinMat` and
+  `darkMat`. So a glossy car is glossy everywhere, and a *repainted* one is
+  repainted on the three surfaces whose colour somebody chose. Both halves stop at
+  the glass, the tyres and either set of lamps, which stay Lambert for the reason
+  below. `paintOf` is deliberately not inside `mat`: the decal material is
+  `0xffffff` with `vertexColors`, so a paint transform there would multiply every
+  stripe and badge on the car by it. `L.body` itself is never touched either, so
+  the swatch, the minimap dot and the nameplate still show the colour that was
+  chosen rather than the colour the finish made of it.
 - **No lamp is customisable, at either end.** They are the only thing a rival
   reads off your car, and the amber drift state was removed for exactly that
   reason; a lamp somebody can recolour is the same mistake with a settings page
