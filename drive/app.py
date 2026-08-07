@@ -98,20 +98,21 @@ def _garage_row(user, create=False):
 
 
 def _earned_for(user, row=None, holders=None):
-    """What this account has earned, writing down the record badge if it is new.
+    """What this account has earned, writing down the losable ones if they are new.
 
-    The badge is the one gate that is kept rather than recomputed (a record can
-    be taken off you and the badge cannot), so the moment it is true it has to be
+    Most gates are counters that only go up and are recomputed every time. The
+    ones in `garage.KEPT` are records *held right now* - a record can be taken off
+    you and the badge for it cannot - so the moment one is true it has to be
     persisted or it would be lost the next time somebody beats the lap. Doing it
     here rather than in a tool is also why no backfill is needed: every current
-    record holder earns it the first time anything asks.
+    record holder earns theirs the first time anything asks.
     """
     if not user:
         return set()
     row = row if row is not None else _garage_row(user)
     already = row.earned if row else set()
     got = garage_mod.earned(user, already, holders)
-    keep = got & {"laurel"}
+    keep = got & garage_mod.KEPT
     if keep - already:
         row = row or _garage_row(user, create=True)
         row.earned_json = json_mod.dumps(sorted(already | keep))
@@ -1209,7 +1210,7 @@ def _roster(players):
     The one place a roster is built, so the gate check cannot be applied on
     three paths and forgotten on the fourth.
     """
-    holders = garage_mod.record_holders()
+    holders = garage_mod.records_held()
     return [pl.to_dict(_livery_for(pl.linked_user, holders, pl.name))
             for pl in players]
 
@@ -1615,7 +1616,7 @@ def _store_replay(r, game, standings, why):
     # it should be the car you drive now. A replay is a record of an afternoon:
     # repainting everybody in it because somebody changed their mind last week
     # would make it a record of nothing.
-    holders = garage_mod.record_holders()
+    holders = garage_mod.records_held()
     livery_by_pid = {pl.pid: _livery_for(pl.linked_user, holders, pl.name)
                      for pl in game.players}
     cars = []

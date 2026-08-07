@@ -37,6 +37,33 @@
     </button>
   </div>
 
+  {# The colour picker, and **it lives out here rather than in `#gopts`** - which
+     is not a layout preference, it is the only place it can be. `set()` calls
+     `render()`, and `render()` rewrites `#gopts`'s innerHTML wholesale on every
+     change; a picker inside it would be destroyed by its own first drag, halfway
+     through the gesture that was driving it. Out here nothing touches it, and it
+     is positioned against the tile that opened it.
+
+     Hidden with `hidden` rather than a class so it is out of the accessibility
+     tree as well as off the screen. #}
+  <div class="gpick" id="gpick" hidden>
+    <div class="gpick-head">
+      <span id="gpickslot">Colour</span>
+      <button class="gpick-x" id="gpickclose" title="Close" aria-label="Close">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    {# The saturation/value square, with the hue behind it as a background the
+       drag never touches. Two gradients and one handle rather than a canvas: the
+       gradients are what a browser is already good at. #}
+    <div class="gpick-sv" id="gpicksv"><i class="gpick-dot" id="gpicksvdot"></i></div>
+    <div class="gpick-hue" id="gpickhue"><i class="gpick-dot" id="gpickhuedot"></i></div>
+    <div class="gpick-foot">
+      <span class="gpick-chip" id="gpickchip"></span>
+      <span class="gpick-hex" id="gpickhex">#000000</span>
+    </div>
+  </div>
+
   <div class="gsaved" id="gsaved">Saved</div>
 </div>
 {% endblock %}

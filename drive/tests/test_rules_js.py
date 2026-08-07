@@ -725,3 +725,76 @@ def test_two_drivers_on_one_colour_do_not_share_a_ghost_car():
     # dozen materials and some geometry, so this happens per ghost and not per frame.
     ctx.eval("ghostView(); ghostView();")
     assert ctx.eval("built.length") == 2
+
+
+# --- the colour picker's own arithmetic --------------------------------------
+# `garage.js` has no test coverage at all: it is a page, and the way it is checked
+# is by looking at it. These two functions are the exception, because they are
+# arithmetic rather than appearance - a hue that comes back three degrees off, or a
+# hex that loses its leading zero, is invisible in a screenshot and permanent in
+# somebody's saved car.
+
+GARAGE_JS = os.path.join(os.path.dirname(__file__), "..", "static", "js",
+                         "garage.js")
+
+
+def _gfn(name):
+    src = open(GARAGE_JS).read()
+    m = re.search(r"^function %s\(.*?^\}" % re.escape(name), src, re.S | re.M)
+    assert m, "%s is gone from garage.js, or is no longer a plain function" % name
+    return m.group(0)
+
+
+def _pick_ctx():
+    ctx = jsrt.quickjs.Context()
+    ctx.eval(_gfn("hexToHsv"))
+    ctx.eval(_gfn("hsvToHex"))
+    return ctx
+
+
+@pytest.mark.parametrize("hex_", [
+    "#000000", "#ffffff", "#808080",           # the greys, where hue is undefined
+    "#ff0000", "#00ff00", "#0000ff",           # the primaries
+    "#e8453c", "#3d8bfd", "#17bfa8", "#f2c94c",  # real body colours
+    "#010203", "#0f0f0f",                      # near-black, where rounding bites
+])
+def test_a_colour_survives_the_round_trip(hex_):
+    """Every swatch in the garage is a hex, and opening the picker on one turns it
+    into hue/saturation/value and back. A round trip that is off by a bit turns
+    "open the picker and close it again" into an edit."""
+    ctx = _pick_ctx()
+    got = ctx.eval("(function () { const k = hexToHsv('%s');"
+                   " return hsvToHex(k.h, k.s, k.v); })()" % hex_)
+    assert got == hex_
+
+
+def test_a_hex_is_always_six_digits():
+    """`toString(16)` drops leading zeros, so a dark colour comes out as `#102`
+    without the pad - which is a valid CSS colour meaning something else entirely,
+    and would be stored and sent to the server as one."""
+    ctx = _pick_ctx()
+    for h in range(0, 360, 37):
+        got = ctx.eval("hsvToHex(%d, 0.9, 0.04)" % h)
+        assert re.fullmatch(r"#[0-9a-f]{6}", got), got
+
+
+def test_the_greys_keep_their_hue_while_you_drag_off_the_edge():
+    """The reason the panel stores h/s/v rather than a hex. Saturation zero has no
+    hue to read back - `hexToHsv('#ffffff').h` is 0, i.e. red - so a drag along the
+    top of the square, where everything is white, would silently reset the hue to
+    red on every move if the state round-tripped through a colour."""
+    ctx = _pick_ctx()
+    assert ctx.eval("hexToHsv('#ffffff').s") == 0
+    assert ctx.eval("hexToHsv('#ffffff').h") == 0
+    # Which is exactly why `S.pick` holds the three numbers: the value the user
+    # chose is kept, not re-derived from what it currently looks like.
+    assert ctx.eval("hsvToHex(210, 0, 1)") == "#ffffff"
+    assert ctx.eval("hsvToHex(210, 1, 1)") == "#0080ff"
+
+
+def test_hue_wraps_rather_than_clipping():
+    """The hue strip is a ring drawn straight, so both ends are red and dragging
+    past either of them has to keep working."""
+    ctx = _pick_ctx()
+    assert ctx.eval("hsvToHex(360, 1, 1)") == ctx.eval("hsvToHex(0, 1, 1)")
+    assert ctx.eval("hsvToHex(-30, 1, 1)") == ctx.eval("hsvToHex(330, 1, 1)")

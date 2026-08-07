@@ -20,6 +20,19 @@ const BRAKE_ON = 0xff2b2b;
 // `test_garage.py`, because a badge in a different green from the record it is
 // about is a badge about nothing.
 const RECORD_GREEN = 0x55e08a;
+// What each badge is drawn in. Its own colour each, so the mark says what kind of
+// thing was earned and not merely that something was: a gold sunburst for having
+// won everything, bronze steps for having been on a lot of podiums, the record's
+// own green for the three that are about records.
+const BADGE_COLOR = {
+  laurel: RECORD_GREEN,
+  crown: RECORD_GREEN,
+  chevrons: RECORD_GREEN,
+  chequers: RECORD_GREEN,
+  sunburst: 0xe8c34a,      // gold
+  podium: 0xc98b4b,        // bronze
+  ribbon: 0xd8dee8,        // road grey
+};
 // How see-through a car is when it is not something you can hit. The ghost, a
 // replay and a rival you are about to drive through are all the same statement
 // - this car is not solid - so they are one number rather than three amounts
@@ -48,10 +61,14 @@ function liveryOf(spec) {
   return {
     body, trim,
     glass: new THREE.Color(spec.glass || 0x2b3240),
-    // The *style* is what turns rims on, not the colour: `stock` is the single
-    // plain cylinder the wheel has always been, and picking a colour for a wheel
-    // that has no rim face should not quietly grow one. Colour only tints.
     rim: new THREE.Color(spec.rim || 0xc9ced6),
+    // **Whether a rim colour was chosen at all**, which the resolved colour above
+    // cannot answer because it has a default baked into it. It is what lets
+    // `stock` have a paintable outer lip without every car in the game growing
+    // one: no colour, no lip, and an untouched car is byte-identical to the car
+    // it was before this existed. The other five styles have a rim face whatever
+    // you do, so it only ever decides anything for stock.
+    rimSet: spec.rim != null,
     stripe: spec.stripe ? new THREE.Color(spec.stripe) : trim.clone(),
     finish: spec.finish || 'matte',
     livery: spec.livery || 'none',
@@ -69,12 +86,79 @@ function liveryOf(spec) {
 // without one it goes flat and dark, and there is no env map here on purpose -
 // the whole look is flat shading and no textures. Phong's specular highlight is
 // the honest way to say "shiny" in a scene lit by one sun and a hemisphere.
+//
+// **A specular alone is not enough, and the reason is the look.** This car is
+// `flatShading: true` boxes lit by one directional light, so a face has one
+// normal and the specular term is *constant across it*: nothing travels, nothing
+// reflects, and the whole of what a shiny finish did was make a sunlit panel
+// slightly lighter. Four finishes that differ only in how much lighter are four
+// finishes nobody can tell apart, which is what they were.
+//
+// So each one also says what it does to **the paint**. Metal is lighter and
+// less saturated than the same colour in flat paint; pearl is lighter still with
+// a colour that is not quite the one underneath it. Those are the differences the
+// eye actually uses on a real car, they survive flat shading because they are in
+// the albedo rather than in the lighting, and they leave the colour recognisably
+// the one you picked.
+//
+// `mat` and `paint` are separate keys because `mat()` spreads its half straight
+// into the material options, and a stray `lighten` on a `MeshPhongMaterial` is
+// junk three.js would silently keep.
 const FINISH = {
+  // Untouched, and it has to be: `matte` is the default, so a car wearing it
+  // must come out byte-identical to a car from before finishes existed.
   matte:    null,
-  gloss:    { shininess: 55,  specular: 0x555555 },
-  metallic: { shininess: 130, specular: 0xa8a8a8 },
-  pearl:    { shininess: 85,  specular: 0xd8d0e8 },
+  // Same colour, harder highlight. Gloss is "your paint, wet".
+  gloss:    { mat: { shininess: 90,  specular: 0x6d7176 } },
+  // **These two are set against each other, not against matte.** Telling either
+  // from a flat car was the easy half; the pair started out both "a bit lighter
+  // and slightly off-hue" and were nearly indistinguishable *from one another*,
+  // which is a finish with two names. So metallic went less pale and more grey
+  // and pearl went the other way: on a #3d8bfd body they are now #6893d3 (steel)
+  // against #85aafe (pale and bright), which reads at a glance.
+  metallic: { mat: { shininess: 190, specular: 0xcfd4dc },
+              paint: { lighten: 0.10, desat: 0.38 } },
+  pearl:    { mat: { shininess: 120, specular: 0xf2e6ff },
+              paint: { lighten: 0.22, tint: 0xc9b6ff, amt: 0.30 } },
 };
+
+const _paint = new THREE.Color();
+const WHITE = new THREE.Color(0xffffff);
+const _grey = new THREE.Color();
+const _tint = new THREE.Color();
+
+/**
+ * The colour a finish paints itself in, given the colour you chose.
+ *
+ * Applied to the body and the trim and to **nothing else** - see the two calls.
+ * Not folded into `mat()`, because the decal material is painted too and is
+ * `0xffffff` with `vertexColors`: a pearl tint applied there would multiply
+ * every stripe and every badge on the car by a lilac, which is not what "my
+ * paint is pearl" means.
+ *
+ * `L.body` itself is never touched, so the swatch in the garage and the dot on
+ * the minimap still show the colour that was chosen rather than the colour the
+ * finish made of it.
+ */
+function paintOf(color, finish) {
+  const p = (FINISH[finish] || {}).paint;
+  if (!p) return color;
+  _paint.copy(color);
+  // Toward white, which is the whole of what "lighter" means here - a metallic
+  // is a pale version of its own colour and not a different hue.
+  if (p.lighten) _paint.lerp(WHITE, p.lighten);
+  // Toward its own grey, keeping the luminance it just gained. Flake scatters
+  // light back at every angle, and the visible result of that is a colour with
+  // the chroma knocked out of it rather than a brighter one.
+  if (p.desat) {
+    const g = _paint.r * 0.299 + _paint.g * 0.587 + _paint.b * 0.114;
+    _paint.lerp(_grey.setRGB(g, g, g), p.desat);
+  }
+  if (p.tint) _paint.lerp(_tint.setHex(p.tint), p.amt);
+  // Cloned: the scratch colour is reused on the next call, and the caller is
+  // handing this straight to a material that keeps it.
+  return _paint.clone();
+}
 
 /**
  * The face of a wheel, as one geometry.
@@ -109,7 +193,14 @@ function rimGeometry(style) {
       buf.quad(P(a0, inner), P(a1, inner), P(a1, R), P(a0, R), C);
     }
   };
-  if (style === 'dish') {
+  if (style === 'stock') {
+    // **A lip and nothing else** - no boss, no spokes. Stock is the plain
+    // cylinder the wheel has always been, and the point of this is that its
+    // outer edge can be painted, not that it quietly becomes a fifth wheel
+    // design. Drawn at all only when a rim colour was actually chosen, so an
+    // untouched car is exactly the car it was: see `hasRim`.
+    ring(16, R - 0.045);
+  } else if (style === 'dish') {
     disc(R, 16);                                   // solid: a moon disc
   } else if (style === 'mesh') {
     ring(16, R - 0.05); disc(0.13, 12);
@@ -128,8 +219,39 @@ function rimGeometry(style) {
   return buf.toGeometry();
 }
 
+// **A vertex colour is not a hex colour.** three.js has colour management on:
+// `new THREE.Color(0x55e08a)` is read as sRGB and converted into the linear
+// working space, and the renderer encodes back to sRGB on the way out, so a
+// `Color` round-trips and comes out as the value you typed. A raw colour
+// *attribute* is assumed to already be linear and gets only the encode out - so
+// writing 0x55e08a straight into one draws it as roughly 0x9cf0c0, a pale wash
+// instead of the record green.
+//
+// Every decal on the car goes through here, which means **a stripe now matches
+// the swatch it was picked from**. It did not before: stripe colours were written
+// raw and drew about twice as bright as the chip in the garage. That was liveable
+// while a stripe was any old colour, and stopped being liveable when a badge had
+// to be recognisably *bronze* rather than recognisably tan.
+//
+// `MeshBuf` itself is deliberately left alone. The twelve track palettes were
+// picked by eye against the unmanaged pipeline, so "fixing" it there would restyle
+// every track in the game; the car's decals are a different consumer of the same
+// buffer and are the only ones that have to match a managed colour.
+const _lin = new THREE.Color();
+
+function linear(hex) {
+  _lin.setHex(hex);
+  return (Math.round(_lin.r * 255) << 16) | (Math.round(_lin.g * 255) << 8)
+       | Math.round(_lin.b * 255);
+}
+
 /**
- * Every stripe on the car, as one `MeshBuf`, or null for a bare one.
+ * Every decal on the car - stripes and the badge - as one `MeshBuf`, or null.
+ *
+ * **One buffer, so a badge is free.** It used to be its own mesh with its own
+ * material, which is a whole draw call for a shape the size of a hand; folded in
+ * here it costs nothing at all, because a badge *is* a decal on the bonnet in
+ * exactly the way a stripe is.
  *
  * Decals sit `LIFT` above the panel they decorate. That number is the whole of
  * why this is not a texture: at this scale a hundredth of a unit is invisible
@@ -141,10 +263,12 @@ function rimGeometry(style) {
  * written into the attribute and costs nothing. A texture would have been the
  * only other way, in a renderer whose entire look is that it has none.
  */
-function liveryMesh(L) {
-  if (!L.livery || L.livery === 'none') return null;
+function decalMesh(L) {
+  const striped = L.livery && L.livery !== 'none';
+  const badged = L.badge && L.badge !== 'none';
+  if (!striped && !badged) return null;
   const buf = new MeshBuf();
-  const S = L.stripe.getHex(), B = L.body.getHex();
+  const S = linear(L.stripe.getHex()), B = linear(L.body.getHex());
   const LIFT = 0.01;
   // The two panels a stripe can lie on, from the chassis boxes above, and **the
   // extent of each of them**. These are named rather than typed out at each case
@@ -158,6 +282,23 @@ function liveryMesh(L) {
   const DECK = 0.555 + LIFT, ROOF = 1.03 + LIFT;
   const NOSE = -1.7, TAIL = 1.7;            // the bonnet, end to end
   const RF = -0.15, RB = 0.9;               // the roof, front and back
+  // **The third panel: the car's sides.** Added because two of the liveries can
+  // only be themselves with it. A hoop that stops at the roofline is not a hoop,
+  // and a car painted in halves along a line nobody can see from beside it is
+  // not painted in halves - which is what both of them were.
+  //
+  // `FX` is the flank plane, `FY0`/`FY1` its top and bottom. Inset a little
+  // inside the `lower` box's own 0.005..0.555 so a decal cannot hang over the
+  // edge onto the underside or up over the deck, where it would read as a fold.
+  const FX = 0.95 + LIFT;
+  const FY0 = 0.03, FY1 = 0.53;
+  // The middle of the car, derived rather than typed so it follows the bonnet.
+  // `halves` splits here, which is the only split worth calling halves: at the
+  // windscreen's foot it was 28% of the car, and the name is a claim about
+  // proportion. The stretch from here forward to the cabin passes under the
+  // screen and the cabin and simply is not seen, which is what happens to every
+  // full-length stripe already.
+  const MID = (NOSE + TAIL) / 2;
   // Wound anticlockwise seen from above, so `computeVertexNormals` gives these
   // an upward normal. The obvious order is the other one and it is silently
   // wrong: the decal still draws, and it is lit from underneath, so a bright
@@ -166,39 +307,268 @@ function liveryMesh(L) {
     [x0, DECK, z0], [x0, DECK, z1], [x1, DECK, z1], [x1, DECK, z0], color);
   const roof = (x0, x1, z0, z1, color) => buf.quad(
     [x0, ROOF, z0], [x0, ROOF, z1], [x1, ROOF, z1], [x1, ROOF, z0], color);
+  /**
+   * Both sides at once, wound so each one's normal points *out of* the car.
+   *
+   * Which is the same trap the two above carry a warning about, arrived at from
+   * a new direction: the winding that lights the right flank correctly lights
+   * the left one from inside the bodywork, so the two cannot share an order -
+   * they are mirror images. Getting it wrong is silent in the same way. The
+   * decal draws, and one side of the car is a bright stripe while the other is a
+   * dark smear.
+   */
+  const flank = (z0, z1, y0, y1, color) => {
+    buf.quad([FX, y0, z0], [FX, y1, z0], [FX, y1, z1], [FX, y0, z1], color);
+    buf.quad([-FX, y0, z1], [-FX, y1, z1], [-FX, y1, z0], [-FX, y0, z0], color);
+  };
 
-  switch (L.livery) {
-    case 'centre':
-      deck(-0.17, 0.17, NOSE, TAIL, S); roof(-0.17, 0.17, RF, RB, S); break;
-    case 'twin':
-      for (const x of [-0.42, 0.14]) {
-        deck(x, x + 0.28, NOSE, TAIL, S); roof(x, x + 0.28, RF, RB, S);
+  // Wrapped, because a badge with no livery still wants a buffer - the whole
+  // point of folding them together is that either one alone is enough to be worth
+  // a mesh, and neither costs a second one.
+  if (striped) {
+    switch (L.livery) {
+      case 'centre':
+        deck(-0.17, 0.17, NOSE, TAIL, S); roof(-0.17, 0.17, RF, RB, S); break;
+      case 'twin':
+        for (const x of [-0.42, 0.14]) {
+          deck(x, x + 0.28, NOSE, TAIL, S); roof(x, x + 0.28, RF, RB, S);
+        }
+        break;
+      case 'band':
+        deck(-0.45, 0.45, NOSE, TAIL, S); roof(-0.45, 0.45, RF, RB, S); break;
+      // **Across the car rather than along it, and now actually across it.** This
+      // used to be a full-width band on the deck at z 0.35..0.85 plus the *whole*
+      // roof. The cabin stands on the deck from -0.15 to 0.9 and is 1.55 wide
+      // against the body's 1.9, so all the band ever showed was two strips of deck
+      // 0.175 wide either side of the roof: what you saw was a painted roof with a
+      // pair of tabs beside it, which is not a hoop by any reading.
+      //
+      // A band at one z up the flank, over the roof and down the other side is the
+      // thing the name always meant. The deck between flank and cabin stays bare at
+      // that z because the cabin is standing on it, which is what a real hoop does
+      // too.
+      case 'hoop': {
+        const H0 = 0.2, H1 = 0.6;
+        roof(-0.76, 0.76, H0, H1, S); flank(H0, H1, FY0, FY1, S); break;
       }
-      break;
-    case 'band':
-      deck(-0.45, 0.45, NOSE, TAIL, S); roof(-0.45, 0.45, RF, RB, S); break;
-    case 'hoop':                          // across the car rather than along it
-      deck(-0.94, 0.94, 0.35, 0.85, S); roof(-0.76, 0.76, RF, RB, S); break;
-    case 'halves':                        // the nose half, so it reads head on
-      deck(-0.94, 0.94, NOSE, 0.05, S); break;
-    case 'pinstripe':                     // gated: two hairlines, deliberately fine
-      for (const x of [-0.5, 0.44]) {
-        deck(x, x + 0.06, NOSE, TAIL, S); roof(x, x + 0.06, RF, RB, S);
+      // The front half of the car in the second colour, **sides included**. It used
+      // to be the bonnet alone, painted full-width back to z 0.05 - which put the
+      // line where the two colours meet underneath the windscreen, so all you could
+      // see was a car with a differently coloured bonnet and no join anywhere. With
+      // the flanks the join is a vertical line down the middle of the side, which is
+      // the thing that makes a two-tone read as one.
+      //
+      // Not the front *face*: the headlights sit 0.01 proud of it and a decal there
+      // would be coplanar with their lenses and z-fight them.
+      case 'halves':
+        deck(-0.94, 0.94, NOSE, MID, S); flank(NOSE, MID, FY0, FY1, S); break;
+      case 'pinstripe':                     // gated: two hairlines, deliberately fine
+        for (const x of [-0.5, 0.44]) {
+          deck(x, x + 0.06, NOSE, TAIL, S); roof(x, x + 0.06, RF, RB, S);
+        }
+        break;
+      case 'fade': {
+        // Baked into the vertices: nose in the stripe colour, tail in the body's.
+        // Lerped between the *managed* colours and linearised after, not between
+        // `S` and `B` - those are already linear, and reading one back in through
+        // `THREE.Color` would convert it a second time and bend the ramp.
+        const N = 10, LEN = TAIL - NOSE;
+        for (let i = 0; i < N; i++) {
+          const z0 = NOSE + (LEN * i) / N, z1 = NOSE + (LEN * (i + 1)) / N;
+          const c = L.stripe.clone().lerp(L.body, i / (N - 1));
+          deck(-0.94, 0.94, z0, z1, linear(c.getHex()));
+        }
+        break;
       }
+      default: break;
+    }
+  }
+
+  if (badged) {
+    badgeShape(buf, L.badge, DECK,
+               linear(BADGE_COLOR[L.badge] || RECORD_GREEN));
+  }
+  // A livery or badge value this renderer has never heard of - a client that has
+  // not reloaded since the vocabulary grew - draws nothing rather than an empty
+  // mesh with a material attached to it.
+  return buf.pos.length ? buf : null;
+}
+
+// Where the badge sits and how big it is. The clear bonnet is the stretch ahead
+// of the windscreen's foot, z -1.7 to -0.75, so this is its middle.
+//
+// **`STRETCH` is the one number here that is not about the shape.** A badge lies
+// flat on the bonnet and the camera you actually see it from is behind and above,
+// so everything is foreshortened along z - the axis the icons treat as up. Drawn
+// square, a crown came out as a blob and a podium's three steps read as one
+// smear, because the whole of what distinguishes them is height. So the icons are
+// described square and stretched along z on the way out, which is a single number
+// rather than a bias baked into seven sets of coordinates.
+// The two are set together, and the ceiling is the bonnet: it is 1.88 across and
+// only 0.95 long, so the *length* is what binds. A round badge stretched to appear
+// square therefore tops out at 0.95 long and 0.95/1.28 wide, and these are that
+// with a little margin. Going wider is free and going longer is not.
+const BADGE_Z = -1.2, BADGE_RAD = 0.34, STRETCH = 1.28;
+const TAU = Math.PI * 2;
+
+/**
+ * One badge, drawn flat on the bonnet, in icon coordinates.
+ *
+ * `u` is right across the car and `v` is **up toward the nose**, so a shape
+ * described the way you would sketch it comes out the right way up to the driver
+ * and to the chase camera looking down at the bonnet.
+ *
+ * `tri2` fixes its own winding, and that is deliberate rather than lazy. A decal
+ * wound the wrong way still draws and is lit from underneath, so it comes out as
+ * a dark smear on the one surface the sun is hitting - and seven hand-drawn
+ * shapes made of arcs and fans is a lot of chances to get an order backwards for
+ * no gain. Describing the corners is the interesting part; their order is not.
+ */
+function badgeShape(buf, badge, y, C) {
+  const P = ([u, v]) => [u, y, BADGE_Z - v * STRETCH];
+  const tri2 = (a, b, c) => {
+    const cross = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    if (cross >= 0) buf.tri(P(a), P(b), P(c), C);
+    else buf.tri(P(a), P(c), P(b), C);
+  };
+  const quad2 = (a, b, c, d) => { tri2(a, b, c); tri2(a, c, d); };
+  const ring = (r, a) => [Math.cos(a) * r, Math.sin(a) * r];
+  const R = BADGE_RAD;
+
+  switch (badge) {
+    // A closed wreath of leaves with a 1 standing in it. Closed rather than the
+    // two open sprigs a laurel usually is, because at this size the gap at the top
+    // read as a broken circle rather than as two branches.
+    //
+    // **One continuous scalloped ring**, not nine separate leaves. Separate leaves
+    // were tried twice - as triangles and as four-cornered leaf shapes - and both
+    // times the gaps between them were bigger than the leaves at this size, so it
+    // came out as a scatter of green specks rather than as a wreath. A ring whose
+    // outer edge rises and falls in nine lobes reads as foliage *and* reads as a
+    // ring, which is the thing that has to survive being small.
+    case 'laurel': {
+      const SEG = 36, LOBES = 9, R0 = R * 0.60;
+      const out = (a) => R * (0.84 + 0.16 * Math.abs(Math.sin(a * LOBES / 2)));
+      const lobe = (a) => [Math.cos(a) * out(a), Math.sin(a) * out(a)];
+      for (let i = 0; i < SEG; i++) {
+        const a0 = (i / SEG) * TAU, a1 = ((i + 1) / SEG) * TAU;
+        quad2(ring(R0, a0), ring(R0, a1), lobe(a1), lobe(a0));
+      }
+      // The numeral, narrow and tall so it stays a 1 rather than a blob: a stem,
+      // the little flag off the top left, and a foot.
+      quad2([-0.030, -0.10], [0.030, -0.10], [0.030, 0.17], [-0.030, 0.17]);
+      tri2([-0.085, 0.085], [-0.030, 0.085], [-0.030, 0.17]);
+      quad2([-0.080, -0.15], [0.080, -0.15], [0.080, -0.10], [-0.080, -0.10]);
       break;
-    case 'fade': {
-      // Baked into the vertices: nose in the stripe colour, tail in the body's.
-      const N = 10, LEN = TAIL - NOSE;
-      for (let i = 0; i < N; i++) {
-        const z0 = NOSE + (LEN * i) / N, z1 = NOSE + (LEN * (i + 1)) / N;
-        const c = new THREE.Color(S).lerp(new THREE.Color(B), i / (N - 1));
-        deck(-0.94, 0.94, z0, z1, c.getHex());
+    }
+    // Only the dark squares are drawn; the light ones are bare bodywork. Which
+    // is what makes it work on any colour of car, and costs half the triangles.
+    case 'chequers': {
+      const W = R * 0.42;
+      for (let r = 0; r < 4; r++) {
+        for (let c = 0; c < 4; c++) {
+          if ((r + c) % 2) continue;
+          const u0 = -2 * W + c * W, v0 = 2 * W - (r + 1) * W;
+          quad2([u0, v0], [u0 + W, v0], [u0 + W, v0 + W], [u0, v0 + W]);
+        }
       }
       break;
     }
-    default: return null;
+    case 'chevrons': {
+      const W = R * 0.82, H = 0.15, T = 0.075;
+      for (let k = 0; k < 3; k++) {
+        const v0 = -0.2 + k * 0.145;
+        quad2([-W, v0], [0, v0 + H], [0, v0 + H - T], [-W, v0 - T]);
+        quad2([0, v0 + H], [W, v0], [W, v0 - T], [0, v0 + H - T]);
+      }
+      break;
+    }
+    // A thin band with three tall points standing well clear of it. The first go
+    // had a thick band and short points and came out as a solid arrowhead: the
+    // gaps between the points are the whole of what makes it a crown, so they
+    // have to be taller than the band rather than notches in it.
+    case 'crown': {
+      const W = R * 0.80, BAND = [-0.20, -0.11];
+      quad2([-W, BAND[0]], [W, BAND[0]], [W, BAND[1]], [-W, BAND[1]]);
+      // Half-width 0.055 against a spacing of 0.18, so the gaps are wider than
+      // the feet of the points. At 0.085 they were 0.005 apart and the three
+      // merged into one solid arrowhead - the gaps *are* the crown.
+      for (const u of [-W * 0.66, 0, W * 0.66]) {
+        tri2([u - 0.055, BAND[1]], [u + 0.055, BAND[1]], [u, 0.22]);
+      }
+      break;
+    }
+    // Three pips in a row with the middle one biggest - **not** the three steps a
+    // podium actually is, and the reason is worth writing down because it applies
+    // to any badge somebody adds later.
+    //
+    // This is a decal lying flat on a bonnet, so **there is no up in it**. What the
+    // icons call height is length along the car, pointing away from the camera - so
+    // three blocks of three different heights come out as three blocks of three
+    // different *lengths*, and no arrangement of them reads as a podium. Steps were
+    // tried separated and connected; the first was a bar chart and the second a
+    // blob with fingers.
+    //
+    // What survives being flat is anything whose plan view is the whole idea:
+    // chequers is a grid, sunburst is radial, the wreath is a ring. So the podium
+    // is three pips and a bigger one in the middle, which says first-of-three by
+    // size rather than by height - and size is the one thing foreshortening keeps.
+    // Discs and not diamonds, for the same reason as everything else here: a
+    // diamond tapers to a point at the top and bottom, and a point along the
+    // foreshortened axis is the first thing to disappear - three of them came out
+    // as three horizontal slivers. A disc has no thin part to lose.
+    case 'podium': {
+      // Spaced so there is clear bodywork between them: at 0.235 apart the outer
+      // discs overlapped the middle one and the three read as a single blob.
+      for (const [u, s] of [[-0.285, 0.085], [0, 0.145], [0.285, 0.085]]) {
+        for (let i = 0; i < 10; i++) {
+          const a0 = (i / 10) * TAU, a1 = ((i + 1) / 10) * TAU;
+          tri2([u, 0], [u + Math.cos(a0) * s, Math.sin(a0) * s],
+               [u + Math.cos(a1) * s, Math.sin(a1) * s]);
+        }
+      }
+      break;
+    }
+    case 'sunburst': {
+      const R0 = R * 0.33, N = 12, HALF = 0.055, HUB = R * 0.30;
+      for (let i = 0; i < N; i++) {
+        const a = (i / N) * TAU;
+        tri2(ring(R0, a - HALF), ring(R0, a + HALF), ring(R, a));
+      }
+      for (let i = 0; i < 10; i++) {
+        tri2([0, 0], ring(HUB, (i / 10) * TAU), ring(HUB, ((i + 1) / 10) * TAU));
+      }
+      break;
+    }
+    // A road going away from you: a tapering strip with a dashed centre line. The
+    // first go was a winding one, a sine narrowing as it went, and at this size it
+    // read as a squiggle - the curve ate the taper, and the taper is the only thing
+    // saying "distance". Straight and tapered says it in one shape, and the dashes
+    // are what stop it reading as an arrowhead.
+    // Drawn as its *markings* rather than as its surface - two edge lines
+    // converging away from you and a dashed centre line - because the badge is one
+    // colour, and a solid road with dashes painted on it in the same colour is a
+    // solid road. Converging lines are also what actually says distance; the first
+    // go filled the whole strip in and read as an arrowhead.
+    case 'ribbon': {
+      const BOT = -0.24, TOP = 0.26, WB = 0.21, WT = 0.06;
+      const vAt = (t) => BOT + (TOP - BOT) * t;
+      const wAt = (t) => 0.050 - 0.030 * t;          // the line narrows with it
+      const strip = (t0, t1, at, scale) => {
+        const w0 = wAt(t0) * scale, w1 = wAt(t1) * scale;
+        quad2([at(t0) - w0, vAt(t0)], [at(t0) + w0, vAt(t0)],
+              [at(t1) + w1, vAt(t1)], [at(t1) - w1, vAt(t1)]);
+      };
+      for (const side of [-1, 1]) {
+        strip(0, 1, (t) => side * (WB + (WT - WB) * t), 1);
+      }
+      for (let i = 0; i < 4; i++) {
+        strip(i / 4 + 0.05, (i + 1) / 4 - 0.11, () => 0, 0.85);
+      }
+      break;
+    }
+    default: break;
   }
-  return buf;
 }
 
 export class CarView {
@@ -229,15 +599,17 @@ export class CarView {
       const spec = painted ? FINISH[L.finish] : null;
       const opt = Object.assign({ color: c, flatShading: true,
                                   transparent: ghost, opacity: this._solid },
-                                spec || {}, extra);
+                                (spec && spec.mat) || {}, extra);
       const m = spec ? new THREE.MeshPhongMaterial(opt)
                      : new THREE.MeshLambertMaterial(opt);
       this._mats.push(m);
       return m;
     };
 
-    const bodyMat = mat(col, {}, true);
-    const darkMat = mat(L.trim, {}, true);
+    // The finish's *paint* half, here and only here - the decal material below is
+    // painted too and would tint every stripe on the car. See `paintOf`.
+    const bodyMat = mat(paintOf(col, L.finish), {}, true);
+    const darkMat = mat(paintOf(L.trim, L.finish), {}, true);
     // Two-tone puts the cabin in the trim colour. One material either way, so it
     // costs nothing but a choice of which one the roof gets.
     const cabinMat = L.twoTone ? darkMat : bodyMat;
@@ -332,7 +704,11 @@ export class CarView {
     // Built with `MeshBuf`, which is the project's own triangle accumulator and
     // already does exactly this for the entire track. `mergeGeometries` is a
     // three.js addon and is deliberately not vendored here.
-    const hasRim = L.rimStyle && L.rimStyle !== 'stock';
+    // Stock earns a rim face only once somebody paints it - see `rimSet`. So the
+    // default car still costs 14 meshes and 7 materials, and a painted stock
+    // wheel costs the 4 meshes, 1 material and 1 geometry that choosing any other
+    // wheel style already costs.
+    const hasRim = !!L.rimStyle && (L.rimStyle !== 'stock' || L.rimSet);
     const rimGeo = hasRim ? rimGeometry(L.rimStyle) : null;
     // Double-sided on purpose: a rim is a flat plate on the outboard face of
     // each wheel, and the left pair are mirrored, so one of the two sides would
@@ -361,10 +737,12 @@ export class CarView {
       if (front) this.steered.push(hub);
     }
 
-    // The livery, as one mesh however many stripes it is made of - and the same
-    // trick pays for `fade`, which is a colour ramp baked straight into the
-    // vertices rather than a texture the rest of this renderer does not have.
-    const deco = liveryMesh(L);
+    // Every decal on the car as one mesh - however many stripes the livery is
+    // made of, **and the badge with them**. The same trick pays for `fade`, which
+    // is a colour ramp baked straight into the vertices rather than a texture the
+    // rest of this renderer does not have; and it is what makes a badge free,
+    // where it used to be a whole draw call for a shape the size of a hand.
+    const deco = decalMesh(L);
     if (deco) {
       const decoMat = mat(0xffffff, { vertexColors: true }, true);
       const m = deco.toMesh(decoMat);
@@ -400,36 +778,22 @@ export class CarView {
       this.brakeMats.push(m);
       this._mats.push(m);
     }
-    // The record badge: a flash across the nose, and the name above the car in
-    // the same green. Green because that is the colour the record already wears
-    // on the medals card - "not a medal and cannot be won" - so the badge needs
-    // no explaining to anybody who has read that card.
+    // **The nameplate is the car's colour and nothing else.** It used to turn the
+    // record green for anybody wearing the laurel, which was worth it while the
+    // badge was a bar on the bumper that nothing could see: a decal on a low-poly
+    // car is invisible at the distance you actually see rivals from, and the name
+    // over it is legible from anywhere.
     //
-    // The plate is most of the point. A decal on a low-poly car is invisible at
-    // the distance you actually see rivals from; the name over it is legible
-    // from anywhere, and it is what a rival reads when they are deciding whether
-    // to try the move.
-    if (L.badge === 'laurel') {
-      // A bar across the front face under the lamps, flush the same 0.01 they
-      // are. It has had to move every time the front did, and one of those moves
-      // turned its fixed z from clear air into solid bodywork and drew the badge
-      // *inside* the car - where nothing errored, nothing looked wrong from any
-      // angle, and the badge was simply absent. Left where it was this time it
-      // would have floated 0.16 in front of a car with no bumper to sit on.
-      //
-      // **-1.69 and not -1.67**, which is the whole reason this has a test.
-      // `MeshBuf.box` above takes *half* extents and `BoxGeometry` takes full
-      // ones, so the same-looking z that puts the lamps 0.01 proud of the face
-      // puts a box of this depth 0.01 behind it - inside the bodywork, invisible,
-      // and silent about it.
-      const flash = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.07, 0.04),
-                                   mat(RECORD_GREEN));
-      flash.position.set(0, 0.15, -1.69);
-      this.body.add(flash);
-    }
-    this.plateColor = L.badge === 'laurel'
-      ? '#' + new THREE.Color(RECORD_GREEN).getHexString()
-      : '#' + col.getHexString();
+    // It stopped being worth it when the badge became a case of seven. Green would
+    // then mean "wearing one of the three green ones", which is not a fact worth a
+    // colour; and the alternative - a plate per badge - takes away the one thing
+    // the plate is good at, which is being that driver's colour. The badge is on
+    // the bonnet now and says what it says by itself.
+    //
+    // `setLabel(text, color)` stays, so a caller can still override a plate; it
+    // simply has nothing to override any more. `test_rules_js.py` pins that
+    // nobody does.
+    this.plateColor = '#' + col.getHexString();
 
     this._braking = false;
     this._ghostly = ghost;

@@ -47,6 +47,12 @@ const S = {
   tab: 'body',
   saveTimer: null,
   resetArmed: false,
+  // The open colour picker: `{slot, tile, h, s, v}`, or null. Hue/sat/val and not
+  // a hex, because the panel's two controls are those axes - round-tripping
+  // through a hex on every pointermove would make a drag along the top of the
+  // square drift its hue, since a fully desaturated colour has no hue to read
+  // back.
+  pick: null,
 };
 
 // Which slots are locked, from the gates the server sent. `slot|value` because a
@@ -250,7 +256,13 @@ const TITLE = {
   metallic: 'Metallic', pearl: 'Pearl', centre: 'Centre', twin: 'Twin',
   band: 'Band', hoop: 'Hoop', halves: 'Halves', fade: 'Fade',
   pinstripe: 'Pinstripe', spoke5: '5-spoke', spoke6: '6-spoke', mesh: 'Mesh',
-  dish: 'Dish', forged: 'Split 5', laurel: 'Laurel',
+  dish: 'Dish', forged: 'Split 5',
+  // The badges. Named for the shape rather than for what earns it, because the
+  // gate's own sentence is already on the chip when it is locked and is the wrong
+  // thing to read once it is not - "Win a race" on a car you have already won a
+  // race in tells you nothing about what is on the bonnet.
+  laurel: 'Laurel', chequers: 'Chequers', chevrons: 'Chevrons', crown: 'Crown',
+  podium: 'Podium', sunburst: 'Sunburst', ribbon: 'Ribbon',
 };
 const label = (v) => TITLE[v] || v;
 
@@ -269,32 +281,40 @@ function chips(slot, values, current) {
 /**
  * A colour slot, as swatches.
  *
- * `auto` is what the slot does when nobody has said - the trim follows the body,
- * the stripe follows the trim, the glass is the standard tint - and it is a
- * chip rather than an absence because "follows the body" is a choice you might
- * want back. It writes `null`, which is exactly what the server already means by
- * a missing key.
+ * The first chip is what the slot does when nobody has said - the trim follows
+ * the body, the stripe follows the trim, the glass is the standard tint - and it
+ * is a chip rather than an absence because "follows the body" is a choice you
+ * might want back. It writes `null`, which is exactly what the server already
+ * means by a missing key. `autoLabel` is there because on a stock wheel that
+ * choice is not "the standard silver" but *no lip at all*, and calling it Auto
+ * would be describing a colour that is not going to appear.
  *
- * Then the same eighteen the body offers, as a shortcut rather than a rule -
+ * Then **this slot's own swatches**, as a shortcut rather than a rule -
  * `validate` accepts any hex in these slots - and last a tile that opens the
- * browser's own picker for anything else. The tile is a conic sweep because at
- * 26px that reads as "any colour" where a plus sign reads as "add another one",
- * and it shows the colour once there is one, so it answers what your custom
- * choice currently is.
+ * picker for anything else. The tile is a conic sweep because at 26px that reads
+ * as "any colour" where a plus sign reads as "add another one", and it shows the
+ * colour once there is one, so it answers what your custom choice currently is.
+ *
+ * Every slot used to offer the eighteen *body* colours, which is wrong for all
+ * four of them and absurd for glass. The body's list is held to rules about being
+ * told apart from other cars and from the world, and a stripe is not that thing:
+ * there was no white anywhere in the garage, and the glass tint could be pink.
+ * `G.palette` is the fallback rather than the answer, so a slot nobody has
+ * written a list for still works.
  */
-function colorSlot(slot, current, autoWord) {
-  const custom = current && G.palette.indexOf(current) < 0;
-  const sw = G.palette.map((c) => `<button class="gsw${current === c ? ' on' : ''}"
+function colorSlot(slot, current, autoWord, autoLabel = 'Auto') {
+  const list = (G.swatches && G.swatches[slot]) || G.palette;
+  const custom = current && list.indexOf(current) < 0;
+  const sw = list.map((c) => `<button class="gsw${current === c ? ' on' : ''}"
       data-slot="${esc(slot)}" data-value="${esc(c)}"
       style="background:${esc(c)}" title="${esc(c)}"></button>`).join('');
   return `<span class="gslot-label">${esc(autoWord)}</span>
     <button class="gopt${current ? '' : ' on'}" data-slot="${esc(slot)}"
-            data-value="">Auto</button>
+            data-value="">${esc(autoLabel)}</button>
     <span class="gcolors">${sw}<button
       class="gsw gcustom${custom ? ' has' : ''}" data-pick="${esc(slot)}"
       title="Any other colour"${custom ? ` style="--pick:${esc(current)}"` : ''}
-      ><input type="color" data-slot="${esc(slot)}"
-              value="${esc(current || '#888888')}"/></button></span>`;
+      ></button></span>`;
 }
 
 const TABS = [
@@ -311,10 +331,13 @@ const TABS = [
     (L.livery && L.livery !== 'none'
       ? `<span class="gsep"></span>` + colorSlot('stripe', L.stripe, 'Stripe')
       : '')],
+  // The Rim colour is offered for **every** style including stock, which is the
+  // one that used to hide it. Stock has no rim face until you paint one, so here
+  // Auto genuinely means "no lip" rather than "the standard silver" - which is
+  // the honest reading of a slot whose absence is a real choice.
   ['rim_style', 'Wheels', (L) => chips('rim_style', G.rim_styles, L.rim_style) +
-    (L.rim_style && L.rim_style !== 'stock'
-      ? `<span class="gsep"></span>` + colorSlot('rim', L.rim, 'Rim')
-      : '')],
+    `<span class="gsep"></span>` +
+    colorSlot('rim', L.rim, 'Rim', L.rim_style === 'stock' ? 'None' : 'Auto')],
   ['glass', 'Glass', (L) => colorSlot('glass', L.glass, 'Glass')],
   ['badge', 'Badge', (L) => chips('badge', G.badges, L.badge)],
 ];
@@ -377,14 +400,156 @@ function render() {
   for (const b of $('gopts').querySelectorAll('button[data-toggle]')) {
     b.onclick = () => set(b.dataset.toggle, !S.livery[b.dataset.toggle]);
   }
-  // The tile is the button; the input inside it is the browser's picker and is
-  // never seen. Clicking the tile opens it, and `input` fires continuously as
-  // the picker is dragged, which is what `save`'s debounce is for.
   for (const b of $('gopts').querySelectorAll('button[data-pick]')) {
-    const inp = b.querySelector('input[type=color]');
-    b.onclick = (e) => { if (e.target !== inp) inp.click(); };
-    inp.oninput = () => set(inp.dataset.slot, inp.value);
+    b.onclick = () => openPick(b.dataset.pick, b);
   }
+  // The panel outlives this redraw, so if it is open on a slot the tab still
+  // shows, it re-anchors to the tile that has just been rebuilt under it.
+  if (S.pick) anchorPick();
+}
+
+// ---------------------------------------------------------------------------
+// The colour picker
+// ---------------------------------------------------------------------------
+// It used to be an `<input type="color">` hidden inside the tile, which meant the
+// browser's own dialog: you had to hit a 26px target exactly to open it, it opened
+// wherever the OS felt like, and on a phone it is a modal sheet over the car you
+// are trying to look at. This is a panel of our own - drag anywhere in the square,
+// let go outside it, click away to close - which is also the only version where
+// the car keeps updating under your cursor while you choose.
+//
+// The maths is here rather than leaning on the browser because there is nothing to
+// lean on: a `<canvas>` would need a pixel read per move, and a CSS gradient can
+// *show* a hue field but cannot tell you which colour a point in it is.
+
+/** #rrggbb -> {h: 0..360, s: 0..1, v: 0..1}. */
+function hexToHsv(hex) {
+  const n = parseInt((hex || '').replace('#', ''), 16);
+  const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  let h = 0;
+  if (d) {
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+    else if (max === g) h = ((b - r) / d + 2) / 6;
+    else h = ((r - g) / d + 4) / 6;
+  }
+  return { h: h * 360, s: max ? d / max : 0, v: max };
+}
+
+/** {h, s, v} -> #rrggbb. */
+function hsvToHex(h, s, v) {
+  const c = ((h % 360) + 360) % 360 / 60;
+  const f = (n) => {
+    const k = (n + c) % 6;
+    return v * (1 - s * Math.max(0, Math.min(k, 4 - k, 1)));
+  };
+  const hx = (x) => Math.round(x * 255).toString(16).padStart(2, '0');
+  return '#' + hx(f(5)) + hx(f(3)) + hx(f(1));
+}
+
+const clamp01 = (x) => Math.max(0, Math.min(1, x));
+
+function openPick(slot, tile) {
+  // A second click on the same tile closes it, which is what a disclosure does.
+  if (S.pick && S.pick.slot === slot) return closePick();
+  const start = S.livery[slot] || '#888888';
+  S.pick = Object.assign({ slot, tile }, hexToHsv(start));
+  $('gpickslot').textContent = TITLE[slot] || slot;
+  $('gpick').hidden = false;
+  anchorPick();
+  drawPick();
+}
+
+function closePick() {
+  S.pick = null;
+  $('gpick').hidden = true;
+}
+
+/**
+ * Put the panel under the tile that opened it, and **inside the stage**.
+ *
+ * Clamped rather than simply placed, because the tile can be at either end of a
+ * two-row swatch block on a phone - and a picker whose right half is off the edge
+ * of the screen is one you cannot use at all on the side it fell off.
+ */
+function anchorPick() {
+  const p = $('gpick'), tile = S.pick && S.pick.tile;
+  if (!tile || !tile.isConnected) return;
+  // Re-found by slot after a redraw: the element that opened the panel has been
+  // replaced by innerHTML, so the reference is stale and its rect is nonsense.
+  const live = $('gopts').querySelector(`button[data-pick="${S.pick.slot}"]`);
+  if (live) S.pick.tile = live;
+  const t = (live || tile).getBoundingClientRect();
+  const stage = document.querySelector('.gstage').getBoundingClientRect();
+  const w = p.offsetWidth || 190;
+  const x = clamp01((t.left + t.width / 2 - w / 2 - stage.left)
+                    / Math.max(1, stage.width - w)) * (stage.width - w);
+  p.style.left = Math.round(x) + 'px';
+  p.style.top = Math.round(t.bottom - stage.top + 10) + 'px';
+}
+
+/** The panel's own controls, from `S.pick`. Does not touch the car. */
+function drawPick() {
+  const k = S.pick;
+  if (!k) return;
+  const hex = hsvToHex(k.h, k.s, k.v);
+  $('gpicksv').style.setProperty('--hue', k.h);
+  $('gpicksvdot').style.left = (k.s * 100) + '%';
+  $('gpicksvdot').style.top = ((1 - k.v) * 100) + '%';
+  $('gpickhuedot').style.left = ((k.h / 360) * 100) + '%';
+  $('gpickchip').style.background = hex;
+  $('gpickhex').textContent = hex;
+}
+
+/**
+ * One drag over `el`, in its own coordinates, for as long as the finger is down.
+ *
+ * `setPointerCapture` is the whole reason this feels like a colour picker rather
+ * than like a series of clicks: events keep coming to this element after the
+ * pointer has left it, so a drag that runs off the edge of the square pins to the
+ * edge and carries on instead of stopping dead. It is also one code path for a
+ * mouse and a thumb.
+ */
+function dragArea(el, onMove) {
+  const at = (e) => {
+    const r = el.getBoundingClientRect();
+    onMove(clamp01((e.clientX - r.left) / r.width),
+           clamp01((e.clientY - r.top) / r.height));
+  };
+  el.addEventListener('pointerdown', (e) => {
+    el.setPointerCapture(e.pointerId);
+    e.preventDefault();
+    at(e);
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (el.hasPointerCapture(e.pointerId)) at(e);
+  });
+}
+
+function bindPick() {
+  const push = () => {
+    const k = S.pick;
+    // `set` redraws the controls and saves; `save` is already debounced a second,
+    // which is what makes it safe to call this on every pointermove.
+    set(k.slot, hsvToHex(k.h, k.s, k.v));
+    drawPick();
+  };
+  dragArea($('gpicksv'), (x, y) => {
+    S.pick.s = x; S.pick.v = 1 - y; push();
+  });
+  dragArea($('gpickhue'), (x) => { S.pick.h = x * 360; push(); });
+  $('gpickclose').onclick = () => closePick();
+  // Anywhere else. `pointerdown` and not `click`, so it closes on the press
+  // rather than waiting for a release that may land somewhere else entirely.
+  document.addEventListener('pointerdown', (e) => {
+    if (!S.pick) return;
+    if ($('gpick').contains(e.target)) return;
+    if (e.target.closest && e.target.closest('button[data-pick]')) return;
+    closePick();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && S.pick) { e.preventDefault(); closePick(); }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -532,6 +697,7 @@ function boot() {
   render();
   bindDrag(canvas);
   bindReset();
+  bindPick();
   requestAnimationFrame(frame);
 }
 

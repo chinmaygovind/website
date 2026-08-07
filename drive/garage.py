@@ -87,8 +87,44 @@ PALETTE = HASH_COLORS + [
 
 GUEST_COLOR = HASH_COLORS[0]
 
+# What the *detail* slots offer, which is not what the body offers.
+#
+# **The body's list is held to rules that these are not, and must not be.** Every
+# bar below this comment exists so that no two cars are confusable and no car can
+# hide against the world - which is a rule about the thing you see from thirty
+# metres, and the trim, the rim, the glass and a stripe are not that thing. White
+# is the case that makes it obvious: a white *car* vanishes against a kerb and
+# against snow, and a white *stripe* is the most ordinary stripe there is. There
+# was no white, black or grey anywhere in the garage, so a white stripe could not
+# be had at all, and the glass tint could be pink.
+#
+# **A shortcut and not a rule.** `validate` still takes any hex in these four
+# slots (`FREE_HEX`), so these lists say what is worth offering rather than what
+# is allowed - and the picker is right there for everything else.
+NEUTRALS = ["#ffffff", "#e6e9ee", "#9aa3af", "#5b626e", "#2b2f37", "#101216"]
+
+SWATCHES = {
+    # Trim and a stripe are contrast against the body, so they want the neutrals
+    # *and* every body colour: a car in one of the eighteen with a stripe in
+    # another is a real car, and picking it should not need the colour picker.
+    "trim":   NEUTRALS + list(PALETTE),
+    "stripe": NEUTRALS + list(PALETTE),
+    # Metals first because that is what a wheel is, then the paint colours,
+    # because a painted rim is a thing people do. `#c9ced6` is second rather
+    # than first only because white sorts before silver; it is the default.
+    "rim":    ["#ffffff", "#c9ced6", "#8d939c", "#d9b45a", "#b5793f", "#101216"]
+              + list(PALETTE),
+    # **Replaced rather than extended**, and it is the only one. Glass is dark
+    # and neutral or it is not glass, so offering eighteen body colours here was
+    # offering eighteen wrong answers - the tint could be pink. Six darks from
+    # limo black up to a light smoke, plus the two the real world actually uses:
+    # a green-blue and a blue-grey. `#2b3240` is render.js's own default.
+    "glass":  ["#101216", "#20242c", "#2b3240", "#1e2c33", "#26333f",
+               "#3c4656", "#586475", "#7d8898"],
+}
+
 # The bars the palette is held to, here rather than in the test so the intent
-# lives with the data it constrains.
+# lives with the data it constrains. **The body's only** - see `SWATCHES`.
 DELTA_E_MIN = 22.0        # between any two body colours
 BACKDROP_MIN = 24.0       # between a body colour and anything it is seen against
 L_MIN, L_MAX = 45.0, 86.0
@@ -135,7 +171,14 @@ FINISHES = ("matte", "gloss", "metallic", "pearl")
 LIVERIES = ("none", "centre", "twin", "band", "hoop", "halves", "fade",
             "pinstripe")
 RIM_STYLES = ("stock", "spoke5", "spoke6", "mesh", "dish", "forged")
-BADGES = ("none", "laurel")
+# A case of them rather than one. Each is a shape drawn on the bonnet in its own
+# colour (`render.js`), and each is gated on something the database already
+# records - which is the constraint that picked this set: `DriveStats` has wins,
+# podiums, races, elo and distance, all written today, and `create_all` makes
+# tables and not columns, so a badge wanting a new counter would need a migration
+# by hand on the live box.
+BADGES = ("none", "laurel", "chequers", "chevrons", "crown", "podium",
+          "sunburst", "ribbon")
 
 DEFAULTS = {
     "body": None,          # None -> color_for(username)
@@ -202,11 +245,16 @@ def validate(raw):
 # they are one fact, and a UI that renders its own wording is a UI that will one
 # day promise something the server refuses.
 #
-# Three are counters that only ever go up. The fourth is the only one anybody can
-# take off you, and it is **earned once and kept**: `holds_record_now` or an
-# already-recorded earn. That is also why it needs no backfill - every current
-# record holder qualifies the first time the garage looks at them, and the earn
-# is written down then.
+# Most are counters that only ever go up. Two are **records held right now**,
+# which can be taken off you - so those are earned once and kept (`KEPT`), from
+# either a live check or an already-recorded earn. That is also why they need no
+# backfill: every current record holder qualifies the first time the garage looks
+# at them, and the earn is written down then.
+#
+# `sunburst` deliberately shares `pinstripe`'s condition. Two items may want the
+# same achievement, and a gold on every track is the thing the sunburst was asked
+# for; giving it a different bar to keep the list tidy would be tidiness deciding
+# what the game rewards.
 GATES = {
     "pearl":     {"slot": "finish",    "value": "pearl",
                   "text": "A gold on any 3 tracks"},
@@ -216,12 +264,61 @@ GATES = {
                   "text": "Finish every track"},
     "laurel":    {"slot": "badge",     "value": "laurel",
                   "text": "Set a track record"},
+    "chequers":  {"slot": "badge",     "value": "chequers",
+                  "text": "Win a multiplayer race"},
+    "podium":    {"slot": "badge",     "value": "podium",
+                  "text": "Finish 10 races in the top three"},
+    "chevrons":  {"slot": "badge",     "value": "chevrons",
+                  "text": "Reach Ace rating"},
+    "sunburst":  {"slot": "badge",     "value": "sunburst",
+                  "text": "A gold on every track"},
+    "ribbon":    {"slot": "badge",     "value": "ribbon",
+                  "text": "Drive 100 km"},
+    "crown":     {"slot": "badge",     "value": "crown",
+                  "text": "Hold the record on 3 tracks at once"},
 }
+
+# The gates whose condition can stop being true, and which are therefore written
+# down the first moment it is. Named here rather than in `app.py`, which used to
+# carry the literal `{"laurel"}` - the vocabulary belongs with the vocabulary, and
+# adding a second losable gate should not mean remembering a set in another file.
+KEPT = frozenset({"laurel", "crown"})
+
+# The bars for the counter gates. Out here because they are the numbers most
+# likely to want moving after somebody has actually played, and hunting them
+# through the predicates is how a threshold ends up disagreeing with its own text.
+ACE_ELO = 1250            # `DriveStats.elo_tier`'s own boundary for "Ace"
+PODIUMS_NEEDED = 10
+CROWN_RECORDS = 3
+RIBBON_METRES = 100_000   # a lap is roughly 0.9-2.8 km, so this is ~50-100 runs
 
 
 def _golds(user):
     st = getattr(user, "drive", None)
     return (getattr(st, "golds", 0) or 0) + (getattr(st, "authors", 0) or 0)
+
+
+def _stat(user, name, missing=0):
+    """One counter off the stats row, or `missing` when there is no row.
+
+    `getattr` twice rather than a join, so this works against the stub user
+    `test_garage.py` hands `payload` - and so an account that has never finished
+    anything reads as zero rather than as an exception.
+    """
+    st = getattr(user, "drive", None)
+    v = getattr(st, name, None)
+    return missing if v is None else v
+
+
+# `DriveStats.elo`'s own default, repeated rather than imported because this
+# module is deliberately free of `models` at import time. A fresh account is 1000
+# and not 0, so defaulting to 0 would put "(0/1250)" on the chip for somebody who
+# has simply never raced - a number that is wrong rather than just unflattering.
+START_ELO = 1000
+
+
+def _elo(user):
+    return _stat(user, "elo", START_ELO)
 
 
 def _tracks_finished(user):
@@ -236,13 +333,18 @@ def _tracks_finished(user):
     return len({r.track for r in rows if r.track in pool})
 
 
-def record_holders():
-    """Every account holding the fastest lap on any track in the pool.
+def records_held():
+    """**How many** records each account holds, as ``{user_id: count}``.
+
+    Counts rather than a set, because the crown asks for three at once - and a
+    dict answers the old question too: `user.id in records_held()` reads exactly
+    as it did when this returned a set, so every caller that only wants "do they
+    hold one" is unchanged.
 
     Computed **once for everybody** rather than once per person, because the
     obvious shape - "does this user hold a record" - is thirteen queries, and a
     room broadcasting its roster would ask it eight times for a hundred queries
-    to draw eight cars. The answer is the same set whoever is asking.
+    to draw eight cars. The answer is the same table whoever is asking.
 
     Same rule the Records page draws (`_records` in app.py): the lowest
     `time_ms` on a track, earliest on a tie, since whoever got there first holds
@@ -253,41 +355,68 @@ def record_holders():
     rows = (DriveTime.query.with_entities(DriveTime.track,
                                           func.min(DriveTime.time_ms))
             .group_by(DriveTime.track).all())
-    out = set()
+    out = {}
     for slug, best in rows:
         if slug not in tracks_mod.BY_SLUG:
             continue
         holder = (DriveTime.query.filter_by(track=slug, time_ms=best)
                   .order_by(DriveTime.updated_at.asc()).first())
         if holder and holder.user_id:
-            out.add(holder.user_id)
+            out[holder.user_id] = out.get(holder.user_id, 0) + 1
     return out
+
+
+def _counts(user, holders):
+    """Every gate's (have, need), which is the one place either is worked out.
+
+    `earned` and `progress` are both this, read two ways - "is have >= need" and
+    "what are the two numbers". They used to be separate lists of predicates, and
+    that is a shape where a threshold and the count shown beside it can disagree
+    while both look right.
+    """
+    n = len(tracks_mod.TRACKS)
+    golds = _golds(user)
+    return {
+        "pearl":     (min(golds, 3), 3),
+        "pinstripe": (min(golds, n), n),
+        "forged":    (_tracks_finished(user), n),
+        # A thing you have or have not done, so 0 or 1 out of 1 - "0/1 records"
+        # would be a worse sentence than the text already on the chip, and the
+        # garage only shows a count when `need` is more than one.
+        "laurel":    (1 if user.id in holders else 0, 1),
+        "chequers":  (min(_stat(user, "wins"), 1), 1),
+        "podium":    (min(_stat(user, "podiums"), PODIUMS_NEEDED), PODIUMS_NEEDED),
+        # Shown as a rating rather than as a distance from one, because Ace is a
+        # number people know: "(1180/1250)" says where you are.
+        "chevrons":  (min(_elo(user), ACE_ELO), ACE_ELO),
+        "sunburst":  (min(golds, n), n),
+        # In kilometres. Metres would put "(43102/100000)" on the chip, which is a
+        # number nobody reads.
+        "ribbon":    (min(int(_stat(user, "distance", 0.0) // 1000),
+                          RIBBON_METRES // 1000), RIBBON_METRES // 1000),
+        "crown":     (min(holders.get(user.id, 0), CROWN_RECORDS), CROWN_RECORDS),
+    }
 
 
 def earned(user, already=(), holders=None):
     """Which gated ids this account has, as a set.
 
-    `already` is whatever has been written down before, which only matters for
-    `laurel`: the other three are recomputed from counters that cannot go down,
-    so storing those would be a second copy of a fact the database already holds.
+    `already` is whatever has been written down before, and it matters for the
+    `KEPT` gates and only those: the rest are recomputed from counters that cannot
+    go down, so storing them would be a second copy of a fact the database holds.
 
-    `holders` is `record_holders()` when the caller is asking about more than one
+    `holders` is `records_held()` when the caller is asking about more than one
     person and has worked it out once - see why up there.
     """
     if user is None:
         return set()
-    got = set()
-    if _golds(user) >= 3:
-        got.add("pearl")
-    if _golds(user) >= len(tracks_mod.TRACKS):
-        got.add("pinstripe")
-    if _tracks_finished(user) >= len(tracks_mod.TRACKS):
-        got.add("forged")
     if holders is None:
-        holders = record_holders()
-    if "laurel" in (already or ()) or user.id in holders:
-        got.add("laurel")
-    return got
+        holders = records_held()
+    counts = _counts(user, holders)
+    got = {gid for gid, (have, need) in counts.items() if have >= need}
+    # A record can be taken off you and the badge for it cannot, so an earn that
+    # was written down outranks a condition that has since stopped being true.
+    return got | (set(already or ()) & KEPT)
 
 
 def progress(user, holders=None):
@@ -295,25 +424,12 @@ def progress(user, holders=None):
 
     Only for the line the garage shows: "Pinstripe needs a gold on every track
     (9/12)". The gate's *text* is still the authority on what it wants - this is
-    the count behind it, and the two are built from the same helpers so they
-    cannot describe different rules.
-
-    The record badge has no meaningful count, so it is 0 or 1 out of 1: it is a
-    thing you have or have not done, and "0/1 records" would be a worse sentence
-    than the text already on the chip.
+    the count behind it, and both come out of `_counts`, so they cannot describe
+    different rules.
     """
     if user is None:
         return {}
-    n = len(tracks_mod.TRACKS)
-    golds = _golds(user)
-    if holders is None:
-        holders = record_holders()
-    return {
-        "pearl": (min(golds, 3), 3),
-        "pinstripe": (min(golds, n), n),
-        "forged": (_tracks_finished(user), n),
-        "laurel": (1 if user.id in holders else 0, 1),
-    }
+    return _counts(user, records_held() if holders is None else holders)
 
 
 def resolve(livery, username, got):
@@ -349,6 +465,11 @@ def payload(user, livery, got, prog=None):
     return {
         "livery": resolve(livery, user.username if user else None, got),
         "palette": list(PALETTE),
+        # What each detail slot offers, which is a different question from what
+        # the body offers - see `SWATCHES`. Sent as its own key rather than
+        # folded into `palette` because `palette` *is* the body's list, and the
+        # rules it is checked against are the body's rules.
+        "swatches": {k: list(v) for k, v in SWATCHES.items()},
         "finishes": list(FINISHES),
         "liveries": list(LIVERIES),
         "rim_styles": list(RIM_STYLES),

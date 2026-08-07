@@ -1143,6 +1143,34 @@ over a rule that actually wants three is worse than no text at all.
   threw out a forest green 14.3 from grass, a sand 10.8 from a bright sky and a
   gold 13.8 from the yellow already there. A trim or a window is not the thing
   you are picked out by, so those are anything you like.
+- **Each detail slot offers its own swatches** (`garage.SWATCHES`), and they are a
+  shortcut rather than a rule - `validate` still takes any hex there. They all
+  offered the *body's* eighteen at first, which is wrong for four slots and absurd
+  for one: there was no white, black or grey anywhere in the garage, so a white
+  stripe could not be had, and the glass tint could be pink. Trim, stripe and rim
+  get six neutrals in front of the palette (and the rim gets its metals: silver,
+  gunmetal, gold, bronze); **glass is the one list that replaces the palette
+  rather than extending it**, because glass is dark and neutral or it is not
+  glass. `test_garage.py` measures that - every glass swatch is L* 62 or under and
+  none of them is a body colour. White is offered in the detail slots and still
+  refused on the body, which is the whole point of splitting the lists.
+- **A finish changes the paint and not only the lighting.** The car is
+  `flatShading: true` boxes lit by one sun, so a Phong specular on a face is
+  *constant across it* - nothing travels and nothing reflects, and the whole of
+  what a shiny finish did was make a sunlit panel slightly lighter. Four finishes
+  differing only in how much lighter are four nobody can tell apart, which is what
+  they were. So `FINISH` has a `mat` half and a **`paint`** half: metallic goes
+  lighter and desaturated, pearl lighter and tinted, gloss is your colour with a
+  harder highlight, and matte is untouched because it is the default and must stay
+  byte-identical. The two were also tuned *against each other* rather than against
+  matte - both started out "a bit lighter and slightly off-hue" and were
+  indistinguishable from one another, so the test asserts a minimum distance
+  between them and not merely that they differ. `paintOf` is applied at the two
+  paint call sites and **not** inside `mat`, because the decal material is painted
+  too and is `0xffffff` with `vertexColors`: a pearl tint there would multiply
+  every stripe and badge on the car by a lilac. `L.body` itself is never touched,
+  so the swatch, the minimap dot and the nameplate still show the colour that was
+  chosen rather than the colour the finish made of it.
 - **No lamp is customisable, at either end.** They are the only thing a rival
   reads off your car, and the amber drift state was removed for exactly that
   reason; a lamp somebody can recolour is the same mistake with a settings page
@@ -1155,14 +1183,39 @@ over a rule that actually wants three is worse than no text at all.
   `CAR_RADIUS`, not the wheel radius, not a gram of mass. A cosmetic that
   changed how the car drives would make every time on the board mean something
   different depending on what its driver was wearing.
-- **Four gates, and the fourth is past tense.** Pearl at three golds, pinstripe
-  at a gold on every track, split-five rims at finishing every track - all three
-  recomputed from counters that cannot go down, so storing them would be a
-  second copy of something the database already knows. The laurel badge is
-  "**set** a track record", earned once and kept: it is the only one anybody can
-  take off you, so it is written into `earned_json` the moment it is true. That
-  is also why it needs no backfill - every current holder qualifies the first
-  time anything asks about them.
+- **Ten gates, and two of them are past tense.** Pearl at three golds, pinstripe
+  at a gold on every track, split-five rims at finishing every track, and six of
+  the seven badges. Most are counters that cannot go down, so storing them would
+  be a second copy of something the database already knows. The **laurel** ("set a
+  track record") and the **crown** ("hold the record on 3 tracks at once") are the
+  two anybody can have taken off them, so they are earned once and kept - written
+  into `earned_json` the moment they are true. `garage.KEPT` is that pair; `app.py`
+  used to carry the literal `{"laurel"}`, and the vocabulary belongs with the
+  vocabulary. That is also why neither needs a backfill: every current holder
+  qualifies the first time anything asks about them.
+- **A gate can only ask about something already recorded**, and that is what chose
+  the badge set. `DriveStats` already has `wins`, `podiums`, `races`, `elo` and
+  `distance`, all written today, so none of the seven needed a column - which
+  matters because `create_all` makes *tables* and not columns, and a new column is
+  a migration by hand on the live box. The thresholds are named
+  (`ACE_ELO`, `PODIUMS_NEEDED`, `CROWN_RECORDS`, `RIBBON_METRES`) rather than
+  buried in the predicates, because they are the numbers most likely to want
+  moving once somebody has actually played.
+- **`earned` and `progress` are one function read two ways.** `_counts` returns
+  every gate's `(have, need)`; `earned` asks whether have >= need and `progress`
+  hands both numbers to the chip. They were two lists of predicates, which is a
+  shape where a threshold and the count shown beside it can disagree while both
+  look right.
+- **`records_held()` counts rather than collects.** The crown wants three records
+  at once, so it returns `{user_id: n}` - and a dict answers the old question
+  unchanged, since `user.id in records_held()` reads exactly as it did when this
+  was a set. Still one query for everybody, for the reason it always was: "does
+  this user hold a record" asked per person is thirteen queries, and a room
+  broadcasting its roster would ask it eight times.
+- **`sunburst` shares `pinstripe`'s condition on purpose.** A gold on every track
+  is the thing that badge was asked for, and two items are allowed to want the
+  same achievement; giving it a different bar to keep the list tidy would be
+  tidiness deciding what the game rewards.
 - **`validate` and `resolve` are two functions on purpose.** `validate` stores
   what was asked for, gates and all, so earning an item later puts it on without
   having to ask twice; `resolve` decides what may be *worn* and runs on every
@@ -1173,30 +1226,118 @@ over a rule that actually wants three is worse than no text at all.
   Five spokes as separate meshes is 24 extra meshes on one car and nearly 200
   across a grid, which is real draw-call cost on a phone. Built with `MeshBuf`,
   the project's own triangle accumulator - `mergeGeometries` is a three.js addon
-  and is not vendored. The *style* is what turns a rim on, never the colour:
-  gating on the colour gave `stock` five spokes, which triangle counts caught.
-- **Decals are quads `LIFT` (0.01) above the panel, wound anticlockwise seen
-  from above.** The obvious winding is the other one and is silently wrong - the
-  stripe still draws and is lit from underneath, so a bright stripe comes out as
-  a dark smear on the one surface the sun is hitting. `fade` is why they all go
-  through `MeshBuf`: a per-vertex colour makes a gradient a lerp written into
-  the attribute, in a renderer whose whole look is having no textures.
+  and is not vendored. Gating a rim on the *colour* once gave `stock` five spokes,
+  which triangle counts caught - so the rule was "the style turns a rim on, never
+  the colour". It is now **the style, or a colour on stock**: stock has its own
+  branch that draws the outer ring alone, no boss and no spokes, so its edge can be
+  painted. Drawn only when a colour was actually chosen (`L.rimSet`, which the
+  resolved `L.rim` cannot answer because it has a default baked into it), so an
+  untouched car is byte-identical to the car it was and a plain car is still 14
+  meshes. Two tests: unpainted stock is census-identical to the default car, and a
+  painted one grows a ring whose every vertex is at radius 0.35 or more - which is
+  what "a lip and not five spokes" means, measured.
+- **Decals are quads `LIFT` (0.01) above the panel, wound to face out of the
+  car.** The obvious winding is the other one and is silently wrong - the stripe
+  still draws and is lit from behind, so a bright stripe comes out as a dark smear
+  on the one surface the sun is hitting. `fade` is why they all go through
+  `MeshBuf`: a per-vertex colour makes a gradient a lerp written into the
+  attribute, in a renderer whose whole look is having no textures.
+- **There are three panels, not two.** The bonnet, the roof, and now the car's
+  **flanks** - added because two liveries could not be themselves without them.
+  `hoop` was a full-width band on the deck at z 0.35-0.85 plus the whole roof, and
+  the cabin stands on the deck from -0.15 to 0.9 and is 1.55 wide against the
+  body's 1.9, so all that band ever showed was two strips 0.175 wide either side of
+  the roof: a painted roof with a pair of tabs beside it. It is now a band up one
+  flank, over the roof and down the other. `halves` painted the bonnet full-width
+  to z 0.05, putting the join under the windscreen where nothing could see it; it
+  is now the front half including the sides, split at the middle of the car,
+  because "halves" is a claim about proportion and at the windscreen's foot it was
+  28%. Not the front *face* for either - the headlights sit 0.01 proud of it and a
+  decal there would z-fight their lenses.
+- **The two flanks are mirror images, so one winding cannot serve both.** The order
+  that lights the right one correctly lights the left one from inside the bodywork.
+  The old facing test could not see either: it asked about the *y* of the normal,
+  which a vertical quad has none of however it is wound. Both decal tests are
+  panel-aware now, and they classify **per triangle** rather than per vertex -
+  a vertex alone is ambiguous, since the widest deck stripes reach x ±0.94 against
+  a flank plane at ±0.96, and the flanks run to y 0.53 against a deck plane at
+  0.565. Every decal quad is axis-aligned, so the flat axis *is* the panel.
+- **`test_a_livery_is_on_the_panels_its_name_needs` is the one that caught `hoop`.**
+  Every geometric assertion passed on the old one - valid, wound right, properly
+  lifted - and it still was not a hoop, because a hoop goes round something and
+  that one only touched the top of the car. There is also a strict "not entirely
+  under the cabin" check, which is a real rule and which would *not* have caught
+  `hoop`; that is said in its docstring rather than left to be assumed.
+- **Car decals are linearised and `MeshBuf` is not.** three.js has colour
+  management on, so a `Color` round-trips while a raw colour *attribute* is assumed
+  already-linear and gets only the encode out - writing `0x55e08a` into one draws
+  it as roughly `0x9cf0c0`. Stripe colours were written raw and drew about twice as
+  bright as the chip they came from; that was liveable until a badge had to be
+  recognisably *bronze* rather than tan. So `decalMesh` puts every colour through
+  `linear()` and **a stripe now matches its swatch**. `MeshBuf` itself is
+  deliberately untouched: the twelve track palettes were picked by eye against the
+  unmanaged pipeline, and the car's decals are the only consumer that has to match
+  a managed colour.
 - **`color` is answered from the livery everywhere it is sent.** The car is
   drawn from `livery`, but the minimap dot, the standings row, the chat name and
   the *nameplate over the car* are all drawn from `color` - so reporting the
   seat's stored column raw put somebody's chosen colour on the bodywork and
   their hashed one on everything pointing at them. `DrivePlayer.to_dict`,
   `/api/ghost` and `car_color` all take it off the resolved livery; the column
-  is the seed and the guest fallback. **The nameplate over a car is the one
-  thing that is the car's own business**, and `setLabel` is called with no
-  colour so it falls back to `CarView.plateColor` - the body colour for almost
-  everybody, and the record green for whoever is wearing the laurel. Both call
-  sites used to pass the roster's colour, which is indistinguishable for
-  everybody except the one driver it matters on: the only car that had earned a
-  green nameplate was the only one that could never show it.
-  `test_rules_js.py` reads the calls out of the file and fails on a second
-  argument, because building a remote to check it needs a renderer, a socket and
-  a track.
+  is the seed and the guest fallback. **The nameplate over a car is the one thing
+  that is the car's own business**, and `setLabel` is called with no colour so it
+  falls back to `CarView.plateColor` - which is now **always the body colour**. It
+  used to go record green for the laurel, and that was worth it while the badge was
+  a bar on the bumper nothing could see. With seven badges, green would mean
+  "wearing one of the three green ones", which is not a fact worth a colour; and a
+  plate per badge takes away the one thing a plate is good at, which is being that
+  driver's colour. The badge is on the bonnet now and says what it says by itself.
+  `test_rules_js.py` still reads the calls out of the file and fails on a second
+  argument, because building a remote to check it needs a renderer, a socket and a
+  track.
+
+#### The badge case
+
+**Seven badges, each a shape on the bonnet in its own colour**, and each **free**:
+they go into the same `MeshBuf` as the stripes, so a badge costs no mesh and no
+material. It used to be its own mesh with its own material - a whole draw call for
+a shape the size of a hand, on every car on the grid - and that is what made a
+case of seven affordable rather than a choice between them. A fully loaded car went
+from 20 meshes to 19.
+
+| | earns it | shape |
+|---|---|---|
+| `laurel` | set a track record | a scalloped ring around a **1**, record green |
+| `chequers` | win a multiplayer race | a 4x4 board, green |
+| `chevrons` | Ace rating (elo 1250) | three stacked V's, green |
+| `crown` | hold 3 records at once | a band and three points, green |
+| `podium` | 10 podiums | three pips, biggest in the middle, bronze |
+| `sunburst` | a gold on every track | 12 rays and a hub, gold |
+| `ribbon` | 100 km driven | a road's markings converging away, grey |
+
+**The thing to know before adding one: a decal lying flat on a bonnet has no
+*up*.** What the icons call height is length along the car, pointing away from the
+camera, so anything whose meaning is vertical does not survive. A podium was tried
+as three separated bars (a bar chart), then as a connected staircase (a blob with
+fingers) before becoming three pips of different *sizes* - because size is the one
+thing foreshortening keeps. What works here is anything whose plan view is the
+whole idea: a grid, a radial burst, a ring, a spiked bar, converging lines.
+
+Two more things that cost iterations:
+
+- **`STRETCH` (1.28) stretches every icon along z**, so a shape described square
+  appears square from the chase camera. Its ceiling is the bonnet: 1.88 across and
+  only 0.95 long, so the *length* binds and a round badge tops out at about 0.87
+  long by 0.68 wide. Going wider is free; going longer runs under the windscreen.
+- **Gaps have to be wider than instinct says.** The crown's three points 0.005
+  apart merged into a solid arrowhead; nine separate laurel leaves came out as a
+  scatter of specks and had to become one continuous scalloped ring; three podium
+  discs 0.235 apart overlapped into one blob. Fine articulation dissolves - the
+  gaps *are* the shape.
+- **`tri2` fixes its own winding** rather than asking the caller to get it right.
+  Seven hand-drawn shapes made of arcs and fans is a lot of chances to reverse an
+  order for no gain, and the failure is silent (a decal lit from underneath).
+  Describing the corners is the interesting part; their order is not.
 - **A guest is hashed off the name they typed**, not `GUEST_COLOR`, and that is
   what let the first-free colour rule go. `_livery_for(user, holders, name)`
   needs that `name` for exactly this: resolve a guest against nothing and four
@@ -1253,12 +1394,37 @@ over a rule that actually wants three is worse than no text at all.
   user with no database behind it.
 - **Every colour slot is swatches**, not an `<input type="color">`. The browser
   draws that as a ~38px grey rectangle that says nothing about what it is or
-  what colour is in it. Instead: an `Auto` chip (writes `null`, which is what
-  the server already means by a missing key), the same eighteen the body offers
-  as a shortcut - `validate` takes any hex in these slots, so this is UI only -
-  and a **conic-gradient tile** that opens the browser's picker for anything
-  else and then shows the colour it chose. A rainbow tile reads as "any colour"
-  at 26px where a plus sign reads as "add one".
+  what colour is in it. Instead: a first chip that writes `null` (which is what
+  the server already means by a missing key - labelled `Auto`, or `None` on a
+  stock wheel where the absence is really "no lip"), then **that slot's own
+  swatches** as a shortcut, and last a **conic-gradient tile**, which reads as
+  "any colour" at 26px where a plus sign reads as "add one".
+- **The picker behind that tile is ours**, and the native one is gone. It needed a
+  pixel-perfect hit on a 26px target, opened wherever the OS felt like, and on a
+  phone is a modal sheet over the car you are trying to look at. This is a panel in
+  the garage's own glass: a saturation/value square, a hue strip, the hex, and a
+  small `x`. It closes on the `x`, on `Escape`, and on a `pointerdown` anywhere
+  outside - `pointerdown` and not `click`, so it goes on the press rather than
+  waiting for a release that may land somewhere else.
+- **`#gpick` lives under `.gstage` and not in `#gopts`, and that is the only place
+  it can be.** `set()` calls `render()`, which rewrites `#gopts`'s innerHTML on
+  every change - a picker inside it would be destroyed by its own first drag,
+  halfway through the gesture driving it. So the panel sits outside, remembers what
+  it is editing in `S.pick`, and **re-finds its tile by slot** after each redraw,
+  because the element that opened it has been replaced and its rect is nonsense.
+- **`S.pick` holds h/s/v, not a hex.** Round-tripping through a colour on every
+  move would make a drag along the top of the square silently reset the hue to red,
+  because a fully desaturated colour has no hue to read back. `hexToHsv`/`hsvToHex`
+  are the one part of `garage.js` with tests (`test_rules_js.py`), for the reason
+  the rest has none: a page is checked by looking at it, and arithmetic is not -
+  a hue three degrees off or a hex that loses its leading zero is invisible in a
+  screenshot and permanent in somebody's saved car.
+- **`setPointerCapture` on both controls**, so a drag that runs off the edge of the
+  square pins to the edge and carries on instead of stopping dead, and so a mouse
+  and a thumb are one code path. `touch-action: none` on both as well, or a drag on
+  a phone scrolls the page - and the page it would scroll is a full-screen canvas.
+  The panel is clamped inside the stage, because the tile can be at either end of a
+  two-row swatch block and a picker half off the screen is unusable on that side.
 - **The viewer builds no track.** `Renderer` starts with `trackGroup` and `sky`
   null and `render(dt)` is only particles plus a draw, so a studio costs one
   canvas and the page opens instantly. There is no `OrbitControls` - it is a
@@ -1988,18 +2154,23 @@ with assembling a car out of a livery is invisible to both of the checks this
 project otherwise leans on: the autopilot never draws, and a screenshot of one
 car either photographs "the fifth rim style is 24 meshes instead of one"
 correctly or photographs it as something you would have to already suspect. So
-it pins the *construction* - the mesh and material budget (14 and 7 plain, 20
-and 10 fully loaded), that no material escapes `_mats` and therefore
+it pins the *construction* - the mesh and material budget (14 and 7 plain, 19
+and 9 fully loaded, and 18 and 8 once a stock wheel is painted), that no material escapes `_mats` and therefore
 `setGhostly`, that a rim style is one geometry shared by four wheels, that every
-decal clears its panel and faces up (the cross product taken from the raw
-positions, since the stub's `computeVertexNormals` does nothing), and that
-nothing a livery does moves any part of the car that was already there. The
-front has its own group: that the headlights are one mesh and never the driver's
-colour, that the car never outgrows the collision radius, that the record badge is not
-enclosed by the bodywork around it, that every livery's stripes stay on the panel
-they are drawn on, that the car did not get longer, and that the laurel's nose flash is
-**on** the nose rather than inside it - which it was, silently, for as long as it
-took to look at a screenshot.
+decal - stripe *and* badge, since they share a buffer - lies on one of the three
+panels, clears it, and faces out of the car (the cross product taken from the raw
+positions, since the stub's `computeVertexNormals` does nothing), and that nothing
+a livery does moves any part of the car that was already there. Two of those had to
+be rewritten when the flanks arrived: "faces up" is a rule a vertical quad cannot
+satisfy, and a panel has to be worked out **per triangle** rather than per vertex,
+because the widest deck stripes reach x ±0.94 against a flank plane at ±0.96.
+The front has its own group: that the headlights are one mesh and never the
+driver's colour, that the car never outgrows the collision radius, that every
+livery's stripes stay on the panel they are drawn on, and that the car did not get
+longer. The badge is checked for being on the *clear* stretch of bonnet ahead of
+the windscreen and for being a readable size - it used to be a bar on the bumper
+line, checked for not being enclosed by the bodywork, which it silently was for as
+long as it took to look at a screenshot.
 **Both of them exist mainly to say the same thing**: an account with no garage
 row wears the car everybody else's account does. Note this file is also what
 pushed `three_stub.js` twice - materials from one shared `noop` to three real

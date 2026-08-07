@@ -185,6 +185,68 @@ def test_free_hex_slots_are_taken_and_normalised():
                                                          "#123456")
 
 
+# ---------------------------------------------------------------------------
+# What the detail slots offer, which is not what the body offers
+# ---------------------------------------------------------------------------
+
+def test_every_free_hex_slot_has_swatches_of_its_own():
+    """Each of the four is a different question, and they all used to be answered
+    with the body's eighteen. `FREE_HEX` is the list of slots that take any hex, so
+    it is also the list that needs somewhere to offer *from*."""
+    assert set(garage.SWATCHES) == set(garage.FREE_HEX)
+    for slot, colours in garage.SWATCHES.items():
+        assert colours, slot
+        assert len(set(colours)) == len(colours), "%s repeats a colour" % slot
+        for c in colours:
+            assert garage._HEX.match(c) and c == c.lower(), (slot, c)
+
+
+def test_white_and_black_are_offered_where_a_car_may_not_be_painted_them():
+    """The point of splitting the lists. The body is held to a luminance band and
+    a distance from kerbs and snow, because it is the shape somebody picks you out
+    by at thirty metres. A stripe is not that thing, and a white stripe is the most
+    ordinary stripe there is - there was no white anywhere in the garage."""
+    for slot in ("trim", "stripe", "rim"):
+        assert "#ffffff" in garage.SWATCHES[slot], slot
+        assert "#101216" in garage.SWATCHES[slot], slot
+    # And the body still refuses both, by the rules two sections up.
+    assert garage.validate({"body": "#ffffff"})["body"] is None
+
+
+def test_glass_is_offered_glass_colours_and_nothing_else():
+    """The one list that *replaces* the palette rather than extending it. Glass is
+    dark and neutral or it is not glass, so eighteen body colours here were
+    eighteen wrong answers - the tint could be pink."""
+    glass = garage.SWATCHES["glass"]
+    assert not (set(glass) & set(garage.PALETTE)), "a body colour is on the glass"
+    # Every one of them is dark: a window you cannot see out of is still a window,
+    # a bright one is a hole. Measured, because "looks like glass" is not checkable.
+    for c in glass:
+        assert _lab(c)[0] <= 62.0, "%s is too light to be glass (L* %.1f)" % (
+            c, _lab(c)[0])
+    # Including the tint render.js falls back to when nobody has chosen, so the
+    # chip for today's car is in the row rather than reading as a custom colour.
+    assert "#2b3240" in glass
+
+
+def test_the_swatches_reach_the_page():
+    """They are a shortcut for the UI and not a rule, but a shortcut nobody is
+    sent is no shortcut. `palette` stays exactly the body's list beside them."""
+    data = garage.payload(None, {}, set())
+    assert data["swatches"]["glass"] == list(garage.SWATCHES["glass"])
+    assert data["palette"] == list(garage.PALETTE)
+    assert "#ffffff" not in data["palette"]
+
+
+def test_a_swatch_is_a_shortcut_and_not_a_rule():
+    """`validate` is unchanged: these slots take any hex, and the picker is right
+    there. Offering a list must not quietly become enforcing one, or the custom
+    colour every one of these slots supports would stop round-tripping."""
+    off_list = "#7f3d19"
+    assert off_list not in garage.SWATCHES["trim"]
+    assert garage.validate({"trim": off_list})["trim"] == off_list
+
+
 def test_storage_keeps_only_what_was_changed():
     """So a default that moves later moves the cars of everybody who never
     touched that slot, which is what a default is for."""
@@ -340,18 +402,21 @@ def test_the_gold_gates_open_at_their_own_counts(env):
     n = len(tracks_mod.TRACKS)
     with env.app.app_context():
         u = env.User.query.get(uid)
-        assert garage.earned(u, holders=set()) == set()
+        assert garage.earned(u, holders={}) == set()
         _stats(env, uid, golds=2)
         env.db.session.expire_all()
-        assert "pearl" not in garage.earned(env.User.query.get(uid), holders=set())
+        assert "pearl" not in garage.earned(env.User.query.get(uid), holders={})
         env.User.query.get(uid).drive.golds = 3
         env.db.session.commit()
-        got = garage.earned(env.User.query.get(uid), holders=set())
+        got = garage.earned(env.User.query.get(uid), holders={})
         assert got == {"pearl"}
         env.User.query.get(uid).drive.golds = n
         env.db.session.commit()
-        assert garage.earned(env.User.query.get(uid), holders=set()) == \
-            {"pearl", "pinstripe"}
+        # `sunburst` on purpose: it shares `pinstripe`'s condition, because a gold
+        # on every track is the thing the badge was asked for and two items are
+        # allowed to want the same achievement.
+        assert garage.earned(env.User.query.get(uid), holders={}) == \
+            {"pearl", "pinstripe", "sunburst"}
 
 
 def test_an_old_author_medal_still_counts_as_a_gold(env):
@@ -361,7 +426,7 @@ def test_an_old_author_medal_still_counts_as_a_gold(env):
     uid = _user(env)
     _stats(env, uid, golds=1, authors=2)
     with env.app.app_context():
-        assert "pearl" in garage.earned(env.User.query.get(uid), holders=set())
+        assert "pearl" in garage.earned(env.User.query.get(uid), holders={})
 
 
 def test_finishing_every_track_is_scoped_to_the_current_pool(env):
@@ -374,10 +439,10 @@ def test_finishing_every_track_is_scoped_to_the_current_pool(env):
     _time(env, uid, "a-track-that-was-deleted", 30000)
     with env.app.app_context():
         u = env.User.query.get(uid)
-        assert "forged" not in garage.earned(u, holders=set())
+        assert "forged" not in garage.earned(u, holders={})
     _time(env, uid, pool[-1], 30000)
     with env.app.app_context():
-        assert "forged" in garage.earned(env.User.query.get(uid), holders=set())
+        assert "forged" in garage.earned(env.User.query.get(uid), holders={})
 
 
 def test_holding_a_record_earns_the_badge_and_losing_it_does_not_take_it(env):
@@ -388,8 +453,8 @@ def test_holding_a_record_earns_the_badge_and_losing_it_does_not_take_it(env):
     a, b = _user(env, "alice"), _user(env, "bob")
     _time(env, a, "sunrise", 30000)
     with env.app.app_context():
-        holders = garage.record_holders()
-        assert holders == {a}
+        holders = garage.records_held()
+        assert holders == {a: 1}
         env._earned_for(env.User.query.get(a))          # writes it down
         assert env._garage_row(env.User.query.get(a)).earned == {"laurel"}
 
@@ -400,7 +465,7 @@ def test_holding_a_record_earns_the_badge_and_losing_it_does_not_take_it(env):
 
     _time(env, b, "sunrise", 25000)                     # bob takes the record
     with env.app.app_context():
-        assert garage.record_holders() == {b}
+        assert garage.records_held() == {b: 1}
         # Alice keeps it, off the stored earn rather than off the record - and
         # keeps *wearing* it, which is the half a stored earn would still get
         # wrong if `resolve` were handed a freshly recomputed set.
@@ -428,7 +493,7 @@ def test_the_earliest_lap_holds_a_tied_record(env):
     _time(env, a, "sunrise", 30000)
     _time(env, b, "sunrise", 30000)
     with env.app.app_context():
-        assert garage.record_holders() == {a}
+        assert garage.records_held() == {a: 1}
 
 
 def test_reading_a_strangers_livery_leaves_no_row_behind(env):
@@ -466,7 +531,7 @@ def test_progress_counts_toward_each_gate(env):
     for slug in pool[:9]:
         _time(env, uid, slug, 30000)
     with env.app.app_context():
-        p = garage.progress(env.User.query.get(uid), holders=set())
+        p = garage.progress(env.User.query.get(uid), holders={})
         # Pearl is already earned, so it reads full rather than 4/3 - a bar past
         # its own end is a bar somebody has to explain.
         assert p["pearl"] == (3, 3)
@@ -493,8 +558,8 @@ def test_progress_and_the_gate_agree(env):
     _stats(env, uid, golds=n)
     with env.app.app_context():
         u = env.User.query.get(uid)
-        got = garage.earned(u, holders=set())
-        prog = garage.progress(u, holders=set())
+        got = garage.earned(u, holders={})
+        prog = garage.progress(u, holders={})
         for gid in garage.GATES:
             have, need = prog[gid]
             assert (have >= need) == (gid in got), gid

@@ -159,6 +159,13 @@ export class Color {
   }
   clone() { const k = new Color(); k.r = this.r; k.g = this.g; k.b = this.b; return k; }
   copy(c) { return this.set(c); }
+  // The two named setters, because a finish reaches for both: `paintOf` lerps
+  // toward a hex tint and toward its own grey. Aliases of `set` rather than
+  // conversions, which is the same choice `set(number)` already makes - this
+  // stub models colour as plain arithmetic on 0..1 components, and the tests
+  // that read `getHexString` back are written against that.
+  setHex(h) { return this.set(h); }
+  setRGB(r, g, b) { this.r = r; this.g = g; this.b = b; return this; }
   lerp(c, t) {
     this.r += (c.r - this.r) * t; this.g += (c.g - this.g) * t; this.b += (c.b - this.b) * t;
     return this;

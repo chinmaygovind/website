@@ -1241,8 +1241,13 @@ body.garage-page .nav { flex: none; }
   display: flex; flex-wrap: wrap; align-items: center; gap: .4rem;
   padding: .55rem .7rem;
   /* So switching tabs does not walk the car up and down the screen behind the
-     bar. The tallest tab is two rows (a chip row plus a swatch row). */
-  min-height: 3.4rem; justify-content: center;
+     bar. Raised from 3.4rem when the detail slots stopped offering the body's
+     eighteen and started offering their own: trim, stripe and rim are
+     twenty-four plus the picker, which is two swatch rows at any window width
+     rather than one row on a wide one. Glass is eight and Badge is chips, and
+     both are shorter - this is what stops that difference being visible as the
+     car moving. */
+  min-height: 5rem; justify-content: center;
 }
 .gtab {
   font-family: var(--display); font-weight: 700; font-size: .82rem;
@@ -1277,7 +1282,11 @@ body.garage-page .nav { flex: none; }
 /* One language for every colour on the page. These used to be a raw
    `<input type=color>`, which the browser draws as a ~38px grey rectangle that
    says nothing about what it is or what colour is currently in it. */
-.gcolors { display: flex; flex-wrap: wrap; align-items: center; gap: .28rem; }
+/* Capped at thirteen columns so a slot's swatches wrap into a tidy block rather
+   than a ragged strip whose break moves with the window. Thirteen because the
+   longest lists are twenty-four plus the picker, which is exactly two rows. */
+.gcolors { display: flex; flex-wrap: wrap; align-items: center; gap: .28rem;
+           max-width: 25rem; justify-content: center; }
 .gsw {
   width: 26px; height: 26px; padding: 0; border-radius: 7px; cursor: pointer;
   border: 1px solid rgba(255, 255, 255, .28); background-clip: padding-box;
@@ -1295,9 +1304,58 @@ body.garage-page .nav { flex: none; }
   content: ''; position: absolute; inset: 5px; border-radius: 3px;
   background: var(--pick); border: 1px solid rgba(0, 0, 0, .3);
 }
-.gsw input[type=color] { position: absolute; opacity: 0; pointer-events: none;
-                         width: 1px; height: 1px; }
 .gslot { display: inline-flex; align-items: center; gap: .4rem; }
+
+/* --- the colour picker ---------------------------------------------------- */
+/* Absolutely positioned against `.gstage` and *outside* `.gtop`, because
+   `render()` rewrites `#gopts` on every change and would take the panel with it
+   mid-drag. `garage.js` sets left/top; everything else is here. */
+.gpick {
+  position: absolute; z-index: 6; width: 208px; padding: .5rem;
+  display: flex; flex-direction: column; gap: .45rem;
+  background: var(--hud); border: 1px solid var(--hud-line); border-radius: 12px;
+  backdrop-filter: blur(8px); color: #fff;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+}
+.gpick[hidden] { display: none; }
+.gpick-head { display: flex; align-items: center; justify-content: space-between;
+              font-size: .68rem; letter-spacing: .12em; text-transform: uppercase;
+              font-weight: 700; color: rgba(255, 255, 255, .6); }
+.gpick-x { width: 20px; height: 20px; padding: 0; border: 0; border-radius: 5px;
+           background: transparent; color: rgba(255, 255, 255, .55);
+           cursor: pointer; display: grid; place-items: center; }
+.gpick-x:hover { background: rgba(255, 255, 255, .12); color: #fff; }
+.gpick-x svg { width: 12px; height: 12px; fill: none; stroke: currentColor;
+               stroke-width: 2.4; stroke-linecap: round; }
+/* Value down, saturation across, over the hue as a flat backdrop - which is the
+   one part a browser gives you for free, and the reason this is two gradients
+   rather than a canvas nobody can style. */
+.gpick-sv {
+  position: relative; height: 116px; border-radius: 7px; cursor: crosshair;
+  background:
+    linear-gradient(to top, #000, rgba(0, 0, 0, 0)),
+    linear-gradient(to right, #fff, hsl(var(--hue, 0) 100% 50%));
+  border: 1px solid rgba(255, 255, 255, .18);
+}
+.gpick-hue {
+  position: relative; height: 14px; border-radius: 7px; cursor: ew-resize;
+  border: 1px solid rgba(255, 255, 255, .18);
+  background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+}
+/* `touch-action: none` on both, or a drag on a phone scrolls the page instead of
+   choosing a colour - and the page it would scroll is a full-screen canvas. */
+.gpick-sv, .gpick-hue { touch-action: none; }
+.gpick-dot {
+  position: absolute; width: 13px; height: 13px; border-radius: 50%;
+  transform: translate(-50%, -50%); pointer-events: none;
+  border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, .5);
+}
+.gpick-hue .gpick-dot { top: 50%; }
+.gpick-foot { display: flex; align-items: center; gap: .4rem; }
+.gpick-chip { width: 22px; height: 22px; border-radius: 5px; flex: none;
+              border: 1px solid rgba(255, 255, 255, .28); }
+.gpick-hex { font-family: ui-monospace, monospace; font-size: .78rem;
+             letter-spacing: .04em; color: rgba(255, 255, 255, .8); }
 .gslot-label { font-size: .68rem; letter-spacing: .12em; text-transform: uppercase;
                color: rgba(255, 255, 255, .5); font-weight: 700; }
 /* A divider between the chips and the colours in the tabs that have both. */
