@@ -431,6 +431,16 @@ def not_found(_e):
 # database driver anywhere near it.
 accounts_enabled = accounts.init_app(app)
 
+# Visit logging, on the same condition and for the same reason: it writes to
+# the database the accounts pages brought with them, so a checkout without one
+# serves the static tree exactly as before and records nothing. `visits.py` is
+# the copy shared by all five services - see its docstring.
+if accounts_enabled:
+    import visits
+    from accounts.models import db as accounts_db
+
+    visits.init_app(app, accounts_db, "site")
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5002)), debug=True)

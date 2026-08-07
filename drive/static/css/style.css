@@ -1420,3 +1420,20 @@ body.garage-page .nav { flex: none; }
   .gopts { min-height: 3rem; padding: .45rem .5rem; }
   .gsw { width: 24px; height: 24px; }
 }
+
+/* --- who is on, in the lobbies sidebar ------------------------------------
+   The same green dot the accounts pages use, because it means the same thing
+   in both places and a second visual language for "here" would be one too
+   many. No red half: this list is only ever people who are on, and the
+   offline story - and how long ago - belongs on a profile. */
+.online-now { grid-column: 2; }
+.online-row {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .35rem 0; border-bottom: 1px dashed #ddd; color: var(--ink);
+}
+.online-row:last-child { border-bottom: 0; }
+.online-row:hover { text-decoration: none; background: #f6f4ef; }
+.online-now .dot {
+  width: .6rem; height: .6rem; border-radius: 50%; flex: none;
+  background: #1f7a4d; box-shadow: 0 0 0 3px rgba(31, 122, 77, .22);
+}

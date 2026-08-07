@@ -22,6 +22,7 @@ from sqlalchemy.engine import Engine
 
 from models import db, User, ErsStats, ErsGame, ErsPlayer, ErsSlap
 import game_logic as gl
+import visits
 
 # ---------------------------------------------------------------------------
 # Config
@@ -80,6 +81,13 @@ with app.app_context():
                 _c.execute(db.text(_stmt)); _c.commit()
         except Exception:
             pass
+
+
+# Every request logged, and this service's players marked as here.
+# `visits.py` is one file copied into all five services and is byte-identical
+# in each - the same convention `models.py` follows, and the main repo's
+# `tests/test_no_drift.py` is what stops the copies drifting.
+visits.init_app(app, db, "ers")
 
 # Seat colors (name is shown in the player's color in the slap log).
 ERS_COLORS = ["#f2c94c", "#eb5757", "#56ccf2", "#6fcf78", "#bb6bd9",
@@ -182,7 +190,19 @@ def inject_globals():
             # rather than four, so a game refers to it by absolute URL - see
             # `UserProfile.flag_path`, which returns the path half.
             "site_url": MAIN_SITE_URL,
+            # What the heartbeat in base.html says about this page. Derived
+            # from the endpoint rather than passed by each route, so a new
+            # page gets a sensible answer without anybody remembering one.
+            "presence_where": PRESENCE_BY_ENDPOINT.get(request.endpoint or "", "home"),
             "asset_version": os.environ.get("ASSET_VERSION", "1")}
+
+
+PRESENCE_BY_ENDPOINT = {
+    "lobbies": "lobby",
+    "lobby": "lobby",
+    "game_page": "game",
+    "leaderboard": "board",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -287,7 +307,55 @@ def lobbies():
         .order_by(ErsGame.last_activity_at.desc()).limit(20).all()
     live = [g.to_lobby_dict() for g in live_games]
     return render_template("lobbies.html", games=games, live=live, user=get_current_user(),
-                           name=get_effective_name())
+                           name=get_effective_name(), online=_online_now())
+
+# What each `where` a page can send is called on a profile. **This table is the
+# whole security model of the status line**: the browser sends a key, and a key
+# that is not in here means no detail at all rather than something to display.
+# A profile page is public, so anything that let a player put their own words
+# on it would be a billboard with a text box attached.
+PRESENCE_WHERE = {
+    "lobby": "In Lobby",
+    "game": "In Game",
+    "board": "Reading the leaderboard",
+}
+
+
+@app.route("/api/presence", methods=["POST"])
+def api_presence():
+    """The heartbeat behind the green dot on cgovind.com/accounts.
+
+    Sent on load and then once a minute while the tab is visible. Guests get a
+    200 and no row: presence hangs off an account, and there is nowhere to hang
+    a guest's.
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"ok": True})
+    where = str((request.json or {}).get("where", ""))[:20]
+    visits.seen(db, user.id, "ers", PRESENCE_WHERE.get(where))
+    return jsonify({"ok": True})
+
+
+def _online_now():
+    """Who is about, anywhere on cgovind.com, for the lobbies page.
+
+    Across all four games and not just this one, which is the point: the
+    question a lobby raises is "is there anybody around to play", and somebody
+    currently driving is somebody you can ask.
+    """
+    rows = visits.online_now(db.session.connection(), limit=12)
+    for r in rows:
+        r["label"] = PRESENCE_LABEL.get(r["service"], "Online")
+    return rows
+
+
+# The four games as a profile would name them, for the one-line "who is on"
+# list. Deliberately short: this is a sidebar, not a profile.
+PRESENCE_LABEL = {"drive": "Drive", "ttr": "Ticket to Ride",
+                  "ers": "Egyptian Rat Screw", "kot": "King of Tokyo",
+                  "site": "On the site"}
+
 
 
 def _add_player(game, host=False):

@@ -56,6 +56,25 @@
       <button class="btn big" style="width:100%" onclick="createRoom()">Create room</button>
       <p class="muted" style="font-size:.9rem">Up to 8 cars. You can change the track from inside the room.</p>
     </div>
+
+    <!-- Who is around, across all four games rather than just this one. The
+         question a lobby actually raises is "is there anybody to race", and
+         somebody in the middle of King of Tokyo is somebody you can ask - so
+         the row says what they are doing rather than pretending they are
+         waiting here. Absent entirely when nobody is on, because an empty
+         panel headed "Online now" is a worse answer than no panel. -->
+    {% if online %}
+    <div class="panel online-now">
+      <h2 style="margin-top:0">Online now</h2>
+      {% for p in online %}
+      <a class="row online-row" href="{{ site_url }}/accounts/{{ p.username }}">
+        <span class="dot"></span>
+        <b>{{ p.username }}</b>
+        <span class="muted" style="margin-left:auto">{{ p.label }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
   </div>
 </div>
 {% endblock %}

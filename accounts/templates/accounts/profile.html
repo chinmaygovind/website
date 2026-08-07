@@ -14,6 +14,16 @@
          it is the login, the profile's address, and the thing that does not
          change, which is exactly what somebody looking a person up needs. #}
       <div class="hero-handle">@{{ user.username }}</div>
+      {# Where they are, right now. Directly under the name because it is the
+         one thing on this page that is true only for the next two minutes -
+         everything below it is a total, and totals keep. The dot carries the
+         game's own accent when somebody is playing one, so the four games are
+         as distinguishable here as they are on the chips below. #}
+      <div class="status {{ 'on' if status and status.online else 'off' }}"
+           {% if status and status.online and status.accent %}style="--dot: {{ status.accent }}"{% endif %}>
+        <span class="dot" aria-hidden="true"></span>
+        <span>{{ status.text if status else 'Offline' }}</span>
+      </div>
       <div class="hero-meta">
         {% set where = places.place_name(user.profile.country if user.profile else none,
                                          user.profile.us_state if user.profile else none) %}

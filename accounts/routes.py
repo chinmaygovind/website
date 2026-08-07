@@ -24,7 +24,7 @@ from flask import (Blueprint, abort, current_app, jsonify, redirect,
                    render_template, request, send_from_directory, session, url_for)
 from sqlalchemy import func, or_
 
-from . import avatars, gamestats, mail, naming, places, tokens
+from . import avatars, gamestats, mail, naming, places, presence, tokens
 from .models import User, UserProfile, db
 
 bp = Blueprint("accounts", __name__, url_prefix="/accounts",
@@ -124,6 +124,31 @@ def _inject():
     }
 
 
+def _status_for(conn, user_ids):
+    """``{user_id: {"online", "text", "accent"}}`` for a page of people.
+
+    One query for the whole page, like the ratings beside it. The wording lives
+    in ``presence.py`` and the row in ``visits.py``, so a page only ever asks
+    for the finished sentence.
+
+    ``visits`` lives at the repo root next to ``app.py`` rather than in this
+    package, because four other services have their own copy of it and this one
+    must stay the same file. Imported here rather than at module scope so the
+    accounts pages still load in a checkout where it is missing - a profile
+    without a dot is a profile, and an ImportError is a 500.
+    """
+    try:
+        import visits
+    except ImportError:                                  # pragma: no cover
+        return {}
+    out = {}
+    for user_id, entry in visits.presence_for(conn, user_ids).items():
+        online, text = presence.line_for(entry)
+        out[user_id] = {"online": online, "text": text,
+                        "accent": presence.accent_for(entry)}
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Public: the directory and a profile
 # ---------------------------------------------------------------------------
@@ -148,7 +173,9 @@ def directory():
 
     conn = db.session.connection()
     ratings = gamestats.ratings_for(conn, [u.id for u in users])
-    rows = [{"user": u, "ratings": ratings.get(u.id, {})} for u in users]
+    status = _status_for(conn, [u.id for u in users])
+    rows = [{"user": u, "ratings": ratings.get(u.id, {}),
+             "status": status.get(u.id)} for u in users]
     # Somebody who has played something goes above somebody who has not; within
     # each, the order is when they joined, which is the only neutral one.
     rows.sort(key=lambda r: (0 if r["ratings"] else 1, r["user"].created_at or datetime.min))
@@ -166,7 +193,11 @@ def profile(username):
     if user.username != username:
         return redirect(url_for("accounts.profile", username=user.username), code=301)
 
-    blocks = gamestats.for_user(db.session.connection(), user.id)
+    conn = db.session.connection()
+    blocks = gamestats.for_user(conn, user.id)
+    # Where they are right now, read the same way the game figures are: one
+    # query, off the table every service writes to.
+    status = _status_for(conn, [user.id]).get(user.id)
     active = request.args.get("game")
     if active not in {b["key"] for b in blocks}:
         # Open on the game they have played most, which is the one a visitor
@@ -174,8 +205,9 @@ def profile(username):
         active = max(blocks, key=lambda b: (b["played"], b["elo"] or 0))["key"]
 
     return render_template("accounts/profile.html", user=user, blocks=blocks,
-                           active=active, is_me=(current_user() is not None
-                                                 and current_user().id == user.id))
+                           active=active, status=status,
+                           is_me=(current_user() is not None
+                                  and current_user().id == user.id))
 
 
 @bp.route("/avatar/<name>")

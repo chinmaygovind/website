@@ -26,6 +26,7 @@ from models import (db, User, DriveStats, DriveTime, DriveStart,
 import tracks as tracks_mod
 import tuning
 import runcheck
+import visits
 import garage as garage_mod
 # The palette and the hash moved into `garage.py`, with the rest of what a car
 # is allowed to look like. Imported by name here because five routes call it.
@@ -74,6 +75,12 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
 with app.app_context():
     db.create_all()  # creates drive_* tables; never touches the shared users table
+
+# Every request logged, and this service's players marked as here. `visits.py`
+# is one file copied into all five services and is byte-identical in each - the
+# same convention `models.py` follows, and `tests/test_no_drift.py` on the main
+# repo is what stops the copies drifting.
+visits.init_app(app, db, "drive")
 
 # What a car looks like lives in `garage.py`: the palette, every slot somebody
 # can change, and the gates on the few that are earned. `color_for` above is
@@ -258,7 +265,25 @@ def inject_globals():
             # rather than four, so a game refers to it by absolute URL - see
             # `UserProfile.flag_path`, which returns the path half.
             "site_url": MAIN_SITE_URL,
+            # What the heartbeat in base.html says about this page. Derived
+            # from the endpoint rather than passed by each route, so a new page
+            # gets a sensible answer without anybody remembering to add one -
+            # and the play page overrides it in JS, because there the track can
+            # change under the page with no navigation at all.
+            "presence_where": PRESENCE_BY_ENDPOINT.get(request.endpoint or "", "home"),
             "asset_version": os.environ.get("ASSET_VERSION", "1")}
+
+
+PRESENCE_BY_ENDPOINT = {
+    "lobbies": "lobby",
+    "room": "room",
+    "solo": "solo",
+    "solo_last": "solo",
+    "garage_page": "garage",
+    "race_replay": "replay",
+    "track_board": "board",
+    "leaderboard": "board",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -624,7 +649,31 @@ def lobbies():
         break
     return render_template("lobbies.html", games=payload["games"],
                            tracks=tracks_mod.summaries(), mine=mine,
+                           online=_online_now(),
                            user=get_current_user(), name=get_effective_name())
+
+
+def _online_now():
+    """Who is about, anywhere on cgovind.com, for the lobbies page.
+
+    Across all four games and not just this one, which is the point: the
+    question a lobby raises is "is there anybody around to race", and somebody
+    currently in King of Tokyo is somebody you can ask. Each row carries where
+    they are so the answer is honest about what they are already doing.
+    """
+    rows = visits.online_now(db.session.connection(), limit=12)
+    for r in rows:
+        r["label"] = PRESENCE_LABEL.get(r["service"], "Online")
+        if r["service"] == "drive" and r["detail"]:
+            r["label"] = r["detail"]
+    return rows
+
+
+# The four games as a profile would name them, for the one-line "who is on"
+# list. Deliberately short: this is a sidebar, not a profile.
+PRESENCE_LABEL = {"drive": "Drive", "ttr": "Ticket to Ride",
+                  "ers": "Egyptian Rat Screw", "kot": "King of Tokyo",
+                  "site": "On the site"}
 
 
 @app.route("/room/<code>")
@@ -911,6 +960,46 @@ def api_last_track():
     if not tracks_mod.get(slug):
         return jsonify({"ok": False}), 404
     _remember_track(slug)
+    return jsonify({"ok": True})
+
+
+# What each `where` a page can send is called on a profile. **This table is the
+# whole security model of the status line**: the browser sends a key, and a key
+# that is not in here means no detail at all rather than something to display.
+# A profile page is public, so anything that let a player put their own words
+# on it would be a billboard with a text box attached.
+PRESENCE_WHERE = {
+    "room": "Multiplayer",
+    "lobby": "In Lobby",
+    "garage": "In the Garage",
+    "replay": "Watching a replay",
+    "board": "Reading the leaderboard",
+}
+
+
+@app.route("/api/presence", methods=["POST"])
+def api_presence():
+    """The heartbeat: "still here, and this is where".
+
+    Sent on load and then once a minute while the tab is visible, which is what
+    keeps a two-minute solo lap - a stretch with no other requests in it at all
+    - from reading as somebody who has gone.
+
+    Guests get a 200 and no row: presence hangs off an account, and there is
+    nowhere to hang a guest's.
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"ok": True})
+    data = request.json or {}
+    where = str(data.get("where", ""))[:20]
+    detail = PRESENCE_WHERE.get(where)
+    if where == "solo":
+        # The one detail that is not a constant, and it still is not the
+        # browser's text: the slug is looked up, and an unknown one is dropped.
+        track = tracks_mod.get(str(data.get("track", ""))[:40])
+        detail = track["name"] if track else None
+    visits.seen(db, user.id, "drive", detail)
     return jsonify({"ok": True})
 
 

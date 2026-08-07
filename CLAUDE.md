@@ -246,9 +246,77 @@ the deploy's `git reset --hard` can never be near them.
 colour hashed from the username, drawn *in the page* rather than served as an
 image — an `<img>` cannot load a webfont, and the initial is the whole picture.
 
+### Visits and presence (`visits.py`)
+
+**Every request to anything on `cgovind.com` is logged, and every account has a
+green dot.** Two tables in the shared database, both created by raw
+`CREATE TABLE IF NOT EXISTS` so whichever service boots first makes them:
+`site_visits` (one row per visit) and `user_presence` (one row per account).
+
+- **`visits.py` is one file copied verbatim into all five services**, which is
+  the strongest form of this repo's copy-per-service convention: not five files
+  that must agree but five copies of one, so the check is a byte comparison and
+  the fix is a copy rather than a merge (`test_every_service_carries_the_same_
+  visits_module`). Nothing in it may be service-specific — it is handed the
+  `db` to use and reads `flask.session` for the rest, so the text has no idea
+  which service it is in. The one difference is the line that starts it:
+  `visits.init_app(app, db, "<service>")`.
+- **A visit is not every request.** Assets, `/static/`, the socket transport
+  and the heartbeat itself are skipped, or the log is unreadable and mostly
+  fonts. **A PDF is deliberately on the other side of that line** — the resume
+  is the one file whose downloads are worth counting. A 404 is logged, with its
+  status: somebody arriving on a dead link is exactly what you want in here.
+- **Raw IPs, kept indefinitely, from `X-Forwarded-For`.** Every service listens
+  on 127.0.0.1 behind nginx, so `remote_addr` is always the proxy; taking the
+  first hop is right *here* and would be wrong on an internet-facing app, where
+  the client can prepend anything. This is the first time the application has
+  stored an address at all — before it, "who is this account" meant reading
+  nginx's logs and matching timestamps by hand, which works and does not
+  survive the fourteen days nginx keeps.
+- **A `cgv` cookie identifies a browser, and a 30-minute gap ends a session.**
+  Set on the parent domain, so reading the landing page and then driving is one
+  visitor and not two. Session stitching reads an in-process cache and falls
+  back to a query, which is what makes the answer survive a restart.
+- **Crawlers are flagged, not filtered.** A bot the regex misses is a row with
+  `is_bot = 0`, which is recoverable; a person it wrongly filters is a visit
+  that never existed.
+- **Presence is public, and it is `visits.py` that writes it.** `touch` says
+  "still here" and `seen` says "here, doing this". Ordinary page loads only
+  ever `touch`, so a detail set by the last heartbeat survives the pages
+  between them — but **changing service clears it**, because "Sunrise Circuit"
+  is false the moment somebody opens King of Tokyo. The throttle
+  (`PRESENCE_EVERY`) skips a write only when the service is *also* unchanged;
+  checking the clock alone was a bug where switching games within 20 seconds
+  left the old game on the profile.
+- **The status can only ever say what the game offers.** A browser sends a
+  *key* to `/api/presence`, the game looks it up in its own `PRESENCE_WHERE`,
+  and a miss is no detail rather than something to display. Drive's track is
+  the one non-constant and it is still a slug looked up in the pool. A profile
+  page is public, so a free-text status would be a billboard with a text box
+  attached — `test_a_status_can_only_say_what_the_game_offers` is what stops a
+  future heartbeat passing its payload through.
+- **The heartbeat is a ping a minute while the tab is visible**, inline in each
+  `base.html`. It is what keeps a two-minute solo lap — a stretch with no other
+  requests in it at all — from reading as somebody who has left, and skipping
+  hidden tabs is most of what makes the dot honest about a browser left open
+  for three days. Drive's play page overrides it through `window.driveWhere`,
+  because the switcher changes track with no navigation.
+- **The wording lives in `accounts/presence.py`** and nowhere else: "Playing
+  Drive - Sunrise Circuit", "Playing Ticket to Ride - In Lobby", "Browsing
+  cgovind.com", "Offline - last online 5 hours ago". Offline is a *length of
+  time* rather than a timestamp, in whole units, and a clock a second fast
+  reads "just now" rather than a negative age.
+- **The dot is on the profile, on the directory, and on each game's lobbies
+  page.** The directory and the lobby lists only ever show people who *are* on
+  — a red dot beside every one of sixteen names is a page of red dots, and the
+  offline half of the sentence belongs on a profile. The lobby lists are
+  cross-game on purpose: the question a lobby raises is "is there anybody
+  around to play", and somebody in the middle of King of Tokyo is somebody you
+  can ask.
+
 ### Tests
 
-`scripts/tests.sh site` — 122 tests, about 15s, plus the `import app` check the
+`scripts/tests.sh site` — 166 tests, about 15s, plus the `import app` check the
 deploy used to be. `tests/test_no_drift.py` is the one to know about: five
 services each own a copy of `User` and now of `UserProfile`, which is this
 repo's convention and the right one for five things that deploy separately, but
@@ -2438,9 +2506,27 @@ Push to `main` triggers `.github/workflows/deploy.yml`: pick the changed modules
 run those tests (see **Tests** below), then an
 SSH deploy (repo secrets `EC2_HOST`/`EC2_USER`/`EC2_SSH_KEY`, where `EC2_HOST` is
 the Elastic IP) that runs `git reset --hard origin/main`, `git submodule update`,
-`pip install -r requirements.txt`, and `sudo systemctl restart website`. That is
-all it does: it ships `site/` and `app.py` but does NOT touch nginx, TLS, or the
-box `.env`, and does NOT run `deploy/setup.sh`. Apply nginx/TLS/`.env` changes by
+`pip install`, and restarts the services that changed. It does NOT touch nginx,
+TLS, or the box `.env`, and does NOT run `deploy/setup.sh`.
+
+**Only the services whose own code moved are restarted**, which matters because
+restarting a game service drops every live game in it — before this, one CSS
+tweak on the landing page ended whatever was being played in ERS and KoT. What
+moved is asked of git *on the box* (`git diff --name-only $BEFORE $AFTER` around
+the reset) rather than passed in, so a box several commits behind still restarts
+everything those commits touched. A hand-triggered re-run of the same commit
+restarts everything, since there is nothing there to compare.
+
+**TTR deploys from this repo's submodule pointer.** The live Ticket to Ride is
+not the `ttr/` submodule but its own clone at `/home/ubuntu/TicketToRide`, and
+the deploy now fetches and `reset --hard`s it to whatever commit `ttr/` names
+here, then restarts `tickettoride`. So shipping TTR is: change it in its own
+repo, `git -C ttr pull`, `git add ttr`, push. The pointer is the source of truth
+on purpose — what this repo records is what prod runs, readable with one
+`git ls-tree`. **Never `git clean` in that clone**: `instance/tickettoride.db`
+is the SQLite file *all five services share* and `.env` is beside it, both
+untracked, so a clean would delete the site's entire data. `reset --hard` is
+safe precisely because neither is tracked. Apply nginx/TLS/`.env` changes by
 hand over SSH (`ssh ubuntu@54.157.20.148`; nginx config at
 `/etc/nginx/sites-available/website`). `deploy/setup.sh` is the one-time bring-up.
 
@@ -2464,6 +2550,9 @@ scripts/tests.sh drive -- -k ghost -x     # after --, straight to pytest
 
 - **`scripts/changed-modules.sh` is the one place a path becomes a module**, and
   both the runner and CI call it, so a laptop and the Action can never disagree.
+  Note it maps *tests* and not deploys: `ttr/` maps to nothing here because TTR
+  has its own CI, while the deploy step does its own path matching on the box
+  and does ship TTR. The two answer different questions on purpose.
   `drive/`, `ers/` and `kot/` map to themselves; `app.py`/`site/` (and anything
   unrecognised, deliberately) map to `site`, whose "suite" is `import app` - the
   same check the deploy used to be. Docs, `deploy/` and `.claude/` map to

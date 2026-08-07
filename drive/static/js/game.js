@@ -203,6 +203,16 @@ function boot() {
   }
   openRequestedLap();
   openPanelParam();
+  // What the heartbeat in base.html should say about this page. A function and
+  // not a value, because this is the one page that changes what it is without
+  // navigating anywhere: the switcher swaps the world in place, and a track
+  // name captured at boot would be the track you arrived on for the rest of
+  // the session. Only the slug leaves the browser - the server looks the name
+  // up, so nothing typed here can reach a public profile.
+  window.driveWhere = () => ({
+    where: CFG.mode === 'replay' ? 'replay' : (CFG.mode === 'room' ? 'room' : 'solo'),
+    track: S.track.slug,
+  });
   requestAnimationFrame(frame);
 }
 

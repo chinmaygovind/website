@@ -21,8 +21,21 @@
   <a class="person" href="{{ url_for('accounts.profile', username=row.user.username) }}">
     {{ bits.avatar(row.user, 'sm') }}
     <div>
-      <div class="person-name">{{ row.user.display }} {{ bits.flag(row.user) }}</div>
-      <div class="person-sub">@{{ row.user.username }} · joined {{ row.user.created_at|usdate }}</div>
+      <div class="person-name">
+        {# Only when they are actually on. A red dot beside every one of
+           sixteen names is a page of red dots, and "not here" is the state
+           this list is normally in - the profile is where the offline half of
+           the sentence, and how long ago, belongs. #}
+        {% if row.status and row.status.online %}
+        <span class="dot on" title="{{ row.status.text }}"
+              {% if row.status.accent %}style="--dot: {{ row.status.accent }}"{% endif %}></span>
+        {% endif %}
+        {{ row.user.display }} {{ bits.flag(row.user) }}
+      </div>
+      <div class="person-sub">
+        {% if row.status and row.status.online %}{{ row.status.text }}
+        {% else %}@{{ row.user.username }} · joined {{ row.user.created_at|usdate }}{% endif %}
+      </div>
     </div>
     {# Four columns whether or not they are filled: a dash in the KoT column is
        information, and a row that only shows the games somebody plays cannot be

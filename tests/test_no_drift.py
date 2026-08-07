@@ -181,3 +181,54 @@ def test_drives_own_account_page_leads_on_to_the_shared_profile():
     other link is."""
     src = source("drive", "templates", "account.html")
     assert "{{ site_url }}/accounts/{{ user.username }}" in src
+
+
+# --- the visit log and the presence row -------------------------------------
+#
+# `visits.py` is the strongest form of this repo's copy-per-service convention:
+# not five files that must agree, but five copies of *one* file. That makes the
+# check trivial and total - a byte comparison - and it makes fixing a failure a
+# copy rather than a merge. It also means nothing in that file may ever be
+# service-specific, which is why it takes its `db` as an argument and reads
+# `flask.session` for the rest.
+
+@pytest.mark.parametrize("game", GAMES)
+def test_every_service_carries_the_same_visits_module(game):
+    assert source(game, "visits.py") == source("visits.py"), (
+        "%s/visits.py has drifted from the root copy. It is meant to be the "
+        "same file: copy the root one over it rather than merging by hand." % game)
+
+
+@pytest.mark.parametrize("game", GAMES)
+def test_every_service_logs_its_visits_under_its_own_name(game):
+    """The one line each copy is *called* with, which is the only difference
+    between them - and the string that decides what a profile says somebody is
+    playing, so a typo here is a status nobody can read."""
+    src = source(game, "app.py")
+    assert 'visits.init_app(app, db, "%s")' % game in src, \
+        "%s/app.py does not start visit tracking as '%s'" % (game, game)
+
+
+@pytest.mark.parametrize("game", GAMES)
+def test_a_status_can_only_say_what_the_game_offers(game):
+    """The status line is drawn on a public profile, so what a browser sends is
+    a *key* and never words. Every game looks the key up in its own table and a
+    miss is no detail at all; the one exception is Drive's track, which is a
+    slug looked up in the track pool. This test is the thing that notices if a
+    heartbeat ever starts passing the payload straight through."""
+    src = source(game, "app.py")
+    body = re.search(r"def api_presence\(\):.*?\n    return jsonify", src, re.S)
+    assert body, "%s has no /api/presence handler" % game
+    body = body.group(0)
+    assert "PRESENCE_WHERE.get(" in body or "PRESENCE_WHERE.get" in body, \
+        "%s builds its status without the whitelist" % game
+    # The detail handed to `seen` must be the *result* of a lookup, never
+    # anything read off the request. `PRESENCE_WHERE.get(where)` is the whole
+    # point - `where` is a key and what comes back is ours - so what this bans
+    # is the request object reaching the call at all.
+    seen_call = re.search(r"visits\.seen\((.*?)\)\n", body, re.S)
+    assert seen_call, "%s never records presence" % game
+    args = seen_call.group(1)
+    for banned in ("request.", "data.get", ".json"):
+        assert banned not in args, \
+            "%s passes %s straight into the status line" % (game, banned)

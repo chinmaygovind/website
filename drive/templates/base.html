@@ -25,6 +25,42 @@
   </script>
   <script src="{{ url_for('static', filename='js/pending.js') }}?v={{ asset_version }}"></script>
   {% block scripts %}{% endblock %}
+  <!-- The heartbeat behind the green dot on cgovind.com/accounts.
+       Inline rather than a file of its own, and after the page's own scripts:
+       it is fifteen lines, and a new file would have to be added to `sw.js`'s
+       precache list to work offline, which is a lot of machinery for a ping.
+       `window.driveWhere` is how a page that changes underneath itself - the
+       play page, where the track switcher swaps worlds without a navigation -
+       says where it has got to; everything else just declares itself once. -->
+  <script>
+    (function () {
+      var fixed = {{ (presence_where or 'home')|tojson }};
+      function where() {
+        try {
+          return (typeof window.driveWhere === 'function' && window.driveWhere())
+                 || { where: fixed };
+        } catch (e) { return { where: fixed }; }
+      }
+      function ping() {
+        // A hidden tab is not somebody playing. Skipping it is most of what
+        // makes the dot honest about a browser left open for three days.
+        if (document.hidden || !window.DRIVE_USER) return;
+        try {
+          fetch('/api/presence', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(where()), keepalive: true,
+          }).catch(function () {});
+        } catch (e) {}
+      }
+      ping();
+      setInterval(ping, 60000);
+      // Coming back to the tab should light the dot now rather than up to a
+      // minute from now, which is the case somebody watching a profile sees.
+      document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) ping();
+      });
+    })();
+  </script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});

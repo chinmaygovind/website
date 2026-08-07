@@ -134,46 +134,97 @@ jobs:
             set -e
 
             APP=/home/ubuntu/website
+            # The live Ticket to Ride is NOT this repo's ttr/ submodule: it is
+            # its own clone, and its instance/ holds the SQLite file all five
+            # services share. **Never `git clean` in there** - the database and
+            # the .env are both untracked, and cleaning would delete the site's
+            # entire data. `reset --hard` is safe: neither is tracked, so
+            # neither is touched.
+            TTR=/home/ubuntu/TicketToRide
 
             echo "==> Pulling latest from main (with submodules)"
             cd "$APP"
+            BEFORE="$(git rev-parse HEAD 2>/dev/null || true)"
             git fetch origin main
             git checkout main 2>/dev/null || true
             git reset --hard origin/main
             git submodule sync --recursive
             git submodule update --init --recursive
+            AFTER="$(git rev-parse HEAD)"
 
-            echo "==> Installing/upgrading Python dependencies"
-            "$APP/venv/bin/pip" install -q -r requirements.txt
-
-            echo "==> Restarting website"
-            sudo systemctl restart website
-
-            echo "==> Egyptian Rat Screw (ers): venv + deps + restart"
-            if [ -f "$APP/ers/.env" ]; then
-              [ -d "$APP/ers/venv" ] || python3 -m venv "$APP/ers/venv"
-              "$APP/ers/venv/bin/pip" install -q -r "$APP/ers/requirements.txt"
-              sudo systemctl restart ers || echo "ers service not installed yet (one-time setup)"
+            # What actually moved, asked of git on the box rather than passed
+            # in - so a deploy that is several commits behind still restarts
+            # everything those commits touched. Restarting a game service drops
+            # every live game in it, which is why this is worth knowing: before
+            # this, one CSS tweak on the landing page ended whatever was being
+            # played in ERS and KoT.
+            if [ -n "$BEFORE" ] && [ "$BEFORE" != "$AFTER" ]; then
+              CHANGED="$(git diff --name-only "$BEFORE" "$AFTER" || echo ALL)"
             else
-              echo "ers/.env missing - skipping ers (do the one-time bring-up first)"
+              # Same commit: a hand-triggered re-run, where the intent is
+              # "deploy it again" and nothing can be safely assumed unchanged.
+              CHANGED=ALL
+            fi
+            touched() {
+              [ "$CHANGED" = ALL ] && return 0
+              printf '%s\n' "$CHANGED" | grep -qE "$1"
+            }
+            echo "changed since $BEFORE:"; printf '%s\n' "$CHANGED" | sed 's/^/    /'
+
+            # One game: venv, deps, restart - but only if that game moved.
+            game() {
+              name="$1"; dir="$APP/$1"
+              if [ ! -f "$dir/.env" ]; then
+                echo "==> $name: no .env, skipping (do the one-time bring-up first)"
+                return 0
+              fi
+              if ! touched "^$1/"; then
+                echo "==> $name: unchanged, leaving it running"
+                return 0
+              fi
+              echo "==> $name: venv + deps + restart"
+              [ -d "$dir/venv" ] || python3 -m venv "$dir/venv"
+              "$dir/venv/bin/pip" install -q -r "$dir/requirements.txt"
+              sudo systemctl restart "$name" || echo "$name service not installed yet"
+            }
+
+            # The website itself: everything that is not one of the four games.
+            if touched '^(app\.py|visits\.py|requirements\.txt|accounts/|site/|deploy/)'; then
+              echo "==> Installing/upgrading Python dependencies"
+              "$APP/venv/bin/pip" install -q -r requirements.txt
+              echo "==> Restarting website"
+              sudo systemctl restart website
+            else
+              echo "==> website: unchanged, leaving it running"
             fi
 
-            echo "==> King of Tokyo (kot): venv + deps + restart"
-            if [ -f "$APP/kot/.env" ]; then
-              [ -d "$APP/kot/venv" ] || python3 -m venv "$APP/kot/venv"
-              "$APP/kot/venv/bin/pip" install -q -r "$APP/kot/requirements.txt"
-              sudo systemctl restart kot || echo "kot service not installed yet (one-time setup)"
-            else
-              echo "kot/.env missing - skipping kot (do the one-time bring-up first)"
-            fi
+            game ers
+            game kot
+            game drive
 
-            echo "==> Drive (drive): venv + deps + restart"
-            if [ -f "$APP/drive/.env" ]; then
-              [ -d "$APP/drive/venv" ] || python3 -m venv "$APP/drive/venv"
-              "$APP/drive/venv/bin/pip" install -q -r "$APP/drive/requirements.txt"
-              sudo systemctl restart drive || echo "drive service not installed yet (one-time setup)"
+            # Ticket to Ride, from this repo's submodule pointer.
+            #
+            # The pointer is the source of truth on purpose: shipping TTR means
+            # bumping it here and pushing, so what this repo records is what
+            # prod runs, and you can read one `git ls-tree` to know. The clone
+            # is left on a detached HEAD at exactly that commit.
+            if touched '^ttr($|/)|^\.gitmodules$'; then
+              WANT="$(git -C "$APP" rev-parse HEAD:ttr)"
+              if [ ! -d "$TTR/.git" ]; then
+                echo "==> ttr: no clone at $TTR, skipping"
+              elif [ ! -f "$TTR/.env" ]; then
+                echo "==> ttr: no .env at $TTR, skipping"
+              elif [ "$(git -C "$TTR" rev-parse HEAD)" = "$WANT" ]; then
+                echo "==> ttr: already on $WANT"
+              else
+                echo "==> ttr: $WANT"
+                git -C "$TTR" fetch origin
+                git -C "$TTR" reset --hard "$WANT"
+                "$TTR/venv/bin/pip" install -q -r "$TTR/requirements.txt"
+                sudo systemctl restart tickettoride || echo "tickettoride service not installed yet"
+              fi
             else
-              echo "drive/.env missing - skipping drive (do the one-time bring-up first)"
+              echo "==> ttr: unchanged, leaving it running"
             fi
 
             echo "==> Deploy complete"

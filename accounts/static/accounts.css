@@ -121,6 +121,42 @@ p { margin: 0; }
 .hero-meta { margin-top: .55rem; font-size: 1.1rem; color: var(--charcoal); }
 .hero-meta span + span::before { content: " · "; color: var(--hair); }
 
+/* --- where somebody is, right now ----------------------------------------
+   A dot and a sentence. The dot is the only thing on these pages that is not
+   drawn with a hand-wobbled border: it is a light, and a light is round. */
+.status {
+  display: flex; align-items: center; gap: .5rem;
+  margin-top: .5rem; font-size: 1.05rem; color: var(--charcoal);
+}
+.status.off { color: var(--muted); }
+.dot {
+  width: .62rem; height: .62rem; border-radius: 50%; flex: none;
+  background: var(--bad);
+}
+/* Green, plus a ring in the game's own colour where there is one - so which
+   game somebody is in is legible before the sentence is read, the same way the
+   chips below the hero are. Falls back to the green when it is just the site.
+   Two selectors because the two places carry the state differently: on a
+   profile it is the line that is on or off (the dot is one part of a sentence),
+   in a list it is the dot itself (there is no offline row to be the other
+   state of). Matching only `.dot.on` left every profile showing a red dot
+   above the words "Playing Drive". */
+.status.on .dot, .dot.on {
+  --dot: var(--good);
+  background: var(--good);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot) 28%, transparent);
+}
+/* It breathes, because a live thing on a page that is otherwise all totals
+   should look live. Slow and small on purpose: a flashing dot is an alarm.
+   Off entirely for anyone who has asked their system not to animate. */
+@media (prefers-reduced-motion: no-preference) {
+  .status.on .dot, .dot.on { animation: dot-pulse 2.6s ease-in-out infinite; }
+}
+@keyframes dot-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot) 28%, transparent); }
+  50%      { box-shadow: 0 0 0 6px color-mix(in srgb, var(--dot) 8%, transparent); }
+}
+
 /* The cog is the only affordance that separates your own profile from anyone
    else's, so it is a real button with a real hit area rather than an icon
    floated into a corner. */
@@ -331,6 +367,11 @@ p { margin: 0; }
 .person:hover { border-color: var(--charcoal); text-decoration: none; }
 .person-name { font-size: 1.35rem; display: flex; align-items: center; gap: .5rem; }
 .person-sub { font-size: .95rem; color: var(--muted); }
+/* In a row the dot rides with the name rather than on a line of its own, so
+   the column of names stays a column - it is inline-block and not flex for
+   exactly that reason. */
+.person-name .dot { display: inline-block; vertical-align: middle;
+                    margin-right: .35rem; }
 .person-elos { display: flex; gap: .85rem; text-align: right; }
 .pelo { min-width: 3.4rem; }
 .pelo b { display: block; font-weight: normal; font-size: 1.25rem; line-height: 1.1; }

@@ -68,6 +68,25 @@
       <button class="btn big" style="width:100%" onclick="createGame()">Create game</button>
       <p class="muted" style="font-size:.85rem;margin-top:.8rem">You'll get a table to invite friends before the first roll. Tokyo Bay opens up at 5+ monsters.</p>
     </div>
+
+    <!-- Who is around, across all four games rather than just this one. The
+         question a lobby actually raises is "is there anybody to play", and
+         somebody in the middle of a race is somebody you can ask - so the row
+         says what they are doing rather than pretending they are waiting here.
+         Absent entirely when nobody is on: an empty panel headed "Online now"
+         is a worse answer than no panel. -->
+    {% if online %}
+    <div class="panel online-now">
+      <h2>Online now</h2>
+      {% for p in online %}
+      <a class="online-row" href="{{ site_url }}/accounts/{{ p.username }}">
+        <span class="dot"></span>
+        <b>{{ p.username }}</b>
+        <span class="muted">{{ p.label }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
   </div>
 </div>
 {% endblock %}
