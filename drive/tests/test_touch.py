@@ -77,6 +77,9 @@ function toggleTracks() {} function toggleBoard() {} function openBoard() {}
 function stopWatching() {} function renderTrackCards() {}
 function renderSettings() {} function openChat() {} function closeChat() {}
 function setGhostCar() {} function setMusic() {} function storedFlag() {}
+// The two readouts. They are switches wired here beside Sound and Music, so
+// they land in this slice for the same reason those two do.
+function setFpsOn() {} function setPingOn() {}
 """
 
 # A thumb: every press and release advances the clock by a millisecond, so the
