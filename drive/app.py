@@ -135,21 +135,22 @@ def _garage_row(user, create=False):
     return row
 
 
-def _earned_for(user, row=None, holders=None):
+def _earned_for(user, row=None, holders=None, leaders=None):
     """What this account has earned, writing down the losable ones if they are new.
 
     Most gates are counters that only go up and are recomputed every time. The
-    ones in `garage.KEPT` are records *held right now* - a record can be taken off
-    you and the badge for it cannot - so the moment one is true it has to be
-    persisted or it would be lost the next time somebody beats the lap. Doing it
-    here rather than in a tool is also why no backfill is needed: every current
-    record holder earns theirs the first time anything asks.
+    ones in `garage.KEPT` are things true *right now* - a track record or the top
+    of the Time Trial board, both of which can be taken off you where the badge
+    for them cannot - so the moment one is true it has to be persisted or it
+    would be lost the next time somebody beats the lap. Doing it here rather than
+    in a tool is also why no backfill is needed: every current holder earns
+    theirs the first time anything asks.
     """
     if not user:
         return set()
     row = row if row is not None else _garage_row(user)
     already = row.earned if row else set()
-    got = garage_mod.earned(user, already, holders)
+    got = garage_mod.earned(user, already, holders, leaders)
     keep = got & garage_mod.KEPT
     if keep - already:
         row = row or _garage_row(user, create=True)
@@ -159,7 +160,7 @@ def _earned_for(user, row=None, holders=None):
     return got
 
 
-def _livery_for(user, holders=None, name=None):
+def _livery_for(user, holders=None, name=None, leaders=None):
     """The livery to draw for somebody, gates already applied.
 
     Every path that sends a car anywhere goes through here - the play page, a
@@ -177,7 +178,7 @@ def _livery_for(user, holders=None, name=None):
     if not user:
         return garage_mod.resolve({}, name, set())
     row = _garage_row(user)
-    got = _earned_for(user, row, holders)
+    got = _earned_for(user, row, holders, leaders)
     return garage_mod.resolve(garage_mod.loads(row.livery_json if row else None),
                               user.username, got)
 
@@ -478,73 +479,16 @@ def _ordinal(n):
 
 
 def _time_trial_board():
-    """Every driver's Time Trial Score: their placing on each track, added up.
+    """The Time Trial board as the page wants it: `garage.time_trial_board()`
+    with each driver's best placing said as an ordinal.
 
-    Golf scoring, so **low is good** and a clean sweep of the pool is 12. Ten
-    firsts and two thirds is 16.
-
-    Three rules make that sum well defined:
-
-    - **A tie shares a place**, which is the answer `_my_rank_map` already gives
-      for one track: a placing is the number of strictly faster laps plus one.
-    - **A track you have never driven scores one worse than last on it** - the
-      place you would take by turning up and being slowest. Adding up only the
-      tracks somebody *has* driven would make driving fewer of them the way to a
-      better score, which is the opposite of what a board is for: one lonely
-      first place would beat a full sweep. A track *nobody* has driven is worth
-      1 to everybody by the same rule, which cannot reorder anyone. The
-      `driven` column is what keeps a big score from being a mystery.
-    - **It is worked out here, on the way to the screen, and stored nowhere.** A
-      personal best does not only change *your* score, it demotes everybody you
-      overtook, so a number kept per driver would have to rewrite most of the
-      board on every lap and would be wrong for as long as one write path was
-      missed. Derived from `drive_times` on each render it cannot go stale, and
-      the pool is twelve tracks.
-
-    Only laps driven alone against the clock are in `drive_times` at all (see
-    `countsForTheBoard` in game.js), so nothing set in a room reaches this
-    board either.
+    The scoring itself lives in `garage.py` rather than here, because the crown
+    badge is now gated on topping this board and a second implementation of "who
+    is first" is exactly the drift this repo keeps testing against. The split is
+    where it usually is: garage owns the rule, this owns the words.
     """
-    slugs = [t["slug"] for t in tracks_mod.TRACKS]
-    pool = set(slugs)
-
-    # One query for the lot. The join is what drops bots and any row whose
-    # account is gone - the same two things the ratings board filters out.
-    rows = (db.session.query(DriveTime.track, DriveTime.time_ms, User)
-            .join(User, User.id == DriveTime.user_id)
-            .filter(User.is_bot.isnot(True)).all())
-
-    by_track = {}
-    for track, ms, user in rows:
-        if track in pool:      # a retired track's times are not places in the pool
-            by_track.setdefault(track, []).append((ms, user))
-
-    field = {}                 # slug -> how many drivers have a time there
-    places = {}                # user id -> {slug: placing}
-    who = {}                   # user id -> User
-    for slug, entries in by_track.items():
-        field[slug] = len(entries)
-        place = {}
-        for i, ms in enumerate(sorted(e[0] for e in entries)):
-            place.setdefault(ms, i + 1)   # first index wins, so equal times tie
-        for ms, user in entries:
-            who[user.id] = user
-            places.setdefault(user.id, {})[slug] = place[ms]
-
-    board = [{"user": who[uid],
-              "score": sum(mine.get(s, field.get(s, 0) + 1) for s in slugs),
-              "driven": len(mine),
-              "of": len(slugs),
-              "best": _ordinal(min(mine.values()))}
-             for uid, mine in places.items()]
-
-    # The score is the order. Everything after it in the key only decides who
-    # comes first *inside* a tie, which the shared position below then hides.
-    board.sort(key=lambda r: (r["score"], -r["driven"], r["user"].display.lower()))
-    for i, r in enumerate(board):
-        r["pos"] = (board[i - 1]["pos"] if i and r["score"] == board[i - 1]["score"]
-                    else i + 1)
-    return board
+    return [dict(r, best=_ordinal(r["best"]))
+            for r in garage_mod.time_trial_board()]
 
 
 # The track you were last on, so that "Solo" is a door back into the game rather
@@ -1410,13 +1354,16 @@ def _seated_room(sk=None):
 
 
 def _roster(players):
-    """Every seat with its livery, working the record holders out once.
+    """Every seat with its livery, working the two whole-field queries out once.
 
     The one place a roster is built, so the gate check cannot be applied on
-    three paths and forgotten on the fourth.
+    three paths and forgotten on the fourth. Both `records_held` and
+    `time_trial_leaders` are the same answer for everybody in the room, so they
+    are asked once here rather than eight times inside `_livery_for`.
     """
     holders = garage_mod.records_held()
-    return [pl.to_dict(_livery_for(pl.linked_user, holders, pl.name))
+    leaders = garage_mod.time_trial_leaders()
+    return [pl.to_dict(_livery_for(pl.linked_user, holders, pl.name, leaders))
             for pl in players]
 
 
@@ -1827,7 +1774,8 @@ def _store_replay(r, game, standings, why):
     # repainting everybody in it because somebody changed their mind last week
     # would make it a record of nothing.
     holders = garage_mod.records_held()
-    livery_by_pid = {pl.pid: _livery_for(pl.linked_user, holders, pl.name)
+    leaders = garage_mod.time_trial_leaders()
+    livery_by_pid = {pl.pid: _livery_for(pl.linked_user, holders, pl.name, leaders)
                      for pl in game.players}
     cars = []
     for pid, frames in rec["cars"].items():

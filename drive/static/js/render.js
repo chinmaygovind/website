@@ -420,7 +420,20 @@ function decalMesh(L) {
 
   if (badged) {
     const own = BADGE_COLOR[L.badge];
-    badgeShape(buf, L.badge, DECK,
+    // **A badge sits a second `LIFT` up, above the stripes and not level with
+    // them.** Every decal here clears the *bodywork* by `LIFT`, which is what
+    // stops a stripe tearing into the panel it is painted on - but the badge is
+    // on the bonnet and so are `centre`, `twin`, `band`, `halves`, `fade` and
+    // `pinstripe`, so drawn at the same y the badge was coplanar with whichever
+    // of those was under it. Two coplanar surfaces is exactly the case `LIFT`
+    // exists for, arriving from the other direction: it was the badge and the
+    // stripe tearing into *each other*, which at speed reads as the badge
+    // flickering on and off rather than as z-fighting.
+    //
+    // A hundredth again is invisible from any angle and is the whole fix. The
+    // ordering is not arbitrary either - a badge is a thing bolted onto the
+    // paint, so it belongs on top of the paint.
+    badgeShape(buf, L.badge, DECK + LIFT,
                linear(L.badgeColor ? L.badgeColor.getHex()
                                    : (own == null ? RECORD_GREEN : own)));
   }
@@ -550,62 +563,92 @@ function badgeShape(buf, badge, y, C) {
       }
       break;
     }
-    // **One connected silhouette**: a solid band with three points growing out of
-    // it and V notches between them, which is how a crown is drawn.
+    // **Two pieces with the paint between them: the circlet, then the crest.**
     //
-    // It was a thin band with three narrow spikes standing off it, on the theory
-    // that "the gaps are the crown" - and the gaps *were* wide, but they were gaps
-    // between three separate triangles and a bar, so it read as three trees on a
-    // wire rather than as one object. What made that hard to see from inside the
-    // code is foreshortening: the front camera sits at a pitch of 0.14, so the v
-    // axis is squashed by about 7x on screen and a band 0.09 of icon space tall
-    // came out a couple of pixels thick. **A band has to be thick in v to be a band
-    // at all**, which is the general lesson - the axis that reads as height is the
-    // one the camera has almost none of.
+    // Getting here took three goes and the history is the useful part. It was a
+    // thin band with three narrow spikes standing off it, on the theory that "the
+    // gaps are the crown" - and the gaps *were* wide, but they were gaps between
+    // three separate triangles and a bar, so it read as three trees on a wire
+    // rather than as one object. What made that hard to see from inside the code is
+    // foreshortening: the front camera sits at a pitch of 0.14, so the v axis is
+    // squashed hard on screen and a band 0.09 of icon space tall came out a couple
+    // of pixels thick. **A band has to be thick in v to be a band at all** - the
+    // axis that reads as height is the one the camera has almost none of.
     //
-    // So it is drawn as one outline: a thick band, and above it a zigzag whose
-    // notches stop **short of the band** rather than reaching it. That last part is
-    // what makes it a crown and not a mountain range - cut the V's all the way down
-    // and the three peaks are three triangles standing on a bar again, which is
-    // where this started. Stopping them at `NOTCH` leaves a continuous shoulder, so
-    // the eye follows one silhouette across the top.
+    // Welding the two together fixes the "unconnected" complaint and loses the
+    // badge: a crown is only a crown because of the *line* between its band and its
+    // points, and in one colour there is no line, so band-plus-points is a
+    // silhouette with three bumps on it, which is a row of hills. So the line is a
+    // **gap**, the trick the shield already uses. Two deliberate pieces read as one
+    // object; four incidental ones read as a mistake, which is what the spikes were.
     //
-    // **Two pieces with the paint between them: the circlet, then the points.**
+    // **And then it is curved, which is the thing that finally made it a crown
+    // rather than a diagram of one.** Three straight-sided triangles on a straight
+    // bar is heraldry drawn with a ruler. Two curves do the work:
     //
-    // Making it connected was the easy half. The hard half is that a crown is only a
-    // crown because of the *line* between its band and its points - and in one
-    // colour there is no line, so band-plus-points welded together is a silhouette
-    // with three bumps on it, which is a row of hills. Both connected attempts read
-    // exactly that way, and narrowing them (the badge comes out about 2.5x wider
-    // than it is deep, so a point as tall as it is wide arrives as a shallow peak)
-    // only made a narrower hill.
+    // - **`arc`**, a shallow rise toward the middle that the whole badge is built
+    //   against - both edges of the circlet, the crest's base, and every tip. A
+    //   flat band is a bar; a band that lifts in the middle is something that goes
+    //   round a head. It costs the badge nothing in width and about `BOW` in
+    //   height, which is why `HI` came down to pay for it.
+    // - **concave flanks on the tines.** Each span of the top edge is eased with a
+    //   square rather than a straight line, which is flat where it leaves a notch
+    //   and steep as it reaches a tip - so a valley is a rounded scoop and a point
+    //   is a point. Straight lines between the same control points give a zigzag,
+    //   and a zigzag with the tips foreshortened is a row of shark's teeth.
     //
-    // So the line is a gap, which is what the shield already does and the reason it
-    // works. Two pieces is not the thing that looked broken before: that was three
-    // separate spikes standing on a bar, four floating shapes with their feet
-    // touching. Here the points are **one** zigzag block - the notches stop halfway
-    // down, so they share a continuous base - sitting over one continuous band. Two
-    // deliberate pieces read as a crown; four incidental ones read as a mistake.
+    // Both are sampled rather than analytic, because everything here is triangles:
+    // `SEG` per span is what makes a curve a curve instead of a chamfer.
     case 'crown': {
-      const W = R * 0.78, BOT = -0.34, RIM = -0.16;
-      const FOOT = -0.105, NOTCH = 0.06;    // the points' base, and the V's floor
-      const HI = 0.31, LO = 0.22;           // centre point, outer points
-      quad2([-W, BOT], [W, BOT], [W, RIM], [-W, RIM]);
-      // The top edge, left to right: up at the three points, down at the notches.
-      const top = [[-W, FOOT], [-2 * W / 3, LO], [-W / 3, NOTCH], [0, HI],
+      const W = R * 0.78;
+      const BOT = -0.34, RIM = -0.17;       // the circlet, bottom and top
+      const FOOT = -0.10;                   // the crest's base, above the gap
+      const HI = 0.28, LO = 0.20, NOTCH = 0.01;
+      const BOW = 0.05;                     // how much the arc lifts at the middle
+      const SEG = 8;
+      // Held to the same ceiling as everything else: the clear bonnet runs to
+      // v 0.35, and `HI + BOW` is 0.33.
+      const arc = (u) => BOW * (1 - (u / W) * (u / W));
+
+      // The circlet: a strip of quads between two copies of the arc, so the band
+      // keeps one thickness the whole way round rather than tapering at the ends.
+      for (let i = 0; i < SEG * 2; i++) {
+        const u0 = -W + (i / SEG) * W, u1 = -W + ((i + 1) / SEG) * W;
+        quad2([u0, BOT + arc(u0)], [u1, BOT + arc(u1)],
+              [u1, RIM + arc(u1)], [u0, RIM + arc(u0)]);
+      }
+
+      // The crest, as one block so the three tines share a continuous base - the
+      // notches stop at `NOTCH`, well above `FOOT`, which is what stops them being
+      // three separate spikes again.
+      const key = [[-W, FOOT], [-2 * W / 3, LO], [-W / 3, NOTCH], [0, HI],
                    [W / 3, NOTCH], [2 * W / 3, LO], [W, FOOT]];
-      // One trapezoid per segment of that edge, dropped to the points' own base.
-      // The outline is not convex, so a fan from any single point would fill the
-      // notches in; per-segment is the shape whatever the zigzag does.
-      for (let k = 0; k < top.length - 1; k++) {
-        const a = top[k], b = top[k + 1];
-        // The two outer segments already start (or finish) on the base line, so
-        // their trapezoid is really a triangle - emitted as a quad it carries a
-        // **zero-area** triangle, which has no normal and therefore no facing at
-        // all. `test_every_decal_faces_away_from_the_car` is what says so.
-        if (a[1] === FOOT) tri2([a[0], FOOT], [b[0], FOOT], b);
-        else if (b[1] === FOOT) tri2([a[0], FOOT], [b[0], FOOT], a);
-        else quad2([a[0], FOOT], [b[0], FOOT], b, a);
+      const base = (u) => FOOT + arc(u);
+      for (let k = 0; k < key.length - 1; k++) {
+        const [ua, va] = key[k], [ub, vb] = key[k + 1];
+        // Eased from whichever end of this span is *lower*, so the curve is flat
+        // in the valley and steep at the tip whichever way the edge is climbing.
+        const up = vb > va;
+        const at = (t) => {
+          const s = up ? t : 1 - t;
+          return (up ? va : vb) + Math.abs(vb - va) * s * s;
+        };
+        for (let i = 0; i < SEG; i++) {
+          const t0 = i / SEG, t1 = (i + 1) / SEG;
+          const u0 = ua + (ub - ua) * t0, u1 = ua + (ub - ua) * t1;
+          const b0 = base(u0), b1 = base(u1);
+          const c0 = at(t0) + arc(u0), c1 = at(t1) + arc(u1);
+          // The outer spans start (or finish) *on* the base, so the end sample of
+          // each is a trapezoid with no height - emitted as a quad it carries a
+          // **zero-area** triangle, which has no normal and therefore no facing at
+          // all. `test_every_decal_faces_away_from_the_car` is what says so, and
+          // it is silent to look at: the thing draws and nothing is wrong.
+          const f0 = Math.abs(c0 - b0) < 1e-9, f1 = Math.abs(c1 - b1) < 1e-9;
+          if (f0 && f1) continue;
+          if (f0) tri2([u0, b0], [u1, b1], [u1, c1]);
+          else if (f1) tri2([u0, b0], [u1, b1], [u0, c0]);
+          else quad2([u0, b0], [u1, b1], [u1, c1], [u0, c0]);
+        }
       }
       break;
     }

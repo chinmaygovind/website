@@ -340,9 +340,18 @@ GATES = {
     "ribbon":    {"slot": "badge",     "value": "ribbon",
                   "text": "Drive 100 km",
                   "done": "driving 100 km"},
+    # **The one gate about the whole pool rather than about one lap.** It asked
+    # for three track records at once, which is the same achievement the laurel
+    # already names, three times over - so the top two badges on the list were
+    # about the same thing and a driver quick on three tracks and nowhere else
+    # outranked one who was second on all twelve. Topping the Time Trial board
+    # is the thing a crown should mean: best over the whole pool, by the board's
+    # own scoring, which already counts a track you have never driven against
+    # you. It is `KEPT` for the same reason the laurel is - it can be taken off
+    # you tomorrow and the badge cannot.
     "crown":     {"slot": "badge",     "value": "crown",
-                  "text": "Hold the record on 3 tracks at once",
-                  "done": "holding the record on 3 tracks at once"},
+                  "text": "Top the Time Trials leaderboard",
+                  "done": "topping the Time Trials leaderboard"},
     # **This gate used to be the pearl finish.** Metallic and pearl went, and its
     # condition - three golds - is a real rung on the ladder that would otherwise
     # have earned nothing at all, so it moved to a badge rather than being deleted
@@ -363,7 +372,6 @@ KEPT = frozenset({"laurel", "crown"})
 # through the predicates is how a threshold ends up disagreeing with its own text.
 ACE_ELO = 1250            # `DriveStats.elo_tier`'s own boundary for "Ace"
 PODIUMS_NEEDED = 10
-CROWN_RECORDS = 3
 RIBBON_METRES = 100_000   # a lap is roughly 0.9-2.8 km, so this is ~50-100 runs
 
 
@@ -410,10 +418,9 @@ def _tracks_finished(user):
 def records_held():
     """**How many** records each account holds, as ``{user_id: count}``.
 
-    Counts rather than a set, because the crown asks for three at once - and a
-    dict answers the old question too: `user.id in records_held()` reads exactly
-    as it did when this returned a set, so every caller that only wants "do they
-    hold one" is unchanged.
+    A dict rather than a set, which reads the same for the one question anybody
+    asks of it: `user.id in records_held()` is "do they hold one", exactly as it
+    was. The counts are what the Records page shows beside a name.
 
     Computed **once for everybody** rather than once per person, because the
     obvious shape - "does this user hold a record" - is thirteen queries, and a
@@ -440,7 +447,100 @@ def records_held():
     return out
 
 
-def _counts(user, holders):
+def time_trial_board():
+    """Every driver's Time Trial Score: their placing on each track, added up.
+
+    Golf scoring, so **low is good** and a clean sweep of the pool is 12. Ten
+    firsts and two thirds is 16.
+
+    Three rules make that sum well defined:
+
+    - **A tie shares a place**, which is the answer `_my_rank_map` in app.py
+      already gives for one track: a placing is the number of strictly faster
+      laps plus one.
+    - **A track you have never driven scores one worse than last on it** - the
+      place you would take by turning up and being slowest. Adding up only the
+      tracks somebody *has* driven would make driving fewer of them the way to a
+      better score, which is the opposite of what a board is for: one lonely
+      first place would beat a full sweep. A track *nobody* has driven is worth
+      1 to everybody by the same rule, which cannot reorder anyone. The
+      `driven` count is what keeps a big score from being a mystery.
+    - **It is worked out on the way to the screen and stored nowhere.** A
+      personal best does not only change *your* score, it demotes everybody you
+      overtook, so a number kept per driver would have to rewrite most of the
+      board on every lap and would be wrong for as long as one write path was
+      missed. Derived from `drive_times` on each render it cannot go stale, and
+      the pool is twelve tracks.
+
+    Only laps driven alone against the clock are in `drive_times` at all (see
+    `countsForTheBoard` in game.js), so nothing set in a room reaches this
+    board either.
+
+    **It lives here rather than in app.py because the crown is gated on it.** A
+    gate has to ask the same question the board answers or the badge is about
+    something nobody can see; `_time_trial_board` is now this plus the ordinals
+    the page prints. `best` is an int here for the same reason - a placing is a
+    number until something decides to say it out loud.
+    """
+    from models import db, DriveTime, User
+
+    slugs = [t["slug"] for t in tracks_mod.TRACKS]
+    pool = set(slugs)
+
+    # One query for the lot. The join is what drops bots and any row whose
+    # account is gone - the same two things the ratings board filters out.
+    rows = (db.session.query(DriveTime.track, DriveTime.time_ms, User)
+            .join(User, User.id == DriveTime.user_id)
+            .filter(User.is_bot.isnot(True)).all())
+
+    by_track = {}
+    for track, ms, user in rows:
+        if track in pool:      # a retired track's times are not places in the pool
+            by_track.setdefault(track, []).append((ms, user))
+
+    field = {}                 # slug -> how many drivers have a time there
+    places = {}                # user id -> {slug: placing}
+    who = {}                   # user id -> User
+    for slug, entries in by_track.items():
+        field[slug] = len(entries)
+        place = {}
+        for i, ms in enumerate(sorted(e[0] for e in entries)):
+            place.setdefault(ms, i + 1)   # first index wins, so equal times tie
+        for ms, user in entries:
+            who[user.id] = user
+            places.setdefault(user.id, {})[slug] = place[ms]
+
+    board = [{"user": who[uid],
+              "score": sum(mine.get(s, field.get(s, 0) + 1) for s in slugs),
+              "driven": len(mine),
+              "of": len(slugs),
+              "best": min(mine.values())}
+             for uid, mine in places.items()]
+
+    # The score is the order. Everything after it in the key only decides who
+    # comes first *inside* a tie, which the shared position below then hides.
+    board.sort(key=lambda r: (r["score"], -r["driven"], r["user"].display.lower()))
+    for i, r in enumerate(board):
+        r["pos"] = (board[i - 1]["pos"] if i and r["score"] == board[i - 1]["score"]
+                    else i + 1)
+    return board
+
+
+def time_trial_leaders():
+    """The user ids sitting at the top of the Time Trial board.
+
+    A **set**, because the board shares a position on an equal score and two
+    people tied for first are both first - anything that broke that tie here
+    would be handing the badge out on `display.lower()`, which is not an
+    achievement.
+
+    Empty when nobody has driven anything, so a fresh database gates the crown
+    rather than granting it to a board of nobody.
+    """
+    return {r["user"].id for r in time_trial_board() if r["pos"] == 1}
+
+
+def _counts(user, holders, leaders):
     """Every gate's (have, need), which is the one place either is worked out.
 
     `earned` and `progress` are both this, read two ways - "is have >= need" and
@@ -468,32 +568,41 @@ def _counts(user, holders):
         # number nobody reads.
         "ribbon":    (min(int(_stat(user, "distance", 0.0) // 1000),
                           RIBBON_METRES // 1000), RIBBON_METRES // 1000),
-        "crown":     (min(holders.get(user.id, 0), CROWN_RECORDS), CROWN_RECORDS),
+        # First on the Time Trial board, which is 0 or 1 out of 1 for the same
+        # reason the laurel is: it is a thing you are or are not, and "0/1
+        # leaderboards" is a worse sentence than the text already on the chip.
+        # Deliberately not "how far off the top you are" - the board's scores are
+        # placings added up, so a bar from 47 to 12 would be measuring a distance
+        # that has nothing to do with how much driving is left in it.
+        "crown":     (1 if user.id in leaders else 0, 1),
     }
 
 
-def earned(user, already=(), holders=None):
+def earned(user, already=(), holders=None, leaders=None):
     """Which gated ids this account has, as a set.
 
     `already` is whatever has been written down before, and it matters for the
     `KEPT` gates and only those: the rest are recomputed from counters that cannot
     go down, so storing them would be a second copy of a fact the database holds.
 
-    `holders` is `records_held()` when the caller is asking about more than one
-    person and has worked it out once - see why up there.
+    `holders` and `leaders` are `records_held()` and `time_trial_leaders()` when
+    the caller is asking about more than one person and has worked them out once -
+    a room's roster is eight people and one board.
     """
     if user is None:
         return set()
     if holders is None:
         holders = records_held()
-    counts = _counts(user, holders)
+    if leaders is None:
+        leaders = time_trial_leaders()
+    counts = _counts(user, holders, leaders)
     got = {gid for gid, (have, need) in counts.items() if have >= need}
     # A record can be taken off you and the badge for it cannot, so an earn that
     # was written down outranks a condition that has since stopped being true.
     return got | (set(already or ()) & KEPT)
 
 
-def progress(user, holders=None):
+def progress(user, holders=None, leaders=None):
     """How far along each gate this account is, as ``{gid: (have, need)}``.
 
     Only for the line the garage shows: "Pinstripe needs a gold on every track
@@ -503,7 +612,9 @@ def progress(user, holders=None):
     """
     if user is None:
         return {}
-    return _counts(user, records_held() if holders is None else holders)
+    return _counts(user,
+                   records_held() if holders is None else holders,
+                   time_trial_leaders() if leaders is None else leaders)
 
 
 def resolve(livery, username, got):

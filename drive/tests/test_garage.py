@@ -439,20 +439,21 @@ def test_the_gold_gates_open_at_their_own_counts(env):
     n = len(tracks_mod.TRACKS)
     with env.app.app_context():
         u = env.User.query.get(uid)
-        assert garage.earned(u, holders={}) == set()
+        assert garage.earned(u, holders={}, leaders=set()) == set()
         _stats(env, uid, golds=2)
         env.db.session.expire_all()
-        assert "shield" not in garage.earned(env.User.query.get(uid), holders={})
+        assert "shield" not in garage.earned(env.User.query.get(uid),
+                                             holders={}, leaders=set())
         env.User.query.get(uid).drive.golds = 3
         env.db.session.commit()
-        got = garage.earned(env.User.query.get(uid), holders={})
+        got = garage.earned(env.User.query.get(uid), holders={}, leaders=set())
         assert got == {"shield"}
         env.User.query.get(uid).drive.golds = n
         env.db.session.commit()
         # `sunburst` on purpose: it shares `pinstripe`'s condition, because a gold
         # on every track is the thing the badge was asked for and two items are
         # allowed to want the same achievement.
-        assert garage.earned(env.User.query.get(uid), holders={}) == \
+        assert garage.earned(env.User.query.get(uid), holders={}, leaders=set()) == \
             {"shield", "pinstripe", "sunburst"}
 
 
@@ -463,7 +464,8 @@ def test_an_old_author_medal_still_counts_as_a_gold(env):
     uid = _user(env)
     _stats(env, uid, golds=1, authors=2)
     with env.app.app_context():
-        assert "shield" in garage.earned(env.User.query.get(uid), holders={})
+        assert "shield" in garage.earned(env.User.query.get(uid),
+                                         holders={}, leaders=set())
 
 
 def test_finishing_every_track_is_scoped_to_the_current_pool(env):
@@ -476,10 +478,11 @@ def test_finishing_every_track_is_scoped_to_the_current_pool(env):
     _time(env, uid, "a-track-that-was-deleted", 30000)
     with env.app.app_context():
         u = env.User.query.get(uid)
-        assert "forged" not in garage.earned(u, holders={})
+        assert "forged" not in garage.earned(u, holders={}, leaders=set())
     _time(env, uid, pool[-1], 30000)
     with env.app.app_context():
-        assert "forged" in garage.earned(env.User.query.get(uid), holders={})
+        assert "forged" in garage.earned(env.User.query.get(uid),
+                                         holders={}, leaders=set())
 
 
 def test_holding_a_record_earns_the_badge_and_losing_it_does_not_take_it(env):
@@ -493,7 +496,15 @@ def test_holding_a_record_earns_the_badge_and_losing_it_does_not_take_it(env):
         holders = garage.records_held()
         assert holders == {a: 1}
         env._earned_for(env.User.query.get(a))          # writes it down
-        assert env._garage_row(env.User.query.get(a)).earned == {"laurel"}
+        written = env._garage_row(env.User.query.get(a)).earned
+        assert "laurel" in written
+        # And **nothing but the losable ones** is written down, which is the
+        # other half of the rule: every other gate is a counter that cannot go
+        # down, so persisting one would be a second copy of a fact the database
+        # already holds. Said as a subset rather than as an exact set because
+        # alice is the only driver here and therefore tops the Time Trial board
+        # too, so the crown - the other `KEPT` gate - legitimately comes along.
+        assert written <= garage.KEPT
 
     with env.app.app_context():                          # and she puts it on
         env._garage_row(env.User.query.get(a)).livery_json = \
@@ -568,7 +579,7 @@ def test_progress_counts_toward_each_gate(env):
     for slug in pool[:9]:
         _time(env, uid, slug, 30000)
     with env.app.app_context():
-        p = garage.progress(env.User.query.get(uid), holders={})
+        p = garage.progress(env.User.query.get(uid), holders={}, leaders=set())
         # Pearl is already earned, so it reads full rather than 4/3 - a bar past
         # its own end is a bar somebody has to explain.
         assert p["shield"] == (3, 3)
@@ -595,8 +606,8 @@ def test_progress_and_the_gate_agree(env):
     _stats(env, uid, golds=n)
     with env.app.app_context():
         u = env.User.query.get(uid)
-        got = garage.earned(u, holders={})
-        prog = garage.progress(u, holders={})
+        got = garage.earned(u, holders={}, leaders=set())
+        prog = garage.progress(u, holders={}, leaders=set())
         for gid in garage.GATES:
             have, need = prog[gid]
             assert (have >= need) == (gid in got), gid
