@@ -244,8 +244,13 @@ def test_drive_rejects_the_same_characters_in_a_guest_name_as_a_display_name():
     (`visits.py` is the same idea) and which is why this test exists: it reads
     the other file and fails when the two stop agreeing.
     """
-    naming_src = open(os.path.join(ROOT, "accounts", "naming.py")).read()
-    drive_src = open(os.path.join(ROOT, "drive", "app.py")).read()
+    # Through `source`, not `open`, so this skips rather than errors where the
+    # module is not checked out. CI gives each job a sparse checkout of its own
+    # module, so `drive/` is not there for the `site` suite that owns this file -
+    # the same reason the TTR checks in here read as passes on CI. It runs on any
+    # machine with the tree, which is where drift actually gets introduced.
+    naming_src = source("accounts", "naming.py")
+    drive_src = source("drive", "app.py")
 
     want = re.search(r"_BAD_CHARS = re\.compile\((.+)\)\n", naming_src)
     assert want, "accounts/naming.py no longer defines _BAD_CHARS"
