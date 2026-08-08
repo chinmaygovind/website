@@ -1387,7 +1387,7 @@ over a rule that actually wants three is worse than no text at all.
   track, split-five rims at finishing every track, and eight badges. Most are
   counters that cannot go down, so storing them would
   be a second copy of something the database already knows. The **laurel** ("set a
-  track record") and the **crown** ("hold the record on 3 tracks at once") are the
+  track record") and the **crown** ("top the Time Trials leaderboard") are the
   two anybody can have taken off them, so they are earned once and kept - written
   into `earned_json` the moment they are true. `garage.KEPT` is that pair; `app.py`
   used to carry the literal `{"laurel"}`, and the vocabulary belongs with the
@@ -1405,7 +1405,7 @@ over a rule that actually wants three is worse than no text at all.
   `distance`, all written today, so none of the eight needed a column - which
   matters because `create_all` makes *tables* and not columns, and a new column is
   a migration by hand on the live box. The thresholds are named
-  (`ACE_ELO`, `PODIUMS_NEEDED`, `CROWN_RECORDS`, `RIBBON_METRES`) rather than
+  (`ACE_ELO`, `PODIUMS_NEEDED`, `RIBBON_METRES`) rather than
   buried in the predicates, because they are the numbers most likely to want
   moving once somebody has actually played.
 - **`earned` and `progress` are one function read two ways.** `_counts` returns
@@ -1413,12 +1413,28 @@ over a rule that actually wants three is worse than no text at all.
   hands both numbers to the chip. They were two lists of predicates, which is a
   shape where a threshold and the count shown beside it can disagree while both
   look right.
-- **`records_held()` counts rather than collects.** The crown wants three records
-  at once, so it returns `{user_id: n}` - and a dict answers the old question
-  unchanged, since `user.id in records_held()` reads exactly as it did when this
-  was a set. Still one query for everybody, for the reason it always was: "does
-  this user hold a record" asked per person is thirteen queries, and a room
-  broadcasting its roster would ask it eight times.
+- **`records_held()` counts rather than collects.** It returns `{user_id: n}`,
+  and a dict answers the only question anybody asks of it unchanged, since
+  `user.id in records_held()` reads exactly as it did when this was a set. One
+  query for everybody, for the reason it always was: "does this user hold a
+  record" asked per person is thirteen queries, and a room broadcasting its
+  roster would ask it eight times.
+- **The crown moved from three records at once to topping the Time Trial board**,
+  and the point of the move is that it used to be the laurel's achievement three
+  times over - so the two best badges on the list were about the same thing, and a
+  driver quick on three tracks and nowhere else outranked one who was second on
+  all twelve. Being first over the whole pool is what a crown should mean. The
+  scoring therefore moved too: `garage.time_trial_board()` is the board and
+  `_time_trial_board` in app.py is now that plus the ordinals the page prints. It
+  had to be one implementation - a gate that computed "who is first" for itself
+  is the exact drift `tests/test_no_drift.py` exists for, and this one would show
+  as a badge on somebody who is not top of the board people can read.
+  `time_trial_leaders()` is a **set**, because the board shares a position on an
+  equal score and breaking that tie here would hand the badge out on
+  `display.lower()`. Both it and `records_held()` are one answer for a whole room,
+  so `_roster` and `_store_replay` ask each once and pass them down - which is why
+  `earned`/`progress`/`_livery_for` take a `leaders` beside the `holders` they
+  already took.
 - **`sunburst` shares `pinstripe`'s condition on purpose.** A gold on every track
   is the thing that badge was asked for, and two items are allowed to want the
   same achievement; giving it a different bar to keep the list tidy would be
@@ -1516,7 +1532,7 @@ rather than a choice between them. A fully loaded car went from 20 meshes to 19.
 | `laurel` | set a track record | a scalloped ring around a **1**, record green |
 | `checkers` | win a multiplayer race | a 4x4 board, black and white |
 | `chevrons` | Ace rating (elo 1250) | three stacked V's, record green |
-| `crown` | hold 3 records at once | a circlet and a 3-point crest, split by a gap, green |
+| `crown` | top the Time Trials board | an arched circlet and a 3-point crest, curved, split by a gap, green |
 | `podium` | 10 podiums | three bars, tallest in the middle, bronze |
 | `sunburst` | a gold on every track | 12 rays and a hub, gold |
 | `ribbon` | 100 km driven | a road's markings opening out toward you, grey |
@@ -1613,15 +1629,31 @@ Two more things that cost iterations:
   shapes with their feet touching. The fix is not "connect everything": it is one
   band and one *zigzag block* whose notches stop halfway down, so the points share a
   continuous base. Then the only gap on the badge is the one that means something.
+- **Straight lines were the last thing wrong with it, and curves are what fixed
+  it.** Even with the gap right, three straight-sided triangles on a straight bar
+  is heraldry drawn with a ruler. Two curves do the whole job and both are
+  sampled, since everything here is triangles. **`arc`** lifts the middle of the
+  badge and *everything* is built against it - both edges of the circlet, the
+  crest's base and every tip - so a flat bar becomes something that goes round a
+  head; it costs about `BOW` of height, which is what `HI` came down to pay for,
+  and the ceiling is still the clear bonnet at v 0.35. And **the tines' flanks are
+  concave**: each span of the top edge is eased with a square rather than a
+  straight line, flat where it leaves a notch and steep as it reaches a tip, so a
+  valley is a rounded scoop and a point is still a point. Straight spans between
+  the same control points give a zigzag, and a zigzag with the tips foreshortened
+  is a row of shark's teeth.
 - **Gaps have to be wider than instinct says.** The crown's three points 0.005
   apart merged into a solid arrowhead; nine separate laurel leaves came out as a
   scatter of specks and had to become one continuous scalloped ring; three podium
   discs 0.235 apart overlapped into one blob. Fine articulation dissolves - the
   gaps *are* the shape.
 - **A trapezoid whose short edge sits on the base line is a zero-area triangle
-  waiting to happen.** The crown's zigzag is built one quad per segment of its top
-  edge, dropped to the base - and the two outer segments already start on that base,
-  so the quad collapses. A degenerate triangle has no normal, so it has no *facing*,
+  waiting to happen.** The crown's crest is built one quad per sample of its top
+  edge, dropped to the base - and the outer spans start (or finish) *on* that base,
+  so the end sample of each collapses. Sampling a curve rather than stepping
+  between control points did not make this go away, it only moved which quad it
+  is, which is why the guard is an epsilon compare per sample and not a test
+  against a named constant. A degenerate triangle has no normal, so it has no *facing*,
   and `test_every_decal_faces_away_from_the_car` is what said so rather than a
   screenshot: it draws nothing and looks perfect.
 - **`tri2` fixes its own winding** rather than asking the caller to get it right.
