@@ -25,6 +25,36 @@ import game_logic as gl
 import bot
 import visits
 
+
+def script_json(obj):
+    """JSON that is safe to drop inside a ``<script>`` block.
+
+    ``json.dumps`` does not escape ``<``, and every roster on this site is
+    embedded straight into a script tag. So a display name of
+    ``</script><svg onload=...>`` - thirty characters, which was exactly the
+    limit - ended the script tag early and the rest of it was parsed as HTML:
+    stored XSS that ran for every other player in the lobby, on a cookie shared
+    across all four games. `naming.check_display_name` now rejects the angle
+    brackets too, but the escaping is the half that has to be right, because it
+    is the half that does not depend on remembering.
+
+    Jinja's ``|tojson`` does exactly this and would be the obvious fix. It is not
+    used because it cannot be told to use compact separators - only
+    ``JSONProvider.response`` honours ``compact`` - and the track payload carries
+    the whole ribbon, so ``", "`` instead of ``","`` is +17%: 12KB a page load on
+    Sandy Cove.
+
+    U+2028 and U+2029 are in here because they are valid in a JSON string and are
+    *line terminators* in JavaScript, so an unescaped one is a syntax error at
+    best.
+    """
+    return (json_mod.dumps(obj, separators=(",", ":"))
+            .replace("<", "\\u003c")
+            .replace(">", "\\u003e")
+            .replace("&", "\\u0026")
+            .replace("\u2028", "\\u2028")
+            .replace("\u2029", "\\u2029"))
+
 # ---------------------------------------------------------------------------
 # Config (mirrors ERS: shared accounts + cross-subdomain SSO)
 # ---------------------------------------------------------------------------
@@ -513,7 +543,7 @@ def game_page(code):
         return redirect(url_for("lobbies"))   # nothing to spectate before the start
     roster = {p.pid: p.to_dict() for p in game.players}
     return render_template("game.html", game=game, my_pid=(me.pid if me else ""),
-                           roster_json=json_mod.dumps(roster),
+                           roster_json=script_json(roster),
                            name=get_effective_name())
 
 

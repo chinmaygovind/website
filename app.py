@@ -23,7 +23,7 @@ from urllib import request as urlrequest
 
 import accounts
 from dotenv import load_dotenv
-from flask import Flask, Response, redirect, request, send_from_directory, abort
+from flask import Flask, redirect, request, send_from_directory, abort
 from werkzeug.utils import safe_join
 
 # In production systemd passes the box's .env in through EnvironmentFile, so
@@ -50,47 +50,21 @@ KOT_URL = os.environ.get("KOT_URL", "https://kot.cgovind.com")
 # other three; point this at wherever it is reachable.
 DRIVE_URL = os.environ.get("DRIVE_URL", "https://drive.cgovind.com")
 
-# The roll game's NPC dialog talks to Google's Gemini API. The key MUST stay
-# server-side - a key shipped in client JS is world-readable - so the browser
-# hits /api/roll/gemini here and this process adds the key. Set GEMINI_API_KEY in
-# .env (empty by default; the feature just degrades gracefully when unset).
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_API_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    "gemini-2.5-flash:generateContent"
-)
-MAX_GEMINI_BODY = 16 * 1024  # generous for a line of dialog; caps proxy abuse
+# The roll game and its `/api/roll/gemini` proxy are **gone** (August 2026), and
+# the proxy is why. It forwarded the caller's JSON body verbatim to Gemini with
+# this box's API key attached, with no login, no rate limit and no origin check -
+# so it was a free Gemini endpoint for the internet, billed here, with the caller
+# in full control of the prompt. It was also two requests away from taking the
+# site down: `website` runs `gunicorn -w 2` *sync* workers and that call blocked
+# for up to thirty seconds.
+#
+# Nothing linked to the game - it was reachable only by typing its URL - so the
+# whole thing went rather than being put behind a login. If it ever comes back it
+# needs a session, a per-account budget, and a pinned request shape rather than a
+# pass-through. **Remove `GEMINI_API_KEY` from the box's .env and revoke the key**;
+# deleting the route stops the spending, revoking it stops a leaked key mattering.
 
 app = Flask(__name__)
-
-
-@app.route("/api/roll/gemini", methods=["POST"])
-def roll_gemini():
-    """Proxy the roll game's dialog request to Gemini, injecting the API key.
-
-    Keeps the key out of the browser. Forwards the client's JSON body verbatim
-    and relays Gemini's response (and error) straight back.
-    """
-    if not GEMINI_API_KEY:
-        return {"error": "Gemini API key not configured on the server."}, 503
-
-    body = request.get_data()
-    if len(body) > MAX_GEMINI_BODY:
-        return {"error": "Request too large."}, 413
-
-    proxied = urlrequest.Request(
-        GEMINI_API_URL + "?key=" + GEMINI_API_KEY,
-        data=body,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urlrequest.urlopen(proxied, timeout=30) as resp:
-            return Response(resp.read(), status=resp.status, mimetype="application/json")
-    except urlerror.HTTPError as exc:
-        return Response(exc.read(), status=exc.code, mimetype="application/json")
-    except urlerror.URLError:
-        return {"error": "Could not reach the Gemini API."}, 502
 
 
 # Chinmay's live Duolingo streak for the landing page's "fast facts". Duolingo's

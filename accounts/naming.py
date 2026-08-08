@@ -23,9 +23,20 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # A display name is a name, not an identifier, so it is much freer than a
 # username - spaces and apostrophes and accents are all fine. What it may not
 # contain is anything that would let it lie about the page it is drawn on:
-# control characters, and the bidirectional overrides that can make a string
-# render as text it does not contain.
-_BAD_CHARS = re.compile(r"[\x00-\x1f\x7f​-‏‪-‮⁦-⁩]")
+# control characters, the bidirectional overrides that can make a string render
+# as text it does not contain, and the angle brackets.
+#
+# The angle brackets are here because of a real hole rather than on principle.
+# Every roster on this site is embedded in a ``<script>`` block, ``json.dumps``
+# does not escape ``<``, and the limit is thirty characters - which is exactly
+# the length of ``</script><svg onload=alert(1)>``. That name ended the script
+# tag early, the rest was parsed as HTML, and it ran for every other player in
+# the lobby on a cookie shared across all four games.
+#
+# The escaping in each service's ``script_json`` is the half that actually
+# closes it, and this is the half that does not depend on anybody remembering
+# to use it. A name is a name; nobody needs a ``<`` in one.
+_BAD_CHARS = re.compile(r"[\x00-\x1f\x7f<>​-‏‪-‮⁦-⁩]")
 
 MIN_PASSWORD = 8
 

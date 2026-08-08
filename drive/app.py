@@ -25,12 +25,43 @@ from models import (db, User, DriveStats, DriveTime, DriveStart,
                     DriveGame, DrivePlayer, DriveRace, DriveGarage)
 import tracks as tracks_mod
 import tuning
+import laptime
 import runcheck
 import visits
 import garage as garage_mod
 # The palette and the hash moved into `garage.py`, with the rest of what a car
 # is allowed to look like. Imported by name here because five routes call it.
 from garage import color_for
+
+
+def script_json(obj):
+    """JSON that is safe to drop inside a ``<script>`` block.
+
+    ``json.dumps`` does not escape ``<``, and every roster on this site is
+    embedded straight into a script tag. So a display name of
+    ``</script><svg onload=...>`` - thirty characters, which was exactly the
+    limit - ended the script tag early and the rest of it was parsed as HTML:
+    stored XSS that ran for every other player in the lobby, on a cookie shared
+    across all four games. `naming.check_display_name` now rejects the angle
+    brackets too, but the escaping is the half that has to be right, because it
+    is the half that does not depend on remembering.
+
+    Jinja's ``|tojson`` does exactly this and would be the obvious fix. It is not
+    used because it cannot be told to use compact separators - only
+    ``JSONProvider.response`` honours ``compact`` - and the track payload carries
+    the whole ribbon, so ``", "`` instead of ``","`` is +17%: 12KB a page load on
+    Sandy Cove.
+
+    U+2028 and U+2029 are in here because they are valid in a JSON string and are
+    *line terminators* in JavaScript, so an unescaped one is a syntax error at
+    best.
+    """
+    return (json_mod.dumps(obj, separators=(",", ":"))
+            .replace("<", "\\u003c")
+            .replace(">", "\\u003e")
+            .replace("&", "\\u0026")
+            .replace("\u2028", "\\u2028")
+            .replace("\u2029", "\\u2029"))
 
 # ---------------------------------------------------------------------------
 # Config (mirrors ERS/KoT: shared accounts + cross-subdomain SSO)
@@ -339,12 +370,37 @@ def register():
     return jsonify({"ok": True})
 
 
+# The character rule for a guest's name, which is the same rule an account's
+# display name gets from `accounts/naming.py` on the website service. Drive is
+# its own service with its own venv and cannot import that module, so this is a
+# copy - the convention `visits.py` already follows here - and
+# `tests/test_no_drift.py` reads the other file and fails when the two stop
+# agreeing. Control characters, angle brackets (a roster is embedded in a
+# `<script>` block; see `script_json`) and the bidi overrides that let a string
+# render as text it does not contain.
+GUEST_BAD_CHARS = re.compile("[\x00-\x1f\x7f<>\u200b-\u200f\u202a-\u202e\u2066-\u2069]")
+
+
 @app.route("/guest", methods=["POST"])
 def guest_login():
+    """A name is all a guest needs - but it is still a name on other people's screens.
+
+    It used to be `.strip()[:20]` and nothing else, which meant the one piece of
+    text on this site that took no validation at all went into the same roster
+    every account's display name goes into. Twenty characters is too short for
+    the payload that `naming` now rejects, but "too short to exploit today" is
+    not a rule, and a guest could also simply type an existing player's name.
+    """
     data = request.json or {}
     name = (data.get("name", "") or "").strip()[:20]
     if not name:
         return jsonify({"ok": False, "error": "Enter a name."}), 400
+    if GUEST_BAD_CHARS.search(name):
+        return jsonify({"ok": False, "error": "That name can't contain that "
+                                              "character."}), 400
+    if not any(ch.isalnum() for ch in name):
+        return jsonify({"ok": False, "error": "A name needs at least one "
+                                              "letter or number."}), 400
     session.permanent = True
     session["guest_name"] = name
     session.pop("user_id", None)
@@ -577,8 +633,7 @@ def _play_solo(slug):
     pb = DriveTime.query.filter_by(user_id=user.id, track=slug).first() if user else None
     return render_template(
         "play.html", mode="solo", track=track,
-        track_json=json_mod.dumps(_track_payload(track["slug"]),
-                                  separators=(",", ":")),
+        track_json=script_json(_track_payload(track["slug"])),
         tuning_json=tuning.as_json(), room=None, me_json="null",
         roster_json="[]", name=get_effective_name(), user=user,
         pb_ms=(pb.time_ms if pb else None), next_slug=_next_slug(slug),
@@ -590,7 +645,7 @@ def _play_solo(slug):
         # guest, whose livery is hashed off the name they typed while
         # `color_for(None)` is the one guest red.
         car_color=_car_livery(user)["body"],
-        car_livery=json_mod.dumps(_car_livery(user), separators=(",", ":")),
+        car_livery=script_json(_car_livery(user)),
         tracks=tracks_mod.summaries(), cards=_track_cards())
 
 
@@ -610,7 +665,7 @@ def garage_page():
     data = garage_mod.payload(user, garage_mod.loads(row.livery_json if row else None),
                               got, garage_mod.progress(user))
     return render_template("garage.html", user=user, name=get_effective_name(),
-                           garage_json=json_mod.dumps(data, separators=(",", ":")),
+                           garage_json=script_json(data),
                            tracks=tracks_mod.summaries())
 
 
@@ -691,13 +746,11 @@ def room(code):
     pb = DriveTime.query.filter_by(user_id=user.id, track=track["slug"]).first() if user else None
     return render_template(
         "play.html", mode="room", track=track,
-        track_json=json_mod.dumps(_track_payload(track["slug"]),
-                                  separators=(",", ":")),
+        track_json=script_json(_track_payload(track["slug"])),
         tuning_json=tuning.as_json(), room=game,
-        me_json=json_mod.dumps(me.to_dict(_livery_for(me.linked_user,
-                                                     name=me.name)),
-                               separators=(",", ":")),
-        roster_json=json_mod.dumps(_roster(game.players), separators=(",", ":")),
+        me_json=script_json(me.to_dict(_livery_for(me.linked_user,
+                                                   name=me.name))),
+        roster_json=script_json(_roster(game.players)),
         name=get_effective_name(), user=user,
         pb_ms=(pb.time_ms if pb else None), next_slug=_next_slug(track["slug"]),
         pb_splits=({track["slug"]: pb.splits} if pb else {}),
@@ -708,7 +761,7 @@ def room(code):
         # guest, whose livery is hashed off the name they typed while
         # `color_for(None)` is the one guest red.
         car_color=_car_livery(user)["body"],
-        car_livery=json_mod.dumps(_car_livery(user), separators=(",", ":")),
+        car_livery=script_json(_car_livery(user)),
         tracks=tracks_mod.summaries(), cards=_track_cards())
 
 
@@ -760,8 +813,7 @@ def race_replay(race_id):
     user = get_current_user()
     return render_template(
         "play.html", mode="replay", track=track,
-        track_json=json_mod.dumps(_track_payload(track["slug"]),
-                                  separators=(",", ":")),
+        track_json=script_json(_track_payload(track["slug"])),
         tuning_json=tuning.as_json(), room=None, me_json="null",
         roster_json="[]", name=get_effective_name(), user=user,
         pb_ms=None, next_slug=_next_slug(track["slug"]), pb_splits={},
@@ -772,7 +824,7 @@ def race_replay(race_id):
         # guest, whose livery is hashed off the name they typed while
         # `color_for(None)` is the one guest red.
         car_color=_car_livery(user)["body"],
-        car_livery=json_mod.dumps(_car_livery(user), separators=(",", ":")),
+        car_livery=script_json(_car_livery(user)),
         # Where the way out of the replay goes. A race is watched from the room
         # that drove it, so the way out of it should be the way back in - and
         # the seat is still there to go back to, see `_seated_room`. `None` is
@@ -2108,6 +2160,14 @@ def on_qual_time(data=None):
     ms = int((data or {}).get("ms") or 0)
     if ms <= 0:
         return
+    # Pole was claimable with `emit('qual_time', {ms: 1})`, the same way a race
+    # was winnable with `emit('finish', {ms: 1})`. A qualifying lap has no green
+    # light of its own to measure against - everybody leaves when they like - so
+    # only the physical floor applies here, not the clock. That is the half that
+    # matters anyway: it is what stops a one-line grid.
+    track = _room_track(code)
+    if track and ms < laptime.line_length(track) / (tuning.MAX_SPEED * 1.7) * 1000.0:
+        return
     if r["qual"].get(pid) is not None and ms >= r["qual"][pid]:
         return
     r["qual"][pid] = ms
@@ -2324,6 +2384,74 @@ def on_split(data=None):
                   room="room:" + code)
 
 
+# How far the clock may disagree. It is for the network and not for the driving:
+# the client stops its own timer at the line and the message then crosses the
+# wire, so an honest `ms` is a little *under* the server's own elapsed time.
+FINISH_CLOCK_SLACK_MS = 1500
+
+# How much of the ribbon a car must have covered to claim it went round.
+FINISH_MIN_PROG = 0.9
+
+
+def _room_track(code):
+    """The track a room is on, as a track dict, or None.
+
+    One small query, on paths that run once per car per race and a few times a
+    qualifying session. The alternative - keeping a copy on the in-memory room -
+    is a second source of truth that `set_track` and every join would have to
+    remember to update, for a saving nothing here can measure.
+    """
+    game = DriveGame.query.filter_by(code=code).first()
+    return tracks_mod.get(game.track) if game else None
+
+
+def _finish_is_possible(r, c, ms):
+    """Could this car have finished in `ms`? Not "did it" - see the caveat.
+
+    `on_finish` used to take any positive number, so `socket.emit('finish',
+    {ms: 1})` won any race outright - and a race feeds ELO, `wins`, `podiums`
+    and the `checkers` badge. Clients are authoritative over their own car by
+    design, and that is right for a race ticking at 30Hz, but *finishing* is one
+    discrete claim and the server has always known when the lights went green.
+
+    Three bounds, and the middle one is the load-bearing one:
+
+    * **Not longer than the race has been running.** Trivially true of an honest
+      lap and it costs nothing to say.
+    * **Not faster than the car physically goes.** The ribbon's own length over
+      `MAX_SPEED * 1.7` - the hard velocity clamp, the same number
+      `runcheck.SPEED_CEIL` is set from. This is a statement about the
+      simulation rather than about anybody's driving, so unlike a floor under
+      `ideal` it cannot punish somebody for being quick: on Sunrise it is 9.8s
+      against a real lap of about 16.
+    * **The car has to have gone round.** `prog` is its own progress along the
+      ribbon, already on the wire for the standings.
+
+    **What this does not do**, and it should be said plainly: `ms` and `prog`
+    both still come from the client, so somebody willing to wait can sit for
+    twelve seconds and claim a twelve-second lap they did not drive. Closing
+    that needs the replay, which a race deliberately does not carry. What has
+    gone is the one-line drive-by - the claim is now bounded by physics and by
+    the clock, instead of being taken entirely on trust.
+    """
+    elapsed = _now_ms() - (r.get("t0") or 0)
+    if ms > elapsed + FINISH_CLOCK_SLACK_MS:
+        return False
+    # Asked of the room's own row rather than read off `r["rec"]`, which
+    # `_go_green` sets up and which is therefore either absent or a *previous*
+    # race's track during qualifying. A miss skips the two track-shaped checks
+    # rather than failing them: refusing a finish nobody can prove is wrong
+    # costs somebody a race they actually drove, which is the worse mistake.
+    track = _room_track(r["code"])
+    if track:
+        length = laptime.line_length(track)
+        if ms < length / (tuning.MAX_SPEED * 1.7) * 1000.0:
+            return False
+        if c.get("prog", 0.0) < FINISH_MIN_PROG * length:
+            return False
+    return True
+
+
 @socketio.on("finish")
 def on_finish(data=None):
     """A car crossed the line. First one home starts the clock on everyone else."""
@@ -2341,6 +2469,8 @@ def on_finish(data=None):
             return
         ms = int((data or {}).get("ms") or 0)
         if ms <= 0:
+            return
+        if not _finish_is_possible(r, c, ms):
             return
         seq = r["race_seq"]
         c["ms"] = ms

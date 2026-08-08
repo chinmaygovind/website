@@ -1,5 +1,7 @@
 """Ghost packing and submitted-time validation."""
 
+import bisect
+import math
 import os
 import sys
 
@@ -15,18 +17,63 @@ TRACK = tracks_mod.get("sunrise")
 
 
 def synth_run(track, seconds=None, hz=None):
-    """A replay that would pass: starts on the line, moves at a sane speed."""
+    """A replay that would pass: it drives the track.
+
+    Down the middle of the ribbon at a constant speed, from the start to the
+    finish gate. It used to be a straight line along +X from the spawn, which was
+    fine while nothing compared a replay to the course - and which was, exactly,
+    the replay-synthesis hole `follows_the_track` exists to close. Every test that
+    wants an *acceptable* run needs one that really goes round.
+    """
+    hz = hz or runcheck.GHOST_HZ
+    seconds = seconds or track["ideal"]
+    pts = [st["p"] for st in track["line"]]
+    fin = next((g for g in track["gates"] if g["kind"] == "finish"), None)
+    if fin is not None:                    # stop at the flag, not at the end of
+        pts = pts[:fin["si"] + 1]          # the ribbon, which runs on past it
+    cum = [0.0]
+    for a, b in zip(pts, pts[1:]):
+        cum.append(cum[-1] + math.dist(a, b))
+    total = cum[-1]
+    n = max(2, int(seconds * hz))
+    frames = []
+    for i in range(n):
+        s = total * i / (n - 1)
+        j = min(bisect.bisect_right(cum, s) - 1, len(pts) - 2)
+        u = (s - cum[j]) / max(1e-9, cum[j + 1] - cum[j])
+        p = [pts[j][k] + (pts[j + 1][k] - pts[j][k]) * u for k in range(3)]
+        frames.append([p[0], p[1] + T.RIDE_HEIGHT, p[2], 0, 0, 0, 1])
+    return frames
+
+
+def straight_line_run(track, seconds=None, hz=None):
+    """The synthesis attack: right duration, right start, no track under it."""
     hz = hz or runcheck.GHOST_HZ
     seconds = seconds or track["ideal"]
     n = max(2, int(seconds * hz))
     sp = track["spawn"]["p"]
-    step = 20.0 / hz                       # 20 u/s along +X, comfortably legal
+    step = 20.0 / hz
     return [[sp[0] + i * step, sp[1] + 0.45, sp[2], 0, 0, 0, 1] for i in range(n)]
 
 
-def splits_for(track, time_ms):
+def splits_for(track, time_ms, frames=None):
+    """The splits that go with a replay.
+
+    Read off the replay's own gate crossings when there is one, because that is
+    now a thing the server checks. Without frames it falls back to spacing them
+    evenly, which is all the tests that never get as far as the geometry need.
+    """
     n = track["checkpoints"]
-    return [int(time_ms * (i + 1) / (n + 1)) for i in range(n)]
+    if frames is None:
+        return [int(time_ms * (i + 1) / (n + 1)) for i in range(n)]
+    cps, _ = runcheck._gates_of(track)
+    ceil = track.get("gate_ceil") or 5.0
+    out, at = [], 0
+    for gate in cps:
+        hits = [i for i in runcheck._crossings(gate, frames, ceil) if i >= at]
+        at = hits[0] if hits else at
+        out.append(int(round(at / runcheck.GHOST_HZ * 1000)))
+    return out
 
 
 def test_ghost_round_trips():
@@ -72,11 +119,12 @@ def test_unpack_rejects_rubbish():
 
 def test_a_plausible_run_is_accepted():
     ms = int(TRACK["ideal"] * 1000)
-    ok, why = runcheck.validate(TRACK, ms, splits_for(TRACK, ms), synth_run(TRACK))
+    frames = synth_run(TRACK)
+    ok, why = runcheck.validate(TRACK, ms, splits_for(TRACK, ms, frames), frames)
     assert ok, why
 
 
-@pytest.mark.parametrize("ms_factor", [0.9, 0.75, 0.5])
+@pytest.mark.parametrize("ms_factor", [0.95, 0.85, 0.75])
 def test_a_lap_faster_than_the_estimate_is_still_accepted(ms_factor):
     """Being quick is not evidence of cheating.
 
@@ -85,10 +133,14 @@ def test_a_lap_faster_than_the_estimate_is_still_accepted(ms_factor):
     used to be the opposite test: anything under 0.8 of ideal was thrown away,
     which meant the floor punished exactly the people who had learned the track.
     A replay that holds up is what makes a time acceptable now.
+
+    Note the fixture drives the *centreline*, which is longer than any racing
+    line, so it carries more speed than a real lap at the same fraction of ideal
+    does - the quickest real lap on the board is 0.754 of ideal and medians 48.2.
     """
     ms = int(TRACK["ideal"] * 1000 * ms_factor)
-    ok, why = runcheck.validate(TRACK, ms, splits_for(TRACK, ms),
-                                synth_run(TRACK, seconds=ms / 1000))
+    frames = synth_run(TRACK, seconds=ms / 1000)
+    ok, why = runcheck.validate(TRACK, ms, splits_for(TRACK, ms, frames), frames)
     assert ok, why
 
 
@@ -182,3 +234,202 @@ def test_tuning_exports_everything_the_client_needs():
         assert key in d, f"tuning does not export {key}"
     assert T.DRAG == pytest.approx(T.ACCEL / (T.MAX_SPEED ** 2)), \
         "drag must be the value that makes MAX_SPEED the actual top speed"
+
+
+# ---------------------------------------------------------------------------
+# The speed ceilings
+# ---------------------------------------------------------------------------
+#
+# These exist because a 12.288s Twin Loop went on the board in August 2026, set
+# by a browser running retuned physics. It passed every check there was: real
+# checkpoints in order, a replay whose length matched its clock, a start on the
+# line. What it could not do was hide the speed in the replay.
+
+def centreline_len(track):
+    pts = [st["p"] for st in track["line"]]
+    fin = next((g for g in track["gates"] if g["kind"] == "finish"), None)
+    if fin is not None:
+        pts = pts[:fin["si"] + 1]
+    return sum(math.dist(a, b) for a, b in zip(pts, pts[1:]))
+
+
+def lap_at_speed(track, u_per_s):
+    """A replay that really drives the track, at a chosen speed.
+
+    Built on `synth_run` rather than on a straight line, so that a test about a
+    *speed* fails for a speed reason - a straight line into the void is refused
+    by the geometry first, and would pass a speed test that had stopped working.
+    """
+    secs = centreline_len(track) / u_per_s
+    return synth_run(track, seconds=secs), int(round(secs * 1000))
+
+
+def test_the_speed_ceiling_is_the_physics_own_clamp():
+    """Not a round number - the one figure the simulation cannot exceed.
+
+    It was `MAX_SPEED * 2.2`, which handed away 25 u/s over a clamp of 85 and is
+    the gap the cheated lap drove through.
+    """
+    assert runcheck.SPEED_CEIL < T.MAX_SPEED * 1.7 * 1.05, \
+        "the ceiling must sit just above the clamp, not a third above it"
+    assert runcheck.SPEED_CEIL > T.MAX_SPEED * 1.7, \
+        "and just above it, so quantisation on a 15Hz ghost cannot fail an honest lap"
+
+
+def test_a_lap_driven_faster_than_the_car_can_go_is_rejected():
+    """The cheated lap's own shape: sustained speed no engine here produces.
+
+    83 u/s is what the 12.288s Twin Loop actually medianed. Driven round the real
+    course, so this is refused for being too quick and not for being nowhere.
+    """
+    frames, ms = lap_at_speed(TRACK, 83.0)
+    ok, why = runcheck.validate(TRACK, ms, splits_for(TRACK, ms, frames), frames)
+    assert not ok and "faster than the car" in why
+
+
+def test_the_median_catches_what_a_single_frame_ceiling_cannot():
+    """A cheat that sits just under the frame ceiling still cannot hold a lap.
+
+    This is the check that is not dodgeable by staying under a number: gravity
+    lifts a car over MAX_SPEED down a descent, which is why the top speed alone
+    is blunt, but nothing holds it there from the line to the flag.
+    """
+    frames, ms = lap_at_speed(TRACK, runcheck.SPEED_CEIL * 0.98)
+    ok, why = runcheck.validate(TRACK, ms, splits_for(TRACK, ms, frames), frames)
+    assert not ok and "faster than the car" in why
+
+
+def test_the_ceilings_leave_an_honest_lap_alone():
+    """Every real lap on the board tops out at 62.5 and medians under 49.5."""
+    frames, ms = lap_at_speed(TRACK, 42.1)          # sunrise at its ideal lap
+    ok, why = runcheck.validate(TRACK, ms, splits_for(TRACK, ms, frames), frames)
+    assert ok, why
+    # And a brief excursion over MAX_SPEED - a descent - is not a rejection.
+    # 62.5 is the fastest single frame on the real board and it has to survive:
+    # shift one frame *and everything after it*, so exactly one interval is quick
+    # and the rest of the lap is unchanged.
+    bump = (62.5 - 42.1) / runcheck.GHOST_HZ
+    for f in frames[len(frames) // 2:]:
+        f[1] += bump                                 # straight up, off a crest
+    ok, why = runcheck.validate(TRACK, ms, splits_for(TRACK, ms, frames), frames)
+    assert ok, why
+
+
+# ---------------------------------------------------------------------------
+# The input stream
+# ---------------------------------------------------------------------------
+
+def test_every_input_the_car_can_be_given_survives_a_byte():
+    from itertools import product
+    for t, b, s, h in product((0, 1), (0, 1), (-1, 0, 1), (False, True)):
+        f = runcheck.input_fields(runcheck.input_byte(t, b, s, h))
+        assert (f["throttle"], f["brake"], f["steer"], f["handbrake"]) == (t, b, s, h)
+
+
+def test_both_arrows_at_once_is_no_steer():
+    """The same answer `readInput` gives: steer is right minus left."""
+    assert runcheck.input_fields(runcheck.input_byte(0, 0, 0, False))["steer"] == 0
+    assert runcheck.input_fields(8 | 16)["steer"] == 0
+
+
+def test_a_lap_of_inputs_round_trips_and_is_small():
+    """A driver holds the throttle for seconds, so run-length does the work."""
+    inputs = [0] * 300 + [1] * 900 + [1 | 16] * 400 + [2 | 4] * 120
+    anchors = [[i * 0.1, -i * 0.01, i * 0.5, (i % 20 - 10) / 10.0] for i in range(220)]
+    back = runcheck.unpack_verify(runcheck.pack_verify(inputs, anchors))
+    assert back["inputs"] == inputs
+    for a, b in zip(anchors, back["anchors"]):
+        assert all(abs(x - y) < 0.001 for x, y in zip(a, b))
+    assert len(runcheck.pack_verify(inputs, anchors)) < len(inputs) * 2
+
+
+def test_a_frame_is_exactly_eight_steps():
+    """The alignment anchored verification depends on: 1/120 into 1/15."""
+    assert runcheck.STEPS_PER_FRAME == int(round((1.0 / runcheck.GHOST_HZ) / T.FIXED_DT))
+
+
+def test_verify_blob_rejects_rubbish():
+    assert runcheck.unpack_verify(None) is None
+    assert runcheck.unpack_verify("not a blob") is None
+    assert runcheck.unpack_inputs([1, 2, 3]) is None      # odd length
+
+
+# ---------------------------------------------------------------------------
+# Does the replay drive the track?
+# ---------------------------------------------------------------------------
+#
+# The second hole. `validate` checked that the splits were increasing integers
+# and that frame 0 was near the spawn, and never looked at the course again - so
+# a replay could be a straight line into the void with three plausible numbers
+# beside it. The splits were the half that mattered: the board draws its
+# checkpoint comparison from them and nothing tied them to the frames.
+
+def test_a_replay_that_never_drives_the_track_is_rejected():
+    """The synthesis attack: right duration, right start, no course under it.
+
+    This is the exact fixture every acceptance test in this file used to use,
+    which is how the hole stayed open - the thing being sent as proof of a lap
+    was the thing the tests called a valid lap.
+    """
+    ms = int(TRACK["ideal"] * 1000)
+    frames = straight_line_run(TRACK)
+    ok, why = runcheck.validate(TRACK, ms, splits_for(TRACK, ms), frames)
+    assert not ok and ("checkpoint" in why or "course" in why)
+
+
+def test_splits_have_to_be_where_the_replay_actually_is():
+    """A real lap with invented splits. The frames are the evidence now."""
+    frames = synth_run(TRACK)
+    ms = int(TRACK["ideal"] * 1000)
+    good = splits_for(TRACK, ms, frames)
+    assert good == sorted(good) and all(0 < s < ms for s in good)
+    moved = [max(1, s - 3000) for s in good]          # claim each one 3s earlier
+    ok, why = runcheck.validate(TRACK, ms, moved, frames)
+    assert not ok and "not where the replay is" in why
+
+
+def test_a_lap_that_skips_a_checkpoint_is_rejected():
+    """Cut the middle out of the lap and the gate it contained goes with it."""
+    frames = synth_run(TRACK)
+    n = len(frames)
+    cut = frames[:n // 3] + frames[2 * n // 3:]
+    ms = int(len(cut) / runcheck.GHOST_HZ * 1000)
+    ok, why = runcheck.validate(TRACK, ms, splits_for(TRACK, ms), cut)
+    assert not ok
+
+
+def test_a_replay_that_stops_short_of_the_finish_is_rejected():
+    """Ending anywhere else is not a lap, however long it lasted."""
+    frames = synth_run(TRACK)
+    short = frames[:int(len(frames) * 0.8)]
+    ms = int(len(short) / runcheck.GHOST_HZ * 1000)
+    ok, why = runcheck.validate(TRACK, ms, splits_for(TRACK, ms, short), short)
+    assert not ok and "finish" in why
+
+
+def test_the_gate_rule_is_the_games_own():
+    """Same numbers as `Run._withinGate` / `Course.gateNear` in course.js.
+
+    If the game credits a gate on one rule and the server insists on another,
+    the disagreement is somebody's real lap refused - so these are a contract
+    with that file, not independent choices.
+    """
+    js = open(os.path.join(os.path.dirname(__file__), "..",
+                           "static", "js", "course.js")).read()
+    assert "this.gateNear = %d" % int(runcheck.GATE_NEAR) in js
+    assert "gate.hw + %s" % ("%.1f" % runcheck.GATE_SIDE_PAD) in js
+    assert "dy > %s" % ("%.1f" % runcheck.GATE_FLOOR) in js
+
+
+@pytest.mark.parametrize("slug", [t["slug"] for t in tracks_mod.TRACKS])
+def test_every_track_accepts_a_lap_of_itself(slug):
+    """A lap round each track's own ribbon passes on every track in the pool.
+
+    The corridor and the gate windows are one set of numbers for twelve very
+    different courses - loops, gaps, half-pipes - so this is what says they are
+    not tuned to whichever one happened to be tested.
+    """
+    track = tracks_mod.get(slug)
+    frames, ms = lap_at_speed(track, 42.0)
+    ok, why = runcheck.validate(track, ms, splits_for(track, ms, frames), frames)
+    assert ok, "%s: %s" % (slug, why)

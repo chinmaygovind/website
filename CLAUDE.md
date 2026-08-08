@@ -18,9 +18,15 @@ multiplayer card game that shares TTR's accounts).
   `https://{ttr,ers,kot}.cgovind.com`). A 404 falls back to the `site/404.html`
   Mario game.
 - `app.py` also proxies a few APIs the landing page calls same-origin, so no keys
-  reach the client: `/api/duolingo-streak`, `/api/spotify/{login,callback,recent,
-  top-artists}` (OAuth refresh token in the box `.env`), and `/api/roll/gemini`
-  for the `site/games/roll/` game.
+  reach the client: `/api/duolingo-streak` and `/api/spotify/{login,callback,
+  recent,top-artists}` (OAuth refresh token in the box `.env`). There used to be
+  a third, `/api/roll/gemini`, and **it and the game it served are gone** (Aug
+  2026): it forwarded the caller's body verbatim to Gemini with this box's API
+  key, unauthenticated and unmetered, so it was a free Gemini endpoint for the
+  internet on Chinmay's bill — and, at a 30s timeout against `-w 2` *sync*
+  workers, two requests away from taking the site down. Nothing linked to the
+  game, so the whole thing went rather than being put behind a login. **The
+  `GEMINI_API_KEY` in the box `.env` should be removed and the key revoked.**
 - **`/accounts` is the one thing here that is not static** — the shared profile
   for all four games. It lives in the `accounts/` package and is attached by
   `accounts.init_app(app)` at the foot of `app.py`, **only when `DATABASE_URL`
@@ -77,7 +83,7 @@ multiplayer card game that shares TTR's accounts).
 - `site/home/index.html` - the **projects landing page** (was the site's old `/`).
   Its assets live in `site/home/{images,audio}/` and `Chinmay_Govind_Resume.pdf`.
 - `site/{projects,games}/` - standalone project/game pages (astro, ibec, quickcal,
-  robot-tour, bridge, flip, klotski, roll), copied unchanged.
+  robot-tour, bridge, flip, klotski), copied unchanged.
 - `site/{images,audio,videos}/` - shared media (Wii menu art + channel media).
 - `site/404.html`, `favicon.ico`, `robots.txt` at the root.
 
@@ -88,8 +94,7 @@ the resume PDF, YouTube, PennToday). **No internal HTML page is linked from `/` 
 all**, so every page below is reachable only by typing its URL:
 
 - **Orphaned outright:** `games/flip/` ("Flip - The Game"), `games/klotski/`
-  ("Klotski"), `games/roll/` ("3D Ball Roll Game" — note this one has a live
-  backend, `/api/roll/gemini`), `wii/`, `channels/mii/`, and the local
+  ("Klotski"), `wii/`, `channels/mii/`, and the local
   `projects/ibec/` copy (7 leftover template pages: committees, contact, events,
   membership, left-/right-/no-sidebar).
 - **Orphaned transitively:** `home/index.html` (the old projects page) has no

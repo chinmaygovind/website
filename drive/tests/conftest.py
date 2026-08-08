@@ -63,3 +63,54 @@ def pytest_runtest_makereport(item, call):
             "If the test genuinely needs the time, mark it @pytest.mark.slow and "
             "say why."
         )
+
+
+# ---------------------------------------------------------------------------
+# A replay that actually drives the track
+# ---------------------------------------------------------------------------
+#
+# `runcheck.validate` compares a submitted replay against the course now - past
+# every gate, when the splits say, without leaving the corridor - so a test that
+# wants an *acceptable* run can no longer hand it a straight line from the spawn.
+# It lives here rather than in either test file because both need it and this
+# repo would rather have one copy than two that agree.
+
+def lap_frames(track, seconds=None, hz=None):
+    """Down the middle of the ribbon at a constant speed, start gate to finish."""
+    import bisect
+    import math
+    import runcheck
+    import tuning as T
+
+    hz = hz or runcheck.GHOST_HZ
+    seconds = seconds or track["ideal"]
+    pts = [st["p"] for st in track["line"]]
+    fin = next((g for g in track["gates"] if g["kind"] == "finish"), None)
+    if fin is not None:                 # stop at the flag; the ribbon runs past it
+        pts = pts[:fin["si"] + 1]
+    cum = [0.0]
+    for a, b in zip(pts, pts[1:]):
+        cum.append(cum[-1] + math.dist(a, b))
+    total = cum[-1]
+    n = max(2, int(seconds * hz))
+    out = []
+    for i in range(n):
+        s = total * i / (n - 1)
+        j = min(bisect.bisect_right(cum, s) - 1, len(pts) - 2)
+        u = (s - cum[j]) / max(1e-9, cum[j + 1] - cum[j])
+        p = [pts[j][k] + (pts[j + 1][k] - pts[j][k]) * u for k in range(3)]
+        out.append([p[0], p[1] + T.RIDE_HEIGHT, p[2], 0, 0, 0, 1])
+    return out
+
+
+def lap_splits(track, frames):
+    """The splits that replay really sets, read off its own gate crossings."""
+    import runcheck
+    cps, _ = runcheck._gates_of(track)
+    ceil = track.get("gate_ceil") or 5.0
+    out, at = [], 0
+    for gate in cps:
+        hits = [i for i in runcheck._crossings(gate, frames, ceil) if i >= at]
+        at = hits[0] if hits else at
+        out.append(int(round(at / runcheck.GHOST_HZ * 1000)))
+    return out

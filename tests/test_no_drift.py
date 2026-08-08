@@ -232,3 +232,56 @@ def test_a_status_can_only_say_what_the_game_offers(game):
     for banned in ("request.", "data.get", ".json"):
         assert banned not in args, \
             "%s passes %s straight into the status line" % (game, banned)
+
+
+def test_drive_rejects_the_same_characters_in_a_guest_name_as_a_display_name():
+    """Drive's guest names are the one piece of text that took no validation.
+
+    A guest name goes into the same roster an account's display name goes into,
+    and that roster is embedded in a `<script>` block - so it needs the same
+    character rule. Drive is its own service with its own venv and cannot import
+    `accounts/naming.py`, so it carries a copy, which is this repo's convention
+    (`visits.py` is the same idea) and which is why this test exists: it reads
+    the other file and fails when the two stop agreeing.
+    """
+    naming_src = open(os.path.join(ROOT, "accounts", "naming.py")).read()
+    drive_src = open(os.path.join(ROOT, "drive", "app.py")).read()
+
+    want = re.search(r"_BAD_CHARS = re\.compile\((.+)\)\n", naming_src)
+    assert want, "accounts/naming.py no longer defines _BAD_CHARS"
+    got = re.search(r"GUEST_BAD_CHARS = re\.compile\((.+)\)\n", drive_src)
+    assert got, "drive/app.py no longer defines GUEST_BAD_CHARS"
+
+    # Compare what the two patterns *do*, not how they are spelled - one is
+    # written with literal characters and the other with escapes.
+    import accounts.naming as naming
+    guest_re = re.compile(eval(got.group(1)))
+    for ch in ("\x00", "\x1f", "\x7f", "<", ">", "​", "‮", "⁦"):
+        assert naming._BAD_CHARS.search(ch), "naming stopped rejecting %r" % ch
+        assert guest_re.search(ch), \
+            "drive's guest names still allow %r, which naming.py rejects" % ch
+    for ch in ("a", " ", "'", "é", "3"):
+        assert not guest_re.search(ch), "drive rejects %r, which is a name" % ch
+
+
+def test_a_display_name_cannot_carry_the_angle_brackets():
+    """The XSS that was live: `</script><svg onload=alert(1)>` is exactly 30
+    characters, which was exactly the limit. The escaping in each service's
+    `script_json` is what actually closes it; this is the half that does not
+    depend on anybody remembering to use it."""
+    import accounts.naming as naming
+    assert naming.check_display_name("</script><svg onload=alert(1)>")
+    assert naming.check_display_name("a<b")
+    assert naming.check_display_name("a>b")
+    assert naming.check_display_name("‮evil") 
+    assert naming.check_display_name("Chinmay") is None
+    assert naming.check_display_name("José O'Neill") is None
+
+
+@pytest.mark.parametrize("game", ["drive", "ers", "kot"])
+def test_every_roster_is_escaped_before_it_reaches_a_script_block(game):
+    """`json.dumps` does not escape `<`, and every roster is embedded in one."""
+    src = source(game, "app.py")
+    assert "def script_json(" in src, "%s has no script_json helper" % game
+    assert "roster_json=script_json(" in src, \
+        "%s still builds its roster with a raw json dump" % game

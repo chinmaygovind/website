@@ -42,20 +42,20 @@ def _user(A, name="chinmay"):
 
 
 def _run_payload(A, slug="sunrise", seconds=None):
-    """A run that will pass validation: real splits and a believable replay."""
-    import runcheck
+    """A run that will pass validation: a replay that drives the track.
+
+    It used to be a straight line along +X from the spawn with evenly spaced
+    splits, which stopped being acceptable when `validate` started comparing a
+    replay to the course - that fixture *was* the replay-synthesis hole.
+    """
     import tracks as tracks_mod
+    from conftest import lap_frames, lap_splits
     track = tracks_mod.get(slug)
     seconds = seconds or track["ideal"]
     ms = int(seconds * 1000)
-    sp = track["spawn"]["p"]
-    n = max(2, int(seconds * runcheck.GHOST_HZ))
-    step = 20.0 / runcheck.GHOST_HZ
-    ghost = [[sp[0] + i * step, sp[1] + 0.45, sp[2], 0, 0, 0, 1] for i in range(n)]
-    ncp = track["checkpoints"]
-    splits = [int(ms * (i + 1) / (ncp + 1)) for i in range(ncp)]
-    return {"track": slug, "time_ms": ms, "splits": splits, "ghost": ghost,
-            "distance": 500}
+    ghost = lap_frames(track, seconds=seconds)
+    return {"track": slug, "time_ms": ms, "splits": lap_splits(track, ghost),
+            "ghost": ghost, "distance": 500}
 
 
 def _login(client, uid):
@@ -141,11 +141,19 @@ def test_a_replayed_run_that_is_slower_than_your_pb_does_not_replace_it(env):
 
 
 def test_being_fast_is_no_longer_a_reason_to_reject_a_run(env):
-    """The floor under `ideal` is gone; the replay is what has to hold up."""
+    """The floor under `ideal` is gone; the replay is what has to hold up.
+
+    0.8 rather than the 0.6 this used to ask for, and the difference is the
+    fixture and not the rule. The replay drives the *centreline*, which is longer
+    than any racing line, so it carries more speed than a real lap at the same
+    fraction of ideal - and 0.6 of ideal round the outside of every corner needs
+    70 u/s, which is a car this game does not have. The quickest lap ever set on
+    the site is 0.754 of ideal and medians 48.2.
+    """
     import tracks as tracks_mod
     c = env.app.test_client()
     _login(c, _user(env))
-    quick = tracks_mod.get("sunrise")["ideal"] * 0.6
+    quick = tracks_mod.get("sunrise")["ideal"] * 0.8
     d = c.post("/api/run", json=_run_payload(env, seconds=quick)).get_json()
     assert d["ok"] and d["stored"], d
 
@@ -1315,3 +1323,119 @@ def test_activity_refuses_a_track_that_does_not_exist(env):
     c = A.app.test_client()
     _login(c, uid)
     assert c.post("/api/activity", json={"track": "nope", "ms": 1000}).status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Embedding somebody's name in a <script> block
+# ---------------------------------------------------------------------------
+
+def test_a_name_cannot_end_the_script_tag_it_is_drawn_in(env):
+    """The XSS that was live: a thirty-character display name.
+
+    `</script><svg onload=alert(1)>` is exactly the length a display name was
+    allowed to be, `json.dumps` does not escape `<`, and every roster is
+    embedded in a `<script>` block - so the tag ended early and the rest was
+    parsed as HTML, for every other player in the lobby.
+    """
+    import app as A
+    payload = A.script_json([{"name": "</script><svg onload=alert(1)>"}])
+    assert "</script>" not in payload
+    assert "\\u003c/script\\u003e" in payload
+
+
+def test_script_json_escapes_everything_that_can_break_out():
+    """`<`, `>`, `&`, and the two JS line terminators that are legal in JSON."""
+    import app as A
+    for ch, esc in (("<", "\\u003c"), (">", "\\u003e"), ("&", "\\u0026"),
+                    ("\u2028", "\\u2028"), ("\u2029", "\\u2029")):
+        out = A.script_json({"n": "a%sb" % ch})
+        assert esc in out, ch
+        assert ch not in out, ch
+
+
+def test_script_json_stays_compact():
+    """Why this is not Jinja's `|tojson`: the track payload is the whole ribbon.
+
+    `|tojson` cannot be told to use compact separators - only
+    `JSONProvider.response` honours `compact` - and `", "` instead of `","` is
+    +17% on a track payload, which is 12KB a page load on Sandy Cove.
+    """
+    import app as A
+    assert A.script_json({"a": 1, "b": [1, 2]}) == '{"a":1,"b":[1,2]}'
+
+
+def test_a_guest_cannot_be_called_something_that_breaks_the_page(env):
+    """The one name on the site that took no validation at all."""
+    c = env.app.test_client()
+    for bad in ("</script>x", "a<b", "\u202eevil"):
+        d = c.post("/guest", json={"name": bad}).get_json()
+        assert not d["ok"], bad
+    assert c.post("/guest", json={"name": "Dave"}).get_json()["ok"]
+
+
+# ---------------------------------------------------------------------------
+# Claiming a race result
+# ---------------------------------------------------------------------------
+
+def _room(A, code, track):
+    """A room row, which is where `_finish_is_possible` reads the track from."""
+    g = A.DriveGame(code=code, track=track, status="waiting")
+    A.db.session.add(g)
+    A.db.session.commit()
+    return g
+
+
+def test_a_finish_cannot_be_quicker_than_the_car_goes(env):
+    """`emit('finish', {ms: 1})` used to win any race outright.
+
+    The floor is the ribbon's own length over the physics' hard velocity clamp,
+    so it is a statement about the simulation and not about anybody's driving -
+    it cannot punish somebody for being quick the way a floor under `ideal`
+    would. On Sunrise it is about 9.8s against a real lap of roughly 16.
+    """
+    import app as A
+    import laptime
+    import tracks as tracks_mod
+    import tuning
+
+    track = tracks_mod.get("sunrise")
+    length = laptime.line_length(track)
+    floor_ms = length / (tuning.MAX_SPEED * 1.7) * 1000.0
+
+    with A.app.app_context():
+        _room(A, "ZZZZZZ", "sunrise")
+        r = {"code": "ZZZZZZ", "t0": A._now_ms() - 20000}
+        car = {"prog": length}
+
+        def possible(ms):
+            return A._finish_is_possible(r, car, ms)
+
+        assert not possible(1), "a one-millisecond lap is not a lap"
+        assert not possible(int(floor_ms) - 500)
+        assert possible(int(floor_ms) + 500)
+        assert possible(16000), "a real Sunrise lap has to be accepted"
+
+
+def test_a_finish_cannot_take_longer_than_the_race_has_run(env):
+    import app as A
+    with A.app.app_context():
+        _room(A, "ZZZZZZ", "sunrise")
+        r = {"code": "ZZZZZZ", "t0": A._now_ms() - 12000}
+        assert not A._finish_is_possible(r, {"prog": 10_000.0}, 30000)
+
+
+def test_a_finish_needs_the_car_to_have_gone_round(env):
+    """`prog` is the car's own progress along the ribbon."""
+    import app as A
+    with A.app.app_context():
+        _room(A, "ZZZZZZ", "sunrise")
+        r = {"code": "ZZZZZZ", "t0": A._now_ms() - 20000}
+        assert not A._finish_is_possible(r, {"prog": 5.0}, 16000)
+
+
+def test_an_unknown_track_skips_the_track_checks_rather_than_failing_them(env):
+    """Refusing a finish nobody can prove is wrong costs a race somebody drove."""
+    import app as A
+    with A.app.app_context():
+        r = {"code": "NOSUCH", "t0": A._now_ms() - 20000}
+        assert A._finish_is_possible(r, {"prog": 0.0}, 16000)

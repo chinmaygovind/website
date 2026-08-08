@@ -35,9 +35,44 @@ POS_Q = 100.0     # positions to the centimetre
 ROT_Q = 4096.0    # quaternion components
 
 MAX_GHOST_FRAMES = GHOST_HZ * 60 * 6      # six minutes is beyond any track
-# A hard ceiling on believable speed: the car's own top speed, plus what a long
-# descent can add on top of it (the physics caps that at 1.7x), plus slack.
-SPEED_CEIL = T.MAX_SPEED * 2.2
+
+# A hard ceiling on believable speed. The physics clamps velocity at
+# `MAX_SPEED * 1.7` and nothing in the simulation can produce more, so anything
+# past it is a car that was not running this game's physics.
+#
+# This used to be `MAX_SPEED * 2.2` - 110 against a simulation that cannot exceed
+# 85 - and that 25 u/s of headroom was given away for nothing. It is what a
+# retuned client drove a 12.288s Twin Loop through: the replay sat at a *median*
+# of 83 and topped 91, passed every check here, and took the track record. The
+# margin the other way is enormous: across the 82 honest laps on the board the
+# fastest single frame is 62.5, so the ceiling below is still 24 u/s clear of the
+# quickest thing anybody has actually driven.
+#
+# The small allowance over the clamp is for measurement, not for driving: a ghost
+# is 15Hz with positions on a 1cm grid, so a frame pair can read slightly high.
+SPEED_CEIL = T.MAX_SPEED * 1.75
+
+# And a ceiling on the speed a *whole lap* can average.
+#
+# The one above is a single-frame test, which a cheat can simply sit underneath.
+# This one cannot be dodged that way, because it is not about any one moment: a
+# long descent lifts a car over `MAX_SPEED` for a few seconds - that is why the
+# top speed alone is a blunt instrument - but nothing in the physics holds it
+# there for a lap. Every honest lap on the board medians between 45 and **49.5**
+# against a `MAX_SPEED` of 50, and the cheated one medianed 83.
+#
+# It is deliberately a **backstop and not a measurement**. Set just over the
+# quickest honest median - 1.06 was tried, at 53 - it is `MIN_PLAUSIBLE` wearing
+# a different hat: a bar calibrated against how fast people drive *today*, which
+# the first person to drive 10% better walks into. The thing that makes this
+# different from that mistake is that it bounds a *speed*, which the physics
+# bounds too, rather than a *time*, which it does not - so it can be set from
+# what the car can do instead of from what anybody has done. Half a lap spent
+# 20% over `MAX_SPEED` already means half a lap of descent, and no track in the
+# pool comes close. Precision here is not this check's job; the re-simulation is
+# what says whether a lap is real, and this only has to make the blatant case a
+# synchronous error with a message rather than a queued one.
+MEDIAN_SPEED_CEIL = T.MAX_SPEED * 1.2
 
 
 def pack_ghost(frames):
@@ -98,6 +133,140 @@ def ghost_hz(blob):
         return GHOST_HZ
 
 
+# ---------------------------------------------------------------------------
+# The input stream
+# ---------------------------------------------------------------------------
+#
+# A pose says where a car was; it does not say that the physics could have put it
+# there. To answer that, the replay has to carry what the driver was *doing*, one
+# entry per fixed physics step, so the run can be stepped again on the server
+# against the real `Car.step` (see verify.py).
+#
+# `Car.step` reads four fields and they fit in a byte, so a step is one small
+# integer and a lap is a few thousand of them - run-length encoded first, because
+# a driver holds the throttle for seconds at a time and the raw stream is long
+# runs of the same value.
+#
+# `FIXED_DT` is 1/120 and a ghost frame is 1/15, so **exactly 8 steps fall
+# between consecutive frames**. That integer alignment is what makes anchored
+# verification possible at all: frame *i* is the state at step *i * 8*.
+
+# It is deliberately **not** in the ghost blob. A ghost is downloaded by everyone
+# who races that lap, and none of them needs the driver's inputs; it also means
+# no replay already on the board changes shape. It lives with the verification
+# row instead, which is the only thing that reads it.
+
+STEPS_PER_FRAME = 8      # FIXED_DT 1/120 against GHOST_HZ 15
+
+# The same six-minute bound `MAX_GHOST_FRAMES` puts on the poses, at step rate.
+MAX_INPUT_STEPS = 120 * 60 * 6
+
+_IN_THROTTLE = 1
+_IN_BRAKE = 2
+_IN_HANDBRAKE = 4
+_IN_RIGHT = 8
+_IN_LEFT = 16
+
+
+def input_byte(throttle, brake, steer, handbrake):
+    """The four fields `Car.step` reads, as one byte."""
+    b = 0
+    if throttle:
+        b |= _IN_THROTTLE
+    if brake:
+        b |= _IN_BRAKE
+    if handbrake:
+        b |= _IN_HANDBRAKE
+    if steer > 0:
+        b |= _IN_RIGHT
+    elif steer < 0:
+        b |= _IN_LEFT
+    return b
+
+
+def input_fields(b):
+    """A byte back into the dict `Car.step` takes."""
+    return {"throttle": 1 if b & _IN_THROTTLE else 0,
+            "brake": 1 if b & _IN_BRAKE else 0,
+            "steer": (1 if b & _IN_RIGHT else 0) - (1 if b & _IN_LEFT else 0),
+            "handbrake": bool(b & _IN_HANDBRAKE)}
+
+
+def pack_inputs(bytes_):
+    """[byte, ...] -> run-length pairs. Cheap, and it shrinks a lap ~50x."""
+    out = []
+    for b in bytes_:
+        b = int(b) & 0xFF
+        if out and out[-1][0] == b and out[-1][1] < 0xFFFF:
+            out[-1][1] += 1
+        else:
+            out.append([b, 1])
+    return [v for pair in out for v in pair]
+
+
+def unpack_inputs(rle):
+    """Run-length pairs back to [byte, ...], or None if it is not readable."""
+    if not rle or len(rle) % 2:
+        return None
+    out = []
+    for i in range(0, len(rle), 2):
+        b, n = int(rle[i]) & 0xFF, int(rle[i + 1])
+        if n < 0 or len(out) + n > MAX_INPUT_STEPS:
+            return None
+        out.extend([b] * n)
+    return out
+
+
+# Velocity is quantised like a position, and the smoothed steer finely - it is
+# -1..1 and the only other scalar a solo step carries forward.
+VEL_Q = 100.0
+STEER_Q = 10000.0
+
+
+def pack_verify(inputs, anchors):
+    """The evidence a re-simulation needs, beyond the poses already in the ghost.
+
+    ``inputs``  one byte per fixed step, from the step the clock started.
+    ``anchors`` one ``[vx, vy, vz, steer]`` per ghost frame - the state that a
+                pose does not carry and that does not re-derive itself inside a
+                step. Everything else a solo car holds is either recomputed from
+                the collider at the top of `Car.step` (`grounded`, `coyote`,
+                `surface`) or is race-only and therefore always zero here
+                (`bumpSlip`, `slipCharge`, `catchupBoost` - contact and the tow
+                are both gated on `contactOn`, which solo never is).
+    """
+    d = []
+    for a in anchors:
+        d.append(int(round(a[0] * VEL_Q)))
+        d.append(int(round(a[1] * VEL_Q)))
+        d.append(int(round(a[2] * VEL_Q)))
+        d.append(int(round(a[3] * STEER_Q)))
+    raw = json.dumps({"v": 1, "q": [VEL_Q, STEER_Q],
+                      "i": pack_inputs(inputs), "a": d},
+                     separators=(",", ":")).encode()
+    return base64.b64encode(zlib.compress(raw, 9)).decode()
+
+
+def unpack_verify(blob):
+    """-> {"inputs": [byte,...], "anchors": [[vx,vy,vz,steer],...]}, or None."""
+    if not blob:
+        return None
+    try:
+        obj = json.loads(zlib.decompress(base64.b64decode(blob)))
+        vq, sq = obj.get("q", [VEL_Q, STEER_Q])
+        inputs = unpack_inputs(obj.get("i"))
+        if inputs is None:
+            return None
+        d = obj.get("a") or []
+        if len(d) % 4:
+            return None
+        anchors = [[d[i] / vq, d[i + 1] / vq, d[i + 2] / vq, d[i + 3] / sq]
+                   for i in range(0, len(d), 4)]
+        return {"inputs": inputs, "anchors": anchors}
+    except Exception:
+        return None
+
+
 def medal_for(track, time_ms):
     """Best medal a time earns on a track, or None."""
     secs = time_ms / 1000.0
@@ -142,19 +311,186 @@ def validate(track, time_ms, splits, frames):
     if not (expected * 0.75 - 3 <= len(frames) <= expected * 1.25 + 3):
         return False, "replay does not match the time"
 
-    # And it has to be a drive, not a sequence of teleports.
+    # And it has to be a drive, not a sequence of teleports - nor a lap driven
+    # by a car with more engine in it than this one has.
     dt = 1.0 / GHOST_HZ
+    speeds = []
     for i in range(1, len(frames)):
         a, b = frames[i - 1], frames[i]
         d = ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2 + (b[2] - a[2]) ** 2) ** 0.5
-        if d / dt > SPEED_CEIL:
+        v = d / dt
+        if v > SPEED_CEIL:
             return False, "replay contains a teleport"
+        speeds.append(v)
+    # A chord across a corner understates the distance travelled and never
+    # overstates it, so this median is a floor on the real one - the right
+    # direction for a number that refuses somebody's lap.
+    if speeds:
+        speeds.sort()
+        if speeds[len(speeds) // 2] > MEDIAN_SPEED_CEIL:
+            return False, "replay is faster than the car"
 
     # It has to start at the start line and end at the finish.
     spawn = track["spawn"]["p"]
     f0 = frames[0]
     if ((f0[0] - spawn[0]) ** 2 + (f0[2] - spawn[2]) ** 2) ** 0.5 > T.CELL * 3:
         return False, "replay does not start on the line"
+
+    # And - the part that used to be missing - it has to have driven the track:
+    # through the gates, when the splits say, without leaving the course.
+    return follows_the_track(track, time_ms, splits, frames)
+
+
+# ---------------------------------------------------------------------------
+# Does the replay actually drive the track?
+# ---------------------------------------------------------------------------
+#
+# Everything above asks whether a replay is self-consistent. None of it ever
+# looked at the *track*: `validate` checked that the splits array was a list of
+# increasing integers and that frame 0 was near the spawn, and that was all. So a
+# replay was free to be a straight line into the void at 49 u/s for the right
+# number of frames, with three plausible-looking split numbers beside it, and it
+# would be accepted and go on the board.
+#
+# That is the second hole, and the splits were the half of it that mattered: they
+# are what the leaderboard's checkpoint comparison is drawn from, and nothing tied
+# them to the replay they arrived with. They are now the *claim* and the frames
+# are the *evidence*, and the two have to agree.
+#
+# These constants mirror `Course`/`Run` in static/js/course.js. They are not
+# independent choices: if the game credits a gate on one rule and the server
+# insists on another, the disagreement is an honest lap thrown away.
+
+GATE_NEAR = 20.0        # Course.gateNear - how close before a gate is watched
+GATE_SIDE_PAD = 2.5     # Run._withinGate - lateral slack past the kerb
+GATE_FLOOR = -2.5       # Run._withinGate - how far under a gate still counts
+
+# How far a frame may sit from the nearest point on the track's own ribbon.
+# Deliberately loose: running wide onto the grass, a jump, and the long way round
+# a hairpin are all ordinary driving, and this is here to catch a replay that
+# leaves the course altogether rather than to police a racing line. Measured
+# against the 82 honest laps on the board, the worst frame is **31.9** units off
+# (Cloudbreak, which is mostly gaps), so this is a little under twice the
+# furthest anybody has legitimately been.
+CORRIDOR = 60.0
+
+# How far a gate crossing may sit from the split that claims it. Measured on the
+# same 82 laps, the worst disagreement is **1.0 frame** - the splits really are
+# the replay's, they were simply never checked against it - so nine frames either
+# way is loose enough never to argue with an honest lap and tight enough that a
+# fabricated split, which is wrong by seconds, cannot survive.
+SPLIT_TOL_MS = 600
+
+
+def _gates_of(track):
+    cps = sorted((g for g in track["gates"] if g["kind"] == "cp"),
+                 key=lambda g: g["gi"])
+    fin = next((g for g in track["gates"] if g["kind"] == "finish"), None)
+    return cps, fin
+
+
+def _side(gate, f):
+    return ((f[0] - gate["p"][0]) * gate["f"][0] +
+            (f[1] - gate["p"][1]) * gate["f"][1] +
+            (f[2] - gate["p"][2]) * gate["f"][2])
+
+
+def _within_gate(gate, f, ceil):
+    """`Run._withinGate`, in Python. Same rule, same numbers."""
+    lx = ((f[0] - gate["p"][0]) * gate["r"][0] +
+          (f[2] - gate["p"][2]) * gate["r"][2])
+    dy = f[1] - gate["p"][1]
+    return abs(lx) <= gate["hw"] + GATE_SIDE_PAD and GATE_FLOOR < dy < ceil
+
+
+def _crossings(gate, frames, ceil):
+    """Frame indices where the replay passes through `gate`, front to back.
+
+    The side is only tracked while the car is in the gate's mouth and within
+    `GATE_NEAR` of its plane - the same restriction `Run.update` needs, and for
+    the same reason: a gate's plane is infinite, so a car crossing it somewhere
+    else on the track would flip the remembered side and the real pass later
+    would produce no sign change at all.
+    """
+    out = []
+    prev = None
+    for i, f in enumerate(frames):
+        s = _side(gate, f)
+        if abs(s) > GATE_NEAR or not _within_gate(gate, f, ceil):
+            prev = None
+            continue
+        if prev is not None and prev < 0 <= s:
+            out.append(i)
+        prev = s
+    return out
+
+
+def follows_the_track(track, time_ms, splits, frames):
+    """(ok, reason). Did this replay drive *this* track, past its gates, on time?
+
+    Three questions, and the replay has to answer all of them:
+
+      * did it go through every checkpoint, in order, through the mouth of the
+        gate rather than across the infinite plane it sits in;
+      * did each of those crossings happen when the matching split says it did;
+      * and did the whole thing stay anywhere near the road.
+    """
+    cps, fin = _gates_of(track)
+    ceil = track.get("gate_ceil") or 5.0
+    hz = GHOST_HZ
+
+    # --- every checkpoint, in order, at the time it claims -------------------
+    at = 0                      # no crossing may be earlier than the last one
+    for n, gate in enumerate(cps):
+        hits = [i for i in _crossings(gate, frames, ceil) if i >= at]
+        if not hits:
+            return False, "replay never passes checkpoint %d" % (n + 1)
+        want = splits[n] / 1000.0 * hz
+        near = min(hits, key=lambda i: abs(i - want))
+        if abs(near - want) > SPLIT_TOL_MS / 1000.0 * hz:
+            return False, "checkpoint %d is not where the replay is" % (n + 1)
+        at = near
+
+    # --- and it ends at the finish ------------------------------------------
+    #
+    # Asked as "ends at" rather than "crosses", because a ghost stops at the
+    # flag: `_recordGhost` only runs while the run is `running` and crossing the
+    # line is what ends it, so the last frame is always on the *approach* and
+    # there is never a frame on the far side to make a sign change out of.
+    # Requiring a crossing here rejected 76 of the 82 honest laps on the board.
+    if fin is not None:
+        last = frames[-1]
+        if not _within_gate(fin, last, ceil) or abs(_side(fin, last)) > GATE_NEAR:
+            return False, "the replay does not end at the finish"
+
+    # --- and it stayed on the course ---------------------------------------
+    line = track.get("line") or []
+    if line:
+        lim = CORRIDOR * CORRIDOR
+
+        def nearest(f, lo, hi):
+            best, bi = None, lo
+            for j in range(lo, hi):
+                p = line[j]["p"]
+                d = ((f[0] - p[0]) ** 2 + (f[1] - p[1]) ** 2 + (f[2] - p[2]) ** 2)
+                if best is None or d < best:
+                    best, bi = d, j
+            return best, bi
+
+        # The car goes forward, so the nearest station is a few past the last
+        # one and a narrow window finds it. This runs on the request path, and
+        # Drive has one eventlet worker - every millisecond here is a millisecond
+        # of every live race's sockets - so the window is small on purpose and a
+        # full scan happens only when the cheap answer looks like a refusal.
+        # Being *sure* is worth 50ms; being sure 300 times a lap is not.
+        idx = 0
+        for f in frames:
+            best, bi = nearest(f, max(0, idx - 10), min(len(line), idx + 40))
+            if best is None or best > lim:
+                best, bi = nearest(f, 0, len(line))
+                if best is None or best > lim:
+                    return False, "replay leaves the course"
+            idx = bi
     return True, ""
 
 
