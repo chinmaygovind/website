@@ -161,9 +161,11 @@ def test_the_first_race_of_a_room_is_not_lined_up_the_same_way_twice(env):
     assert len(poles) > 1
 
 
-def test_a_room_qualifies_unless_the_host_says_otherwise(env):
+def test_a_room_races_unless_the_host_asks_for_qualifying(env):
+    """So a new room's first grid is the shuffle `_reverse_grid` falls back to,
+    not the order a session it never ran would have produced."""
     A = env
-    assert A._room("NEW")["settings"]["qualifying"] is True
+    assert A._room("NEW")["settings"]["qualifying"] is False
 
 
 def test_the_settings_and_the_last_result_survive_a_race(env):
@@ -193,18 +195,20 @@ def test_the_qualifying_countdown_is_a_phase_a_race_can_be_called_off_in(env):
 # The room's settings
 # ---------------------------------------------------------------------------
 
-def test_qualifying_is_on_unless_the_host_turns_it_off(env):
+def test_qualifying_is_off_unless_the_host_turns_it_on(env):
+    """A new room races. Ninety seconds of session plus five of lights is
+    longer than some of the races it sets the grid for."""
     A = env
-    assert A._room("SET1")["settings"]["qualifying"] is True
+    assert A._room("SET1")["settings"]["qualifying"] is False
 
 
 def test_a_room_owns_its_settings(env):
     """A copy of the defaults, not the defaults - one host must not set every
     other room's rules along with their own."""
     A = env
-    A._room("SET2")["settings"]["qualifying"] = False
-    assert A._room("SET3")["settings"]["qualifying"] is True
-    assert A.ROOM_DEFAULTS["qualifying"] is True
+    A._room("SET2")["settings"]["qualifying"] = True
+    assert A._room("SET3")["settings"]["qualifying"] is False
+    assert A.ROOM_DEFAULTS["qualifying"] is False
 
 
 def test_opening_a_race_lights_the_session(env):
@@ -214,17 +218,19 @@ def test_opening_a_race_lights_the_session(env):
     driving rather than eighty-five."""
     A = env
     r = _room(A, phase="free")
+    r["settings"]["qualifying"] = True
     assert A._open_race(r) is True
     assert r["phase"] == "qual_countdown"
     assert r["qual_end"] is None and r["t0"] is not None
 
 
 def test_opening_a_race_without_qualifying_goes_straight_to_the_grid(env):
-    """With it off the room never enters the session at all - the same five
-    seconds of lights, counting down to the race itself."""
+    """With it off - which is how a room starts - the room never enters the
+    session at all: the same five seconds of lights, counting down to the race
+    itself."""
     A = env
     r = _room(A, phase="free")
-    r["settings"]["qualifying"] = False
+    assert r["settings"]["qualifying"] is False
     assert A._open_race(r) is False
     assert r["phase"] == "countdown"
     assert r["qual"] == {} and r["qual_end"] is None
@@ -706,6 +712,16 @@ def _as_host(A, fn, *args):
         fn(*args)
 
 
+def _qual_on(r):
+    """A room defaults to racing, so a test about the session has to ask for it.
+
+    Set straight into the state rather than through `on_set_setting`: its fan-out
+    lands in `sent`, which is the list several of these tests read the room's
+    events off.
+    """
+    r["settings"]["qualifying"] = True
+
+
 def _run(fired):
     """Fire every timer armed so far, in order, and clear the queue."""
     todo, fired[:] = list(fired), []
@@ -717,6 +733,7 @@ def test_starting_runs_the_lights_before_qualifying_not_after(live):
     """The session used to simply begin, so the first anyone knew of it was a
     toast saying they were already in it and a lap that no longer counted."""
     A, r, pids, sent, fired = live
+    _qual_on(r)
     _as_host(A, A.on_start_race, {"code": "LIVE"})
     assert r["phase"] == "qual_countdown"
     assert [e for e, _ in sent] == ["qual_countdown"]
@@ -726,11 +743,10 @@ def test_starting_runs_the_lights_before_qualifying_not_after(live):
 
 
 def test_with_qualifying_off_the_lights_are_the_races_own(live):
-    """Nobody wants ninety seconds of driving alone before every race, so the
-    session can be switched off - and then Start race means start the race."""
+    """Nobody wants ninety seconds of driving alone before every race, which is
+    why it is off unless asked for - and then Start race means start the race."""
     A, r, pids, sent, fired = live
-    _as_host(A, A.on_set_setting,
-             {"code": "LIVE", "key": "qualifying", "value": False})
+    assert r["settings"]["qualifying"] is False
     _as_host(A, A.on_start_race, {"code": "LIVE"})
     assert r["phase"] == "countdown"
     assert "race_start" in [e for e, _ in sent]
@@ -744,8 +760,11 @@ def test_the_qualifying_switch_is_the_hosts_and_only_between_races(live):
     with A.app.test_request_context():
         from flask import session
         session["session_key"] = "sk-other"
-        A.on_set_setting({"code": "LIVE", "key": "qualifying", "value": False})
-    assert r["settings"]["qualifying"] is True, "anybody could turn it off"
+        A.on_set_setting({"code": "LIVE", "key": "qualifying", "value": True})
+    assert r["settings"]["qualifying"] is False, "anybody could turn it on"
+    _as_host(A, A.on_set_setting,
+             {"code": "LIVE", "key": "qualifying", "value": True})
+    assert r["settings"]["qualifying"] is True, "the host could not turn it on"
     _as_host(A, A.on_start_race, {"code": "LIVE"})
     _as_host(A, A.on_set_setting,
              {"code": "LIVE", "key": "qualifying", "value": False})
@@ -756,6 +775,7 @@ def test_a_qualifying_lap_puts_its_replay_on_pole(live):
     """The lap that is provisionally on pole is the one ghost worth having in a
     session that exists to set it, so it comes up with the time."""
     A, r, pids, sent, fired = live
+    _qual_on(r)
     _as_host(A, A.on_start_race, {"code": "LIVE"})
     _run(fired)
     frames = [[0, 0, 0, 0, 0, 0, 1, 0]] * 40
@@ -772,6 +792,7 @@ def test_a_qualifying_lap_puts_its_replay_on_pole(live):
 
 def test_a_slower_lap_does_not_take_pole(live):
     A, r, pids, sent, fired = live
+    _qual_on(r)
     _as_host(A, A.on_start_race, {"code": "LIVE"})
     _run(fired)
     frames = [[0, 0, 0, 0, 0, 0, 1, 0]] * 40
@@ -792,6 +813,7 @@ def test_a_slower_lap_does_not_take_pole(live):
 
 def test_the_session_ends_on_the_grid_it_set(live):
     A, r, pids, sent, fired = live
+    _qual_on(r)
     _as_host(A, A.on_start_race, {"code": "LIVE"})
     _run(fired)                       # the lights -> qualifying
     r["qual"] = {pids["other"]: 42000, pids["host"]: 44000}
@@ -806,6 +828,7 @@ def test_the_host_can_skip_the_rest_of_the_session(live):
     """Ninety seconds is the right length for a session nobody wants cut short
     and the wrong length for two people who are ready."""
     A, r, pids, sent, fired = live
+    _qual_on(r)
     _as_host(A, A.on_start_race, {"code": "LIVE"})
     _run(fired)
     r["qual"] = {pids["host"]: 43000}
@@ -820,6 +843,7 @@ def test_somebody_leaving_between_the_flag_and_the_grid_is_not_lined_up(live):
     can name somebody who is no longer there, and the slots have to close up
     rather than start the race with a hole in the field."""
     A, r, pids, sent, fired = live
+    _qual_on(r)
     _as_host(A, A.on_start_race, {"code": "LIVE"})
     _run(fired)
     r["qual"] = {pids["other"]: 42000, pids["host"]: 44000}

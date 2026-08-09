@@ -111,9 +111,9 @@ ELO, socket handlers, the race recorder or `/race/<id>`.
   were already in it and a lap in progress that no longer counted. Nobody is
   *placed* for it, though: a session has no start line - everyone leaves when
   they like, on their own lap - so it counts down over wherever you are sitting.
-- **Qualifying can be switched off, and then the grid is the last race
-  reversed.** It is the room's one setting so far (`ROOM_DEFAULTS`, on by
-  default) and it lives in the live room state rather than on `DriveGame`: it is
+- **Qualifying is off by default, and then the grid is the last race
+  reversed.** It is the room's one setting so far (`ROOM_DEFAULTS`) and it lives
+  in the live room state rather than on `DriveGame`: it is
   about the next few minutes, and `create_all` makes tables and not columns, so
   a column would need a hand migration on the live database for something a room
   forgets anyway. With it off, `_open_race` sends the room straight to
@@ -125,7 +125,12 @@ ELO, socket handlers, the race recorder or `/race/<id>`.
   moves the switch from the room drawer, the server refuses it mid-session
   (`LIVE_PHASES`, same as the track), and the whole set is fanned back out as
   `room_settings` so nobody is reading a switch that says something different
-  from the host's.
+  from the host's. **It defaults off** because a session is ninety seconds plus
+  five of lights before anybody races, which is longer than some of the races,
+  and a room that has just filled up wants to be on the grid rather than
+  spending its first two minutes alone on the road; a host who wants the grid
+  earned turns it on. The client's own `S.settings` starts off to match, so the
+  switch is not drawn one way and corrected by the first `room_settings`.
 - **The grid is staggered and pole starts on the inside of the first corner.**
   Ordering alone does not fix a two-by-two grid: cars level with each other
   reach the first corner together and the one on the inside of it simply gets

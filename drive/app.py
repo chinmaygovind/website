@@ -1529,7 +1529,12 @@ LIVE_PHASES = ("qual_countdown", "qualifying", "countdown", "racing")
 # not columns (so a new one would need a hand migration on the live database),
 # and a room that has been empty long enough for its state to be dropped is not
 # a room anybody is still setting up.
-ROOM_DEFAULTS = {"qualifying": True}
+#
+# Qualifying is **off** by default: it is ninety seconds plus five of lights
+# before anybody races, which is most of a race spent not racing, and a room of
+# people who have just found each other wants to be on the grid. The host turns
+# it on from the room drawer when the grid is worth two minutes.
+ROOM_DEFAULTS = {"qualifying": False}
 
 _rooms = {}       # code -> live room state
 _sid_room = {}    # socket id -> (code, pid)
@@ -1995,7 +2000,7 @@ def _open_race(r):
     the order it produces. With it off it is the race itself, and the grid is
     the last result reversed - see `_reverse_grid`.
     """
-    quali = bool(r["settings"].get("qualifying", True))
+    quali = bool(r["settings"].get("qualifying", ROOM_DEFAULTS["qualifying"]))
     r["race_seq"] += 1
     r["qual"] = {}
     r["pole"] = None

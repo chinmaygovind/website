@@ -114,7 +114,10 @@ const S = {
   catchupDemo: null,       // `?catchup=<s>` pins the gap, to look at the effect
   qualEnd: null,           // local perf-clock ms qualifying closes
   standings: [],
-  settings: { qualifying: true },   // rooms only: what the next race will be
+  settings: { qualifying: false },  // rooms only: what the next race will be
+                                    // (the server's `room_settings` is the
+                                    // truth; this matches ROOM_DEFAULTS so the
+                                    // switch does not flash the wrong way)
   lastPose: 0,
   socket: null,
   clockOffset: 0, bestRtt: Infinity,
