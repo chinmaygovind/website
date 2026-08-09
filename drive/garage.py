@@ -344,7 +344,7 @@ GATES = {
     # for three track records at once, which is the same achievement the laurel
     # already names, three times over - so the top two badges on the list were
     # about the same thing and a driver quick on three tracks and nowhere else
-    # outranked one who was second on all twelve. Topping the Time Trial board
+    # outranked one who was second on every other one. Topping the Time Trial board
     # is the thing a crown should mean: best over the whole pool, by the board's
     # own scoring, which already counts a track you have never driven against
     # you. It is `KEPT` for the same reason the laurel is - it can be taken off
@@ -407,7 +407,7 @@ def _tracks_finished(user):
     """How many tracks in the current pool this account has a time on.
 
     Scoped to the pool rather than to every row, so a time on a retired track
-    cannot quietly count toward finishing the twelve that exist.
+    cannot quietly count toward finishing the ones that exist.
     """
     from models import DriveTime
     pool = {t["slug"] for t in tracks_mod.TRACKS}
@@ -450,8 +450,9 @@ def records_held():
 def time_trial_board():
     """Every driver's Time Trial Score: their placing on each track, added up.
 
-    Golf scoring, so **low is good** and a clean sweep of the pool is 12. Ten
-    firsts and two thirds is 16.
+    Golf scoring, so **low is good** and a clean sweep of the pool scores one
+    per track. Firsts everywhere but two tracks, and thirds on those, scores
+    four over the sweep.
 
     Three rules make that sum well defined:
 
@@ -470,7 +471,7 @@ def time_trial_board():
       overtook, so a number kept per driver would have to rewrite most of the
       board on every lap and would be wrong for as long as one write path was
       missed. Derived from `drive_times` on each render it cannot go stale, and
-      the pool is twelve tracks.
+      the whole pool is one query.
 
     Only laps driven alone against the clock are in `drive_times` at all (see
     `countsForTheBoard` in game.js), so nothing set in a room reaches this

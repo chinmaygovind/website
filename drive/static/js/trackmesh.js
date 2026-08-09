@@ -18,7 +18,11 @@
 
 import * as THREE from './vendor/three.module.js';
 
-export const KIND = { ROAD: 0, WALL: 1, OFFROAD: 2 };
+// BOOST is a road you can drive on in every way ROAD is - the ground query, the
+// steering normal, the racing line all treat it identically. It is a separate
+// kind purely so the car can *notice* it, the same way OFFROAD is a surface
+// rather than an object standing on one. See `Builder.boost` in tracks.py.
+export const KIND = { ROAD: 0, WALL: 1, OFFROAD: 2, BOOST: 3 };
 
 // A palette's `sky` is either a plain colour (the old two-tone dome) or a spec
 // that render.js turns into a graded dome, a sun and a bank of cloud. See
@@ -272,6 +276,71 @@ const PALETTES = {
                 fog: 0x120a28, fogNear: 300, fogFar: 1500,
               },
               below: { kind: 'void' } },
+  // Big Red: a long fall through a red sky, above a city drowned in cloud.
+  //
+  // The whole track is a descent, so the thing you look at for forty seconds is
+  // what is *underneath* you - hence the deepest `below` in the pool. The deck
+  // sits 130 down rather than Skyline's 92 and the floor another 300 under
+  // that, which is what makes the city read as far away rather than as a
+  // basement; and `cover` is well under Skyline's, because the point here is
+  // seeing through the holes to a city rather than seeing a cloud layer with a
+  // few masts in it.
+  //
+  // Everything is lit from below and behind by a sun that is nearly down. That
+  // is why the cloud is a warm salmon rather than white - it is being lit from
+  // underneath by the same sunset - and why `hemi.ground` is a deep red: it is
+  // the bounce, and on a track with nothing under it but weather the bounce is
+  // most of what the car and the barriers are actually lit by.
+  bigred:   { road: 0x3a2530, kerb: 0xffe4dc, kerb2: 0xff2f42,
+              ground: 0x3a1622, rail: 0xffd6cf, prop: 0x5c2432, deco: 0xff4d5a,
+              fog: 0xa8556a,
+              // Electric cyan on a red road, which is the one pair of colours
+              // nobody has to be told about. The panel under it is nearly black
+              // so the chevrons have something to be bright *against* - on bare
+              // tarmac they read as paint rather than as light.
+              pad: 0x7df9ff, padBase: 0x140710,
+              sky: {
+                // Down at the horizon it is nearly black - you are above the
+                // weather and there is no ground to bounce anything back. It
+                // burns through crimson to orange where the sun is, and cools
+                // to a deep violet overhead that still has night in it.
+                stops: [
+                  [0.00, 0x2a0a12], [0.36, 0x7d1526], [0.46, 0xc42d2c],
+                  [0.50, 0xf25c34], [0.55, 0xc93650], [0.64, 0x8e2a5e],
+                  [0.76, 0x53215e], [0.88, 0x2c1546], [1.00, 0x140a28],
+                ],
+                glow: 0xff9a5a, glowStrength: 0.95,
+                sun: { az: -0.62, el: 0.03, color: 0xff8f52, size: 620 },
+                // The disc is on the deck; the key light is not, or the road
+                // and the cars are silhouettes. Warm, and strong enough that a
+                // banked corner still shows which way it is banked.
+                light: { color: 0xffd0b4, intensity: 1.34,
+                         dir: [Math.sin(-0.62) * 0.86, 0.5, Math.cos(-0.62) * 0.86] },
+                hemi: { sky: 0xff9c86, ground: 0x7a1428, intensity: 0.95 },
+                fog: 0xa8556a, fogNear: 280, fogFar: 2100,
+              },
+              // A real city a long way down, and a thin layer of cloud between
+              // it and the road - which is two separate things and needed the
+              // `haze` hook to say so.
+              //
+              // The default `below` world was tried first and is the wrong
+              // world for this: it is *one* thing, a cloud deck sitting on top
+              // of the towers that are drowned in it, so the city can only ever
+              // be at the cloud's own depth. Under a red sunset that came out
+              // as a field of pale mesas standing on dark pillars - stone, not
+              // sky, and no amount of retuning the cloud fixed it because the
+              // problem was that the two layers were one. `downtown` puts a
+              // proper skyline down there with lit windows, which is the thing
+              // that actually reads as a city from 260 units up, and the haze
+              // is then free to be thin and broken because it is not holding
+              // anything up.
+              below: { kind: 'downtown', deck: 300, reach: 900, step: 5,
+                       coreX: 60, coreZ: 120, coreR: 380,
+                       low: 34, spread: 58, rise: 115,
+                       landmarkX: -40, landmarkZ: -60, landmarkH: 200,
+                       tower: 0x2b1b33, window: 0xffc98a, floor: 0x160a16,
+                       haze: { deck: 72, cover: 0.15, cloudStep: 20, puff: 1.2,
+                               cloud: 0xffe4dc } } },
   // Sandy Cove: a coast road on hot sand. `shore` is what cuts the sea out of
   // the ground plane - see the ground block in buildTrack. Sand is the run-off
   // and the water is scenery, so falling in is a fall like any other.
@@ -702,6 +771,65 @@ export function buildTrack(track, T) {
   };
   const roadBuf = pal.rainbow ? bright : solid;
 
+  // ---- boost pads ---------------------------------------------------------
+  // A pad has to be readable from far enough back to aim at, on a road whose
+  // colour is the track's business - so it is drawn rather than tinted: a dark
+  // inset panel to lift it off the tarmac, and chevrons pointing the way you
+  // are going. Both go in the `bright` buffer, so a pad glows on Spiral
+  // Ascent's midnight road exactly as it does in daylight and needs no light of
+  // its own.
+  //
+  // Everything is built in the station pair's own (u, s) space and lifted along
+  // the *road's* normal, not world up, which is what makes a pad on the wall of
+  // a loop lie flat on the wall.
+  const PAD_LIFT = 0.03, CHEV_LIFT = 0.05;
+  const PAD_LANES = 8;          // lateral strips a chevron is drawn from
+  // A chevron is drawn across CHEV_SPAN stations rather than between one pair
+  // of them, and that is the whole reason it reads as an arrow. Stations are
+  // 3.5 units apart and the road is 12 to 14 wide, so a V confined to a single
+  // gap can rake its arms back by at most a couple of units across six of
+  // width - which from behind the car is a *straight line*, drawn three times.
+  // Over two gaps the tip is four units up the road from the arms and it is
+  // unmistakably pointing somewhere.
+  const CHEV_SPAN = 2;          // stations a single chevron is drawn across
+  const CHEV_EVERY = 2;         // stations between one chevron and the next
+  const padPt = (a, b, u, s, lift) => {
+    const p = surf(a, u), q = surf(b, u);
+    const out = [0, 0, 0];
+    for (let k = 0; k < 3; k++) {
+      out[k] = p[k] + (q[k] - p[k]) * s
+               + (a.n[k] + (b.n[k] - a.n[k]) * s) * lift;
+    }
+    return out;
+  };
+  function padStrip(i) {
+    const a = line[i], b = line[i + 1];
+    const base = pal.padBase != null ? pal.padBase : 0x101828;
+    const glow = pal.pad != null ? pal.pad : 0x62f0ff;
+    // The panel stops short of the kerb, or it fights the painted stripe that
+    // is already there and the edge of the pad reads as a lane marking.
+    const w = 0.86;
+    bright.quad(padPt(a, b, -w, 0, PAD_LIFT), padPt(a, b, w, 0, PAD_LIFT),
+                padPt(a, b, w, 1, PAD_LIFT), padPt(a, b, -w, 1, PAD_LIFT), base);
+    if (i % CHEV_EVERY) return;
+    // The whole chevron has to fit inside the pad, or the arms of the last one
+    // hang off the end and there is a cyan V painted on ordinary road.
+    for (let k = 0; k <= CHEV_SPAN; k++) if (!line[i + k] || !line[i + k].bp) return;
+    const far = line[i + CHEV_SPAN];
+    // A V pointing the way you are travelling: the tip is furthest along the
+    // road and the arms rake back toward the kerbs. Drawn as lateral strips
+    // because a quad has one colour and the shape is easier to keep on the
+    // surface than to fold out of two big triangles.
+    const TIP = 0.92, RAKE = 0.62, THICK_S = 0.17;
+    for (let j = 0; j < PAD_LANES; j++) {
+      const u0 = -w + 2 * w * j / PAD_LANES, u1 = -w + 2 * w * (j + 1) / PAD_LANES;
+      const s0 = TIP - Math.abs(u0) * RAKE, s1 = TIP - Math.abs(u1) * RAKE;
+      bright.quad(padPt(a, far, u0, s0, CHEV_LIFT), padPt(a, far, u1, s1, CHEV_LIFT),
+                  padPt(a, far, u1, s1 - THICK_S, CHEV_LIFT),
+                  padPt(a, far, u0, s0 - THICK_S, CHEV_LIFT), glow);
+    }
+  }
+
   // ---- the road: one strip of quads between consecutive stations -----------
   //
   // This loop is the entire track geometry. Everything the old grid version
@@ -729,9 +857,10 @@ export function buildTrack(track, T) {
       // Wound so the surface normal comes out along `n`, which is what lets the
       // ground query find the road while the car is upside down inside a
       // corkscrew - or high on the wall of a pipe.
-      col.addQuad(p0, p1, q1, q0, KIND.ROAD);
+      col.addQuad(p0, p1, q1, q0, a.bp ? KIND.BOOST : KIND.ROAD);
       roadBuf.quad(p0, p1, q1, q0, roadColor(i, (u0 + u1) / 2));
     }
+    if (a.bp) padStrip(i);
     note(aL); note(aR);
 
     // Underside: the slab, so the track reads as solid edge-on and from below.
@@ -1029,6 +1158,17 @@ function addWorldBelow(buf, soft, bright, track, pal, bbox, CELL, minY, maxY) {
   if (cfg.above) {
     cloudDeck(soft, cfg.above, rnd, x0, x1, z0, z1,
               maxY + (cfg.above.deck != null ? cfg.above.deck : 120), CELL);
+  }
+  // A layer of cloud *between* the road and whatever is under it, at its own
+  // depth and its own coverage. The default world already ends in a cloud deck
+  // sitting on top of its drowned towers, which is one thing rather than two -
+  // so a track that wants to be above the weather and still see a city a long
+  // way further down had no way to say so, because every other `kind` returns
+  // before the deck is drawn. This is drawn first and dispatched past, so any
+  // world can carry one.
+  if (cfg.haze) {
+    cloudDeck(soft, cfg.haze, rnd, x0, x1, z0, z1,
+              minY - (cfg.haze.deck != null ? cfg.haze.deck : 60), CELL);
   }
   if (cfg.kind === 'void') return;      // nothing down there at all, on purpose
   if (cfg.kind === 'lava') {

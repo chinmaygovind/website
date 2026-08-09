@@ -1189,8 +1189,21 @@ export class Draft {
 
   update(car, dt, camera) {
     const T = car.T;
-    const boosting = car.slipBoost > 0;
-    const bf = boosting ? Math.min(1, car.slipBoost / (T.SLIP_BOOST || 1.6)) : 0;
+    /*
+     * A boost pad draws the same air as a tow, because from inside the car it
+     * is the same fact: more engine than you had a moment ago. It arrives with
+     * no charge - a pad is not something you wind up - so it goes straight to
+     * full and peters out, which is what the `Math.max` gets for free.
+     *
+     * A remote car has no `padBoost` and is not sent one. That is deliberate
+     * rather than missing: a tow is invisible, so a rival winding one up has to
+     * be drawn or nobody could answer it, where a pad is a lit strip of road
+     * everybody can already see. Nothing on the wire has to say what the track
+     * is saying.
+     */
+    const bf = Math.max(car.slipBoost > 0 ? Math.min(1, car.slipBoost / (T.SLIP_BOOST || 1.6)) : 0,
+                        car.padBoost > 0 ? Math.min(1, car.padBoost / (T.PAD_BOOST || 1.3)) : 0);
+    const boosting = bf > 0;
     /*
      * One number drives the whole thing, and it is the bar this replaced:
      * while the tow fills it *is* the charge, so the air thickens around you
@@ -1450,10 +1463,12 @@ export class Renderer {
     this.camera.up.copy(this.camUp);
     this.camera.lookAt(this.camLook);
 
-    // A little FOV with speed - cheap, and it does a lot. A slipstream boost
-    // adds a punch of its own on top, which is most of what makes it feel like
-    // more speed rather than a different number.
-    const fov = this.baseFov + Math.min(13, speed * 0.16) + (car.slipBoost > 0 ? 7 : 0);
+    // A little FOV with speed - cheap, and it does a lot. A boost adds a punch
+    // of its own on top, which is most of what makes it feel like more speed
+    // rather than a different number. A pad and a tow are worth the same kick
+    // and never add up: two at once is one boost, not a fisheye.
+    const fov = this.baseFov + Math.min(13, speed * 0.16)
+              + (car.slipBoost > 0 || car.padBoost > 0 ? 7 : 0);
     if (Math.abs(this.camera.fov - fov) > 0.05) {
       this.camera.fov += (fov - this.camera.fov) * (1 - Math.exp(-6 * dt));
       this.camera.updateProjectionMatrix();

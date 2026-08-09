@@ -573,7 +573,7 @@ def test_the_records_page_dates_the_record_and_drops_the_gold_time(env):
 
 
 def test_a_track_with_no_record_still_lists(env):
-    """Nine rows, record or not - the table is the pool, not the records."""
+    """A row per track, record or not - the table is the pool, not the records."""
     html = env.app.test_client().get("/leaderboard").get_data(as_text=True)
     import tracks as tracks_mod
     for t in tracks_mod.TRACKS:
@@ -619,15 +619,21 @@ def test_every_column_heading_on_a_board_is_in_the_one_font(env):
 
 
 # --- the Time Trials board --------------------------------------------------
-# Golf scoring: your placing on each of the twelve tracks, added up, so low is
-# good and a clean sweep of the pool is 12.
+# Golf scoring: your placing on every track in the pool, added up, so low is
+# good and a clean sweep scores one per track.
+#
+# Every expectation below is written against `len(_pool())` rather than against
+# the number of tracks there happen to be today. A test that has to be edited
+# each time a track is added is not pinning the scoring, it is pinning the size
+# of the pool - which is `_POOL`'s business and nothing this file has an opinion
+# about.
 
 def _pbs(A, name, times, bot=False):
     """A driver with a personal best on each track in `times` ({slug: ms}).
 
     Written straight into `drive_times` rather than driven through `/api/run`:
     these tests are about what a table of times adds up to, and posting a
-    believable replay for each of twelve tracks would put the lap validator in
+    believable replay for every track in the pool would put the lap validator in
     the middle of an arithmetic test.
     """
     with A.app.app_context():
@@ -654,18 +660,20 @@ def _pool(A):
 
 
 def test_the_time_trial_score_is_the_sum_of_your_placings(env):
-    """Ten firsts and two thirds is 16."""
+    """Firsts everywhere but the last two tracks, and thirds on those."""
     A = env
     slugs = _pool(A)
-    # Quickest on the first ten, and beaten by both of the others on the last two.
-    _pbs(A, "sweeper", {s: (1000 if i < 10 else 3000) for i, s in enumerate(slugs)})
+    firsts = len(slugs) - 2
+    # Quickest on all but the last two, and beaten by both of the others there.
+    _pbs(A, "sweeper", {s: (1000 if i < firsts else 3000)
+                        for i, s in enumerate(slugs)})
     _pbs(A, "second", {s: 2000 for s in slugs})
     _pbs(A, "third", {s: 2500 for s in slugs})
 
     board = _tt(A)
-    assert board["sweeper"]["score"] == 10 * 1 + 2 * 3 == 16
-    assert board["second"]["score"] == 10 * 2 + 2 * 1
-    assert board["third"]["score"] == 10 * 3 + 2 * 2
+    assert board["sweeper"]["score"] == firsts * 1 + 2 * 3
+    assert board["second"]["score"] == firsts * 2 + 2 * 1
+    assert board["third"]["score"] == firsts * 3 + 2 * 2
     assert [board[n]["pos"] for n in ("sweeper", "second", "third")] == [1, 2, 3], (
         "low is good"
     )
@@ -680,10 +688,11 @@ def test_a_track_you_have_never_driven_counts_as_one_worse_than_last(env):
     _pbs(A, "oneandgone", {slugs[0]: 1000})     # quickest on one track, nothing else
 
     board = _tt(A)
-    # On the first track 1000 beats 2000. On the other eleven only one driver has
+    # On the first track 1000 beats 2000. On every other one only one driver has
     # a time at all, so the missing lap is second of two.
-    assert board["oneandgone"]["score"] == 1 + 11 * 2
-    assert board["everywhere"]["score"] == 2 + 11 * 1
+    rest = len(slugs) - 1
+    assert board["oneandgone"]["score"] == 1 + rest * 2
+    assert board["everywhere"]["score"] == 2 + rest * 1
     assert board["everywhere"]["pos"] == 1, (
         "one lonely first place must not beat a full sweep")
     assert board["oneandgone"]["driven"] == 1

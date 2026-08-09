@@ -213,6 +213,10 @@ class Builder:
         self.prof = None
         self.prof_last = None
         self._pb = 0.0
+        # Whether the stations being laid are boost pads. `boost` turns it on
+        # for a measured length and back off again, so unlike the cross-section
+        # it is never a mode you can leave running by accident.
+        self._pad = False
 
     # -- internals ---------------------------------------------------------
     def _pf(self):
@@ -246,6 +250,10 @@ class Builder:
             e["pf"] = pf
         if air:
             e["air"] = 1
+        # A boost pad is a property of the surface, not a thing standing on it -
+        # see `boost` below.
+        if self._pad and not air:
+            e["bp"] = 1
         if fix:
             e["fix"] = 1
         if kick:
@@ -406,6 +414,35 @@ class Builder:
         half = length / 2.0
         self.crest(rise, half, w=w)
         return self.crest(-rise, half)
+
+    def boost(self, length=12.0, rise=0.0):
+        """A strip of road that hands you speed for driving over it.
+
+        The pad is the *surface*, not an object standing on it: the stations are
+        flagged and their road quads go into the collider as ``KIND.BOOST``, so
+        the ground query the car already runs finds it with no new code, and a
+        pad works upside down inside a loop for exactly the reason a half-pipe
+        does. What it then does to the car is in physics.js; how much, in
+        tuning.py.
+
+        It is deliberately only a **straight**, and that is the rule rather than
+        a missing feature. A pad is worth about a second of unarguable speed, so
+        the place for one is somewhere the speed is usable and survivable - out
+        of a slow corner, down a straight, into a jump - and never mid-corner or
+        into a braking zone, where all it does is take away the decision the
+        corner was for. Wanting a pad round a bend is almost always wanting it
+        on the exit.
+        """
+        self._pad = True
+        try:
+            self.straight(length, rise=rise)
+            # `straight` records itself as it starts and nothing else appends
+            # while it runs, so this is that entry - rewritten rather than added
+            # to, or one authored primitive would show up in `sections` twice.
+            self.sections[-1] = {"t": "boost", "len": length, "rise": rise}
+        finally:
+            self._pad = False
+        return self
 
     def gap(self, length, drop=0.0, bow=None):
         """No road at all for ``length`` units, landing ``drop`` below the lip.
@@ -1010,6 +1047,83 @@ def _rainbow():
     return b
 
 
+def _big_red():
+    """Big Red: a long fall through a red sky, over a city drowned in cloud.
+
+    The shape is the whole idea, and it is Big Blue's: you start at the top and
+    the track spends the rest of itself going *down*. So the elevation is almost
+    monotone - about 75 units of descent across 1850 - and the one climb on it is
+    the loop, which is therefore the moment the track hauls you back up rather
+    than a trick sitting in the middle of a flat road.
+
+    Corners are big and banked because a descent is fast and a fast corner you
+    can lean on is what carries speed rather than scrubbing it; the two tight
+    ones exist so the big ones have something to be big *against*. It keeps its
+    barriers: a downhill track this quick with nothing at the edges is a respawn
+    every time somebody is a metre wide, which is punishment without a decision
+    in it.
+
+    The four boost pads are the only ones in the pool. They are all on straights
+    and all with a long run to the next braking point - out of the slow corner,
+    onto the loop, off the hairpin - because a pad is worth about a second of
+    unarguable speed and the place for that is somewhere you can use it, never
+    into a corner where all it does is take the corner away.
+    """
+    b = Builder(0, 0, 0, yaw=0, width=14.0, rails=True)
+    b.start(run=46)
+    b.boost(20)                              # off the line, before anything else
+    b.straight(50, rise=-6.0)
+
+    b.arc(-64, 70, rise=-7.0, bank=16)       # the first big banked left, falling
+    b.cp()
+    b.straight(50, rise=-6.0)
+    b.arc(78, 58, bank=18, rise=-6.0)
+    b.straight(30)
+    b.cp()
+
+    # The slow one. Everything either side of it is fourth gear or better, so
+    # this is the only place on the track anybody has to think about braking.
+    b.width(12.0)
+    b.arc(-120, 26, rise=-4.0)
+    b.straight(24)
+    b.boost(20)
+    b.straight(56, rise=-8.0)
+    b.cp()
+
+    b.width(14.0)
+    b.arc(96, 62, bank=20, rise=-9.0)        # the longest corner on the track
+    b.straight(40)
+    b.cp()
+
+    b.hump(4.2, 34).straight(30)             # over the brow, out over the cloud
+    b.arc(-88, 44, rise=-6.0).straight(36)
+    b.cp()
+
+    # The loop, and the one climb. It is fed by a pad and a straight because a
+    # loop is a speed check before it is anything else - arrive slow and the car
+    # comes off the roof of it.
+    b.boost(20)
+    b.straight(30)
+    b.loop(radius=22.0, dir="l")
+    b.straight(40)
+    b.cp()
+
+    b.arc(70, 54, rise=-8.0, bank=15).straight(44)
+    b.width(12.0)
+    b.arc(-140, 22).straight(34)             # the hairpin, and the last slow bit
+    b.cp()
+
+    b.boost(20)
+    b.width(14.0)
+    b.straight(58, rise=-9.0)
+    b.arc(-72, 66, bank=16, rise=-6.0).straight(40)
+    b.cp()
+
+    b.arc(86, 40).straight(34)
+    b.finish()
+    return b
+
+
 # Sandy Cove's waterline, as a world Z. The track is authored against it rather
 # than the other way round: a shoreline can only read as a coast if the road
 # runs *along* it, so the outbound half is pinned to a band just inland of this
@@ -1210,6 +1324,8 @@ _POOL = [
      "pillars", None, 5, _pillars),
     ("rainbow", "Rainbow Road", "Half-pipes in deep space, and almost no barriers. Do not fall.",
      "rainbow", None, 5, _rainbow),
+    ("bigred", "Big Red", "A long fall through a red sky, on boost pads, over a drowned city.",
+     "bigred", None, 4, _big_red),
 ]
 
 

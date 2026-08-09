@@ -461,7 +461,7 @@ them.
 **Live at `https://drive.cgovind.com`.** The fourth game, same shape as ERS/KoT:
 Flask + Flask-SocketIO, its own eventlet gunicorn `-w 1` on `127.0.0.1:5005`, its own
 venv (`drive/venv`) and `.env` (both gitignored, hand-made on the box), sharing TTR's
-`users` table for accounts. A PolyTrack-style low-poly driving game: twelve
+`users` table for accounts. A PolyTrack-style low-poly driving game: thirteen
 point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
 
 The last three in the pool are the long ones, all difficulty 5 and all roughly
@@ -470,6 +470,54 @@ onto the beach and out along a pier over open water), **Cloudbreak** (`pillars`,
 threaded between rock spires above an overcast) and **Rainbow Road** (`rainbow`,
 half-pipes in deep space with almost no barriers). Cloudbreak and Rainbow
 Road are both in `tracks.EXPOSED`.
+
+**Big Red** (`bigred`, difficulty 4, 1868 units) is the descent: about 75 units
+of near-monotone fall through a red sunset, over a city drowned a long way below
+it, with the one loop as the only climb. It is the only track in the pool with
+**boost pads** on it.
+
+- **A boost pad is a surface, not an object.** `Builder.boost(length)` flags the
+  stations it lays, their road quads go into the collider as `KIND.BOOST`
+  alongside `ROAD`/`WALL`/`OFFROAD`, and the ground query the car already runs
+  finds it - so a pad needs no new collision code and would work upside down
+  inside a loop for the same reason a half-pipe does. The chevrons are drawn
+  into the `bright` (unlit) buffer, so a pad glows on Spiral Ascent's midnight
+  road exactly as it does in daylight.
+- **It is more engine, not a raised limit** (`PAD_ACCEL_MULT` 1.7, `PAD_BOOST`
+  1.3s), which is the same term the slipstream and catch-up multiply. **But a
+  pad and a tow take the larger of the two rather than the product**: three
+  multipliers at once is 92 u/s against a hard clamp of 85, and then the clamp
+  sets the top speed instead of the tuning - and a tow is earned where a pad is
+  handed to everybody, so multiplying them makes a pad worth most to the car
+  already being helped. Catch-up still stacks, landing at 75.
+- **Touching a pad arms it; staying on re-arms it.** So a pad is a *place*
+  rather than a distance, and the car crawling out of a slow corner gets the
+  same second of engine as the one flying over it. `onBoostPad` is a callback
+  rather than a flag on the car, like `onBump` and `onLand`: the physics steps
+  at 1/120 and the frame loop reads the car at 1/60, so a flag would lose every
+  other pad.
+- **`Builder.boost` only lays straight road**, and that is the rule rather than
+  a gap. A pad is worth about a second of unarguable speed, so it belongs where
+  the speed is usable - out of a slow corner, down a straight, into a jump - and
+  never mid-corner, where all it does is take away the decision the corner was
+  for. `test_boost.py` checks it on every track in the pool.
+- **`laptime.py` models the pads, or the medals would be soft.** It solves the
+  speed profile, asks where the boost then reaches, and solves again; a track
+  with no pads settles after one pass and is timed exactly as it always was.
+  Finding this needed a fix in `_corner_speed`, which used to bisect up to a
+  hard ceiling of `MAX_SPEED` - so a boosted station's raised cap was thrown
+  away on anything straight, which is the only kind of road a pad is laid on,
+  and four pads came out worth 0.29s instead of 1.8. Every other test passed.
+- **A remote car's pad boost is not on the wire and does not need to be.** A tow
+  is invisible, so a rival winding one up has to be drawn or nobody could answer
+  it; a pad is a lit strip of road everybody can already see.
+- The world under it needed a new hook. `below.haze` draws a cloud deck at its
+  own depth *between* the road and whatever is beneath it, and any `kind` can
+  carry one - the default world's deck is welded to the towers drowned in it, so
+  "above the weather, with a city much further down" could not be said. Under a
+  red sunset that came out as pale mesas standing on dark pillars, which is
+  stone; `kind: 'downtown'` plus a thin haze is a city with lit windows and some
+  cloud drifting over it.
 
 - **Guests can play, and a guest's times are not thrown away.** Driving alone needs
   no account at all (`/`, `/solo` and `/solo/<slug>` are open); sharing a room needs
@@ -613,8 +661,8 @@ Road are both in `tracks.EXPOSED`.
   Ascent), so one global multiplier makes some golds harder than others - the
   fix for that is a better `laptime.py`, not per-track fudge factors. Two tests
   pin the intent (steps under 0.09 of the lap; gold under `ideal`), and
-  `test_medals_bracket_the_simulated_driver` still requires the headless driver
-  to manage a bronze. **Medals already earned do not move**: `DriveTime.medal`
+  and `MEDAL_MULT` is calibrated against times people have actually set rather
+  than against any simulation. **Medals already earned do not move**: `DriveTime.medal`
   is written when the run is stored.
 - **The record heads the medals card**, above gold/silver/bronze, as a green
   dot and a time laid out exactly like the three under it - the fourth time on
@@ -704,7 +752,7 @@ Road are both in `tracks.EXPOSED`.
   has no crease, and `crest`/`hump`/`jump` deliberately do, marking their stations
   `kick`. A hill needs `length >= sqrt(330 * rise)` or it becomes a jump by accident;
   `test_hills_are_eased_but_kickers_are_not` enforces it as a vertical curvature radius.
-- **There are no vertical loops and no boost pads.** A plain vertical loop returns to
+- **There are no vertical loops.** A plain vertical loop returns to
   exactly where it started, so its descent lands on its own climb - two surfaces a metre
   apart, which trapped cars. `Builder.loop` slides the exit sideways (smoothstepped, so
   both joins stay tangential) which fixes it completely. A helix about the direction of
@@ -728,17 +776,20 @@ Road are both in `tracks.EXPOSED`.
   track whose whole subject is how far down the ground is takes the height away
   and leaves a bobsleigh run. The rails it keeps are for where going off is not
   an avoidable mistake - the two jump landings, where you arrive with no
-  steering, and the narrow bridge. **Pulling rails off is a change the autopilot
-  has to survive**: Cloudbreak went from 98% walled to 9%, and
-  `test_a_clean_lap_needs_no_respawns` is what says the line was always
-  drivable rather than being held in by the barriers.
+  steering, and the narrow bridge. Cloudbreak went from 98% walled to 9%, and
+  at the time that was checked by driving it: `test_a_clean_lap_needs_no_respawns`
+  required a headless autopilot to get round with no respawns at all. That test
+  and the autopilot behind it are **gone** (see **Tests**), so pulling rails off
+  a track is now something to check by driving it yourself.
 - **The three long tracks are ~2500-2800 units and 56-64s of ideal lap**, against
-  The Gauntlet's 1667 and 40s. Two ceilings bound that: `test_tracks` caps an
-  ideal lap at 120s, and `test_sim` caps the *simulated driver* at 90s - and the
-  autopilot runs about 1.04x ideal, so ~64s ideal is roughly the practical limit.
-  Every one of them still has to be driven to the finish with **zero respawns**
-  (`test_a_clean_lap_needs_no_respawns`), so "easy to fall off" has to mean
-  punishing when you leave the line, never that the line itself is marginal.
+  The Gauntlet's 1667 and 40s. One ceiling bounds that now: `test_tracks` caps an
+  ideal lap at 120s. There used to be a second and much tighter pair - a
+  simulated driver capped at 90s, and a requirement that every track be driven to
+  the finish with **zero respawns** - and both are gone with the autopilot. That
+  was a deliberate trade: those two were a ceiling on how mean a track is allowed
+  to be, which is a decision for the track and not for the test suite. What it
+  costs is that "punishing when you leave the line" and "the line itself is
+  marginal" are no longer told apart by anything except driving it.
 - **The ghost is a practice tool, so in a room it belongs to the phases you drive
   alone in** - free practice and qualifying - and to neither of the others. It is
   not rendered at all from the countdown to the flag, whatever the setting says:
@@ -1423,7 +1474,7 @@ over a rule that actually wants three is worse than no text at all.
   and the point of the move is that it used to be the laurel's achievement three
   times over - so the two best badges on the list were about the same thing, and a
   driver quick on three tracks and nowhere else outranked one who was second on
-  all twelve. Being first over the whole pool is what a crown should mean. The
+  all of the others. Being first over the whole pool is what a crown should mean. The
   scoring therefore moved too: `garage.time_trial_board()` is the board and
   `_time_trial_board` in app.py is now that plus the ordinals the page prints. It
   had to be one implementation - a gate that computed "who is first" for itself
@@ -2051,7 +2102,7 @@ field from a dark field.
 - **The switcher's cards are photographs, not diagrams.** `tools/shoot_tracks.py`
   drives headless Chrome over every track with `?shot=1` (`S.shot` in game.js: HUD off,
   car hidden, camera behind the start line) and writes `static/img/tracks/<slug>.png`;
-  the home page uses the same twelve. **Re-run it after changing a track's geometry
+  the home page uses the same set. **Re-run it after changing a track's geometry
   or sky** - a test asserts the files exist but nothing can notice that one is stale.
   **It must run on ANGLE's software GL** (`--use-gl=angle --use-angle=swiftshader`),
   which is what `GL_FLAGS` is for: plain `--use-gl=swiftshader` is *rejected* by
@@ -2249,9 +2300,9 @@ field from a dark field.
   from another table. The cells keep mono, where it does the work - figures line
   up under each other. `.acct-tracks` had already undone this for itself; that
   override is gone, since the fix is now in the one rule.
-- **The Time Trial Score is golf scoring: your placing on each of the twelve
-  tracks, added up**, so low is good and a clean sweep of the pool is 12. Ten
-  firsts and two thirds is 16. Three rules make the sum well defined, all of them
+- **The Time Trial Score is golf scoring: your placing on every track in the
+  pool, added up**, so low is good and a clean sweep scores one per track -
+  thirteen today. Eleven firsts and two thirds is 17. Three rules make the sum well defined, all of them
   in `_time_trial_board`. A **tie shares a place**, the answer `_my_rank_map`
   already gives for one track (strictly faster, plus one). A **track never driven
   counts as one worse than last on it** - the place you would take by turning up
@@ -2262,7 +2313,7 @@ field from a dark field.
   nowhere**: a personal best does not only change your own score, it demotes
   everybody it overtook, so a number kept per driver would have to rewrite most
   of the board on every lap and would be wrong for as long as one write path was
-  missed. Twelve tracks is one query. Bots and accounts with no times are off it
+  missed. The whole pool is one query. Bots and accounts with no times are off it
   (the join is what drops them), and since only laps driven alone are in
   `drive_times` at all, nothing set in a room reaches this board either.
   **The `Score` heading explains itself where it stands** - a dotted rule, a
@@ -2478,7 +2529,7 @@ field from a dark field.
 
 ### Tests
 
-`scripts/tests.sh drive` - **881 tests, about 40s** (four workers, split by file).
+`scripts/tests.sh drive` - **853 tests, about 45s** (four workers, split by file).
 
 **Nothing in this suite may sleep, and there is a test that enforces it.**
 `tests/conftest.py` fails any test whose call phase exceeds `SLOW_TEST_BUDGET_S`
@@ -2495,9 +2546,9 @@ exit status does not reliably reach the controller.
 Note what it cannot do: it measures a test that *finished*, so it catches a sleep
 and not a hang.
 
-**Two of every three drive tests come from parametrisation, not from typing.** 837
-tests are about 400 functions - `test_tracks.py` is 23 functions x 12 tracks = 199
-tests in 3.6s. So the count is a bad proxy for either cost or duplication: deleting
+**Two of every three drive tests come from parametrisation, not from typing.** The
+count is about 400 functions - `test_tracks.py` is 23 functions x 13 tracks = 299
+tests in 4s. So the count is a bad proxy for either cost or duplication: deleting
 hand-written tests buys almost no time (`test_garage_js.py` is 141 tests in 1.3s),
 and the per-track multiplication is where the value is. When the suite feels big,
 **profile it** (`--durations=25`) rather than counting it.
@@ -2521,26 +2572,33 @@ directly, since it is plain dicts and what is under test is the bookkeeping
 rather than the wire; the last group is different and drives the **real socket
 handlers** from `free` all the way to the green light, with the emits captured
 and the timers fired by hand, because the thing worth pinning about a phase
-machine is the order it goes through them in. **`test_sim.py` runs the game's real JavaScript
-headlessly**: `tests/jsrt.py` strips the ES module syntax, swaps three.js for
-`tests/three_stub.js` (real Vector3/Quaternion maths, inert graphics), and runs it in
-QuickJS, then `tests/autopilot.js` *drives every track to the finish*. That is the test
-that matters. **Each track is driven once and the lap kept** (`_sim` caches on the
-`rt` runtime): seven tests ask questions about the same lap - did it finish, did it
-respawn, how much air, how long - and the autopilot has no randomness anywhere in it,
-so driving it seven times bought seven identical answers and three quarters of the
-suite's runtime. Two things follow: a test must **read** that result rather than
-mutate it, since its neighbours are handed the same dict; and test_sim.py has to stay
-on one worker, which is why drive is split by file. Between them these have caught: road and grass being coplanar (the car
-thought it was on grass for whole laps); wall collision geometry being double-sided so
-contacts cancelled velocity twice per step; loops folding back onto themselves tightly
-enough to trap a car forever, and later meeting the road at a 55-degree kink; checkpoint
-planes being tracked across the whole map so real passes went unnoticed; the spawn point
-having no road under it; a loop built with `self.x` for all three coordinates; and
-several tracks that simply could not be finished. Needs `quickjs`, which lives in
-`drive/requirements-test.txt` rather than `requirements.txt` so a plain deploy install
-is unaffected. Without it these tests skip, which reads as a pass - `scripts/tests.sh`
-and CI both install it.
+**`test_sim.py` and the headless autopilot are gone, deliberately, and it is
+worth knowing what went with them.** `tests/jsrt.py` bundled the real modules
+into QuickJS against `tests/three_stub.js` and then `tests/autopilot.js` *drove
+every track to the finish*, and a group of tests asked questions about that lap:
+did it finish, did it respawn, how much air, how long. It was removed because
+those questions are a **ceiling on how mean a track is allowed to be** - a
+track that cannot be driven cleanly by a simulated driver following a relaxed
+racing line is not thereby a bad track - and that is a decision for the track.
+
+What it caught, and what nothing catches now: road and grass being coplanar (the
+car thought it was on grass for whole laps); wall collision geometry being
+double-sided so contacts cancelled velocity twice per step; loops folding back
+onto themselves tightly enough to trap a car forever, and later meeting the road
+at a 55-degree kink; checkpoint planes tracked across the whole map so real
+passes went unnoticed; a spawn point with no road under it; a loop built with
+`self.x` for all three coordinates; and several tracks that simply could not be
+finished. It was also the only thing pinning `laptime.CALIBRATION`, from which
+every medal time is derived. **So a new track has to be driven by hand before it
+ships** - there is no longer any automatic answer to "can this be finished at
+all".
+
+`jsrt.py` itself is very much alive: six other files still build a QuickJS
+runtime with it (`test_bump`, `test_slipstream`, `test_catchup`, `test_boost`,
+`test_start_line`, `test_garage_js`, `test_rules_js`, `test_sound`), and it still
+needs `quickjs`, which lives in `drive/requirements-test.txt` rather than
+`requirements.txt` so a plain deploy install is unaffected. Without it those
+tests skip, which reads as a pass - `scripts/tests.sh` and CI both install it.
 
 **Two other files run browser JavaScript the same way, against a stub DOM instead of a
 stub three.js.** `test_touch.py` lifts the touch bindings straight out of `game.js` and

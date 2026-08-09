@@ -259,6 +259,22 @@ export class Sound {
   }
 
   /**
+   * A boost pad. Deliberately not `slipstream()`, though both are a boost.
+   *
+   * A tow is something you built up and were finally paid for, so it rises -
+   * you hear it coming and then it lets go. A pad is something the road did to
+   * you the instant you touched it, so this drops instead: a hard bright hit
+   * that falls away, and short enough to land inside the moment you crossed the
+   * chevrons rather than trailing over the road after them. Two sounds that
+   * both mean "faster" have to be told apart in the half second you have.
+   */
+  boostPad() {
+    this._blip({ freq: 1180, to: 300, type: 'square', dur: 0.22, gain: 0.13 });
+    this._blip({ freq: 590, to: 160, type: 'sawtooth', dur: 0.26, gain: 0.1 });
+    this._burst({ freq: 3200, q: 0.7, dur: 0.16, gain: 0.14 });
+  }
+
+  /**
    * Where the ears are.
    *
    * They ride the **chase camera**, not the car, because the camera is where you

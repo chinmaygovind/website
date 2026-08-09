@@ -469,7 +469,7 @@ def test_an_old_author_medal_still_counts_as_a_gold(env):
 
 
 def test_finishing_every_track_is_scoped_to_the_current_pool(env):
-    """A time on a retired track cannot count toward finishing the twelve that
+    """A time on a retired track cannot count toward finishing the ones that
     exist, or the gate would open on a pool that no longer does."""
     uid = _user(env)
     pool = [t["slug"] for t in tracks_mod.TRACKS]

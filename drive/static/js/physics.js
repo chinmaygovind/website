@@ -60,6 +60,7 @@ export class Car {
     this.towed = false;        // in another car's hole right now
     this.slipCharge = 0;       // 0..1, how full the tow is
     this.slipBoost = 0;        // seconds of boost left
+    this.padBoost = 0;         // seconds of boost-pad left
     this.catchupBoost = 0;     // 0..1, how much help for being down the road
     this._bumpCooldown = new Map();
     this._wallHit = 0;
@@ -82,6 +83,10 @@ export class Car {
     this.towed = false;
     this.slipCharge = 0;
     this.slipBoost = 0;
+    // Nor does a pad's boost. Being placed is a respawn or a grid slot, and
+    // arriving at either with a second of engine left over from a pad you drove
+    // over before you fell off is speed you were not going to keep.
+    this.padBoost = 0;
     // Nor does the help for being behind: a car being placed is a car on the
     // grid or one that has just been picked up, and neither is a moment to hand
     // out engine. It is derived from the gap every frame, so it is back inside
@@ -168,6 +173,22 @@ export class Car {
     }
     this.offroad = this.grounded && this.surface === KIND.OFFROAD;
 
+    // A boost pad is armed by touching it and paid out over the seconds after,
+    // so driving across one at an angle, or clipping the corner of one, is
+    // worth the same as driving down it - the pad is a place, not a distance.
+    // Re-arming while still on it is what makes a long pad hold the boost open
+    // rather than starting a timer at the near end of it.
+    // `onBoostPad` is a callback rather than a flag left on the car for
+    // somebody to notice, for the same reason `onBump` and `onLand` are: this
+    // runs once per *substep* and the frame loop reads the car once per frame,
+    // so a flag set at 1/120 and read at 1/60 loses every other one - and a pad
+    // taken at speed can easily be wholly inside a single frame.
+    this.padBoost = Math.max(0, this.padBoost - dt);
+    if (this.grounded && this.surface === KIND.BOOST) {
+      if (this.padBoost <= 0) this.onBoostPad && this.onBoostPad();
+      this.padBoost = T.PAD_BOOST;
+    }
+
     // --- gravity, always -------------------------------------------------
     this.vel.y -= T.GRAVITY * dt;
 
@@ -232,7 +253,16 @@ export class Car {
         // alone and has finally caught somebody is precisely the one that
         // should have enough to come past. See `catchup` below for the gap it
         // is read off, and tuning.py for why it is much the smaller of the two.
-        let eng = this.slipBoost > 0 ? T.ACCEL * T.SLIP_ACCEL_MULT : T.ACCEL;
+        // A pad is the same kind of help and so it is the same kind of term -
+        // but the pad and the tow take the **larger** of the two rather than
+        // multiplying. Three multipliers at once is 92 u/s against a clamp of
+        // 85, which would leave the clamp setting the top speed instead of the
+        // tuning; and a tow is earned where a pad is handed to everybody who
+        // drives over it, so stacking them would make a pad worth most to the
+        // car that was already being helped. See tuning.py.
+        const help = Math.max(this.slipBoost > 0 ? T.SLIP_ACCEL_MULT : 1,
+                              this.padBoost > 0 ? T.PAD_ACCEL_MULT : 1);
+        let eng = T.ACCEL * help;
         if (this.catchupBoost > 0) {
           eng *= 1 + this.catchupBoost * (T.CATCHUP_ACCEL_MULT - 1);
         }

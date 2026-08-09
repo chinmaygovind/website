@@ -403,6 +403,13 @@ function wireCarEvents() {
     S.renderer.kick(Math.min(1.0, mag / 26));
     S.renderer.smoke(pos.clone(), new THREE.Vector3(0, 2, 0), 'spark');
   };
+  car.onBoostPad = () => {
+    S.sound.boostPad();
+    // A small kick, well under a wall or a hard landing. The pad is a good
+    // thing happening to you, and a camera that lurches for it reads as an
+    // impact - the FOV punch and the air round the car carry the rest.
+    S.renderer.kick(0.35);
+  };
   car.onLand = (airTime) => {
     S.sound.land(airTime);
     if (airTime > 0.5) S.renderer.kick(Math.min(0.8, airTime * 0.5));
@@ -2043,7 +2050,10 @@ function drive(inp) {
                  !car.grounded);
   // The tow's own air, on the same tick: it fills with the charge and falls
   // away with the boost, so the whole thing is audible without being looked at.
-  S.sound.draft(car.slipCharge, car.slipBoost / T.SLIP_BOOST);
+  // The tow's rushing air is the same air a pad's boost makes, so the band
+  // opens for either - but only a tow has a charge to fill it with beforehand.
+  S.sound.draft(car.slipCharge,
+                Math.max(car.slipBoost / T.SLIP_BOOST, car.padBoost / T.PAD_BOOST));
   // tyre smoke while sliding, dust when off the road
   if (car.grounded && (car.slip > 0.3 || (car.offroad && car.speed > 8))) {
     const back = new THREE.Vector3().copy(car.pos)

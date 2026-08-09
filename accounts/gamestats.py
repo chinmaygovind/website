@@ -68,6 +68,7 @@ DRIVE_TRACKS = {
     "cove": "Sandy Cove",
     "pillars": "Cloudbreak",
     "rainbow": "Rainbow Road",
+    "bigred": "Big Red",
 }
 
 

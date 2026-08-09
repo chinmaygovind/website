@@ -203,6 +203,29 @@ SLIP_DECAY = 1.6           # seconds for a full charge to bleed away once you le
 SLIP_BOOST = 1.6           # seconds the boost lasts
 SLIP_ACCEL_MULT = 1.5      # engine force while boosting; top speed x sqrt(1.5)
 
+# --- boost pads ------------------------------------------------------------
+# A strip of road that hands you speed for driving over it. It is the same kind
+# of help the tow is, so it is the same kind of term: **more engine, not a
+# raised limit**, on the throttle only. PAD_ACCEL_MULT 1.7 lifts top speed by
+# its square root, 50 -> 65, and the car has to accelerate up to it.
+#
+# The interesting decision is what happens when a pad and a tow are on at once.
+# They must **not** multiply. Pad x slip x catchup is 3.4 times the engine,
+# which is 92 u/s against a hard velocity clamp of MAX_SPEED * 1.7 = 85 - and
+# then the clamp is setting the top speed instead of the tuning, which is the
+# exact failure the catch-up boost's own note is about. So the pad and the tow
+# take **the larger of the two**: a tow is earned by sitting in somebody's air
+# for a second and a half, a pad is the track's and is given to everybody who
+# drives over it equally, and multiplying them makes a pad worth most to the car
+# that was already being helped. Catch-up still stacks on top, as it does with a
+# tow, which lands at 75 u/s - under the clamp with room to spare.
+#
+# PAD_BOOST is short on purpose. A pad is a moment, not a state: long enough to
+# carry you down a straight or into a corner you would otherwise have lifted
+# for, short enough that where the pad is remains a decision about the line.
+PAD_BOOST = 1.3            # seconds the boost lasts after leaving the pad
+PAD_ACCEL_MULT = 1.7       # engine force while boosting; top speed x sqrt(1.7)
+
 # --- catching up -----------------------------------------------------------
 # A race where somebody drops three seconds is over, and everyone still in it
 # spends the rest of the lap driving alone. So a car behind the leader gets a
@@ -309,6 +332,7 @@ _EXPORT = [
     "MAX_STEPS", "RESPAWN_DELAY",
     "SLIP_RANGE", "SLIP_HALF_W", "SLIP_ALIGN", "SLIP_MIN_SPEED", "SLIP_CHARGE",
     "SLIP_DECAY", "SLIP_BOOST", "SLIP_ACCEL_MULT",
+    "PAD_BOOST", "PAD_ACCEL_MULT",
     "CATCHUP_DEAD", "CATCHUP_FULL", "CATCHUP_ACCEL_MULT", "CATCHUP_SMOOTH",
 ]
 

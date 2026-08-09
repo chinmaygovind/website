@@ -111,10 +111,13 @@ ensure_venv() {
 # independent, so this is most of the speed here: drive goes 5:40 -> 1:35 and
 # kot 2:25 -> 1:10.
 #
-# **drive splits by file, not by test.** test_sim.py drives each track once and
-# keeps the lap, because seven tests ask questions about the same lap; hand
-# those to separate workers and each one re-drives it, which is far slower than
-# not parallelising at all. Everything else splits by test, which packs better.
+# **drive splits by file, not by test.** The original reason was test_sim.py,
+# which drove each track once and kept the lap for seven tests to ask questions
+# about - split by test and each worker re-drove it, which was slower than not
+# parallelising at all. That file is gone, but the shape of the reason is not:
+# half of drive's suite builds a QuickJS runtime in a module-scoped fixture, and
+# a module scattered across four workers builds it four times. Everything else
+# splits by test, which packs better.
 #
 # Four workers rather than every core, deliberately. Past four the critical
 # path is one long file either way, so there is nothing left to win - and on a

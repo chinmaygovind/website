@@ -59,8 +59,6 @@ def bundle(extra=()):
     parts.append("const THREE = {%s};" % ",".join(_THREE_NAMES))
     for name in ("trackmesh.js", "physics.js", "course.js"):
         parts.append(_strip_modules(_read(os.path.join(JS, name))))
-    parts.append(_strip_modules(_read(os.path.join(HERE, "autopilot.js"))))
-    parts.append(_strip_modules(_read(os.path.join(HERE, "sim.js"))))
     for src in extra:
         parts.append(src)
     return "\n;\n".join(parts)
@@ -86,24 +84,23 @@ class Runtime:
         return json.loads(self.ctx.eval("JSON.stringify(%s)" % js_expression))
 
     def load_tuning_and_tracks(self):
-        """Push the tuning constants, the tracks and the racing lines into JS.
+        """Push the tuning constants and the assembled tracks into JS.
 
-        The racing line and speed profile come from ``laptime.py`` - the same ones
-        the medal times are derived from - so the test driver follows the line the
-        medals assume, and a track whose medal time is undrivable fails the test.
+        This is what lets a test build a real track with ``buildTrack`` and put a
+        real ``Car`` on it, which is the only way to reach the parts of the
+        physics that exist solely while the car is grounded - grip, the bump's
+        released tyres, the slipstream's corridor.
+
+        It used to push ``laptime``'s racing line alongside them, for a headless
+        autopilot that drove every track. That is gone (see the note in
+        laptime.py), and with it the only consumer of the line, so computing one
+        here would be a speed profile per track per runtime that nothing reads.
         """
         import json
         import sys
         sys.path.insert(0, os.path.join(HERE, ".."))
         import tuning
-        import laptime
         import tracks as tracks_mod
         self.ctx.eval("var T = %s;" % tuning.as_json())
         self.ctx.eval("var TRACKS = %s;" % json.dumps(tracks_mod.TRACKS))
-        rl = {}
-        for t in tracks_mod.TRACKS:
-            pts, speeds, _ = laptime.speed_profile(t)
-            rl[t["slug"]] = {"p": [[round(v, 3) for v in p] for p in pts],
-                             "v": [round(v, 3) for v in speeds]}
-        self.ctx.eval("var RL = %s;" % json.dumps(rl))
         return tracks_mod
