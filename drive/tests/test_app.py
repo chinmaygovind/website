@@ -158,6 +158,59 @@ def test_being_fast_is_no_longer_a_reason_to_reject_a_run(env):
     assert d["ok"] and d["stored"], d
 
 
+def test_a_ghost_off_the_board_cannot_be_posted_back_as_a_faster_lap(env):
+    """The whole chain, from the outside: two requests and a record.
+
+    `/api/ghost` is public and answers with the record's *frames*, its splits and
+    its time - it has to, because that is the lap everybody races. Nothing then
+    stopped those frames being posted straight back to `/api/run` under another
+    name, and because the clock was only checked against a ±25% band on the frame
+    count, they could be posted back **faster than they were driven**. Measured on
+    sunrise that was a 19.872s record re-registered as 15.734s, by somebody who
+    had never loaded the game.
+
+    The frames now pin the clock, so what is left of that is **one frame of the
+    recorder's own quantisation** - 72ms on this track, against the 4.138s the
+    same two requests used to be worth. That is what this test bounds, and it is
+    deliberately not "the post is refused": a stolen replay relabelled by less
+    than the grid it was recorded on is still accepted, and saying otherwise here
+    would be describing a fix that has not been built yet.
+
+    Taking the theft itself away needs the run token and the re-simulation - a
+    stolen replay has no input stream behind it, and `/api/ghost` has never
+    served one.
+    """
+    victim, thief = _user(env, "victim"), _user(env, "thief")
+
+    c = env.app.test_client()
+    _login(c, victim)
+    honest = _run_payload(env, "sunrise")
+    assert c.post("/api/run", json=honest).get_json()["stored"]
+
+    stolen = env.app.test_client().get("/api/ghost/sunrise?who=wr").get_json()
+    assert stolen["ghost"], "the record's frames are public - that is the premise"
+
+    import runcheck
+    faked = [max(1, s - (runcheck.SPLIT_TOL_MS - 1)) for s in stolen["splits"]]
+    for i in range(1, len(faked)):
+        faked[i] = max(faked[i], faked[i - 1] + 1)
+    lo, _ = runcheck.time_window(len(stolen["ghost"]))
+    claim = max(faked[-1] + 1, int(lo))
+    assert claim < stolen["time_ms"], "the fixture is not attempting anything"
+
+    t = env.app.test_client()
+    _login(t, thief)
+    t.post("/api/run", json={"track": "sunrise", "time_ms": claim,
+                             "splits": faked, "ghost": stolen["ghost"],
+                             "distance": 500})
+
+    board = env.app.test_client().get("/api/board/sunrise").get_json()["rows"]
+    forged = stolen["time_ms"] - min(r["time_ms"] for r in board)
+    assert forged <= (1 + runcheck.FRAME_SLACK) / runcheck.GHOST_HZ * 1000, (
+        "a stolen replay took %.3fs off the record it was stolen from" % (
+            forged / 1000.0))
+
+
 # ---------------------------------------------------------------------------
 # The board, and racing somebody's lap
 # ---------------------------------------------------------------------------

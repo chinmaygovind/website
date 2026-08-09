@@ -648,7 +648,7 @@ export class Stepper {
    * of throttle before the clock reads zero, on a coin-flip. Measured on the real
    * board that was worth up to ~33ms of unrecorded distance, and the drivers it
    * favoured were the ones whose frame happened to be long - so a stutter was an
-   * advantage. See `_recordGhost` and the note in CLAUDE.md.
+   * advantage. See `_recordGhost` and the note in `drive/docs/runs-and-scoring.md`.
    */
   reset() { this.acc = 0; }
   run(realDt, fn) {

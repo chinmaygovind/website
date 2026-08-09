@@ -16,6 +16,18 @@ import tuning as T
 TRACK = tracks_mod.get("sunrise")
 
 
+def frame_count(seconds, hz=None):
+    """How many frames `Run._recordGhost` writes for a lap of `seconds`.
+
+    It pushes while ``_ghostN / hz <= t``, so a lap ending at `t` has written
+    every index from 0 to floor(t * hz) - one more than the obvious answer, and
+    the relation `runcheck.time_window` inverts. The fixtures below have to agree
+    with it or they are testing a client that does not exist.
+    """
+    hz = hz or runcheck.GHOST_HZ
+    return max(2, int(seconds * hz) + 1)
+
+
 def synth_run(track, seconds=None, hz=None):
     """A replay that would pass: it drives the track.
 
@@ -35,7 +47,7 @@ def synth_run(track, seconds=None, hz=None):
     for a, b in zip(pts, pts[1:]):
         cum.append(cum[-1] + math.dist(a, b))
     total = cum[-1]
-    n = max(2, int(seconds * hz))
+    n = frame_count(seconds, hz)
     frames = []
     for i in range(n):
         s = total * i / (n - 1)
@@ -50,7 +62,7 @@ def straight_line_run(track, seconds=None, hz=None):
     """The synthesis attack: right duration, right start, no track under it."""
     hz = hz or runcheck.GHOST_HZ
     seconds = seconds or track["ideal"]
-    n = max(2, int(seconds * hz))
+    n = frame_count(seconds, hz)
     sp = track["spawn"]["p"]
     step = 20.0 / hz
     return [[sp[0] + i * step, sp[1] + 0.45, sp[2], 0, 0, 0, 1] for i in range(n)]
@@ -178,6 +190,67 @@ def test_a_replay_that_does_not_match_the_time_is_rejected():
     short = synth_run(TRACK, seconds=TRACK["ideal"] * 0.4)
     ok, why = runcheck.validate(TRACK, ms, splits_for(TRACK, ms), short)
     assert not ok and "match" in why
+
+
+def test_the_clock_is_pinned_to_the_frame_count():
+    """A replay of n frames may claim the one 1/15s window that produced it.
+
+    The recorder writes floor(t * 15) + 1 frames, so the window is a frame wide
+    and `FRAME_SLACK` widens it by one either side. What matters is the far edge:
+    the band this replaced was ±25%, and 25% of a lap is seconds.
+    """
+    frames = synth_run(TRACK)
+    n = len(frames)
+    lo, hi = runcheck.time_window(n)
+    assert (hi - lo) / 1000.0 * runcheck.GHOST_HZ == pytest.approx(
+        1 + 2 * runcheck.FRAME_SLACK)
+
+    honest = int((n - 1) / runcheck.GHOST_HZ * 1000)
+    ok, why = runcheck.validate(TRACK, honest, splits_for(TRACK, honest, frames), frames)
+    assert ok, why
+
+    for ms in (int(lo) - 1, int(hi) + 1):
+        ok, _ = runcheck.validate(TRACK, ms, splits_for(TRACK, ms, frames), frames)
+        assert not ok, "a lap %dms outside its own window was accepted" % (
+            ms - honest)
+
+
+@pytest.mark.parametrize("slug", [t["slug"] for t in tracks_mod.TRACKS])
+def test_an_honest_lap_cannot_be_relabelled_faster(slug):
+    """The hole both of the tightened windows existed to close.
+
+    Take a replay that really drives the track - your own, or any of the ones
+    `/api/ghost` hands out to anybody who asks - and change nothing about it.
+    Shift every split down by the split tolerance and claim a finish one
+    millisecond after the last of them. Nothing here looked at the relationship
+    between the clock and the frames closely enough to notice: the duration band
+    was ±25% and the split tolerance was nine frames, so the lap came back
+    **3.5 to 6.9 seconds faster** on every track in the pool, and on the two
+    long ones that is most of the gap between first and last on the board.
+
+    Measured with the tolerances this test is written against, the same attack is
+    worth under 0.25s - which is the quantisation of the recorder, and the point
+    below which there is nothing left to take.
+    """
+    track = tracks_mod.get(slug)
+    honest_s = track["ideal"]
+    frames = synth_run(track, honest_s)
+    honest_ms = int(honest_s * 1000)
+    splits = splits_for(track, honest_ms, frames)
+    ok, why = runcheck.validate(track, honest_ms, splits, frames)
+    assert ok, "%s: the honest lap was refused: %s" % (slug, why)
+
+    faked = [max(1, s - (runcheck.SPLIT_TOL_MS - 1)) for s in splits]
+    for i in range(1, len(faked)):
+        faked[i] = max(faked[i], faked[i - 1] + 1)
+    lo, _ = runcheck.time_window(len(frames))
+    claim = max(faked[-1] + 1, int(lo))
+
+    ok, _ = runcheck.validate(track, claim, faked, frames)
+    gain = (honest_ms - claim) / 1000.0
+    assert not ok or gain < 0.25, (
+        "%s: an honest %.3fs lap was accepted as %.3fs - %.3fs of it forged"
+        % (slug, honest_ms / 1000.0, claim / 1000.0, gain))
 
 
 def test_a_teleporting_replay_is_rejected():
@@ -386,6 +459,34 @@ def test_splits_have_to_be_where_the_replay_actually_is():
     moved = [max(1, s - 3000) for s in good]          # claim each one 3s earlier
     ok, why = runcheck.validate(TRACK, ms, moved, frames)
     assert not ok and "not where the replay is" in why
+
+
+def test_the_split_tolerance_is_the_recorders_and_not_a_round_number():
+    """Both edges of `SPLIT_TOL_MS`, because only the far one used to be tested.
+
+    A 3-second invention is refused whatever this constant says, so the test
+    above went on passing while the tolerance was nine frames wide - and nine
+    frames is most of a second to move a checkpoint by, which is the half of the
+    relabelling attack the clock does not already cover.
+
+    So this pins the number from both sides. An honest lap has to survive the
+    worst disagreement one can actually produce: the split is stamped on the
+    render frame that spots the crossing and the crossing is found on the 15Hz
+    ghost grid, which measured across the twelve tracks is never worse than 59ms.
+    And a split moved by more than twice that has to be refused, which is the
+    assertion that fails if this is ever widened back toward where it was.
+    """
+    frames = synth_run(TRACK)
+    ms = int(TRACK["ideal"] * 1000)
+    good = splits_for(TRACK, ms, frames)
+
+    honest = [max(1, s - 59) for s in good]
+    ok, why = runcheck.validate(TRACK, ms, honest, frames)
+    assert ok, "the measured worst honest disagreement was refused: %s" % why
+
+    forged = [max(1, s - 400) for s in good]
+    ok, _ = runcheck.validate(TRACK, ms, forged, frames)
+    assert not ok, "a checkpoint moved by 400ms was accepted as the replay's own"
 
 
 def test_a_lap_that_skips_a_checkpoint_is_rejected():

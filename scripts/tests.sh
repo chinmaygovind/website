@@ -2,8 +2,9 @@
 #
 # Run the tests for the parts of the site that changed.
 #
-# The full suite is about three minutes (drive ~1:35, kot ~1:10), and almost
-# every change touches one game, so running all of it is nearly always waste.
+# The full suite is about two and a half minutes (drive ~1:10, kot ~1:10), and
+# almost every change touches one game, so running all of it is nearly always
+# waste.
 #
 # Each suite is split across cores where that helps - see parallel_for.
 #
@@ -107,27 +108,44 @@ ensure_venv() {
 }
 
 # How many workers to split a suite across, and how to divide it between them.
-# The two suites that cost real time are CPU bound and their tests are
-# independent, so this is most of the speed here: drive goes 5:40 -> 1:35 and
-# kot 2:25 -> 1:10.
+# kot is CPU bound with independent tests, so this is most of the speed there:
+# 2:25 -> 1:10.
 #
-# **drive splits by file, not by test.** The original reason was test_sim.py,
-# which drove each track once and kept the lap for seven tests to ask questions
-# about - split by test and each worker re-drove it, which was slower than not
-# parallelising at all. That file is gone, but the shape of the reason is not:
-# half of drive's suite builds a QuickJS runtime in a module-scoped fixture, and
-# a module scattered across four workers builds it four times. Everything else
-# splits by test, which packs better.
+# **drive opts out, and that is a trade made on measurements rather than a
+# preference.** It used to run `-n 4 --dist loadfile`, worth 5:40 -> 1:35 back
+# when test_sim.py drove all thirteen tracks. That file is gone and what is left
+# is 66s serial against 42s on four workers - xdist now buys 24s.
 #
-# Four workers rather than every core, deliberately. Past four the critical
-# path is one long file either way, so there is nothing left to win - and on a
-# 16 core laptop kot's self-play tests contend badly enough that the suite
-# stops finishing at all.
+# What it costs is the other half. **Three of the last 34 CI drive jobs hung**
+# (~9%, about one push in eleven): the run reaches 94-98% in 15-42 seconds and
+# then sits with the controller and all four workers at 0.0% CPU until something
+# kills it - 739s, 901s and 246s before that happened. The tests all pass; the
+# session never ends. `##[error]The operation was canceled` is followed by five
+# orphan python3 processes being terminated, which is the controller and its four
+# workers still alive with nothing to do.
+#
+# Two things make that worse than the 24s it saves. The stall ends as
+# **cancelled rather than failed**, so `deploy`'s `always()` guard skips the
+# ship and the run does not read as a test failure. And the length is set by
+# `cancel-in-progress` - the next push is what ends it - so it is bounded by
+# when somebody notices, not by `timeout-minutes`. At 9% of ~700s the expected
+# cost is about 63s a run, which is more than the 24s it wins.
+#
+# So drive runs serially. If it ever grows back into needing workers, the thing
+# to fix first is the deadlock (pytest-timeout, plus a step-level
+# `timeout-minutes`), not this line.
+#
+# Four workers rather than every core for kot, deliberately: on a 16 core laptop
+# its self-play tests contend badly enough that the suite stops finishing.
 parallel_for() {
   m="$1"; py="$2"
 
   # 18 tests in a twentieth of a second. Starting workers costs more.
   [ "$m" = ers ] && return 0
+
+  # 66s serial vs 42s parallel, against a ~9% chance of an open-ended hang.
+  # See the note above - this is deliberate, not an oversight.
+  [ "$m" = drive ] && return 0
 
   # Optional, like quickjs: without it the suite runs serially rather than
   # refusing to run.
@@ -138,7 +156,7 @@ parallel_for() {
 
   n="$(nproc 2>/dev/null || echo 4)"
   [ "$n" -gt 4 ] && n=4
-  [ "$m" = drive ] && echo "-n $n --dist loadfile" || echo "-n $n --dist load"
+  echo "-n $n --dist load"
 }
 
 # kot's three bot self-play tests are marked `strength` and deselected by

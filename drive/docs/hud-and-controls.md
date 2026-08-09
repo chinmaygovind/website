@@ -1,0 +1,368 @@
+# Drive: the HUD, the phone and the type
+
+Read this before changing the in-game HUD, the settings/help sheets, the keys,
+the touch controls, `sound.js`, or the type.
+
+The site's own pages — the home page, `/solo`'s track switcher, `/account` and
+`/leaderboard` — are in `pages-and-boards.md`.
+
+- **The HUD is arranged the way Polytrack's is**, because it is the arrangement that
+  keeps the middle of the screen empty: the clock is bottom centre, the split delta
+  flashes directly above it at each checkpoint and fades, your personal best sits to
+  its lower left and the speed to its lower right, with a speed bar under the lot.
+  The corners are therefore free, which is the whole reason the touch controls fit.
+- **Top left is where you are** - the track name, then what kind of session this is.
+  Solo that is `Solo time trial`; in a room it is the room's *phase*, `Multiplayer -
+  Free practice` / `Race about to start` / `Race in progress` / `Race finished`, which
+  is the only place the phase is written down and is driven from one `PHASE_LABEL`
+  table rather than a `setMode` call at each transition. **Top right is everything you
+  can open**: the room drawer (rooms only), the track switcher, help, settings. Icon
+  buttons and nothing else - plus, solo only, the medal times. In a room those are
+  gone: a table of lap times floating over a race you are driving against other people
+  relates to nothing on the screen. **Top centre is the host's Start race button**, and
+  only that; it used to live in the room drawer, which closes itself, so the one thing
+  everybody was waiting on was behind a panel.
+- **Bottom left is the minimap with restart and last-checkpoint above it.** Those two
+  used to head the settings sheet, which meant a menu you had to open to restart a run
+  - which is the most common thing you do. They are hidden on touch, where the real
+  buttons are under a thumb already.
+- **The whole left-hand side is one flex column (`.hud-l`), and where the map goes
+  is a `margin-top`.** `.hud-tl` and `.hud-bl` used to be two separately anchored
+  boxes sharing that edge, so neither could know how tall the other was - and
+  every layout that brings the map up out of the steering thumb's corner (touch,
+  and `@media (max-height: 460px)`) had to clear the cards above it with a
+  hardcoded `top`. **84px cleared the track card, and the Position card
+  underneath it did not exist when that number was written**, so the map sat
+  squarely on top of your race position on every phone, in every race. It
+  survived because the position card is only shown once there are rivals on the
+  road, so every screenshot anybody could take of the phone HUD was of a solo
+  session and looked perfect. Now the map is simply the last item in the column:
+  `margin-top: auto` puts it on the floor for a desktop and `margin-top: 0` lets
+  it follow the last card everywhere else, both magic numbers are gone, and the
+  overlap has stopped being a thing that can be expressed. Two things to know.
+  **`.hud-bl` has to sit next to `.hud-tl` in the template**, not where it reads
+  naturally in top-left/top-right/bottom-left order - `.hud-tr` was between them,
+  and a wrapper spanning both makes `.hud-l` the containing block for its
+  `right: 14px`, which puts the top-right stack 14px from the right of a 200px
+  column. And `.hud > *` is what turns pointer events back on, so the wrapper is
+  now that child rather than the cards: without `pointer-events: none` on it and
+  `auto` on its children, a full-height column swallows every click down the left
+  of the screen.
+- **Settings is only settings.** Title, an X, and the things you set. The
+  session controls moved to the HUD. It is **Splits and the ghost car, then
+  Sound and Music, then the two ways out** - a white *View Leaderboard* beside
+  the red *Leave*, the red one last because it is the only control on the sheet
+  that pressing again does not undo. Every label on it is **Title Case**, down
+  to the state a switch is in (*Ghost: On*). It is also the one sheet wider
+  than `.sheet.wide` (`.sheet.wide.settings`, 720px): its top row is four
+  choices *and* a switch beside them, and in a room the four include
+  *Provisional Pole*, which cannot be said in fewer words - at 620 they wrapped
+  and left a hole under the switch.
+- **Which lap you drive against and whether it is drawn are two switches.** They
+  were one - the "Ghost" row, where picking a lap turned the car on and `Off`
+  turned both off together - so the only way to stop a translucent car driving
+  the line in front of you was to give up the split deltas as well, and the
+  deltas are the half of a reference lap you actually read at 200km/h. Now the
+  row is **Splits** (off / my best / world record / view others, and
+  *provisional pole* in a room), named for what it is for, with a **Ghost:
+  on/off** button to the right of it. `S.ghostMode` is the lap and
+  `S.showGhost` is the car; `setGhostMode` no longer touches the second one and
+  a test asserts it (`test_picking_a_lap_does_not_turn_the_ghost_car_back_on`).
+  Both are remembered, under `drive.ghost` and `drive.ghostcar`. In a room `my
+  best` still means your best lap of *this* practice session, and `ghostOn()`
+  still hides every ghost for the whole of a race.
+- **Two switches, two keys: `K` is which lap, `G` is whether it is drawn.** They
+  shared `G`, which stepped through the laps and left the car reachable only from
+  the settings sheet. `K` steps through `GHOST_CYCLE` (off, my best, world record;
+  plus provisional pole in a room) rather than toggling the last one back on, and
+  a lap chased off the board is deliberately not in the cycle, so pressing it
+  leaves that lap. `G` is a plain toggle, because with two states landing on the
+  one you meant should not depend on where you started. **`K` and not `P`** - `P`
+  has always changed track, which is the more common thing to do and the harder
+  muscle memory to move; `K` is admitted to have no mnemonic, and every letter
+  with a claim on "splits" or "lap" is a driving key or already taken.
+- **The defaults are your own best lap and a car to chase**, for somebody who has
+  never opened the sheet: `storedGhostMode()` falls back to `me` and
+  `drive.ghostcar` to `true`.
+- **Nothing but you may write your splits choice, and three things used to.** All
+  three were the same shape - the *setting* said one thing and the road did
+  another, with the setting telling the truth about what you had chosen and a lie
+  about what you were chasing:
+  - **A new PB.** `/api/run`'s handler called `loadGhost('me')` unconditionally, so
+    setting a personal best swapped the ghost to your own lap while the row still
+    read *World Record*. It never touched `S.ghostMode`, which is why it looked
+    like a lost setting rather than a bug. Now it reloads only when the mode is
+    `me`, plus the one genuine case: taking the record makes a `wr` ghost stale.
+  - **Opening a lap off the leaderboard.** `run` is not a standing choice and
+    `storedGhostMode` cannot restore it, so it was filed as `me` - which meant
+    chasing one lap from the board permanently rewrote a `wr` preference. `run` is
+    no longer written at all.
+  - **Switching track.** It hid the ghost car with `remember: false`, so the stored
+    preference still said *on* while the road had no car. That was defended as
+    "somewhere new is somewhere you are looking at rather than attacking", which is
+    a fair thing to want and the wrong way to get it: a setting that turns itself
+    off when you go somewhere is not a setting. Gone.
+
+  Four tests pin this group, and one of them is worth knowing about: the first
+  version of the `run` test asserted `"mode !== 'run'" in body`, which **passed
+  with the fix reverted**, because that comparison also appears three lines up
+  clearing `S.ghostRun`. It now parses the guard on the `localStorage.setItem`
+  itself. A source-reading test that cannot fail is worse than no test, and that
+  one proved it by not failing.
+- **Storage is `localStorage`, not an account setting**, which was a choice rather
+  than the default. It already persists across sessions - the complaint was never
+  that the preference was *lost*, it was that other code overwrote it - and Drive
+  is playable with no account at all, so a per-user table would leave every guest
+  without the setting. The cost is that it is per-browser: clearing site data or
+  moving to another machine starts you back at `me` with the car on. A
+  `drive_prefs` table would fix that (and `create_all` makes tables, so it needs no
+  migration) if it ever matters.
+- **Sound and Music are two switches because they are two buses.** `Sound.sfx`
+  carries the car and the world, `Music`'s own bus sits beside it under the
+  master, and `mute` is the sfx gain rather than the master's - so muting the
+  game leaves the music playing and vice versa, which is the only reading of
+  two switches that is not a lie about one of them. Both are remembered
+  (`drive.sound`, `drive.music`), which the mute never used to be. **Sound
+  defaults on and music defaults off**: the engine is what the game sounds
+  like, and a loop over the top of it is something you ask for. `start` now
+  declines to build a context only when *both* are off, since somebody driving
+  muted with the music on still needs one.
+- **The music is synthesised, like everything else here.** There are no audio
+  files on the site and a loop long enough not to wear out is a megabyte of
+  them, so `Music` in `sound.js` is four bars of i - VI - III - VII in A minor
+  under a rolling sixteenth arpeggio, played on the same oscillators the clanks
+  and beeps are. Two things about it are load-bearing. **It is scheduled ahead
+  against `ctx.currentTime`, never played by a timer**: a note placed by a
+  `setTimeout` lands wherever the main thread is, which on the frame that
+  builds a track mesh is tens of milliseconds late and audibly so - `musicTick`
+  books everything due in the next `M_LOOK` and is called from the frame loop,
+  above its early returns, so a replay keeps its music and being called
+  irregularly moves nothing. A tab that stopped getting frames skips forward
+  rather than playing the backlog. And **the chords are inverted rather than
+  stacked from each root** (F is played A-C-F): written the obvious way, each
+  bar starts higher than the last and the figure ratchets up an octave and a
+  half across the loop instead of going round.
+- **The world-record ghost has to be a lap that can be shown.** `?who=wr` took
+  the fastest row and served whatever replay was on it, but a row keeps its
+  time whether or not a ghost was stored beside it, so one old replay-less row
+  made "world record" report that *nobody had set a time here* on a track with
+  a full board. It now filters on `DriveTime.ghost`. Every other way in already
+  only offered laps with a replay - the board sends `has_ghost` and hands back
+  an id - which is exactly why "view others" worked where this did not. The
+  message distinguishes the two facts now: no record at all, or a record with
+  no replay. **There were two bugs wearing the same message**, and the second
+  outlived the first: `loadGhost` clears the ghost and then *awaits* the
+  request, while `setGhostMode` writes the line under the buttons
+  synchronously - so the line was always written during the half second when
+  there was reliably no ghost, and said so however good the answer turned out
+  to be. It is written again when the request settles, guarded on the mode and
+  the track still being the ones that asked (click two ghosts quickly and the
+  slower reply must not land on the newer choice). `?ghost=off|me|wr` picks a
+  standing choice by name - ids are digits, so the two cannot collide - which
+  makes a ghost setting linkable and, with `--dump-dom`, checkable without a
+  browser to click in.
+- **Escape closes what is in front of you before it opens anything.** It works
+  innermost first - a replay, then a panel opened from another panel, then the
+  panel itself - and *then* means "open settings". The controls sheet was
+  missing from that list, so pressing Escape while reading it opened the
+  settings sheet on top: the one key everybody presses to get out of something
+  put something else in the way.
+- **The `?` sheet is Controls, and it is the controls and nothing else.** It
+  used to open on the track blurb and close on two paragraphs about grass and
+  crests, which is reading matter in front of somebody who pressed it to find
+  out which key drifts. **The table follows the device** - `body.touch` swaps
+  the keyboard rows for the gestures (`.keys-only` / `.touch-only`, the same
+  mechanism as the start hint), so it never describes controls you do not have.
+- **Watching is not driving, so it takes the HUD away.** `body.watching` hides the
+  clock, the map and the pedals - none of it is true during somebody else's lap - and
+  leaves a bar with their name and the replay clock. The camera reads its speed and
+  orientation back off the ghost's own motion, since a replay carries neither. It
+  loops, and it refuses to start mid-race: it parks your car and stops your pose going
+  out, which in a race would leave a stationary obstacle with your name on it.
+- **`S.paused` is derived in one place** (`syncPaused`), from whether any panel is
+  open, and only solo. Four panels each assigning it meant closing any one of them
+  unpaused a game with another still open, and the car rolled away behind the sheet you
+  were reading.
+- **The start hint is shown once per session.** It tells a new player the one thing
+  they cannot guess; by the second run it is a label floating over the road on every
+  restart. Remembered in `sessionStorage`, so a reload does not restart the lecture,
+  and the touch and keyboard wordings are two spans switched by `body.touch`.
+- **`?panel=settings|help|tracks|board|qual|racing` (plus `&row=N`) opens a panel
+  on load**, for the same reason `?touch=1` exists: there is no browser in CI and a
+  screenshot cannot click, so it is the only way to look at a panel's layout.
+  `qual` and `racing` also *pin* the phase and fake a session, since neither is a
+  panel you can open and getting a room into either takes two browsers and a
+  stopwatch. **`?draft=charge|boost`** is the same idea for the slipstream: it
+  pins the tow so the air round the car can be photographed without a rival.
+- **The room drawer's button is three people, not a hamburger and not one
+  person.** Three stacked bars sat next to the settings icon, which is three
+  stacked sliders, and at a glance they were the same button. A single figure
+  replaced it and was wrong in the other direction: one head is the icon every
+  site on the internet uses for *your own account*, so on the one screen where
+  the button means "everybody else who is here" it was saying the opposite of
+  what it opens. It is a head and shoulders with two smaller ones behind, run
+  off the edges of the 24-unit box so it reads as a crowd rather than as three
+  buttons. The drawer reads top to bottom as who is here, what the next
+  race will be, the way out, and then the talking: **chat is last and the box you
+  type into is on the floor of the panel**, which is `#chatLog` stretching rather
+  than the block being pushed down - capping the log left the input floating half
+  way up with a hole under it.
+- **Race settings are in the drawer, drawn for everybody and pressable by the
+  host.** One switch so far (Qualifying), not a host-only panel: what the next
+  race will be is something everyone is about to drive, so it cannot be a rule
+  only one person can read. `renderSettings` is called from `applyPhase`, so it
+  follows both the phase (a live session locks it) and the host changing
+  mid-room, rather than being assigned at either event.
+- **The room panel is a drawer at every screen size**, opened by that button. It
+  used to be pinned open - a 274px column on a desktop, a 46vh slab across the bottom
+  of a phone - so the multiplayer furniture sat on top of the road and the driving
+  controls the entire time you were racing. It opens on arrival and closes itself when
+  a race starts.
+- **The two finish screens are deliberately different screens.** A time trial ends in
+  a number, so `#results` is that number - big, centred, medal beside it, its rank
+  under it - then `PB:` and `WR:` with their ranks, and Retry / Leaderboard / Exit.
+  There are no sentences on it: "New personal best", "Ranked #3" and "That is the
+  fastest time on this track" were all restating the numbers next to them. Only a
+  *problem* gets a sentence (not logged in, offline). A race ends in an **order**, so
+  `#raceOver` is the finishing order and the three things there are to do next -
+  Practice, Quit, and Rematch for the host. Note that `/api/run`'s `medal`, `rank` and
+  `is_record` all describe your stored PB row, not the lap you just drove: the lap's
+  own medal is computed client-side and its own placing is the separate `run_rank`.
+- **The touch buttons are sized off the height of the screen**, not off a
+  breakpoint: `clamp(76px, 19.5vh, 124px)` (and the two small ones above the
+  pedals `clamp(46px, 11.5vh, 72px)`), with the glyph a percentage of the
+  button so it needs no sizes of its own. A phone in landscape is about 390px
+  tall and a tablet nearly 800, and both land in "not a desktop", so one fixed
+  76px was a thumb-sized button on the phone and a postage stamp held at arm's
+  length on the iPad. The bottom-left corner belongs to the steering thumb
+  whenever there is one - `body.touch`, not a width, since a tablet is 1180px
+  wide and still drives with its thumbs - so the minimap moves up under the
+  track card there and the blurb goes with it.
+- **Touch controls: four driving buttons and no handbrake button.** Steering left,
+  throttle and brake right, checkpoint and restart small above the steering. There
+  is deliberately no fifth button, because there is nowhere a thumb can reach one:
+  the right thumb is on a pedal essentially the whole lap and the left is on an
+  arrow. The handbrake is **two gestures, one per thumb**, both handled in
+  `bindInput`/`syncTouch` - so they are touch-input mappings and the physics and
+  the keyboard are untouched, and either just adds `drift` to `touchKeys`.
+  **Drag the throttle down** (`dragDrift`, threshold `DRAG_DRIFT`) and it comes
+  on *without the thumb leaving the pedal*. That is the whole reason this thumb
+  can carry a gesture after all: the objection was never the thumb but that every
+  earlier candidate charged it a **release**, and coming off the power mid-corner
+  is the one thing it must never do. A drag costs nothing, so the slide arrives
+  under throttle, which is how the turn is actually driven. `DRAG_KEEP` is a
+  second, lower threshold for letting off, so a thumb parked on the boundary
+  cannot chatter the handbrake under itself. **Or double-tap and hold the arrow
+  you are turning with**, so tap-tap-hold left is a handbrake turn to the left;
+  the steering thumb arrives at a corner having just let go of the last arrow, so
+  the second tap is the press it was going to make anyway. Letting go of either
+  drops the handbrake, which is also how you catch the slide.
+  **The two arrows share one double-tap timer, and a press on either voids the
+  other's window**, so left-right-left is a correction rather than a double-tap of
+  left. That sequence is fast and common, and it is exactly the moment - mid-corner,
+  already saving it - when an unasked-for handbrake does the most damage.
+  **`DOUBLE_TAP` is 50ms, which is far tighter than a normal double tap and is
+  meant to be.** The other correction is coming off *the same* arrow and putting
+  it straight back on, which is the exact shape of the gesture and cannot be told
+  apart by anything except speed - at 320ms it fired on half of them. A gap this
+  short is not something a thumb does while driving unless it means to.
+  `test_touch.py` expresses its waits as fractions of `DOUBLE_TAP` rather than in
+  milliseconds, so retuning the window retunes the tests instead of quietly
+  invalidating them, and one test pins the intent directly: a 150ms re-grab is
+  never a drift.
+  The button that is drifting goes **amber** (`.tbtn.drifting`, `#ffd96b`) so it
+  is obvious you asked for something different - that is the drift indicator,
+  and it is on the on-screen button, *not* on the car. **The car's tail lamps
+  are two-state red** (`BRAKE_ON`/`BRAKE_OFF`), and an amber drift state was
+  tried and taken out again: `Car.braking` is `braking || handbrake`, so a
+  slide does not *light* the lamps, it changes the colour of lamps that are
+  already lit - and a car that goes yellow every time it steps out reads as a
+  fault rather than as a driver. `FLAG.DRIFT` is still computed and still
+  packed into the pose and the ghost; nothing draws it. What `lampsOf` answers
+  is braking and only braking, for your car, every rival, a ghost and a
+  replay.
+  Three earlier attempts are worth not repeating: a DRIFT button beside the pedals,
+  which was literally unpressable; **brake-while-steering, which is unusable** -
+  braking into a corner *is* steering, so it fired on essentially every corner and
+  the car spent the lap sideways; and the same double-tap on the *brake*, which
+  worked but charged the busy thumb a release mid-corner and could not be reached
+  from the throttle at all. A handbrake has to be something you ask for, it cannot
+  be a combination you were going to make anyway, and it should cost you nothing
+  you were already holding.
+  Touch state lives in its own `touchDown`/`touchKeys` sets rather than being poked
+  into `keys`, since it is not a one-button-one-control mapping. Laid out with
+  flexbox off the safe-area insets. `?touch=1` on a play URL forces the touch HUD on
+  a desktop browser, which is the only way to look at the phone layout without one.
+  **Checkpoint and restart sit above the pedals, not above the steering** - flag left,
+  restart right, mirroring the pedals under them. You reach for them having just gone
+  off, which is the moment the right thumb has stopped driving and the left one is
+  still holding a corner.
+- **Every icon is inline SVG, never a Unicode glyph.** A gear, a flag or a triangle
+  from the symbol blocks renders as a full-colour emoji on some platforms and a
+  hairline outline on others, so it can be neither styled nor trusted. The touch
+  buttons are dark-fill/light-stroke for the same reason a white wash did not work:
+  it vanishes against a bright sky or a sunlit kerb, and half of every track is one.
+- `R` restarts the run; `T` goes back to the last checkpoint **with the clock
+  still running** - the difference between "that lap is gone" and "I fell off".
+  **Neither does anything until the clock is running**, and silently: before you
+  have set off there is no run to throw away and no checkpoint to go back to, so
+  refusing costs nothing - and it closes a hole that was worth real time. On a
+  grid, a respawn puts the car on the *start gate*, which is in front of every
+  slot on it, so pressing either during the countdown walked you up the road; a
+  world record was set that way. A message would turn a non-event into an event,
+  so there is none. `P` opens the track switcher, which is the most common thing
+  there is to do that is not driving. **Enter is the host's start button** in a
+  room, which is why it is no longer a third way to press T, along with
+  Backspace - and inside the chat box it still sends the message.
+- **`Q` looks behind you and `F` puts you in the driver's seat, and both are held
+  rather than pressed.** A glance is a glance: it ends when you let go, so there is
+  no camera state to arrive at a corner still in. They are entries in `KEYMAP`
+  beside the throttle rather than tests beside `R` and `T`, because that is the set
+  that gets emptied on blur and on opening the chat box - a keyup swallowed by a
+  message box would otherwise leave you driving the rest of the lap backwards.
+  `readInput` takes the five names it wants out of that set, so the physics never
+  sees these two. **There are no touch rows to match**: four buttons is everything
+  the thumbs reach, and a view a phone could not let go of would be a fault rather
+  than a feature. They work on a replay as well - somebody else's lap is exactly
+  where seeing what the driver could see is worth something.
+- **Two questions, not three cameras.** `F` is where the eye sits and `Q` is which
+  way it looks, so holding both is a glance over your shoulder from the seat, which
+  is the only thing both at once could sensibly mean - and `Renderer.follow` takes
+  them as two booleans rather than as the name of a view. All of them orbit in the
+  *car's* frame, exactly as the chase camera does, so a view can be taken up
+  mid-loop without the horizon doing anything. Three things are deliberately not
+  the chase camera's, though. **Looking back moves the camera to the far side of
+  the car** rather than turning it where it stands: reversed in place it would be
+  pointing away from your own car, which is the thing everything back there is
+  closing on. **A change of view is a cut**, because the views are metres apart and
+  easing between them drags the camera through the car and out through the road,
+  for a glance that is over before it arrives. And **the driver's seat is not
+  smoothed at all**: the eye is a fixed point in the car, and the position
+  smoothing that absorbs kerbs for the chase camera sits a couple of metres behind
+  its target at speed, which from in there is a couple of metres behind the driver.
+  The eye is *inside* the cabin, which is what keeps that view clear for nothing: a
+  box is invisible from within, so the roof, the glass and the pillars are simply
+  not there. It sits at the windscreen rather than at the cabin's middle because a
+  bonnet 1.9 wide seen from 0.4 above it takes a third of the screen from back
+  there, and the view you asked for would be mostly of the car you are sitting in.
+  **The ears ride the camera**, so a look back also swaps the side a rival arrives
+  from - correctly, since you are looking at them when it happens.
+- **`M` is the one key that means two things, and it is the right two.** Solo it
+  mutes; in a room it puts the cursor in the chat box (opening the drawer), and
+  Enter sends and hands the keyboard straight back to the car - staying in the box
+  is what a chat window does, and this is a driving game. Muting is still in
+  settings with every other preference, and the Controls sheet lists whichever M
+  you have (`.room-only` / `.solo-only`, the same mechanism as `.touch-only`).
+  Opening it clears `keys`: the keyup for anything you were holding is delivered
+  to the input and swallowed, so without that the car drives itself into the
+  barrier at full throttle for as long as the sentence takes. Escape is bound on
+  the input itself, because the window handler ignores keystrokes aimed at an
+  input - which is exactly what stops WASD steering while you type.
+- **The type is Titillium Web**, self-hosted in `static/fonts/` at four weights
+  (~46KB total, no CDN). It replaced xkcd Script, which is a good joke on the landing
+  page and the wrong voice entirely for a timing screen. Titillium is the closest
+  freely licensable thing to Formula 1's own display face, which is proprietary.
+  `--display` is headings and buttons, `--sans` is body text, both the same family.
+  **This is Drive only** - the landing page and the other three games still use xkcd
+  Script. Changing the font means changing `sw.js`'s precache list too.
+

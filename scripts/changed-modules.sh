@@ -72,10 +72,6 @@ all() { want_site=1; want_drive=1; want_ers=1; want_kot=1; }
 while IFS= read -r p; do
   [ -n "$p" ] || continue
   case "$p" in
-    drive/*) want_drive=1 ;;
-    ers/*)   want_ers=1 ;;
-    kot/*)   want_kot=1 ;;
-
     # ttr is a submodule with its own repo and its own CI.
     ttr|ttr/*|.gitmodules) ;;
 
@@ -84,7 +80,16 @@ while IFS= read -r p; do
     scripts/*|.github/workflows/*) all ;;
 
     # Docs, deploy plumbing and editor config affect no test suite.
+    #
+    # This has to come BEFORE the module directories, because the per-service
+    # documentation lives inside them now (`drive/CLAUDE.md`, `drive/docs/*.md`,
+    # `accounts/CLAUDE.md` ...). Matched the other way round, editing a note
+    # about the garage would run Drive's 853 tests.
     *.md|.gitignore|deploy/*|.claude/*|.github/*) ;;
+
+    drive/*) want_drive=1 ;;
+    ers/*)   want_ers=1 ;;
+    kot/*)   want_kot=1 ;;
 
     # app.py, requirements.txt, accounts/, tests/, site/ and anything
     # unrecognised: the root app. Its suite is the accounts tests plus the

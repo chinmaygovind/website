@@ -92,7 +92,9 @@ def lap_frames(track, seconds=None, hz=None):
     for a, b in zip(pts, pts[1:]):
         cum.append(cum[-1] + math.dist(a, b))
     total = cum[-1]
-    n = max(2, int(seconds * hz))
+    # One more than the obvious count: `Run._recordGhost` writes a frame while
+    # `_ghostN / hz <= t`, which `runcheck.time_window` now depends on exactly.
+    n = max(2, int(seconds * hz) + 1)
     out = []
     for i in range(n):
         s = total * i / (n - 1)

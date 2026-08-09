@@ -284,6 +284,43 @@ def medal_rank(medal):
     return MEDAL_ORDER.index(medal) + 1 if medal in MEDAL_ORDER else 0
 
 
+# How many frames the recorder is allowed to be out by. See `time_window`.
+FRAME_SLACK = 1
+
+
+def time_window(n_frames):
+    """[lo, hi) - the times a replay of `n_frames` frames is allowed to claim.
+
+    This used to be a **±25% band** on the frame count, and that width was the
+    whole of a hole worth 3.5 to 6.9 seconds on every track in the pool. Nothing
+    else pins the clock: the splits are checked against the replay's own gate
+    crossings, but `time_ms` itself only had to be larger than the last split and
+    somewhere inside that band - so an entirely honest lap, relabelled, was
+    accepted several seconds faster than it was driven. Stack it on a ghost
+    downloaded from `/api/ghost` and it was a world record for two HTTP requests.
+
+    The band was never necessary, because the frame count is not approximately
+    the duration - it *is* the duration. `Run._recordGhost` pushes a frame while
+    ``_ghostN / GHOST_HZ <= t``, and `Run.update` sets `this.time` and records on
+    the same frame that detects the finish, so there is no interpolation between
+    them and no dependence on the browser's frame rate:
+
+        n_frames == floor(time_ms / 1000 * GHOST_HZ) + 1
+
+    exactly. Inverted, that is a window one frame wide - 66.7ms - which is the
+    quantisation of the recorder and nothing more.
+
+    Measured against the twelve tracks driven by `tests/autopilot.js` through the
+    real shipped physics, ``len(frames) - time_ms / 1000 * GHOST_HZ`` lands
+    between **0.12 and 0.88** - inside a window of [0, 1) every time, with no
+    value near either edge. `FRAME_SLACK` widens it by a frame either way anyway,
+    for a lap that `pending.js` has been holding in a browser since before the
+    start-line fix changed where frame 0 sits.
+    """
+    return ((n_frames - 1 - FRAME_SLACK) / GHOST_HZ * 1000.0,
+            (n_frames + FRAME_SLACK) / GHOST_HZ * 1000.0)
+
+
 def validate(track, time_ms, splits, frames):
     """(ok, reason). ``frames`` is the unpacked ghost, or None."""
     if not isinstance(time_ms, int) or time_ms <= 0:
@@ -306,9 +343,9 @@ def validate(track, time_ms, splits, frames):
     if len(frames) < 2 or len(frames) > MAX_GHOST_FRAMES:
         return False, "replay length implausible"
 
-    # The replay has to last about as long as the time claims it did.
-    expected = time_ms / 1000.0 * GHOST_HZ
-    if not (expected * 0.75 - 3 <= len(frames) <= expected * 1.25 + 3):
+    # The replay has to last exactly as long as the time claims it did.
+    lo, hi = time_window(len(frames))
+    if not (lo <= time_ms < hi):
         return False, "replay does not match the time"
 
     # And it has to be a drive, not a sequence of teleports - nor a lap driven
@@ -374,12 +411,32 @@ GATE_FLOOR = -2.5       # Run._withinGate - how far under a gate still counts
 # furthest anybody has legitimately been.
 CORRIDOR = 60.0
 
-# How far a gate crossing may sit from the split that claims it. Measured on the
-# same 82 laps, the worst disagreement is **1.0 frame** - the splits really are
-# the replay's, they were simply never checked against it - so nine frames either
-# way is loose enough never to argue with an honest lap and tight enough that a
-# fabricated split, which is wrong by seconds, cannot survive.
-SPLIT_TOL_MS = 600
+# How far a gate crossing may sit from the split that claims it.
+#
+# Nine frames either way, which this was, is not loose - it is **six times the
+# widest disagreement an honest lap can produce**, and a window that wide is a
+# window a fabricated split fits inside. Shifting every split down by the
+# tolerance and claiming a finish a millisecond after the last one was worth
+# seconds a lap; with `time_window` now pinning the clock to the frame count,
+# this is the other half of the same arithmetic and it is worth tightening for
+# the same reason.
+#
+# What an honest lap actually produces is the sum of three quantisations:
+#
+#   * the split is stamped `Math.round(this.time)` on the *render* frame that
+#     detects the crossing, so it is up to one frame of the browser's own loop
+#     late - 50ms at 20fps, and less on anything healthier;
+#   * the crossing this is compared against is found on the ghost's 15Hz grid,
+#     so it is placed to within 66.7ms;
+#   * and both are rounded to the millisecond.
+#
+# That is about 120ms of honest worst case. Measured on the twelve tracks driven
+# through the real physics by `tests/autopilot.js`, every checkpoint on every
+# track lands between **0 and 59ms** - inside one ghost frame, and all of it on
+# the same side, since the crossing is always found on or after the split that
+# claims it. 250 is twice the theoretical worst case and four times the measured
+# one, and it takes what a shifted split is worth from 599ms to 249ms.
+SPLIT_TOL_MS = 250
 
 
 def _gates_of(track):
