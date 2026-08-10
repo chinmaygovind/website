@@ -68,6 +68,13 @@ def shoot(slug):
            ["--hide-scrollbars", "--window-size=%d,%d" % SIZE,
             "--virtual-time-budget=%d" % BUDGET_MS,
             "--screenshot=" + out, url])
+    # Take the old picture away first, or a Chrome that never runs reports the
+    # *previous* file's size and the tool prints a comfortable "144.3 kB" for a
+    # shot it did not take. That is the worst failure this tool has, because the
+    # whole reason to run it is that nothing downstream can tell a stale preview
+    # from a fresh one - and it is what a wrong CHROME path looks like.
+    if os.path.exists(out):
+        os.remove(out)
     subprocess.run(cmd, capture_output=True)
     if not os.path.exists(out):
         return None

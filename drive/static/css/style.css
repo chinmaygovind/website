@@ -29,7 +29,7 @@
   font-weight: 900; font-style: normal; font-display: swap;
 }
 
-/* Three faces that nothing on any page is set in.
+/* Four faces that nothing on any page is set in.
 
    They exist for the sponsor boards around Spa, which are drawn into a canvas
    by `signTexture` in trackmesh.js and so can only use fonts the *browser*
@@ -59,6 +59,16 @@
   font-family: "Metamorphous";
   src: url("../fonts/metamorphous.woff2") format("woff2");
   font-weight: 400; font-style: normal; font-display: block;
+}
+/* The one board that needs type rather than artwork. "GO BIRDS" is a fan
+   phrase, not a wordmark, so unlike Penn, Taco Bell and Marlboro there is no
+   file of it to draw - and the Eagles' own lettering is custom, with only
+   unofficial recreations of it in circulation. This is the nearest heavy
+   condensed italic with a licence that can live in a public repo. */
+@font-face {
+  font-family: "Barlow Condensed";
+  src: url("../fonts/barlow-condensed-800-italic.woff2") format("woff2");
+  font-weight: 800; font-style: italic; font-display: block;
 }
 
 :root {

@@ -89,11 +89,16 @@ only trackside furniture, configured in the `spa` palette by **fraction of the
 lap** so they survive the ribbon being re-solved. The boards are also the only
 textured geometry in the whole game: nine sponsors, each drawing its own canvas
 in `SPONSORS`, two in three of them this site's own games and the rest what a
-circuit actually carries. Three of the logos are the artwork the real page uses,
-copied into `static/img/sponsors/`; the rest are paths. They need three fonts
-nothing else here is set in, and both the fonts and the logos land *after* the
-track is built - see `docs/tracks-and-geometry.md` before touching any of it,
-because every way of getting this wrong is silent.
+circuit actually carries. **Every mark on them is a file** in
+`static/img/sponsors/` - three from inside this repo, four the brands' own off
+Wikipedia - and none is drawn in code any more. Only one board needs type for
+its name (`GO BIRDS`, which is a fan phrase and so exists as no artwork
+anywhere); the other three outside brands ship their own lettering inside the
+artwork, which is the only correct version of it, since all of them use
+commissioned faces no font will give you. They need four fonts nothing else here
+is set in, and both the fonts and the logos land *after* the track is built -
+see `docs/tracks-and-geometry.md` before touching any of it, because every way
+of getting this wrong is silent, and three of them have been.
 
 ## Layout
 

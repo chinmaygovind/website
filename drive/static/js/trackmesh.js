@@ -2272,7 +2272,8 @@ function logo(key) {
  *  this: it resolves happily, having loaded nothing.
  */
 const BOARD_FONTS = ['700 60px Cinzel', '400 60px "xkcd Script"',
-                     '400 60px Metamorphous', '900 60px "Titillium Web"'];
+                     '400 60px Metamorphous', '900 60px "Titillium Web"',
+                     'italic 800 60px "Barlow Condensed"'];
 /** One promise for the whole of a board's artwork, shared by every board.
  *
  *  It has to be shared. Each texture used to hang its own `onload` on the three
@@ -2353,22 +2354,96 @@ function word(g, str, cx, cy, maxW, opt) {
  *  the website's - Ticket to Ride's locomotive is black artwork and its board
  *  is gold on near-black. `tint` of null leaves the artwork as it is, which is
  *  what the two app icons want: they are whole badges, not silhouettes.
+ *
+ *  **Both box dimensions are required and the tint is seventh.** Every call
+ *  site used to pass six arguments, so the tint landed in `maxH`: the scale
+ *  came out `NaN` for a colour and `0` for a `null`, `drawImage` got a
+ *  degenerate rectangle, and not one of the seven logos was ever drawn. Nothing
+ *  threw and every board still painted, which is the whole problem - a mark
+ *  that fails does so by leaving a gap in a layout that is otherwise correct.
+ *  `test_boards.py` now checks the destination rectangle of every `drawImage`.
  */
 function mark(g, key, x, y, maxW, maxH, tint) {
+  markPart(g, key, null, x, y, maxW, maxH, tint);
+}
+
+/** Part of a lockup - its symbol, or its name - as a fraction of the file.
+ *
+ *  Taco Bell's artwork and Marlboro's are one image with the mark stacked above
+ *  the name, and a hoarding is 4:1. Fitted whole, the Taco Bell lockup is a
+ *  fifth of the board wide and the other four fifths are plate: from the car
+ *  that is a white rectangle with a smudge on it, which is the one thing a
+ *  hoarding may not be. Drawn as two source rectangles side by side it fills
+ *  the board the way Ticket to Ride's mark-then-wordmark does, and every pixel
+ *  is still the brand's own - which matters, because all three of these brands
+ *  use commissioned lettering that no font will give you.
+ *
+ *  `box` is `[x, y, w, h]` in fractions of the natural size, so it survives the
+ *  artwork being re-exported at another resolution. **Measure them, do not
+ *  guess**: the two are not cleanly stacked. Marlboro's roof reaches lower at
+ *  its outer corners than the wordmark's ascenders reach up, so the obvious cut
+ *  puts a red triangle over each end of the word and a black serif under the
+ *  roof. The boxes below are where the ink actually is.
+ */
+function markPart(g, key, box, x, y, maxW, maxH, tint) {
   const im = logo(key);
   if (!im.complete || !im.naturalWidth) return;
-  const s = Math.min(maxW / im.naturalWidth, maxH / im.naturalHeight);
-  const w = im.naturalWidth * s, h = im.naturalHeight * s;
-  if (!tint) { g.drawImage(im, x - w / 2, y - h / 2, w, h); return; }
+  // Crop off a rasterised copy, never off the SVG. A source rectangle on an
+  // `<img>` holding an SVG is measured against whatever Chrome decided to
+  // rasterise it at, which is **not** `naturalWidth` unless the file carries
+  // width and height attributes - and `marlboro.svg` carries only a viewBox, so
+  // it reports the 249x150 default-replaced-element size and then reads its own
+  // source rectangle against a much larger bitmap. What that looks like is both
+  // halves of the lockup showing the wrong band of the artwork: the roof came
+  // out a plain red bar and the wordmark came out as the right-hand slope of
+  // the roof with the tops of four letters under it. Every other file here has
+  // intrinsic dimensions and cropped correctly, which is how it survived being
+  // looked at. A canvas has exact pixel semantics and no such question.
+  const src = box ? sheet(key, im) : im;
+  const nw = box ? src.width : im.naturalWidth;
+  const nh = box ? src.height : im.naturalHeight;
+  const b = box || [0, 0, 1, 1];
+  const sx = b[0] * nw, sw = b[2] * nw;
+  const sy = b[1] * nh, sh = b[3] * nh;
+  const s = Math.min(maxW / sw, maxH / sh);
+  const w = sw * s, h = sh * s;
+  const dx = x - w / 2, dy = y - h / 2;
+  if (!tint) { g.drawImage(src, sx, sy, sw, sh, dx, dy, w, h); return; }
   const sc = document.createElement('canvas');
   sc.width = Math.max(1, Math.round(w)); sc.height = Math.max(1, Math.round(h));
   const sg = sc.getContext('2d');
-  sg.drawImage(im, 0, 0, sc.width, sc.height);
+  sg.drawImage(src, sx, sy, sw, sh, 0, 0, sc.width, sc.height);
   sg.globalCompositeOperation = 'source-in';
   sg.fillStyle = tint;
   sg.fillRect(0, 0, sc.width, sc.height);
-  g.drawImage(sc, x - w / 2, y - h / 2, w, h);
+  g.drawImage(sc, dx, dy, w, h);
 }
+
+const _sheet = {};
+/** The artwork rasterised once at a known size, so a crop can index into it.
+ *
+ *  Drawn whole and unscaled-from, which is the one drawImage form an SVG with
+ *  no intrinsic size still gets right. 1024 on the long edge is more than any
+ *  board asks for - the widest a mark is ever drawn is about 630.
+ */
+function sheet(key, im) {
+  if (_sheet[key]) return _sheet[key];
+  const k = 1024 / Math.max(im.naturalWidth, im.naturalHeight);
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(im.naturalWidth * k));
+  c.height = Math.max(1, Math.round(im.naturalHeight * k));
+  c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+  return (_sheet[key] = c);
+}
+
+// Where the mark stops and the name starts in the two stacked lockups, as
+// fractions of the file. Measured off the rendered artwork, not authored.
+const PARTS = {
+  tacoBell: [0, 0, 1, 0.816],       // the bell, clear of the wordmark
+  tacoWord: [0, 0.874, 1, 0.126],   // "TACO BELL"
+  marlRoof: [0, 0, 1, 0.452],       // the roof, cut at the first serif below it
+  marlWord: [0.049, 0.50, 0.902, 0.432],
+};
 
 /**
  * The sponsors, each drawing its own board.
@@ -2381,100 +2456,133 @@ function mark(g, key, x, y, maxW, maxH, tint) {
  * The colours are still the ones those pages use, which is what makes a board
  * read as *that* game rather than as advertising in general: the landing page's
  * per-game accents, ERS's wood and gold, King of Tokyo's purple-and-gold poster,
- * Ticket to Ride's gold on near-black, Drive's own ink-on-paper with the red it
- * uses for a finish line, and Penn's red on Penn's blue. The four that are not
- * this site are drawn the way you would see them from a circuit: a Marlboro
- * board is the chevron, a Taco Bell board is the bell, and neither needs any
- * more than that to be read at a hundred miles an hour.
+ * Ticket to Ride's gold on near-black, and Drive's own ink-on-paper with the
+ * red it uses for a finish line.
+ *
+ * The four that are not this site are their own artwork end to end. Three of
+ * them ship their name as part of it - Penn's shield beside "Penn Engineering",
+ * Taco Bell's bell over "TACO BELL", Marlboro's roof over "Marlboro" - and all
+ * three of those names are commissioned lettering with no public font behind
+ * them, so the file is the only correct version and nothing here is set in
+ * type beside it. `GO BIRDS` is the exception and the reason for the fourth
+ * self-hosted face: it is a fan phrase, not a wordmark, so no artwork of it
+ * exists anywhere to draw.
  */
 const SPONSORS = {
   // White ground, lowercase, hand-drawn - the landing page's own voice.
   'CGOVIND.COM': (g, W, H) => {
     plate(g, W, H, '#ffffff', '#1d1d1f');
-    word(g, 'cgovind.com', W / 2, H * 0.54, W * 0.80,
+    word(g, 'cgovind.com', W / 2, H * 0.5, W * 0.80,
          { font: '400 ' + (H * 0.52) + 'px "xkcd Script", cursive', fill: '#1d1d1f' });
-    g.fillStyle = '#1a56ff';
-    g.fillRect(W * 0.30, H * 0.83, W * 0.40, H * 0.045);
   },
 
   'TICKET TO RIDE': (g, W, H) => {
     plate(g, W, H, '#14120f', '#c8a84b');
-    mark(g, 'ttr', H * 0.62, H * 0.5, H * 0.68, '#c8a84b');
-    word(g, 'TICKET TO RIDE', W * 0.58, H * 0.5, W * 0.66,
+    mark(g, 'ttr', H * 0.58, H * 0.5, H * 0.68, H * 0.68, '#c8a84b');
+    word(g, 'TICKET TO RIDE', W * 0.60, H * 0.5, W * 0.63,
          { font: '700 ' + (H * 0.42) + 'px Cinzel, Georgia, serif',
            fill: '#e8c97a', track: H * 0.03 });
   },
 
-  // The wordmark the site's own nav uses - "Rat Screw", not the full name.
+  // The short name the site's own nav uses, not the full one, and set in caps
+  // like every other wordmark on the circuit.
   'RAT SCREW': (g, W, H) => {
     plate(g, W, H, '#3f2311', '#b8860b');
-    mark(g, 'ers', H * 0.60, H * 0.5, H * 0.72, null);
-    word(g, 'Rat Screw', W * 0.60, H * 0.52, W * 0.62,
+    mark(g, 'ers', H * 0.60, H * 0.5, H * 0.72, H * 0.72, null);
+    word(g, 'RAT SCREW', W * 0.60, H * 0.52, W * 0.62,
          { font: '400 ' + (H * 0.50) + 'px Metamorphous, Georgia, serif',
            fill: '#f2c94c', shadow: 'rgba(0,0,0,0.55)', shadowAt: H * 0.035 });
   },
 
   'KING OF TOKYO': (g, W, H) => {
     plate(g, W, H, '#211b33', '#f2c94c');
-    mark(g, 'kot', H * 0.60, H * 0.5, H * 0.74, null);
+    mark(g, 'kot', H * 0.60, H * 0.5, H * 0.74, H * 0.74, null);
     word(g, 'KING OF TOKYO', W * 0.60, H * 0.5, W * 0.64,
          { font: '900 ' + (H * 0.44) + 'px "Arial Narrow", "Franklin Gothic Bold", '
                  + 'Impact, "Titillium Web", sans-serif',
            fill: '#f2c94c', track: H * 0.02, stroke: '#eb5757', strokeW: H * 0.012 });
   },
 
+  // The one lockup that is already horizontal - shield beside wordmark, near
+  // enough 3:1 - so unlike the other two it fills a hoarding without being
+  // unstacked. The artwork is navy on transparent, which makes the Penn blue
+  // this board used to be ground the one colour it cannot go on: navy on navy
+  // is a blank board. The blue is the hairline instead, and drawn untinted the
+  // shield keeps its red band.
   'PENN ENGINEERING': (g, W, H) => {
-    plate(g, W, H, '#011f5b', '#f7f5f2');
-    pennShield(g, H * 0.62, H * 0.5, H * 0.76);
-    word(g, 'PENN ENGINEERING', W * 0.60, H * 0.5, W * 0.66,
-         { font: '700 ' + (H * 0.36) + 'px Cinzel, Georgia, serif',
-           fill: '#f7f5f2', track: H * 0.025 });
+    plate(g, W, H, '#f7f5f2', '#011f5b');
+    mark(g, 'penn', W / 2, H * 0.5, W * 0.86, H * 0.84, null);
   },
 
+  // Bell then wordmark, both the brand's own, unstacked to fill the board.
+  // Taco Bell's lettering is a 2016 commission and has never been released as a
+  // font, so anything set here in type would be a guess at it - the file is the
+  // real thing.
   'TACO BELL': (g, W, H) => {
     plate(g, W, H, '#ffffff', '#702082');
-    tacoBell(g, H * 0.58, H * 0.5, H * 0.72, '#702082');
-    word(g, 'TACO BELL', W * 0.58, H * 0.5, W * 0.62,
-         { font: '900 ' + (H * 0.46) + 'px "Titillium Web", Helvetica, Arial, sans-serif',
-           fill: '#702082', track: H * 0.015 });
+    markPart(g, 'taco', PARTS.tacoBell, H * 0.60, H * 0.5, H * 0.86, H * 0.82, null);
+    markPart(g, 'taco', PARTS.tacoWord, W * 0.60, H * 0.52, W * 0.62, H * 0.36, null);
   },
 
-  // The trackside board: a red roof on white with the wordmark under it. It is
-  // the shape that is recognisable at speed, not the lettering.
+  // The roof and the wordmark, which is the whole of what a Marlboro board is.
+  // It was drawn here in paths - five `lineTo`s, with Titillium standing in for
+  // Neo Contact - back when the other three marks were too, and it was the last
+  // of the four still doing it. The plate is white because the artwork's ground
+  // is, so the two meet invisibly and the board reads as one piece.
   'MARLBORO': (g, W, H) => {
     plate(g, W, H, '#ffffff', '#d0d0d0');
-    g.fillStyle = '#e4002b';
-    g.beginPath();
-    g.moveTo(0, 0); g.lineTo(W, 0); g.lineTo(W, H * 0.10);
-    g.lineTo(W / 2, H * 0.56); g.lineTo(0, H * 0.10);
-    g.closePath();
-    g.fill();
-    word(g, 'Marlboro', W / 2, H * 0.76, W * 0.70,
-         { font: '900 ' + (H * 0.34) + 'px "Titillium Web", Helvetica, Arial, sans-serif',
-           fill: '#111111', track: H * 0.01 });
+    // The roof spans the whole width of its own artwork, so drawn to its own
+    // aspect beside the wordmark it reads as a flat red stripe rather than as a
+    // roof. Squeezed to 0.6 across it gets the pack's proportions back. This is
+    // the only mark on the circuit not drawn to its own shape, and it is safe
+    // here because the roof is a plain chevron - no lettering is distorted.
+    const cx = W * 0.24;
+    g.save();
+    g.translate(cx, 0); g.scale(0.6, 1); g.translate(-cx, 0);
+    markPart(g, 'marlboro', PARTS.marlRoof, cx, H * 0.5, H * 1.60, H * 0.64, null);
+    g.restore();
+    markPart(g, 'marlboro', PARTS.marlWord, W * 0.65, H * 0.52, W * 0.50, H * 0.54, null);
   },
 
+  // The one outside board that does need type: the eagle is artwork but "GO
+  // BIRDS" is a fan phrase, not a wordmark, so no file anywhere has it. The
+  // team's lettering is custom and only unofficial recreations of it exist,
+  // which is not something to commit here - Barlow Condensed's heavy italic is
+  // the nearest face with a licence, and the head does the recognising anyway.
+  // Drawn untinted: the artwork's own midnight green is this board's ground, so
+  // it drops out and leaves the silver and white of the head behind.
   'GO BIRDS': (g, W, H) => {
     plate(g, W, H, '#004c54', '#a5acaf');
-    eagleHead(g, H * 0.58, H * 0.5, H * 0.80, '#a5acaf', '#004c54');
-    word(g, 'GO BIRDS', W * 0.60, H * 0.5, W * 0.60,
-         { font: '900 ' + (H * 0.52) + 'px "Titillium Web", Helvetica, Arial, sans-serif',
-           fill: '#ffffff', track: H * 0.02, slant: 0.22 });
+    mark(g, 'eagles', H * 0.66, H * 0.5, H * 1.05, H * 0.80, null);
+    word(g, 'GO BIRDS', W * 0.62, H * 0.52, W * 0.58,
+         { font: 'italic 800 ' + (H * 0.56) + 'px "Barlow Condensed", "Titillium Web", '
+                 + 'Helvetica, Arial, sans-serif',
+           fill: '#ffffff', track: H * 0.02 });
   },
 
   'DRIVE': (g, W, H) => {
-    plate(g, W, H, '#1d1d1f', '#c0182b');
-    g.fillStyle = '#c0182b';
-    g.fillRect(0, 0, W * 0.035, H);
-    // a strip of start-line chequer, so the board is Drive's and not any board
-    const n = 8, c = H * 0.16;
-    for (let i = 0; i < n * 2; i++) {
-      g.fillStyle = i % 2 ? '#faf8f4' : '#1d1d1f';
-      g.fillRect(W - c * (i + 1) / 2, 0, c / 2, c);
-      g.fillRect(W - c * (i + 1) / 2, H - c, c / 2, c);
+    plate(g, W, H, '#1d1d1f', null);
+    // Start-line chequer all the way round, so the board is Drive's and not any
+    // board. `H / 8` divides a 4:1 hoarding exactly 32 by 8, so the run closes
+    // on a whole cell at every corner instead of a sliver; and the colour comes
+    // from the cell's own grid position rather than from a counter per side,
+    // which is what keeps the alternation correct as it turns each corner.
+    const c = H / 8;
+    for (let iy = 0; iy * c < H - 0.5; iy++) {
+      for (let ix = 0; ix * c < W - 0.5; ix++) {
+        const x = ix * c, y = iy * c;
+        if (x >= c && y >= c && x < W - c * 1.5 && y < H - c * 1.5) continue;
+        g.fillStyle = (ix + iy) % 2 ? '#faf8f4' : '#1d1d1f';
+        g.fillRect(x, y, c, c);
+      }
     }
-    word(g, 'DRIVE', W * 0.5, H * 0.52, W * 0.62,
-         { font: '900 ' + (H * 0.58) + 'px "Titillium Web", Helvetica, Arial, sans-serif',
+    // The red it uses for a finish line, as a rule inside the chequer.
+    g.strokeStyle = '#c0182b';
+    g.lineWidth = Math.max(1, H * 0.022);
+    g.strokeRect(c + g.lineWidth / 2, c + g.lineWidth / 2,
+                 W - 2 * c - g.lineWidth, H - 2 * c - g.lineWidth);
+    word(g, 'DRIVE', W * 0.5, H * 0.52, W * 0.60,
+         { font: '900 ' + (H * 0.56) + 'px "Titillium Web", Helvetica, Arial, sans-serif',
            fill: '#faf8f4', track: H * 0.09 });
   },
 };

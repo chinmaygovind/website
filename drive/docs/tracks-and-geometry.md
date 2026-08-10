@@ -61,6 +61,14 @@ the second track that wants one as the thing that will find the bugs.
   Crossing that plane on lap zero is harmless *only* because `Run._advance` in
   course.js will not credit a finish until `nextCp >= cps.length`; if that guard
   ever goes, every closed track finishes the instant it starts.
+  **Both halves of that branch need to know.** The guard stops the lap being
+  *finished* on the grid, and then the `else` fell straight through to "you
+  skipped one" - so Spa opened every attempt with **Missed a checkpoint!**
+  before the car reached the first corner. `Run.closed` suppresses the warning
+  at `nextCp === 0` only, which is the difference between not telling somebody
+  off for starting and never telling them anything: come back round to the line
+  having actually skipped a gate and it still fires. `test_closed_lap.py` walks
+  a stub car through the line and pins all three.
 - **The join has to be invisible to the proximity checks.** `self_proximity` and
   `crossings` decide "these two stations are neighbours, not a crossing" from
   the gap between their *indices*, which on a ring is wrong at exactly one
@@ -251,17 +259,55 @@ the second track that wants one as the thing that will find the bugs.
   (not one round the whole building - the La Source stand's bounding rectangle
   is most of the infield) and `addHoardings` skips any board that lands in one.
 - **The boards' fonts and logos arrive after the track is built, so the canvas
-  is painted twice.** Three faces are self-hosted for the boards alone and
+  is painted twice.** Four faces are self-hosted for the boards alone and
   nothing on the page is set in them, which means the browser never fetches
   them unless `document.fonts.load` asks by name - `document.fonts.ready`
   resolves perfectly happily having loaded nothing. The logos are `Image`s off
   the static tree. Both are awaited on **one shared promise**: giving each
-  texture its own `onload` on the three shared `Image` objects means the last
+  texture its own `onload` on the shared `Image` objects means the last
   board's handler replaces the previous one's, and the only board on the
   circuit that ever repaints is whichever was built last. All of this fails
   quietly - you get the layout you designed, in the wrong typeface, with
   nothing where the logo goes - and the preview picture is taken by a headless
   browser that owns almost no fonts at all.
+- **Nothing in the suite could see a board at all, and three bugs lived there.**
+  `buildTrack` guards the whole sign block with `typeof document !== 'undefined'`
+  so the anti-cheat can run the real file in QuickJS, and that guard also walks
+  `test_every_track_can_be_built_without_a_browser` straight past every painter.
+  What grew behind it: the four outside marks were converted from canvas paths
+  to real artwork, three call sites were left calling helpers that had been
+  deleted, and `SPONSORS['PENN ENGINEERING']` threw `ReferenceError` inside
+  `buildTrack` - **so Spa did not render a single frame, with a green suite**.
+  `tests/test_boards.py` paints all nine against a stub canvas now. Anything
+  added to a board painter has to stay reachable from there.
+- **A mark that fails does it by leaving a gap, not by throwing.** `mark` fits
+  artwork into a box and every call site passed six arguments to its seven, so
+  the tint landed in `maxH`: `NaN` for a colour, `0` for a `null`, a degenerate
+  rectangle into `drawImage`, and **not one of the seven logos ever drawn**. The
+  boards still painted, correctly laid out, with holes where the marks go - which
+  from the car is a white rectangle, and which nobody notices because that is
+  roughly what a distant hoarding looks like anyway. The test checks the
+  destination rectangle of every `drawImage`, which is the only way this is loud.
+- **Crop off a rasterised copy, never off the SVG.** Two of the brand files stack
+  the mark above the name and a hoarding is 4:1, so they are drawn as two source
+  rectangles side by side - fitted whole, the Taco Bell lockup is a fifth of the
+  board wide and the rest is plate. But a source rectangle on an `<img>` holding
+  an SVG is measured against whatever the browser rasterised it at, which equals
+  `naturalWidth` only if the file carries width and height attributes.
+  `marlboro.svg` carries only a viewBox, so it reports the 249x150
+  default-replaced-element size and then reads its crop against a much bigger
+  bitmap: the roof came out a plain red bar and the wordmark came out as the
+  right-hand slope of the roof with the tops of four letters beneath it. Every
+  other file has intrinsic dimensions and cropped correctly, which is how it
+  survived being looked at. `sheet()` rasterises once at a known size and the
+  crop indexes into that, where a pixel is a pixel.
+- **Three of the four outside brands need no font, and one cannot have one.**
+  Penn, Taco Bell and Marlboro all ship their own lettering inside their
+  artwork, and all three use commissioned faces with nothing public behind them
+  - so the file *is* the correct wordmark and setting the name beside it in type
+  would be both a guess and a second copy of the name. `GO BIRDS` is the
+  exception and the reason the fourth font exists: it is a fan phrase, not a
+  wordmark, so no artwork of it exists to draw.
 
 ## The ribbon, the collider and the car on it
 

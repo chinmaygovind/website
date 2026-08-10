@@ -206,6 +206,9 @@ export class Run {
     // about the track. The fallback is the old flat roof, which is safe on any
     // geometry.
     this.gateCeil = (track && track.gate_ceil) || 5.0;
+    // A ring's finish gate *is* its start gate, so the line is the first thing
+    // you cross rather than the last - see `finish_at_start` in tracks.py.
+    this.closed = !!(track && track.closed);
     this.reset();
   }
 
@@ -436,6 +439,15 @@ export class Run {
             this.state = 'done';
             this.time = Math.round(nowMs - this.startedAt);
             events.push('finish');
+          } else if (this.closed && this.nextCp === 0) {
+            // Leaving the grid, not skipping anything. On a ring the finish
+            // gate is the start gate, so the first thing every lap does is
+            // cross the line - and with no checkpoint behind you yet there is
+            // nothing you could have missed. The finish itself is already safe
+            // (the branch above needs every checkpoint), but the *warning* was
+            // not, so Spa opened every attempt by telling you off.
+            // Deliberately `=== 0` rather than "closed": come back round to the
+            // line having actually skipped one and you still hear about it.
           } else {
             // Not a failed run - just go back and get the ones you skipped.
             this.missed = true;
