@@ -576,7 +576,14 @@ def _track_cards():
     """
     pbs = _my_pb_map()
     ranks = _my_rank_map(pbs)
-    ver = os.environ.get("ASSET_VERSION", "1")
+    # The one module-level token, not a second read of the environment. The
+    # switcher's card art is the only `?v=` built in Python rather than in a
+    # template, and it was reading `ASSET_VERSION` directly - which pinned every
+    # preview at `?v=1` the moment that variable stopped being set, and pinned it
+    # for a month once nginx started honouring the token. Re-running
+    # `tools/shoot_tracks.py` moves this now, because the pictures are under
+    # `static/`.
+    ver = ASSET_VERSION
     out = []
     for t in tracks_mod.summaries():
         slug = t["slug"]
