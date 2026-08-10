@@ -208,3 +208,32 @@ proxying `:5005` with WebSocket upgrade, its own Let's Encrypt cert, and a Route
 record. `/drive` on the main site 302-redirects there (`DRIVE_URL`). As with the others,
 nginx/TLS/DNS/`.env` are hand-managed on the box.
 
+**nginx serves `static/` off disk now, and that lives only on the box.** Three
+things there are load-bearing and nothing in this repo would recreate them, so
+they are written down here: a `location /static/ { alias …/drive/static/; expires
+$static_expires; }` block in the drive vhost, the `$static_expires` **map** and a
+real `gzip_types` list in `/etc/nginx/nginx.conf`, and `/home/ubuntu` being `o+x`
+so www-data can traverse to the files (without it every asset 403s). It is worth
+the drift: the worker that serves `static/` is the same single eventlet worker
+that relays every live race pose at 30Hz, and it was spending ~26ms of that box's
+CPU and 1.9MB per cold page load on files nginx can hand out for nothing.
+Measured after: **1.90MB → 0.47MB** on the wire.
+
+**The cache lifetime is short on purpose, and `immutable` is wrong here.** Only
+`style.css`, `game.js`, `garage.js` and `pending.js` are requested with a `?v=`
+token; `three.module.js`, `trackmesh.js`, `physics.js`, `render.js`, `course.js`
+and `sound.js` are reached by bare `import` from inside `game.js` and carry no
+token, so nothing can bust them. The map gives a tokened URL 30 days and an
+un-tokened one an hour. Version those imports before raising the second number.
+The token itself is derived from the newest mtime under `static/`
+(`_derive_asset_version`) rather than the old hand-bumped `ASSET_VERSION`, which
+is commented out in the box `.env`.
+
+**`certbot --nginx` rewrites the drive vhost in place, so check the `/static/`
+block survived a cert renewal** - a lost block is not an error, just Python
+quietly serving 1.9MB again. `curl -sI https://drive.cgovind.com/static/js/game.js`
+and look for `Cache-Control: max-age=` and *no* `Set-Cookie`: Flask sets a cookie
+on everything it serves and nginx sets none, so that header is the tell for which
+one answered. Backups of every file touched are on the box as
+`*.bak-<timestamp>`, and the stamp is in `/etc/nginx/.stage0-stamp`.
+
