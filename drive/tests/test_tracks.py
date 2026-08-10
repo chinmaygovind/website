@@ -509,6 +509,79 @@ def test_only_the_pier_is_over_the_water():
         f"the coast road comes within {min(dry):.0f} units of the waterline"
 
 
+def _costco_shell_from_js():
+    """The `building` block out of the `costco` palette in trackmesh.js."""
+    js = open(os.path.join(os.path.dirname(__file__), "..", "static", "js",
+                           "trackmesh.js")).read()
+    i = js.index("building: {")
+    block = js[i:js.index("door:", i)]
+    x = re.search(r"x:\s*\[([\d.\-]+),\s*([\d.\-]+)\]", block)
+    z = re.search(r"z:\s*\[([\d.\-]+),\s*([\d.\-]+)\]", block)
+    ceil = re.search(r"ceil:\s*([\d.\-]+)", block)
+    return ((float(x.group(1)), float(x.group(2))),
+            (float(z.group(1)), float(z.group(2))), float(ceil.group(1)))
+
+
+def test_the_costco_shell_agrees_with_the_track():
+    """tracks.py authors the Costco against walls that trackmesh.js draws.
+
+    Two copies of three numbers, which is this repo's convention and the right
+    one here for the same reason the waterline is: Python cannot draw a building
+    and the JS cannot lay a road. Deriving the shell from whichever stations are
+    indoors is the tidier-sounding alternative and it is circular - the wall
+    position would depend on the set of stations used to decide where the wall
+    goes. So they are authored twice and pinned here. Drift them apart and a wall
+    lands across a road, or a doorway stops being where the road goes through.
+    """
+    x, z, ceil = _costco_shell_from_js()
+    assert x == tracks_mod.SHELL_X
+    assert z == tracks_mod.SHELL_Z
+    assert ceil == tracks_mod.SHELL_CEIL
+
+
+def test_the_warehouse_fits_inside_its_own_walls():
+    """Everything the Costco does off the ground has to happen indoors.
+
+    Both travelators and the whole rooftop car park are authored against
+    SHELL_X/SHELL_Z, and a leg lengthened past a wall does not fail loudly - it
+    puts a doorway-sized hole in the building where a hairpin pokes out, or brings
+    a ramp through a wall three units up in the air. Neither is visible from
+    anywhere except inside the building.
+
+    The road is *expected* to cross a wall - twice, once in and once out - so what
+    is checked is that it only ever does so on the flat, which is what makes a
+    doorway a doorway.
+    """
+    t = tracks_mod.get("costco")
+    line = t["line"]
+    (x0, x1), (z0, z1) = tracks_mod.SHELL_X, tracks_mod.SHELL_Z
+
+    inside = lambda e: x0 <= e["p"][0] <= x1 and z0 <= e["p"][2] <= z1
+
+    raised = [i for i, e in enumerate(line) if e["p"][1] > 0.4]
+    assert raised, "nothing on the Costco is off the ground - the roof has gone"
+    out = [i for i in raised if not inside(line[i])]
+    assert not out, (
+        "%d raised stations are outside the shell, e.g. station %d at "
+        "(%.0f, %.0f, %.0f)" % (len(out), out[0], line[out[0]]["p"][0],
+                                line[out[0]]["p"][1], line[out[0]]["p"][2]))
+
+    # Where the road goes through a wall it has to be level, or the doorway is a
+    # hole partway up one.
+    doors = []
+    for i in range(1, len(line)):
+        a, b = line[i - 1]["p"], line[i]["p"]
+        for at, ax, lo, hi, oax in ((x0, 0, z0, z1, 2), (x1, 0, z0, z1, 2),
+                                    (z0, 2, x0, x1, 0), (z1, 2, x0, x1, 0)):
+            if (a[ax] - at) * (b[ax] - at) < 0 and lo <= a[oax] <= hi:
+                doors.append(i)
+                assert abs(b[1]) < 0.35, (
+                    "the road leaves the building %.1f units up at station %d - "
+                    "that is a hole in a wall, not a door" % (b[1], i))
+    assert len(doors) == 2, \
+        "expected one way in and one way out, found %d wall crossings" % len(doors)
+
+
 def test_summaries_do_not_ship_station_lists():
     """The track-select page gets metadata only; the ribbon is a per-track fetch."""
     for s in tracks_mod.summaries():

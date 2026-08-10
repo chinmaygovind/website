@@ -309,6 +309,102 @@ the second track that wants one as the thing that will find the bugs.
   exception and the reason the fourth font exists: it is a fan phrase, not a
   wordmark, so no artwork of it exists to draw.
 
+## Interiors (`addBuilding`, Costco Wholesale only)
+
+The Costco is the pool's only interior: the only track where solid geometry
+surrounds *and covers* the road. Like closed laps, terrain and furniture, it is
+written to be general and has exactly one caller, so treat the second track that
+wants a building as the thing that will find the bugs.
+
+- **It is a sibling of `addScenery`, not a use of the `furniture` block.**
+  `addFurniture` is only reachable from inside `buildTrack`'s `else if (terrain)`
+  branch, so borrowing it would mean giving a flat track a height field it has no
+  use for - and its vocabulary is grandstands, pit buildings and gantries, which
+  is not what a warehouse is made of. What it does borrow is the parts already
+  proven: both faces on every quad, the `bright` buffer, and the `signs` contract.
+- **The shell is the one thing authored twice, and that is deliberate.**
+  `SHELL_X`/`SHELL_Z`/`SHELL_CEIL` in tracks.py and the `building` block in the
+  palette are two copies of three numbers, pinned together by a test, exactly as
+  Sandy Cove's waterline is. Deriving the box from whichever stations are indoors
+  sounds tidier and is circular: the wall position would depend on the set of
+  stations you are using to decide where the wall is, and a doorway then lands
+  mid-descent or halfway round a corner depending on the margin. Everything else
+  is derived - the doorways are where the road crosses a wall, the holes in the
+  roof are where it crosses the roof plane, the racking stands half an aisle out
+  from every straight aisle station.
+- **A roof-hole test must ask "near the plane", not "above it".** The rooftop deck
+  is road standing *over* the roof. A test for road above the ceiling therefore
+  catches the deck too and carves its whole rectangular loop out of the roof it
+  stands on - and what that looks like from the aisles is a moth-eaten ceiling
+  with daylight coming through, which reads as a lighting bug rather than as
+  missing geometry. It is also why `SHELL_CEIL` and `DECK` move together: the
+  window needs a real gap between them to tell the two cases apart, so raising the
+  roof means raising the deck, and raising the deck lengthens both travelators,
+  because a hill needs `length >= sqrt(330 * rise)` before it stops being a hill.
+- **A ceiling has to be drawn *unlit* or it is black.** A downward-facing quad
+  gets nothing from a key light overhead and only the hemisphere's ground colour
+  from below, and there are no shadow maps here - so a "correctly" lit ceiling
+  over the car comes out very nearly black, which is the most obvious thing in the
+  building. The roof's top goes in `solid` (it is the floor of the view from the
+  deck) and its underside in `bright`.
+- **The roof needs real thickness, and so does everything else laid on a face
+  here.** Top and soffit at the same `y` are coplanar quads in two different
+  meshes, which is a depth-buffer coin toss: the roof flickers between the two as
+  the camera moves, and from inside that reads as the ceiling strobing. The same
+  bug in miniature hit the shelf beams (long tan splinters shooting off down the
+  aisle, which reads as stray geometry rather than as z-fighting) and the chiller
+  glass. Give the slab depth and stand anything applied to a face off it. `0.05`
+  is not enough: the run-off's own note puts the floor nearer `0.15`.
+- **Racking, tills and the food court have to be told apart.** The racking rule -
+  every straight floor-level station inside the shell - also catches the run out
+  through the checkouts, and shelving that too leaves the last stretch indoors
+  indistinguishable from the four aisles you just drove. The checkout run is found
+  rather than authored: it is everything still at floor level after the travelator
+  brings you back down, so it survives the lap being retimed.
+- **`const` in a long function is not merely hoisted.** The food court hangs its
+  board while it is building its counter, which means it uses the sign helper
+  before the signage section declares it - and a `const` is in its temporal dead
+  zone until its own line runs, so that throws rather than reading as undefined.
+  Helpers used by more than one section go up with the rest of the helpers.
+- **The rooftop railing cannot be a ribbon `rail`.** This is a ground track, and
+  `test_barriers_are_opt_in` requires a ground track to carry *no* walled stations
+  at all. So the parapet along the deck is collider geometry standing beside the
+  road, the way the racking is - which also keeps it outside the kerb, so the
+  racing line never touches it and no medal time moves. It takes its up vector
+  from the station's own normal, so it leans with the banking.
+- **A car park is paint, not posts.** Lamp columns were the first go at the lot and
+  they are wrong twice over: from a car they are a field of grey posts with no cars
+  under them, which reads as scaffolding, and being the only vertical thing out
+  there they pull the eye off the building. What says "car park" at this scale is
+  bays marked as `|_|` - two sides and a closed end, drawn as one unlit quad per
+  line, in nose-to-nose rows sharing their head line.
+- **`toRoad` needs a height window on a track with road over road.** The nearest
+  road in *plan* is the right question for Spa, whose legs all lie in one sheet.
+  Here a car park flies 14.5 units over the aisles, so a plan-only answer reports
+  the deck as being "at" every point beneath it. What that cost, silently: the
+  racking down one side of an aisle, because the deck's south leg passes 4.7 units
+  from it in plan and three metres over its head. One aisle came out shelved on
+  one side and nothing else was wrong.
+- **A support may not stand on a road.** Until a track put a car park on its own
+  roof, raised road was only ever over *ground*, so `buildTrack`'s trestles never
+  had to ask. The deck flies over four aisles and its legs came down straddling
+  roads you drive along - and they are drawn but never collided, so they were a
+  pair of ghost pillars in the middle of an aisle. `overRoad` drops the pair
+  rather than the run, because where the deck is over open floor the legs are
+  right; the building's own column grid carries the look everywhere else.
+- **Two camera numbers set most of the geometry, and both fail invisibly.** The
+  chase camera rides `3.2 + min(1.1, speed*0.02)` above the car - about 4.3 - so a
+  ceiling under about 7 is through the lens. And it trails up to 11.6 units
+  *behind*, so it passes through a doorway about half a second after the car: a
+  wall crossed square on a straight puts the camera through the same opening, and
+  turning in a doorway puts a wall between the camera and the car. That is why the
+  openings are full height with no lintel and the entrance header's underside is
+  held at 9.5, well over the camera.
+- **The outermost aisle has no room for racking at half an aisle out**, because it
+  runs closer to the shell than the aisles run to each other. Clamping those runs
+  hard against the wall is both what a warehouse does there and the difference
+  between an aisle with shelves on both sides and one with a blank wall down it.
+
 ## The ribbon, the collider and the car on it
 
 - **A track is a ribbon of stations, not a grid of tiles.** Each station carries a

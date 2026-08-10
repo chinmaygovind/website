@@ -3,10 +3,11 @@
 **Live at `https://drive.cgovind.com`.** The fourth game, same shape as ERS/KoT:
 Flask + Flask-SocketIO, its own eventlet gunicorn `-w 1` on `127.0.0.1:5005`, its own
 venv (`drive/venv`) and `.env` (both gitignored, hand-made on the box), sharing TTR's
-`users` table for accounts. A PolyTrack-style low-poly driving game: fourteen
-tracks, medal times, ghosts, and multiplayer rooms. Thirteen are point-to-point;
+`users` table for accounts. A PolyTrack-style low-poly driving game: fifteen
+tracks, medal times, ghosts, and multiplayer rooms. Fourteen are point-to-point;
 **Spa-Francorchamps is the one closed circuit** and starts and finishes on the
-same line.
+same line. **Costco Wholesale is the one that goes indoors**, and it is the only
+track with solid geometry over the road.
 
 ## Read the one doc your change is about
 
@@ -32,7 +33,7 @@ question, you may well need none.
 
 ## The track pool
 
-The last three in the pool are the long ones, all difficulty 5 and all roughly
+Three of the pool are the long ones, all difficulty 5 and all roughly
 twice The Gauntlet: **Sandy Cove** (`cove`, a ground track - a coast road down
 onto the beach and out along a pier over open water), **Cloudbreak** (`pillars`,
 threaded between rock spires above an overcast) and **Rainbow Road** (`rainbow`,
@@ -54,8 +55,8 @@ not further downrange; a shallow kicker buys drop and distance back without
 spending more of that budget. It is in `tracks.EXPOSED` and keeps barriers in
 only five places - the loop and each big jump's landing straight, where a car
 arrives with no steering - everywhere else, including every closing hairpin,
-the edge is just the edge. It is the only track in the pool with **boost
-pads** on it (six of them now).
+the edge is just the edge. It has six **boost pads** on it, and it was the only
+track in the pool with any until the Costco's two travelators.
 
 **Spa-Francorchamps** (`spa`, difficulty 4, 3167 units, ~71s - second only to
 Big Red) is a compressed recreation of the real circuit, and it is the odd one
@@ -99,6 +100,43 @@ commissioned faces no font will give you. They need four fonts nothing else here
 is set in, and both the fonts and the logos land *after* the track is built -
 see `docs/tracks-and-geometry.md` before touching any of it, because every way
 of getting this wrong is silent, and three of them have been.
+
+**Costco Wholesale** (`costco`, difficulty 3, 2106 units, ~50s) is the one that
+goes indoors, and it is the only track in the pool with solid geometry *over* the
+road. You start in the car park, drive in through the front doors, run four
+warehouse aisles with pallet racking either side, take a travelator up onto the
+rooftop car park, cross back over the aisles on the deck, come down, and go out
+through the checkouts past the food court. Read `docs/tracks-and-geometry.md`
+before touching it.
+
+- **The shell is authored twice on purpose.** `SHELL_X`/`SHELL_Z`/`SHELL_CEIL` in
+  `tracks.py` and the `building` block in the `costco` palette are the same three
+  facts, held together by `test_the_costco_shell_agrees_with_the_track`. It is the
+  trade Sandy Cove's waterline makes and it is right for the same reason: the road
+  is authored to pass *through* these walls, so deriving them from the road is
+  circular - the wall position would depend on the set of stations you were using
+  to decide where the wall goes. Everything else - the doorways, the holes the
+  travelators punch in the roof, where the racking stands - **is** derived, and
+  `test_the_warehouse_fits_inside_its_own_walls` is what fails when a leg grows
+  past a wall.
+- **`addBuilding` is a sibling of `addScenery`, not a use of Spa's furniture.**
+  `addFurniture` is only reachable from inside the terrain branch, and a flat
+  track has no height field for it.
+- **The rooftop deck is the only crossing**, and it clears the floor by the whole
+  of `DECK` (19), which is why `gate_ceil` comes out at its full 14. Both
+  travelators climb along the one row of the building with no aisle under it, so
+  nothing is ever over anything else part-way up.
+- **`SHELL_CEIL` and `DECK` move together.** The roof-hole test needs a real gap
+  between them, so the roof cannot be raised without raising the deck over it, and
+  raising the deck lengthens both travelators (`length >= sqrt(330 * rise)`) - which
+  moves where the ramp ends, which is what the containment test is watching.
+- **The deck's parapet is collider geometry, not a ribbon `rail`**, because a
+  ground track has to carry zero walled stations.
+- Two things about the camera set numbers here. It rides ~4.3 units over the car,
+  so the 15-unit ceiling clears it easily; and it trails ~11.6 units *behind*, so
+  it goes through a doorway a beat after the car does - which is why every wall is
+  crossed square on a straight, the openings are full height with no lintel, and
+  the entrance header's underside is held at 9.5.
 
 ## Layout
 
