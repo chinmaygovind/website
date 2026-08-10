@@ -34,23 +34,26 @@ The last three in the pool are the long ones, all difficulty 5 and all roughly
 twice The Gauntlet: **Sandy Cove** (`cove`, a ground track - a coast road down
 onto the beach and out along a pier over open water), **Cloudbreak** (`pillars`,
 threaded between rock spires above an overcast) and **Rainbow Road** (`rainbow`,
-half-pipes in deep space with almost no barriers). Cloudbreak and Rainbow
-Road are both in `tracks.EXPOSED`.
+half-pipes in deep space with almost no barriers). Cloudbreak, Rainbow Road
+and Big Red are all in `tracks.EXPOSED`.
 
-**Big Red** (`bigred`, difficulty 4, 2405 units) is the descent: about 160 units
-of near-monotone fall through a warm sunset, over a city drowned a long way below
-it, with the one loop as the only climb. A pad-fed kicker off the slow hairpin
-sends the car over a gap it clears the better part of two seconds later, well
-below where it left; a second, smaller gap repeats the idea further on; a third,
-the same size as the first, closes the lap in the air off the very last pad.
-All three are kept short of what looks dramatic on paper - `AIR_PITCH` noses the
-car down at a constant rate for as long as the throttle is held in the air, so a
-longer flight just means landing further past level, not further downrange; a
-shallow kicker buys drop and distance back without spending more of that
-budget. It is in `tracks.EXPOSED` and keeps barriers in only four places - the
-loop and each jump's landing straight, where a car arrives with no steering -
-everywhere else the edge is just the edge. It is the only track in the pool
-with **boost pads** on it.
+**Big Red** (`bigred`, difficulty 4, 3335 units - now the longest track in
+the pool) is the descent: about 220 units of near-monotone fall through a red
+sunset, over a city drowned a long way below it, with the one loop as the only
+climb. Four full-size jumps and one small one break the fall up. A pad-fed
+kicker off a hairpin sends the car over a gap it clears the better part of two
+seconds later, well below where it left, and the back third of the lap is a
+closing run of hairpin-into-jump repeated twice more - a hairpin resets the
+speed, a pad feeds the next jump - so the last stretch is hairpin, jump,
+hairpin, jump, flag. Every jump is kept short of what looks dramatic on paper -
+`AIR_PITCH` noses the car down at a constant rate for as long as the throttle
+is held in the air, so a longer flight just means landing further past level,
+not further downrange; a shallow kicker buys drop and distance back without
+spending more of that budget. It is in `tracks.EXPOSED` and keeps barriers in
+only five places - the loop and each big jump's landing straight, where a car
+arrives with no steering - everywhere else, including every closing hairpin,
+the edge is just the edge. It is the only track in the pool with **boost
+pads** on it (six of them now).
 
 ## Layout
 
