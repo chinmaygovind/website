@@ -277,6 +277,48 @@ def _stats(user, create=True):
     return user.drive
 
 
+def _derive_asset_version():
+    """A `?v=` token that moves when anything under `static/` moves.
+
+    This used to be `ASSET_VERSION` from the box `.env`, bumped by hand, and a
+    missed bump cost nothing because every static response also carried
+    `Cache-Control: no-cache` - the browser revalidated whatever the token said.
+    nginx now serves `static/` with a real cache lifetime, so a missed bump would
+    mean stale JS for the length of that lifetime, and the token is derived rather
+    than remembered.
+
+    The newest mtime under the tree is enough. The deploy is `git reset --hard`,
+    which only writes files whose contents actually changed, so the token moves
+    exactly when the assets do and not on every deploy.
+
+    **This does not make long-lived caching safe on its own.** Only four files are
+    requested with the token on them (`style.css`, `game.js`, `garage.js`,
+    `pending.js`); the rest of the module graph - `three.module.js`, `trackmesh.js`,
+    `physics.js`, `render.js`, `course.js`, `sound.js` - is reached by bare
+    `import` from inside `game.js` and carries no token at all. That is why the
+    nginx cache lifetime on `/static/` is short. Version those imports before
+    reaching for `immutable`.
+    """
+    newest = 0.0
+    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+    for dirpath, _dirs, files in os.walk(root):
+        for name in files:
+            try:
+                m = os.stat(os.path.join(dirpath, name)).st_mtime
+            except OSError:                  # vanished mid-walk; it cannot be the newest
+                continue
+            if m > newest:
+                newest = m
+    return str(int(newest)) if newest else "1"
+
+
+# Walked once at import rather than per request: the tree cannot change under a
+# running worker, and a deploy restarts it. An explicit `ASSET_VERSION` still
+# wins, so the old knob is not silently ignored - but it is no longer needed, and
+# leaving one set pins the token to whatever it says.
+ASSET_VERSION = os.environ.get("ASSET_VERSION") or _derive_asset_version()
+
+
 @app.context_processor
 def inject_globals():
     return {"current_user": get_current_user(),
@@ -292,7 +334,7 @@ def inject_globals():
             # and the play page overrides it in JS, because there the track can
             # change under the page with no navigation at all.
             "presence_where": PRESENCE_BY_ENDPOINT.get(request.endpoint or "", "home"),
-            "asset_version": os.environ.get("ASSET_VERSION", "1")}
+            "asset_version": ASSET_VERSION}
 
 
 PRESENCE_BY_ENDPOINT = {
@@ -1227,6 +1269,20 @@ def _verify_payload(data):
 # done and none of the blocking.
 _children = []
 
+# How many checks may be in flight at once. Each child is up to ~110MB on the
+# longest track and the box has about a gigabyte across five services, so an
+# unbounded fan-out was the one way a busy evening could have the kernel pick
+# something unrelated to kill - a live race in another room, or ERS. Two fits
+# alongside everything else; three does not.
+#
+# **A refused spawn does not lose the lap.** The row is already committed to
+# `drive_run_checks` and the client has already been told `pending`, so the lap
+# is exactly where it would have been anyway - and `_settle_checks`'s sweep
+# hands anything still pending past `_CHECK_GRACE` to a fresh child, which
+# drains up to 50 rows in one runtime. The cost of being refused is that the lap
+# goes up later, not that it is dropped.
+MAX_VERIFIERS = int(os.environ.get("DRIVE_MAX_VERIFIERS", "2"))
+
 
 def _spawn_verifier(*args):
     """Kick off a check in its own process, and do not wait for it.
@@ -1234,7 +1290,16 @@ def _spawn_verifier(*args):
     `start_new_session` so that a deploy restarting gunicorn does not take a
     half-finished check with it, and both pipes to devnull so nothing can block
     on a full buffer.
+
+    Returns False without starting anything when `MAX_VERIFIERS` are already
+    running. Every caller ignores the return, which is correct: see the note on
+    `MAX_VERIFIERS` for why a refusal is safe.
     """
+    # Reaped first, or a finished-but-uncollected child would count against the
+    # cap for as long as this worker lives, which is months.
+    _reap_verifiers()
+    if len(_children) >= MAX_VERIFIERS:
+        return False
     try:
         import subprocess
         p = subprocess.Popen(
