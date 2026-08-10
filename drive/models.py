@@ -367,6 +367,50 @@ class DriveRace(db.Model):
             return []
 
 
+class DriveCheatFlag(db.Model):
+    """A car whose race stopped being rated, and why.
+
+    The verdict itself is **silent**: a flagged car keeps its place in the
+    standings and nobody in the room is told anything. What it loses is the
+    rating - ``_rate_race`` skips it exactly the way it already skips a guest -
+    and that is the whole of the punishment on purpose. Announcing it would put
+    the server in the middle of an argument it cannot referee, on evidence that
+    is deliberately calibrated to be wrong in the harmless direction; kicking on
+    it would let a false positive end somebody's afternoon.
+
+    So the finding goes here instead, where a person can look at it. There is no
+    admin page yet and no read path in the app at all - this table is written
+    and never queried, which is the intended state until there is something to
+    read it with. ``reasons_json`` keeps the tally per rule rather than a single
+    verdict string, because the useful question of a row like this is always
+    *which* check fired and how often: twelve of one thing is a bad connection
+    finding a soft edge, hundreds of one thing is somebody's build of the game.
+
+    Its own table for the reason ``drive_starts`` and ``drive_races`` are: a
+    live database gets it from ``create_all`` with no migration.
+    """
+    __tablename__ = "drive_cheat_flags"
+
+    id           = db.Column(db.Integer, primary_key=True)
+    user_id      = db.Column(db.Integer, db.ForeignKey("users.id"),
+                             nullable=True, index=True)
+    name         = db.Column(db.String(32), nullable=False)   # guests have no user_id
+    code         = db.Column(db.String(6), nullable=False, index=True)
+    race_id      = db.Column(db.Integer, nullable=True)       # the replay, if one was kept
+    track        = db.Column(db.String(32), nullable=False)
+    phase        = db.Column(db.String(16), nullable=False)   # what it was caught in
+    strikes      = db.Column(db.Integer, default=0)
+    reasons_json = db.Column(db.Text, default="{}")
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    @property
+    def reasons(self):
+        try:
+            return json.loads(self.reasons_json or "{}")
+        except Exception:
+            return {}
+
+
 class DriveGarage(db.Model):
     """What one account's car looks like, and what it has earned the right to.
 

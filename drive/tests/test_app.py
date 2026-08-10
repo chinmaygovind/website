@@ -1500,7 +1500,28 @@ def test_a_finish_cannot_take_longer_than_the_race_has_run(env):
 
 
 def test_a_finish_needs_the_car_to_have_gone_round(env):
-    """`prog` is the car's own progress along the ribbon."""
+    """Progress along the ribbon, and **the server's own measurement of it**.
+
+    This used to read the car's `prog`, which is a number the client had just
+    sent - so the one load-bearing check here was satisfied by
+    `emit('pose', {prog: 99999})` and the whole thing came down to waiting out
+    the physics floor. It reads the watcher now; the car's own number is only
+    the fallback for a car that has never sent a pose, and that car fails this
+    anyway. `tests/test_racecheck.py` is where the watcher's side of it lives.
+    """
+    import app as A
+    import racecheck
+    with A.app.app_context():
+        _room(A, "ZZZZZZ", "sunrise")
+        r = {"code": "ZZZZZZ", "t0": A._now_ms() - 20000}
+        w = racecheck.Watcher()
+        w.prog = 5.0
+        assert not A._finish_is_possible(r, {"prog": 99999.0}, 16000, w)
+
+
+def test_a_car_that_has_never_reported_falls_back_to_its_own_number(env):
+    """No watcher at all is a car that has sent no pose, which fails on `prog`
+    being nought - so the fallback is safe and saying so costs one line."""
     import app as A
     with A.app.app_context():
         _room(A, "ZZZZZZ", "sunrise")

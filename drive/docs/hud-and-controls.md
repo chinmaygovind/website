@@ -302,6 +302,16 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   hairline outline on others, so it can be neither styled nor trusted. The touch
   buttons are dark-fill/light-stroke for the same reason a white wash did not work:
   it vanishes against a bright sky or a sunlit kerb, and half of every track is one.
+  Two things bite at the size these are actually drawn (`.btn.toggle .icn` is
+  17px). **A dot is a zero-length stroke with a round cap** (`M12 18.4h.01`), not
+  a tiny arc back to its own start: `a2 2 0 1 0 0 -.1` puts the point you gave it
+  on the *circle* and the centre a radius away, which is how the ping icon's dot
+  spent its life 2 units to the left of the arcs it was supposed to be the middle
+  of. And **nothing may touch anything it is not part of**: the FPS gauge's needle
+  drawn out to the dial welded to it and the pair read as one filled triangle, so
+  the needle stops short and the dial carries past horizontal at both ends -
+  a clean semicircle with a line under it is a hump, not a gauge. It replaced a
+  zigzag-over-a-baseline, which was the generic analytics mark and named nothing.
 - `R` restarts the run; `T` goes back to the last checkpoint **with the clock
   still running** - the difference between "that lap is gone" and "I fell off".
   **Neither does anything until the clock is running**, and silently: before you

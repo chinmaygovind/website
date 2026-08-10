@@ -3,6 +3,91 @@
 Read this before changing the room phase machine, qualifying, the grid,
 ELO, socket handlers, the race recorder or `/race/<id>`.
 
+- **A room has its own anti-cheat, and it is a different question from the
+  board's.** `racecheck.py`, and its preamble is the long version. The short
+  one: `runcheck.validate` asks whether a submitted replay is self-consistent
+  and `verify.py` re-drives it through the real `Car.step` to ask whether *this
+  car* drove it - both of which need a whole lap in one POST, and the second of
+  which needs the input stream. A race carries neither. What a room has instead
+  is a live 30Hz stream of client-authoritative poses, and the question that
+  allows is smaller: could the car have got from where it said it was to where
+  it now says it is, and did the race stay anywhere near the road.
+  - **The hole this closed was not subtle.** Every field of `on_pose` arrived
+    unchecked, including the two the *server* then decided things from. `prog`
+    orders the standings and was the only real tooth in `_finish_is_possible` -
+    so `emit('pose', {prog: 99999})`, wait out the physics floor, `emit('finish')`
+    was a win, its ELO, its win tally, its podium and its `checkers` badge,
+    with the car never driven. The floor and the clock bound were doing nothing
+    on their own, because the check they were guarding read a number the same
+    client had just made up. `_finish_is_possible` now reads the server's own
+    projection of where the car has been.
+  - **The failure mode is the design.** A race is not a leaderboard - nothing
+    set in a room reaches the board - so the stake is ELO, the tallies, the
+    badges over them and everybody else's afternoon. That flips which mistake is
+    expensive: refusing an honest lap costs a record, but penalising an honest
+    driver costs them a race they are in the middle of. So a pose that fails is
+    **dropped, not punished** - the car keeps the last position the server
+    believed, which looks like a moment of rubber-banding - and only a car that
+    fails steadily (`STRIKE_LIMIT`, twelve) loses anything.
+  - **The budget is a bucket, and that is the whole reason it works.** The
+    obvious rule - a step may not exceed `SPEED_CEIL` times the gap between two
+    poses - does not survive a network: `dt` is measured on *arrival*, so two
+    poses sent 33ms apart routinely land 5ms apart and that honest pair reads as
+    six times the speed limit. Distance is spent from an allowance instead,
+    refilled at `SPEED_CEIL` and capped at `BUCKET_MAX_S`. Jitter cancels,
+    because it is jitter; a car genuinely going too fast drains it and keeps
+    draining it. The cap is the other half - without it a car banks ten seconds
+    of standing still and spends it on one hop to the line.
+  - **`FLAG.RESPAWN` cannot buy a free teleport**, or setting one bit in a
+    payload the client already writes *is* the cheat. A respawn is allowed
+    because it is a real jump, but only to the grid or a checkpoint, and only
+    one the car has **already reached** - measured by the server's own progress
+    rather than by the car's `cp`, which is a client number: read off `cp`,
+    `{cp: 99, flags: RESPAWN}` was a legal jump to the last gate on the track.
+  - **`Watcher.prog` is monotone, and `_go_green` therefore has to reset it.**
+    It must be monotone or a car that rolled backwards over its own line would
+    be refused its finish; but that means a qualifying lap's progress is still
+    sitting there when the lights go out, and the first finish claim of the race
+    would be waved through on a lap driven before it. `_reset_race` clears them
+    too, which is what covers a track change - a new track is a different ribbon,
+    so a carried-over station hint measures a line the car is not on.
+  - **The expensive half runs once, at the flag** (`racecheck.scan_race`), over
+    the trace `_record_race` already samples off the server's own clock. No
+    client sends anything new for it and there is no arrival jitter in it, which
+    is what makes two things affordable that the live half cannot ask: a whole
+    race's **median** frame-to-frame speed, which a cheat cannot sit underneath
+    the way it can a single-frame ceiling, and the corridor over every frame
+    rather than every fifth one.
+  - **The verdict is silent and rating-shaped.** A flagged car keeps its place
+    in the standings, nobody in the room is told, and what it loses is the
+    rating - `_rate_race` skips it through the very same door a guest goes
+    through, so beating one gains nothing either. Announcing it would put the
+    server in the middle of an argument it cannot referee on evidence
+    deliberately calibrated to be wrong in the harmless direction, and kicking
+    on it would let a false positive end somebody's afternoon. The finding goes
+    to `drive_cheat_flags`, which **nothing in Drive reads** - it is written for
+    an admin page that does not exist yet, and that is its intended state.
+  - **What it cannot do**, said plainly: it does not decide a *person* drove,
+    and it cannot see a slightly richer engine. That is the class `verify.py`
+    exists for and it needs the input stream. Carrying one through a live race
+    would mean a new wire format, seconds of subprocess CPU per car, and a
+    verdict that lands after the results sheet - so ELO would have to become
+    provisional and revocable. Deliberately not done: the cheat that ruins a
+    room is the visible one.
+  - `on_qual_time` gets the corridor pass too, on the **pole lap only**. That
+    replay is the one ghost a whole qualifying session chases, so a fabricated
+    one is a car nobody can follow cutting a corner that is not there, with
+    every driver in the room aiming at it. The gate and clock halves of
+    `runcheck.validate` want splits a qualifying lap does not send. The grid
+    slot itself is left on the physics floor it already had - the grid is not
+    rated, and the pose checks are the real defence during the session.
+  - **`_hot_track` exists because `_room_track` is a database query** and says
+    so: it is for paths that run once per car per race, and `on_pose` is thirty
+    times a second per car. So the answer is memoised on the room and dropped by
+    `on_set_track`, the one handler that can change it. That is the second
+    source of truth `_room_track` avoided; what makes it safe is that it is
+    derived and single-writer, so a miss just re-queries.
+
 - **A race is recorded off those same poses, and the recording outlives the
   room.** `_record_race` runs on the broadcast tick and writes one frame per car
   per `1/REPLAY_HZ` from the green light, so frame *n* of every car is the same

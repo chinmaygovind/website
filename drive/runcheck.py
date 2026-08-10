@@ -594,34 +594,59 @@ def follows_the_track(track, time_ms, splits, frames):
             return False, "the replay does not end at the finish"
 
     # --- and it stayed on the course ---------------------------------------
-    line = track.get("line") or []
-    if line:
-        lim = CORRIDOR * CORRIDOR
-
-        def nearest(f, lo, hi):
-            best, bi = None, lo
-            for j in range(lo, hi):
-                p = line[j]["p"]
-                d = ((f[0] - p[0]) ** 2 + (f[1] - p[1]) ** 2 + (f[2] - p[2]) ** 2)
-                if best is None or d < best:
-                    best, bi = d, j
-            return best, bi
-
-        # The car goes forward, so the nearest station is a few past the last
-        # one and a narrow window finds it. This runs on the request path, and
-        # Drive has one eventlet worker - every millisecond here is a millisecond
-        # of every live race's sockets - so the window is small on purpose and a
-        # full scan happens only when the cheap answer looks like a refusal.
-        # Being *sure* is worth 50ms; being sure 300 times a lap is not.
-        idx = 0
-        for f in frames:
-            best, bi = nearest(f, max(0, idx - 10), min(len(line), idx + 40))
-            if best is None or best > lim:
-                best, bi = nearest(f, 0, len(line))
-                if best is None or best > lim:
-                    return False, "replay leaves the course"
-            idx = bi
+    if leaves_course(track, frames):
+        return False, "replay leaves the course"
     return True, ""
+
+
+def nearest_station(track, f, hint=0):
+    """The index of the ribbon station nearest `f`, and its squared distance.
+
+    `hint` is where to start looking. The car goes forward, so the nearest
+    station is a few past the last one and a narrow window finds it. This runs
+    on the request path, and Drive has one eventlet worker - every millisecond
+    here is a millisecond of every live race's sockets - so the window is small
+    on purpose and a full scan happens only when the cheap answer looks like a
+    refusal. Being *sure* is worth 50ms; being sure 300 times a lap is not.
+
+    Returns `(None, hint)` for a track with no line, which every caller reads as
+    "no opinion" rather than as a pass or a fail.
+    """
+    line = track.get("line") or []
+    if not line:
+        return None, hint
+
+    def scan(lo, hi):
+        best, bi = None, lo
+        for j in range(lo, hi):
+            p = line[j]["p"]
+            d = ((f[0] - p[0]) ** 2 + (f[1] - p[1]) ** 2 + (f[2] - p[2]) ** 2)
+            if best is None or d < best:
+                best, bi = d, j
+        return best, bi
+
+    best, bi = scan(max(0, hint - 10), min(len(line), hint + 40))
+    if best is None or best > CORRIDOR * CORRIDOR:
+        best, bi = scan(0, len(line))
+    return best, bi
+
+
+def leaves_course(track, frames):
+    """Does any frame sit further than `CORRIDOR` from the ribbon?
+
+    Factored out of `validate` because a room needs exactly this question of a
+    recording that never goes near a leaderboard - a race replay, a pole lap -
+    and the windowed walk over the line is the whole cost of asking it.
+    """
+    if not (track.get("line") or []):
+        return False
+    lim = CORRIDOR * CORRIDOR
+    idx = 0
+    for f in frames:
+        best, idx = nearest_station(track, f, idx)
+        if best is None or best > lim:
+            return True
+    return False
 
 
 def clamp_distance(track, claimed):

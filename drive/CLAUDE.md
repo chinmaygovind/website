@@ -18,7 +18,7 @@ rest of the repo; any one of them is 11-28KB.
 | `docs/tracks-and-geometry.md` | `tracks.py`, `trackmesh.js`, `course.js`, the collider, boost pads, a track's palette or sky |
 | `docs/runs-and-scoring.md` | `/api/run`, `/api/start`, `/api/activity`, `runcheck.py`, `verify.py`, `laptime.py`, `pending.js`, medals, ghost recording, the anti-cheat |
 | `docs/racing-physics.md` | car-to-car contact, the slipstream, catch-up, remote-car interpolation, rival sound |
-| `docs/rooms-and-races.md` | the room phase machine, qualifying, the grid, ELO, socket handlers, the race recorder, `/race/<id>` |
+| `docs/rooms-and-races.md` | the room phase machine, qualifying, the grid, ELO, socket handlers, `racecheck.py`, the race recorder, `/race/<id>` |
 | `docs/garage.md` | `garage.py`, `garage.js`, `CarView`, the car model, liveries, decals |
 | `docs/badges.md` | adding, changing or recolouring a badge |
 | `docs/hud-and-controls.md` | the in-game HUD, the settings/help sheets, the keys, touch controls, `sound.js`, the type |
@@ -49,7 +49,8 @@ it, with the one loop as the only climb. It is the only track in the pool with
   relaxation + speed profile → medal times), `runcheck.py` (ghost packing, time
   validation), `verify.py` + `jsrt.py` + `three_stub.js` (the anti-cheat: a lap
   near the top of a board is re-driven through the game's own `Car.step` in
-  QuickJS before it goes up), `models.py`, `app.py`, `static/js/` (`trackmesh.js`, `physics.js`,
+  QuickJS before it goes up), `racecheck.py` (the *room's* anti-cheat, which is
+  a different question - see below), `models.py`, `app.py`, `static/js/` (`trackmesh.js`, `physics.js`,
   `course.js`, `render.js`, `sound.js`, `game.js`, `pending.js`, vendored
   `three.module.js`), `tools/shoot_tracks.py` (the preview pictures). The play
   page has three modes - `solo`, `room` and `replay` - and they are one template
@@ -74,6 +75,14 @@ it, with the one loop as the only climb. It is the only track in the pool with
   recording or `/api/run` has to keep that working: read
   `docs/runs-and-scoring.md` first, and note that `tests/test_verify.py` drives
   real laps and will tell you if the honest floor has moved.
+- **A room is checked too, but for a different thing and with a different
+  temper.** `racecheck.py` bounds the live pose stream and scans the recorded
+  race at the flag: it catches teleports, speed hacks and a win claimed without
+  driving, and it deliberately cannot see a slightly richer engine, which needs
+  the input stream a race does not carry. A failed pose is **dropped, not
+  punished**, and the only consequence a car can suffer is going unrated,
+  silently. Read `docs/rooms-and-races.md` before touching `on_pose`,
+  `on_finish`, `on_qual_time` or `_rate_race`.
 - **Nothing cosmetic may touch the simulation** - not ride height, not `CAR_RADIUS`,
   not the wheel radius, not a gram of mass. A cosmetic that changed how the car
   drives would make every time on the board mean something different.

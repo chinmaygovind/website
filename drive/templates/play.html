@@ -502,16 +502,35 @@
            Two switches and not one, because wanting to know your frame rate and
            wanting to know your latency are different questions. Both default
            off: a number over the road is something you go looking for. -->
+      {# A dial and a needle, not the zigzag-over-a-baseline it used to be: that
+         is the generic "chart" mark every analytics page uses, and it said
+         *some numbers about something* rather than naming the thing the switch
+         turns on. A gauge reads as a rate at a glance, and the needle is swung
+         high on purpose - up is the good end of this number.
+         Two things it needs at 17px. The dial carries **past horizontal at both
+         ends** (220 degrees, not a half circle): a clean semicircle with a
+         needle under it is a hump with a line in it, and the overhanging ends
+         are what make it read as a dial. And the **needle stops well short of
+         the rim** - drawn out to the arc it welds to it and closes the shape
+         into a filled triangle at this size. There is no hub dot, because a
+         1.9-wide round cap already is one. #}
       <button class="btn secondary toggle" id="btnFps" aria-pressed="false">
         <svg class="icn" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M3.5 17.5 8 11l3.6 3.2L15.4 8l5.1 9.5z"/>
-          <path d="M3.5 20.5h17"/>
+          <path d="M4.5 17.7A8 8 0 1 1 19.5 17.7"/>
+          <path d="M12 15 14.7 10.4"/>
         </svg>
         FPS Counter: <span id="btnFpsState">Off</span>
       </button>
       <button class="btn secondary toggle" id="btnPing" aria-pressed="false">
         <svg class="icn" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 18.4a2 2 0 1 0 0-.1z"/>
+          {# The dot sits on the arcs' own centre, (12, 18.4) - both arcs are
+             struck from there, so anywhere else and the rings are not around
+             it. It is drawn as a zero-length stroke with a round cap rather
+             than as a tiny circle: an `a2 2 …` arc back to its own start puts
+             the *start* on the circle and the centre a radius off to one side,
+             which is exactly how this one ended up 2 units left of the arcs it
+             belongs to. #}
+          <path d="M12 18.4h.01"/>
           <path d="M8.1 14.6a5.5 5.5 0 0 1 7.8 0"/>
           <path d="M4.8 11.1a10.2 10.2 0 0 1 14.4 0"/>
         </svg>

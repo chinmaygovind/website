@@ -23,11 +23,12 @@ from sqlalchemy import func
 
 import models as models_mod
 from models import (db, User, DriveStats, DriveTime, DriveStart, DriveRunCheck,
-                    DriveGame, DrivePlayer, DriveRace, DriveGarage)
+                    DriveGame, DrivePlayer, DriveRace, DriveGarage, DriveCheatFlag)
 import tracks as tracks_mod
 import tuning
 import laptime
 import runcheck
+import racecheck
 import visits
 import garage as garage_mod
 # The palette and the hash moved into `garage.py`, with the rest of what a car
@@ -1828,6 +1829,33 @@ def _room(code):
     return r
 
 
+def _hot_track(r):
+    """The room's track, for the 30Hz path. Memoised on the room.
+
+    `_room_track` is a database query and says in as many words that it is for
+    paths that run once per car per race. `on_pose` is thirty times a second per
+    car and cannot have one - but it needs the track, because projecting a car
+    back onto the ribbon is the whole of what makes `prog` the server's number
+    rather than the client's.
+
+    So the answer is kept on the room and dropped by the one handler that can
+    change it. That is the second source of truth `_room_track` deliberately
+    avoided, and the difference that makes it safe is that this one is *derived*
+    and has a single writer: a miss re-queries, so the worst a stale entry can
+    do is be thrown away and fetched again. The miss is cached too (as `False`),
+    or a room whose game row has been swept would run a query per pose.
+    """
+    trk = r.get("trk")
+    if trk is None:
+        trk = r["trk"] = _room_track(r["code"]) or False
+    return trk or None
+
+
+def _watch(r, pid):
+    """This car's rolling anti-cheat state. See `racecheck.Watcher`."""
+    return r.setdefault("watch", {}).setdefault(pid, racecheck.Watcher())
+
+
 def _car(r, pid):
     return r["cars"].setdefault(pid, {
         "p": [0.0, 0.0, 0.0], "q": [0.0, 0.0, 0.0, 1.0], "v": [0.0, 0.0, 0.0],
@@ -2124,7 +2152,25 @@ def on_clock(data=None):
 
 @socketio.on("pose")
 def on_pose(data=None):
-    """A car's own report of where it is. Client-authoritative by design."""
+    """A car's own report of where it is. Client-authoritative, but not unquestioned.
+
+    Client-authoritative is right for a car in a race ticking at 30Hz - there is
+    no other way to have it steer like a car - but "authoritative" was doing more
+    work than it should have. Every field here arrived unchecked, including the
+    two the *server* then made decisions from: `prog` orders the standings and is
+    the only real tooth in `_finish_is_possible`, so `emit('pose', {prog: 99999})`
+    followed by a finish claim won a race, its ELO, its win, its podium and its
+    badge without the car being driven at all.
+
+    So a pose is now plausible or it is dropped. `racecheck` says what that
+    means and, more importantly, why each rule is shaped the way it is; what
+    matters here is the failure mode. **A refused pose is not a penalty**: the
+    car keeps the last position the server believed, which looks like a moment
+    of rubber-banding, and it goes on racing. Only a car that fails steadily -
+    `STRIKE_LIMIT` of them - loses its rating at the flag, silently. A dropped
+    frame on a bad connection costs nothing, which it must, because this runs
+    while somebody is mid-corner.
+    """
     ent = _sid_room.get(request.sid)
     if not ent or not data:
         return
@@ -2133,21 +2179,60 @@ def on_pose(data=None):
     if not r:
         return
     c = _car(r, pid)
+    w = _watch(r, pid)
+    track = _hot_track(r)
+    now = _now_ms()
+
     p, q, v = data.get("p"), data.get("q"), data.get("v")
-    if isinstance(p, list) and len(p) == 3:
-        c["p"] = [float(x) for x in p]
-    if isinstance(q, list) and len(q) == 4:
-        c["q"] = [float(x) for x in q]
-    if isinstance(v, list) and len(v) == 3:
+    # Numbers first, and `finite` rather than a bare `float()`: JSON has `NaN`
+    # and `Infinity` and Python parses both, so this pose is fanned straight
+    # back out to five other browsers as a car at coordinates that are not
+    # coordinates. The pole ghost has been checked for exactly this since it
+    # existed (`_sane_frames`); the live stream never was.
+    if not (isinstance(p, list) and len(p) == 3 and racecheck.finite(p)):
+        return
+    if not (isinstance(q, list) and len(q) == 4 and racecheck.finite(q)):
+        return
+    p = [float(x) for x in p]
+
+    # Measured against the last pose the server *believed*, not the last one it
+    # was sent - otherwise a refused jump becomes the baseline for the next one
+    # and a cheat only ever has to be refused once.
+    prev = c["p"] if c["ts"] else None
+    try:
+        flags = int(data.get("flags") or 0)
+    except (TypeError, ValueError):
+        return
+    if racecheck.check_pose(w, track, prev, p, now - (c["ts"] or now), flags):
+        return
+    racecheck.sample_progress(w, track, p, now)
+
+    c["p"] = p
+    c["q"] = [float(x) for x in q]
+    if isinstance(v, list) and len(v) == 3 and racecheck.finite(v):
         c["v"] = [float(x) for x in v]
-    c["prog"] = float(data.get("prog") or 0.0)
-    c["cp"] = int(data.get("cp") or 0)
-    c["flags"] = int(data.get("flags") or 0)
+    c["cp"] = racecheck.clamp_cp(data.get("cp") or 0)
+    c["flags"] = flags
+    # The client's own progress, but never further round than the server has
+    # seen it get. It is kept rather than replaced because it updates every pose
+    # where the server's projection is sampled at 5Hz, and the standings read it
+    # - so this is smooth where `w.prog` would step. What it can no longer be is
+    # a number somebody typed.
+    try:
+        claimed = float(data.get("prog") or 0.0)
+    except (TypeError, ValueError):
+        claimed = 0.0
+    if claimed != claimed:                              # NaN
+        claimed = 0.0
+    c["prog"] = max(0.0, min(claimed, w.prog + racecheck.PROG_LEAD))
     # How full the tow is. Clamped rather than trusted: it is fanned straight
     # back out to everybody else, and it is the loudness of an effect on their
     # screens, so a client sending 400 would be a car in a permanent boost.
-    c["sl"] = min(1.0, max(0.0, float(data.get("sl") or 0.0)))
-    c["ts"] = _now_ms()
+    try:
+        c["sl"] = min(1.0, max(0.0, float(data.get("sl") or 0.0)))
+    except (TypeError, ValueError):
+        c["sl"] = 0.0
+    c["ts"] = now
 
 
 @socketio.on("set_track")
@@ -2171,6 +2256,7 @@ def on_set_track(data=None):
         game.track = slug
         game.last_activity_at = datetime.utcnow()
         db.session.commit()
+        r["trk"] = None                  # `_hot_track`'s memo; this is its writer
         _reset_race(r)
     socketio.emit("track_change", {"track": slug}, room="room:" + code)
     _broadcast_lobbies()
@@ -2227,8 +2313,15 @@ def _reset_race(r):
         if c["gone"]:
             # Only kept around to be a DNF in the race that has just ended.
             r["cars"].pop(pid, None)
+            r.get("watch", {}).pop(pid, None)
             continue
         c["ms"], c["dnf"], c["cp"], c["prog"] = None, False, 0, 0.0
+    # The anti-cheat's rolling state goes back to nothing with everything else.
+    # `on_set_track` comes through here, and a new track is a different ribbon,
+    # so a carried-over station hint and progress would be measurements of a
+    # line the car is no longer on.
+    for w in r.get("watch", {}).values():
+        w.reset()
 
 
 def _abort_race(code, why):
@@ -2391,6 +2484,15 @@ def on_qual_time(data=None):
         return
     if r["pole"] and r["pole"]["ms"] <= ms:
         return                   # quick, but not quick enough to be the ghost
+    # The pole lap is the one ghost a whole qualifying session chases, so it is
+    # worth more than a shape check before it becomes everybody's target: a
+    # fabricated one is a car nobody can follow, cutting a corner that is not
+    # there, and every driver in the room aiming at it. The corridor is the one
+    # question worth asking of frames alone - `runcheck.validate`'s gate and
+    # clock checks want the splits, which a qualifying lap does not send, and
+    # the re-simulation wants an input stream, which no room lap carries.
+    if track and runcheck.leaves_course(track, frames):
+        return
     c = _car(r, pid)
     r["pole"] = {"pid": pid, "name": c["name"], "color": c["color"], "ms": ms,
                  "hz": int((data or {}).get("hz") or runcheck.GHOST_HZ),
@@ -2564,6 +2666,27 @@ def _go_green(code, seq):
             # the same instant and the replay's clock is the race's clock.
             r["rec"] = {"t0": t0, "track": game.track if game else "", "n": 0,
                         "cars": {pid: [] for pid in r["grid"]}}
+            # **Every watcher starts this race from nothing**, and the green
+            # light is exactly the right moment for it - not `countdown`, where
+            # the grid is assigned.
+            #
+            # `Watcher.prog` is monotone: it has to be, or a car that rolled
+            # backwards over its own line would be refused the finish it just
+            # took. So a qualifying lap's progress would otherwise still be
+            # sitting there when the lights went out, and `_finish_is_possible`
+            # would wave the first claim of the race through on the strength of
+            # a lap driven before it.
+            #
+            # The strikes go with it, and that is what pays for the grid. Being
+            # placed in a slot is a teleport by every measure in `racecheck`,
+            # and the client does it partway through the countdown - after the
+            # phase changes, so a reset there would happen *before* the jump it
+            # was meant to excuse and catch nothing. Clearing here, five seconds
+            # later, means whatever the move cost is discarded before it can
+            # count against anybody, and the first pose of the race is measured
+            # against the grid slot the car is genuinely sitting on.
+            for w in r.get("watch", {}).values():
+                w.reset()
         socketio.emit("race_green", {"t0": t0}, room="room:" + code)
         # The backstop. Every other way a race ends depends on somebody doing
         # something; this one does not.
@@ -2586,9 +2709,23 @@ def on_split(data=None):
     r = _rooms.get(code)
     if not r or r["phase"] != "racing" or pid not in r["grid"]:
         return
-    cp = int((data or {}).get("cp") or 0)
-    ms = int((data or {}).get("ms") or 0)
+    try:
+        cp = int((data or {}).get("cp") or 0)
+        ms = int((data or {}).get("ms") or 0)
+    except (TypeError, ValueError):
+        return
     if cp <= 0 or ms <= 0:
+        return
+    # Bounded the same way a finish is, and for a smaller version of the same
+    # reason. A split only feeds the gap on everybody's HUD - it reaches no
+    # standing and no rating - but it is fanned straight back out, so an
+    # unbounded one shows five other people a leader who is forty seconds up the
+    # road and not there. `cp` past the last checkpoint is not a checkpoint, and
+    # `ms` cannot be longer than the race has been running.
+    track = _hot_track(r)
+    if track and cp > len(track.get("gates") or []):
+        return
+    if ms > _now_ms() - (r.get("t0") or 0) + FINISH_CLOCK_SLACK_MS:
         return
     mine = r["splits"].setdefault(pid, {})
     if cp in mine:
@@ -2619,7 +2756,7 @@ def _room_track(code):
     return tracks_mod.get(game.track) if game else None
 
 
-def _finish_is_possible(r, c, ms):
+def _finish_is_possible(r, c, ms, w=None):
     """Could this car have finished in `ms`? Not "did it" - see the caveat.
 
     `on_finish` used to take any positive number, so `socket.emit('finish',
@@ -2638,15 +2775,24 @@ def _finish_is_possible(r, c, ms):
       simulation rather than about anybody's driving, so unlike a floor under
       `ideal` it cannot punish somebody for being quick: on Sunrise it is 9.8s
       against a real lap of about 16.
-    * **The car has to have gone round.** `prog` is its own progress along the
-      ribbon, already on the wire for the standings.
+    * **The car has to have gone round**, and this is now the server's own
+      opinion of that rather than the client's. It used to read `c["prog"]`,
+      which is a number the same client had just sent - so the one load-bearing
+      check was satisfied by `emit('pose', {prog: 99999})` and the whole thing
+      reduced to "wait out the physics floor, then claim". What it reads now is
+      `Watcher.prog`: the car's position projected back onto the ribbon by
+      `racecheck.sample_progress`, five times a second, from poses that each had
+      to be reachable from the one before. To get that number up you have to
+      actually move a car around the course.
 
-    **What this does not do**, and it should be said plainly: `ms` and `prog`
-    both still come from the client, so somebody willing to wait can sit for
-    twelve seconds and claim a twelve-second lap they did not drive. Closing
-    that needs the replay, which a race deliberately does not carry. What has
-    gone is the one-line drive-by - the claim is now bounded by physics and by
-    the clock, instead of being taken entirely on trust.
+    **What this does not do**, and it should be said plainly: `ms` still comes
+    from the client, so somebody willing to drive round slowly can claim the lap
+    took less time than it did. Closing *that* needs the replay and the input
+    stream behind it, which a race deliberately does not carry - see
+    `racecheck`'s preamble for why a room is not the place for the
+    re-simulation. The bound that is left is a real one: a lap no faster than
+    the car goes, no longer than the race has run, over a course the server
+    watched the car cover.
     """
     elapsed = _now_ms() - (r.get("t0") or 0)
     if ms > elapsed + FINISH_CLOCK_SLACK_MS:
@@ -2661,7 +2807,11 @@ def _finish_is_possible(r, c, ms):
         length = laptime.line_length(track)
         if ms < length / (tuning.MAX_SPEED * 1.7) * 1000.0:
             return False
-        if c.get("prog", 0.0) < FINISH_MIN_PROG * length:
+        # The server's projection, falling back to the car's own number only
+        # when there is no watcher at all - which is a car that has never sent a
+        # pose, and therefore one that is about to fail this anyway.
+        prog = w.prog if w is not None else c.get("prog", 0.0)
+        if prog < FINISH_MIN_PROG * length:
             return False
     return True
 
@@ -2684,7 +2834,7 @@ def on_finish(data=None):
         ms = int((data or {}).get("ms") or 0)
         if ms <= 0:
             return
-        if not _finish_is_possible(r, c, ms):
+        if not _finish_is_possible(r, c, ms, _watch(r, pid)):
             return
         seq = r["race_seq"]
         c["ms"] = ms
@@ -2747,9 +2897,14 @@ def _close_race(code, why, seq=None):
                                   "color": c["color"]})
             elo_delta = {}
             race_id = None
+            # Judged before either of the next two lines: the rating needs the
+            # answer, and `_store_replay` is what clears `r["rec"]`, which is
+            # the recording the post-race pass reads.
+            flagged = _judge_race(r)
             if game:
-                elo_delta = _rate_race(game, standings)
+                elo_delta = _rate_race(game, standings, set(flagged))
                 race_id = _store_replay(r, game, standings, why)
+                _record_flags(r, game, flagged, race_id)
                 game.add_result({"t": now, "track": game.track, "race": race_id,
                                  "standings": standings, "why": why})
                 game.status = "waiting"
@@ -2847,7 +3002,73 @@ def on_end_race(data=None):
         _abort_race(code, "The host called it off.")
 
 
-def _rate_race(game, standings):
+def _judge_race(r):
+    """Who, if anybody, drove something the car cannot do. `{pid: reasons}`.
+
+    Two sources of evidence, and they answer different halves:
+
+      * the **live** strikes each car collected through the race
+        (`racecheck.Watcher`), which is the per-pose bucket and the corridor
+        sampled at 5Hz;
+      * a **post-race** pass over the trace the server recorded itself
+        (`racecheck.scan_race`), which is the questions no per-step rule can
+        ask - a whole race's median speed, and the corridor over every frame
+        instead of every fifth one.
+
+    Run before `_rate_race` and before `_store_replay`, because the first needs
+    the answer and the second is what throws the frames away.
+
+    Only the graded field is looked at: `r["grid"]` is who lined up, and
+    somebody who joined after the lights is not in the standings and cannot be
+    in this either.
+    """
+    rec = r.get("rec") or {}
+    track = tracks_mod.get(rec.get("track") or "")
+    out = {}
+    for pid in r.get("grid", {}):
+        reasons = {}
+        w = r.get("watch", {}).get(pid)
+        flagged = False
+        if w is not None and w.flagged:
+            flagged = True
+            reasons.update(w.reasons)
+        for why in racecheck.scan_race(track, (rec.get("cars") or {}).get(pid), REPLAY_HZ):
+            flagged = True
+            reasons[why] = reasons.get(why, 0) + 1
+        if flagged:
+            out[pid] = reasons
+    return out
+
+
+def _record_flags(r, game, flagged, race_id):
+    """Write the findings down. Nothing in Drive reads them yet - that is the point.
+
+    The verdict a flagged car gets is silent and rating-shaped: it is skipped by
+    `_rate_race` exactly the way a guest is, and nobody in the room is told.
+    That leaves the finding itself with nowhere to go, which is what this table
+    is for - somewhere a person can look later, when there is an admin page to
+    look with. See `DriveCheatFlag`.
+
+    Guests are flagged too, even though a guest has no rating to lose. They can
+    still take a win off somebody, and a row saying who and on what track is
+    worth more than the reasoning that a guest does not matter.
+    """
+    if not flagged or not game:
+        return
+    by_pid = {p.pid: p for p in game.players}
+    for pid, reasons in flagged.items():
+        pl = by_pid.get(pid)
+        c = r["cars"].get(pid) or {}
+        db.session.add(DriveCheatFlag(
+            user_id=pl.user_id if pl else None,
+            name=(pl.name if pl else None) or c.get("name") or "Driver",
+            code=r["code"], race_id=race_id, track=game.track,
+            phase="racing", strikes=sum(reasons.values()),
+            reasons_json=json_mod.dumps(reasons)))
+    db.session.commit()
+
+
+def _rate_race(game, standings, skip=()):
     """Pairwise ELO over the finishing order, counting only logged-in accounts.
 
     **Guests are invisible to the rating.** They are in the room, on the grid
@@ -2866,10 +3087,19 @@ def _rate_race(game, standings):
 
     Still needs two accounts: a race with one is a race with nobody to rate
     them against.
+
+    **`skip` is the anti-cheat's whole verdict**, and it is deliberately the
+    same door a guest comes through: a car that failed `_judge_race` is in the
+    room, on the grid and in the standings on everybody's screen, and simply is
+    not part of the rating. Nothing else happens to it. That means beating one
+    gains nothing, which is the right answer twice over - the result is not
+    evidence about either driver, and a room cannot be farmed by bringing a
+    cheat along to lose to.
     """
     by_pid = {p.pid: p for p in game.players}
     rated = [e for e in standings
-             if e["pid"] in by_pid and by_pid[e["pid"]].user_id]
+             if e["pid"] in by_pid and by_pid[e["pid"]].user_id
+             and e["pid"] not in skip]
     if len(rated) < 2:
         return {}
     K = 32.0

@@ -751,7 +751,11 @@ body.room .solo-only { display: none; }
 }
 .opt:hover { background: #f1efe9; }
 .opt.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
-.ghost-now { margin: .55rem 0 0; font-size: .9rem; color: var(--ink-soft); }
+/* The sentence under the Splits row belongs to the Splits row: it says which
+   lap the chips have you chasing. It had .55rem above it and nothing below, so
+   it sat closer to the audio switches than to the thing it is about and read as
+   a caption for Sound and Music. Tight above, a clear gap below. */
+.ghost-now { margin: .3rem 0 1.05rem; font-size: .9rem; color: var(--ink-soft); }
 
 /* --- the board, in the game ---------------------------------------------- */
 .tracks-sheet { max-width: 780px; }
