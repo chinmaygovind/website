@@ -37,10 +37,20 @@ threaded between rock spires above an overcast) and **Rainbow Road** (`rainbow`,
 half-pipes in deep space with almost no barriers). Cloudbreak and Rainbow
 Road are both in `tracks.EXPOSED`.
 
-**Big Red** (`bigred`, difficulty 4, 1868 units) is the descent: about 75 units
-of near-monotone fall through a red sunset, over a city drowned a long way below
-it, with the one loop as the only climb. It is the only track in the pool with
-**boost pads** on it.
+**Big Red** (`bigred`, difficulty 4, 2405 units) is the descent: about 160 units
+of near-monotone fall through a warm sunset, over a city drowned a long way below
+it, with the one loop as the only climb. A pad-fed kicker off the slow hairpin
+sends the car over a gap it clears the better part of two seconds later, well
+below where it left; a second, smaller gap repeats the idea further on; a third,
+the same size as the first, closes the lap in the air off the very last pad.
+All three are kept short of what looks dramatic on paper - `AIR_PITCH` noses the
+car down at a constant rate for as long as the throttle is held in the air, so a
+longer flight just means landing further past level, not further downrange; a
+shallow kicker buys drop and distance back without spending more of that
+budget. It is in `tracks.EXPOSED` and keeps barriers in only four places - the
+loop and each jump's landing straight, where a car arrives with no steering -
+everywhere else the edge is just the edge. It is the only track in the pool
+with **boost pads** on it.
 
 ## Layout
 

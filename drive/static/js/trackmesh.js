@@ -276,9 +276,9 @@ const PALETTES = {
                 fog: 0x120a28, fogNear: 300, fogFar: 1500,
               },
               below: { kind: 'void' } },
-  // Big Red: a long fall through a red sky, above a city drowned in cloud.
+  // Big Red: a sheer dive through a warm sunset sky, above a city drowned in cloud.
   //
-  // The whole track is a descent, so the thing you look at for forty seconds is
+  // The whole track is a descent, so the thing you look at for the whole lap is
   // what is *underneath* you - hence the deepest `below` in the pool. The deck
   // sits 130 down rather than Skyline's 92 and the floor another 300 under
   // that, which is what makes the city read as far away rather than as a
@@ -286,38 +286,46 @@ const PALETTES = {
   // seeing through the holes to a city rather than seeing a cloud layer with a
   // few masts in it.
   //
-  // Everything is lit from below and behind by a sun that is nearly down. That
-  // is why the cloud is a warm salmon rather than white - it is being lit from
-  // underneath by the same sunset - and why `hemi.ground` is a deep red: it is
-  // the bounce, and on a track with nothing under it but weather the bounce is
-  // most of what the car and the barriers are actually lit by.
+  // The sky used to burn crimson through near-black, which read as menacing
+  // rather than as a sunset - the horizon was closer to a wound than to dusk.
+  // It is a gentler evening now: gold and coral low down where the sun still
+  // is, cooling up through peach and lavender to a soft twilight blue overhead
+  // that never goes near black, so the drop reads as scenic rather than
+  // punishing.
+  //
+  // Everything is still lit from below and behind by a sun that is nearly
+  // down. That is why the cloud is a warm salmon rather than white - it is
+  // being lit from underneath by the same sunset - and why `hemi.ground` is a
+  // warm amber rather than the old blood red: it is the bounce, and on a track
+  // with nothing under it but weather the bounce is most of what the car and
+  // the barriers are actually lit by.
   bigred:   { road: 0x3a2530, kerb: 0xffe4dc, kerb2: 0xff2f42,
               ground: 0x3a1622, rail: 0xffd6cf, prop: 0x5c2432, deco: 0xff4d5a,
-              fog: 0xa8556a,
+              fog: 0xd99a86,
               // Electric cyan on a red road, which is the one pair of colours
               // nobody has to be told about. The panel under it is nearly black
               // so the chevrons have something to be bright *against* - on bare
               // tarmac they read as paint rather than as light.
               pad: 0x7df9ff, padBase: 0x140710,
               sky: {
-                // Down at the horizon it is nearly black - you are above the
-                // weather and there is no ground to bounce anything back. It
-                // burns through crimson to orange where the sun is, and cools
-                // to a deep violet overhead that still has night in it.
+                // Warm gold and coral low down, where the sun still is; cooling
+                // through soft peach and lavender to a twilight blue overhead
+                // that keeps colour in it rather than falling to black - an
+                // evening sky, not a burning one.
                 stops: [
-                  [0.00, 0x2a0a12], [0.36, 0x7d1526], [0.46, 0xc42d2c],
-                  [0.50, 0xf25c34], [0.55, 0xc93650], [0.64, 0x8e2a5e],
-                  [0.76, 0x53215e], [0.88, 0x2c1546], [1.00, 0x140a28],
+                  [0.00, 0x3a2a4a], [0.30, 0x9a5f72], [0.45, 0xe8926a],
+                  [0.50, 0xffc07a], [0.56, 0xf5aa8c], [0.68, 0xb090ba],
+                  [0.82, 0x7078ac], [1.00, 0x424c82],
                 ],
-                glow: 0xff9a5a, glowStrength: 0.95,
-                sun: { az: -0.62, el: 0.03, color: 0xff8f52, size: 620 },
+                glow: 0xffcf8e, glowStrength: 0.85,
+                sun: { az: -0.62, el: 0.03, color: 0xffc98a, size: 620 },
                 // The disc is on the deck; the key light is not, or the road
                 // and the cars are silhouettes. Warm, and strong enough that a
                 // banked corner still shows which way it is banked.
-                light: { color: 0xffd0b4, intensity: 1.34,
+                light: { color: 0xffe0bc, intensity: 1.24,
                          dir: [Math.sin(-0.62) * 0.86, 0.5, Math.cos(-0.62) * 0.86] },
-                hemi: { sky: 0xff9c86, ground: 0x7a1428, intensity: 0.95 },
-                fog: 0xa8556a, fogNear: 280, fogFar: 2100,
+                hemi: { sky: 0xffd2b0, ground: 0xc07858, intensity: 0.9 },
+                fog: 0xd99a86, fogNear: 300, fogFar: 2100,
               },
               // A real city a long way down, and a thin layer of cloud between
               // it and the road - which is two separate things and needed the

@@ -99,6 +99,48 @@ collider, or any track palette/sky.
   jump taken flat out - which is how every jump is taken - was pointing at the floor
   half a second off the lip. `test_the_car_does_not_nosedive_off_a_jump` bounds the
   drop over the first half second and still requires enough authority to aim.
+- **A big drop needs an explicit `bow` on `gap`, or the lap model brakes for it
+  like a corner.** `gap`'s default bow is a small, capped ballistic hint - fine
+  for the pool's ordinary jumps, all of which drop under 12 units - but for a
+  real fall the straight-line kicker exit and the shallow default bow meet at a
+  real kink in the tangent, and `speed_profile`'s curvature-based cap (the same
+  one that slows a car for a corner) reads that kink as a tight one and clamps
+  speed hard right at the lip - independent of the kicker's own angle, since
+  the kink is in the *seam*, not the ramp. `Builder.gap(length, drop, bow=...)`
+  takes an explicit bow instead of the auto one; picking it so the curve's
+  initial slope roughly matches the kicker's exit grade -
+  `(drop + length * rise / kick) / pi` - removes the kink and lets the model
+  see the same climb-then-fall arc the car actually flies. Big Red's main jump
+  is the one in the pool that needs this.
+- **A jump's hang time has a real ceiling, and it is not about the ballistics.**
+  `AIR_PITCH` pitches the car's nose down at a constant *rate* for as long as
+  the throttle is held in the air, which is how every jump in the pool is
+  actually flown (the test driver holds it, and so does everyone's instinct).
+  That means the nose keeps rotating for as long as the car is airborne,
+  whatever the drop or the distance - so hang time, not span, is what decides
+  how far past level it has rotated by touchdown. Built for a two-and-a-half
+  second flight, Big Red's main jump landed nose-down hard enough to punch
+  through the road on contact; dialled back to under two seconds - still the
+  longest in the pool by a clear margin - it lands clean. Sanity-check a new
+  jump's hang time against the pool's existing ones (`~1-1.5s`) before making
+  it much longer, and check by actually flying it - `test_every_gap_is_clearable`
+  only asks whether the ballistics reach the far side, not what the car is
+  pointed at when they do.
+- **The authored landing zone has to absorb *real* speed, not `laptime`'s ideal
+  line.** `speed_profile` models one theoretical racing line; a real lap - the
+  test driver's or a person's - carries a different amount of speed off the
+  lip depending on how the corner before the jump was actually taken, so it
+  lands at a different point every time. Big Red's landing straight used to be
+  46 units and the next gate right after it; a faster entry landed past the
+  gate while still airborne, which a gate cannot credit at any height (see
+  `gate_ceiling` below), and past *that* the car was landing on whatever
+  happened to be next rather than on flat road, which is the other way a fast
+  landing goes wrong. The fix was distance, not tuning: a 100-unit landing
+  straight and the gate pushed out past where even a full-throttle, no-braking
+  approach lands. `test_every_gap_is_clearable`'s margin (reach over the
+  authored span) tells you the jump is *reachable*, not that the landing zone
+  is generous enough for the range of real speed a lip actually sees - budget
+  the room separately.
 - **Gate posts are walls, not scenery.** Every checkpoint's two posts go into the
   collider as well as the mesh, and sit just outside the kerb so the full road stays
   usable. `test_checkpoint_posts_are_solid_and_the_gate_is_not` pins both halves: the
