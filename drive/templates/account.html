@@ -78,6 +78,27 @@
     </div>
   </div>
 
+  {# A lap quick enough to place near the top of a board is re-driven on the
+     server before it goes up (see /api/run). It is yours and it is not lost -
+     it is simply not on the board yet, and the alternative to saying so is a
+     personal best that appears to have been ignored. #}
+  {% if waiting %}
+  <h2>Being checked</h2>
+  <div class="panel">
+    <p class="muted" style="margin:0 0 .6rem">
+      A lap this quick is driven again on the server before it goes on the board.
+      It usually takes a few seconds.</p>
+    {# No list markup: nothing else on this page uses a bulleted list and there
+       is no rule for one in style.css, so it would arrive with the browser's
+       own bullets and indent. #}
+    {% for c in waiting %}
+    <div><b>{{ by_slug[c.track].name if c.track in by_slug else c.track }}</b>
+      &middot; {{ '%d:%06.3f'|format((c.time_ms // 60000), (c.time_ms % 60000) / 1000) }}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   <h2>Tracks</h2>
   <div class="panel">
     {% if rows %}

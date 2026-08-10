@@ -2007,6 +2007,10 @@ function frame(now) {
   const gap = S.catchupDemo != null ? S.catchupDemo : gapToLeader();
   if (!S.paused && !clockStarting) {
     S.stepper.run(dt, (h) => {
+      // Before the step, not after: an anchor is the state a step *starts*
+      // from, so that the server can seed a car from it and run the same eight
+      // steps. See Run.noteStep.
+      S.run.noteStep(S.car, inp, now);
       S.car.step(h, inp);
       if (rivals) S.car.resolveCars(rivals, h);
       // Always called, even with nobody to tow off: that is what bleeds a
@@ -2711,7 +2715,12 @@ async function onFinish() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ track: S.track.slug, time_ms: run.time,
                              splits: run.splits, ghost: run.ghost,
-                             distance: Math.round(run.distance) }),
+                             distance: Math.round(run.distance),
+                             // What the driver did, step by step. A lap near the
+                             // top of the board is re-driven on the server
+                             // before it goes up, and this is what it is
+                             // re-driven from - see Run.noteStep.
+                             verify: run.verifyPayload() }),
     });
     const d = await r.json();
     if (d.ok && d.stored) {
@@ -2722,8 +2731,14 @@ async function onFinish() {
       S.bestTime = d.pb_ms;
       if (CFG.pbs) CFG.pbs[S.track.slug] = d.pb_ms;
       if (!racing) {
+        // `note` is nearly always absent. The one case that fills it is a lap
+        // quick enough to be re-driven on the server before it goes up (see
+        // /api/run): it is stored and it is yours, and the board has not got it
+        // yet - which is worth a sentence rather than a PB that appears to have
+        // been ignored.
         showResults({ time: run.time, medal, rank: d.run_rank,
-                      pb: d.pb_ms, pbRank: d.rank, wr: d.record_ms });
+                      pb: d.pb_ms, pbRank: d.rank, wr: d.record_ms,
+                      note: d.note || null });
       }
       // Solo, a new PB is a new ghost - **but only if your own lap is the one
       // you asked to drive against.**
@@ -2749,6 +2764,7 @@ async function onFinish() {
         window.DrivePending.save({
           track: S.track.slug, time_ms: run.time, splits: run.splits,
           ghost: run.ghost, distance: Math.round(run.distance),
+          verify: run.verifyPayload(),
         });
       }
       if (!racing) {
@@ -2763,6 +2779,7 @@ async function onFinish() {
       window.DrivePending.save({
         track: S.track.slug, time_ms: run.time, splits: run.splits,
         ghost: run.ghost, distance: Math.round(run.distance),
+        verify: run.verifyPayload(),
       });
     }
     if (improved) { S.bestTime = run.time; localBest(run.time); }

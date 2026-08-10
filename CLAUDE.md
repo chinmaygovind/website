@@ -115,7 +115,7 @@ live site in one go. If the SSH step fails with `dial tcp :22 i/o timeout`, the
 
 ## Tests: run only what changed
 
-The full suite is about two and a half minutes (drive ~1:10, kot ~1:10, site
+The full suite is about three minutes (drive ~1:40, kot ~1:10, site
 ~15s, ers a couple of seconds) and nearly every change is to exactly one game,
 so **never reach for the whole thing by hand**:
 
@@ -141,16 +141,18 @@ scripts/tests.sh drive -- -k ghost -x     # after --, straight to pytest
 - **The venvs are gitignored, so a module you have never tested locally has
   none.** `tests.sh` builds it rather than reporting `No module named pytest`,
   which is not a test result. It also installs `requirements-test.txt` if there
-  is one - that is where drive's `quickjs` lives, kept out of `requirements.txt`
-  so the box never compiles a JS engine it has no use for. **Without quickjs,
-  `test_sim.py` skips itself, which reads as a pass**, which is why CI installs
-  it explicitly. A venv is rebuilt when its requirements move, keyed on a
+  is one. **Drive's `quickjs` is no longer in it**: the anti-cheat re-drives a
+  submitted lap through the game's own JavaScript (`drive/verify.py`), so the
+  box needs a JS engine now and it is an ordinary requirement. Without quickjs
+  the tests that need it **skip themselves, which reads as a pass**, which is
+  why CI installs the requirements rather than trusting a venv.
+  A venv is rebuilt when its requirements move, keyed on a
   `.requirements-stamp` of the two files: they are long lived and gitignored, so
   otherwise a dependency added to `requirements-test.txt` reaches CI and a fresh
   clone but never the venv you have been using for months - and a *test-only*
   dependency going missing does not fail, it quietly stops doing its job.
 - **`parallel_for` in `tests.sh` splits kot across four cores**, which is most of
-  the difference between a two-and-a-half minute full run and a much longer one.
+  the difference between a three minute full run and a much longer one.
   Four workers rather than every core, since on a 16 core laptop kot's self-play
   tests contend badly enough that the suite stops finishing. `ers` opts out (18
   tests in 0.05s - workers cost more than they save), an explicit `-n` after `--`
@@ -158,7 +160,7 @@ scripts/tests.sh drive -- -k ghost -x     # after --, straight to pytest
   run.
 - **drive opts out too, which it did not used to**, and the trade is written down
   in `drive/docs/testing.md`. `-n 4 --dist loadfile` was worth 5:40 -> 1:35 when
-  `test_sim.py` drove all thirteen tracks; that file is gone and what is left is
+  `test_sim.py` drove all thirteen tracks; that file is gone and what was left was
   66s serial against 42s parallel. Set against **three of the last 34 CI drive
   jobs hanging** - 94-98% done in under a minute, then the controller and all
   four workers at 0.0% CPU for 739s / 901s / 246s - the 24s is not worth it.

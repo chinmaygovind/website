@@ -3,6 +3,7 @@ eventlet.monkey_patch()
 
 import os
 import re
+import sys
 import hashlib
 import json as json_mod
 import time
@@ -18,10 +19,10 @@ load_dotenv()
 from flask import (Flask, render_template, request, jsonify,
                    redirect, url_for, session, send_from_directory, abort)
 from flask_socketio import SocketIO, join_room, leave_room, emit
-from sqlalchemy import event, func
-from sqlalchemy.engine import Engine
+from sqlalchemy import func
 
-from models import (db, User, DriveStats, DriveTime, DriveStart,
+import models as models_mod
+from models import (db, User, DriveStats, DriveTime, DriveStart, DriveRunCheck,
                     DriveGame, DrivePlayer, DriveRace, DriveGarage)
 import tracks as tracks_mod
 import tuning
@@ -76,30 +77,17 @@ if _cookie_domain:
 if os.environ.get("SESSION_COOKIE_SECURE", "").lower() in ("1", "true", "yes"):
     app.config["SESSION_COOKIE_SECURE"] = True
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-if not DATABASE_URL:
-    _shared = os.path.join(os.path.dirname(__file__), "..", "ttr", "instance", "tickettoride.db")
-    DATABASE_URL = "sqlite:///" + os.path.abspath(_shared)
-if DATABASE_URL.startswith("sqlite:///"):
-    _path = DATABASE_URL[len("sqlite:///"):]
-    if _path and _path != ":memory:":
-        os.makedirs(os.path.dirname(os.path.abspath(_path)) or ".", exist_ok=True)
+# One resolution of "which database", in models.py, because `verify.py` runs in
+# a process of its own and has to arrive at the same file this does.
+DATABASE_URL = models_mod.database_url()
 app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 
-@event.listens_for(Engine, "connect")
-def _set_sqlite_pragma(dbapi_conn, _rec):
-    try:
-        cur = dbapi_conn.cursor()
-        cur.execute("PRAGMA journal_mode=WAL")
-        cur.execute("PRAGMA busy_timeout=5000")
-        cur.close()
-    except Exception:
-        pass
-
+# The SQLite pragmas (WAL, and a busy timeout) live in `models.py` now, where
+# `verify.py` gets them too - it writes to this same file from a process of its
+# own, and a per-connection busy timeout it never set is a write that fails
+# rather than waits.
 
 db.init_app(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
@@ -446,7 +434,13 @@ def _records():
     ``set_at`` is the holder's ``updated_at``, which is when *this* lap was set:
     a better run replaces the row wholesale and stamps it, so the column cannot
     drift into meaning "when they first drove here".
+
+    It is also where a re-driven lap is let onto the board. Nothing in Drive runs
+    on a timer, and the process that checks a record writes its verdict and
+    exits - so the settling happens in the one function every page that shows a
+    record already calls. Normally it is a query that finds nothing.
     """
+    _settle_checks()
     rows = (db.session.query(DriveTime.track, func.min(DriveTime.time_ms))
             .group_by(DriveTime.track).all())
     out = {}
@@ -806,6 +800,7 @@ def track_board(slug):
     track = tracks_mod.get(slug)
     if not track:
         return redirect(url_for("index"))
+    _settle_checks()          # a lap that has just been cleared belongs on it
     rows = (DriveTime.query.filter_by(track=slug)
             .order_by(DriveTime.time_ms.asc()).limit(100).all())
     # One query for the whole board rather than one per row, clamped the same way
@@ -869,6 +864,7 @@ def account_for(username):
 
 
 def _account_page(user, is_me):
+    _settle_checks(user.id)
     times = (DriveTime.query.filter_by(user_id=user.id)
              .order_by(DriveTime.updated_at.desc()).all())
     starts = _starts_for(user.id, times)
@@ -895,13 +891,23 @@ def _account_page(user, is_me):
     # yours, so it goes on the end rather than quietly disappearing.
     rows += [_row(s) for s in dict.fromkeys(list(by_track) + sorted(starts))
              if s not in set(pool)]
+    # A lap being re-driven is not on the board and is not lost either, and the
+    # person who drove it is the one person who should be told which. Only ever
+    # your own: an unchecked lap of somebody else's is not news, it is a claim.
+    waiting = []
+    if is_me:
+        waiting = (DriveRunCheck.query
+                   .filter(DriveRunCheck.user_id == user.id,
+                           DriveRunCheck.applied_at.is_(None),
+                           DriveRunCheck.status.in_(("pending", "error")))
+                   .order_by(DriveRunCheck.id.asc()).all())
     # Totalled per track rather than kept in a counter of its own: a track can have
     # starts and no time (never finished) or a time and no starts (driven before
     # the counter existed), and the per-track clamp already knows what to do with
     # both, so summing it cannot disagree with the column underneath.
     return render_template("account.html", user=user, is_me=is_me,
                            stats=_stats(user, create=is_me),
-                           times=times, starts=starts, rows=rows,
+                           times=times, starts=starts, rows=rows, waiting=waiting,
                            total_starts=sum(starts.values()),
                            by_slug=tracks_mod.BY_SLUG,
                            tracks=tracks_mod.summaries(), name=get_effective_name())
@@ -927,6 +933,9 @@ def _track_payload(slug):
     track = tracks_mod.get(slug)
     if not track:
         return None
+    # Same reason `_records` does it: this is the record the car on the road is
+    # chasing, so a lap that has just been cleared belongs on it.
+    _settle_checks()
     best = (DriveTime.query.filter_by(track=slug)
             .order_by(DriveTime.time_ms.asc()).first())
     out = dict(track)
@@ -1132,6 +1141,210 @@ def _starts_for(user_id, times):
     return rows
 
 
+# ---------------------------------------------------------------------------
+# Laps that are quick enough to be re-driven before they go up
+# ---------------------------------------------------------------------------
+#
+# `runcheck.validate` asks whether a replay holds together. It cannot ask whether
+# the car could have driven it, and a browser with a raised `ACCEL` produces a
+# replay that passes every check in there - which is how a 12.288s Twin Loop took
+# a track record. `verify.py` answers that by re-driving the lap through the real
+# `Car.step`, and this is the machinery around it:
+#
+#   * a lap that would place in the top `VERIFY_TOP_N` is **held in
+#     `drive_run_checks` instead of being stored**, so the board, the record, the
+#     ghost and everybody's rank are untouched until it has been checked. Storing
+#     it and reverting later is not available: `drive_times` keeps only the best
+#     lap, so the row it overwrote is gone;
+#   * the check runs in a **subprocess**, because one lap is one to four seconds
+#     of solid CPU and Drive is a single eventlet worker - doing it here would
+#     freeze every socket in every live race for that long;
+#   * and the verdict is **settled by whoever reads the board next**, since the
+#     child process only ever writes its own row.
+#
+# Two things this deliberately does not do. It does not hold laps at all when
+# nothing can check them (`quickjs` missing, `DRIVE_VERIFY=0`): a lap that would
+# wait for ever is worse than one that was never checked. And a *failed* check
+# never touches the driver's stored time, because there is nothing of theirs to
+# touch - the lap never got in.
+
+_VERIFY_OK = None
+
+
+def _can_verify():
+    """Is there anything on this box that could re-drive a lap?
+
+    `DRIVE_VERIFY` in the environment forces the answer either way, which is the
+    switch to reach for if the verifier ever has to be turned off on the box
+    without a deploy. Cached: it is a question about the installation.
+    """
+    global _VERIFY_OK
+    forced = os.environ.get("DRIVE_VERIFY", "")
+    if forced:
+        return forced.lower() in ("1", "true", "yes")
+    if _VERIFY_OK is None:
+        try:
+            import verify
+            _VERIFY_OK = verify.available()
+        except Exception:
+            _VERIFY_OK = False
+    return _VERIFY_OK
+
+
+def _verify_payload(data):
+    """The evidence off the wire: (inputs, anchors), or None if it is not usable.
+
+    Shape-checked here and packed only if the lap is actually going to be held -
+    `pack_verify` is a zlib compression of a few tens of kilobytes and this runs
+    on the request path of every finished lap, the overwhelming majority of which
+    are nowhere near the top of a board.
+    """
+    v = data.get("verify")
+    if not isinstance(v, dict):
+        return None
+    inputs = runcheck.unpack_inputs(v.get("i"))
+    anchors = v.get("a")
+    if inputs is None or not isinstance(anchors, list) or not anchors:
+        return None
+    if len(anchors) > runcheck.MAX_ANCHORS:
+        return None
+    for a in anchors:
+        if not isinstance(a, list) or len(a) != runcheck.ANCHOR_STRIDE:
+            return None
+        for x in a:
+            if not isinstance(x, (int, float)) or isinstance(x, bool):
+                return None
+            if x != x or abs(x) > 1e9:            # NaN, infinities, nonsense
+                return None
+    return inputs, anchors
+
+
+# Every check started and not yet reaped. Nothing waits on these - the point of
+# a subprocess is that the request does not - but a child nobody collects stays
+# in the process table as a zombie for as long as this worker lives, which is
+# months. So they are polled on the way past, which is all `wait` would have
+# done and none of the blocking.
+_children = []
+
+
+def _spawn_verifier(*args):
+    """Kick off a check in its own process, and do not wait for it.
+
+    `start_new_session` so that a deploy restarting gunicorn does not take a
+    half-finished check with it, and both pipes to devnull so nothing can block
+    on a full buffer.
+    """
+    try:
+        import subprocess
+        p = subprocess.Popen(
+            [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                          "verify.py")] + list(args) + ["--quiet"],
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, start_new_session=True)
+        _children.append(p)
+        return True
+    except Exception:
+        return False
+
+
+def _reap_verifiers():
+    """Collect whichever of them have finished. `poll` never blocks."""
+    for p in list(_children):
+        try:
+            if p.poll() is not None:
+                _children.remove(p)
+        except Exception:
+            _children.remove(p)
+
+
+# How long a check may sit unanswered before it is assumed the process that was
+# doing it is gone. Generous: a slow lap on a slow box is a few seconds, and
+# re-running one that is merely still going costs a core for nothing.
+_CHECK_GRACE = timedelta(minutes=10)
+
+# And how often that is even asked. Two reasons, and the second is the important
+# one: it keeps a query off nearly every page load, and it means a row that
+# cannot be judged at all - a broken runtime, a blob nothing can read - costs one
+# process every five minutes rather than one per page view. Module state in a
+# single eventlet worker, so it is simply a variable.
+_SWEEP_EVERY = timedelta(minutes=5)
+_last_sweep = None
+
+
+def _apply_check(c):
+    """Act on a verdict, once. A pass becomes the driver's time; a fail is filed.
+
+    The improvement is re-tested against the row *now* rather than against what
+    it was when the lap was driven: two quick laps can be in the queue at once,
+    and the slower of them arriving second must not overwrite the quicker.
+    """
+    c.applied_at = datetime.utcnow()
+    if c.status != "pass":
+        return
+    track = tracks_mod.get(c.track)
+    if not track:
+        return
+    st = DriveStats.query.filter_by(user_id=c.user_id).first()
+    if st is None:
+        st = DriveStats(user_id=c.user_id)
+        db.session.add(st)
+    row = DriveTime.query.filter_by(user_id=c.user_id, track=c.track).first()
+    medal = runcheck.medal_for(track, c.time_ms)
+    if row is None:
+        row = DriveTime(user_id=c.user_id, track=c.track, time_ms=c.time_ms,
+                        medal=medal, splits_json=c.splits_json, ghost=c.ghost,
+                        runs=1)
+        db.session.add(row)
+        db.session.flush()
+        _count_medal(st, medal)
+    elif c.time_ms < row.time_ms:
+        _uncount_medal(st, row.medal)
+        row.time_ms = c.time_ms
+        row.medal = medal
+        row.splits_json = c.splits_json
+        row.ghost = c.ghost
+        row.updated_at = datetime.utcnow()
+        _count_medal(st, medal)
+    c.drive_time_id = row.id
+
+
+def _settle_checks(user_id=None):
+    """Apply any verdicts that have come back, and restart any that got lost.
+
+    Called from the places that read the board rather than on a timer, because
+    there is no timer: the process that judges a lap is a child that writes one
+    row and exits. Normally both queries return nothing.
+    """
+    global _last_sweep
+    try:
+        _reap_verifiers()
+        q = DriveRunCheck.query.filter(DriveRunCheck.applied_at.is_(None),
+                                       DriveRunCheck.status.in_(("pass", "fail")))
+        if user_id is not None:
+            q = q.filter(DriveRunCheck.user_id == user_id)
+        rows = q.order_by(DriveRunCheck.id.asc()).limit(20).all()
+        for c in rows:
+            _apply_check(c)
+        if rows:
+            db.session.commit()
+
+        now = datetime.utcnow()
+        if _last_sweep is not None and now - _last_sweep < _SWEEP_EVERY:
+            return
+        _last_sweep = now
+        stale = (DriveRunCheck.query
+                 .filter(DriveRunCheck.status.in_(("pending", "error")),
+                         DriveRunCheck.queued_at < now - _CHECK_GRACE)
+                 .first())
+        if stale is not None and _can_verify():
+            _spawn_verifier("--pending", "--again")
+    except Exception:
+        # Nothing here is worth failing a page load over: an unsettled verdict
+        # is a lap that goes up a little later.
+        db.session.rollback()
+
+
 @app.route("/api/run", methods=["POST"])
 def api_run():
     """A finished timed run: store it if it is a PB, and always count the try.
@@ -1170,11 +1383,20 @@ def api_run():
             q = q.filter(DriveTime.user_id != exclude_user_id)
         return q.count() + 1
 
+    def _rank_of(r):
+        """Where a stored row sits on the board."""
+        return DriveTime.query.filter(DriveTime.track == track["slug"],
+                                      DriveTime.time_ms < r.time_ms).count() + 1
+
     if not user:
         return jsonify({"ok": True, "stored": False, "medal": medal,
                         "guest": True, "rank": None, "run_rank": _run_rank(),
                         "record_ms": best.time_ms if best else None,
                         "note": "Kept on this device - log in and it goes on the board."})
+
+    # Anything of this player's that has been judged since they were last here,
+    # so that "is this a PB" is asked of an up-to-date row.
+    _settle_checks(user.id)
 
     st = _stats(user)
     st.runs = (st.runs or 0) + 1
@@ -1183,6 +1405,45 @@ def api_run():
 
     run_rank = _run_rank(exclude_user_id=user.id)
     row = DriveTime.query.filter_by(user_id=user.id, track=track["slug"]).first()
+
+    # --- a lap near the top of the board is re-driven before it goes up ------
+    if (run_rank <= runcheck.VERIFY_TOP_N and (row is None or time_ms < row.time_ms)
+            and _can_verify()):
+        ev = _verify_payload(data)
+        if ev is None:
+            # There is no way to check this lap and it is quick enough to need
+            # checking. The honest cause is a page that was open across the
+            # deploy that added the recording, and a reload fixes it; the other
+            # cause is somebody who left the evidence out on purpose, and the
+            # two get the same answer. `pending.js` drops a 4xx, which is right:
+            # a lap kept from before this existed can never grow an input stream.
+            db.session.commit()          # the attempt still counted
+            return jsonify({"ok": False, "error": "This lap is quick enough to be "
+                            "checked, and your game did not send what it is checked "
+                            "from. Reload the page and it will."}), 400
+        inputs, anchors = ev
+        if row is not None:
+            row.runs = (row.runs or 0) + 1
+            _floor_starts(user.id, track["slug"], row.runs or 0)
+        check = DriveRunCheck(
+            user_id=user.id, track=track["slug"], time_ms=time_ms,
+            splits_json=json_mod.dumps(splits),
+            ghost=runcheck.pack_ghost(ghost_frames),
+            evidence=runcheck.pack_verify(inputs, anchors))
+        db.session.add(check)
+        db.session.commit()
+        _spawn_verifier("--check", str(check.id))
+        return jsonify({"ok": True, "stored": True, "improved": False,
+                        "pending": True,
+                        "medal": row.medal_shown if row else None,
+                        "pb_ms": row.time_ms if row else None,
+                        "rank": _rank_of(row) if row else None,
+                        "run_rank": run_rank,
+                        "record_ms": best.time_ms if best else None,
+                        "is_record": False,
+                        "note": "Being checked - a lap this quick is re-driven on "
+                                "the server before it goes on the board."})
+
     improved = False
     if row is None:
         row = DriveTime(user_id=user.id, track=track["slug"], time_ms=time_ms,

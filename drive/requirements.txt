@@ -4,4 +4,11 @@ Flask-SQLAlchemy==3.1.1
 python-dotenv==1.0.0
 eventlet==0.38.2
 gunicorn==23.0.0
+
+# The server re-drives a lap near the top of a board through the game's own
+# physics before it goes up (verify.py), which means prod needs a JS engine. It
+# used to be a test-only dependency and is deliberately no longer one: the
+# anti-cheat runs the real static/js files rather than a Python port of them,
+# because a port is a thing that can disagree with the game.
+quickjs==1.19.4
 pytest==8.3.4

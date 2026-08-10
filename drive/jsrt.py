@@ -6,6 +6,14 @@ browser. Rather than reimplement them in Python for testing (which would test
 the copy, not the game), this bundles the real modules into one script and runs
 it in QuickJS.
 
+**It lives beside the app rather than under `tests/`, because `verify.py` runs
+it in production.** The server re-drives a submitted lap through the same
+`Car.step` the browser used, and the only way to do that without a second copy
+of the physics in Python is to run the real file. Everything here was written
+for the tests and none of it changed when the verifier started using it: a
+Python port of the car would be a thing that could disagree with the game, which
+is precisely what an anti-cheat must not have.
+
 ES module `import`/`export` statements are stripped and the files concatenated in
 dependency order, which works because the modules only import from each other and
 from three.js - and three.js is swapped for `three_stub.js`, which provides real
@@ -20,7 +28,7 @@ import os
 import re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-JS = os.path.join(HERE, "..", "static", "js")
+JS = os.path.join(HERE, "static", "js")
 
 try:
     import quickjs
@@ -98,9 +106,28 @@ class Runtime:
         """
         import json
         import sys
-        sys.path.insert(0, os.path.join(HERE, ".."))
+        sys.path.insert(0, HERE)
         import tuning
         import tracks as tracks_mod
         self.ctx.eval("var T = %s;" % tuning.as_json())
         self.ctx.eval("var TRACKS = %s;" % json.dumps(tracks_mod.TRACKS))
         return tracks_mod
+
+    def load_racing_line(self, slug):
+        """Push `laptime`'s line and speed profile for one track, as `RL[slug]`.
+
+        Opt-in and one track at a time, because it is a relaxation and a speed
+        profile per track and only a test that actually *drives* wants one. That
+        is what `load_tuning_and_tracks` used to do for all thirteen, for an
+        autopilot that no longer exists.
+        """
+        import json
+        import sys
+        sys.path.insert(0, HERE)
+        import laptime
+        import tracks as tracks_mod
+        pts, speeds, _ = laptime.speed_profile(tracks_mod.get(slug))
+        self.ctx.eval("if (typeof RL === 'undefined') var RL = {};")
+        self.ctx.eval("RL[%s] = %s;" % (json.dumps(slug), json.dumps(
+            {"p": [[round(v, 4) for v in p] for p in pts],
+             "v": [round(v, 4) for v in speeds]})))

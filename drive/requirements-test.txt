@@ -1,11 +1,13 @@
 # Test-only dependencies. Kept out of requirements.txt on purpose: the box
-# installs that one, and nothing in prod needs a JS engine.
+# installs that one.
 #
-# QuickJS is what test_sim.py runs the game's real JavaScript in (trackmesh,
-# physics, course) and what test_touch.py / test_pending.py drive their stub
-# browsers with. Without it those tests skip, which looks like a pass.
-quickjs==1.19.4
+# QuickJS has moved into requirements.txt: `verify.py` runs the game's real
+# JavaScript in production now, so it is not a test-only dependency any more.
+# It is still what the tests that run trackmesh/physics/course use, and what
+# test_touch.py / test_pending.py drive their stub browsers with - without it
+# those tests skip, which looks like a pass.
 
-# See the note in the root requirements-test.txt. Drive is distributed by file
-# rather than by test, so test_sim.py's laps stay in one process.
+# See the note in the root requirements-test.txt. Drive does not use it (see
+# `parallel_for` in scripts/tests.sh); it is here so that a venv built from
+# these files can.
 pytest-xdist>=3.5

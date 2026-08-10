@@ -16,7 +16,7 @@ rest of the repo; any one of them is 11-28KB.
 | doc | read it before touching |
 |---|---|
 | `docs/tracks-and-geometry.md` | `tracks.py`, `trackmesh.js`, `course.js`, the collider, boost pads, a track's palette or sky |
-| `docs/runs-and-scoring.md` | `/api/run`, `/api/start`, `/api/activity`, `runcheck.py`, `laptime.py`, `pending.js`, medals, ghost recording |
+| `docs/runs-and-scoring.md` | `/api/run`, `/api/start`, `/api/activity`, `runcheck.py`, `verify.py`, `laptime.py`, `pending.js`, medals, ghost recording, the anti-cheat |
 | `docs/racing-physics.md` | car-to-car contact, the slipstream, catch-up, remote-car interpolation, rival sound |
 | `docs/rooms-and-races.md` | the room phase machine, qualifying, the grid, ELO, socket handlers, the race recorder, `/race/<id>` |
 | `docs/garage.md` | `garage.py`, `garage.js`, `CarView`, the car model, liveries, decals |
@@ -47,7 +47,9 @@ it, with the one loop as the only climb. It is the only track in the pool with
 - **Layout:** `tuning.py` (every physics constant, in one place), `tracks.py` (the
   ribbon format + the pool, authored with a turtle `Builder`), `laptime.py` (racing-line
   relaxation + speed profile → medal times), `runcheck.py` (ghost packing, time
-  validation), `models.py`, `app.py`, `static/js/` (`trackmesh.js`, `physics.js`,
+  validation), `verify.py` + `jsrt.py` + `three_stub.js` (the anti-cheat: a lap
+  near the top of a board is re-driven through the game's own `Car.step` in
+  QuickJS before it goes up), `models.py`, `app.py`, `static/js/` (`trackmesh.js`, `physics.js`,
   `course.js`, `render.js`, `sound.js`, `game.js`, `pending.js`, vendored
   `three.module.js`), `tools/shoot_tracks.py` (the preview pictures). The play
   page has three modes - `solo`, `room` and `replay` - and they are one template
@@ -64,6 +66,14 @@ it, with the one loop as the only climb. It is the only track in the pool with
   a room reaches it - no time, no medal, no ghost, no distance, no attempt.
   `countsForTheBoard()` in `game.js` is the single answer and both `/api/run` and
   `/api/start` read it. Details in `docs/runs-and-scoring.md`.
+- **A lap that would place in the top 3 is re-driven on the server before it goes
+  on the board**, through the real `Car.step` in QuickJS, against the input stream
+  and the anchors the client recorded (`verify.py`). It waits in
+  `drive_run_checks` rather than in `drive_times` while that happens, so nothing
+  public shows a lap nobody has checked. Anything that changes the physics, the
+  recording or `/api/run` has to keep that working: read
+  `docs/runs-and-scoring.md` first, and note that `tests/test_verify.py` drives
+  real laps and will tell you if the honest floor has moved.
 - **Nothing cosmetic may touch the simulation** - not ride height, not `CAR_RADIUS`,
   not the wheel radius, not a gram of mass. A cosmetic that changed how the car
   drives would make every time on the board mean something different.
@@ -73,14 +83,22 @@ it, with the one loop as the only climb. It is the only track in the pool with
   otherwise would. See `docs/testing.md`.
 - **Re-run `tools/shoot_tracks.py` after changing a track's geometry or sky.** A
   test asserts the preview files exist; nothing can notice that one is stale.
-- Tests: `scripts/tests.sh drive` - about 853 tests in 70s, **run serially on
-  purpose** (see `docs/testing.md`). Nothing in the suite may sleep;
-  `tests/conftest.py` enforces it.
+- Tests: `scripts/tests.sh drive` - about 889 tests in 100s, **run serially on
+  purpose** (see `docs/testing.md`). A third of that is the anti-cheat driving
+  real laps and re-driving them, which is the price of the one test that
+  matters: a lap somebody actually drove has to be accepted. Nothing in the
+  suite may sleep; `tests/conftest.py` enforces it.
 
 ## Deploy
 
 **Drive deploy:** the usual Action also (when `drive/.env` exists) builds/updates
-`drive/venv` and `sudo systemctl restart drive`. nginx has a `drive.cgovind.com` vhost
+`drive/venv` and `sudo systemctl restart drive`. **`quickjs` is in
+`requirements.txt` now, not `requirements-test.txt`** - the anti-cheat runs the
+real `static/js` files in production, so the box needs a JS engine and the first
+deploy after that change compiles one. Nothing else is new on the box: the
+verifier is a subprocess `app.py` starts, so there is no service to install and
+nothing to restart. If it ever needs turning off, `DRIVE_VERIFY=0` in the box
+`.env` puts `/api/run` back to storing laps directly. nginx has a `drive.cgovind.com` vhost
 proxying `:5005` with WebSocket upgrade, its own Let's Encrypt cert, and a Route 53 A
 record. `/drive` on the main site 302-redirects there (`DRIVE_URL`). As with the others,
 nginx/TLS/DNS/`.env` are hand-managed on the box.

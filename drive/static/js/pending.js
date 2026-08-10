@@ -27,11 +27,28 @@
     } catch (e) { return {}; }
   }
 
+  /**
+   * Store, and if there is no room for the evidence, store the times anyway.
+   *
+   * A kept run carries what the driver did at every physics step as well as the
+   * replay (see Run.noteStep), which is most of its size and is only ever read
+   * for a lap near the top of the board. So a quota that refuses the whole thing
+   * is asked a second time without it: the alternative is dropping laps that
+   * would have been accepted, to protect evidence that most of them never needed.
+   */
   function write(obj) {
     try {
-      if (Object.keys(obj).length) localStorage.setItem(KEY, JSON.stringify(obj));
-      else localStorage.removeItem(KEY);
-    } catch (e) { /* private mode, or full: the time is lost, not the lap */ }
+      if (!Object.keys(obj).length) { localStorage.removeItem(KEY); return; }
+      localStorage.setItem(KEY, JSON.stringify(obj));
+    } catch (e) {
+      try {
+        const lean = {};
+        for (const k of Object.keys(obj)) {
+          lean[k] = Object.assign({}, obj[k], { verify: null });
+        }
+        localStorage.setItem(KEY, JSON.stringify(lean));
+      } catch (e2) { /* private mode, or full: the time is lost, not the lap */ }
+    }
   }
 
   const round = (v, q) => Math.round(v * q) / q;
@@ -52,6 +69,11 @@
     all[run.track] = {
       track: run.track, time_ms: run.time_ms, splits: run.splits || [],
       distance: run.distance || 0, ghost: shrink(run.ghost), at: Date.now(),
+      // Already quantised by `Run.verifyPayload`, and it has to survive whole:
+      // a rounded input stream is not a smaller input stream, it is a different
+      // lap. Null for a run kept before this existed, which the server answers
+      // for by refusing only the laps that need checking.
+      verify: run.verify || null,
     };
     write(all);
   }

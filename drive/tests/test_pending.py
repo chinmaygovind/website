@@ -71,7 +71,8 @@ function ghost(n) {
   return out;
 }
 function run(track, ms, frames) {
-  return { track, time_ms: ms, splits: [ms / 2], ghost: ghost(frames || 4), distance: 100 };
+  return { track, time_ms: ms, splits: [ms / 2], ghost: ghost(frames || 4), distance: 100,
+           verify: { i: [1, 480], a: [[0, 1, 2, 3, 0, 0, 0, 1, 0, 0, 0, 0]] } };
 }
 """
 
@@ -193,6 +194,44 @@ def test_what_is_sent_is_the_whole_run():
     assert q(c, "[sent[0].url, sent[0].body.track, sent[0].body.time_ms,"
                 " sent[0].body.ghost.length, sent[0].body.splits.length].join('|')"
              ) == "/api/run|sunrise|20000|5|1"
+
+
+def test_the_evidence_travels_with_the_lap():
+    """A kept lap carries what the driver did at every step, not only the replay.
+
+    Without it a guest's best lap arrives at `/api/run` at login unverifiable,
+    and if it is quick enough to place it is refused rather than stored - so the
+    one thing this file exists to protect would be lost at the last moment.
+    """
+    c = ctx()
+    do(c, """
+      window.DrivePending.save(run('sunrise', 20000, 5));
+      window.DRIVE_USER = true;
+      window.DrivePending.flush();
+    """)
+    assert q(c, "JSON.stringify(sent[0].body.verify.i)") == "[1,480]"
+    assert q(c, "sent[0].body.verify.a.length") == 1
+
+
+def test_a_full_quota_costs_the_evidence_and_not_the_lap():
+    """The evidence is most of a kept run's size and is read for almost none of
+    them, so when there is no room for both, the time is what survives.
+
+    Dropping the whole write - which is what used to happen - loses laps that
+    would have been accepted, to protect evidence that most of them never needed.
+    """
+    c = ctx()
+    # A quota that refuses anything with an input stream in it.
+    c.eval("""
+      localStorage.setItem = function (k, v) {
+        if (v.indexOf('"verify":{') >= 0) throw new Error('QuotaExceededError');
+        store[k] = String(v);
+      };
+    """)
+    do(c, "window.DrivePending.save(run('sunrise', 20000, 5));")
+    assert q(c, "slugs()") == "sunrise"
+    assert q(c, "pending()['sunrise'].time_ms") == 20000
+    assert q(c, "pending()['sunrise'].verify") is None
 
 
 def test_a_rejected_run_is_dropped_rather_than_retried_forever():

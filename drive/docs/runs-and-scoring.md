@@ -1,7 +1,8 @@
 # Drive: runs, scoring, medals and ghosts
 
 Read this before changing `/api/run`, `/api/start`, `/api/activity`,
-`runcheck.py`, `laptime.py`, `pending.js`, medals, or ghost recording.
+`runcheck.py`, `verify.py`, `laptime.py`, `pending.js`, medals, or ghost
+recording.
 
 - **Guests can play, and a guest's times are not thrown away.** Driving alone needs
   no account at all (`/`, `/solo` and `/solo/<slug>` are open); sharing a room needs
@@ -148,6 +149,122 @@ Read this before changing `/api/run`, `/api/start`, `/api/activity`,
     the pool, against 6.9s. It cannot go lower without the run token, and a
     stolen replay is only fully answered by the re-simulation, since
     `/api/ghost` serves poses and has never served the input stream behind them.
+## The lap is re-driven on the server
+
+*(This section replaces `drive/VERIFICATION-PLAN.md`, which was the working plan
+for it. Three things in that plan turned out differently once it was measured -
+the tolerance, which is a median and not a per-window distance; the anchors,
+which carry a pose and a clock rather than only a velocity; and the verifier,
+which is a subprocess rather than a service - so keeping the plan next to the
+built thing would only have been a way to be told the wrong answer.)*
+
+- **`runcheck.validate` cannot ask the only question that matters, and
+  `verify.py` is the answer to it.** Everything in `runcheck` is about whether a
+  replay is *self-consistent*: right duration, no teleports, through every gate
+  when the splits say, inside a corridor of the road. A browser with a raised
+  `ACCEL` satisfies all of it - the replay is a real recording of a real drive,
+  it is just not this car - and that is exactly what took a **12.288s Twin Loop
+  record on 2026-08-07**. So a lap that would place in the **top 3** on its track
+  is now re-driven through the game's own `Car.step` before it goes on the board.
+  - **Anchored, not free-running.** Starting a car on the line, feeding it the
+    recorded inputs and comparing the finishing time does not work, and it fails
+    in the worst direction - it refuses honest laps. `Math.exp` (six times a
+    step), `atan2` and `acos` are implementation-defined in ECMAScript, and the
+    browser runs real three.js while the server runs `three_stub.js`; over a few
+    thousand steps of feedback the two part company somewhere in the second
+    corner. Instead the verifier **walks the recording**: at each anchor it seeds
+    a car from the recorded state, steps `Car.step` exactly eight times with the
+    recorded inputs, and requires the prediction to land on the next anchor.
+    Divergence can never compound past 1/15s.
+  - **`FIXED_DT` is 1/120 and an anchor is every eighth step**, so a window is
+    exactly one ghost frame and there is no interpolation anywhere in it. That
+    integer alignment is what `Run.noteStep` is arranged around and what
+    `test_a_frame_is_exactly_eight_steps` pins.
+- **What a run carries now**: one input byte per physics step (run-length
+  encoded; a driver holds the throttle for seconds) and, every eighth step, the
+  car's whole carried state - pose, velocity, smoothed steer, and the lap clock.
+  It is deliberately **not** in the ghost blob: a ghost is downloaded by everyone
+  racing that lap and none of them needs the driver's inputs, and keeping it out
+  means no replay already on the board changes shape.
+  - **The pose is in the anchor as well as in the ghost, and that is not
+    duplication.** A ghost frame is interpolated to a moment of the lap clock by
+    `_recordGhost`; an anchor is the exact state at a step boundary. Seeding from
+    an interpolated pose - a state the physics was never in - puts a whole render
+    frame of error into the only measurement this makes.
+  - **The anchor carries its own clock**, because steps and the lap clock do not
+    tick together. A frame longer than `MAX_STEPS` steps drops the rest, so one
+    stutter puts the step count permanently behind the clock; matching anchor *i*
+    to ghost frame *i* by index would then refuse an honest lap. 12fps drops
+    steps on every frame and is the case that proves it.
+  - **`padBoost` is the one thing the verifier will not be told.** It is carried
+    across windows and it is worth engine, so the verifier keeps its own: a
+    number a client can set is a number a client can set to `PAD_BOOST` for the
+    whole lap. Everything else either re-derives itself inside a step
+    (`grounded`, `coyote`, `surface`) or is race-only and therefore always zero
+    in a solo lap (`bumpSlip`, `slipCharge`, `catchupBoost`).
+- **The verdict is a median, and that is the whole calibration.** Because a
+  window is seeded with the recorded *velocity* as well as the pose, a retuned
+  car never accumulates: the extra speed is handed back at every anchor, and what
+  is left is one window of the difference in *acceleration* - about 0.06 units
+  for a 40% richer engine, not the 2.2 the original plan assumed. So the useful
+  measurement is not the worst window but the middle one. Measured by driving all
+  thirteen tracks through the real physics and re-driving them
+  (`tests/test_verify.py`): an honest lap sits at **0.00055-0.00063 units** on
+  every track, at every frame rate from 12 to 144, with hitches, with respawns,
+  driven gently or hard - because the floor is the quantisation of an anchor and
+  nothing else. `ACCEL x1.02` sits at 0.0026, `GRIP x1.5` at 0.0054, `ACCEL x1.4`
+  at 0.042. The threshold is 0.002. Two other rules cover what a median cannot
+  see: a per-lap budget for divergence that is isolated rather than typical, and
+  a check that the anchors are the same lap as the replay they arrived with -
+  without which an honest lap of your own plus a replay downloaded from
+  `/api/ghost` (which is public) would pass both halves separately.
+- **What it does not decide is that a *person* drove it.** Feed the real physics
+  perfect inputs from a script and this passes, because the car really did do
+  that. What it ends is the class of "my car accelerates faster than yours",
+  which is every cheat anybody has actually tried here.
+- **A held lap is not written into `drive_times` at all.** That table keeps one
+  row per player per track and a better run overwrites it wholesale, ghost and
+  all - so storing a lap now and disowning it later takes the time it replaced
+  with it. It waits in `drive_run_checks` instead, which means the board, the
+  record, the ghost and everybody's rank are untouched by an unchecked lap with
+  no read path anywhere having to remember to exclude one. **Absence of a row
+  means verified**, which grandfathers the 82 laps that predate all of this.
+  - It runs in a **subprocess**, because one lap is one to four seconds of solid
+    CPU and Drive is a single eventlet worker - doing it on the request path
+    would freeze every socket in every live race for that long. Deliberately not
+    the long-lived service the original plan called for: a daemon is a second
+    thing to install on the box, a second thing to restart on deploy, and a
+    second thing that can be quietly dead while the board waits for it. Measured
+    on the pool: **0.5s and ~75MB for a short track, 6s and ~110MB for
+    Rainbow Road**, `nice`d to 10, and the QuickJS heap capped at 256MB so a
+    runaway is an `error` on a row rather than the kernel choosing which of the
+    five services on the box to kill.
+  - The child **judges and does not apply**. Writing a pass back into
+    `drive_times` means medals and counters, which live in `app.py`; so it writes
+    the verdict to its own row and `app.py` settles it the next time anything
+    reads a board (`_settle_checks`, called from `_records` and `_track_payload`).
+    Nothing in Drive runs on a timer and this does not add one. A check still
+    pending long after it was queued - the process died, the box rebooted - is
+    handed to a fresh one by the same path.
+  - **Nothing is held when nothing can check it.** If `quickjs` is missing, or
+    `DRIVE_VERIFY=0` in the box `.env`, `/api/run` stores laps exactly as it did
+    before: a lap that would wait for ever is worse than one that was never
+    checked.
+  - **A quick lap that arrives with no evidence is refused, with a message
+    asking for a reload.** It has to be, or leaving the field out is the cheat.
+    The honest cause is a page open across the deploy that added the recording,
+    and the cost is bounded: a lap `pending.js` has been holding since before
+    this shipped is dropped if - and only if - it would have placed in the top 3.
+- **What is still open, said plainly.** A hand-built replay could hide a few
+  hundredths of a second inside the isolated-divergence budget, which is less
+  than the quantisation `time_window` already allows and costs an input stream
+  that survives everything else. Tightening it further would start refusing real
+  laps for grazing a barrier, which is the worse failure. And a lap with a
+  **respawn** in it is refused before any of this by `validate` - the jump back
+  to the checkpoint is a teleport by the speed ceiling - so the verifier's
+  respawn handling is defence for the day that changes rather than something
+  live today.
+
 - **Three medals, and gold is the best one.** There used to be a fourth above it,
   `author`, at 0.94 of the ideal lap. The word names an authority rather than a
   standard, and it sat above the medal everybody already reads as the top one. The

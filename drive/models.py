@@ -17,11 +17,55 @@ games) and only the finished result is written back.
 
 from datetime import datetime
 import json
+import os
 
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from werkzeug.security import generate_password_hash, check_password_hash
 
 db = SQLAlchemy()
+
+
+@event.listens_for(Engine, "connect")
+def _set_sqlite_pragma(dbapi_conn, _rec):
+    """WAL and a busy timeout, on every connection anything here opens.
+
+    Here rather than in ``app.py`` because the anti-cheat runs in a second
+    process (``verify.py``) that writes to the same file and never imports
+    ``app``. WAL is a property of the database and would have been set already;
+    **the busy timeout is per connection**, so without this the verifier's write
+    would fail outright the moment it landed at the same time as a request's,
+    instead of waiting the five seconds that makes two writers a non-event.
+    """
+    try:
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("PRAGMA busy_timeout=5000")
+        cur.close()
+    except Exception:
+        pass
+
+
+def database_url():
+    """Which database Drive uses, resolved the one way.
+
+    Here rather than in ``app.py`` because ``verify.py`` runs in a process of its
+    own and has to reach the *same* file. Two copies of this that drifted would
+    not fail: they would quietly verify laps in a database nobody is reading.
+    """
+    url = os.environ.get("DATABASE_URL", "")
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    if not url:
+        shared = os.path.join(os.path.dirname(__file__), "..", "ttr",
+                              "instance", "tickettoride.db")
+        url = "sqlite:///" + os.path.abspath(shared)
+    if url.startswith("sqlite:///"):
+        path = url[len("sqlite:///"):]
+        if path and path != ":memory:":
+            os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
+    return url
 
 
 class User(db.Model):
@@ -222,6 +266,70 @@ class DriveStart(db.Model):
     track      = db.Column(db.String(32), primary_key=True)
     starts     = db.Column(db.Integer, default=0, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class DriveRunCheck(db.Model):
+    """A lap fast enough to be re-driven on the server before it goes on the board.
+
+    **The lap lives here until it passes, rather than in ``drive_times`` with a
+    flag on it.** `drive_times` keeps one row per player per track and a better
+    run overwrites it wholesale, ghost and all - so storing first and reverting
+    on a fail is not available: the time it overwrote is gone. Holding it here
+    instead means the public board, the record, the ghost and everybody's rank
+    are simply untouched by a lap that has not been checked, with no read path
+    anywhere having to remember to exclude one.
+
+    Its own table for the reason ``drive_starts`` and ``drive_races`` are:
+    ``create_all`` makes tables and not columns, so it arrives on the live
+    database by itself where a column on ``drive_times`` would need a migration
+    over SSH.
+
+    **The absence of a row means verified**, which is what grandfathers the 82
+    laps that were on the board before any of this existed. They carry no input
+    stream and never can - nothing recorded one - and all 82 measure clean under
+    `tools/audit_times.py`.
+
+    ``status`` is pending -> pass | fail | error. ``error`` is the verifier
+    falling over rather than the lap being wrong, and it is deliberately not
+    ``fail``: a missing quickjs or a bad deploy must not be able to throw
+    somebody's record away. ``applied_at`` is when `app.py` acted on the
+    verdict, which is a second step because the verifier runs in another process
+    and only ever writes its own row.
+    """
+    __tablename__ = "drive_run_checks"
+
+    id          = db.Column(db.Integer, primary_key=True)
+    user_id     = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    track       = db.Column(db.String(32), nullable=False, index=True)
+    time_ms     = db.Column(db.Integer, nullable=False)
+    splits_json = db.Column(db.Text, default="[]")
+    ghost       = db.Column(db.Text, nullable=True)
+    evidence    = db.Column(db.Text, nullable=True)     # runcheck.pack_verify
+    status      = db.Column(db.String(10), default="pending", index=True)
+    reason      = db.Column(db.String(200), nullable=True)
+    stats_json  = db.Column(db.Text, default="{}")
+    # Set when this row became the player's stored time, so a verdict is acted
+    # on exactly once however many times the board is read.
+    drive_time_id = db.Column(db.Integer, nullable=True)
+    queued_at   = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    checked_at  = db.Column(db.DateTime, nullable=True)
+    applied_at  = db.Column(db.DateTime, nullable=True)
+
+    user = db.relationship("User", lazy="select")
+
+    @property
+    def splits(self):
+        try:
+            return json.loads(self.splits_json or "[]")
+        except Exception:
+            return []
+
+    @property
+    def stats(self):
+        try:
+            return json.loads(self.stats_json or "{}")
+        except Exception:
+            return {}
 
 
 class DriveRace(db.Model):

@@ -16,10 +16,19 @@ better you drove the more likely it was to throw the lap away. The replay checks
 below are the ones that mean something, because they are about the run rather
 than about the number.
 
-So faking a time is no longer "send a small number", it is "synthesise a
-plausible 30-second replay", and the fake ghost is then public on the
-leaderboard for anyone to race. That is the right amount of effort for a driving
-game on a personal site. It is deliberately not a replay re-simulation.
+So faking a time is not "send a small number", it is "synthesise a plausible
+30-second replay" - and the fake ghost is then public on the leaderboard for
+anyone to race.
+
+**That was once the whole of it, and it was not enough.** Every check in here is
+about whether a replay is self-consistent, and a browser running retuned physics
+produces a replay that is perfectly consistent with itself: it is a real
+recording of a real drive, it is just not this car. That is how a 12.288s Twin
+Loop took a track record. So a lap quick enough to place near the top of a board
+is now **re-driven on the server** through the game's own `Car.step` before it
+goes up - see `verify.py`, which owns that, and the input stream and anchors
+below, which are what it re-drives from. Everything here still runs first and on
+the request path: it is cheap, it is synchronous, and it answers with a reason.
 """
 
 import base64
@@ -148,15 +157,24 @@ def ghost_hz(blob):
 # runs of the same value.
 #
 # `FIXED_DT` is 1/120 and a ghost frame is 1/15, so **exactly 8 steps fall
-# between consecutive frames**. That integer alignment is what makes anchored
-# verification possible at all: frame *i* is the state at step *i * 8*.
-
+# between consecutive frames**. That integer alignment is why the anchors are
+# recorded every `STEPS_PER_FRAME` steps: anchor *i* is the state at step
+# *i * 8*, which is what lets a window be re-driven with no interpolation in it.
+#
 # It is deliberately **not** in the ghost blob. A ghost is downloaded by everyone
 # who races that lap, and none of them needs the driver's inputs; it also means
 # no replay already on the board changes shape. It lives with the verification
 # row instead, which is the only thing that reads it.
 
 STEPS_PER_FRAME = 8      # FIXED_DT 1/120 against GHOST_HZ 15
+
+# How far up the board a lap has to be for the re-simulation to be worth its
+# seconds. The record is rank 1, so the record is always checked - which is the
+# thing worth protecting - and times only ever improve, so a run outside the top
+# N at submission can never rise into it later and the queue never needs
+# revisiting. The one exception is a row being *deleted*, which promotes
+# everybody below it.
+VERIFY_TOP_N = 3
 
 # The same six-minute bound `MAX_GHOST_FRAMES` puts on the poses, at step rate.
 MAX_INPUT_STEPS = 120 * 60 * 6
@@ -205,63 +223,118 @@ def pack_inputs(bytes_):
 
 
 def unpack_inputs(rle):
-    """Run-length pairs back to [byte, ...], or None if it is not readable."""
-    if not rle or len(rle) % 2:
-        return None
-    out = []
-    for i in range(0, len(rle), 2):
-        b, n = int(rle[i]) & 0xFF, int(rle[i + 1])
-        if n < 0 or len(out) + n > MAX_INPUT_STEPS:
+    """Run-length pairs back to [byte, ...], or None if it is not readable.
+
+    Total, because `/api/run` hands it whatever was in the request body: this
+    used to be reached only through `unpack_verify`, which catches everything,
+    and a bare list of anything at all reached the `int()` calls below.
+    """
+    try:
+        if not rle or len(rle) % 2:
             return None
-        out.extend([b] * n)
-    return out
+        out = []
+        for i in range(0, len(rle), 2):
+            b, n = int(rle[i]) & 0xFF, int(rle[i + 1])
+            if n < 0 or len(out) + n > MAX_INPUT_STEPS:
+                return None
+            out.extend([b] * n)
+        return out
+    except (TypeError, ValueError):
+        return None
 
 
-# Velocity is quantised like a position, and the smoothed steer finely - it is
-# -1..1 and the only other scalar a solo step carries forward.
-VEL_Q = 100.0
-STEER_Q = 10000.0
+# An anchor is the whole of a solo car's carried state at one step boundary:
+#
+#     [t_ms, x, y, z, qx, qy, qz, qw, vx, vy, vz, steer]
+#
+# **The pose is in here as well as in the ghost, and that is not duplication.** A
+# ghost frame is the pose at a moment of the *lap clock*, interpolated between
+# two render frames by `Run._recordGhost`; an anchor is the exact state the
+# simulation held at a step boundary. Seeding a re-simulation from an
+# interpolated pose - a state the physics was never actually in - and comparing
+# where it lands against another one puts a whole render frame of error in the
+# only measurement this makes. The ghost keeps the job it has (playback, at the
+# clock's own rate) and the anchors keep this one.
+#
+# `t_ms` is the lap clock at that step, and it is what ties the two together.
+# `Stepper` runs 8 steps per ghost frame *when it keeps up*: a frame longer than
+# 66ms hits `MAX_STEPS` and drops the rest, so after a hitch the step count is
+# behind the clock for the remainder of the lap. Anchor *i* is therefore not
+# always ghost frame *i*, and pinning them to each other by index would refuse an
+# honest lap for one stutter. Carrying the clock costs one integer and says
+# exactly which instant of the replay each anchor is.
+#
+# Everything else a solo car holds either re-derives itself inside a step
+# (`grounded`, `coyote`, `surface` come off the collider at the top of
+# `Car.step`) or is race-only and therefore always zero here (`bumpSlip`,
+# `slipCharge`, `catchupBoost` - contact and the tow are both gated on
+# `contactOn`, which solo never is). `padBoost` is neither: it is carried across
+# windows and it is worth engine, so the verifier keeps **its own** rather than
+# being told - a number a client can set is a number a client can set to
+# `PAD_BOOST` for the whole lap.
+#
+# Positions are held to the millimetre rather than the ghost's centimetre. It is
+# a few bytes, and it is the largest term in the seeding error - and 5mm is
+# enough to land on the other side of the "am I touching the ground" threshold,
+# which is the one difference in a step that is not small.
+A_POS_Q = 1000.0
+A_ROT_Q = 32768.0
+A_VEL_Q = 1000.0
+A_STEER_Q = 100000.0
+
+ANCHOR_STRIDE = 12
+
+# Six minutes of anchors, the bound `MAX_GHOST_FRAMES` puts on the poses.
+MAX_ANCHORS = MAX_GHOST_FRAMES
 
 
 def pack_verify(inputs, anchors):
-    """The evidence a re-simulation needs, beyond the poses already in the ghost.
+    """The evidence a re-simulation needs, beyond the replay already submitted.
 
     ``inputs``  one byte per fixed step, from the step the clock started.
-    ``anchors`` one ``[vx, vy, vz, steer]`` per ghost frame - the state that a
-                pose does not carry and that does not re-derive itself inside a
-                step. Everything else a solo car holds is either recomputed from
-                the collider at the top of `Car.step` (`grounded`, `coyote`,
-                `surface`) or is race-only and therefore always zero here
-                (`bumpSlip`, `slipCharge`, `catchupBoost` - contact and the tow
-                are both gated on `contactOn`, which solo never is).
+    ``anchors`` one 12-value row per `STEPS_PER_FRAME` steps - see above.
     """
     d = []
     for a in anchors:
-        d.append(int(round(a[0] * VEL_Q)))
-        d.append(int(round(a[1] * VEL_Q)))
-        d.append(int(round(a[2] * VEL_Q)))
-        d.append(int(round(a[3] * STEER_Q)))
-    raw = json.dumps({"v": 1, "q": [VEL_Q, STEER_Q],
+        d.append(int(round(a[0])))
+        for k in (1, 2, 3):
+            d.append(int(round(a[k] * A_POS_Q)))
+        for k in (4, 5, 6, 7):
+            d.append(int(round(a[k] * A_ROT_Q)))
+        for k in (8, 9, 10):
+            d.append(int(round(a[k] * A_VEL_Q)))
+        d.append(int(round(a[11] * A_STEER_Q)))
+    raw = json.dumps({"v": 2, "q": [A_POS_Q, A_ROT_Q, A_VEL_Q, A_STEER_Q],
                       "i": pack_inputs(inputs), "a": d},
                      separators=(",", ":")).encode()
     return base64.b64encode(zlib.compress(raw, 9)).decode()
 
 
 def unpack_verify(blob):
-    """-> {"inputs": [byte,...], "anchors": [[vx,vy,vz,steer],...]}, or None."""
+    """-> {"inputs": [byte,...], "anchors": [[t,x,y,z,qx,qy,qz,qw,vx,vy,vz,st],...]}.
+
+    ``None`` for anything this cannot read, which is the same answer it gives for
+    a blob that is merely absent: a run with unreadable evidence is a run with no
+    evidence, and the caller has one case to handle rather than two.
+    """
     if not blob:
         return None
     try:
         obj = json.loads(zlib.decompress(base64.b64decode(blob)))
-        vq, sq = obj.get("q", [VEL_Q, STEER_Q])
+        pq, rq, vq, sq = obj.get("q", [A_POS_Q, A_ROT_Q, A_VEL_Q, A_STEER_Q])
         inputs = unpack_inputs(obj.get("i"))
         if inputs is None:
             return None
         d = obj.get("a") or []
-        if len(d) % 4:
+        if len(d) % ANCHOR_STRIDE or len(d) // ANCHOR_STRIDE > MAX_ANCHORS:
             return None
-        anchors = [[d[i] / vq, d[i + 1] / vq, d[i + 2] / vq, d[i + 3] / sq]
-                   for i in range(0, len(d), 4)]
+        anchors = []
+        for i in range(0, len(d), ANCHOR_STRIDE):
+            anchors.append([float(d[i])] +
+                           [d[i + k] / pq for k in (1, 2, 3)] +
+                           [d[i + k] / rq for k in (4, 5, 6, 7)] +
+                           [d[i + k] / vq for k in (8, 9, 10)] +
+                           [d[i + 11] / sq])
         return {"inputs": inputs, "anchors": anchors}
     except Exception:
         return None

@@ -405,15 +405,50 @@ def test_both_arrows_at_once_is_no_steer():
     assert runcheck.input_fields(8 | 16)["steer"] == 0
 
 
+def _fake_anchors(n=220):
+    """[t, pos, quat, vel, steer] per anchor, at roughly the rates a lap has."""
+    return [[round(i * 1000 / runcheck.GHOST_HZ),
+             i * 0.5, 3.25, -i * 0.01,
+             0.0, 0.3826834, 0.0, 0.9238795,
+             38.5, -0.02, i * 0.001, (i % 20 - 10) / 10.0] for i in range(n)]
+
+
 def test_a_lap_of_inputs_round_trips_and_is_small():
     """A driver holds the throttle for seconds, so run-length does the work."""
     inputs = [0] * 300 + [1] * 900 + [1 | 16] * 400 + [2 | 4] * 120
-    anchors = [[i * 0.1, -i * 0.01, i * 0.5, (i % 20 - 10) / 10.0] for i in range(220)]
+    anchors = _fake_anchors()
     back = runcheck.unpack_verify(runcheck.pack_verify(inputs, anchors))
     assert back["inputs"] == inputs
     for a, b in zip(anchors, back["anchors"]):
         assert all(abs(x - y) < 0.001 for x, y in zip(a, b))
     assert len(runcheck.pack_verify(inputs, anchors)) < len(inputs) * 2
+
+
+def test_an_anchor_keeps_the_precision_the_re_simulation_needs():
+    """Millimetres, not centimetres, and the reason is not tidiness.
+
+    Half a centimetre of seeding error is enough to put a car on the other side
+    of the "am I touching the ground" threshold, which is the one difference
+    inside a step that is not small - and the whole verdict is a measurement of
+    differences far below that. See `verify.MEDIAN_TOL`.
+    """
+    a = [1234, 101.2345, -7.6543, 55.5555,
+         0.1234567, -0.2345678, 0.3456789, 0.8765432,
+         41.2345, -0.6789, 12.3456, -0.123456]
+    back = runcheck.unpack_verify(runcheck.pack_verify([1, 1], [a]))["anchors"][0]
+    def within(q, *ix):
+        # Half a grid step is the worst a round trip can do; the hair on the end
+        # is because the halfway point is not exactly representable.
+        return all(abs(a[k] - back[k]) <= 0.5 / q + 1e-9 for k in ix)
+
+    assert back[0] == 1234
+    assert within(runcheck.A_POS_Q, 1, 2, 3)
+    assert within(runcheck.A_ROT_Q, 4, 5, 6, 7)
+    assert within(runcheck.A_VEL_Q, 8, 9, 10)
+    assert within(runcheck.A_STEER_Q, 11)
+    # And the grids themselves are fine enough to be worth having: a millimetre
+    # of position, and an orientation far below anything that could be driven.
+    assert runcheck.A_POS_Q >= 1000 and runcheck.A_ROT_Q >= 32768
 
 
 def test_a_frame_is_exactly_eight_steps():
@@ -425,6 +460,27 @@ def test_verify_blob_rejects_rubbish():
     assert runcheck.unpack_verify(None) is None
     assert runcheck.unpack_verify("not a blob") is None
     assert runcheck.unpack_inputs([1, 2, 3]) is None      # odd length
+    # `/api/run` hands the wire straight to this one, so "unreadable" has to
+    # cover anything a JSON body can hold rather than only the shapes a browser
+    # would have sent.
+    for rubbish in ("a string!!", ["x", 1], [None, None], [1, "many"], {}, 7):
+        assert runcheck.unpack_inputs(rubbish) is None
+
+
+def test_an_anchor_that_is_the_wrong_shape_is_not_half_read():
+    """A blob with a partial anchor on the end is unreadable, not truncatable.
+
+    Reading what fits and dropping the rest would hand the verifier a lap that
+    is a few windows shorter than the one that was submitted, which is the
+    coverage check's problem to catch and should never get that far.
+    """
+    good = runcheck.pack_verify([1, 1], _fake_anchors(4))
+    assert len(runcheck.unpack_verify(good)["anchors"]) == 4
+    import base64 as b64, json as js, zlib
+    obj = js.loads(zlib.decompress(b64.b64decode(good)))
+    obj["a"] = obj["a"][:-3]
+    bad = b64.b64encode(zlib.compress(js.dumps(obj).encode())).decode()
+    assert runcheck.unpack_verify(bad) is None
 
 
 # ---------------------------------------------------------------------------

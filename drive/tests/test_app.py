@@ -17,10 +17,22 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 @pytest.fixture()
 def env():
-    """A fresh app + database, and a client for it."""
+    """A fresh app + database, and a client for it.
+
+    **The re-simulation is off in here**, and saying so is the honest version of
+    what these tests are. `_run_payload` builds a replay that drives the track
+    but was never driven by a car - there is no input stream behind it and there
+    could not be - so with the anti-cheat live every lap in this file would be
+    held in the queue and none of them would reach the board. That would make
+    this a file about the queue, and it is a file about the board.
+
+    What the anti-cheat does to `/api/run` is tested in `test_run_checks.py`,
+    against laps the physics actually drove.
+    """
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
     os.environ["DATABASE_URL"] = "sqlite:///" + path
+    os.environ["DRIVE_VERIFY"] = "0"
     for mod in ("app", "models"):
         sys.modules.pop(mod, None)
     import app as A
@@ -29,6 +41,7 @@ def env():
         A.db.drop_all()
         A.db.create_all()
     yield A
+    os.environ.pop("DRIVE_VERIFY", None)
     os.unlink(path)
 
 

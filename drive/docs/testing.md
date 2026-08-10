@@ -4,12 +4,15 @@ Read this before adding or removing a Drive test, or when a test surprises
 you. Also read it before shipping a rendering change — there is no browser
 in CI.
 
-`scripts/tests.sh drive` - **853 tests, about 70s**, on one core.
+`scripts/tests.sh drive` - **889 tests, about 100s**, on one core. A third of
+that is the anti-cheat: `test_verify.py` and `test_run_checks.py` drive real laps
+through the real physics and then re-drive them, which is what it costs to have
+the one test worth having there - a lap somebody actually drove is accepted.
 
 **Drive runs serially on purpose, and the reason is a measurement.** It used to
 run `-n 4 --dist loadfile`, which was worth 5:40 -> 1:35 while `test_sim.py`
-drove all thirteen tracks. That file is gone and the suite is now 66s serial
-against 42s on four workers, so xdist buys 24s. Against that, **three of the
+drove all thirteen tracks. That file is gone; the suite was 66s serial
+against 42s on four workers when this was measured, so xdist bought 24s. Against that, **three of the
 last 34 CI drive jobs hung**: the run reaches 94-98% in 15-42 seconds and then
 sits with the controller and all four workers at 0.0% CPU, 739s / 901s / 246s,
 until a later push cancelled it. Every test passes; the session just never ends.
@@ -25,7 +28,8 @@ there when you want it and know the risk.
 
 **Nothing in this suite may sleep, and there is a test that enforces it.**
 `tests/conftest.py` fails any test whose call phase exceeds `SLOW_TEST_BUDGET_S`
-(5s) unless it is marked `@pytest.mark.slow`. That exists because of the bug that
+(10s; it was 5s until a loaded CI runner failed a test that was doing nothing
+wrong) unless it is marked `@pytest.mark.slow`. That exists because of the bug that
 prompted it: `_close_race` held an inline `eventlet.sleep(12)`, correct in
 production (it runs in a greenlet) and twelve real seconds in the two tests that
 called it synchronously - **24s of a 56s suite, and every test passed the whole
@@ -67,9 +71,9 @@ and the timers fired by hand, because the thing worth pinning about a phase
 machine is the order it goes through them in.
 
 **`test_sim.py` and the headless autopilot are gone, deliberately, and it is
-worth knowing what went with them.** `tests/jsrt.py` bundled the real modules
-into QuickJS against `tests/three_stub.js` and then `tests/autopilot.js` *drove
-every track to the finish*, and a group of tests asked questions about that lap:
+worth knowing what went with them.** `jsrt.py` (then in `tests/`) bundled the
+real modules into QuickJS against `three_stub.js` and then `tests/autopilot.js`
+*drove every track to the finish*, and a group of tests asked questions about that lap:
 did it finish, did it respawn, how much air, how long. It was removed because
 those questions are a **ceiling on how mean a track is allowed to be** - a
 track that cannot be driven cleanly by a simulated driver following a relaxed
@@ -87,12 +91,38 @@ every medal time is derived. **So a new track has to be driven by hand before it
 ships** - there is no longer any automatic answer to "can this be finished at
 all".
 
-`jsrt.py` itself is very much alive: six other files still build a QuickJS
-runtime with it (`test_bump`, `test_slipstream`, `test_catchup`, `test_boost`,
-`test_start_line`, `test_garage_js`, `test_rules_js`, `test_sound`), and it still
-needs `quickjs`, which lives in `drive/requirements-test.txt` rather than
-`requirements.txt` so a plain deploy install is unaffected. Without it those
-tests skip, which reads as a pass - `scripts/tests.sh` and CI both install it.
+`jsrt.py` itself is very much alive, and it has **moved out of `tests/` into
+`drive/`** (along with `three_stub.js`), because `verify.py` runs it in
+production: the anti-cheat re-drives a submitted lap through the real
+`static/js` files rather than a Python port of them, since a port is a thing
+that can disagree with the game. Eight test files still build a runtime with it
+(`test_bump`, `test_slipstream`, `test_catchup`, `test_boost`, `test_start_line`,
+`test_garage_js`, `test_rules_js`, `test_sound`) and nothing about how they use
+it changed. `quickjs` has moved the same way, into `requirements.txt`, so the
+box installs it now. Without it those tests skip, which reads as a pass.
+
+**A driver came back, and it is not the old autopilot.** `tests/driver.js` is
+that pursuit controller - the same one, off `laptime.py`'s racing line - plus the
+frame loop out of `game.js` - `Stepper`,
+`Run.noteStep`, `Run.update`, in that order - so what it produces is a lap
+recorded exactly as a browser would record one. Two differences from the thing
+that was deleted are load-bearing: it **drives on the keyboard** (the car is
+stepped with the decoded input *byte*, never with the steering angle that
+produced it, because a lap driven on an angle it did not record would be
+evidence of a lap nobody drove), and it is a **frame** loop rather than a step
+loop, so the tests can ask what 12fps or a stuttering frame does to the
+recording. It is only there to make laps for `test_verify.py` and
+`test_run_checks.py`, and it makes no claim about how mean a track is allowed to
+be - which is why it did not bring `test_sim.py` back with it.
+
+`test_verify.py` is where the anti-cheat's numbers come from: it drives real laps
+and re-drives them, both for the case that matters (an honest lap is accepted,
+with the honest floor pinned well under the threshold) and for the cases it is
+for (2% more engine, more grip, a stolen replay, evidence that stops early).
+`test_run_checks.py` is the other half - what `/api/run` does with the verdict -
+and it turns the re-simulation **on**, which is why `test_app.py`'s fixture turns
+it off and says so: `test_app.py`'s replays drive the track but were never driven
+by a car, so with the anti-cheat live none of them would reach the board.
 
 **Two other files run browser JavaScript the same way, against a stub DOM instead of a
 stub three.js.** `test_touch.py` lifts the touch bindings straight out of `game.js` and
@@ -136,7 +166,7 @@ qualify, `resolve` replacing an ungranted item however it arrived, the record
 badge persisting and surviving losing the record, and the two deliberate
 duplications of `RECORD_GREEN` read out of `render.js` and `style.css` rather
 than trusted. **`test_garage_js.py` builds `CarView` for real in QuickJS**, the
-way `test_sim.py` runs the physics, because almost everything that can go wrong
+way `test_verify.py` runs the physics, because almost everything that can go wrong
 with assembling a car out of a livery is invisible to both of the checks this
 project otherwise leans on: the autopilot never draws, and a screenshot of one
 car either photographs "the fifth rim style is 24 meshes instead of one"

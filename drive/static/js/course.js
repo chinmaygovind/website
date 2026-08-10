@@ -15,6 +15,63 @@
 
 const GHOST_HZ = 15;
 
+// ---------------------------------------------------------------------------
+// The evidence a lap is submitted with
+// ---------------------------------------------------------------------------
+//
+// A replay says where the car was. It does not say the physics could have put it
+// there - a browser with a raised `ACCEL` produces a replay that passes every
+// self-consistency check there is, which is how a 12.288s Twin Loop once took a
+// track record. So a run also carries **what the driver was doing**, one byte per
+// fixed physics step, and the state of the car every eighth step; the server
+// re-drives it through this same `Car.step` and requires it to land where the
+// recording says it did. See runcheck.py and verify.py, which own the other end
+// of both of these formats.
+//
+// Every constant below is mirrored from runcheck.py rather than chosen here,
+// and `test_verify.py` holds the two together: it reads these quantisation
+// values straight out of this file, and it runs this `inputByte` against
+// `runcheck.input_byte` for every input a car can be given. A drift in the
+// byte would not fail, it would *verify the wrong lap* - the brake and the
+// handbrake are one bit apart.
+
+const STEPS_PER_FRAME = 8;          // FIXED_DT is 1/120 and a frame is 1/15
+const MAX_INPUT_STEPS = 120 * 60 * 6;
+const IN_THROTTLE = 1, IN_BRAKE = 2, IN_HANDBRAKE = 4, IN_RIGHT = 8, IN_LEFT = 16;
+// Anchor quantisation: millimetres, and a steer angle far finer than anything
+// that could be driven. Rounding here rather than on the server only makes the
+// request smaller - the server quantises what it is sent to the same grid.
+const A_POS_Q = 1000, A_ROT_Q = 32768, A_VEL_Q = 1000, A_STEER_Q = 100000;
+
+/** The four fields `Car.step` reads, as one byte. `runcheck.input_byte`. */
+export function inputByte(inp) {
+  let b = 0;
+  if (inp.throttle) b |= IN_THROTTLE;
+  if (inp.brake) b |= IN_BRAKE;
+  if (inp.handbrake) b |= IN_HANDBRAKE;
+  if (inp.steer > 0) b |= IN_RIGHT;
+  else if (inp.steer < 0) b |= IN_LEFT;
+  return b;
+}
+
+/** Run-length pairs. A driver holds the throttle for seconds; this is ~50x. */
+function packInputs(bytes) {
+  const out = [];
+  for (const b of bytes) {
+    if (out.length && out[out.length - 2] === b && out[out.length - 1] < 0xFFFF) {
+      out[out.length - 1]++;
+    } else {
+      out.push(b, 1);
+    }
+  }
+  return out;
+}
+
+// Named rather than `q`, because in the headless test/verifier bundle every
+// module shares one scope and a one-letter const is a collision waiting for
+// whoever adds one to trackmesh.js.
+const quant = (v, n) => Math.round(v * n) / n;
+
 export class Course {
   constructor(built) {
     this.line = built.line;
@@ -163,6 +220,8 @@ export class Run {
     this.ghost = [];
     this._ghostN = 0;
     this._prevPose = null;
+    this.inputs = [];            // one byte per physics step - see noteStep
+    this.anchors = [];           // the car itself, every STEPS_PER_FRAME steps
     this._sides = new Map();     // gate -> which side of its plane we were on
     this._lastPos = null;
     this.respawnGate = this.course.startGate();
@@ -190,7 +249,47 @@ export class Run {
     this.ghost = [];
     this._ghostN = 0;
     this._prevPose = null;
+    this.inputs = [];
+    this.anchors = [];
     this._sides.clear();
+  }
+
+  /**
+   * One physics step happened: what was asked of the car, and - every eighth
+   * step - the car itself.
+   *
+   * Called from inside the fixed-step loop, **before** the step it is
+   * describing, which is what makes the recording exact rather than
+   * approximate: anchor *i* is the state at step *i * 8* and inputs *8i..8i+7*
+   * are the ones that carry it to anchor *i + 1*. There is no interpolation
+   * anywhere in that sentence, and a server that re-drives those eight steps
+   * has to land on the next anchor to within the quantisation of these numbers.
+   *
+   * `nowMs` is the frame's clock, so the recorded `t` is up to one render frame
+   * later than the step really was. That is deliberate slack in the harmless
+   * direction: `t` exists to say which part of the *replay* an anchor belongs
+   * to, and the replay is sampled on the same clock.
+   */
+  noteStep(car, input, nowMs) {
+    if (this.state !== 'running') return;
+    if (this.inputs.length >= MAX_INPUT_STEPS) return;
+    if (this.inputs.length % STEPS_PER_FRAME === 0) {
+      this.anchors.push([
+        Math.round(Math.max(0, nowMs - this.startedAt)),
+        quant(car.pos.x, A_POS_Q), quant(car.pos.y, A_POS_Q), quant(car.pos.z, A_POS_Q),
+        quant(car.quat.x, A_ROT_Q), quant(car.quat.y, A_ROT_Q),
+        quant(car.quat.z, A_ROT_Q), quant(car.quat.w, A_ROT_Q),
+        quant(car.vel.x, A_VEL_Q), quant(car.vel.y, A_VEL_Q), quant(car.vel.z, A_VEL_Q),
+        quant(car.steer, A_STEER_Q),
+      ]);
+    }
+    this.inputs.push(inputByte(input));
+  }
+
+  /** The evidence, as `/api/run` sends it, or null if there is none. */
+  verifyPayload() {
+    if (!this.inputs.length || !this.anchors.length) return null;
+    return { i: packInputs(this.inputs), a: this.anchors };
   }
 
   /**
