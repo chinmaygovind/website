@@ -86,7 +86,9 @@ def lap_frames(track, seconds=None, hz=None):
     seconds = seconds or track["ideal"]
     pts = [st["p"] for st in track["line"]]
     fin = next((g for g in track["gates"] if g["kind"] == "finish"), None)
-    if fin is not None:                 # stop at the flag; the ribbon runs past it
+    # Stop at the flag; the ribbon runs past it. On a closed track the flag is
+    # the start line and the whole ribbon is the lap, so there is nothing to cut.
+    if fin is not None and not track.get("closed"):
         pts = pts[:fin["si"] + 1]
     cum = [0.0]
     for a, b in zip(pts, pts[1:]):

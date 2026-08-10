@@ -402,6 +402,124 @@ const PALETTES = {
                        puff: 2.1, cloudStep: 13,
                        spireStep: 12, spireDensity: 0.62, rise: 104, root: 110,
                        rock: 0x5f5244 } },
+  // Spa-Francorchamps under the weather it is famous for. The only palette in
+  // the pool with **no sun disc at all**: `sky.sun` is optional everywhere it is
+  // read, so leaving it out gives a flat dome and nothing to cast from.
+  //
+  // Two things make an overcast read as overcast rather than as a grey bug.
+  // First, the zenith is *darker* than the horizon - low cloud pressing down
+  // with pale mist under it, which is the opposite of every other sky here and
+  // is most of the Ardennes feeling. Second, almost all the light is `hemi`
+  // rather than `light`: a heavy overcast is a sky-sized softbox, so the key is
+  // weak, nearly straight down, and casts almost nothing. Turning the key up to
+  // the 1.3-1.5 the sunny tracks use immediately reads as "sunny day, grey sky".
+  //
+  // `hemi.ground` is a deep forest green because that is the bounce here, and
+  // it is what keeps the undersides of the cars and the armco from going flat
+  // black under a sky with no warmth in it.
+  spa:      { road: 0x3e444e, kerb: 0xf5f2ee, kerb2: 0xd23b32,
+              ground: 0x4a6b3f, rail: 0xd8dde2,
+              prop: 0x22482f, prop2: 0x1b3a28, deco: 0xe8b93c,
+              // Gravel run-off. Cosmetic only - it is the same OFFROAD surface
+              // the grass is, at the same drag, and nothing in the simulation
+              // knows the difference. See `runoff` in buildTrack.
+              gravel: 0xc7b48c,
+              // Ground that follows the ribbon instead of one flat plate. Spa
+              // is the only track that needs it and the only one that has it:
+              // its road falls 63 units, and a plate at `track.ground` would be
+              // a collidable ceiling over the whole second half of the lap.
+              // `gravel` is how far from the road centre the run-off stays grit
+              // before it turns to grass; `clear` is how far out nothing may
+              // grow, which has to reach past the barrier or the forest comes
+              // through it. `armco` is the backstop: far enough out that going
+              // off costs you time on the gravel rather than the lap, close
+              // enough that you never reach the trees.
+              // `apron` is how far the swept run-off reaches from the road
+              // centre before the height field takes over; `gravel` is where it
+              // stops being grit inside that; `armco` is the barrier, which has
+              // to sit inside the apron so it stands on swept ground rather
+              // than on the grid; `clear` is how far out nothing may grow.
+              terrain: { apron: 38, gravel: 21, armco: 27, clear: 44 },
+              // Everything beside the road. Positions are fractions of the lap
+              // rather than station indices, because the ribbon gets re-solved
+              // for closure and that changes how many stations there are - the
+              // corners stay where they are in the lap, so the stands do too.
+              // `side` is the road's own right (+1) or left (-1).
+              furniture: {
+                armco: 26, concrete: 0xb9b6ae,
+                board: { bg: '#12161c', fg: '#f4f1ea' },
+                // The advertising, dealt round the lap in this order. Two in
+                // three are this site's own games and the rest are the ones a
+                // circuit actually carries; the list is long enough, and shuffled
+                // enough, that no brand lands twice in the same braking zone.
+                // Every name here has to be a key in SPONSORS or it comes out as
+                // the plain fallback board.
+                sponsors: ['CGOVIND.COM', 'TICKET TO RIDE', 'TACO BELL', 'RAT SCREW',
+                           'KING OF TOKYO', 'MARLBORO', 'DRIVE', 'CGOVIND.COM',
+                           'GO BIRDS', 'TICKET TO RIDE', 'RAT SCREW',
+                           'PENN ENGINEERING', 'KING OF TOKYO', 'DRIVE', 'TACO BELL',
+                           'CGOVIND.COM', 'RAT SCREW', 'MARLBORO', 'TICKET TO RIDE',
+                           'GO BIRDS'],
+                boardEvery: 26,
+                // How tall a hoarding on the barrier stands. Width follows, at
+                // the 4:1 the sign canvas is drawn to - so this is the only
+                // number that sets how big the advertising is.
+                boardH: 2.6,
+                // Each stand wears its sponsor's colours - see SPONSORS. Any of
+                // these that turns out to sit across another part of the lap is
+                // dropped by `stand` rather than drawn through it, which is what
+                // happened to the one that used to be behind the pits: twenty
+                // units of seating laid over the exit of La Source.
+                stands: [
+                  // The main stand down the pit straight, opposite the pits.
+                  { at: [0.006, 0.068], side: -1, tiers: 9, text: 'CGOVIND.COM',
+                    seat: 0x1a56ff, trim: 0xf5b301 },
+                  // Round the outside of La Source.
+                  { at: [0.080, 0.101], side: -1, tiers: 7, text: 'PENN ENGINEERING',
+                    seat: 0x990000, trim: 0x011f5b },
+                  // The hillside at Eau Rouge and Raidillon, which is where
+                  // everybody actually stands.
+                  { at: [0.136, 0.172], side: -1, tiers: 10, text: 'DRIVE',
+                    seat: 0x2f333c, trim: 0xc0182b },
+                  { at: [0.322, 0.352], side: -1, tiers: 6, text: 'KING OF TOKYO',
+                    seat: 0x5c2678, trim: 0xf2c94c },
+                  { at: [0.680, 0.712], side: -1, tiers: 6, text: 'TICKET TO RIDE',
+                    seat: 0x6b4226, trim: 0xc0182b },
+                  // The Bus Stop, the last corner before the line.
+                  { at: [0.938, 0.962], side: -1, tiers: 8, text: 'RAT SCREW',
+                    seat: 0xb8860b, trim: 0x3f2311 },
+                ],
+                pits: { at: [0.004, 0.072], side: 1 },
+                spans: [
+                  { at: 0.0045, lights: true, text: 'DRIVE', clear: 9.5 },
+                  { at: 0.250, deck: true, clear: 10.5, text: 'CGOVIND.COM' },
+                ],
+              },
+              fog: 0xc2cbd2,
+              // The Ardennes is a pine forest, so this is the densest scatter
+              // in the pool and almost all of it is big.
+              density: 0.34,
+              props: { bigpine: 0.5, conifer: 0.34, deadtree: 0.06, rock: 0.10 },
+              sky: {
+                stops: [
+                  [0.00, 0x8d959c], [0.42, 0xb6bfc6], [0.50, 0xcdd4d9],
+                  [0.58, 0xbcc4cb], [0.74, 0xa2acb6], [1.00, 0x7f8b97],
+                ],
+                // Broken cloud, shaded onto the dome rather than built out of
+                // boxes - see skyDome. Without it a flat grey dome reads as an
+                // empty background rather than as weather.
+                clouds: { scale: 2.9, amount: 1.5, dark: 0x67727f,
+                          light: 0xe9eef3, lit: 0.45 },
+                // No `sun`, and so no `glow` either - there is nothing for the
+                // glow to sit around, and a halo with no disc under it reads as
+                // a smudge on the dome.
+                light: { color: 0xdfe6ec, intensity: 0.7, dir: [0.3, 0.94, 0.16] },
+                hemi: { sky: 0xd2dae0, ground: 0x3f5236, intensity: 1.2 },
+                // Closer than the sunny tracks. Mist in the trees is the point,
+                // and on a 3167-unit circuit it also keeps the far side of the
+                // lap from being visible across the infield.
+                fog: 0xc2cbd2, fogNear: 240, fogFar: 1050,
+              } },
 };
 
 export function palette(track) {
@@ -901,13 +1019,27 @@ export function buildTrack(track, T) {
   // than floating. Sparse on purpose: one every three stations turned every
   // raised section into a picket fence you could not see the track through.
   const groundY = track.ground != null ? track.ground : null;
+  // Built here rather than down in the ground block because the supports, the
+  // scenery and the trackside furniture all have to stand on it.
+  const GRASS_DROP = 1.2;          // how far the run-off sits under the tarmac
+  const terrain = (groundY != null && pal.terrain)
+    ? buildTerrain(track, CELL, bbox,
+                   pal.terrain.apron != null ? pal.terrain.apron : 34, GRASS_DROP)
+    : null;
+  let armcoRuns = [];              // barrier polylines, for hanging boards on
+  const signs = [];                // textured sponsor boards, batched per word
   const legEvery = Math.max(4, Math.round(26 / (track.station || 3.5)));
   for (let i = Math.floor(legEvery / 2); i < line.length; i += legEvery) {
     const e = line[i];
     if (e.air || e.fix || e.pf) continue;       // nor under a pipe, whose edges
                                                 // are walls rather than a deck
     if (e.n[1] < 0.7) continue;                 // not under a banked or rolled bit
-    const base = groundY != null ? groundY : e.p[1] - 16;
+    // On a terrain track the ground is right under the road, so `drop` comes
+    // out around the ride height and the `< 1.5` test below skips the legs
+    // entirely - which is correct: the road there is built on a hillside, not
+    // held up in the air.
+    const base = terrain ? terrain.height(e.p[0], e.p[2])
+               : groundY != null ? groundY : e.p[1] - 16;
     const drop = e.p[1] - THICK - base;
     if (drop < 1.5) continue;
     for (const s of [-1, 1]) {
@@ -1019,6 +1151,23 @@ export function buildTrack(track, T) {
                   sh.foam != null ? sh.foam : 0x9fe0ea);
     }
     killY = groundY - 30;
+  } else if (terrain) {
+    // Ground that follows the road instead of one flat plate - the only way a
+    // track that falls 63 units can still be a ground track. See buildTerrain.
+    const APRON = pal.terrain.apron != null ? pal.terrain.apron : 34;
+    drawTerrain(solid, col, terrain, pal, APRON,
+                pal.terrain.gravel != null ? pal.terrain.gravel : 22);
+    addApron(solid, col, track, pal, terrain, pal.terrain, GRASS_DROP);
+    armcoRuns = addArmco(solid, col, track, pal, terrain, pal.terrain, GRASS_DROP);
+    killY = minY - 40;
+    if (pal.furniture) {
+      const keepOut = addFurniture(solid, bright, signs, track, pal, terrain,
+                                   pal.furniture, GRASS_DROP);
+      if (pal.furniture.sponsors) {
+        addHoardings(signs, armcoRuns, pal.furniture.sponsors,
+                     pal.furniture.boardEvery || 26, pal.furniture, keepOut);
+      }
+    }
   } else if (groundY != null) {
     // The grass sits well below the road surface, so the track is a raised
     // ribbon of tarmac. Coplanar road and grass is what made the ground query a
@@ -1041,13 +1190,41 @@ export function buildTrack(track, T) {
   }
 
   // --- scenery (procedural, seeded, deterministic) -------------------------
-  addScenery(solid, track, pal, bbox, CELL);
+  addScenery(solid, track, pal, bbox, CELL, terrain);
   if (groundY == null && pal.below) addWorldBelow(solid, soft, bright, track, pal, bbox, CELL, minY, maxY);
 
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   const matBright = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
   group.add(solid.toMesh(mat));
   group.add(bright.toMesh(matBright));
+  // Sponsor boards, batched by word: every hoarding reading DRIVE is one mesh
+  // sharing one canvas, so the circuit's advertising is a handful of draw calls.
+  //
+  // Skipped when there is no DOM, and that is load bearing rather than tidy:
+  // the anti-cheat runs this exact file inside QuickJS to re-drive a lap
+  // (`jsrt.bundle`, `verify.py`), and there is no `document` there. Without
+  // this guard `buildTrack` throws for any track with boards, which does not
+  // fail loudly - it means every fast lap on that track waits in
+  // `drive_run_checks` forever and never reaches the leaderboard.
+  if (signs.length && typeof document !== 'undefined') {
+    const byText = new Map();
+    for (const s of signs) {
+      let buf = byText.get(s.text);
+      if (!buf) byText.set(s.text, buf = new SignBuf());
+      const c = buf.panel(s.c, s.r, s.u, s.hw, s.hh, s.n);
+      // The back and the edges, in the world mesh. Without these a board is a
+      // sheet of paper you can see the wrong way through from behind the stand.
+      const n = s.n || [0, 0, 1];
+      const B = (p) => [p[0] - n[0] * 0.35, p[1] - n[1] * 0.35, p[2] - n[2] * 0.35];
+      const back = 0x2a2e35;
+      solid.quad(B(c[0]), B(c[3]), B(c[2]), B(c[1]), back);
+      solid.quad(c[0], B(c[0]), B(c[1]), c[1], back);   // bottom
+      solid.quad(c[3], c[2], B(c[2]), B(c[3]), back);   // top
+      solid.quad(c[0], c[3], B(c[3]), B(c[0]), back);   // ends
+      solid.quad(c[1], B(c[1]), B(c[2]), c[2], back);
+    }
+    for (const [text, buf] of byText) group.add(buf.toMesh(signTexture(text)));
+  }
   // Cloud is its own mesh so it can be translucent. depthWrite is off on
   // purpose: it is what lets overlapping boxes *accumulate* into something
   // dense in the middle and wispy at the edges, which is the entire difference
@@ -1567,7 +1744,1300 @@ function solid_plate(buf, x0, x1, z0, z1, y, color) {
   buf.quad([x0, y, z0], [x0, y, z1], [x1, y, z1], [x1, y, z0], color);
 }
 
-function addScenery(buf, track, pal, bbox, CELL) {
+/**
+ * Ground that follows the ribbon, for a track whose road climbs and falls too
+ * far for one flat plate.
+ *
+ * Every other ground track keeps its road between 0 and 20 and sits it on a
+ * single quad at `track.ground`, which is both the grass you see and the
+ * OFFROAD surface you are punished on. Spa falls 63 units, so that plate would
+ * be an opaque, collidable ceiling over most of the lap - the car would spend
+ * from Pouhon to Stavelot driving underneath the world.
+ *
+ * So the ground here is a height field sampled off the road itself: near the
+ * ribbon it is the height of the closest point *on* it, and further out it
+ * blends into an inverse-distance-squared average of the stations in reach.
+ * Three things follow from doing it this way rather than authoring a heightmap:
+ *
+ *  - it cannot disagree with the track, because it is derived from it;
+ *  - a road cut into a hillside falls out for free, and so does the bank
+ *    between Pouhon and Blanchimont where the two legs pass at different
+ *    heights;
+ *  - and the same sampler places the trees, the gravel, the armco and the
+ *    grandstands, so none of them can float or sink.
+ *
+ * The field is built once at CELL resolution and bilinear-sampled after that.
+ */
+function buildTerrain(track, CELL, bbox, apron, drop) {
+  const line = track.line;
+  const PAD = CELL * 10;
+  const x0 = bbox.x0 - PAD, x1 = bbox.x1 + PAD;
+  const z0 = bbox.z0 - PAD, z1 = bbox.z1 + PAD;
+  const nx = Math.ceil((x1 - x0) / CELL) + 1;
+  const nz = Math.ceil((z1 - z0) / CELL) + 1;
+
+  // Bucket the stations so each grid point only looks at what is near it.
+  //
+  // The buckets live in a flat array indexed by integer coordinates rather than
+  // in a Map keyed on `bx + ',' + bz`. It is the same buckets holding the same
+  // stations, and it is most of what this function costs: every cell reads its
+  // whole 9x9 neighbourhood, so a string key is 15,810 x 81 concatenations and
+  // hashes - 1.3 million of them - to answer a question that is an array index.
+  const BUCKET = 48, REACH = 190, REACH2 = REACH * REACH;
+  const span = Math.ceil(REACH / BUCKET);
+  const bxMin = Math.floor(x0 / BUCKET) - span - 1;
+  const bzMin = Math.floor(z0 / BUCKET) - span - 1;
+  const nbx = Math.floor(x1 / BUCKET) + span + 2 - bxMin;
+  const nbz = Math.floor(z1 / BUCKET) + span + 2 - bzMin;
+  const buckets = new Array(nbx * nbz).fill(null);
+  for (let i = 0; i < line.length; i++) {
+    const p = line[i].p;
+    const bx = Math.floor(p[0] / BUCKET) - bxMin, bz = Math.floor(p[2] / BUCKET) - bzMin;
+    if (bx < 0 || bx >= nbx || bz < 0 || bz >= nbz) continue;
+    const k = bx * nbz + bz;
+    let a = buckets[k];
+    if (!a) buckets[k] = a = [];
+    a.push(i);
+  }
+  // The stations' coordinates, flat. `line[i].p[0]` is three property loads and
+  // a bounds check per axis per candidate, and the inner loop below runs about
+  // eighteen million times on Spa.
+  const px_ = new Float64Array(line.length), py_ = new Float64Array(line.length),
+        pz_ = new Float64Array(line.length);
+  for (let i = 0; i < line.length; i++) {
+    px_[i] = line[i].p[0]; py_[i] = line[i].p[1]; pz_[i] = line[i].p[2];
+  }
+  // The neighbourhood, nearest bucket first. Visiting it in this order is what
+  // lets the projection bound below actually reject anything: scanning from a
+  // corner leaves `best` at infinity until most of the work is already done.
+  const ring = [];
+  for (let dx = -span; dx <= span; dx++) {
+    for (let dz = -span; dz <= span; dz++) ring.push([dx, dz]);
+  }
+  ring.sort((a, b) => (a[0] * a[0] + a[1] * a[1]) - (b[0] * b[0] + b[1] * b[1]));
+  const ringX = new Int32Array(ring.map((o) => o[0]));
+  const ringZ = new Int32Array(ring.map((o) => o[1]));
+
+  // The nearest road is the nearest point on the *ribbon*, not the nearest
+  // station, and that distinction is the whole difference between run-off that
+  // reads as gravel and run-off with grass torn through it.
+  //
+  // Nearest-station makes `near` a staircase: every point in a station's
+  // Voronoi cell gets that station's exact height, so the field steps by a
+  // whole station's rise at each cell boundary. The swept apron, meanwhile,
+  // interpolates smoothly between the same two stations. On Spa's steepest
+  // grade a station is 0.64 units of descent, so the two surfaces disagree by
+  // up to a third of a unit either way - a hundred times the 0.03 the apron is
+  // lifted by - and the height field pokes up through the gravel in patches all
+  // the way down the hill. Measured before this: 19% of the run-off had grass
+  // standing above it, by as much as 3.4 units.
+  //
+  // Projecting onto the segment and lerping its height is exactly what the
+  // apron's own sweep does, so on a straight the two agree to the bit and on a
+  // corner to the ribbon's curvature. It also makes `toRoad` an honest distance
+  // to the road rather than to the nearest survey peg, which is what the apron's
+  // clipping, the armco and the stands all wanted it to be anyway.
+  // Projecting onto a segment costs a divide and a dozen flops, and doing it for
+  // every station in reach of every cell is 100M of them on Spa - it took the
+  // field from 83ms to build to 630ms, and this runs inside QuickJS on the
+  // server as well as in the browser. Two things make it cheap again without
+  // changing a single sample:
+  //
+  //  - `1/L2` is a property of the segment, not of the cell, so it is computed
+  //    once here rather than 90,000 times;
+  //  - and a segment whose *station* is further off than `best + segMax` cannot
+  //    contain a nearer point than the one already found, so it is never
+  //    projected at all. That bound is only worth anything if `best` gets small
+  //    early, which is why the buckets are visited nearest-first below instead
+  //    of starting from a corner of the neighbourhood.
+  const closed = !!track.closed;
+  const segs = new Float64Array(line.length * 7);
+  let segMax = 0;
+  for (let i = 0; i < line.length; i++) {
+    const a = line[i].p;
+    const j = i + 1 < line.length ? i + 1 : (closed ? 0 : i);
+    const b = line[j].p;
+    const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+    const L2 = dx * dx + dz * dz;
+    const o = i * 7;
+    segs[o] = a[0]; segs[o + 1] = a[1]; segs[o + 2] = a[2];
+    segs[o + 3] = dx; segs[o + 4] = dy; segs[o + 5] = dz;
+    segs[o + 6] = L2 > 0 ? 1 / L2 : 0;
+    segMax = Math.max(segMax, Math.sqrt(L2));
+  }
+
+  // height, and the distance to the nearest road centre - the second is what
+  // paints gravel next to the road and grass beyond it.
+  const H = new Float32Array(nx * nz);
+  const D = new Float32Array(nx * nz);
+  for (let ix = 0; ix < nx; ix++) {
+    const px = x0 + ix * CELL;
+    const bx = Math.floor(px / BUCKET) - bxMin;
+    for (let iz = 0; iz < nz; iz++) {
+      const pz = z0 + iz * CELL;
+      const bz = Math.floor(pz / BUCKET) - bzMin;
+      let wsum = 0, hsum = 0, best = Infinity, bestY = 0, gate = Infinity;
+      for (let r = 0; r < ringX.length; r++) {
+        const qx2 = bx + ringX[r], qz2 = bz + ringZ[r];
+        if (qx2 < 0 || qx2 >= nbx || qz2 < 0 || qz2 >= nbz) continue;
+        const a = buckets[qx2 * nbz + qz2];
+        if (a === null) continue;
+        for (let n = 0; n < a.length; n++) {
+          const i = a[n];
+          const ex = px_[i] - px, ez = pz_[i] - pz;
+          const d2 = ex * ex + ez * ez;
+          // Nearest point on this station's segment, and its height there -
+          // but only where this segment could possibly hold one.
+          if (d2 < gate) {
+            const o = i * 7;
+            const sx = segs[o], sz = segs[o + 2], dx2 = segs[o + 3], dz2 = segs[o + 5];
+            const u = Math.max(0, Math.min(1,
+              ((px - sx) * dx2 + (pz - sz) * dz2) * segs[o + 6]));
+            const ax = sx + dx2 * u - px, az = sz + dz2 * u - pz;
+            const q2 = ax * ax + az * az;
+            if (q2 < best) {
+              best = q2; bestY = segs[o + 1] + segs[o + 4] * u;
+              const g = Math.sqrt(best) + segMax;
+              gate = g * g;
+            }
+          }
+          if (d2 > REACH2) continue;
+          const w = 1 / (d2 + 12);
+          wsum += w; hsum += w * py_[i];
+        }
+      }
+      const idx = ix * nz + iz;
+      // Nothing in reach happens only out past the padding, where the nearest
+      // station is still the only sensible answer - a global base level there
+      // turns the outfield into a bowl with the circuit on a plateau in it.
+      const far = wsum > 0 ? hsum / wsum : bestY;
+      const d = best === Infinity ? 1e6 : Math.sqrt(best);
+      // Inside the apron the ground is *exactly* the nearest road's height,
+      // less the same drop the apron uses. That is what lets the swept run-off
+      // and this grid agree where they meet. An inverse-distance blend right up
+      // to the kerb was the first attempt and is what made the gravel wander
+      // above and below the road: it averages in stations from further up and
+      // down the hill, so beside a climb the ground came out higher than the
+      // tarmac and buried it.
+      const BLEND = 70;
+      const near = bestY - drop;
+      const t = Math.max(0, Math.min(1, (d - apron) / BLEND));
+      H[idx] = near + (far - near) * (t * t * (3 - 2 * t));
+      D[idx] = d;
+    }
+  }
+
+  const sample = (arr, x, z) => {
+    const fx = Math.min(nx - 1.001, Math.max(0, (x - x0) / CELL));
+    const fz = Math.min(nz - 1.001, Math.max(0, (z - z0) / CELL));
+    const ix = Math.floor(fx), iz = Math.floor(fz);
+    const tx = fx - ix, tz = fz - iz;
+    const a = arr[ix * nz + iz], b = arr[(ix + 1) * nz + iz];
+    const c = arr[ix * nz + iz + 1], d = arr[(ix + 1) * nz + iz + 1];
+    return (a * (1 - tx) + b * tx) * (1 - tz) + (c * (1 - tx) + d * tx) * tz;
+  };
+
+  return {
+    nx, nz, x0, z0, CELL,
+    /** Terrain surface height under a world point. */
+    height: (x, z) => sample(H, x, z),
+    /** Distance from a world point to the nearest road centre. */
+    toRoad: (x, z) => sample(D, x, z),
+    gridH: H, gridD: D,
+  };
+}
+
+/**
+ * The run-off, swept along the ribbon rather than sampled from the grid.
+ *
+ * This is the whole reason the gravel is not part of `drawTerrain`. The height
+ * field is an 8-unit grid, and its vertices do not lie on the road edge - so a
+ * cell straddling the kerb interpolates across it and comes out above the
+ * tarmac in some places and below it in others. What that looks like is gravel
+ * sawing in and out of the road, gravel lying *over* the road, and a hole at
+ * the edge of a corner you can drop through. All of that was one bug.
+ *
+ * Sweeping the ribbon fixes it by construction: these quads are built from the
+ * same stations and the same `lat` the road is, so the inner edge of the run-off
+ * is the road's edge, exactly, all the way round.
+ *
+ * The apron sits `drop` below the road from the kerb outward rather than
+ * meeting it flush, for the reason the flat ground plate does: coplanar road
+ * and run-off makes the ground query a coin toss between them, and the car
+ * spends whole corners behaving as if it were on gravel.
+ */
+function addApron(buf, col, track, pal, terrain, cfg, drop) {
+  const line = track.line;
+  const A = cfg.apron != null ? cfg.apron : 34;
+  const gTo = cfg.gravel != null ? cfg.gravel : 22;
+  const grit = pal.gravel != null ? pal.gravel : pal.ground;
+  // Bands, as distances from the road *centre*. The gravel/grass change is a
+  // band boundary rather than a per-quad colour test, so the edge is a clean
+  // line along the road instead of a staircase.
+  // The lift is not slop. Where the swept apron and the height field overlap
+  // they are all but coplanar - both are "nearest road height, less the drop" -
+  // and coplanar surfaces z-fight into a shimmering mess along the entire
+  // circuit, so the apron is raised a hair to settle the depth test in its
+  // favour.
+  //
+  // It was 0.03, and 0.03 is only enough if the two surfaces really do agree.
+  // They did not: the field used to take its height from the nearest *station*
+  // rather than the nearest point on the ribbon, so it stepped by a whole
+  // station's rise while the apron interpolated, and on the descent it stood a
+  // third of a unit proud of the gravel in patches all the way down the hill.
+  // `buildTerrain` no longer does that, and this is the margin over what is
+  // left: an eighth of the drop, well under what reads as a step, and past the
+  // 99th percentile of the disagreement that remains.
+  //
+  // **A banked station has far less room for it, and none to spare.** The apron
+  // is one horizontal band at the station's *centre* height, so on a rolled
+  // station the road's lower kerb is already `|lat.y| * hw` beneath that centre
+  // - 1.17 units through Pouhon's eight degrees, against a drop of 1.2. The
+  // whole clearance between the run-off and the low side of the road there is
+  // three hundredths of a unit, and a flat 0.15 spends five times it: the gravel
+  // comes up *through* the left-hand kerb and the edge of the road reads as
+  // lifted, which is exactly what it looks like from the car. So the lift is
+  // whatever the bank leaves - full value on the 96% of the circuit that is flat,
+  // and squeezed to nothing round the one corner that is not.
+  const LIFT = 0.15;
+  const lift = (e) => Math.max(0.01,
+    Math.min(LIFT, drop - Math.abs(e.lat[1]) * e.hw - 0.01));
+  const at = (e, o) => [e.p[0] + e.lat[0] * o, e.p[1] - drop + lift(e),
+                        e.p[2] + e.lat[2] * o];
+
+  // How far this station's run-off may reach on this side before it starts
+  // laying gravel over some *other* part of the circuit.
+  //
+  // Spa's legs pass as close as 43 units, and two aprons of 38 do not fit in
+  // that - so without this the Pouhon apron is drawn straight across the
+  // Blanchimont tarmac, at Pouhon's height. That is the "gravel covering the
+  // road" and the stray quads hanging in the infield: both are one apron
+  // trespassing on another leg.
+  //
+  // The test needs nothing to know which corners are tight. `toRoad` is the
+  // distance to the *nearest* road centre, so at a point `o` out from our own
+  // road it reads back `o` exactly when we are the nearest thing - and less
+  // when somebody else is. Clipping on that makes the union of all the aprons
+  // cover everything within reach of the ribbon exactly once.
+  const reach = (e, s) => {
+    let lim = A;
+    for (let o = e.hw; o <= A; o += 2) {
+      const p = at(e, s * o);
+      if (terrain.toRoad(p[0], p[2]) < o - 2.5) { lim = o - 2; break; }
+    }
+    return Math.max(e.hw, lim);
+  };
+  const lims = [];
+  for (const e of line) lims.push([reach(e, -1), reach(e, 1)]);
+
+  // Taper the limit instead of letting it drop off a cliff. The test above is
+  // per station, so a run-off that has to give way to a neighbouring leg used
+  // to go from its full width to nothing between two stations 3.5 units apart,
+  // and that wedge is the last of the stray shards in the infield. Two sweeps
+  // with a slope cap turn the cut into a gentle taper; the track is a ring, so
+  // they wrap.
+  const N = lims.length, SLOPE = 1.4;
+  for (const k of [0, 1]) {
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 1; i <= N; i++) {
+        const p = lims[(i - 1) % N][k], c = i % N;
+        lims[c][k] = Math.min(lims[c][k], p + SLOPE);
+      }
+      for (let i = N - 1; i >= -1; i--) {
+        const nx = lims[((i + 1) % N + N) % N][k], c = ((i % N) + N) % N;
+        lims[c][k] = Math.min(lims[c][k], nx + SLOPE);
+      }
+    }
+  }
+
+  for (let i = 0; i + 1 < line.length; i++) {
+    const a = line[i], b = line[i + 1];
+    if (a.air || b.air) continue;
+    for (const s of [-1, 1]) {
+      const cap = Math.min(lims[i][s < 0 ? 0 : 1], lims[i + 1][s < 0 ? 0 : 1]);
+      const edges = [a.hw, Math.min(gTo, cap), Math.min(A, cap)];
+      for (let k = 0; k + 1 < edges.length; k++) {
+        const o0 = s * edges[k], o1 = s * edges[k + 1];
+        if (Math.abs(edges[k + 1]) <= Math.abs(edges[k]) + 0.05) continue;
+        // No snapping the outer edge onto the height field. It looks like the
+        // careful thing to do and it is what produced the shards hanging in the
+        // infield: `terrain.height` returns the height of whatever road is
+        // *nearest*, so wherever two legs pass close the outer corners of these
+        // quads got yanked to the other leg's height and the band came out as a
+        // skewed sheet across the gap. It is unnecessary as well as wrong -
+        // inside the apron the height field is already `nearest road - drop`
+        // by construction (see buildTerrain), which is exactly this height, so
+        // the two surfaces meet on their own.
+        const p0 = at(a, o0), p1 = at(b, o0), p2 = at(b, o1), p3 = at(a, o1);
+        const c = k === 0 ? grit : pal.ground;
+        buf.quad(p0, p1, p2, p3, c);
+        buf.quad(p3, p2, p1, p0, c);
+        col.addQuad(p0, p1, p2, p3, KIND.OFFROAD);
+      }
+      // The lip under the kerb, so the step down to the gravel reads as a step
+      // rather than as the road floating. It has to reach the *kerb*, which on a
+      // rolled station is not `drop` above the run-off: the apron is one
+      // horizontal band at the station's centre height, so a bank puts one kerb
+      // above it and the other below. Standing the lip a fixed `drop` tall was
+      // the old way and it built a wall - through Pouhon's eight degrees the
+      // inside lip finished 1.19 units *over* the road it was supposed to be
+      // holding up, which from the car is the left-hand edge of the track lifted
+      // into the air for the length of the corner, and the outside kerb was left
+      // hanging over a lip 1.16 too short to meet it. Both are the same missing
+      // term. (`e.lat[1] * hw` is the kerb height for a station with no
+      // cross-section; the run-off only exists on a terrain track and no track
+      // in the pool is both, so there is no profile to sample here.)
+      const kerbY = (e) => e.p[1] + e.lat[1] * s * e.hw;
+      const k0 = at(a, s * a.hw), k1 = at(b, s * b.hw);
+      const t0 = [k0[0], kerbY(a), k0[2]], t1 = [k1[0], kerbY(b), k1[2]];
+      buf.quad(t0, t1, k1, k0, shade(pal.road, -0.25));
+      buf.quad(k0, k1, t1, t0, shade(pal.road, -0.25));
+    }
+  }
+}
+
+/**
+ * The armco: a continuous barrier set well back from the road, standing on the
+ * terrain, with sponsor hoardings on it.
+ *
+ * This is deliberately **not** the `rail` mechanic. A rail is a wall on the
+ * kerb, which on a Grand Prix circuit would make the run-off decorative and the
+ * whole lap a bobsleigh run. This sits past the gravel: you can run wide, lose
+ * time in the grit and come back, but you cannot drive into the forest.
+ *
+ * Where the circuit doubles back on itself - the inside of La Source, Rivage,
+ * the Bus Stop - there is not room for a barrier and the two sides would meet
+ * in the middle. Nothing has to know which corners those are: if the nearest
+ * road centre to a barrier post is closer than the barrier's own offset, some
+ * *other* part of the track is there, and the segment is skipped.
+ *
+ * One collision quad per segment, not two, for the reason `wallStrip` gives:
+ * the wall query works its push-out direction out from the closest point on the
+ * triangle, so a single face stops a car arriving from either side, and a
+ * second face makes every contact fire twice and scrub the car's speed.
+ */
+function addArmco(buf, col, track, pal, terrain, cfg, drop) {
+  const line = track.line;
+  const back = cfg.armco != null ? cfg.armco : 26;
+  const H = cfg.armcoH != null ? cfg.armcoH : 1.7;
+  const rail = pal.rail != null ? pal.rail : 0xd8dde2;
+  const posts = [];                 // where a hoarding may later be hung
+
+  // Each post carries the way back to the road, so a board hung here knows
+  // which face to print on.
+  //
+  // The footing comes from the barrier's *own* station rather than from
+  // `terrain.height`, and that is the fix for the jagged pale streak that used
+  // to run through the infield. The height field returns the height of whatever
+  // road is nearest, so a barrier standing 27 units out beside a place where
+  // two legs pass close had its footing flip between the two from post to post
+  // and zigzagged through forty units of height. Everything inside the apron
+  // stands on the road it belongs to, which is also what the run-off does.
+  const at = (e, s) => {
+    const x = e.p[0] + e.lat[0] * s * back;
+    const z = e.p[2] + e.lat[2] * s * back;
+    const p = [x, e.p[1] - drop - 0.2, z];
+    p.n = [-s * e.lat[0], 0, -s * e.lat[2]];
+    return p;
+  };
+  for (const s of [-1, 1]) {
+    let run = [];
+    const flush = () => {
+      for (let k = 0; k + 1 < run.length; k++) {
+        const a = run[k], b = run[k + 1];
+        const at2 = [a[0], a[1] + H, a[2]], bt = [b[0], b[1] + H, b[2]];
+        col.addQuad(a, b, bt, at2, KIND.WALL);
+        buf.quad(a, b, bt, at2, rail);
+        buf.quad(at2, bt, b, a, rail);
+        // a dark plinth, so the barrier reads as standing on the ground rather
+        // than as a ribbon hovering over it
+        buf.quad([a[0], a[1], a[2]], [b[0], b[1], b[2]],
+                 [b[0], b[1] - 0.55, b[2]], [a[0], a[1] - 0.55, a[2]], shade(rail, -0.55));
+      }
+      if (run.length > 3) posts.push(run.slice());
+      run = [];
+    };
+    for (let i = 0; i < line.length; i++) {
+      const e = line[i];
+      if (e.air || e.pf || e.n[1] < 0.75) { flush(); continue; }
+      const p = at(e, s);
+      // Another part of the circuit is closer than our own offset, so there is
+      // no room here - the inside of a hairpin, or a leg passing alongside.
+      if (terrain.toRoad(p[0], p[2]) < back - 2.5) { flush(); continue; }
+      run.push(p);
+    }
+    flush();
+  }
+  return posts;
+}
+
+/**
+ * A buffer of textured quads, one per sponsor board.
+ *
+ * The rest of the world here is flat-shaded vertex colour with no textures at
+ * all, and this is the one exception: a hoarding has to be *readable*, and
+ * letters built out of boxes stop being letters about forty units away, which
+ * is where you actually see them from. So boards carry a canvas texture - the
+ * same trick render.js already uses for the name tags over the cars.
+ *
+ * The quads are written in world space with their UVs, and every board sharing
+ * a sponsor shares one buffer, so the whole circuit's advertising is five or
+ * six draw calls rather than one per board.
+ */
+class SignBuf {
+  constructor() { this.pos = []; this.uv = []; }
+  /** A quad from its centre, a half-width along `r` and a half-height along `u`.
+   *
+   *  `r` is flipped if needed so the face's winding points at `n` - the board
+   *  has to face the road it is advertising to, and which way a mirrored
+   *  placement ends up winding is not something the caller should have to
+   *  reason about. Everything here is single sided: the back of a board is a
+   *  plain panel in the world mesh, not the same word printed in mirror
+   *  writing, which is what DoubleSide gives you.
+   */
+  panel(c, r, u, hw, hh, n) {
+    // face normal is r x u; flip r if that points away from the road
+    const cr = [r[1] * u[2] - r[2] * u[1], r[2] * u[0] - r[0] * u[2],
+                r[0] * u[1] - r[1] * u[0]];
+    if (n && cr[0] * n[0] + cr[1] * n[1] + cr[2] * n[2] < 0) {
+      r = [-r[0], -r[1], -r[2]];
+    }
+    const P = (sr, su) => [c[0] + r[0] * sr * hw + u[0] * su * hh,
+                           c[1] + r[1] * sr * hw + u[1] * su * hh,
+                           c[2] + r[2] * sr * hw + u[2] * su * hh];
+    const a = P(-1, -1), b = P(1, -1), d = P(1, 1), e = P(-1, 1);
+    for (const [v, uv] of [[a, [0, 0]], [b, [1, 0]], [d, [1, 1]],
+                           [a, [0, 0]], [d, [1, 1]], [e, [0, 1]]]) {
+      this.pos.push(v[0], v[1], v[2]);
+      this.uv.push(uv[0], uv[1]);
+    }
+    return [a, b, d, e];
+  }
+  toMesh(tex) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(this.uv, 2));
+    g.computeVertexNormals();
+    return new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+      map: tex, side: THREE.FrontSide, fog: true,
+    }));
+  }
+}
+
+/**
+ * Every mark that goes on a board, as a file.
+ *
+ * None of these is drawn in code, and the four that are not this site's used to
+ * be. A shield, a bell, a chevron and an eagle's head are each a few dozen
+ * canvas paths, they were all *recognisable*, and every one of them was
+ * obviously a drawing of a logo rather than the logo - which on a board whose
+ * entire job is to read as a brand at a hundred miles an hour is the only thing
+ * that matters. The real artwork is smaller than the code that approximated it.
+ *
+ * Three come from inside this repo: Ticket to Ride's locomotive is the file its
+ * own site draws, and King of Tokyo's monster and Rat Screw's pyramid are those
+ * games' app icons. The other four are the brands' own, off Wikipedia. Penn's
+ * is a PNG resampled to 1200 wide - the original is 2908 and half a megabyte,
+ * for a mark that is never drawn wider than about 200 pixels.
+ *
+ * They load as `Image`s off the static tree and land after the track is built,
+ * which is fine - see `signTexture`, which repaints when they do.
+ */
+const LOGOS = {
+  ttr: '/static/img/sponsors/ttr-train.svg',
+  kot: '/static/img/sponsors/kot.svg',
+  ers: '/static/img/sponsors/ers.svg',
+  penn: '/static/img/sponsors/penn.png',
+  taco: '/static/img/sponsors/tacobell.svg',
+  marlboro: '/static/img/sponsors/marlboro.svg',
+  eagles: '/static/img/sponsors/eagles.svg',
+};
+const _logo = {};
+function logo(key) {
+  if (key in _logo) return _logo[key].im;
+  const im = new Image();
+  const ready = new Promise((res) => { im.onload = res; im.onerror = res; });
+  im.src = LOGOS[key];
+  _logo[key] = { im, ready };
+  return im;
+}
+
+/** Every face a board is set in, asked for by name so the browser fetches it.
+ *
+ *  A `@font-face` is only downloaded when something on the page is *set* in it,
+ *  and nothing on the play page is set in any of these - they exist for the
+ *  boards alone. Without an explicit `load` the rule sits there unused, the
+ *  canvas silently falls back, and Spa's advertising comes out in whatever the
+ *  machine had lying around. `document.fonts.ready` on its own does not fix
+ *  this: it resolves happily, having loaded nothing.
+ */
+const BOARD_FONTS = ['700 60px Cinzel', '400 60px "xkcd Script"',
+                     '400 60px Metamorphous', '900 60px "Titillium Web"'];
+/** One promise for the whole of a board's artwork, shared by every board.
+ *
+ *  It has to be shared. Each texture used to hang its own `onload` on the three
+ *  `Image`s, which are one object each however many boards want them - so the
+ *  ninth board's handler replaced the eighth's, the first eight never heard
+ *  that anything had arrived, and the only board on the circuit that ever
+ *  repainted was whichever happened to be built last. What you get is the
+ *  layout you designed with none of the logos on it and the fallback font, and
+ *  it looks deliberate.
+ */
+let _art = null;
+function boardArt() {
+  if (_art) return _art;
+  if (typeof document === 'undefined') return (_art = Promise.resolve());
+  const waits = Object.keys(LOGOS).map((k) => { logo(k); return _logo[k].ready; });
+  if (document.fonts) {
+    waits.push(...BOARD_FONTS.map((f) => document.fonts.load(f).catch(() => {})));
+  }
+  return (_art = Promise.all(waits));
+}
+
+// --- drawing helpers shared by the boards -----------------------------------
+
+/** Fill the board and put a hairline frame on it. */
+function plate(g, W, H, bg, edge) {
+  g.fillStyle = bg;
+  g.fillRect(0, 0, W, H);
+  if (edge) {
+    g.strokeStyle = edge;
+    g.lineWidth = Math.round(H * 0.035);
+    g.strokeRect(g.lineWidth / 2, g.lineWidth / 2, W - g.lineWidth, H - g.lineWidth);
+  }
+}
+
+/** A wordmark, centred on (cx, cy), squeezed rather than clipped if it is wide.
+ *
+ *  Canvas has no letter-spacing, so tracking is drawn a glyph at a time. The
+ *  squeeze is horizontal only: a sponsor with a long name gets a condensed
+ *  wordmark, which is what a real one would do, rather than a smaller one that
+ *  stops being readable from the far side of the road.
+ */
+function word(g, str, cx, cy, maxW, opt) {
+  const o = opt || {};
+  g.save();
+  g.font = o.font;
+  g.textAlign = 'left';
+  g.textBaseline = 'middle';
+  const tr = o.track || 0;
+  const glyphs = str.split('');
+  const w = glyphs.reduce((a, ch) => a + g.measureText(ch).width, 0) + tr * (glyphs.length - 1);
+  const k = w > maxW ? maxW / w : 1;
+  g.translate(cx, cy);
+  if (o.slant) g.transform(1, 0, -o.slant, 1, 0, 0);
+  g.scale(k, 1);
+  let x = -w / 2;
+  for (const ch of glyphs) {
+    if (o.shadow) {
+      g.fillStyle = o.shadow;
+      g.fillText(ch, x + (o.shadowAt || 3), (o.shadowAt || 3));
+    }
+    g.fillStyle = o.fill;
+    g.fillText(ch, x, 0);
+    if (o.stroke) {
+      g.lineWidth = o.strokeW || 3;
+      g.strokeStyle = o.stroke;
+      g.strokeText(ch, x, 0);
+    }
+    x += g.measureText(ch).width + tr;
+  }
+  g.restore();
+  return w * k;
+}
+
+/** One of the copied SVGs, recoloured and fitted into a box.
+ *
+ *  Recolouring is a `source-in` fill on a scratch canvas rather than a filter,
+ *  because these are flat single-colour marks on boards whose palette is not
+ *  the website's - Ticket to Ride's locomotive is black artwork and its board
+ *  is gold on near-black. `tint` of null leaves the artwork as it is, which is
+ *  what the two app icons want: they are whole badges, not silhouettes.
+ */
+function mark(g, key, x, y, maxW, maxH, tint) {
+  const im = logo(key);
+  if (!im.complete || !im.naturalWidth) return;
+  const s = Math.min(maxW / im.naturalWidth, maxH / im.naturalHeight);
+  const w = im.naturalWidth * s, h = im.naturalHeight * s;
+  if (!tint) { g.drawImage(im, x - w / 2, y - h / 2, w, h); return; }
+  const sc = document.createElement('canvas');
+  sc.width = Math.max(1, Math.round(w)); sc.height = Math.max(1, Math.round(h));
+  const sg = sc.getContext('2d');
+  sg.drawImage(im, 0, 0, sc.width, sc.height);
+  sg.globalCompositeOperation = 'source-in';
+  sg.fillStyle = tint;
+  sg.fillRect(0, 0, sc.width, sc.height);
+  g.drawImage(sc, x - w / 2, y - h / 2, w, h);
+}
+
+/**
+ * The sponsors, each drawing its own board.
+ *
+ * These used to be a colour and a font stack fed through one generic layout,
+ * and six near-identical rectangles is what that looks like from the car. Each
+ * one now paints the whole 4:1 canvas, so it can carry the mark the thing it
+ * advertises actually uses and be laid out the way that brand lays itself out.
+ *
+ * The colours are still the ones those pages use, which is what makes a board
+ * read as *that* game rather than as advertising in general: the landing page's
+ * per-game accents, ERS's wood and gold, King of Tokyo's purple-and-gold poster,
+ * Ticket to Ride's gold on near-black, Drive's own ink-on-paper with the red it
+ * uses for a finish line, and Penn's red on Penn's blue. The four that are not
+ * this site are drawn the way you would see them from a circuit: a Marlboro
+ * board is the chevron, a Taco Bell board is the bell, and neither needs any
+ * more than that to be read at a hundred miles an hour.
+ */
+const SPONSORS = {
+  // White ground, lowercase, hand-drawn - the landing page's own voice.
+  'CGOVIND.COM': (g, W, H) => {
+    plate(g, W, H, '#ffffff', '#1d1d1f');
+    word(g, 'cgovind.com', W / 2, H * 0.54, W * 0.80,
+         { font: '400 ' + (H * 0.52) + 'px "xkcd Script", cursive', fill: '#1d1d1f' });
+    g.fillStyle = '#1a56ff';
+    g.fillRect(W * 0.30, H * 0.83, W * 0.40, H * 0.045);
+  },
+
+  'TICKET TO RIDE': (g, W, H) => {
+    plate(g, W, H, '#14120f', '#c8a84b');
+    mark(g, 'ttr', H * 0.62, H * 0.5, H * 0.68, '#c8a84b');
+    word(g, 'TICKET TO RIDE', W * 0.58, H * 0.5, W * 0.66,
+         { font: '700 ' + (H * 0.42) + 'px Cinzel, Georgia, serif',
+           fill: '#e8c97a', track: H * 0.03 });
+  },
+
+  // The wordmark the site's own nav uses - "Rat Screw", not the full name.
+  'RAT SCREW': (g, W, H) => {
+    plate(g, W, H, '#3f2311', '#b8860b');
+    mark(g, 'ers', H * 0.60, H * 0.5, H * 0.72, null);
+    word(g, 'Rat Screw', W * 0.60, H * 0.52, W * 0.62,
+         { font: '400 ' + (H * 0.50) + 'px Metamorphous, Georgia, serif',
+           fill: '#f2c94c', shadow: 'rgba(0,0,0,0.55)', shadowAt: H * 0.035 });
+  },
+
+  'KING OF TOKYO': (g, W, H) => {
+    plate(g, W, H, '#211b33', '#f2c94c');
+    mark(g, 'kot', H * 0.60, H * 0.5, H * 0.74, null);
+    word(g, 'KING OF TOKYO', W * 0.60, H * 0.5, W * 0.64,
+         { font: '900 ' + (H * 0.44) + 'px "Arial Narrow", "Franklin Gothic Bold", '
+                 + 'Impact, "Titillium Web", sans-serif',
+           fill: '#f2c94c', track: H * 0.02, stroke: '#eb5757', strokeW: H * 0.012 });
+  },
+
+  'PENN ENGINEERING': (g, W, H) => {
+    plate(g, W, H, '#011f5b', '#f7f5f2');
+    pennShield(g, H * 0.62, H * 0.5, H * 0.76);
+    word(g, 'PENN ENGINEERING', W * 0.60, H * 0.5, W * 0.66,
+         { font: '700 ' + (H * 0.36) + 'px Cinzel, Georgia, serif',
+           fill: '#f7f5f2', track: H * 0.025 });
+  },
+
+  'TACO BELL': (g, W, H) => {
+    plate(g, W, H, '#ffffff', '#702082');
+    tacoBell(g, H * 0.58, H * 0.5, H * 0.72, '#702082');
+    word(g, 'TACO BELL', W * 0.58, H * 0.5, W * 0.62,
+         { font: '900 ' + (H * 0.46) + 'px "Titillium Web", Helvetica, Arial, sans-serif',
+           fill: '#702082', track: H * 0.015 });
+  },
+
+  // The trackside board: a red roof on white with the wordmark under it. It is
+  // the shape that is recognisable at speed, not the lettering.
+  'MARLBORO': (g, W, H) => {
+    plate(g, W, H, '#ffffff', '#d0d0d0');
+    g.fillStyle = '#e4002b';
+    g.beginPath();
+    g.moveTo(0, 0); g.lineTo(W, 0); g.lineTo(W, H * 0.10);
+    g.lineTo(W / 2, H * 0.56); g.lineTo(0, H * 0.10);
+    g.closePath();
+    g.fill();
+    word(g, 'Marlboro', W / 2, H * 0.76, W * 0.70,
+         { font: '900 ' + (H * 0.34) + 'px "Titillium Web", Helvetica, Arial, sans-serif',
+           fill: '#111111', track: H * 0.01 });
+  },
+
+  'GO BIRDS': (g, W, H) => {
+    plate(g, W, H, '#004c54', '#a5acaf');
+    eagleHead(g, H * 0.58, H * 0.5, H * 0.80, '#a5acaf', '#004c54');
+    word(g, 'GO BIRDS', W * 0.60, H * 0.5, W * 0.60,
+         { font: '900 ' + (H * 0.52) + 'px "Titillium Web", Helvetica, Arial, sans-serif',
+           fill: '#ffffff', track: H * 0.02, slant: 0.22 });
+  },
+
+  'DRIVE': (g, W, H) => {
+    plate(g, W, H, '#1d1d1f', '#c0182b');
+    g.fillStyle = '#c0182b';
+    g.fillRect(0, 0, W * 0.035, H);
+    // a strip of start-line chequer, so the board is Drive's and not any board
+    const n = 8, c = H * 0.16;
+    for (let i = 0; i < n * 2; i++) {
+      g.fillStyle = i % 2 ? '#faf8f4' : '#1d1d1f';
+      g.fillRect(W - c * (i + 1) / 2, 0, c / 2, c);
+      g.fillRect(W - c * (i + 1) / 2, H - c, c / 2, c);
+    }
+    word(g, 'DRIVE', W * 0.5, H * 0.52, W * 0.62,
+         { font: '900 ' + (H * 0.58) + 'px "Titillium Web", Helvetica, Arial, sans-serif',
+           fill: '#faf8f4', track: H * 0.09 });
+  },
+};
+
+/** A sponsor board's texture: its wordmark and its mark, drawn onto a 4:1 canvas.
+ *
+ * 1024x256 rather than the 512x128 this started at, because the boards carry
+ * artwork now: a pyramid or a locomotive at 128 tall is a smudge, and this is
+ * ten textures on a track that already ships two hundred thousand triangles.
+ *
+ * **It draws twice, and the second time is the one you see.** Fonts and logos
+ * both arrive asynchronously and the track is built long before either lands,
+ * so the first pass is whatever is available - usually the right layout in the
+ * wrong typeface with a gap where the mark goes. When the last of them resolves
+ * the same canvas is repainted and the texture marked dirty, which three.js
+ * uploads on the next frame. Getting this wrong is not loud: you get a
+ * perfectly good-looking board set in the wrong font, on a track whose preview
+ * picture is taken by a headless browser that owns almost no fonts at all.
+ */
+function signTexture(text) {
+  const W = 1024, H = 256;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const paint = SPONSORS[text] || ((gg, w, h) => {
+    plate(gg, w, h, '#12161c', '#c0182b');
+    word(gg, text, w / 2, h / 2, w * 0.8,
+         { font: '900 ' + (h * 0.45) + 'px "Titillium Web", Helvetica, Arial, sans-serif',
+           fill: '#f4f1ea' });
+  });
+  paint(g, W, H);
+  const t = new THREE.CanvasTexture(c);
+  t.anisotropy = 4;
+  const again = () => {
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, W, H);
+    paint(g, W, H);
+    t.needsUpdate = true;
+  };
+  boardArt().then(again);
+  return t;
+}
+
+/**
+ * Everything beside the road that is not the road: grandstands, the pit
+ * building and its wall, the start gantry, the bridge over Kemmel, and the
+ * sponsor boards on all of it.
+ *
+ * Placement is by **fraction of the lap** rather than station index, so it
+ * survives the ribbon being re-solved for closure (which changes how many
+ * stations there are). Everything stands on `terrain`, so nothing floats or
+ * sinks when the hillside moves under it.
+ *
+ * None of it is in the collider. The armco is the thing that stops a car, and
+ * it is between the road and all of this - a grandstand you can hit is a
+ * grandstand somebody will spend the lap parked inside.
+ */
+function addFurniture(solid, bright, signs, track, pal, terrain, cfg, drop) {
+  const line = track.line;
+  const n = line.length;
+  const at = (f) => Math.max(0, Math.min(n - 1, Math.round(f * (n - 1))));
+  const conc = cfg.concrete != null ? cfg.concrete : 0xb9b6ae;
+  const dark = shade(conc, -0.45);
+
+  // Where a building ended up, so the hoardings can stay out of it.
+  //
+  // A stand knows to keep off the *road*, and that is not the same as keeping
+  // off the barrier: it stands 31 out and the circuit's own legs pass as close
+  // as 43, so a stand can be perfectly clear of every road and still be sat on
+  // top of another leg's armco - and a board hung on that armco then comes out
+  // of the middle of a grandstand's end wall. One box per segment rather than
+  // one round the whole building, because the stand at La Source follows 170
+  // degrees of corner and its bounding rectangle is most of the infield.
+  const keepOut = [];
+  const boxes = (i0, i1, oA, oB, y0, y1) => {
+    for (let i = i0; i < i1; i++) {
+      let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+      for (const j of [i, i + 1]) {
+        for (const o of [oA, oB]) {
+          const [x, z] = spot(j, o);
+          x0 = Math.min(x0, x); x1 = Math.max(x1, x);
+          z0 = Math.min(z0, z); z1 = Math.max(z1, z);
+        }
+      }
+      keepOut.push({ x0, x1, z0, z1, y0: y0(i), y1: y1(i) });
+    }
+  };
+
+  // Every face here is drawn both ways round, and it has to be.
+  //
+  // The world mesh is `MeshLambertMaterial`, which is FrontSide, so a quad is
+  // only visible from the side its winding faces. Furniture is placed by a
+  // signed `side`, and flipping that sign mirrors the geometry and therefore
+  // reverses the winding - so a stand authored on the left renders and the
+  // identical stand on the right is invisible from the track. That is exactly
+  // how the pit building came to be an invisible shed with a roof floating in
+  // the sky. `wallStrip` solves the same problem the same way.
+  const face = (a, b, c, d, col) => {
+    solid.quad(a, b, c, d, col);
+    solid.quad(a, d, c, b, col);
+  };
+
+  // A world point beside station i, `o` units to the road's right, on the deck.
+  const spot = (i, o) => {
+    const e = line[i];
+    const x = e.p[0] + e.lat[0] * o, z = e.p[2] + e.lat[2] * o;
+    return [x, z];
+  };
+  // Ground under a piece of furniture. Inside the apron that is the road's own
+  // height less the drop - NOT `terrain.height`, which returns whatever road is
+  // nearest and so jumps between legs wherever the circuit folds back on
+  // itself. Beyond the apron there is no road to belong to and the field is the
+  // only answer.
+  const deck = (i, o) => {
+    const e = line[i];
+    const [x, z] = spot(i, o);
+    return Math.abs(o) <= (cfg.apron != null ? cfg.apron : 38)
+      ? e.p[1] - drop : terrain.height(x, z);
+  };
+
+  /** A grandstand: stepped seating facing the road, under a flat roof. */
+  function stand(f0, f1, side, opts) {
+    const i0 = at(f0), i1 = at(f1);
+    if (i1 - i0 < 3) return;
+    const off = (opts.off != null ? opts.off : (cfg.armco || 26) + 5) * side;
+    // Refuse to build where another part of the circuit is already. A stand is
+    // twenty units deep, so on a track that folds back on itself as tightly as
+    // this one it is easy to author one that sits across a corner further round
+    // the lap - which is what the stand behind the pits was doing to La Source.
+    // Same test the armco and the run-off use: if the nearest road to our
+    // footprint is nearer than our own offset, we are standing on someone else.
+    const depthOut = Math.abs(off) + (opts.tiers != null ? opts.tiers : 8) * 1.7 + 4;
+    for (let i = i0; i <= i1; i++) {
+      for (const o of [Math.abs(off), depthOut]) {
+        const [cx, cz] = spot(i, side * o);
+        if (terrain.toRoad(cx, cz) < o - 3) return;
+      }
+    }
+    const tiers = opts.tiers != null ? opts.tiers : 8;
+    // Kept deliberately low. The first pass was 1.5 a row and 2.0 deep, which
+    // at ten rows is a fifteen-unit wall standing over a sixteen-unit road -
+    // from the car it read as a canyon rather than a circuit.
+    const depth = 1.7, riseH = 1.0;
+    // Where the roof board stands and how far the roof may wander out from
+    // under it. The roof runs from 1.5 out to (tiers+1)*depth, so the shallowest
+    // stand in the pool (six tiers) is 10.4 deep: standing the board 4 out with
+    // 2.5 of slack keeps it between 1.5 and 6.5, on the roof either way it bows.
+    const SET_BACK = 4.0, ROOF_SLACK = 2.5;
+    // Level, like a real one. Sat on the highest ground under its footprint so
+    // the downhill end is filled in rather than left hanging in the air.
+    let base = -Infinity, foot = Infinity;
+    for (let i = i0; i <= i1; i++) {
+      base = Math.max(base, deck(i, off));
+      foot = Math.min(foot, deck(i, off));
+    }
+    base -= 0.4;
+    foot -= 6;                       // where the skirt is carried down to
+    // Each stand takes its seating from whatever it is advertising, which is
+    // where the colour on an overcast circuit comes from. Rows alternate
+    // between the seat colour and a darker version of it, and every few rows
+    // there is a band of the trim colour - a solid block of one hue across ten
+    // rows reads as a painted ramp rather than as seating.
+    const seat = opts.seat != null ? opts.seat : 0x7d8794;
+    const trim = opts.trim != null ? opts.trim : shade(seat, 0.3);
+    for (let i = i0; i + 1 <= i1; i++) {
+      const e0 = line[i], e1 = line[i + 1];
+      const lat0 = e0.lat, lat1 = e1.lat;
+      const P = (e, lat, o, y) => [e.p[0] + lat[0] * o, y, e.p[2] + lat[2] * o];
+      for (let k = 0; k < tiers; k++) {
+        const oA = off + side * k * depth, oB = off + side * (k + 1) * depth;
+        const y0 = base + k * riseH, y1 = base + (k + 1) * riseH;
+        // tread: the row of seats
+        face(P(e0, lat0, oA, y0), P(e1, lat1, oA, y0),
+                   P(e1, lat1, oB, y0), P(e0, lat0, oB, y0),
+                   k % 4 === 2 ? trim : (k % 2 ? seat : shade(seat, -0.22)));
+        // riser: the concrete step up to the next row
+        face(P(e0, lat0, oB, y0), P(e1, lat1, oB, y0),
+                   P(e1, lat1, oB, y1), P(e0, lat0, oB, y1), conc);
+      }
+      // The front face, carried down to the ground under each end rather than
+      // a fixed depth: the stand is level but the hillside is not, so a fixed
+      // skirt leaves the downhill end hanging in the air.
+      face(P(e0, lat0, off, Math.min(foot, deck(i, off) - 0.5)),
+                 P(e1, lat1, off, Math.min(foot, deck(i + 1, off) - 0.5)),
+                 P(e1, lat1, off, base), P(e0, lat0, off, base), dark);
+      // the roof
+      const yR = base + tiers * riseH + 4.2;
+      const oBack = off + side * (tiers + 1) * depth;
+      face(P(e0, lat0, off + side * 1.5, yR), P(e1, lat1, off + side * 1.5, yR),
+                 P(e1, lat1, oBack, yR), P(e0, lat0, oBack, yR), shade(conc, 0.1));
+      face(P(e0, lat0, oBack, yR), P(e1, lat1, oBack, yR),
+                 P(e1, lat1, oBack, yR - 0.7), P(e0, lat0, oBack, yR - 0.7), dark);
+      // the back wall, which is what the stand reads as from behind
+      face(P(e0, lat0, oBack, Math.min(foot, deck(i, oBack) - 0.5)),
+                 P(e1, lat1, oBack, Math.min(foot, deck(i + 1, oBack) - 0.5)),
+                 P(e1, lat1, oBack, yR), P(e0, lat0, oBack, yR), shade(conc, -0.12));
+    }
+    // The gable ends. Without these a stand is a tube: the treads, the roof and
+    // the back wall all run along the road and nothing closes either end, so
+    // from anywhere but square on you look straight into it and see the inside
+    // of its own roof. It reads as a hollow shell rather than a building, and it
+    // is worse than an ordinary missing face because the seating is *lit* in
+    // there - the eye reads it as a room you are meant to be looking into.
+    //
+    // One slab from the ground to the roof, rather than a wall stepped to
+    // follow the seating. Stepping it was the first go and it leaves the
+    // triangle between the top row and the roof open, which is precisely the
+    // hole you look through - a real stand is solid to the roof at its ends for
+    // the same reason, and at this polygon count the steps would be invisible
+    // behind their own wall anyway.
+    const oEndBack = off + side * (tiers + 1) * depth;
+    const yRoof = base + tiers * riseH + 4.2;
+    boxes(i0, i1, off, oEndBack,
+          (i) => Math.min(foot, deck(i, off) - 0.5), () => yRoof);
+    for (const j of [i0, i1]) {
+      const e = line[j], lat = e.lat;
+      const P = (o, y) => [e.p[0] + lat[0] * o, y, e.p[2] + lat[2] * o];
+      face(P(off, Math.min(foot, deck(j, off) - 0.5)),
+           P(oEndBack, Math.min(foot, deck(j, oEndBack) - 0.5)),
+           P(oEndBack, yRoof), P(off, yRoof), shade(conc, -0.18));
+    }
+
+    // roof posts, sparse
+    for (let i = i0; i <= i1; i += Math.max(3, Math.round((i1 - i0) / 6))) {
+      const o = off + side * (tiers + 0.8) * depth;
+      const [x, z] = spot(i, o);
+      const g = deck(i, o), h = base + tiers * riseH + 4.2;
+      solid.box(x, (g + h) / 2, z, 0.4, (h - g) / 2, 0.4, dark);
+    }
+    // A board standing on the roof, facing the track.
+    //
+    // It used to hang in front of the roof and 1.7 *below* its lip, which on
+    // the three stands that sit on a curve put it straight through the roof and
+    // the back rows of seating - the board is one flat quad and a stand round
+    // the outside of La Source is not flat. Both halves of that are fixed here:
+    // it stands on the roof rather than in front of it, and its width is
+    // whatever keeps a straight board on a curved building.
+    if (opts.text) {
+      const mid = Math.round((i0 + i1) / 2);
+      const e = line[mid];
+      const oB = off + side * SET_BACK;
+      const [x, z] = spot(mid, oB);
+      const nx = line[Math.min(n - 1, mid + 1)];
+      const along = [nx.p[0] - e.p[0], 0, nx.p[2] - e.p[2]];
+      const L = Math.hypot(along[0], along[2]) || 1;
+      const r = [along[0] / L, 0, along[2] / L];
+      // Walk out from the middle until the roof under the board has wandered
+      // off the tangent by more than it can afford, and stop there. On a
+      // straight stand that is the whole stand; round La Source it is a shorter
+      // board that is still on the building, which is the trade worth making.
+      let reach = 0;
+      for (let j = 1; j <= Math.max(i1 - mid, mid - i0); j++) {
+        let worst = 0;
+        for (const s2 of [1, -1]) {
+          const jj = mid + s2 * j;
+          if (jj < i0 || jj > i1) continue;
+          const [px, pz] = spot(jj, oB);
+          // perpendicular distance of the roof point from the tangent line
+          worst = Math.max(worst, Math.abs((px - x) * r[2] - (pz - z) * r[0]));
+        }
+        if (worst > ROOF_SLACK) break;
+        reach = j;
+      }
+      const hw = Math.min(12, Math.max(4, reach * 1.6));
+      // Sat on the roof with its foot just clear of it.
+      signs.push({ text: opts.text, c: [x, base + tiers * riseH + 4.35 + hw / 4, z],
+                   r, u: [0, 1, 0], hw, hh: hw / 4,
+                   n: [-side * e.lat[0], 0, -side * e.lat[2]] });
+    }
+  }
+
+  /** The pit building: a long shed with a garage stripe, and the pit wall. */
+  function pits(f0, f1, side) {
+    const i0 = at(f0);
+    const off = ((cfg.armco || 26) + 9) * side;
+    const D = 13;
+    const oF = off, oB = off + side * D;
+    // Truncate where the far wall runs out of infield, rather than trusting the
+    // authored end. The building is thirteen units deep and stands 35 out, and
+    // La Source doubles the circuit back through 170 degrees a hundred units
+    // later - so its back wall was crossing the road down to Eau Rouge and
+    // finishing three quarters of a unit off that road's centreline, a shed
+    // through the track one corner after the grid.
+    //
+    // Same signal the armco, the run-off and `stand` all use: `toRoad` is the
+    // distance to the *nearest* road centre, so a footprint point that reads
+    // back less than its own clearance has some other leg under it. `stand`
+    // drops the whole thing; a building down the pit straight wants shortening
+    // instead, because most of it is in the right place. CLEAR is twice a road's
+    // half width, which keeps it off the tarmac with the run-off still showing
+    // between - clearing the armco as well is not affordable here, since the
+    // circuit's own legs pass as close as 43 units.
+    const CLEAR = 16;
+    let i1 = at(f1);
+    for (let i = i0; i <= i1; i++) {
+      const a = spot(i, oF), b = spot(i, oB);
+      if (terrain.toRoad(a[0], a[1]) < CLEAR || terrain.toRoad(b[0], b[1]) < CLEAR) {
+        i1 = i - 1;
+        break;
+      }
+    }
+    if (i1 - i0 < 3) return;
+    // A building has one floor, so it stands on the highest ground under it -
+    // and then it has to be carried *down* to the ground everywhere else, which
+    // is what a grandstand's skirt does and what this did not. The pit straight
+    // climbs eleven units from the grid to La Source, so the whole shed sat at
+    // the La Source height with its far end eleven units off the ground: from
+    // the grid it was the first thing you saw on your right and it was flying.
+    let base = -Infinity, foot = Infinity;
+    for (let i = i0; i <= i1; i++) {
+      base = Math.max(base, deck(i, oF), deck(i, oB));
+      foot = Math.min(foot, deck(i, oF), deck(i, oB));
+    }
+    foot -= 4;                       // buried, so no gap opens on a rough patch
+    const H = 8.5;
+    // Ground under the wall at station i, never above the floor it holds up.
+    const sole = (i, o) => Math.min(foot, deck(i, o) - 0.5);
+    boxes(i0, i1, oF, oB, (i) => sole(i, oF), () => base + H);
+    for (let i = i0; i + 1 <= i1; i++) {
+      const e0 = line[i], e1 = line[i + 1];
+      const P = (e, o, y) => [e.p[0] + e.lat[0] * o, y, e.p[2] + e.lat[2] * o];
+      // the plinth: from whatever the ground is doing up to the building's floor
+      face(P(e0, oF, sole(i, oF)), P(e1, oF, sole(i + 1, oF)),
+                 P(e1, oF, base), P(e0, oF, base), dark);
+      face(P(e0, oB, sole(i, oB)), P(e1, oB, sole(i + 1, oB)),
+                 P(e1, oB, base), P(e0, oB, base), dark);
+      // front wall, with the garage-door band picked out darker
+      face(P(e0, oF, base), P(e1, oF, base), P(e1, oF, base + 4.2), P(e0, oF, base + 4.2),
+                 (i % 3) ? shade(conc, -0.3) : 0x39404a);
+      face(P(e0, oF, base + 4.2), P(e1, oF, base + 4.2),
+                 P(e1, oF, base + H), P(e0, oF, base + H), conc);
+      face(P(e0, oF, base + H), P(e1, oF, base + H),
+                 P(e1, oB, base + H), P(e0, oB, base + H), shade(conc, 0.08));
+      face(P(e0, oB, base), P(e1, oB, base), P(e1, oB, base + H), P(e0, oB, base + H),
+                 shade(conc, -0.2));
+    }
+    // The two ends, for the reason a grandstand needs them: an open box is a
+    // box you can see the inside of the roof of, and this one is thirteen units
+    // deep and right beside the grid.
+    for (const j of [i0, i1]) {
+      const e = line[j];
+      const P = (o, y) => [e.p[0] + e.lat[0] * o, y, e.p[2] + e.lat[2] * o];
+      face(P(oF, sole(j, oF)), P(oB, sole(j, oB)), P(oB, base + H), P(oF, base + H),
+                 shade(conc, -0.24));
+    }
+    // the pit wall, low and close in, between the road and the building
+    const wOff = ((cfg.armco || 26) - 9) * side;
+    for (let i = i0; i + 1 <= i1; i++) {
+      const e0 = line[i], e1 = line[i + 1];
+      const [x0, z0] = spot(i, wOff), [x1, z1] = spot(i + 1, wOff);
+      const y0 = deck(i, wOff), y1 = deck(i + 1, wOff);
+      face([x0, y0, z0], [x1, y1, z1], [x1, y1 + 1.15, z1], [x0, y0 + 1.15, z0],
+                 i % 4 < 2 ? 0xf0efec : shade(conc, -0.1));
+    }
+  }
+
+  /** A frame over the road: the start gantry, and the bridge over Kemmel. */
+  function span(f, opts) {
+    const i = at(f);
+    const e = line[i];
+    const hw = e.hw + 3.5;
+    const clear = opts.clear != null ? opts.clear : 8.5;
+    const legs = [];
+    for (const s of [-1, 1]) {
+      const [x, z] = spot(i, s * hw);
+      const g = deck(i, s * hw);
+      solid.box(x, (g + e.p[1] + clear) / 2, z, 0.7, (e.p[1] + clear - g) / 2, 0.7,
+                opts.color != null ? opts.color : dark);
+      legs.push([x, z]);
+    }
+    const y = e.p[1] + clear;
+    const beamH = opts.deck ? 1.9 : 1.1;
+    const A = [legs[0][0], y, legs[0][1]], B = [legs[1][0], y, legs[1][1]];
+    const f2 = [e.lat[2], 0, -e.lat[0]];       // along the road
+    const w = opts.deck ? 3.2 : 1.0;
+    const Q = (p, sf, sy) => [p[0] + f2[0] * sf, p[1] + sy, p[2] + f2[2] * sf];
+    for (const sf of [-w, w]) {
+      face(Q(A, sf, 0), Q(B, sf, 0), Q(B, sf, beamH), Q(A, sf, beamH),
+                 opts.color != null ? opts.color : dark);
+    }
+    face(Q(A, -w, beamH), Q(B, -w, beamH), Q(B, w, beamH), Q(A, w, beamH),
+               shade(opts.color != null ? opts.color : dark, 0.15));
+    if (opts.deck) {
+      face(Q(A, -w, 0), Q(B, -w, 0), Q(B, w, 0), Q(A, w, 0), shade(conc, -0.1));
+    }
+    // the five red start lights, unlit so they read against a grey sky
+    if (opts.lights) {
+      for (let k = -2; k <= 2; k++) {
+        const t = (k + 2) / 4;
+        const p = [A[0] + (B[0] - A[0]) * (0.28 + t * 0.44), y + beamH * 0.5,
+                   A[2] + (B[2] - A[2]) * (0.28 + t * 0.44)];
+        bright.box(p[0], p[1], p[2], 0.52, 0.52, 0.52, 0xd8202a);
+      }
+    }
+    if (opts.text) {
+      const mid = [(A[0] + B[0]) / 2, y + beamH + 1.5, (A[2] + B[2]) / 2];
+      const r = [(B[0] - A[0]), 0, (B[2] - A[2])];
+      const L = Math.hypot(r[0], r[2]) || 1;
+      // Faces back down the road, at the car arriving.
+      signs.push({ text: opts.text, c: mid, r: [r[0] / L, 0, r[2] / L], u: [0, 1, 0],
+                   hw: L * 0.42, hh: L * 0.42 / 8, n: [-f2[0], 0, -f2[2]] });
+    }
+  }
+
+  for (const s of (cfg.stands || [])) stand(s.at[0], s.at[1], s.side, s);
+  if (cfg.pits) pits(cfg.pits.at[0], cfg.pits.at[1], cfg.pits.side);
+  for (const s of (cfg.spans || [])) span(s.at, s);
+  return keepOut;
+}
+
+/**
+ * Sponsor boards along the barrier: one every so often down each armco run,
+ * standing just proud of it and facing the road.
+ *
+ * A board is one flat quad and the ground it stands on is not flat, which is
+ * the whole difficulty. Two things follow, and neither was here to begin with:
+ * 61 of Spa's 67 boards had their bottom edge underground, by a median of 1.8
+ * units and as much as 4.3, which from the car is a row of hoardings sunk to
+ * the knee in the grass.
+ *
+ * **The board leans with the barrier.** `r` is the full 3D chord, slope and
+ * all, and `u` is square to it - not world up. A horizontal board on a slope
+ * has to pick a height, and whichever it picks one end is buried and the other
+ * is flying; Spa falls up to 0.64 a station and these span five of them, so
+ * that alone is +/-1.6. The armco beside it has always followed the ground, so
+ * a board that does not is also the one thing on the barrier that looks wrong.
+ *
+ * **And it clears every post under it, not just the two it is hung from.** The
+ * chord between the ends cuts *under* the polyline over a crest, so squaring up
+ * to it is not enough on its own - the middle of the board is what surfaces.
+ * The lift is measured against each post in the run and taken to the worst.
+ *
+ * Size is the palette's, not the chord's. `hw = L/2, hh = L/8` made the board
+ * as wide as whatever five stations happened to span and four times taller than
+ * an armco, which is most of how far under they reached; a hoarding is a fixed
+ * object and reads as one. The 4:1 is the canvas `signTexture` draws.
+ */
+/** Does a board's panel land in any of the buildings' keep-out boxes? */
+function inside(keepOut, c, hw, hh, r, u) {
+  if (!keepOut || !keepOut.length) return false;
+  // The four corners and the middle. A board is 10 units across and the boxes
+  // are one station long, so a corner test alone can straddle one unseen.
+  const pts = [[-1, -1], [1, -1], [1, 1], [-1, 1], [0, 0]].map(([a, b]) =>
+    [c[0] + r[0] * a * hw + u[0] * b * hh, c[1] + r[1] * a * hw + u[1] * b * hh,
+     c[2] + r[2] * a * hw + u[2] * b * hh]);
+  for (const b of keepOut) {
+    for (const p of pts) {
+      if (p[0] >= b.x0 && p[0] <= b.x1 && p[2] >= b.z0 && p[2] <= b.z1
+          && p[1] >= b.y0 && p[1] <= b.y1) return true;
+    }
+  }
+  return false;
+}
+
+function addHoardings(signs, runs, names, every, opts, keepOut) {
+  const H = (opts && opts.boardH != null) ? opts.boardH : 2.6;
+  const hwMax = H * 2;             // the sign canvas is 4:1, so width is 4 x H/2
+  // Clearance over the barrier's *footing*, which is 0.2 under the ground, and
+  // the run-off is another 0.15 over that where it is not banked - so anything
+  // under 0.35 here is still a board with its bottom edge in the gravel.
+  const SIT = 0.45;
+  const PROUD = 0.6;               // clear of the rail, on the road side of it
+  let k = 0;
+  for (const run of runs) {
+    for (let i = 2; i + 6 < run.length; i += every) {
+      const a = run[i], b = run[i + 5];
+      const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+      const flat = Math.hypot(dx, dz);
+      if (flat < 8) continue;
+      const L = Math.hypot(dx, dy, dz);
+      const r = [dx / L, dy / L, dz / L];
+      const n = a.n || [dz / flat, 0, -dx / flat];
+      // Up, in the board's own plane: n x r, which is world up on the flat and
+      // leans with the barrier where it is not.
+      //
+      // Then forced to actually point up, which is not a formality. `n` faces
+      // the road rather than following from `r`, so it is r turned a quarter
+      // turn one way down the left-hand barrier and the other way down the
+      // right - and n x r comes out pointing at the sky on one side of the
+      // circuit and at the ground on the other. Left alone that builds every
+      // board on one side upside down and 2.9 units into the earth, printed
+      // wrong way up, which is a good deal worse than the sag it replaced.
+      let u = [n[1] * r[2] - n[2] * r[1], n[2] * r[0] - n[0] * r[2],
+               n[0] * r[1] - n[1] * r[0]];
+      const uL = (Math.hypot(u[0], u[1], u[2]) || 1) * (u[1] < 0 ? -1 : 1);
+      u = [u[0] / uL, u[1] / uL, u[2] / uL];
+      const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+      // How far the bottom edge has to stand off the chord to clear every post
+      // it spans, not merely the two it is measured from.
+      let sit = SIT;
+      for (let j = i; j <= i + 5; j++) {
+        const q = run[j];
+        sit = Math.max(sit, (q[0] - mid[0]) * u[0] + (q[1] - mid[1]) * u[1]
+                          + (q[2] - mid[2]) * u[2] + SIT);
+      }
+      const hw = Math.min(hwMax, flat / 2), hh = hw / 4;
+      const c = [mid[0] + n[0] * PROUD + u[0] * (sit + hh),
+                 mid[1] + n[1] * PROUD + u[1] * (sit + hh),
+                 mid[2] + n[2] * PROUD + u[2] * (sit + hh)];
+      if (inside(keepOut, c, hw, hh, r, u)) continue;
+      signs.push({ text: names[k++ % names.length], c, r, u, hw, hh, n });
+    }
+  }
+}
+
+/**
+ * Draw the height field, and put it in the collider as OFFROAD.
+ *
+ * `drop` is the same trick the flat plate uses: the ground sits a little under
+ * the road so the tarmac reads as a raised ribbon and the two surfaces never
+ * z-fight or make the ground query a coin toss between them.
+ *
+ * Cells are painted gravel out to `gravel` units from the road centre and grass
+ * past it, which is the whole of the run-off. It is cosmetic: both are one
+ * OFFROAD surface at one drag, so nothing in the simulation can tell them
+ * apart and no medal time anywhere moved to get it.
+ */
+function drawTerrain(buf, col, terr, pal, apron, gravelTo) {
+  const { nx, nz, x0, z0, CELL, gridH, gridD } = terr;
+  const P = (ix, iz) => [x0 + ix * CELL, gridH[ix * nz + iz], z0 + iz * CELL];
+  const grit = pal.gravel != null ? pal.gravel : pal.ground;
+  // Which cells are run-off. The swept apron draws the *clean* gravel edge on
+  // top of this, so the only job here is that whatever the field pokes through
+  // with is already the right colour. The test is the cell's *middle* - the
+  // mean of its four corners - rather than "any corner inside the band", which
+  // was the first go and is wrong in a way you can see: erring a whole cell wide
+  // puts an eight-unit ring of grit outside the band, and every place the field
+  // stands proud out there is a tan wedge lying in the grass. Centred, the
+  // colour can only be wrong within half a cell of a line the apron is drawing
+  // over the top of anyway.
+  //
+  // Painting the ground under the apron as well as the apron itself is belt and
+  // braces, and the belt is `buildTerrain` agreeing with the sweep in the first
+  // place. It earns its place anyway at distance: the apron's 0.03 lift is
+  // below the depth buffer's resolution past about 450 units, and matching
+  // colours mean the far side of the infield shimmers between two shades of the
+  // same gravel instead of between gravel and grass.
+  const gTo = gravelTo != null ? gravelTo : 0;
+  for (let ix = 0; ix + 1 < nx; ix++) {
+    for (let iz = 0; iz + 1 < nz; iz++) {
+      // Nothing is skipped near the road, and that is deliberate. Skipping the
+      // cells the swept run-off covers looks like the way to avoid drawing the
+      // ground twice, and it tore holes: the apron gets clipped back wherever
+      // another leg of the circuit is nearer, so the two rules disagreed about
+      // who owned that ground and neither drew it. What you see through a hole
+      // in the floor is the sky, which is why it read as pale grey shards lying
+      // in the infield.
+      //
+      // Drawing both is safe because they are coplanar where they overlap -
+      // inside the apron this field is "nearest road height, less the drop",
+      // which is exactly what the apron is - and the apron is lifted a hair so
+      // it wins the depth test. Overlap costs a few thousand quads; a hole in
+      // the ground costs you the car.
+      const a = P(ix, iz), b = P(ix, iz + 1), c = P(ix + 1, iz + 1), d = P(ix + 1, iz);
+      const mid = (gridD[ix * nz + iz] + gridD[ix * nz + iz + 1] +
+                   gridD[(ix + 1) * nz + iz] + gridD[(ix + 1) * nz + iz + 1]) / 4;
+      buf.quad(a, b, c, d, mid < gTo ? grit : pal.ground);
+      col.addQuad(a, b, c, d, KIND.OFFROAD);
+    }
+  }
+}
+
+function addScenery(buf, track, pal, bbox, CELL, terrain) {
   let seed = 0;
   for (let i = 0; i < track.slug.length; i++) seed = seed * 31 + track.slug.charCodeAt(i);
   const rnd = mulberry(seed);
@@ -1612,7 +3082,12 @@ function addScenery(buf, track, pal, bbox, CELL) {
       if (!onGround) continue;         // nothing to stand a tree on in the void
       const px = gx * CELL + (rnd() - 0.5) * CELL * 0.6;
       const pz = gz * CELL + (rnd() - 0.5) * CELL * 0.6;
-      const baseY = gy;
+      // The `occupied` ring only clears the road itself. A circuit with real
+      // run-off needs the whole apron kept clear too, or pines grow out of the
+      // gravel trap and through the barrier.
+      if (terrain && pal.terrain && terrain.toRoad(px, pz) < (pal.terrain.clear || 0)) continue;
+      // On a hillside the trees stand where the hill is, not on one level.
+      const baseY = terrain ? terrain.height(px, pz) - 0.4 : gy;
       let kind = pick(rnd());
       if (kind === 'bigpine' && !roomy(gx, gz)) kind = 'conifer';
 

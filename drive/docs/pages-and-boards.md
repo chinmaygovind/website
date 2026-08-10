@@ -110,7 +110,7 @@ the track cards, `/account`, `/leaderboard`, or the in-game board panel.
   override is gone, since the fix is now in the one rule.
 - **The Time Trial Score is golf scoring: your placing on every track in the
   pool, added up**, so low is good and a clean sweep scores one per track -
-  thirteen today. Eleven firsts and two thirds is 17. Three rules make the sum well defined, all of them
+  fourteen today. Eleven firsts and two thirds is 17. Three rules make the sum well defined, all of them
   in `_time_trial_board`. A **tie shares a place**, the answer `_my_rank_map`
   already gives for one track (strictly faster, plus one). A **track never driven
   counts as one worse than last on it** - the place you would take by turning up

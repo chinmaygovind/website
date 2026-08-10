@@ -104,6 +104,33 @@ def retuned(rt, what, mult):
     return _Ctx()
 
 
+def test_every_track_can_be_built_without_a_browser(rt):
+    """`buildTrack` has to survive in QuickJS, for every track in the pool.
+
+    The verifier re-drives a submitted lap through the game's own `static/js`
+    (`jsrt.bundle`), and the first thing it does is `buildTrack` - so anything
+    in there that reaches for a browser API takes the anti-cheat down with it.
+    There is no `document` in QuickJS.
+
+    The failure this exists for is silent in the worst way. Spa's sponsor
+    hoardings are canvas textures, and `signTexture` called
+    `document.createElement`; the track rendered perfectly in a browser and
+    threw the moment the verifier touched it. Nothing goes red - a lap that
+    would place just waits in `drive_run_checks` forever and never reaches the
+    board, on that track only.
+
+    The deep driving tests below are parametrized over two tracks because a lap
+    is a second of real simulation each. This one is the cheap sweep that covers
+    the other twelve, and it is the one that would have caught it.
+    """
+    built = rt.call("TRACKS.map(t => { const b = buildTrack(t, T);"
+                    "  return [t.slug, b.gates.length, b.line.length]; })")
+    assert len(built) == len(tracks_mod.TRACKS)
+    for slug, gates, stations in built:
+        assert gates >= 3, "%s built no gates" % slug
+        assert stations > 40, "%s built no ribbon" % slug
+
+
 # ---------------------------------------------------------------------------
 # A lap that was really driven
 # ---------------------------------------------------------------------------

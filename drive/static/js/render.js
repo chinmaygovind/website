@@ -1564,7 +1564,10 @@ function sampleStops(stops, u) {
 function skyDome(spec) {
   // Enough segments that the gradient and the glow are smooth; at ~1200 verts
   // this is still nothing.
-  const geo = new THREE.SphereGeometry(R_SKY, 48, 26);
+  // Cloud wants resolution to break up in; a clear sky is a smooth gradient and
+  // 48x26 is plenty for that.
+  const geo = spec.clouds ? new THREE.SphereGeometry(R_SKY, 150, 84)
+                          : new THREE.SphereGeometry(R_SKY, 48, 26);
   const pos = geo.attributes.position;
   const colors = [];
   const glow = spec.glow != null ? new THREE.Color(spec.glow) : null;
@@ -1594,6 +1597,36 @@ function skyDome(spec) {
         g = Math.pow(facing, 3.2) * band;
       }
       c.lerp(glow, g * strength);
+    }
+    // Cloud, as shading on the dome rather than as geometry in it.
+    //
+    // The pool's cloud decks are boxes, and they work because you look *down*
+    // onto them from a floating track. Overhead the same boxes read as pale
+    // rectangles however they are shaded, which is why there has never been any
+    // in the dome. Overcast does not need geometry anyway: a broken sky is
+    // mostly a brightness pattern, so this is smooth 3D noise driving a lerp
+    // between a lit and a shadowed grey, densest overhead and thinning out into
+    // the haze at the horizon where you would be seeing it edge-on.
+    if (spec.clouds) {
+      const cl = spec.clouds;
+      const sc = (cl.scale != null ? cl.scale : 2.4) / R_SKY;
+      const nx = v.x * sc, ny = v.y * sc, nz = v.z * sc;
+      let s = 0, amp = 1, f = 1;
+      for (let o = 0; o < 4; o++) {
+        s += amp * Math.sin(nx * f + 1.3) * Math.sin(nz * f * 0.92 + 2.1)
+                 * Math.sin(ny * f * 1.37 + 0.7);
+        amp *= 0.52; f *= 2.07;
+      }
+      let t = Math.max(0, Math.min(1, s * (cl.amount != null ? cl.amount : 1.1) + 0.5));
+      t = t * t * (3 - 2 * t);
+      // Fade the pattern out toward the horizon, or the mottling marches down
+      // into the fog band and reads as dirt on the lens. The ramp is gentle on
+      // purpose: a chase camera spends almost all its time looking at the band
+      // just above the horizon, so cloud that only exists overhead is cloud
+      // nobody ever sees.
+      t *= Math.max(0, Math.min(1, (u - 0.5) * 1.7));
+      if (cl.dark != null) c.lerp(new THREE.Color(cl.dark), t);
+      if (cl.light != null) c.lerp(new THREE.Color(cl.light), (1 - t) * (cl.lit || 0));
     }
     colors.push(c.r, c.g, c.b);
   }

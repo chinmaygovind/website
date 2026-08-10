@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect x="0" y="0" width="512" height="512" rx="104" fill="#221610"/>
+  <rect x="0" y="360" width="512" height="152" fill="#2c1d12"/>
+
+  <!-- sun -->
+  <circle cx="256" cy="170" r="70" fill="#f2c94c"/>
+  <circle cx="256" cy="170" r="70" fill="none" stroke="#f7dd8f" stroke-opacity="0.55" stroke-width="8"/>
+
+  <!-- stars -->
+  <circle cx="116" cy="120" r="4" fill="#f7efdd" opacity="0.85"/>
+  <circle cx="398" cy="96" r="5" fill="#f7efdd" opacity="0.75"/>
+  <circle cx="430" cy="206" r="3" fill="#f7efdd" opacity="0.6"/>
+  <circle cx="88" cy="214" r="3" fill="#f7efdd" opacity="0.6"/>
+
+  <!-- pyramid: lit face + shadow face -->
+  <polygon points="256,150 256,404 86,404" fill="#e8ba52"/>
+  <polygon points="256,150 426,404 256,404" fill="#a9781f"/>
+
+  <!-- course lines -->
+  <g stroke="#3a2410" stroke-opacity="0.4" stroke-width="4" fill="none">
+    <line x1="256" y1="150" x2="256" y2="404"/>
+    <line x1="210" y1="220" x2="302" y2="220"/>
+    <line x1="176" y1="288" x2="336" y2="288"/>
+    <line x1="140" y1="356" x2="372" y2="356"/>
+  </g>
+  <polygon points="256,150 426,404 86,404" fill="none" stroke="#2a1710" stroke-width="7" stroke-linejoin="round"/>
+
+  <!-- sand strip -->
+  <rect x="0" y="404" width="512" height="30" fill="#6b4a26"/>
+</svg>

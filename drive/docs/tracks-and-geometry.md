@@ -48,6 +48,221 @@ collider, or any track palette/sky.
   stone; `kind: 'downtown'` plus a thin haze is a city with lit windows and some
   cloud drifting over it.
 
+## Closed circuits, terrain and trackside furniture
+
+All three of these exist for Spa and nothing else uses them yet. They are
+written to be general, but none of them has ever had a second caller, so treat
+the second track that wants one as the thing that will find the bugs.
+
+- **A closed lap is a ring whose finish gate is its start gate.** `tracks.CLOSED`
+  is the set. `Builder.finish_at_start` copies the start gate rather than laying
+  a new one, because on a ring the road under the line was already laid by
+  `start` and `finish` would build a second pit straight on top of the first.
+  Crossing that plane on lap zero is harmless *only* because `Run._advance` in
+  course.js will not credit a finish until `nextCp >= cps.length`; if that guard
+  ever goes, every closed track finishes the instant it starts.
+- **The join has to be invisible to the proximity checks.** `self_proximity` and
+  `crossings` decide "these two stations are neighbours, not a crossing" from
+  the gap between their *indices*, which on a ring is wrong at exactly one
+  place: station 0 and station n-1 are touching and maximally far apart by
+  index. Both take the gap circularly when `track["closed"]`. Without it the
+  seam is reported as the worst car trap on the track and `gate_ceiling`
+  collapses to its 5.0 floor, which quietly costs you checkpoints.
+- **Closing the ribbon is a solve, not authoring.** Fix the corner angles so
+  they sum to exactly 360 and the heading closes for free; that leaves two
+  equations for the position and so two free lengths. `tools/close_spa.py`
+  Newtons on them **through the real `Builder`** and prints the answer to paste
+  into the function's defaults. It drives the real builder on purpose: the first
+  version reimplemented the turtle in the plan view, got `_frame`'s handedness
+  backwards, closed perfectly in its own model and left the actual ribbon 66
+  units out. Do not write a second copy of the kinematics.
+- **Clearing `self_proximity` is not the same as having room.** Spa's Pouhon and
+  Blanchimont legs first passed 6.5 units apart, which is a car trap; pushed to
+  15 they passed the check, and their *kerbs were still touching*, so there was
+  physically nowhere to put the run-off and the barrier. The check is a floor on
+  safety, not on whether a circuit with furniture fits. Budget the room the
+  scenery needs separately, and remember the tightest gap a track is allowed to
+  have is whatever its own hairpins already do.
+- **The run-off is swept along the ribbon, not sampled from the height field**,
+  and that is not a preference. The field is an 8-unit grid whose vertices do
+  not lie on the road edge, so a cell straddling the kerb interpolates across it
+  and lands above the tarmac in some places and below it in others. What that
+  looks like is gravel sawing in and out of the road, gravel lying *over* the
+  road after a checkpoint, and a hole at the edge of a corner you drop through -
+  all one bug. `addApron` builds from the same stations and the same `lat` the
+  road does, so its inner edge *is* the road's edge.
+- **Anything within the apron stands on its own road, never on
+  `terrain.height`.** The field returns the height of whatever road is
+  *nearest*, so beside a place where two legs pass close it flips from one leg
+  to the other. Sample it for a barrier post and the barrier zigzags through
+  forty units of height; sample it for the outer corner of a run-off quad and
+  the quad becomes a skewed sheet thrown across the infield. Both of those
+  shipped and both looked like "stray quads". The rule is: inside the apron use
+  `station.p[1] - drop`, outside it use the field.
+- **Two rules must never both decide who draws a piece of ground.** The apron
+  clips itself back wherever another leg is nearer, and `drawTerrain` used to
+  skip the cells the apron covers. Those two disagreed about the strip in
+  between and neither drew it, which puts holes in the floor - and what you see
+  through a hole in the floor is the sky, so it reads as pale grey shards lying
+  in the infield rather than as a hole. They are coplanar where they overlap, so
+  the fix is to let both draw and lift the apron to settle the depth test.
+  Overlap costs a few thousand quads; a hole costs you the car.
+- **Two surfaces a hair apart are only safe while they agree, and for a while
+  these did not.** The lift was 0.03, which is plenty for two surfaces that
+  really are coplanar - and the height field was not one of them, because it took
+  its height from the nearest *station* while the apron interpolated between two
+  of them. A station is 0.64 units of descent on Spa's steepest grade, so the
+  field stepped where the sweep ramped and stood up to a third of a unit proud of
+  the gravel: **19% of the run-off had grass standing above it**, and what that
+  looks like is the run-off torn into patches with green wedges through it, worse
+  the steeper the hill. It reads as bad texturing rather than as two surfaces
+  fighting, which is why it survived being looked at. Three things fixed it and
+  all three are worth keeping. The field takes its height from the nearest point
+  **on the ribbon**, interpolated along the segment, which is exactly what the
+  sweep does - so on a straight they now agree to the bit. The lift went to 0.15,
+  an eighth of the drop and past the 99th percentile of what disagreement is
+  left. And `drawTerrain` paints its own cells grit inside the gravel band, so
+  anything that does poke through is already the right colour - which also covers
+  the far side of the infield, where past about 450 units the depth buffer cannot
+  resolve 0.15 either.
+- **Furniture has to be drawn double-sided.** See the note further down about
+  `MeshLambertMaterial` and mirrored placements - it is the same trap.
+- **`pal.terrain` replaces the flat ground plate with a height field sampled off
+  the ribbon.** Every other ground track keeps its road between 0 and 20 and
+  sits on one collidable quad at `track.ground`; a track that falls 63 units
+  would have that quad through the middle of it as an opaque ceiling. Near the
+  ribbon it is the height of the closest point *on* it; further out it blends
+  into an inverse-distance-squared average of the stations in reach. Built once
+  at `CELL` and bilinear-sampled after that, and deliberately derived rather than
+  authored so it cannot disagree with the road. One sampler then places the
+  ground, the gravel, the trees, the armco and the grandstands, which is what
+  stops any of them floating.
+- **Gravel is a colour, not a surface.** It is the same `OFFROAD` quad at the
+  same drag as grass, painted differently. A third surface would mean a new
+  collider `KIND`, a constant in `tuning.py` and a term in `laptime.py` - which
+  is to say it would move every medal time in the pool for the sake of one track.
+  Both surfaces over that ground carry the colour: the swept apron draws the
+  clean edge, and `drawTerrain` paints the cells under it to match, tested at
+  each cell's *middle* rather than at any corner - erring a whole cell wide lays
+  an eight-unit ring of grit outside the band, and every place the field stands
+  proud out there is then a tan wedge lying in the grass.
+- **An armco is not a `rail`.** A rail is a wall on the kerb and makes the
+  run-off decorative. `addArmco` walks the ribbon at a fixed lateral offset past
+  the gravel and stands a wall on the terrain, so going off costs time rather
+  than the lap. Where the circuit doubles back there is no room for it, and
+  nothing has to know which corners those are: if the nearest road centre to a
+  post is closer than the barrier's own offset, some *other* part of the track
+  is there and the run is cut. It draws both faces and adds **one** collision
+  quad, for the reason `wallStrip` gives.
+- **Furniture is placed by fraction of the lap, not station index**, because the
+  ribbon gets re-solved for closure and that changes how many stations there
+  are. The corners stay where they are in the lap, so the stands do too.
+- **A stand and a shed are both extrusions along the ribbon, so both need ends
+  and a bottom, and neither had them.** Every face was authored per *segment* -
+  treads, roof, back wall, front skirt - which builds a tube: from anywhere but
+  square on you look straight into it and see the inside of its own roof, and
+  because the seating in there is lit the eye reads it as a room rather than as a
+  missing face. Each stand now closes with one slab from the ground to the roof
+  at each end. Stepping that slab to follow the seating was the first go and is
+  wrong: it leaves the triangle between the top row and the roof open, which is
+  precisely the hole you were looking through.
+- **The kerb lip has to reach the kerb, and on a banked station that is not
+  `drop` above the run-off.** The apron is one horizontal band at the station's
+  *centre* height, so a roll puts one kerb above it and the other below - 1.17
+  units either way through Pouhon's eight degrees, against a drop of 1.2. The lip
+  under the kerb was a fixed `drop` tall, which through there built a wall
+  standing 1.19 units *over* the road it was supposed to be holding up: from the
+  car, the left-hand edge of the track lifted into the air for the length of the
+  corner, with the kerb hidden behind it. The outside had the same bug the other
+  way, a lip 1.16 too short to meet a kerb left hanging. It takes the road edge's
+  own height (`e.lat[1] * hw`) instead. Two related things follow. The apron's
+  lift has to be **squeezed to nothing on a banked station** - the whole gap
+  between the run-off and the low kerb there is 0.03, so a flat 0.15 lays gravel
+  over the last metre of tarmac. And `drop` is now the *ceiling* on how far a
+  ground track may be banked: past `drop / hw` in radians the run-off surfaces
+  through the road and no lift can save it.
+- **A building stands on the highest ground under it, and has to be carried down
+  to the ground everywhere else.** A grandstand did that already (`foot`, the
+  skirt under the front and back walls); the pit building did not, so it was a
+  flat-bottomed box at the La Source height with its far end eleven units off the
+  ground - and that end is the first thing on your right on the grid, which is
+  where it was reported from. Anything level laid along a slope needs the same
+  plinth. It is not a rounding error you can shim away: the pit straight climbs
+  eleven units, and this is the only track in the pool where trackside furniture
+  has to cope with a grade at all.
+- **A long building is truncated by the circuit, not by its authored end.** The
+  pit building is 13 units deep standing 35 out, and La Source turns the whole
+  thing back through 170 degrees a hundred units later - so the authored range
+  ran its back wall across the road down to Eau Rouge and finished it three
+  quarters of a unit from that road's centreline. `pits` now walks its own
+  footprint and stops at the first station where `toRoad` says another leg is
+  under it, which is the same signal the armco, the run-off and `stand` all read.
+  The difference from `stand` is what to do about it: a grandstand is dropped
+  whole, a building down the pit straight is shortened, because most of it is
+  where it belongs. Clearance is twice a road's half width - enough to keep it
+  off the tarmac with run-off still showing between, and no more, because Spa's
+  own legs pass as close as 43 units and there is not room to clear the armco.
+- **Draw trackside furniture double-sided.** The world mesh is
+  `MeshLambertMaterial`, which is `FrontSide`. Furniture is placed by a signed
+  `side`, and flipping that sign mirrors the geometry and therefore reverses
+  every quad's winding - so a stand authored on the left renders and the
+  identical one on the right is invisible from the track. This is not
+  hypothetical: it is how the pit building spent an afternoon as an invisible
+  shed with a roof floating in the sky, and it is only findable by looking.
+- **The sponsor boards are the only textured geometry in the game.** Everything
+  else is flat-shaded vertex colour. A hoarding has to be readable and letters
+  built out of boxes stop being letters at about forty units, which is where you
+  see them from, so boards get a `CanvasTexture` - the same trick render.js uses
+  for the name tags. They are batched by word, so the whole circuit's
+  advertising is nine or ten draw calls.
+- **A board is one flat quad and nothing it stands on is flat.** Both halves of
+  that cost something. A hoarding on the barrier takes `r` from the *3D* chord
+  and its up vector from `n x r`, so it leans with the ground the way the armco
+  beside it always has; a horizontal board on a slope has to choose a height,
+  and whichever it chooses one end is buried and the other is flying - Spa falls
+  up to 0.64 a station and a board spans five of them, so that alone is +/-1.6.
+  It then clears every post *under* it rather than the two it is hung from,
+  because the chord cuts beneath the polyline over a crest and it is the middle
+  that surfaces. Before this, **61 of Spa's 67 boards had their bottom edge
+  underground**, by a median of 1.8 units and as much as 4.3.
+  - **`n x r` points at the ground down one side of the circuit.** `n` faces
+    the road rather than following from `r`, so it is `r` turned a quarter turn
+    one way along the left-hand barrier and the other way along the right. Take
+    it as up and every board on one side is built upside down, printed
+    mirrored, and 2.9 units into the earth. Force the sign.
+  - **Size a hoarding, do not derive it.** `hw = L/2, hh = L/8` made a board as
+    wide as whatever five stations happened to span and four times taller than
+    the armco it hung on, which is most of how it got underground. It is
+    `boardH` in the palette now, with the width following at the 4:1 the canvas
+    is drawn to.
+- **A board on a grandstand roof has to be short enough to stay on it.** A stand
+  round the outside of a 170-degree corner is curved and the board is not, so a
+  straight board as long as the stand leaves the roof at both ends. `stand`
+  walks out from the middle until the roof under the board has wandered off the
+  tangent by more than the roof is deep, and stops there - full width on a
+  straight stand, shorter at La Source. It also stands *on* the roof rather than
+  hanging in front of and below the lip, which is what put three of the four
+  through their own back rows.
+- **Keeping off the road is not the same as keeping off the barrier.** A stand
+  refuses to build where `toRoad` says another leg is under it, and can still
+  be sat squarely on that leg's armco - it stands 31 out and Spa's own legs pass
+  as close as 43. A board hung on that armco then comes out of the middle of a
+  grandstand's end wall. `addFurniture` publishes a keep-out box per segment
+  (not one round the whole building - the La Source stand's bounding rectangle
+  is most of the infield) and `addHoardings` skips any board that lands in one.
+- **The boards' fonts and logos arrive after the track is built, so the canvas
+  is painted twice.** Three faces are self-hosted for the boards alone and
+  nothing on the page is set in them, which means the browser never fetches
+  them unless `document.fonts.load` asks by name - `document.fonts.ready`
+  resolves perfectly happily having loaded nothing. The logos are `Image`s off
+  the static tree. Both are awaited on **one shared promise**: giving each
+  texture its own `onload` on the three shared `Image` objects means the last
+  board's handler replaces the previous one's, and the only board on the
+  circuit that ever repaints is whichever was built last. All of this fails
+  quietly - you get the layout you designed, in the wrong typeface, with
+  nothing where the logo goes - and the preview picture is taken by a headless
+  browser that owns almost no fonts at all.
+
 ## The ribbon, the collider and the car on it
 
 - **A track is a ribbon of stations, not a grid of tiles.** Each station carries a

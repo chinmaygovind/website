@@ -35,7 +35,18 @@ def test_track_is_well_formed(track):
     assert cps == set(range(1, track["checkpoints"] + 1))
     # the start has to come first and the finish last, along the road
     order = [g["si"] for g in track["gates"]]
-    assert order == sorted(order)
+    if track.get("closed"):
+        # On a ring the finish IS the start - same station, same plane - so the
+        # gates cannot be in increasing station order and should not be. What
+        # still has to hold is that the checkpoints between them are.
+        start = next(g for g in track["gates"] if g["kind"] == "start")
+        fin = next(g for g in track["gates"] if g["kind"] == "finish")
+        assert fin["si"] == start["si"], "a closed lap must finish where it started"
+        assert fin["p"] == start["p"] and fin["f"] == start["f"]
+        mid = [g["si"] for g in track["gates"] if g["kind"] == "cp"]
+        assert mid == sorted(mid) and mid[0] > start["si"]
+    else:
+        assert order == sorted(order)
 
 
 @pytest.mark.parametrize("track", ALL, ids=IDS)
@@ -292,6 +303,39 @@ def test_gold_is_faster_than_the_estimate(track):
     what made the old 1.04 gold trivial. It has to be under the estimate."""
     assert track["medals"]["gold"] < track["ideal"], \
         "gold must ask for more than the relaxed-racing-line estimate"
+
+
+@pytest.mark.parametrize("track", [t for t in ALL if t.get("closed")],
+                         ids=[t["slug"] for t in ALL if t.get("closed")])
+def test_a_closed_lap_actually_closes(track):
+    """A ring has to meet itself, in all three axes and in heading.
+
+    Spa's two free straights are solved offline (``tools/close_spa.py``) and the
+    answer is baked into ``_spa``'s defaults, so nothing at import time would
+    notice them drifting apart - and the failure is quiet and nasty. A ribbon
+    that misses its own start by a few units is a step in the road you fall
+    down; miss it by sixty and the finish line is in a field. Every length and
+    angle in the track feeds these numbers, so this is the test that says
+    "re-run the solver".
+    """
+    line = track["line"]
+    a, b = line[0], line[-1]
+    gap = math.dist(a["p"], b["p"])
+    assert gap < 1.0, (
+        "%s does not close: its ends are %.2f units apart. Re-run "
+        "tools/close_spa.py and paste the numbers into the builder."
+        % (track["slug"], gap))
+    # ...and arrives pointing the way it left, or the join is a kink.
+    fa = [a["p"][k] - line[1]["p"][k] for k in (0, 2)]
+    fb = [line[-2]["p"][k] - b["p"][k] for k in (0, 2)]
+    na = math.hypot(*fa) or 1.0
+    nb = math.hypot(*fb) or 1.0
+    cos = (fa[0] * fb[0] + fa[1] * fb[1]) / (na * nb)
+    assert cos > 0.999, "%s closes at a kink (%.2f deg)" % (
+        track["slug"], math.degrees(math.acos(max(-1, min(1, cos)))))
+    # The finish gate is the start gate, which is what makes it one lap.
+    kinds = {g["kind"]: g for g in track["gates"] if g["kind"] in ("start", "finish")}
+    assert kinds["finish"]["p"] == kinds["start"]["p"]
 
 
 @pytest.mark.parametrize("track", ALL, ids=IDS)

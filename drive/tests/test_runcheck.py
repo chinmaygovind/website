@@ -41,8 +41,11 @@ def synth_run(track, seconds=None, hz=None):
     seconds = seconds or track["ideal"]
     pts = [st["p"] for st in track["line"]]
     fin = next((g for g in track["gates"] if g["kind"] == "finish"), None)
-    if fin is not None:                    # stop at the flag, not at the end of
-        pts = pts[:fin["si"] + 1]          # the ribbon, which runs on past it
+    # Stop at the flag, not at the end of the ribbon, which runs on past it -
+    # unless the track is a ring, where the flag IS the start and the whole
+    # ribbon is the lap. Truncating there would leave a 14-unit stub.
+    if fin is not None and not track.get("closed"):
+        pts = pts[:fin["si"] + 1]
     cum = [0.0]
     for a, b in zip(pts, pts[1:]):
         cum.append(cum[-1] + math.dist(a, b))
@@ -321,7 +324,7 @@ def test_tuning_exports_everything_the_client_needs():
 def centreline_len(track):
     pts = [st["p"] for st in track["line"]]
     fin = next((g for g in track["gates"] if g["kind"] == "finish"), None)
-    if fin is not None:
+    if fin is not None and not track.get("closed"):   # a ring is its own lap
         pts = pts[:fin["si"] + 1]
     return sum(math.dist(a, b) for a, b in zip(pts, pts[1:]))
 

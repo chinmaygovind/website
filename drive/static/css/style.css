@@ -29,6 +29,38 @@
   font-weight: 900; font-style: normal; font-display: swap;
 }
 
+/* Three faces that nothing on any page is set in.
+
+   They exist for the sponsor boards around Spa, which are drawn into a canvas
+   by `signTexture` in trackmesh.js and so can only use fonts the *browser*
+   has. A font stack ending in `cursive` or `serif` is not good enough there:
+   a board is a brand, and "xkcd Script, or whatever you happen to have"
+   renders as Nimbus Roman on this project's own screenshot box - which is how
+   the track preview would end up shipping a picture of the wrong typeface.
+
+   Each is the face the thing it advertises actually uses: xkcd Script is the
+   landing page's and ERS's hand-drawn heading font, Cinzel is Ticket to Ride's
+   display face (and near enough Penn's engraved serif to stand in for it), and
+   Metamorphous is a carved, wedge-terminalled display face for Rat Screw's
+   pyramid-and-sun billing. Self-hosted like Titillium: no CDN, no build step.
+   `font-display: block` rather than `swap` because nothing renders these as
+   text - the canvas either has the face or draws the board in the wrong one. */
+@font-face {
+  font-family: "xkcd Script";
+  src: url("../fonts/xkcd-script.woff") format("woff");
+  font-weight: 400; font-style: normal; font-display: block;
+}
+@font-face {
+  font-family: "Cinzel";
+  src: url("../fonts/cinzel-700.woff2") format("woff2");
+  font-weight: 700; font-style: normal; font-display: block;
+}
+@font-face {
+  font-family: "Metamorphous";
+  src: url("../fonts/metamorphous.woff2") format("woff2");
+  font-weight: 400; font-style: normal; font-display: block;
+}
+
 :root {
   /* --display is headings, buttons and anything that should look stamped on;
      --sans is body text. Same family, different weight. */

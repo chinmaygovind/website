@@ -3,8 +3,10 @@
 **Live at `https://drive.cgovind.com`.** The fourth game, same shape as ERS/KoT:
 Flask + Flask-SocketIO, its own eventlet gunicorn `-w 1` on `127.0.0.1:5005`, its own
 venv (`drive/venv`) and `.env` (both gitignored, hand-made on the box), sharing TTR's
-`users` table for accounts. A PolyTrack-style low-poly driving game: thirteen
-point-to-point time-trial tracks, medal times, ghosts, and multiplayer rooms.
+`users` table for accounts. A PolyTrack-style low-poly driving game: fourteen
+tracks, medal times, ghosts, and multiplayer rooms. Thirteen are point-to-point;
+**Spa-Francorchamps is the one closed circuit** and starts and finishes on the
+same line.
 
 ## Read the one doc your change is about
 
@@ -54,6 +56,44 @@ only five places - the loop and each big jump's landing straight, where a car
 arrives with no steering - everywhere else, including every closing hairpin,
 the edge is just the edge. It is the only track in the pool with **boost
 pads** on it (six of them now).
+
+**Spa-Francorchamps** (`spa`, difficulty 4, 3167 units, ~71s - second only to
+Big Red) is a compressed recreation of the real circuit, and it is the odd one
+out in the pool in four ways that all cost something to get right. Read
+`docs/tracks-and-geometry.md` before touching any of them.
+
+- **It is the only closed lap.** The ribbon is a ring: the last station lands
+  back on station 0 and the finish gate *is* the start gate
+  (`Builder.finish_at_start`). That works only because `course.js` refuses to
+  credit the finish until every checkpoint is behind you, so the car crossing
+  the line at t=0 is ignored. `tracks.CLOSED` is the set, and
+  `self_proximity`/`crossings` measure station gaps **circularly** for it - a
+  linear gap reads the join as the worst car trap on the track.
+- **Two of its straights are solved, not authored.** The corner angles are fixed
+  and sum to exactly 360 so the heading closes by construction; Kemmel and the
+  Stavelot run are then whatever closes the *position*. Change any length or
+  angle and you must re-run `tools/close_spa.py` and paste its two numbers into
+  `_spa`'s defaults. `test_a_closed_lap_actually_closes` is what tells you.
+- **It is the only track with terrain.** Every other ground track sits on one
+  flat collidable quad at `track.ground`; Spa falls 63 units, which would put
+  that quad through the road as an opaque ceiling. `pal.terrain` swaps it for a
+  height field sampled off the ribbon itself (`buildTerrain`), and the same
+  sampler places the trees, the gravel, the armco and the grandstands.
+- **Its barriers are not `rail`.** A rail sits on the kerb; Spa's armco is a
+  *backstop* set 26 units out, past the gravel, so running wide costs time
+  rather than the lap. It is drawn off the ribbon in `addArmco` and skips itself
+  wherever the circuit doubles back and there is no room.
+
+Its grandstands, pit building, start gantry and sponsor boards are the pool's
+only trackside furniture, configured in the `spa` palette by **fraction of the
+lap** so they survive the ribbon being re-solved. The boards are also the only
+textured geometry in the whole game: nine sponsors, each drawing its own canvas
+in `SPONSORS`, two in three of them this site's own games and the rest what a
+circuit actually carries. Three of the logos are the artwork the real page uses,
+copied into `static/img/sponsors/`; the rest are paths. They need three fonts
+nothing else here is set in, and both the fonts and the logos land *after* the
+track is built - see `docs/tracks-and-geometry.md` before touching any of it,
+because every way of getting this wrong is silent.
 
 ## Layout
 
