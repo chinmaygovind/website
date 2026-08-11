@@ -254,7 +254,11 @@ def test_every_board_on_the_circuit_has_a_sponsor(rt):
     means a typo in the palette ships as a board that looks like a placeholder
     and nothing says so.
     """
-    listed = rt.call("PALETTES.spa.furniture.sponsors")
+    # Read from Python, because that is where a palette lives now. It used to be
+    # `PALETTES.spa.furniture.sponsors` inside trackmesh.js; the object is gone
+    # and the sponsors list is the same list in `tracks/<slug>/palette.py`.
+    import tracks as tracks_mod
+    listed = tracks_mod.get("spa")["pal"]["furniture"]["sponsors"]
     unknown = sorted(set(listed) - set(names(rt)))
     assert not unknown, "no SPONSORS entry for %r" % unknown
 

@@ -62,11 +62,32 @@ def _read(path):
 
 
 def bundle(extra=()):
-    """The whole simulation as one script, ready to eval."""
+    """The whole simulation as one script, ready to eval.
+
+    **Every track's `scenery.js` is in here, and leaving one out is silent.**
+    `verify.py` calls `buildTrack` to re-drive a submitted lap, so a track whose
+    scenery adds collidable geometry - the Costco's walls and racking - has that
+    geometry in the collider the anti-cheat measures against. A bundle without it
+    still builds, still drives and still returns a time; it just re-drives the lap
+    on a Costco with no building in it. The symptom is not an error, it is fast
+    laps waiting in `drive_run_checks` forever, so `tests/test_scenery.py` counts
+    collider triangles on both sides rather than trusting this loop.
+
+    They go in *after* trackmesh.js and register on a global, which is the same
+    shape the browser uses - a classic inline script above a deferred module. So
+    there is one contract and it is exercised by both.
+    """
     parts = [_strip_modules(_read(os.path.join(HERE, "three_stub.js")))]
     parts.append("const THREE = {%s};" % ",".join(_THREE_NAMES))
+    parts.append("var globalThis = globalThis || this;")
     for name in ("trackmesh.js", "physics.js", "course.js"):
         parts.append(_strip_modules(_read(os.path.join(JS, name))))
+    import sys
+    if HERE not in sys.path:
+        sys.path.insert(0, HERE)
+    import tracks as _tracks
+    for slug, src in _tracks.all_scenery():
+        parts.append("/* tracks/%s/scenery.js */\n%s" % (slug, src))
     for src in extra:
         parts.append(src)
     return "\n;\n".join(parts)

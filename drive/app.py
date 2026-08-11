@@ -622,6 +622,7 @@ def _play_solo(slug):
     return render_template(
         "play.html", mode="solo", track=track,
         track_json=script_json(_track_payload(track["slug"])),
+        track_scenery=tracks_mod.scenery_source(track["slug"]),
         tuning_json=tuning.as_json(), room=None, me_json="null",
         roster_json="[]", name=get_effective_name(), user=user,
         pb_ms=(pb.time_ms if pb else None), next_slug=_next_slug(slug),
@@ -735,6 +736,7 @@ def room(code):
     return render_template(
         "play.html", mode="room", track=track,
         track_json=script_json(_track_payload(track["slug"])),
+        track_scenery=tracks_mod.scenery_source(track["slug"]),
         tuning_json=tuning.as_json(), room=game,
         me_json=script_json(me.to_dict(_livery_for(me.linked_user,
                                                    name=me.name))),
@@ -802,6 +804,7 @@ def race_replay(race_id):
     return render_template(
         "play.html", mode="replay", track=track,
         track_json=script_json(_track_payload(track["slug"])),
+        track_scenery=tracks_mod.scenery_source(track["slug"]),
         tuning_json=tuning.as_json(), room=None, me_json="null",
         roster_json="[]", name=get_effective_name(), user=user,
         pb_ms=None, next_slug=_next_slug(track["slug"]), pb_splits={},

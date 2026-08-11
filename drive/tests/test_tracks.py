@@ -6,7 +6,6 @@ broken - which is exactly the kind of thing a test should be holding down.
 """
 
 import math
-import re
 import os
 import sys
 
@@ -310,21 +309,23 @@ def test_gold_is_faster_than_the_estimate(track):
 def test_a_closed_lap_actually_closes(track):
     """A ring has to meet itself, in all three axes and in heading.
 
-    Spa's two free straights are solved offline (``tools/close_spa.py``) and the
-    answer is baked into ``_spa``'s defaults, so nothing at import time would
-    notice them drifting apart - and the failure is quiet and nasty. A ribbon
-    that misses its own start by a few units is a step in the road you fall
-    down; miss it by sixty and the finish line is in a field. Every length and
-    angle in the track feeds these numbers, so this is the test that says
-    "re-run the solver".
+    `tracks/solver.py` closes it at import, so in the ordinary case this test is
+    confirming the solver's work rather than catching an author's mistake. It is
+    still the check that matters most about a closed track: a ribbon that misses
+    its own start by a few units is a step in the road you fall down, and by sixty
+    puts the finish line in a field.
+
+    It also covers the one thing the solver cannot - a solver told to close only
+    *some* of the residuals, or guarded out of closing them, still produces a
+    track, and this is what refuses it.
     """
     line = track["line"]
     a, b = line[0], line[-1]
     gap = math.dist(a["p"], b["p"])
     assert gap < 1.0, (
-        "%s does not close: its ends are %.2f units apart. Re-run "
-        "tools/close_spa.py and paste the numbers into the builder."
-        % (track["slug"], gap))
+        "%s does not close: its ends are %.2f units apart. `closed = True` should "
+        "have had tracks/solver.py shut this - check what it reported, or nominate "
+        "different legs with FREE()." % (track["slug"], gap))
     # ...and arrives pointing the way it left, or the join is a kink.
     fa = [a["p"][k] - line[1]["p"][k] for k in (0, 2)]
     fb = [line[-2]["p"][k] - b["p"][k] for k in (0, 2)]
@@ -419,6 +420,78 @@ def test_the_ceiling_is_high_enough_to_catch_a_jump():
     assert tracks_mod.get("jumpcity")["gate_ceil"] == tracks_mod.GATE_CEIL_MAX
 
 
+def test_every_track_folder_loads():
+    """Every folder in `tracks/` is in the pool. **This is the pull-request gate.**
+
+    A track is a folder somebody can add in one PR, so this is the test that
+    decides whether that PR is mergeable. It has to fail loudly and name the
+    folder, because the person reading it may be adding their first track.
+
+    It exists in this shape - checking a list the loader filled in - rather than
+    as "the loader raised" on purpose. The loader **excludes** a track it cannot
+    load instead of raising, because raising means one contributor's typo stops
+    the server booting and stops pytest collecting *any* test in the suite, so
+    whoever has to fix it cannot run anything, including this. Excluding keeps
+    the blast radius inside the track that is wrong and puts the failure here.
+
+    All three ways a folder can fail are covered, because they happen at
+    different moments and only the last one used to be caught: **importing**
+    `track.py` (a syntax error, or anything raising at module level),
+    **reading** its declarations (a missing `blurb`, a slug that disagrees with
+    the folder name), and **building** the ribbon (a loop that will not close, a
+    palette missing a colour). See `tests/test_track_folders.py`, which proves
+    each of them is contained rather than fatal.
+    """
+    assert not tracks_mod.BROKEN, "\n".join(
+        ["", "%d track folder(s) did not load and are NOT in the game:"
+         % len(tracks_mod.BROKEN), ""]
+        + ["  tracks/%s/\n      %s" % (slug, exc)
+           for slug, exc in sorted(tracks_mod.BROKEN.items())]
+        + ["", "Fix the folder or remove it. Every other track still works, so "
+           "`venv/bin/python tools/validate_track.py <slug>` will tell you more."])
+
+
+def test_no_track_folder_is_silently_ignored():
+    """A folder in `tracks/` with no `track.py` is in neither list, and that is
+    the one failure mode with no symptom at all.
+
+    `_discover` skips such a folder deliberately - it is usually somebody's
+    scratch directory - so a contributor who names the file `tracks.py`, or
+    `Track.py`, or leaves it in a subfolder, gets **silence**: no error, no
+    warning, and no track. They are then debugging the loader rather than their
+    typo.
+
+    Machinery lives in `tracks/*.py` rather than in folders, so any directory
+    here that is not a track and not private is a mistake worth naming.
+    """
+    root = os.path.join(os.path.dirname(__file__), "..", "tracks")
+    stray = []
+    for entry in sorted(os.listdir(root)):
+        d = os.path.join(root, entry)
+        if not os.path.isdir(d) or entry.startswith((".", "_")):
+            continue
+        if os.path.exists(os.path.join(d, "track.py")):
+            continue
+        stray.append((entry, sorted(os.listdir(d))[:6]))
+    assert not stray, "\n".join(
+        ["", "folder(s) in tracks/ with no track.py, so they are not tracks:", ""]
+        + ["  tracks/%s/  contains %s" % (name, files) for name, files in stray]
+        + ["", "A track needs a file called exactly `track.py`."])
+
+
+def test_the_pool_is_not_suspiciously_small():
+    """A guard on the two tests above being able to pass by finding nothing.
+
+    If discovery broke - a rename, a path change, a bad glob - `BROKEN` would be
+    empty and no folder would be stray, and both would go green over a pool with
+    nothing in it. The rest of this file is parameterized over `ALL`, so it would
+    quietly collect zero tests as well.
+    """
+    assert len(ALL) >= 8, (
+        "only %d tracks loaded, which is fewer than the pool has ever had. "
+        "Discovery is probably broken rather than the tracks." % len(ALL))
+
+
 def test_the_pool_uses_the_whole_vocabulary():
     """Loops, gaps, hills, banking and width changes should all be in use."""
     kinds = set()
@@ -451,29 +524,6 @@ def test_pool_has_a_difficulty_spread():
     assert len(ALL) >= 8
 
 
-def _cove_shore_from_js():
-    """The `shore` block out of the `cove` palette in trackmesh.js."""
-    js = open(os.path.join(os.path.dirname(__file__), "..", "static", "js",
-                           "trackmesh.js")).read()
-    i = js.index("shore: {")
-    block = js[i:js.index("}", i)]
-    return {k: float(v) for k, v in re.findall(r"(at|amp|wave):\s*(-?[\d.]+)", block)}
-
-
-def test_the_waterline_agrees_with_the_track():
-    """tracks.py authors Sandy Cove against a waterline that trackmesh.js draws.
-
-    Two copies of one number, which is this repo's convention and the right one
-    here - Python cannot draw the sea and the JS cannot lay the road. But the
-    road is placed *relative* to this line, so if the two drift the water moves
-    inland over a road that was authored to be dry.
-    """
-    js = _cove_shore_from_js()
-    assert js["at"] == tracks_mod.SHORE_Z
-    assert js["amp"] == tracks_mod.SHORE_AMP
-    assert js["wave"] == tracks_mod.SHORE_WAVE
-
-
 def test_only_the_pier_is_over_the_water():
     """Sandy Cove's sea is scenery and is never in the collider, so anywhere the
     road crosses the waterline has *nothing* under it - run wide there and you
@@ -487,11 +537,17 @@ def test_only_the_pier_is_over_the_water():
     t = tracks_mod.get("cove")
     line = t["line"]
 
+    # Off the palette, which is the only copy of the waterline there is now and
+    # is the one `buildTerrain` draws the sea from. This used to read a Python
+    # constant and a sibling test compared it against a regex scrape of
+    # trackmesh.js; the palette moved into Python and both copies became one.
+    sh = t["pal"]["shore"]
+
     def shore(x):
-        return (tracks_mod.SHORE_Z
-                + tracks_mod.SHORE_AMP * math.sin(x / tracks_mod.SHORE_WAVE * 2 * math.pi)
-                + tracks_mod.SHORE_AMP * 0.38
-                * math.sin(x / (tracks_mod.SHORE_WAVE * 0.37) * 2 * math.pi))
+        return (sh["at"]
+                + sh["amp"] * math.sin(x / sh["wave"] * 2 * math.pi)
+                + sh["amp"] * 0.38
+                * math.sin(x / (sh["wave"] * 0.37) * 2 * math.pi))
 
     over = [i for i, e in enumerate(line)
             if not e.get("air") and e["p"][2] > shore(e["p"][0])]
@@ -500,43 +556,13 @@ def test_only_the_pier_is_over_the_water():
     assert over == list(range(over[0], over[-1] + 1)), \
         f"the road crosses the waterline in more than one place: {over}"
     # Both ends of the track are firmly on the sand.
-    assert min(e["p"][2] for e in line) < tracks_mod.SHORE_Z - 100
+    assert min(e["p"][2] for e in line) < sh["at"] - 100
     # And the road either side of the pier has real clearance from the water,
     # so it is dry land rather than dry by a metre.
     dry = [shore(e["p"][0]) - e["p"][2] for i, e in enumerate(line)
            if i < over[0] - 12 or i > over[-1] + 12]
     assert min(dry) > 25, \
         f"the coast road comes within {min(dry):.0f} units of the waterline"
-
-
-def _costco_shell_from_js():
-    """The `building` block out of the `costco` palette in trackmesh.js."""
-    js = open(os.path.join(os.path.dirname(__file__), "..", "static", "js",
-                           "trackmesh.js")).read()
-    i = js.index("building: {")
-    block = js[i:js.index("door:", i)]
-    x = re.search(r"x:\s*\[([\d.\-]+),\s*([\d.\-]+)\]", block)
-    z = re.search(r"z:\s*\[([\d.\-]+),\s*([\d.\-]+)\]", block)
-    ceil = re.search(r"ceil:\s*([\d.\-]+)", block)
-    return ((float(x.group(1)), float(x.group(2))),
-            (float(z.group(1)), float(z.group(2))), float(ceil.group(1)))
-
-
-def test_the_costco_shell_agrees_with_the_track():
-    """tracks.py authors the Costco against walls that trackmesh.js draws.
-
-    Two copies of three numbers, which is this repo's convention and the right
-    one here for the same reason the waterline is: Python cannot draw a building
-    and the JS cannot lay a road. Deriving the shell from whichever stations are
-    indoors is the tidier-sounding alternative and it is circular - the wall
-    position would depend on the set of stations used to decide where the wall
-    goes. So they are authored twice and pinned here. Drift them apart and a wall
-    lands across a road, or a doorway stops being where the road goes through.
-    """
-    x, z, ceil = _costco_shell_from_js()
-    assert x == tracks_mod.SHELL_X
-    assert z == tracks_mod.SHELL_Z
-    assert ceil == tracks_mod.SHELL_CEIL
 
 
 def test_the_warehouse_fits_inside_its_own_walls():
@@ -554,7 +580,10 @@ def test_the_warehouse_fits_inside_its_own_walls():
     """
     t = tracks_mod.get("costco")
     line = t["line"]
-    (x0, x1), (z0, z1) = tracks_mod.SHELL_X, tracks_mod.SHELL_Z
+    # Same single copy: the shell the road was authored against is the shell the
+    # palette hands to `addBuilding`.
+    b = tracks_mod.get("costco")["pal"]["building"]
+    (x0, x1), (z0, z1) = b["x"], b["z"]
 
     inside = lambda e: x0 <= e["p"][0] <= x1 and z0 <= e["p"][2] <= z1
 

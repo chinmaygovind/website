@@ -3,6 +3,12 @@ name: Deploy
 on:
   push:
     branches: [main]
+  # **Pull requests run the tests and stop there.** Without this a PR ran nothing
+  # at all - the suite only fired once the branch was already merged to main,
+  # which is the wrong end of the process to find out a track does not load.
+  # The `deploy` job below is guarded so a PR can never ship anything.
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       test_all:
@@ -10,7 +16,9 @@ on:
         type: boolean
         default: true
 
-# One deploy at a time; a newer push cancels an in-progress run.
+# One deploy at a time; a newer push cancels an in-progress run. Keyed on the
+# ref, so a pull request's runs cancel each other rather than the one on main:
+# `github.ref` is `refs/pull/<n>/merge` for a PR.
 concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: true
@@ -39,8 +47,17 @@ jobs:
       - id: pick
         env:
           GH_TOKEN: ${{ github.token }}
-          BEFORE: ${{ github.event.before }}
-          SHA: ${{ github.sha }}
+          # On a push these are the two ends of the push. On a pull request
+          # `github.event.before` does not exist, and `github.sha` is the *merge*
+          # commit rather than the branch tip - so both come off the PR payload,
+          # and the comparison is base...head, which is what the PR actually
+          # proposes to change.
+          BEFORE: ${{ github.event_name == 'pull_request'
+                      && github.event.pull_request.base.sha
+                      || github.event.before }}
+          SHA: ${{ github.event_name == 'pull_request'
+                   && github.event.pull_request.head.sha
+                   || github.sha }}
           RUN_ALL: ${{ github.event_name == 'workflow_dispatch' && inputs.test_all }}
         run: |
           set -uo pipefail
@@ -117,10 +134,20 @@ jobs:
     name: SSH deploy
     runs-on: ubuntu-latest
     needs: [pick, test]
-    # `test` is skipped when nothing testable changed, and a skipped job would
-    # otherwise skip this one too.
+    # Two conditions, and the first is the important one.
+    #
+    # **A pull request must never reach this job.** It runs for PRs now so the
+    # tests gate them, and the whole point of a PR gate is that the code has not
+    # been reviewed yet - shipping it to prod on open would be strictly worse than
+    # having no gate at all. `github.event_name` is the check rather than the
+    # branch, because a PR's `github.ref` is `refs/pull/<n>/merge` and would pass
+    # a naive branch test.
+    #
+    # Then the original one: `test` is skipped when nothing testable changed, and
+    # a skipped need would otherwise skip this too.
     if: >-
       always()
+      && github.event_name != 'pull_request'
       && needs.pick.result == 'success'
       && (needs.test.result == 'success' || needs.test.result == 'skipped')
     steps:

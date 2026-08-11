@@ -1,6 +1,6 @@
 # Drive: tracks, geometry and look
 
-Read this before changing `tracks.py`, `trackmesh.js`, `course.js`, the
+Read this before changing `tracks/`, `trackmesh.js`, `course.js`, the
 collider, or any track palette/sky.
 
 ## Boost pads
@@ -76,14 +76,32 @@ the second track that wants one as the thing that will find the bugs.
   index. Both take the gap circularly when `track["closed"]`. Without it the
   seam is reported as the worst car trap on the track and `gate_ceiling`
   collapses to its 5.0 floor, which quietly costs you checkpoints.
-- **Closing the ribbon is a solve, not authoring.** Fix the corner angles so
-  they sum to exactly 360 and the heading closes for free; that leaves two
-  equations for the position and so two free lengths. `tools/close_spa.py`
-  Newtons on them **through the real `Builder`** and prints the answer to paste
-  into the function's defaults. It drives the real builder on purpose: the first
-  version reimplemented the turtle in the plan view, got `_frame`'s handedness
-  backwards, closed perfectly in its own model and left the actual ribbon 66
-  units out. Do not write a second copy of the kinematics.
+- **Closing the ribbon is a solve, and the game does it.** Say `closed = True`
+  and `tracks/solver.py` Newtons a leg or two until the walk comes back to where
+  it started - in position, heading *and* height - then reports what it changed.
+  Four residuals, four knobs: two straight lengths, one corner angle, one
+  gradient. It costs 16-32ms because with the angles fixed the end position is an
+  *exactly linear* function of the straight lengths, so Newton converges in one
+  step from any starting guess.
+
+  It drives the **real `Builder`**, by re-running `build(b)` with substituted
+  values. That is not a convenience: the first version of this reimplemented the
+  turtle in the plan view, got `_frame`'s handedness backwards, closed perfectly
+  in its own model and left the actual ribbon 66 units out. There is no second
+  copy of the kinematics and there must not be one.
+
+  It **refuses** rather than distorting: no straight moves more than 15%, no
+  corner more than 8 degrees, and a gradient may not break `length >= sqrt(330 *
+  rise)` and turn a hill into a kicker. Those guards exist because an early
+  attempt left Spa's Stavelot as a 179-degree hairpin. Nominate legs with
+  `FREE(...)` when the automatic choice is wrong - Spa does, because its corners
+  are real places. Wrap the whole expression: `FREE(330) - CP` is an ordinary
+  float by the time the Builder sees it, and the mark is silently lost.
+
+  Two things it cannot fix. **Do not end the lap mid-corner** - the road either
+  side of the seam has to be going the same way or the join is a kink, which
+  `test_a_closed_lap_actually_closes` measures. And get within about 10% of
+  closing by hand; past the guards it declines and names the leg.
 - **Clearing `self_proximity` is not the same as having room.** Spa's Pouhon and
   Blanchimont legs first passed 6.5 units apart, which is a car trap; pushed to
   15 they passed the check, and their *kerbs were still touching*, so there was
@@ -322,13 +340,15 @@ wants a building as the thing that will find the bugs.
   use for - and its vocabulary is grandstands, pit buildings and gantries, which
   is not what a warehouse is made of. What it does borrow is the parts already
   proven: both faces on every quad, the `bright` buffer, and the `signs` contract.
-- **The shell is the one thing authored twice, and that is deliberate.**
-  `SHELL_X`/`SHELL_Z`/`SHELL_CEIL` in tracks.py and the `building` block in the
-  palette are two copies of three numbers, pinned together by a test, exactly as
-  Sandy Cove's waterline is. Deriving the box from whichever stations are indoors
-  sounds tidier and is circular: the wall position would depend on the set of
-  stations you are using to decide where the wall is, and a doorway then lands
-  mid-descent or halfway round a corner depending on the margin. Everything else
+- **The shell is authored rather than derived, and it is authored once.**
+  `SHELL_X`/`SHELL_Z`/`SHELL_CEIL` live in `tracks/costco/track.py` and
+  `tracks/costco/palette.py` imports them. Deriving the box from whichever
+  stations are indoors sounds tidier and is circular: the wall position would
+  depend on the set of stations you are using to decide where the wall is, and a
+  doorway then lands mid-descent or halfway round a corner depending on the
+  margin. They **used to be two copies** in two languages, pinned by a test that
+  read trackmesh.js with a regular expression; the palettes are Python now, so
+  there is one copy and the test is gone. Everything else
   is derived - the doorways are where the road crosses a wall, the holes in the
   roof are where it crosses the roof plane, the racking stands half an aisle out
   from every straight aisle station.
@@ -563,7 +583,19 @@ wants a building as the thing that will find the bugs.
   marginal" are no longer told apart by anything except driving it.
 ## Look: skies and worlds
 
-Every track's art direction lives in one `PALETTES` entry in `trackmesh.js`.
+Every track's art direction lives in its own `tracks/<slug>/palette.py`, as
+`PALETTE = {...}`, and rides to the browser on the track dict - `_track_payload`
+inlines it as `window.DRIVE_TRACK` and `jsrt` hands the pool to QuickJS as JSON,
+so it reaches the renderer *and* the anti-cheat with no plumbing of its own.
+`tracks/look.py` lists the required keys and every optional block, and refuses a
+palette carrying a key nothing reads - which is the usual typo, and otherwise
+fails by quietly ignoring the thing you were trying to change.
+
+Colours are packed RGB integers written as hex, handed to three.js unconverted.
+Pick them **cooler than they look**: a light's colour goes through sRGB-to-linear
+and a vertex colour does not, so a warm key light multiplies a neutral grey road
+down to mud.
+
 Two optional fields do nearly all of it, and both are read by code that has no
 idea which track it is looking at:
 
@@ -585,12 +617,13 @@ idea which track it is looking at:
   drawn and never collided, and driving off the sand is a fall rather than a
   slow patch. `at` is an absolute world coordinate rather than a fraction of the
   bounding box, because **the track is authored against the waterline** and it
-  has to stay put when the layout moves; `SHORE_Z`/`SHORE_AMP`/`SHORE_WAVE` in
-  tracks.py are the other copy, and two tests hold them together -
-  `test_the_waterline_agrees_with_the_track` and
-  `test_only_the_pier_is_over_the_water`, which requires the crossing to be a
-  single run (the pier) and the coast road to keep 25 units of clearance. Drift
-  those apart and the sea floods a road that was authored to be dry.
+  has to stay put when the layout moves. `SHORE_Z`/`SHORE_AMP`/`SHORE_WAVE` are
+  declared in `tracks/cove/track.py` and *imported* by its palette, so there is
+  one copy; they used to be two, in two languages, held together by a regex
+  scrape of trackmesh.js. `test_only_the_pier_is_over_the_water` is what remains
+  and it is the one that mattered: the crossing has to be a single run (the pier)
+  and the coast road has to keep 25 units of clearance, or the sea floods a road
+  that was authored to be dry.
 - **`rainbow`** - degrees of hue per station, and it moves the road into the
   *unlit* buffer so it glows. **Two gradients, not one.** Along the road the hue
   sweeps slowly; across it the lightness falls toward the kerbs, the saturation
