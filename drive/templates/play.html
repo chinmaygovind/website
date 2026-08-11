@@ -697,5 +697,24 @@
   };
   {% if pb_ms %}window.DRIVE_CFG.pbs["{{ track.slug }}"] = {{ pb_ms }};{% endif %}
 </script>
+{# This track's own mesh code, if it has any: `tracks/<slug>/scenery.js`.
+
+   Inlined rather than linked, and it has to be a classic script above the module
+   below. Three things force that shape and each of them bites differently:
+
+   * `buildTrack` is synchronous and `render.js` depends on it being so, so the
+     scenery cannot arrive by `import()` without making the whole chain async;
+   * a classic inline script runs at parse time, *before* any deferred module, so
+     `globalThis.DRIVE_SCENERY` is populated before game.js executes and the
+     ordering needs no coordination at all;
+   * only the track being driven is sent. All of this used to live in
+     trackmesh.js, which meant every visitor downloaded the Costco's warehouse to
+     drive Sunrise Circuit.
+
+   The cost is that inline content is not cached, so a repeat visit re-downloads
+   it. That is the right side of the trade while this is tens of KB and the file it
+   came out of was served to everyone; if it stops being, a
+   `<script src="/static/js/tracks/{{ track.slug }}.js">` is the change. #}
+{% if track_scenery %}<script>{{ track_scenery|safe }}</script>{% endif %}
 <script type="module" src="{{ url_for('static', filename='js/game.js') }}?v={{ asset_version }}"></script>
 {% endblock %}

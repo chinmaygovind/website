@@ -1,0 +1,341 @@
+"""The track pool: one folder per track, discovered rather than listed.
+
+A track is a **directory**::
+
+    tracks/costco/
+        track.py      what it is, and the geometry
+        palette.py    what it looks like            (optional)
+        scenery.js    mesh code only this track has (optional)
+
+Drop one in and it is in the game - on the home page, in the switcher, on the
+leaderboard, in a room. Nothing else has to be edited, which is the entire point:
+adding Costco used to mean editing seven files in three languages, two of which
+were a Python constant and a JavaScript constant that had to agree with each other
+and were held together by a test that scraped one with a regex.
+
+What `track.py` must define
+---------------------------
+``slug``, ``name``, ``blurb``, ``difficulty`` (1-5), and ``build(b)`` - which
+takes a `Builder` and lays the road. Everything else is optional:
+
+    ground      world Y of the solid ground plane. ``None`` means the track
+                floats in the void and leaving the road is a fall. Default None.
+    order       where it sits in the pool. Default 500, ties broken by slug.
+    closed      True for a lap: the finish line *is* the start line, and
+                `solver` closes the ribbon on itself. Default False.
+    exposed     True to declare that running wide is *meant* to be unrecoverable,
+                so `test_barriers_are_opt_in` stops asking for barriers.
+    scenery     True if the folder ships a `scenery.js`. Checked, so a typo in
+                the filename is an error rather than a track with no building.
+
+Everything derived stays derived
+--------------------------------
+``pole_side``, ``gate_ceil``, the ideal lap and the three medal times are all
+computed here from the ribbon. A new track gets them for free and cannot get them
+wrong - and retuning the car in `tuning.py` retunes every medal on every track,
+which is why there is no second copy of `ACCEL` anywhere.
+
+Order matters more than it looks
+--------------------------------
+``TRACKS[0]`` is the fallback track in five places in `app.py`, and the home page
+is asserted to list the pool in order. So discovery is sorted by ``order`` and
+then ``slug``, never by whatever the filesystem happened to return, and a
+duplicate slug is an error rather than a coin flip.
+"""
+
+import importlib
+import logging
+import os
+
+from tracks import look, solver
+from tracks.builder import (CELL, LEVEL, ROAD_W, STATION, Builder,
+                            PROF_BLEND, PROF_SAMPLES, rise_at, surface_at)
+from tracks.checks import (CROSS_CLEAR, FIRST_TURN_DEG, GATE_CEIL_MARGIN,
+                           GATE_CEIL_MAX, GATE_CEIL_MIN, crossings,
+                           gate_ceiling, pole_side, self_proximity)
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+_log = logging.getLogger(__name__)
+
+# Folders that failed to load, as `{slug: exception}`. Populated by `_assemble`
+# and asserted empty by `test_every_track_folder_loads`, which is what stops a
+# track like this reaching main. See the note there for why a bad track is
+# excluded rather than fatal.
+BROKEN = {}
+
+# Where a track ends up when it does not say. Middle of the range, so a track can
+# be pushed either way without renumbering the pool.
+DEFAULT_ORDER = 500
+
+def _discover():
+    """Every folder in `tracks/` that has a `track.py`, by name.
+
+    Names rather than imported modules, so that importing one is inside
+    `_assemble`'s per-track guard: a `track.py` with a syntax error in it is the
+    single likeliest thing a first-time contributor will push, and it must not be
+    able to stop the other fifteen tracks loading.
+
+    A folder without a `track.py` is not a track - most likely somebody's scratch
+    directory - so it is skipped silently rather than reported as broken.
+    """
+    out = []
+    for entry in sorted(os.listdir(HERE)):
+        d = os.path.join(HERE, entry)
+        if not os.path.isdir(d) or entry.startswith((".", "_")):
+            continue
+        if not os.path.exists(os.path.join(d, "track.py")):
+            continue
+        out.append(entry)
+    return out
+
+
+def _meta(mod, folder):
+    """Read a track module's declarations, with a clear error for each mistake.
+
+    Named errors rather than an AttributeError, because the reader of this message
+    is often somebody adding their first track and the difference between
+    "``blurb`` is missing from tracks/quarry/track.py" and
+    "``module 'tracks.quarry.track' has no attribute 'blurb'``" is most of whether
+    they can fix it without reading this file.
+    """
+    def need(attr):
+        if not hasattr(mod, attr):
+            raise ValueError(
+                "tracks/%s/track.py is missing `%s`. A track needs slug, name, "
+                "blurb, difficulty and build(b)." % (folder, attr))
+        return getattr(mod, attr)
+
+    slug = need("slug")
+    if slug != folder:
+        raise ValueError(
+            "tracks/%s/track.py says slug = %r. The folder name is the slug - it "
+            "is in the URL (/solo/%s), the leaderboard and every saved time, so "
+            "the two cannot differ." % (folder, slug, folder))
+    if not callable(getattr(mod, "build", None)):
+        raise ValueError("tracks/%s/track.py needs `build(b)`" % folder)
+
+    diff = need("difficulty")
+    if not (isinstance(diff, int) and 1 <= diff <= 5):
+        raise ValueError("tracks/%s/track.py: difficulty must be 1-5, not %r"
+                         % (folder, diff))
+
+    return {
+        "slug": slug,
+        "name": need("name"),
+        "blurb": need("blurb"),
+        "difficulty": diff,
+        "ground": getattr(mod, "ground", None),
+        "order": getattr(mod, "order", DEFAULT_ORDER),
+        # Where the turtle starts and what it starts with. `rails` is the
+        # *default* for sections that do not say otherwise: a track floating in
+        # the void wants it on, because without ground under it running wide is a
+        # fall rather than a penalty. `origin` only matters when a track is
+        # authored against something in world space - Sandy Cove starts at
+        # z = -20 because its road is placed relative to a fixed waterline.
+        "width": getattr(mod, "width", ROAD_W),
+        "rails": bool(getattr(mod, "rails", False)),
+        "origin": tuple(getattr(mod, "origin", (0.0, 0.0, 0.0, 0.0))),
+        "closed": bool(getattr(mod, "closed", False)),
+        "exposed": bool(getattr(mod, "exposed", False)),
+        "wants_scenery": bool(getattr(mod, "scenery", False)),
+        "build": mod.build,
+        "module": mod,
+    }
+
+
+def _assemble():
+    """Every track folder, built. Ones that fail are recorded, not raised.
+
+    **A bad track is left out of the pool rather than taking the app down with
+    it**, and the whole of that decision is about blast radius. Raising is the
+    tidier-looking choice and it means one contributor's typo stops the other
+    fifteen tracks loading, stops the server booting, and stops *pytest collecting
+    any test in the suite* - so the person who has to fix it cannot run anything,
+    including the test that would tell them what is wrong.
+
+    It is not silent. Each failure warns with the folder name and the reason, and
+    `test_tracks.py::test_every_track_folder_loads` fails on `BROKEN`, so a pull
+    request carrying one cannot go green. The failure just stays inside the track
+    it belongs to.
+
+    Three things can go wrong and all three are guarded per track, because the
+    likeliest of them is the first: **importing** `track.py` (a syntax error, or
+    anything that raises at module level), **reading** its declarations (a missing
+    `blurb`, a slug that disagrees with the folder), and **building** the ribbon (a
+    loop that will not close).
+    """
+    broken, entries = {}, []
+    for folder in _discover():
+        try:
+            mod = importlib.import_module("tracks.%s.track" % folder)
+            entries.append(_meta(mod, folder))
+        except Exception as exc:
+            broken[folder] = exc
+
+    seen = {}
+    for e in list(entries):
+        if e["slug"] in seen:
+            # Unreachable while `_meta` insists slug == folder and folder names
+            # are unique on a filesystem, which is belt and braces rather than
+            # dead weight: the day a track is allowed to name itself, this is
+            # what stops two of them owning one URL.
+            broken[e["slug"]] = ValueError(
+                "two folders claim the slug %r. A slug is in the URL and in every "
+                "saved time, so it has to be unique." % e["slug"])
+            entries.remove(e)
+            continue
+        seen[e["slug"]] = e
+    entries.sort(key=lambda e: (e["order"], e["slug"]))
+
+    out = []
+    for e in entries:
+        try:
+            out.append(_one(e))
+        except Exception as exc:
+            broken[e["slug"]] = exc
+
+    for slug, exc in sorted(broken.items()):
+        _log.warning("tracks/%s did not load and is not in the pool: %s", slug, exc)
+
+    BROKEN.clear()
+    BROKEN.update(broken)
+    if not out:
+        raise ValueError(
+            "no tracks loaded from %s. A track is a folder with a track.py in it; "
+            "%d folder(s) were found and every one of them failed: %s"
+            % (HERE, len(broken),
+               "; ".join("%s (%s)" % (s, e) for s, e in sorted(broken.items()))
+               or "none found"))
+    return out
+
+
+def _one(e):
+    """Build one track, all the way to its medals-ready dict."""
+    def fresh():
+        x, y, z, yaw = e["origin"]
+        return Builder(x, y, z, yaw=yaw, width=e["width"], rails=e["rails"])
+
+    b = fresh()
+    built = e["build"](b)
+    # A folder's `build` may either return the Builder or just drive the one it
+    # was given. Both read naturally, and insisting on one of them is a rule a
+    # contributor would have to be told rather than one they could guess.
+    if built is None:
+        built = b
+
+    closure = []
+    if e["closed"]:
+        # Make the ribbon meet itself. The author lays out a loop that feels
+        # right; this is what turns it into one that actually closes. See
+        # `tracks/solver.py` - and note it is only reached for a closed track, so
+        # nothing point-to-point pays for it.
+        built, closure = solver.close(e["build"], fresh)
+
+    t = {"slug": e["slug"], "name": e["name"], "blurb": e["blurb"],
+         "ground": e["ground"], "difficulty": e["difficulty"],
+         "exposed": e["exposed"], "closed": e["closed"],
+         "cell": CELL, "level": LEVEL, "station": STATION}
+    t.update(built.build())
+    # Both derived from the ribbon rather than authored, so a new track gets them
+    # for free and cannot get them wrong.
+    t["pole_side"] = pole_side(t)
+    t["gate_ceil"] = gate_ceiling(t)
+    # What it looks like, on the track itself. This is the whole reason the
+    # palettes came out of trackmesh.js: `_track_payload` sends this dict to the
+    # page as `window.DRIVE_TRACK` and `jsrt` sends the pool to QuickJS as JSON, so
+    # a palette here reaches the browser *and* the anti-cheat with no new plumbing
+    # - and Sandy Cove's waterline and the Costco shell stop being two copies of
+    # one number in two languages.
+    t["pal"] = look.check(e["slug"], _palette_for(e))
+    if closure:
+        # Kept on the track so `tools/validate_track.py` can print it and a test
+        # can assert on it. Also said out loud once, because a solver that silently
+        # rewrote what you authored would be worse than the tool it replaced.
+        t["closure"] = closure
+        _log.info("%s: closed the loop by %s", t["slug"],
+                  ", ".join("%s %s -> %s" % (c["leg"], c["was"], c["now"])
+                            for c in closure))
+    return t
+
+
+def _palette_for(entry):
+    """A track's palette: its own `palette.py`, the legacy bag, or the default.
+
+    The default is not a fallback for a mistake - `look.check` catches those. It
+    is so that a folder with a `track.py` and nothing else renders correctly the
+    first time it is driven, which is most of the difference between adding a
+    track and learning what a palette is first.
+    """
+    try:
+        return importlib.import_module("tracks.%s.palette" % entry["slug"]).PALETTE
+    except ModuleNotFoundError:
+        return dict(look.DEFAULT)
+    except AttributeError:
+        raise ValueError("tracks/%s/palette.py must define `PALETTE`"
+                         % entry["slug"])
+
+
+TRACKS = _assemble()
+BY_SLUG = {t["slug"]: t for t in TRACKS}
+
+# Kept as derived sets rather than as the authored ones they used to be. Nothing
+# outside here should need them - a track carries `closed` and `exposed` on
+# itself - but they were part of this module's surface and a test still reaches
+# for one.
+CLOSED = {t["slug"] for t in TRACKS if t["closed"]}
+EXPOSED = {t["slug"] for t in TRACKS if t["exposed"]}
+
+# Medal times need the lap simulation, which needs the assembled ribbons - hence
+# the import down here rather than at the top.
+import laptime  # noqa: E402
+
+for _t in TRACKS:
+    _t["ideal"] = laptime.ideal_lap(_t)
+    _t["medals"] = laptime.medals(_t["ideal"])
+
+
+def scenery_path(slug):
+    """Where a track's own mesh code lives, if it has any."""
+    p = os.path.join(HERE, slug, "scenery.js")
+    return p if os.path.exists(p) else None
+
+
+def scenery_source(slug):
+    """A track's `scenery.js`, as text, or None.
+
+    Read on demand rather than at import: it is tens of KB per track, only the
+    track being driven needs it, and a file edited while the server is running
+    should take effect on reload like every other static asset here.
+    """
+    p = scenery_path(slug)
+    if p is None:
+        return None
+    with open(p) as f:
+        return f.read()
+
+
+def all_scenery():
+    """Every track's scenery, in pool order: `[(slug, source), ...]`.
+
+    This is what `jsrt.bundle` concatenates into the QuickJS script, and it is the
+    reason it is a function rather than a per-track lookup. The anti-cheat builds
+    whichever track a submitted lap claims, so *all* of them have to be in the
+    bundle - a bundle missing one verifies laps against a track with no building
+    in it, and nothing about that failure is loud. See `test_scenery.py`.
+    """
+    out = []
+    for t in TRACKS:
+        src = scenery_source(t["slug"])
+        if src is not None:
+            out.append((t["slug"], src))
+    return out
+
+
+def summaries():
+    """Everything the track-select screen needs, without the station lists."""
+    return [{k: t[k] for k in ("slug", "name", "blurb", "difficulty", "ideal",
+                               "medals", "checkpoints")} for t in TRACKS]
+
+
+def get(slug):
+    return BY_SLUG.get(slug)
