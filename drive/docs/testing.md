@@ -241,7 +241,34 @@ all when it is off, and a tab that was in the background for ten minutes
 picking up rather than firing ten minutes of notes at once.
 
 There is no browser in CI, so **check rendering by hand** before shipping a
-geometry change - and a *room* needs one more step than a solo track does,
+geometry change.
+
+For a **track**, that is now three commands and not a manual job:
+
+```bash
+cd drive && venv/bin/python tools/track_views.py <slug>     # plan + 5 road views
+cd drive && venv/bin/python tools/validate_track.py <slug>  # geometry, medals, console
+cd drive && venv/bin/python tools/shoot_tracks.py <slug>    # the switcher preview
+```
+
+`track_views.py` writes to `tools/views/<slug>/` (gitignored) and is the one that
+changes how authoring feels: `plan.png` finds layout mistakes - a leg outside its
+building, a hairpin bulging into the next aisle - and the road views find the ones
+only a driver would. They use the **real chase camera** with the car parked on the
+centreline, which is the point: on Costco the question is whether the lens clears a
+15-unit ceiling and follows the car through a doorway 11.6 units later, and a
+camera written for the tool would answer that about itself.
+
+Both go through Playwright's chromium if `drive/venv` has it and fall back to a
+Chrome on PATH or in `/Applications`. **That fallback is the fix for authoring
+blind**: `shoot_tracks.py` used to look only on PATH, find nothing on a Mac, print
+one line and do nothing - so tracks were designed, shipped, and only then looked
+at. Note also that switching browser re-renders every preview with tiny
+antialiasing differences (measured: 1.68% of pixels, max channel delta 1 of 255),
+so previews coming back "modified" after a backend change means nothing - check
+them out again.
+
+A *room* needs one more step than a solo track does,
 because `/room/<code>` redirects anyone who is not already a player in it. The
 cheapest way in is a scratch harness that imports the real app and adds a
 login-and-join route, so headless Chrome can reach a room in one navigation;

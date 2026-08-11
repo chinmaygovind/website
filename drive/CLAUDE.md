@@ -18,7 +18,7 @@ rest of the repo; any one of them is 11-28KB.
 
 | doc | read it before touching |
 |---|---|
-| `docs/tracks-and-geometry.md` | `tracks.py`, `trackmesh.js`, `course.js`, the collider, boost pads, a track's palette or sky |
+| `docs/tracks-and-geometry.md` | `tracks/`, `trackmesh.js`, `course.js`, the collider, boost pads, a track's palette or sky |
 | `docs/runs-and-scoring.md` | `/api/run`, `/api/start`, `/api/activity`, `runcheck.py`, `verify.py`, `laptime.py`, `pending.js`, medals, ghost recording, the anti-cheat |
 | `docs/racing-physics.md` | car-to-car contact, the slipstream, catch-up, remote-car interpolation, rival sound |
 | `docs/rooms-and-races.md` | the room phase machine, qualifying, the grid, ELO, socket handlers, `racecheck.py`, the race recorder, `/race/<id>` |
@@ -67,14 +67,17 @@ out in the pool in four ways that all cost something to get right. Read
   back on station 0 and the finish gate *is* the start gate
   (`Builder.finish_at_start`). That works only because `course.js` refuses to
   credit the finish until every checkpoint is behind you, so the car crossing
-  the line at t=0 is ignored. `tracks.CLOSED` is the set, and
-  `self_proximity`/`crossings` measure station gaps **circularly** for it - a
-  linear gap reads the join as the worst car trap on the track.
-- **Two of its straights are solved, not authored.** The corner angles are fixed
-  and sum to exactly 360 so the heading closes by construction; Kemmel and the
-  Stavelot run are then whatever closes the *position*. Change any length or
-  angle and you must re-run `tools/close_spa.py` and paste its two numbers into
-  `_spa`'s defaults. `test_a_closed_lap_actually_closes` is what tells you.
+  the line at t=0 is ignored. `closed = True` in its `track.py` is what says so,
+  and `self_proximity`/`crossings` measure station gaps **circularly** for such a
+  track - a linear gap reads the join as the worst car trap on the track.
+- **It closes itself.** `tracks/solver.py` adjusts a leg or two at import until
+  the ribbon meets itself in position, heading *and* height, and reports what it
+  changed. It costs 16-32ms and only closed tracks pay it. Spa nominates which
+  legs with `FREE()`, because every corner on it is a real place and a solver free
+  to choose would sooner lengthen the pit straight by 12% - which closes the lap
+  and stops it being Spa. **This used to be `tools/close_spa.py`**, run by hand
+  with its two answers pasted into the builder and a docstring warning that
+  changing any *other* length silently invalidated them. That tool is gone.
 - **It is the only track with terrain.** Every other ground track sits on one
   flat collidable quad at `track.ground`; Spa falls 63 units, which would put
   that quad through the road as an opaque ceiling. `pal.terrain` swaps it for a
@@ -109,19 +112,21 @@ rooftop car park, cross back over the aisles on the deck, come down, and go out
 through the checkouts past the food court. Read `docs/tracks-and-geometry.md`
 before touching it.
 
-- **The shell is authored twice on purpose.** `SHELL_X`/`SHELL_Z`/`SHELL_CEIL` in
-  `tracks.py` and the `building` block in the `costco` palette are the same three
-  facts, held together by `test_the_costco_shell_agrees_with_the_track`. It is the
-  trade Sandy Cove's waterline makes and it is right for the same reason: the road
-  is authored to pass *through* these walls, so deriving them from the road is
-  circular - the wall position would depend on the set of stations you were using
-  to decide where the wall goes. Everything else - the doorways, the holes the
+- **The shell is authored, not derived, and it is now authored once.**
+  `SHELL_X`/`SHELL_Z`/`SHELL_CEIL` live in `tracks/costco/track.py` and
+  `tracks/costco/palette.py` imports them. Deriving them from the road would be
+  circular - the wall position would depend on which stations you used to decide
+  where the wall goes. **They used to exist twice**, once in Python and once in a
+  JavaScript palette, pinned by a test that scraped trackmesh.js with a regular
+  expression; the palettes are Python now and both that test and Sandy Cove's
+  equivalent are deleted. Everything else - the doorways, the holes the
   travelators punch in the roof, where the racking stands - **is** derived, and
   `test_the_warehouse_fits_inside_its_own_walls` is what fails when a leg grows
   past a wall.
-- **`addBuilding` is a sibling of `addScenery`, not a use of Spa's furniture.**
-  `addFurniture` is only reachable from inside the terrain branch, and a flat
-  track has no height field for it.
+- **The building lives in `tracks/costco/scenery.js`**, not in trackmesh.js. It is
+  a sibling of `addScenery` rather than a use of Spa's furniture: `addFurniture`
+  is only reachable from inside the terrain branch, and a flat track has no height
+  field for it.
 - **The rooftop deck is the only crossing**, and it clears the floor by the whole
   of `DECK` (19), which is why `gate_ceil` comes out at its full 14. Both
   travelators climb along the one row of the building with no aisle under it, so
@@ -138,17 +143,76 @@ before touching it.
   crossed square on a straight, the openings are full height with no lintel, and
   the entrance header's underside is held at 9.5.
 
+## Adding a track
+
+**A track is one folder and nothing outside it needs editing.** Drop
+`tracks/<slug>/track.py` in and it is in the game - home page, switcher,
+leaderboard, rooms - with its medal times, pole side and checkpoint ceiling all
+derived from the ribbon.
+
+```
+tracks/dockyard/
+    track.py      required: slug, name, blurb, difficulty, build(b)
+    palette.py    optional: PALETTE = {...}. Without one it gets a neutral default
+                  that renders correctly on the first run.
+    scenery.js    optional: mesh code only this track needs. Costco's is the
+                  worked example.
+```
+
+Optional declarations in `track.py`: `ground` (None floats in the void), `order`
+(place in the pool), `width`, `rails`, `origin`, `closed`, `exposed`, `scenery`.
+`tracks/__init__.py` documents each one and names the folder in every error.
+
+**Use `/track`.** The skill runs the whole loop - write it, run the track tests,
+render a plan view and five from the road, *look at them*, fix what shows, check
+the medal times, take the switcher preview, then serve it on
+`localhost:5005/solo/<slug>` for you to drive. Authoring blind is what made a
+track cost four or five rounds; the pictures are what removes them.
+
+**A folder that does not load is left out of the pool rather than being fatal**,
+with a warning naming it. Raising would mean one bad contributor track stops the
+server booting and stops pytest collecting *any* test - so the person fixing it
+could not run anything, including the test that says what is wrong. All three
+moments are guarded: importing `track.py`, reading its declarations, building the
+ribbon.
+
+**The pull-request gate is `test_every_track_folder_loads`**, which fails and
+names every folder that did not make it into the game, with the loader's own
+reason for each. Two tests stand behind it: `test_no_track_folder_is_silently_
+ignored` catches the one failure with no symptom (a folder whose file is called
+`tracks.py`, so it is skipped rather than reported), and
+`tests/test_track_folders.py` writes deliberately broken folders and proves each
+kind is contained rather than fatal - otherwise the gate could be green over a
+pool that never loads anything.
+
+**CI runs on pull requests now**, which it did not: `deploy.yml` triggered only on
+push to `main`, so a PR ran nothing and the suite first fired *after* the merge.
+The `deploy` job is guarded with `github.event_name != 'pull_request'` so a PR can
+never ship - checked on the event and not the branch, because a PR's `github.ref`
+is `refs/pull/<n>/merge` and would slip past a branch test.
+
+**A closed lap closes itself** (`closed = True`); see Spa above. Two things the
+solver cannot do for you: do not end the lap mid-corner, or the seam is a kink,
+and get within about 10% of closing, because it will not stretch a straight more
+than 15% or move a corner more than 8 degrees before refusing.
+
 ## Layout
 
-- **Layout:** `tuning.py` (every physics constant, in one place), `tracks.py` (the
-  ribbon format + the pool, authored with a turtle `Builder`), `laptime.py` (racing-line
+- **Layout:** `tuning.py` (every physics constant, in one place), `tracks/` (one
+  folder per track - `track.py`, optional `palette.py`, optional `scenery.js` -
+  plus `builder.py` for the turtle, `checks.py` for what must be true of any
+  ribbon, `solver.py` for closing a lap and `look.py` for the palette contract),
+  `laptime.py` (racing-line
   relaxation + speed profile → medal times), `runcheck.py` (ghost packing, time
   validation), `verify.py` + `jsrt.py` + `three_stub.js` (the anti-cheat: a lap
   near the top of a board is re-driven through the game's own `Car.step` in
   QuickJS before it goes up), `racecheck.py` (the *room's* anti-cheat, which is
   a different question - see below), `models.py`, `app.py`, `static/js/` (`trackmesh.js`, `physics.js`,
   `course.js`, `render.js`, `sound.js`, `game.js`, `pending.js`, vendored
-  `three.module.js`), `tools/shoot_tracks.py` (the preview pictures). The play
+  `three.module.js`), `tools/shoot_tracks.py` (the switcher's preview pictures),
+  `tools/track_views.py` (a plan view and several from the road, for authoring),
+  `tools/validate_track.py` (one track, every check, one report),
+  `tools/snapshot_tracks.py` (proof that a refactor moved no geometry). The play
   page has three modes - `solo`, `room` and `replay` - and they are one template
   and one `game.js`, because a replay is a track, some cars and a clock and that
   is what the game already draws.
