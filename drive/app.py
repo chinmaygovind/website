@@ -1822,6 +1822,16 @@ def _delete_game(game):
 
 TICK_HZ = 30
 POSE_STALE_MS = 6000
+# The most of a one-way trip anybody is credited with, in ms. A client measures
+# its own round trip and reports it (`on_clock`); this is the ceiling on half of
+# it, because the number arrives from the thing it flatters. 80ms one way covers
+# a transatlantic connection with room to spare, and at MAX_SPEED it is worth
+# about four units of road - so the worst a liar buys is being drawn a car
+# length up on other people's screens, which is less than the error every honest
+# car carried before any of this was compensated. It reaches nothing else: not
+# racecheck, not `prog`, not the standings (see `_snapshot` on why it is its own
+# field and not folded into the pose age), not the result.
+UPSTREAM_CAP_MS = 80.0
 QUAL_MS = 90000
 COUNTDOWN_MS = 5000
 FINISH_GRACE_MS = 45000
@@ -1932,8 +1942,31 @@ def _car(r, pid):
     return r["cars"].setdefault(pid, {
         "p": [0.0, 0.0, 0.0], "q": [0.0, 0.0, 0.0, 1.0], "v": [0.0, 0.0, 0.0],
         "prog": 0.0, "cp": 0, "flags": 0, "sl": 0.0, "ts": 0, "name": "", "color": "#fff",
-        "ms": None, "dnf": False, "gone": False,
+        "ms": None, "dnf": False, "gone": False, "up": 0.0,
     })
+
+
+def _note_upstream(c, rtt):
+    """Keep the shortest round trip this car has reported, halved and capped.
+
+    Split out of `on_clock` so the rule can be read and tested without a socket
+    under it, since the rule is the whole of the interesting part.
+
+    A round trip is unusable if it can only ever grow: the pings arrive while
+    the page is still loading, so the first of them is the worst measurement of
+    the session and would set the number for the rest of it. The minimum is the
+    sample with the least queueing in it, which is also the only direction a
+    client cannot walk this in - and the cap is what bounds it even then. `None`
+    on the first ping, when nothing has been measured yet.
+    """
+    try:
+        rtt = float(rtt)
+    except (TypeError, ValueError):
+        return
+    if rtt != rtt or rtt < 0:                   # NaN, or a trip that went back
+        return
+    one_way = min(rtt / 2.0, UPSTREAM_CAP_MS)
+    c["up"] = one_way if c["up"] <= 0 else min(c["up"], one_way)
 
 
 def _snapshot(r):
@@ -1948,9 +1981,24 @@ def _snapshot(r):
     Field 14 is how full that car's tow is, 0..1, with `FLAG.SLIP` in the flags
     saying whether it is the charge or what is left of the boost. It is here so
     a rival's slipstream can be *drawn* and *heard* rather than only known
-    about. Both of the trailing fields are appended rather than inserted and the
-    client guards on the array's length, so a page left open across a deploy
-    degrades to no tow rather than to a car in the wrong place.
+    about. Every trailing field is appended rather than inserted and the client
+    guards on the array's length, so a page left open across a deploy degrades
+    to no tow rather than to a car in the wrong place.
+
+    **Field 15 is the other half of the trip, and it is deliberately not added
+    into field 13.** A pose is stamped on arrival, so 13 is the wait since it
+    landed and says nothing about the journey it made to get here - while the
+    pose describes where the car was when it was *sent*. Leaving that out drew
+    every car short by its own upstream leg on every screen but its own: about
+    1.5 units at 60ms of ping, always backwards, and mirrored, so two drivers
+    level with each other each had the other one trailing. `c["up"]` is that
+    leg (`on_clock`), and it goes in a field of its own because the two numbers
+    have **different owners and different consumers**. 13 is the server's own
+    measurement; 15 is the client's, capped. Rendering wants both, and adds
+    them. The running order (`orderFromSnapshot`) wants only the one the server
+    owns - fold them together and overstating your ping quietly buys projected
+    distance on the board, which is precisely the number the order exists to
+    make trustworthy.
     """
     now = _now_ms()
     cars = {}
@@ -1961,7 +2009,7 @@ def _snapshot(r):
                      round(c["q"][0], 3), round(c["q"][1], 3), round(c["q"][2], 3), round(c["q"][3], 3),
                      round(c["v"][0], 2), round(c["v"][1], 2), round(c["v"][2], 2),
                      round(c["prog"], 1), c["cp"], c["flags"], max(0, now - c["ts"]),
-                     round(c.get("sl", 0.0), 2)]
+                     round(c.get("sl", 0.0), 2), round(c["up"])]
     return {"t": now, "cars": cars}
 
 
@@ -2218,8 +2266,36 @@ def on_join_room(data=None):
 
 @socketio.on("clock")
 def on_clock(data=None):
-    """Round-trip clock sync so a countdown lands at the same instant for all."""
+    """Round-trip clock sync so a countdown lands at the same instant for all.
+
+    The reply is the whole of that. What the *request* also carries is the round
+    trip this client has measured, which is the one thing about its connection
+    the server cannot find out for itself: a pose is stamped when it **lands**,
+    so the server times the leg out to everybody else exactly and knows nothing
+    whatever about the leg in. Halved and kept here, it is what lets `_snapshot`
+    report an age covering the whole path instead of half of it - without it
+    every car is drawn short by its own upstream leg, on every screen but its
+    own, which is about 1.5 units at 60ms of ping and always in the same
+    direction.
+
+    **Clamped, because it is a client number that buys distance.** The only
+    thing it feeds is how far other browsers extrapolate this car, so inflating
+    it draws you a little further up the road on screens that are not yours. It
+    reaches neither `racecheck`, nor `prog`, nor the **standings** - which is
+    why it travels in a field of its own rather than added into the pose age,
+    see `_snapshot` - nor the result. `UPSTREAM_CAP_MS` is worth four units at
+    MAX_SPEED, less than the error every honest car on the track was carrying
+    while none of this was compensated at all. Kept as the **minimum** seen, the
+    same sample the client's own offset is taken from: the shortest trip is the
+    one with the least queueing in it, and a min cannot be walked upwards.
+    """
     emit("clock", {"c": (data or {}).get("c"), "s": _now_ms()})
+    ent = _sid_room.get(request.sid)
+    if not ent:
+        return                                  # not seated yet; four more come
+    r = _rooms.get(ent[0])
+    if r:
+        _note_upstream(_car(r, ent[1]), (data or {}).get("rtt"))
 
 
 @socketio.on("pose")

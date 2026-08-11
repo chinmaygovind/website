@@ -244,6 +244,46 @@ ELO, socket handlers, the race recorder or `/race/<id>`.
   uses) rather than as a time, since a split needs the reference lap's shape.
   **Free practice: the ghost**, as before. The finish is the last split and
   follows the same rule.
+- **The running order is settled off the snapshot, because that is the one
+  clock everybody shares.** `liveOrder` used to compare **your own distance right
+  now against everybody else's from a round trip ago** - `S.run.bestS` live
+  against each rival's `prog` as it last arrived. At 60ms of ping that is about
+  three units of road, always in the reader's favour and mirrored on the other
+  screen, so two cars side by side were each shown leading on their own monitor:
+  the board saying the opposite of the board next to it, with nothing to say
+  which had it right. The fix is not a better estimate, it is **one instant**.
+  The snapshot carries every car - *including the reader's own*, which `onPoses`
+  otherwise skips - each with the server's copy of its progress and its own age,
+  so `orderFromSnapshot` walks each forward by that age and sorts the field at
+  `snap.t`. Every browser is handed the same bytes and does the same arithmetic,
+  so every browser reaches the same order, and the test that matters is not that
+  some car leads but that **two readers of one snapshot agree**.
+  - **Your own row goes stale with everyone else's, and that is the point.** A
+    gap is a difference, so what it needs is one clock rather than the freshest
+    possible number on each side; being the only car on the board reading itself
+    live is exactly what made the two boards disagree.
+  - **Derived from the message rather than sent alongside it.** The server could
+    fan out a finished list, but the same packet already carries the progress
+    and the age it would be computed from, so a list would be a second statement
+    of it and the interesting question would become which to believe when they
+    differed. This is the `_hot_track` rule from the other direction: derived and
+    single-writer, so a stale one is a miss and never a contradiction.
+  - **It projects on the pose age and never on the upstream leg beside it.**
+    Field 15 is the trip in, and it is a number the car being ranked reported
+    about itself (see `docs/racing-physics.md`). The drawing adds the two; this
+    must not, or overstating your own ping is worth four units of projected road
+    on everybody's board.
+  - **Ties break by pid, not by enumeration order.** `prog` is rounded to 0.1 on
+    the wire, so two cars genuinely abreast do reach the client tied - and that
+    is the one case the whole change exists for, so it cannot be left to
+    whichever way each browser happened to walk the object.
+  - Finishers still sort ahead of the field by lap time, ordered by `ms` from
+    `S.standings`: progress orders the road, a lap time orders the result, and a
+    car already home has left the road. Solo and a replay have no snapshot, so
+    `S.order` is empty there and every line falls back to what it did before.
+  - **What this does *not* touch is who won.** `on_finish` sorts by the client's
+    own `ms`, so the result was never decided by who claimed it first and is not
+    decided by any of this either.
 - **The qualifying board is top right with the standings**, not top centre:
   it is the same kind of thing they are - who is where - and top centre is for
   the one button the room is waiting on, which a board above it pushed down

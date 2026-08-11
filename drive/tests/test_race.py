@@ -402,10 +402,10 @@ def test_the_snapshot_carries_how_full_a_cars_tow_is(env):
     assert row[12] & 16 and row[14] == pytest.approx(0.75)
 
 
-def test_the_tow_and_the_age_are_appended_not_inserted(env):
-    """Both trailing fields arrived after the format did, and the client guards
-    on the array's length - so a page left open across a deploy loses the tow
-    rather than reading a car's velocity as its position."""
+def test_the_trailing_fields_are_appended_not_inserted(env):
+    """The age, the tow and the upstream leg all arrived after the format did,
+    and the client guards on the array's length - so a page left open across a
+    deploy loses the tow rather than reading a car's velocity as its position."""
     A = env
     r = _room(A)
     _add_car(A, r, "a")
@@ -413,7 +413,7 @@ def test_the_tow_and_the_age_are_appended_not_inserted(env):
     row = A._snapshot(r)["cars"]["a"]
     assert row[:3] == [1.0, 2.0, 3.0] and row[7:10] == [0, 0, -40.0]
     assert row[10] == 12.5 and row[11] == 2
-    assert len(row) == 15
+    assert len(row) == 16
 
 
 def test_a_client_cannot_claim_a_tow_it_does_not_have(env):

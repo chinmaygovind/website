@@ -188,8 +188,8 @@ before touching it.
   otherwise would. See `docs/testing.md`.
 - **Re-run `tools/shoot_tracks.py` after changing a track's geometry or sky.** A
   test asserts the preview files exist; nothing can notice that one is stale.
-- Tests: `scripts/tests.sh drive` - about 889 tests in 100s, **run serially on
-  purpose** (see `docs/testing.md`). A third of that is the anti-cheat driving
+- Tests: `scripts/tests.sh drive` - about 1000 tests in about a minute, **run
+  serially on purpose** (see `docs/testing.md`). A third of that is the anti-cheat driving
   real laps and re-driving them, which is the price of the one test that
   matters: a lap somebody actually drove has to be accepted. Nothing in the
   suite may sleep; `tests/conftest.py` enforces it.

@@ -114,6 +114,9 @@ const S = {
   catchupDemo: null,       // `?catchup=<s>` pins the gap, to look at the effect
   qualEnd: null,           // local perf-clock ms qualifying closes
   standings: [],
+  order: [],               // the running order, off the last snapshot: see
+                           // `orderFromSnapshot`. Derived and single-writer, so
+                           // a stale one is a miss and never a disagreement.
   settings: { qualifying: false },  // rooms only: what the next race will be
                                     // (the server's `room_settings` is the
                                     // truth; this matches ROOM_DEFAULTS so the
@@ -2310,17 +2313,86 @@ function timeAlong(arr, s) {
   return a.ms + (b.ms - a.ms) * u;
 }
 
+/**
+ * The running order, off one snapshot, projected to one instant.
+ *
+ * This used to be settled locally by `liveOrder`, and it compared **your own
+ * distance right now against everybody else's from a round trip ago**. At 60ms
+ * of ping that is about three units of track, always in the reader's favour and
+ * mirrored on the other screen, so two cars side by side were each shown ahead
+ * on their own monitor - the board saying the opposite of the board next to it,
+ * with no way to tell which had it right.
+ *
+ * The answer is one clock, and there is exactly one clock everybody shares: the
+ * snapshot. It carries every car - *including the reader's own*, which the pose
+ * loop otherwise skips - each with the server's copy of its progress and, since
+ * the age field, its own staleness. So each is walked forward by its own age
+ * and the whole field is sorted at `snap.t`. Every browser is handed the same
+ * bytes and does the same arithmetic on them, so every browser reaches the same
+ * order. Nobody is compared against a fresher copy of themselves.
+ *
+ * Derived from what is already in the message rather than sent alongside it. A
+ * server-computed list would be a second statement of a fact the same packet
+ * already carries twice over, and the interesting question would become which
+ * of the two to believe when they disagreed.
+ *
+ * The projection uses speed rather than progress-per-second, which slightly
+ * over-credits a car that is sliding: ages run to about a pose interval, so the
+ * whole term is under two units and its error is a small fraction of that.
+ * Doing nothing instead would hand the place to whichever car's packet happened
+ * to land nearest the tick, which is a coin flip thirty times a second.
+ *
+ * **Field 13 only, and never the upstream leg beside it in field 15.** The
+ * drawing adds the two, because it wants the whole journey; this must not,
+ * because 15 is a number the car being ranked reported about itself. Add it in
+ * and overstating your own ping is worth four units of projected road on
+ * everybody's board - a cheat invented by the fix for something else, in the
+ * one place this whole function exists to make trustworthy.
+ */
+function orderFromSnapshot(snap) {
+  const out = [];
+  for (const pid in snap.cars) {
+    const a = snap.cars[pid];
+    const age = (a.length > 13 ? a[13] : 0) / 1000;
+    out.push({ pid, s: a[10] + Math.hypot(a[7], a[8], a[9]) * age });
+  }
+  // Ties broken by pid, not by enumeration order: `prog` is rounded to 0.1 on
+  // the wire, so two cars genuinely abreast do tie, and the pair of screens has
+  // to break it the same way or the whole point is lost on the one case the
+  // whole thing is for.
+  out.sort((x, y) => (y.s - x.s) || (x.pid < y.pid ? -1 : 1));
+  return out;
+}
+
 function liveOrder() {
-  const out = [{ name: CFG.name, color: CFG.me ? CFG.me.color : '#e8453c',
-                 s: S.run.bestS, self: true, ms: S.run.state === 'done' ? S.run.time : null }];
+  const mine = CFG.me ? CFG.me.pid : null;
+  // Where the server last saw everybody, all at the same instant. Empty in solo
+  // and in a replay, where there is no snapshot and nobody to disagree with, and
+  // then every line below falls back to what it did before.
+  const rank = new Map(), prog = new Map();
+  S.order.forEach((e, i) => { rank.set(e.pid, i); prog.set(e.pid, e.s); });
+  // Your own row comes off the snapshot too, ~a round trip old like everyone
+  // else's. That is the point rather than a cost: a gap is a difference, so
+  // what it needs is one clock, and being the only car on the board reading
+  // its own live number is precisely what made the two boards disagree.
+  const at = (pid, live) => (prog.has(pid) ? prog.get(pid) : live);
+  const out = [{ name: CFG.name, color: CFG.me ? CFG.me.color : '#e8453c', pid: mine,
+                 s: at(mine, S.run.bestS), self: true,
+                 ms: S.run.state === 'done' ? S.run.time : null }];
   for (const [pid, r] of S.remotes) {
-    out.push({ name: r.name, color: r.color, s: r.prog, self: false, pid,
+    out.push({ name: r.name, color: r.color, s: at(pid, r.prog), self: false, pid,
                ms: (S.standings.find(x => x.pid === pid) || {}).ms || null });
   }
   out.sort((a, b) => {
     if (a.ms != null && b.ms != null) return a.ms - b.ms;
     if (a.ms != null) return -1;
     if (b.ms != null) return 1;
+    const ra = rank.has(a.pid) ? rank.get(a.pid) : Infinity;
+    const rb = rank.has(b.pid) ? rank.get(b.pid) : Infinity;
+    // Compared rather than subtracted: two cars the snapshot has never heard of
+    // are both Infinity, and `Infinity - Infinity` is a NaN comparator, which
+    // sorts to whatever the engine feels like.
+    if (ra !== rb) return ra - rb;
     return b.s - a.s;
   });
   return out;
@@ -2890,7 +2962,18 @@ function connect() {
   const socket = S.socket = window.io();
   socket.on('connect', () => {
     socket.emit('join_room_', { code: CFG.room });
-    for (let i = 0; i < 5; i++) setTimeout(() => socket.emit('clock', { c: Date.now() }), 200 * i);
+    for (let i = 0; i < 5; i++) {
+      setTimeout(() => {
+        const d = { c: Date.now() };
+        // The round trip measured so far, which the server halves and hands to
+        // everybody else as this car's *upstream* leg - the half of the path it
+        // has no way to time for itself, since it stamps a pose when the pose
+        // lands. See `on_clock`. Left off the first ping, which is the one with
+        // nothing measured yet, and refined by the four behind it.
+        if (isFinite(S.bestRtt)) d.rtt = Math.round(S.bestRtt);
+        socket.emit('clock', d);
+      }, 200 * i);
+    }
   });
   socket.on('clock', (d) => {
     const now = Date.now(), rtt = now - d.c;
@@ -3086,6 +3169,10 @@ function sendPose(now) {
 }
 
 function onPoses(snap) {
+  // Settled here rather than in the HUD: it belongs to the snapshot, so it is
+  // worked out once when one arrives instead of once a frame off whichever one
+  // happens to be current.
+  S.order = orderFromSnapshot(snap);
   for (const pid in snap.cars) {
     if (CFG.me && pid === CFG.me.pid) continue;
     const a = snap.cars[pid];
@@ -3097,7 +3184,15 @@ function onPoses(snap) {
     // reported. Reading them all as fresh under-extrapolates every car by a
     // different amount each tick, which is jitter no smoothing can remove.
     // (Guarded for a client that outlives a server without the field.)
-    r.packetT = snap.t - (a.length > 13 ? a[13] : 0);
+    //
+    // Two ages, added: field 13 is the wait since the pose *landed*, which the
+    // server timed itself, and field 15 is the trip it made getting here, which
+    // only the client at the other end could measure. A pose describes where a
+    // car was when it was sent, so the drawing wants the whole path - without
+    // the second term every rival is short by its own upstream leg, on every
+    // screen but its own. They stay separate on the wire because the running
+    // order wants only the half the server owns: see `orderFromSnapshot`.
+    r.packetT = snap.t - (a.length > 13 ? a[13] : 0) - (a.length > 15 ? a[15] : 0);
     r.px = a[0]; r.py = a[1]; r.pz = a[2];
     r.q.set(a[3], a[4], a[5], a[6]);
     r.vel.set(a[7], a[8], a[9]);
@@ -3168,8 +3263,37 @@ function addRemote(pid) {
  * is taken whole. Smoothing one is worse than useless: the car streaks across
  * the map at a speed nothing can do, through the middle of everybody, and is
  * solid the entire way.
+ *
+ * **And the chase has to be led, or it never arrives.** See `CHASE_RATE`.
  */
 const REMOTE_SNAP = 12;               // units; ~3.5 car lengths, well past a frame of driving
+const CHASE_RATE = 16;                // 1/s; the exponential the position is chased at
+
+/**
+ * How far behind a moving target the chase settles, as time.
+ *
+ * An exponential filter never catches a target that is itself moving: each
+ * frame closes a fraction `k` of the gap while the target opens `v*dt` of new
+ * one, so it comes to rest `v*dt*(1-k)/k` short - at MAX_SPEED, about three
+ * units, most of a car length, on every rival on every screen with no network
+ * involved at all. **That was the larger half of this game's multiplayer
+ * disagreement, and none of it was ping.** Each driver saw the other one most
+ * of a car back, the two errors point opposite ways, and so two cars genuinely
+ * level looked like a lead to each of them.
+ *
+ * Leading the target by exactly that lag cancels it. Solving the filter's fixed
+ * point for zero error gives `dt*(1-k)/k`, which is bounded above by the
+ * filter's own time constant (1/CHASE_RATE, 62ms) however long a frame runs, so
+ * a hitch cannot turn it into a lunge. Exact for a car going in a straight
+ * line; for one that is braking or turning it is wrong by the same amount and
+ * in the same direction as the extrapolation it is added to, which is the
+ * residue nothing short of sending acceleration can remove.
+ *
+ * It is *added to the packet age* rather than applied separately because they
+ * are the same quantity - time this car has spent driving since the position in
+ * hand - and the extrapolation does not care which is which.
+ */
+function chaseLead(dt, k) { return dt * (1 - k) / k; }
 
 function updateRemotes(dt) {
   const nowS = serverNow();
@@ -3177,8 +3301,12 @@ function updateRemotes(dt) {
   // is the same answer contact and your own tow read - so a car cannot be seen
   // winding up a boost in a session where nobody can get one.
   const towOn = contactOn();
+  const k = 1 - Math.exp(-CHASE_RATE * dt);
+  const lead = chaseLead(dt, k);
   for (const r of S.remotes.values()) {
-    const ahead = Math.min(0.35, Math.max(0, (nowS - r.packetT) / 1000));
+    // Only the age is clamped. That clamp is about not flinging a stale packet
+    // across the map; the lead is not staleness and is bounded by its own maths.
+    const ahead = Math.min(0.35, Math.max(0, (nowS - r.packetT) / 1000)) + lead;
     const tx = r.px + r.vel.x * ahead;
     const ty = r.py + r.vel.y * ahead;
     const tz = r.pz + r.vel.z * ahead;
@@ -3189,7 +3317,6 @@ function updateRemotes(dt) {
     if (jump) {
       r.pos.set(tx, ty, tz); r.rq.copy(r.q); r.primed = true;
     } else {
-      const k = 1 - Math.exp(-16 * dt);
       r.pos.x += (tx - r.pos.x) * k;
       r.pos.y += (ty - r.pos.y) * k;
       r.pos.z += (tz - r.pos.z) * k;

@@ -238,14 +238,65 @@ catch-up boost, remote-car interpolation, or rival sound.
   smoothing that streaked the rival across the map at an impossible speed,
   solid the whole way. Past `REMOTE_SNAP` (12 units), or on `FLAG.RESPAWN`, the
   jump is taken whole - and a respawning car is hidden, so the cut is not seen.
+- **And the chase has to be *led*, or it never arrives.** An exponential ease
+  never catches a target that is itself moving: each frame closes a fraction `k`
+  of the gap while the target opens `v*dt` of new one, so it comes to rest
+  `v*dt*(1-k)/k` short - **about three units at `MAX_SPEED`, most of a car
+  length, on a perfect connection**. It ran that way for a long time and it was
+  **the larger half of the reason two friends racing saw opposite results**:
+  every rival is drawn most of a car back on every screen, the errors point
+  opposite ways, so two cars genuinely level each looked ahead to their own
+  driver. **None of it was ping** - `test_the_lag_is_a_filter_and_not_the_network`
+  measures it identical at 2ms and at 200. `chaseLead` cancels it by aiming that
+  far up the road: solving the filter's fixed point for zero error gives
+  `dt*(1-k)/k`, which is bounded above by the filter's own time constant
+  (`1/CHASE_RATE`, 62ms) however long a frame runs, so a hitch cannot turn it
+  into a lunge. It is added to the packet's age rather than applied separately,
+  because both are the same quantity - time this car has spent driving since the
+  position in hand - though **only the age is clamped**, since that clamp is
+  about not flinging a stale packet across the map and a lead is not staleness.
+  Exact for a car going in a straight line; a braking or turning car is left
+  wrong by the same amount and in the same direction as the constant-velocity
+  extrapolation it rides on, which is the residue nothing short of putting
+  acceleration on the wire can remove. `test_netcode.py` pins it, and pins it
+  **against its own absence** rather than against a figure in a comment, since
+  that comparison is the whole surprise.
 - **Each car in a snapshot carries its own age.** `snap.t` is when the
   *snapshot* went out; the pose inside it is whatever last arrived and can be a
   full pose-interval older. Extrapolating every car from `snap.t` left them all
   short by a different amount every tick - jitter that reads as the network and
-  is arithmetic. `_snapshot` sends `now - c["ts"]` per car and the client
-  measures from there. It is the last field, and the client guards on array
-  length, so a cached old client meeting a new server degrades rather than
-  computing `NaN` positions.
+  is arithmetic. `_snapshot` sends `now - c["ts"]` per car (field 13) and the
+  client measures from there. Trailing fields are appended rather than inserted
+  and the client guards on array length, so a cached old client meeting a new
+  server degrades rather than computing `NaN` positions.
+- **But that age is only half the trip, and the other half is field 15.** A pose
+  is stamped when it *lands*, so field 13 is the wait since arrival and says
+  nothing about the journey the pose made getting here - while a pose describes
+  where the car was when it was **sent**. So every car was drawn short by its own
+  upstream leg on every screen but its own: ~1.5 units at 60ms of ping, always
+  backwards, mirrored, the smaller half of the same disagreement the chase lag
+  caused. The server cannot time that leg itself, so **the client measures its
+  own round trip and reports it** on the `clock` handshake it was already making,
+  and `_note_upstream` keeps half of the **shortest** one seen. The pings land
+  while the page is still loading, so the first is the worst measurement of the
+  session, and a running minimum is the only thing that stops it setting the
+  number for the rest of it.
+  - **It is a client number, so it is capped** (`UPSTREAM_CAP_MS`, 80ms one
+    way). All it feeds is how far *other* browsers extrapolate this car, so
+    inflating it draws you a little further up the road on screens that are not
+    yours; it reaches neither `racecheck`, nor `prog`, nor the result. At the cap
+    that is worth about four units, and a test pins that against `CAR_LEN` - the
+    trade only holds while the most a liar gains stays under what every honest
+    driver was already losing.
+  - **And it is a separate field on purpose, not added into 13.** The two have
+    different owners: 13 is what the server timed, 15 is what the car being
+    measured said about itself. `updateRemotes` adds them, because drawing wants
+    the whole journey. `orderFromSnapshot` uses 13 alone, because the standings
+    must not be movable by a claim - fold them together and overstating your ping
+    is worth four units of projected road on everybody's board, a cheat invented
+    by the fix for something else and landing on the one number the order exists
+    to make trustworthy. `test_claiming_a_terrible_connection_does_not_buy_a_place`
+    is what holds the two apart.
 - **Rivals are brought up to now before the physics that has to hit them.**
   `updateRemotes` ran after the fixed-step loop, so every substep resolved
   contact against a frame-old position - about a car length at racing speed,
