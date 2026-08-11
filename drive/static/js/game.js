@@ -87,6 +87,8 @@ const S = {
   mySplits: [],            // your PB's splits, to compare somebody else's with
   watch: null,             // a replay playing instead of a run
   shot: false,             // taking a preview picture, not playing
+  shotMode: '1',           // which picture: `1` (the switcher's), `plan`, `at:<f>`
+  shotAt: null,            // `?shot=at:<f>`: where round the lap to park the car
   previewPhase: null,      // `?panel=qual|racing` pins a phase to look at it
   // And `?panel=racing` pins a *field* to go with it, because pinning the phase
   // alone was not enough to photograph the one thing that phase puts on screen:
@@ -687,11 +689,39 @@ function bindInput() {
   // `?touch=1` forces the touch HUD on a desktop browser, which is the only way
   // to look at the phone layout without a phone.
   // Preview-picture mode: no HUD, no car, no controls - just the track.
-  if (location.search.indexOf('shot=1') >= 0) {
+  //
+  // `?shot=1` is the switcher's picture and its framing must not drift -
+  // `tools/shoot_tracks.py` takes all fifteen with it and nothing downstream can
+  // tell a re-framed preview from a stale one. The other two are for authoring,
+  // where the question is not "does this look like somewhere" but "is this
+  // right", and they are read by `tools/track_views.py`:
+  //
+  //   ?shot=plan        straight down, whole track in frame, north up. What
+  //                     catches a leg that left the building, a hairpin that
+  //                     bulged into the next aisle, a lap that is really two.
+  //   ?shot=at:<0..1>   the car parked on the road that far round the lap, with
+  //                     the ordinary chase camera behind it. Deliberately the
+  //                     real camera and not a copy of it: on Costco the whole
+  //                     question is whether the lens clears a 15-unit ceiling
+  //                     and follows the car through a doorway 11.6 units later,
+  //                     and a bespoke authoring camera would answer about
+  //                     itself instead.
+  const sh = /[?&]shot=([A-Za-z0-9.:]+)/.exec(location.search);
+  if (sh) {
     S.shot = true;
+    S.shotMode = sh[1];
     S.car.frozen = true;
-    S.view.setVisible(false);
     document.body.classList.add('shot');
+    const at = /^at:([0-9.]+)$/.exec(S.shotMode);
+    if (at) {
+      // The car stays visible here, and that is the point of this mode: it is
+      // the only thing in frame with a known size, so it is what tells you
+      // whether the road is as wide as it should be and whether the roof is as
+      // low as it feels.
+      S.shotAt = Math.max(0, Math.min(1, parseFloat(at[1])));
+    } else {
+      S.view.setVisible(false);
+    }
   }
   // Read off `location.search` directly, like `shot=1` above and unlike the
   // panel params: this line is inside the slice `test_touch.py` lifts into a
@@ -1903,7 +1933,26 @@ function frame(now) {
   // preview of a track is always the track as it is now rather than a drawing
   // of it that has to be kept in step.
   if (S.shot) {
-    shotCamera();
+    if (S.shotAt != null) {
+      // Park the car and let the *ordinary* camera follow it. `render` is given
+      // a real dt so its follow spring settles rather than trailing a car that
+      // teleported, which otherwise leaves the camera at the origin looking at
+      // nothing for the first second - and a screenshot is all first second.
+      seatCarAlongLap(S.shotAt);
+      S.renderer.follow(S.car, dt);
+      // The mesh has to be moved as well as the body. `S.car` is the simulation
+      // and `S.view` is the thing you can see, and the normal frame path updates
+      // both - so without this the car is parked correctly on the road and drawn
+      // at the origin, which reads as a view with no car in it.
+      S.view.update(S.car.pos, S.car.quat, {
+        groundY: S.car.groundY,
+        groundN: S.car.grounded ? S.car.groundN : null,
+      });
+    } else if (S.shotMode === 'plan') {
+      planCamera();
+    } else {
+      shotCamera();
+    }
     S.renderer.render(dt);
     return;
   }
@@ -2157,6 +2206,73 @@ function shotCamera() {
   cam.lookAt(new THREE.Vector3(p[0] + f[0] * back * 0.5, p[1],
                                p[2] + f[2] * back * 0.5));
   cam.updateProjectionMatrix();
+}
+
+/**
+ * `?shot=plan`: straight down on the whole track, north up.
+ *
+ * The authoring view, and the opposite trade from `shotCamera`. That one is a
+ * photograph and gives up on showing the layout; this one gives up on looking
+ * like anywhere and shows nothing but the layout. It is what a plan drawing
+ * would be if the game could draw one, and it is the picture that answers the
+ * questions authoring actually asks - is the last leg back inside the building,
+ * did that hairpin bulge into the next aisle, does the road cross itself where
+ * it was supposed to, is the closing stretch as long as it felt.
+ *
+ * Height is fitted rather than scaled: the frame has to hold the track's *bigger*
+ * axis at the camera's aspect, and picking the wrong one silently crops the end
+ * of a long track - which reads as a track that stops rather than as a camera
+ * that is too low.
+ */
+function planCamera() {
+  const pts = S.built.line.map(e => e.p);
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, hi = -Infinity;
+  for (const p of pts) {
+    x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]);
+    z0 = Math.min(z0, p[2]); z1 = Math.max(z1, p[2]);
+    hi = Math.max(hi, p[1]);
+  }
+  const cam = S.renderer.camera;
+  const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+  const w = Math.max(1, x1 - x0), d = Math.max(1, z1 - z0);
+  // Vertical half-angle, and the horizontal one it implies at this aspect.
+  const vf = (cam.fov * Math.PI / 180) / 2;
+  const hf = Math.atan(Math.tan(vf) * cam.aspect);
+  // 12% of margin, so nothing sits on the edge of the frame and a barrier at the
+  // extreme of the track is still visibly inside it.
+  const need = Math.max((d / 2) / Math.tan(vf), (w / 2) / Math.tan(hf)) * 1.12;
+  cam.position.set(cx, hi + need, cz);
+  // A camera looking straight down has no unique up vector, so three falls back
+  // on its default and the track arrives at whatever rotation that implies.
+  // Pinning it to -Z puts north up, which is the orientation every other tool
+  // here reports in - `self_proximity` failures, the bbox, SHELL_X/SHELL_Z.
+  cam.up.set(0, 0, -1);
+  cam.lookAt(new THREE.Vector3(cx, hi, cz));
+  cam.updateProjectionMatrix();
+}
+
+/**
+ * `?shot=at:<f>`: park the car on the centreline a fraction of the way round.
+ *
+ * Placed with the same `placeAt` a respawn uses, so the car arrives on the road
+ * at the road's own attitude - upside down inside a loop, banked on a wall - and
+ * not merely at the right coordinates. The alternative was interpolating a pose
+ * here, which is a second copy of something `Builder` already baked into every
+ * station.
+ */
+function seatCarAlongLap(f) {
+  const line = S.built.line;
+  const s = S.built.s;
+  const target = s[s.length - 1] * f;
+  let i = 1;
+  while (i < s.length - 1 && s[i] < target) i++;
+  // Forward is the difference to the next station rather than a stored heading,
+  // which is what `spawn.fwd` is too - the ribbon does not carry one, because
+  // `n x lat` is it.
+  const a = line[i - 1].p, b = line[Math.min(i, line.length - 1)].p;
+  const fwd = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const len = Math.hypot(fwd[0], fwd[1], fwd[2]) || 1;
+  S.car.placeAt(line[i].p, [fwd[0] / len, fwd[1] / len, fwd[2] / len]);
 }
 
 // ---------------------------------------------------------------------------

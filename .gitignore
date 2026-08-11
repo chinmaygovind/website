@@ -26,3 +26,10 @@ Thumbs.db
 
 # Scratch notes, not the repo.
 drive/todo.txt
+
+# Working pictures from `drive/tools/track_views.py` - a plan view and several
+# from the road, taken while authoring a track and looked at once. The switcher's
+# previews under drive/static/img/tracks/ ARE committed; these are not, because a
+# five-view set per track per attempt would be tens of megabytes of pictures
+# nobody reads twice.
+drive/tools/views/
