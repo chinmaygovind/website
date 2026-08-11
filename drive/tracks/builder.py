@@ -461,7 +461,7 @@ class Builder:
         self.crest(rise, half, w=w)
         return self.crest(-rise, half)
 
-    def boost(self, length=12.0, rise=0.0):
+    def boost(self, length=12.0, rise=0.0, ease=True):
         """A strip of road that hands you speed for driving over it.
 
         The pad is the *surface*, not an object standing on it: the stations are
@@ -478,10 +478,20 @@ class Builder:
         into a braking zone, where all it does is take away the decision the
         corner was for. Wanting a pad round a bend is almost always wanting it
         on the exit.
+
+        ``ease`` is the same flag `straight` takes, and passing ``False`` makes
+        the pad a **kicker** rather than a hill - which is the one thing a pad
+        needs to be able to do that "straight" did not already cover. Mount Joy
+        drives a ramp up a mountainside as a chain of steepening kickers with a
+        pad on every one of them, because `PAD_BOOST` is 1.3 seconds and a ramp
+        long enough to climb anything worth climbing runs out of boost halfway
+        up: a pad *on* the climb re-arms itself every step, so the engine is
+        still 1.7x at the lip. An eased hill cannot be used for that, because
+        eased means grade zero at both ends and so no launch angle at all.
         """
         self._pad = True
         try:
-            self.straight(length, rise=rise)
+            self.straight(length, rise=rise, ease=ease)
             # `straight` records itself as it starts and nothing else appends
             # while it runs, so this is that entry - rewritten rather than added
             # to, or one authored primitive would show up in `sections` twice.

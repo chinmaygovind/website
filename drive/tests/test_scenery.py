@@ -58,6 +58,11 @@ EXPECTED = {
     "spa":       {"total":  43566, "road":  1810, "wall":  3542, "off": 38214, "boost":  0},
     "costco":    {"total":   4044, "road":  1188, "wall":  2834, "off":     2, "boost": 20},
     "bigred":    {"total":   2848, "road":  1582, "wall":  1188, "off":     0, "boost": 78},
+    # Recorded when the track was added rather than off an earlier tree, since
+    # there was no earlier tree. Nearly all of the `off` is the mountain: the
+    # snow in `tracks/mountjoy/scenery.js` is a collidable height field, which
+    # is what makes running wide a scramble across a hillside instead of a fall.
+    "mountjoy":  {"total":  17420, "road":  1970, "wall":   588, "off": 14744, "boost": 118},
 }
 
 COUNTER = """
