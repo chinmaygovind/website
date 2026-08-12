@@ -423,6 +423,74 @@ def test_the_bot_columns_are_added_to_a_table_that_predates_them(env):
         assert env._seat_bot(g, "easy").is_bot
 
 
+@needs_js
+def test_a_room_that_loses_its_bot_world_builds_another(env, monkeypatch):
+    """Seats with no world must not be a state the room stays in.
+
+    Everything that builds a bot world is a host action, so before this the
+    room sat with bots in the roster and no cars on the track until somebody
+    thought to re-add one. Reported from a real room after a track change; the
+    trigger was never reproduced, so what is pinned here is the recovery rather
+    than the fault.
+    """
+    with env.app.app_context():
+        g, _ = _game(env, track="sunrise")
+        env._seat_bot(g, "medium")
+        r = env._room(g.code)
+        env._sync_bots(r, g)
+        pid = list(r["bots"])[0]
+        now = [2_000_000]
+        monkeypatch.setattr(env, "_now_ms", lambda: now[0])
+        # The world goes, the seats do not - exactly the broken state.
+        env.botsim.drop(g.code)
+        assert r["bots"] and env._bot_world(r) is None
+
+        now[0] += env.BOT_REVIVE_MS + 1
+        env._tick_bots(r)                      # notices, rebuilds
+        assert env._bot_world(r) is not None, "the room never got a world back"
+        assert pid in env._bot_world(r).bots
+
+        # And it drives again, rather than merely existing.
+        moved = False
+        first = None
+        for _ in range(40):
+            now[0] += 33
+            env._tick_bots(r)
+            c = r["cars"].get(list(r["bots"])[0])
+            if c and "p" in c:
+                if first is None:
+                    first = list(c["p"])
+                elif abs(c["p"][0] - first[0]) + abs(c["p"][2] - first[2]) > 1:
+                    moved = True
+        assert moved, "the rebuilt bot never moved"
+
+
+def test_one_bad_tick_does_not_end_the_bots_for_the_session(env, monkeypatch):
+    """A world that throws once is retried; one that keeps throwing is given up on."""
+    with env.app.app_context():
+        g, _ = _game(env, track="sunrise")
+        env._seat_bot(g, "medium")
+        r = env._room(g.code)
+        env._sync_bots(r, g)
+        now = [3_000_000]
+        monkeypatch.setattr(env, "_now_ms", lambda: now[0])
+
+        class Boom:
+            slug = "sunrise"
+            bots = {"x": "medium"}
+
+            def tick(self, *a, **k):
+                raise RuntimeError("bang")
+
+        monkeypatch.setattr(env, "_bot_world", lambda r, create=False: Boom())
+        now[0] += 33; env._tick_bots(r)        # first tick primes the interval
+        for i in range(env.BOT_FAIL_LIMIT):
+            now[0] += 33
+            env._tick_bots(r)
+        assert r["bots"] == {}, "a world that always throws should be given up on"
+        assert r["bot_fail"] >= env.BOT_FAIL_LIMIT
+
+
 def test_filling_the_grid_uses_the_level_on_the_dropdown(env):
     """Every seat the fill makes is at the level that was chosen, not the default.
 

@@ -2146,6 +2146,39 @@ def _bot_humans(r):
     return out
 
 
+# How often a room holding bot seats with no bot world may try to rebuild one,
+# and how many times a world may throw before the room gives up on it.
+BOT_REVIVE_MS = 2000
+BOT_FAIL_LIMIT = 3
+
+
+def _revive_bots(r):
+    """Rebuild a bot world that has gone missing under seats that still exist.
+
+    **Seats and world can only be made to agree by a host action**, and that is
+    the bug this exists for. `_tick_bots` used to return here, so a room that
+    lost its world mid-session showed bots in the roster with no cars on the
+    track, for the rest of the session, with nothing in the UI to say why.
+    Reported from a real room after a track change, and not reproducible here
+    against sixteen tracks, humans posing and every phase - so this does not
+    claim to know the trigger. It makes the state recoverable instead of
+    terminal, which is true whatever the trigger turns out to be.
+
+    Throttled and outside the room lock's owner: the pump does not hold the
+    lock, so this takes it, and a rebuild that is going to fail should cost one
+    query every couple of seconds rather than one per tick.
+    """
+    now = _now_ms()
+    if now - (r.get("bot_revive") or 0) < BOT_REVIVE_MS:
+        return
+    r["bot_revive"] = now
+    with app.app_context():
+        with _lock(r["code"]):
+            game = DriveGame.query.filter_by(code=r["code"]).first()
+            if game:
+                _sync_bots(r, game)
+
+
 def _tick_bots(r):
     """Step this room's bots and write their poses in as though they had sent them.
 
@@ -2158,6 +2191,7 @@ def _tick_bots(r):
         return
     w = _bot_world(r)
     if w is None:
+        _revive_bots(r)
         return
     now = _now_ms()
     last = r.get("bot_t")
@@ -2182,10 +2216,33 @@ def _tick_bots(r):
         # A bot world that has thrown is not worth taking the room down for.
         # Drop it: the seats stay, the cars stop appearing, and the race carries
         # on for the people in it.
-        app.logger.exception("bot world failed in room %s; dropping it", r["code"])
+        #
+        # **The track is in the message because the symptom is track-shaped.**
+        # Reported from a real room: bots worked on two tracks, the host moved to
+        # a third and the cars never appeared, and removing and re-adding did not
+        # help - which is what this branch looks like from the outside when the
+        # tick throws every time on one particular slug. Without the slug and the
+        # bot count here, the log said only that *a* room had failed.
+        fails = r["bot_fail"] = (r.get("bot_fail") or 0) + 1
+        app.logger.exception(
+            "bot world failed in room %s on %s (%d bots, phase %s, failure %d);"
+            " dropping it", r["code"], r.get("bot_slug"),
+            len(r.get("bots") or {}), r["phase"], fails)
         botsim.drop(r["code"])
-        r["bots"] = {}
+        # **The seats stay listed, so leaving `r["bots"]` set is what lets
+        # `_revive_bots` build a new world on the next tick.** One bad tick -
+        # a pose that arrived half-written, a world caught mid-rebuild - should
+        # cost a blink, not the session. Only after it has failed
+        # `BOT_FAIL_LIMIT` times in a row is it treated as this track simply not
+        # working, and only then is the room told, once.
+        if fails >= BOT_FAIL_LIMIT:
+            r["bots"] = {}
+            socketio.emit("room_error",
+                          {"error": "The bots stopped working on this track. "
+                                    "Re-add them, or try another track."},
+                          room="room:" + r["code"])
         return
+    r["bot_fail"] = 0
     for row in poses:
         c = _car(r, row[0])
         c["p"] = [row[1], row[2], row[3]]
