@@ -212,3 +212,15 @@ it — but it means the TTR half of the agreement is only actually checked on a
 machine that has run `git submodule update --init ttr`, i.e. when somebody is
 changing TTR anyway. If you touch the shared profile columns, run it there.
 
+**That skip is also how the suite's one real miss happened, so `source()` no
+longer allows it.** `test_track_names_match_drive` read `drive/tracks.py`; the
+pool became the `drive/tracks/` package; the path stopped existing and `source`
+skipped it, which reads as a pass. It stayed green through Spa, Costco
+Wholesale and Mount Joy being added, and every one of them appeared on a profile
+as its raw slug — `Race · mountjoy` — until somebody read their own page.
+`source()` now skips only when the *service* is absent (no Python at its top
+level, which is what an uninitialised `ttr/` looks like) and **fails** when a
+file is missing from a service that is checked out, because that is a rename and
+a rename should be loud. The track test reads the folders now, which is the same
+thing the game reads.
+

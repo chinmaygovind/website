@@ -22,11 +22,38 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GAMES = ("ers", "kot", "drive", "ttr")
 
 
+def checked_out(service):
+    """Whether a service's code is actually here.
+
+    Any Python at its top level, rather than the directory existing: `ttr/` is a
+    submodule, and an uninitialised one still leaves a directory behind with an
+    untracked `instance/` sitting in it.
+    """
+    d = os.path.join(ROOT, service)
+    return os.path.isdir(d) and any(f.endswith(".py") for f in os.listdir(d))
+
+
 def source(*parts):
+    """A file from another service, read rather than imported.
+
+    A whole service being absent is a legitimate skip - `ttr/` is a submodule
+    that is not checked out in CI or in a plain clone, and every job in the
+    Action is a sparse checkout of one module. **A file missing from a service
+    that *is* here is a failure**, because that is a rename, and a skip reads as
+    a pass: this skipped `drive/tracks.py` for the entire life of three tracks
+    after the pool became the `drive/tracks/` package, and the profile it guards
+    printed `costco` and `mountjoy` at people for all of it.
+    """
     path = os.path.join(ROOT, *parts)
-    if not os.path.exists(path):
-        pytest.skip("%s is not checked out here" % os.path.join(*parts))
-    return open(path).read()
+    if os.path.exists(path):
+        return open(path).read()
+    service = parts[0] if len(parts) > 1 else None
+    if service and not checked_out(service):
+        pytest.skip("%s is not checked out here" % service)
+    raise AssertionError(
+        "%s is missing, but %s is checked out. If the file moved, move this "
+        "test with it - letting it skip would read as a pass."
+        % (os.path.join(*parts), service or "the repo root"))
 
 
 # --- rating tiers -----------------------------------------------------------
@@ -73,19 +100,51 @@ def test_tiers_match_the_games(key, path, class_name):
 # --- Drive's track names ----------------------------------------------------
 
 def test_track_names_match_drive():
-    """Copied rather than imported because importing `drive/tracks.py` costs
-    1.7 seconds of geometry assembly at boot, in a process whose other job is
-    serving static files, to learn nine strings."""
+    """Copied rather than imported because importing `drive/tracks` builds every
+    ribbon in the pool - about 1.7 seconds - in a process whose other job is
+    serving static files, to learn sixteen strings.
+
+    **This read `drive/tracks.py`, and that file stopped existing.** The pool
+    became one folder per track, `source` skipped a path it could not find, and
+    a skip reads as a pass - so this sat green while Spa, the Costco and Mount
+    Joy were added and a profile showed all three as their slugs. `source`
+    fails on a rename now, and this reads the folders, which are the same thing
+    the game itself reads.
+    """
     from accounts.gamestats import DRIVE_TRACKS
-    src = source("drive", "tracks.py")
-    # `_POOL` is a list of tuples whose first two members are the slug and the
-    # display name. Read rather than imported, for the reason above.
-    pool = re.search(r"^_POOL = \[(.*?)^\]", src, re.S | re.M)
-    assert pool, "could not find _POOL in drive/tracks.py"
-    found = dict(re.findall(r'\(\s*"([a-z0-9]+)",\s*"([^"]+)"', pool.group(1)))
-    assert found, "could not read the track pool out of drive/tracks.py"
+    if not checked_out("drive"):
+        pytest.skip("drive is not checked out here")
+    pool = os.path.join(ROOT, "drive", "tracks")
+    assert os.path.isdir(pool), (
+        "drive is checked out but drive/tracks is not a directory. If the pool "
+        "has moved again, move this test with it rather than letting it skip.")
+    found = {}
+    for folder in sorted(os.listdir(pool)):
+        # A track is a folder with a `track.py` in it; everything else in here
+        # (builder.py, solver.py, __pycache__) is not a track.
+        p = os.path.join(pool, folder, "track.py")
+        if not os.path.exists(p):
+            continue
+        src = open(p).read()
+        slug = re.search(r'^slug\s*=\s*"([^"]+)"', src, re.M)
+        name = re.search(r'^name\s*=\s*"([^"]+)"', src, re.M)
+        assert slug and name, (
+            "drive/tracks/%s/track.py declares no %s"
+            % (folder, "slug" if not slug else "name"))
+        found[slug.group(1)] = name.group(1)
+    # Or a regex that matched nothing would agree with an empty copy of the map.
+    assert len(found) > 10, (
+        "only read %d tracks out of drive/tracks/, which cannot be right - the "
+        "declarations have probably changed shape" % len(found))
     assert found == DRIVE_TRACKS, (
-        "Drive's track pool has changed - update accounts/gamestats.py DRIVE_TRACKS")
+        "Drive's track pool and accounts/gamestats.py DRIVE_TRACKS disagree. A "
+        "slug missing from the map is printed raw on a profile.\n"
+        "  only in drive:    %s\n  only in accounts: %s\n"
+        "  spelt differently: %s"
+        % (sorted(set(found) - set(DRIVE_TRACKS)),
+           sorted(set(DRIVE_TRACKS) - set(found)),
+           sorted(s for s in set(found) & set(DRIVE_TRACKS)
+                  if found[s] != DRIVE_TRACKS[s])))
 
 
 # --- reserved usernames -----------------------------------------------------

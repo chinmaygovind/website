@@ -234,6 +234,11 @@ def _one(e):
     t = {"slug": e["slug"], "name": e["name"], "blurb": e["blurb"],
          "ground": e["ground"], "difficulty": e["difficulty"],
          "exposed": e["exposed"], "closed": e["closed"],
+         # Whether this track ships a `scenery.js`. On the track rather than
+         # left in `_meta` because the *browser* needs the answer: the switcher
+         # swaps the world in place, so it has to know to go and fetch the
+         # scenery before it builds. See `/scenery/<slug>.js` in app.py.
+         "scenery": e["wants_scenery"],
          "cell": CELL, "level": LEVEL, "station": STATION}
     t.update(built.build())
     # Both derived from the ribbon rather than authored, so a new track gets them
@@ -332,9 +337,16 @@ def all_scenery():
 
 
 def summaries():
-    """Everything the track-select screen needs, without the station lists."""
+    """Everything the track-select screen needs, without the station lists.
+
+    `scenery` is in here so the switcher knows *before* you click a card whether
+    that track needs its `scenery.js` fetching - which lets it ask for the
+    scenery and the track payload at the same time rather than one after the
+    other. See `ensureScenery` in game.js.
+    """
     return [{k: t[k] for k in ("slug", "name", "blurb", "difficulty", "ideal",
-                               "medals", "checkpoints")} for t in TRACKS]
+                               "medals", "checkpoints", "scenery")}
+            for t in TRACKS]
 
 
 def get(slug):

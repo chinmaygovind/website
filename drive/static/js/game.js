@@ -83,6 +83,10 @@ const S = {
   // Both readouts default off: a number over the road is asked for, not given.
   showFps: storedFlag('drive.fps', false),
   showPing: storedFlag('drive.ping', false),
+  // The slug the switcher is part-way through loading, or null. One at a time:
+  // a second click during the (network + several hundred ms of building) that a
+  // switch costs would race the first one into `loadTrack`.
+  switching: null,
   board: null,             // the last board fetched, for the detail pane
   mySplits: [],            // your PB's splits, to compare somebody else's with
   watch: null,             // a replay playing instead of a run
@@ -1488,6 +1492,9 @@ function renderTrackCards() {
     <button class="tcard2" data-track="${esc(c.slug)}">
       <span class="tcard2-img" style="background-image:url('${esc(c.image)}')">
         <span class="tcard2-live">Now</span>
+        <!-- The one you have just clicked, while it loads. Same corner as "Now",
+             because they are the same fact a moment apart. -->
+        <span class="tcard2-busy">Loading</span>
       </span>
       <span class="tcard2-body">
         <span class="tcard2-top">
@@ -1522,17 +1529,43 @@ function renderTrackCards() {
  * address of "driving on your own", and the track is a thing you change while
  * you are there. In a room it is the host's decision to make, so it goes to the
  * server and comes back to everyone at once.
+ *
+ * **The sheet stays open until the world is up.** It used to close on the click
+ * and leave you looking at the track you were trying to leave for as long as the
+ * switch took, which on Mount Joy or the Costco is a request plus several
+ * hundred milliseconds of synchronous building - so the honest reading of the
+ * screen was that the click had not registered. Now the card you pressed says
+ * `Loading`, the grid stops taking clicks, and the sheet closes at the moment
+ * there is something new behind it. A failed switch leaves it open, because the
+ * next thing you want is to pick something else.
  */
-function pickTrack(slug) {
+async function pickTrack(slug) {
   if (slug === S.track.slug) { toggleTracks(false); return; }
   if (CFG.mode === 'room') {
     if (!S.isHost) { toast('Only the host can change the track'); return; }
+    // The room answers this for everybody at once over `track_change`, so there
+    // is nothing local to wait for and the sheet's work is done.
     S.socket.emit('set_track', { code: CFG.room, track: slug });
     toggleTracks(false);
     return;
   }
-  toggleTracks(false);
-  switchTrack(slug);
+  if (S.switching) return;                 // one at a time; the grid is dimmed anyway
+  S.switching = slug;
+  setSwitchBusy(slug, true);
+  const ok = await switchTrack(slug, { quiet: true });   // the card is the message
+  S.switching = null;
+  setSwitchBusy(slug, false);
+  if (ok) toggleTracks(false);
+}
+
+/** The clicked card, mid-switch: it says `Loading` and the rest stops taking clicks. */
+function setSwitchBusy(slug, on) {
+  const grid = $('tGrid');
+  if (!grid) return;
+  grid.classList.toggle('busy', on);
+  grid.querySelectorAll('[data-track]').forEach((el) => {
+    el.classList.toggle('busy', on && el.dataset.track === slug);
+  });
 }
 
 /** Which kind of session this is, shown under the track name. */
@@ -3731,11 +3764,96 @@ function renderBotControls(players, fromRoster) {
     : 'Add cars to race against. They practise, qualify and race.';
 }
 
-async function switchTrack(slug) {
+// ---------------------------------------------------------------------------
+// A track's own scenery, on a switch
+// ---------------------------------------------------------------------------
+// `tracks/<slug>/scenery.js` registers itself on `globalThis.DRIVE_SCENERY` and
+// `buildTrack` reads it back out of there - see the comment block in
+// trackmesh.js for why it is a global rather than an import. The play page
+// inlines the file for the track you *arrive* on, which is the whole story for
+// a page load and none of it for a switch: the switcher swaps the world without
+// navigating, so the second track's scenery has to be fetched.
+//
+// **It is not decoration and a switch may not proceed without it.** Costco's
+// building is 2834 wall triangles and Mount Joy's mountain is 14744 offroad
+// ones - most of each track's solid geometry, and Mount Joy has no `ground`
+// under it at all. A track built without its scenery is not a plainer version
+// of that track, it is a different one, and a lap driven on it would go to
+// /api/run as a time on this one.
+//
+// Still a classic `<script>` and not `import()`: the file is written to run at
+// parse time and assign a global, and `buildTrack` is synchronous.
+const sceneryLoads = new Map();       // slug -> the promise for its <script>
+
+const sceneryReady = (slug) => !!(globalThis.DRIVE_SCENERY || {})[slug];
+
+const trackCard = (slug) => (CFG.cards || []).find((c) => c.slug === slug);
+
+function ensureScenery(slug) {
+  // Already here: inlined by the page we arrived on, or fetched by an earlier
+  // switch. The registry is keyed by slug and never emptied, so switching away
+  // from the Costco and back costs nothing.
+  if (sceneryReady(slug)) return Promise.resolve();
+  // `scenery` rides down with the track summaries, so this is answerable before
+  // the click - which is what lets the switch ask for the scenery and the track
+  // payload at the same time instead of one after the other. A slug this page
+  // has never heard of is *tried* rather than skipped: skipping is the silent
+  // failure this whole function exists to stop.
+  const card = trackCard(slug);
+  if (card && !card.scenery) return Promise.resolve();
+  if (sceneryLoads.has(slug)) return sceneryLoads.get(slug);
+  const p = new Promise((ok, fail) => {
+    const s = document.createElement('script');
+    s.src = '/scenery/' + encodeURIComponent(slug) + '.js';
+    // Loaded is not the same as registered - a file that parses and assigns
+    // nothing leaves `buildTrack` exactly as badly off as no file at all.
+    s.onload = () => (sceneryReady(slug) ? ok() : fail(new Error(slug)));
+    s.onerror = () => fail(new Error(slug));
+    document.head.appendChild(s);
+  }).catch((e) => { sceneryLoads.delete(slug); throw e; });   // so a retry can work
+  sceneryLoads.set(slug, p);
+  return p;
+}
+
+/** Wait for the frame the caller's last DOM change is on to actually be drawn. */
+const painted = () => new Promise((ok) =>
+  requestAnimationFrame(() => requestAnimationFrame(ok)));
+
+/**
+ * Change the world to `slug`.
+ *
+ * `quiet` is for the switcher, whose card carries its own busy state - anywhere
+ * else (a room's host picking for everybody, arriving into a room already on
+ * another track) nothing on screen would otherwise explain the pause.
+ *
+ * Resolves true only if the switch actually happened, which is what tells the
+ * switcher whether to close.
+ */
+async function switchTrack(slug, opts = {}) {
+  const card = trackCard(slug);
+  if (!opts.quiet) toast('Loading ' + (card ? card.name : 'track') + '...');
   try {
-    const r = await fetch('/api/track/' + slug);
-    const t = await r.json();
-    if (!t || t.error) return;
+    // Together, not in sequence. A rejection here is a scenery we could not get,
+    // and it lands in the catch below with everything else that means "no".
+    const [t] = await Promise.all([
+      fetch('/api/track/' + slug).then((r) => r.json()),
+      ensureScenery(slug),
+    ]);
+    if (!t || t.error) { toast('Could not load that track'); return false; }
+    // The guard that actually decides, because it reads the payload rather than
+    // what this page knew about the pool when it booted. `ensureScenery` skips a
+    // track its card says ships none; if that card is stale, this is what
+    // catches it before the world is built wrong.
+    if (t.scenery && !sceneryReady(slug)) {
+      toast('Could not load ' + t.name);
+      return false;
+    }
+    // Everything below is synchronous and the build is most of it - hundreds of
+    // milliseconds on the big tracks, with the main thread locked for all of it.
+    // So give the browser a frame to paint whatever said this was happening
+    // before it stops being able to paint anything. Awaiting the fetch is
+    // usually enough on its own; this is what makes it always enough.
+    await painted();
     if (S.watch) stopWatching();
     S.raceMode = false; S.racePhase = 'free'; S.raceT0 = null;
     if ($('raceOver')) $('raceOver').style.display = 'none';
@@ -3760,7 +3878,8 @@ async function switchTrack(slug) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ track: slug }),
     }).catch(() => {});
-  } catch (e) { toast('Could not load that track'); }
+    return true;
+  } catch (e) { toast('Could not load that track'); return false; }
 }
 
 function onRaceStart(d) {

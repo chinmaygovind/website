@@ -32,6 +32,38 @@ the track cards, `/account`, `/leaderboard`, or the in-game board panel.
   on a menu whose only job is choosing where to drive. `_track_cards` therefore does
   not even send it. It is still on the board and the home page, which are for reading
   rather than picking.
+- **A switch has to carry the track's scenery with it, and for a long time it did
+  not.** `tracks/<slug>/scenery.js` registers itself on `globalThis.DRIVE_SCENERY`
+  and the play page inlines it - for the track you *arrive* on, and only that one.
+  `switchTrack` fetched the payload and built straight from it, so switching to the
+  Costco built a warehouse with no walls and switching to Mount Joy built a road with
+  no mountain and, since it declares `ground = None`, nothing under it at all. **Not
+  a cosmetic difference**: those are 2834 and 14744 collider triangles, most of each
+  track's solid geometry, so the lap you then drove was a lap on a different track
+  and it went to `/api/run` as a time on this one. It hit rooms hardest - the host
+  picking the Costco broke it for everybody, since `track_change` lands in the same
+  function. The fix is `ensureScenery` in game.js against `/scenery/<slug>.js`
+  (`track_scenery` in app.py), fetched **in parallel with** the payload rather than
+  after it: the `scenery` flag rides down with `summaries()`, so the switcher knows
+  before the click. **A scenery it cannot get abandons the switch** rather than
+  building without it, and the payload's own flag is re-checked after the fetch so a
+  stale card list cannot skip the load silently. `test_the_scenery_flag_and_the_
+  scenery_url_agree` is what holds the two halves together.
+- **The sheet stays open until the new world is up.** It used to close on the click,
+  which left you looking at the track you were trying to leave for as long as the
+  switch took - and on Mount Joy or the Costco that is a request plus several hundred
+  milliseconds of *synchronous* `buildTrack`, during which the page cannot paint at
+  all. The honest reading of that screen is that the click did not land, which is
+  what "the picker is slow" turned out to mean. Now the card you pressed carries a
+  `Loading` badge in the same corner as `Now`, `.tgrid.busy` dims the rest and stops
+  it taking clicks, and the sheet closes at the moment there is something new behind
+  it; a failed switch leaves it open, because the next thing you want is to pick
+  something else. `switchTrack` waits a **double `requestAnimationFrame`** after the
+  network and before the build - without it a warm cache goes from click to frozen
+  frame with the badge never drawn. In a room the host's sheet still closes on the
+  click, because the room answers for everybody at once over `track_change`; that
+  path and the join path pass `quiet: false` and get a toast instead, since nothing
+  else on their screen would explain the pause.
 - **The switcher's cards are photographs, not diagrams.** `tools/shoot_tracks.py`
   drives headless Chrome over every track with `?shot=1` (`S.shot` in game.js: HUD off,
   car hidden, camera behind the start line) and writes `static/img/tracks/<slug>.png`;

@@ -14,6 +14,12 @@ symptom is fast laps waiting in `drive_run_checks` forever.
 So this counts collider triangles rather than trusting the loop in
 `jsrt.bundle`, and `test_a_bundle_without_the_scenery_is_a_different_track` proves
 the count is actually sensitive to the thing it is watching.
+
+**The browser's two paths to the same file are tested in `test_app.py`** (search
+for `/scenery/`), not here: the play page inlines it for the track you arrive on
+and the switcher fetches it from `/scenery/<slug>.js` when you change track. They
+need the app rather than a JS engine, and everything in this file is skipped
+without quickjs.
 """
 
 import json

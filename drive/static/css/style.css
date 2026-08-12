@@ -884,14 +884,22 @@ body.room .solo-only { display: none; }
   border-bottom: 1px solid var(--line); position: relative;
 }
 /* "Now" only on the one you are driving, so the grid says where you are as well
-   as where you could go. */
-.tcard2-live { display: none; }
-.tcard2.active .tcard2-live {
+   as where you could go. "Loading" is the same badge in the same corner on the
+   one you have just clicked, because it is the same fact a moment early - and
+   the switch is worth saying out loud, since building Mount Joy or the Costco
+   locks the main thread for long enough that a silent sheet reads as a click
+   that did not land. */
+.tcard2-live, .tcard2-busy { display: none; }
+.tcard2.active .tcard2-live,
+.tcard2.busy .tcard2-busy {
   display: block; position: absolute; top: .35rem; left: .35rem;
   background: var(--red); color: #fff; font-size: .62rem; font-weight: 700;
   letter-spacing: .1em; text-transform: uppercase; padding: .1rem .35rem;
   border-radius: 4px;
 }
+/* Never both at once: the last thing a successful switch does is mark the card
+   active, a frame or two before the sheet closes over it. */
+.tcard2.busy .tcard2-live { display: none; }
 .tcard2-body { display: flex; flex-direction: column; gap: .25rem; padding: .5rem .6rem .6rem; }
 /* The name stays on one line and the pips stay on the right, so a long name
    cannot make one card taller than the two beside it. */
@@ -911,6 +919,12 @@ body.room .solo-only { display: none; }
 .tgrid.locked .tcard2 { cursor: default; opacity: .75; }
 .tgrid.locked .tcard2:hover { transform: none; border-color: var(--line); }
 .tgrid.locked .tcard2.active { opacity: 1; border-color: var(--red); }
+/* Mid-switch. The same shape as `locked` one line up - dim it and stop it taking
+   clicks - except that the card being waited on stays lit, since it is the one
+   the dimming is explaining. */
+.tgrid.busy .tcard2 { cursor: default; opacity: .55; pointer-events: none; }
+.tgrid.busy .tcard2:hover { transform: none; border-color: var(--line); }
+.tgrid.busy .tcard2.busy { opacity: 1; border-color: var(--red); }
 @media (max-width: 760px) { .tgrid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 480px) { .tgrid { grid-template-columns: 1fr; } }
 

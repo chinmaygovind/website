@@ -157,7 +157,12 @@ tracks/dockyard/
     palette.py    optional: PALETTE = {...}. Without one it gets a neutral default
                   that renders correctly on the first run.
     scenery.js    optional: mesh code only this track needs. Costco's is the
-                  worked example.
+                  worked example. It reaches the game three ways and all three
+                  matter: inlined by the play page for the track you arrive on,
+                  fetched from `/scenery/<slug>.js` by the switcher (a switch
+                  builds a new world without navigating), and bundled into
+                  QuickJS for the anti-cheat. Miss any one and that path builds
+                  the track without its collider, silently.
     hotlap.json   generated, not authored: the fast line the quick bots drive,
                   taken off a real lap on the board by `tools/hotlap.py`. Run it
                   once a record has been set here; without one the quick bots

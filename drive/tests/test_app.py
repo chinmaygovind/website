@@ -483,6 +483,82 @@ def test_the_track_dicts_are_not_mutated_by_serving_them(env):
     assert "record_ms" not in tracks_mod.get("sunrise")
 
 
+# --- a track's scenery, on a switch ----------------------------------------
+#
+# `tracks/<slug>/scenery.js` reaches the browser two ways: inlined by the play
+# page for the track you arrive on, and fetched from `/scenery/<slug>.js` by the
+# switcher, which swaps the world without navigating. (`jsrt` is the third
+# consumer and `test_scenery.py` covers it - these live here instead because
+# they need the app and not quickjs.)
+#
+# The switcher lost the second one for as long as it existed: it fetched the
+# track payload and built straight from it, so switching to the Costco built a
+# warehouse with no walls and switching to Mount Joy built a road with no
+# mountain under it. Not a cosmetic difference - both are most of their track's
+# collider - so the lap you then drove was a lap on a different track, submitted
+# to this one's board.
+
+def test_a_track_ships_its_scenery_to_the_switcher(env):
+    A = env
+    c = A.app.test_client()
+    r = c.get("/scenery/costco.js")
+    assert r.status_code == 200
+    assert "javascript" in r.headers["Content-Type"]
+    # It has to *register*, not merely parse: `buildTrack` looks the track up by
+    # slug in `globalThis.DRIVE_SCENERY` and a file that assigns nothing leaves
+    # it exactly as badly off as no file at all.
+    assert "DRIVE_SCENERY.costco" in r.get_data(as_text=True)
+    # Cacheable, because the switcher re-fetches on every session and this is
+    # 34kB. An hour, matching what nginx gives an un-tokened asset under
+    # `static/` - nothing can bust this URL, so it cannot be longer.
+    assert "max-age=3600" in r.headers["Cache-Control"]
+    assert r.headers.get("ETag")
+
+
+def test_only_a_pool_track_with_a_scenery_file_has_a_scenery_url(env):
+    """A 404 for everything else, and `slug` comes off the wire."""
+    A = env
+    c = A.app.test_client()
+    assert c.get("/scenery/sunrise.js").status_code == 404    # in the pool, no file
+    assert c.get("/scenery/nosuchtrack.js").status_code == 404
+    assert c.get("/scenery/...js").status_code == 404
+
+
+def test_the_scenery_flag_and_the_scenery_url_agree(env):
+    """The flag is what the browser decides on, so a wrong one is the old bug.
+
+    `ensureScenery` skips the fetch when the track says it ships no scenery, and
+    `buildTrack` then builds whatever it has. So a track whose flag says `false`
+    while a `scenery.js` sits on disk is the *same* silent missing-building
+    failure this route was added to fix, just moved one step earlier - and the
+    flag is derived from `track.py` while the URL is derived from the disk, so
+    the two can drift.
+
+    `test_scenery.py::test_a_track_that_ships_scenery_says_so` pins the other
+    half of it: `track.py`'s declaration against the file.
+    """
+    import tracks as tracks_mod
+    A = env
+    c = A.app.test_client()
+    checked = 0
+    for t in tracks_mod.summaries():
+        slug = t["slug"]
+        served = c.get("/scenery/%s.js" % slug).status_code == 200
+        assert t["scenery"] is served, (
+            "%s: the summaries say scenery=%r but /scenery/%s.js %s. The "
+            "switcher reads that flag to decide whether to fetch, so the "
+            "disagreeing one is a track that builds without its collider."
+            % (slug, t["scenery"], slug, "serves" if served else "404s"))
+        # The same answer on the payload the switcher actually builds from,
+        # which is the guard of last resort when a page's card list is stale.
+        assert c.get("/api/track/%s" % slug).get_json()["scenery"] is served
+        checked += 1
+    assert checked > 1
+    # And at least one of them says yes, or every assertion above passes by
+    # agreeing that nothing has any scenery.
+    assert any(t["scenery"] for t in tracks_mod.summaries())
+
+
 def test_the_account_tracks_are_in_the_same_order_as_everywhere_else(env):
     """The pool's order, the one the switcher and the home page use.
 

@@ -69,17 +69,31 @@ export function palette(track) {
 //     })();
 //
 // **A plain global rather than an import, and that is forced rather than lazy.**
-// The file is inlined into the play page as a classic `<script>`, which runs at
-// parse time - *before* any deferred module, so before this file has executed and
-// before an exported `registerScenery` would exist to call. The same shape is
-// what `window.DRIVE_TUNING` and `window.DRIVE_TRACK` already use, and it is what
-// lets `jsrt` concatenate these files into the QuickJS bundle unchanged.
+// The file is a classic `<script>`, which runs at parse time - *before* any
+// deferred module, so before this file has executed and before an exported
+// `registerScenery` would exist to call. The same shape is what
+// `window.DRIVE_TUNING` and `window.DRIVE_TRACK` already use, and it is what lets
+// `jsrt` concatenate these files into the QuickJS bundle unchanged.
+//
+// **Three things load it, and this registry is where they meet.** The play page
+// inlines the file for the track you arrive on. The switcher fetches it from
+// `/scenery/<slug>.js` (`ensureScenery` in game.js) when you change track,
+// because a switch swaps the world without navigating and nothing else would
+// bring the new track's scenery with it. And `jsrt` bundles every track's for
+// QuickJS. All three write the same global; the registry is keyed by slug and
+// never emptied, so a track already in it is never fetched twice.
 //
 // **It has to reach QuickJS, and getting that wrong is silent.** `verify.py` calls
 // `buildTrack` to re-drive a submitted lap, so the Costco's walls and racking are
 // in the collider the anti-cheat measures against. A bundle missing this file
 // verifies laps on a Costco with no building in it - and the symptom is not an
 // error, it is fast laps sitting in `drive_run_checks` forever.
+//
+// **The browser has the same failure the other way up**, and it is why a switch
+// that cannot get the scenery is abandoned rather than built without it: the
+// Costco's building and Mount Joy's mountain are most of each track's collider,
+// and a lap driven on the version without them is a lap on a different track
+// that would go on this one's board.
 //
 // Hooks are named because scenery cannot all happen at one moment: `props` runs
 // after the road and the scatter, which is where anything standing on the ground

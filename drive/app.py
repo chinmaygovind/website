@@ -1025,6 +1025,39 @@ def api_track(slug):
     return jsonify(track)
 
 
+@app.route("/scenery/<slug>.js")
+def track_scenery(slug):
+    """A track's own mesh code, for the switcher.
+
+    The play page *inlines* this for the track you arrive on (see the comment at
+    the foot of play.html), which is right for arrival and useless for a switch:
+    `switchTrack` swaps the world without navigating, so the second track's
+    scenery has to come from somewhere. Here.
+
+    Not decoration. Costco's building and Mount Joy's mountain are in the
+    collider - most of each track's solid geometry - so a switch that builds
+    without them is not a plainer version of the track, it is a different one,
+    and a lap driven on it would go to `/api/run` as a time on this one.
+
+    An hour of `max-age`, matching what nginx gives an un-tokened asset under
+    `static/`: nothing can bust this URL, and `send_from_directory` adds an ETag
+    so an edited file is still picked up on revalidate. Restricted to slugs in
+    the pool because `slug` comes off the wire.
+
+    **Served by Python and not by nginx**, which is against the rule the rest of
+    `static/` follows, deliberately. These files live in `tracks/<slug>/` rather
+    than under `static/`, so handing them to nginx means a second `alias` block
+    in the vhost - hand-managed, undone by a `certbot --nginx` renewal, and
+    silent when it goes. The bytes do not justify it: two tracks, ~60kB between
+    them, only on a switch onto one of them, and a 304 after the first. Move it
+    if a third and fourth track ship one.
+    """
+    if not tracks_mod.get(slug) or tracks_mod.scenery_path(slug) is None:
+        abort(404)
+    return send_from_directory(os.path.join(tracks_mod.HERE, slug), "scenery.js",
+                               mimetype="text/javascript", max_age=3600)
+
+
 @app.route("/api/last-track", methods=["POST"])
 def api_last_track():
     """The switcher saying where you have moved to.

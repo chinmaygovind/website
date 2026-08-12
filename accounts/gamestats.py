@@ -51,10 +51,17 @@ TIERS = {
 
 # Drive's tracks, so a lap on a profile reads "Jump City" rather than
 # "jumpcity". Copied for the same reason and with the same guard as the tiers
-# above: importing `drive/tracks.py` to ask costs 1.7 seconds of geometry
-# assembly at boot, in a process whose entire other job is serving static files,
-# to learn nine strings. `test_track_names_match_drive` reads that file and
-# fails when the pool changes.
+# above: importing `drive/tracks` to ask costs 1.7 seconds of geometry assembly
+# at boot - it builds every ribbon in the pool - in a process whose entire other
+# job is serving static files, to learn sixteen strings.
+# `test_track_names_match_drive` reads the pool and fails when the two disagree.
+#
+# **It went three tracks stale before anybody noticed**, and the guard was green
+# the whole time: it read `drive/tracks.py`, that file became the `drive/tracks/`
+# package, and `source()` *skipped* a file it could not find instead of failing.
+# So Spa, the Costco and Mount Joy were added, and every one of them appeared on
+# a profile as its slug. The guard reads the folders now and cannot skip while
+# drive is checked out.
 DRIVE_TRACKS = {
     "sunrise": "Sunrise Circuit",
     "chicane": "Chicane Park",
@@ -68,7 +75,10 @@ DRIVE_TRACKS = {
     "cove": "Sandy Cove",
     "pillars": "Cloudbreak",
     "rainbow": "Rainbow Road",
+    "spa": "Spa-Francorchamps",
+    "costco": "Costco Wholesale",
     "bigred": "Big Red",
+    "mountjoy": "Mount Joy",
 }
 
 
