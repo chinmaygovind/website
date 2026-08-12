@@ -509,6 +509,12 @@ class DrivePlayer(db.Model):
     seat_order = db.Column(db.Integer, default=0)
     is_host = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # A bot is an ordinary seat with nobody behind it - see `botsim`. It has no
+    # `user_id`, which is what makes it invisible to ELO and to the win and
+    # podium tallies by construction rather than by remembering to exclude it.
+    is_bot = db.Column(db.Boolean, default=False, index=True)
+    # Which of `bots.LEVELS` it drives at. Null for a person.
+    bot_level = db.Column(db.String(10), nullable=True)
 
     linked_user = db.relationship("User", foreign_keys="DrivePlayer.user_id", lazy="select")
 
@@ -550,6 +556,74 @@ class DrivePlayer(db.Model):
             "livery": livery,
             "seat_order": self.seat_order,
             "is_host": self.is_host,
-            "guest": self.user_id is None,
+            # A bot has no account, so it reads as a guest to everything that
+            # asks - which is right for the rating and wrong for the roster,
+            # where "GUEST" next to a car nobody is driving is a lie. Hence the
+            # two fields: `guest` stays what it was, and the room tags a bot
+            # with the level it drives at.
+            "guest": self.user_id is None and not self.is_bot,
+            "bot": bool(self.is_bot),
+            "level": self.bot_level if self.is_bot else None,
             "elo": elo,
         }
+
+
+# ---------------------------------------------------------------------------
+# The one migration
+# ---------------------------------------------------------------------------
+
+# Every other new thing in this file arrived as a whole **table**, because
+# ``create_all`` is ``CREATE TABLE IF NOT EXISTS`` and brings one into being on
+# the live database by itself - and that is the convention here precisely so
+# that nothing needs a hand-run migration over SSH.
+#
+# ``drive_players.is_bot`` could not be a table. A bot *is* a seat: it has to be
+# in the roster, on the grid, in the standings and in the stored replay, and all
+# four of those read ``game.players``. A parallel table would mean every one of
+# them learning about a second kind of player, which is four places to forget.
+#
+# So it is two columns and this is what adds them. Done in code rather than by
+# hand on the box for one reason: a mapped column that is missing from the table
+# makes **every** query against ``drive_players`` fail, so a deploy where
+# somebody forgot the ALTER is not a feature that does not work, it is Drive
+# down. Idempotent, dialect-agnostic enough for the SQLite this actually runs
+# on, and it costs one ``PRAGMA`` at boot.
+_ADDED = {
+    "drive_players": [
+        ("is_bot", "BOOLEAN DEFAULT 0"),
+        ("bot_level", "VARCHAR(10)"),
+    ],
+}
+
+
+def ensure_columns(app_db, log=None):
+    """Add any mapped column the live table does not have yet.
+
+    Loud on failure and does not raise: the next query will fail anyway and say
+    so far more precisely than a boot-time traceback with no context would.
+    """
+    from sqlalchemy import inspect, text
+    try:
+        insp = inspect(app_db.engine)
+        tables = set(insp.get_table_names())
+    except Exception as e:                                # pragma: no cover
+        if log:
+            log.warning("could not inspect the database for columns: %s", e)
+        return
+    for table, cols in _ADDED.items():
+        if table not in tables:
+            continue                                      # create_all made it
+        have = {c["name"] for c in insp.get_columns(table)}
+        for name, decl in cols:
+            if name in have:
+                continue
+            try:
+                with app_db.engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE %s ADD COLUMN %s %s"
+                                      % (table, name, decl)))
+                if log:
+                    log.warning("added %s.%s to the live database", table, name)
+            except Exception as e:                        # pragma: no cover
+                if log:
+                    log.error("could not add %s.%s (%s) - queries against %s "
+                              "will fail until it exists", table, name, e, table)

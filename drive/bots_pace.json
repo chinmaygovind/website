@@ -1,0 +1,290 @@
+{
+ "bigred": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.7829
+  },
+  "hard": {
+   "line": "relaxed",
+   "pace": 1.0856
+  },
+  "max": {
+   "line": "relaxed",
+   "pace": 1.0856
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.8766
+  }
+ },
+ "chicane": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.7878
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.93
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.02
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.8531
+  }
+ },
+ "costco": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.8253
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.95
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.02
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.9
+  }
+ },
+ "cove": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.8371
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.95
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.0
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.9174
+  }
+ },
+ "eight": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.8094
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.9367
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.02
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.8782
+  }
+ },
+ "gauntlet": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.8395
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.95
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.0
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.922
+  }
+ },
+ "heights": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.831
+  },
+  "hard": {
+   "line": "relaxed",
+   "pace": 1.0536
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.02
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.8909
+  }
+ },
+ "jumpcity": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.8042
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.95
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.0169
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.8933
+  }
+ },
+ "mountjoy": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.7956
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.95
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.0092
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.8848
+  }
+ },
+ "pillars": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.8432
+  },
+  "hard": {
+   "line": "relaxed",
+   "pace": 1.0856
+  },
+  "max": {
+   "line": "relaxed",
+   "pace": 1.0856
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.9346
+  }
+ },
+ "rainbow": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.8389
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.9263
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.02
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.9115
+  }
+ },
+ "skyline": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.8248
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.95
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.02
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.8953
+  }
+ },
+ "spa": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.8485
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.95
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.02
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.9209
+  }
+ },
+ "spiral": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.825
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.95
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.02
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.9
+  }
+ },
+ "sunrise": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.8209
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.9443
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.0165
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.8861
+  }
+ },
+ "twist": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.8326
+  },
+  "hard": {
+   "line": "relaxed",
+   "pace": 1.1328
+  },
+  "max": {
+   "line": "relaxed",
+   "pace": 1.1328
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.8948
+  }
+ }
+}

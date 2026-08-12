@@ -96,13 +96,27 @@ def bundle(extra=()):
 class Runtime:
     """A QuickJS context with the game code loaded."""
 
-    def __init__(self, memory_mb=512, seconds=600):
+    def __init__(self, memory_mb=512, seconds=600, extra=()):
+        """`extra` is more sources to append to the bundle.
+
+        The verifier's bundle is the game and nothing else, deliberately - it is
+        what a submitted lap is judged against, and anything else in there is
+        something that could change the verdict. So the bot driver is *not* in
+        the core list in `bundle()`; `botsim` passes it here instead, and the
+        anti-cheat's runtime stays exactly what it was.
+
+        `seconds` is a per-eval limit rather than a budget the context spends
+        down (quickjs resets its clock each `eval`), which is what makes it safe
+        on the long-lived runtime the room bots use: a single tick that somehow
+        never returns is killed, and the ordinary ones are unaffected however
+        many of them there have been.
+        """
         if not HAVE_QUICKJS:                          # pragma: no cover
             raise RuntimeError("quickjs is not installed")
         self.ctx = quickjs.Context()
         self.ctx.set_memory_limit(memory_mb * 1024 * 1024)
         self.ctx.set_time_limit(seconds)
-        self.ctx.eval(bundle())
+        self.ctx.eval(bundle(extra))
 
     def eval(self, code):
         return self.ctx.eval(code)

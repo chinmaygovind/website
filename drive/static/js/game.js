@@ -1574,6 +1574,9 @@ function livePhase() {
  * started.
  */
 function applyPhase() {
+  // The bot controls are disabled while a session is live, so they follow the
+  // phase as well as the roster.
+  renderBotControls(S.roster || []);
   if (CFG.mode !== 'room') return;
   const p = S.previewPhase || S.racePhase;      // `?panel=qual|racing`
   const [text, racing] = PHASE_LABEL[p] || PHASE_LABEL.free;
@@ -3234,6 +3237,37 @@ function connect() {
   $('btnWatchRace').onclick = () => {
     if (S.lastRaceId) location.href = '/race/' + S.lastRaceId;
   };
+  // The level rides on the button, so building a mixed field is one press per
+  // car rather than a trip through a dialog each time.
+  const botLevel = () => ($('botLevel') || {}).value || 'medium';
+  if ($('btnAddBot')) {
+    $('btnAddBot').onclick = () =>
+      socket.emit('add_bot', { code: CFG.room, level: botLevel() });
+  }
+  if ($('btnFillBots')) {
+    // Seating up to seven cars takes a round trip and, the first time a room is
+    // on a track, a collider build behind it. Saying so on the button is the
+    // whole fix for "it feels laggy": the press is acknowledged in the same
+    // frame, and the control then disappears rather than sitting there inviting
+    // a second fill of a grid that is already full.
+    $('btnFillBots').onclick = () => {
+      const b = $('btnFillBots');
+      if (b.disabled) return;
+      S.fillingBots = true;
+      b.disabled = true;
+      b.classList.add('busy');
+      setLabel(b, 'Adding racers…');
+      // If the server refuses - the room filled up from somewhere else between
+      // the render and the press - no roster arrives and nothing would ever put
+      // the button back. It is a stuck control either way; this way it unsticks.
+      clearTimeout(S.fillTimer);
+      S.fillTimer = setTimeout(() => {
+        S.fillingBots = false;
+        renderBotControls(S.roster || [], true);
+      }, 5000);
+      socket.emit('fill_bots', { code: CFG.room, level: botLevel() });
+    };
+  }
   $('optQual').onclick = (e) => {
     if (e.currentTarget.disabled) return;
     socket.emit('set_setting', { code: CFG.room, key: 'qualifying',
@@ -3634,12 +3668,14 @@ function renderRoster(players) {
       <span class="pl-name">${esc(p.name)}</span>
       ${p.is_host ? '<span class="tag">HOST</span>' : ''}
       ${p.guest ? '<span class="tag guest">GUEST</span>' : ''}
+      ${p.bot ? `<span class="tag lv lv-${esc(p.level || '')}">${esc((p.level || 'bot').toUpperCase())}</span>` : ''}
       ${p.elo != null ? `<span class="pl-elo">${p.elo}</span>` : ''}
       ${isHost && !p.is_host ? `<button class="kick" data-kick="${esc(p.pid)}">&times;</button>` : ''}
     </div>`).join('');
   $('roster').querySelectorAll('[data-kick]').forEach(b => {
     b.onclick = () => S.socket.emit('kick', { code: CFG.room, pid: b.dataset.kick });
   });
+  renderBotControls(players, true);
   for (const [pid, r] of S.remotes) {
     const meta = players.find(p => p.pid === pid);
     // Same as `addRemote`: the plate colour is the car's business, not the
@@ -3647,6 +3683,52 @@ function renderRoster(players) {
     // changes their display name.
     if (meta && meta.name !== r.name) { r.name = meta.name; r.view.setLabel(meta.name); }
   }
+}
+
+/**
+ * The host's bot controls, under the roster.
+ *
+ * Hidden entirely for everybody else rather than shown disabled, which is the
+ * opposite of what the qualifying switch does one panel down - and the
+ * difference is what the two things *are*. Qualifying is a rule of the room
+ * that everybody is about to race under, so everybody should be able to read
+ * it. This is a way of adding a car, and a control you cannot press is only
+ * worth showing when the state it displays is worth knowing.
+ *
+ * Disabled rather than hidden mid-race, because then the reason is temporary
+ * and worth saying.
+ */
+function renderBotControls(players, fromRoster) {
+  const box = $('botAdd');
+  if (!box) return;
+  if (!S.isHost || !CFG.bots) { box.style.display = 'none'; return; }
+  box.style.display = '';
+  const bots = players.filter(p => p.bot).length;
+  const full = players.length >= (CFG.maxRoom || 8);
+  const capped = bots >= (CFG.maxBots || 7);
+  const live = ['qual_countdown', 'qualifying', 'countdown', 'racing']
+    .includes(S.racePhase);
+  // A roster is the answer to the fill - the cars asked for are now in the list
+  // being drawn. Only a roster clears it: `applyPhase` also calls this, and
+  // clearing on that would put the button back mid-flight for no reason.
+  if (fromRoster && S.fillingBots) {
+    S.fillingBots = false;
+    clearTimeout(S.fillTimer);
+  }
+  const fill = $('btnFillBots');
+  if (!S.fillingBots) { fill.classList.remove('busy'); setLabel(fill, 'Fill the grid'); }
+  // Gone once there is nothing left to fill, rather than sitting there disabled:
+  // "+ Bot" one line up already carries the reason in `botNote`, and a dead
+  // control under a full grid is just something else to read.
+  fill.style.display = (full || capped) ? 'none' : '';
+  $('btnAddBot').disabled = full || capped || live;
+  fill.disabled = full || capped || live || S.fillingBots;
+  $('botNote').textContent =
+    live ? 'Bots can be added between races.'
+    : capped ? 'That is as many bots as a room takes.'
+    : full ? 'Every seat is taken.'
+    : bots ? bots + (bots === 1 ? ' bot in the room.' : ' bots in the room.')
+    : 'Add cars to race against. They practise, qualify and race.';
 }
 
 async function switchTrack(slug) {

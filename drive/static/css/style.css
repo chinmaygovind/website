@@ -1078,6 +1078,42 @@ body.touch.side-open .hud-tr { transform: none; }
 .pl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pl-elo { margin-left: auto; font-family: var(--mono); font-size: .75rem; color: #b9c2d0; }
 .kick { background: none; border: 0; color: #ff8a7a; cursor: pointer; font-size: 1rem; }
+/* A bot's tag is its level and not the word "bot", because the level is the
+   only part anybody needs while choosing who to race - that the car has nobody
+   in it is obvious from the four of them appearing at once. Coloured by how
+   quick it is, so a glance at the roster reads as a difficulty. */
+.tag.lv { color: var(--ink-soft); }
+.tag.lv-easy { color: #7fd4a0; }
+.tag.lv-medium { color: #7fc4ff; }
+.tag.lv-hard { color: #ffc46b; }
+.tag.lv-max { color: #ff8a7a; }
+
+/* --- adding bots ---------------------------------------------------------- */
+.bots { margin-top: .5rem; display: flex; flex-direction: column; gap: .35rem; }
+.bot-row { display: flex; gap: .4rem; align-items: center; }
+.bot-row select {
+  flex: 1; min-width: 0; font-family: var(--sans); font-size: .82rem;
+  padding: .3rem .4rem; color: #fff; background: rgba(255, 255, 255, .06);
+  border: 1px solid var(--hud-line); border-radius: 8px;
+}
+.bot-row .btn.small { width: auto; flex: 0 0 auto; }
+.bots .btn:disabled { opacity: .5; cursor: default; }
+/* "Fill the grid" is a `.btn.ghost`, which is transparent with `--ink` on it -
+   in this dark sidebar that is a grey word on a dark panel, sitting one line
+   above a genuinely greyed-out note, and it read as something already disabled.
+   It gets a face and a border here so it is visibly a thing you can press. */
+.bots .btn.ghost {
+  background: rgba(255, 255, 255, .07);
+  border: 1px solid var(--hud-line);
+  color: #fff;
+}
+.bots .btn.ghost:hover:not(:disabled) { background: rgba(255, 255, 255, .15); }
+/* While the seats are being made. The press has already been acknowledged by
+   the label changing, so the cursor should not also suggest it can be pressed
+   again - the second press would be a second fill. */
+.bots .btn.busy, .bots .btn.busy:hover {
+  background: rgba(255, 255, 255, .07); cursor: progress; opacity: .8;
+}
 
 /* --- the room's race settings --------------------------------------------
    A switch rather than a button that says what it will do next: this is a

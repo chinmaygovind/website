@@ -22,6 +22,7 @@ rest of the repo; any one of them is 11-28KB.
 | `docs/runs-and-scoring.md` | `/api/run`, `/api/start`, `/api/activity`, `runcheck.py`, `verify.py`, `laptime.py`, `pending.js`, medals, ghost recording, the anti-cheat |
 | `docs/racing-physics.md` | car-to-car contact, the slipstream, catch-up, remote-car interpolation, rival sound |
 | `docs/rooms-and-races.md` | the room phase machine, qualifying, the grid, ELO, socket handlers, `racecheck.py`, the race recorder, `/race/<id>` |
+| `docs/bots.md` | `bot.js`, `botworld.js`, `botsim.py`, `bots.py`, the hot laps in each track folder, adding a bot to a room |
 | `docs/garage.md` | `garage.py`, `garage.js`, `CarView`, the car model, liveries, decals |
 | `docs/badges.md` | adding, changing or recolouring a badge |
 | `docs/hud-and-controls.md` | the in-game HUD, the settings/help sheets, the keys, touch controls, `sound.js`, the type |
@@ -157,6 +158,10 @@ tracks/dockyard/
                   that renders correctly on the first run.
     scenery.js    optional: mesh code only this track needs. Costco's is the
                   worked example.
+    hotlap.json   generated, not authored: the fast line the quick bots drive,
+                  taken off a real lap on the board by `tools/hotlap.py`. Run it
+                  once a record has been set here; without one the quick bots
+                  drive the relaxed line and are slower. See `docs/bots.md`.
 ```
 
 Optional declarations in `track.py`: `ground` (None floats in the void), `order`

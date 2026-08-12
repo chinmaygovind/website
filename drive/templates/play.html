@@ -238,6 +238,31 @@
   <div>
     <h4>Room {{ room.code }}<button class="side-close" id="btnRoomClose" title="Hide">&times;</button></h4>
     <div id="roster"></div>
+    <!-- Bots.
+         Directly under the list of players, because that is what they are: a
+         bot takes a seat, has a name, appears in the standings and can be taken
+         off the grid with the same x as anybody else. Host only, and only
+         between races - adding a car to a grid that is already lit changes what
+         everybody is in the middle of.
+
+         The level sits on the button rather than in a dialog: the whole point
+         of a dropdown here is that adding a *hard* one and adding an *easy* one
+         are one press apart, which is how a mixed field gets built. -->
+    <div id="botAdd" class="bots" style="display:none">
+      <div class="bot-row">
+        {# Rendered from `bots.OFFERED` rather than written out here, so the one
+           place that decides which levels are ready to be raced is the one
+           place the server validates against. #}
+        <select id="botLevel" title="How quick the next bot is">
+          {% for lv, label in bot_levels %}
+          <option value="{{ lv }}"{% if lv == bot_default %} selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn small" id="btnAddBot">+ Bot</button>
+      </div>
+      <button class="btn ghost small" id="btnFillBots">Fill the grid</button>
+      <div class="setting-note" id="botNote"></div>
+    </div>
   </div>
   <!-- The invitation.
        Everything else about joining is a form on the lobbies page, which is
@@ -693,7 +718,13 @@
     {# The room the watcher still holds a seat in, so the way out of a replay can
        be the way back in. Read by `stopWatching`. #}
     backRoom: {{ back|tojson }},
-    nextTrack: {{ next_slug|tojson }}
+    nextTrack: {{ next_slug|tojson }},
+    {# Whether this server can run bots at all - it needs a JS engine, and
+       `DRIVE_BOTS=0` turns them off on the box without a deploy. The host's
+       controls are not drawn where they would do nothing. #}
+    bots: {{ 'true' if bots_on else 'false' }},
+    maxBots: {{ max_bots }},
+    maxRoom: {{ max_room }}
   };
   {% if pb_ms %}window.DRIVE_CFG.pbs["{{ track.slug }}"] = {{ pb_ms }};{% endif %}
 </script>

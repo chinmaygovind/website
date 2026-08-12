@@ -30,6 +30,8 @@ import laptime
 import runcheck
 import racecheck
 import visits
+import bots as bots_mod
+import botsim
 import garage as garage_mod
 # The palette and the hash moved into `garage.py`, with the rest of what a car
 # is allowed to look like. Imported by name here because five routes call it.
@@ -95,6 +97,11 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
 with app.app_context():
     db.create_all()  # creates drive_* tables; never touches the shared users table
+    # And the one thing `create_all` cannot do - see `models.ensure_columns`.
+    # `drive_players` grew two columns for the room's bots, and a mapped column
+    # the table does not have makes every query against it fail, so this runs
+    # here rather than being a step somebody has to remember over SSH.
+    models_mod.ensure_columns(db, log=app.logger)
 
 # Every request logged, and this service's players marked as here. `visits.py`
 # is one file copied into all five services and is byte-identical in each - the
@@ -334,6 +341,18 @@ def inject_globals():
             # and the play page overrides it in JS, because there the track can
             # change under the page with no navigation at all.
             "presence_where": PRESENCE_BY_ENDPOINT.get(request.endpoint or "", "home"),
+            # Facts about this server rather than about a page: whether it can
+            # run bots at all (it needs a JS engine, and `DRIVE_BOTS=0` turns
+            # them off on the box without a deploy) and how many cars fit. Here
+            # rather than passed by each route because `play.html` is rendered
+            # by three of them and a room is only one.
+            "bots_on": botsim.available(),
+            "max_bots": botsim.MAX_BOTS,
+            "max_room": MAX_ROOM,
+            "bot_levels": [(lv, bots_mod.LABEL[lv]) for lv in bots_mod.OFFERED],
+            "bot_default": (bots_mod.DEFAULT_LEVEL
+                            if bots_mod.DEFAULT_LEVEL in bots_mod.OFFERED
+                            else bots_mod.OFFERED[0]),
             "asset_version": ASSET_VERSION}
 
 
@@ -1662,7 +1681,8 @@ def _leave_other_rooms(sk, keep_code=None):
             db.session.delete(p)
             db.session.commit()
             remaining = sorted(g.players, key=lambda q: q.seat_order)
-            if not remaining:
+            # Bots do not keep a room alive; see `_drop`.
+            if not any(not q.is_bot for q in remaining):
                 _delete_game(g)
             else:
                 if p.is_host and not any(q.is_host for q in remaining):
@@ -1769,7 +1789,22 @@ def join():
     already = DrivePlayer.query.filter_by(game_id=game.id, session_key=sk).first()
     if not already:
         if len(game.players) >= game.max_players:
-            return jsonify({"ok": False, "error": "That room is full."}), 409
+            # **A person takes a bot's seat.** A room that has filled its grid
+            # with bots is not full in any sense that should keep somebody out -
+            # the bots are there because there was nobody else - so the slowest
+            # one stands down. Slowest rather than newest, because the field is
+            # there to race and the easy one is the least of it.
+            order = {lv: i for i, lv in enumerate(bots_mod.LEVELS)}
+            spare = sorted((p for p in game.players if p.is_bot),
+                           key=lambda p: order.get(p.bot_level, 0))
+            if not spare:
+                return jsonify({"ok": False, "error": "That room is full."}), 409
+            db.session.delete(spare[0])
+            db.session.commit()
+            r = _rooms.get(code)
+            if r:
+                r["cars"].pop(spare[0].pid, None)
+                _sync_bots(r, game)
         if game.is_private and game.passcode and passcode != game.passcode:
             return jsonify({"ok": False, "error": "Wrong passcode."}), 403
         _leave_other_rooms(sk)
@@ -1810,6 +1845,10 @@ def _delete_game(game):
         db.session.delete(p)
     _rooms.pop(game.code, None)
     _locks.pop(game.code, None)
+    # The bot world outlives the room state unless it is told, and it is the
+    # expensive thing here: a QuickJS world holding a built track is tens of
+    # megabytes on a box with about a gigabyte across five services.
+    botsim.drop(game.code)
     db.session.delete(game)
     db.session.commit()
 
@@ -2049,6 +2088,244 @@ def _pending(r):
             and not r["cars"][pid]["dnf"]]
 
 
+# ---------------------------------------------------------------------------
+# Bots in a room
+# ---------------------------------------------------------------------------
+# A bot is an ordinary seat (`DrivePlayer.is_bot`) whose car is stepped by the
+# server instead of by a browser - see `botsim` for why the server and not the
+# host's tab. Everything downstream of a pose treats it as any other car: the
+# snapshot carries it, the standings order it, the replay records it, the
+# slipstream tows off it, and it can be hit. Two things are deliberately *not*
+# true of it: it never reaches ELO (no `user_id`, the same door a guest comes
+# through) and it is never judged by the anti-cheat, which would flag the quick
+# ones for taking exactly the shortcuts they were taught.
+
+def _bot_pids(r):
+    return r.get("bots") or {}
+
+
+def _humans(r):
+    """Everyone here who is a person: a fresh pose, not gone, not a bot.
+
+    The room's own liveness is measured on this and never on `_live`, because a
+    room with bots in it produces poses for ever - so an empty one would keep
+    its pump, its bot world and any race it was in the middle of alive until
+    somebody happened to come back.
+    """
+    bots = _bot_pids(r)
+    return [pid for pid in _live(r) if pid not in bots]
+
+
+def _bot_world(r, create=False):
+    slug = r.get("bot_slug")
+    if not slug or not botsim.available():
+        return None
+    return botsim.world(r["code"], slug, create=create)
+
+
+def _bot_humans(r):
+    """The people, in the shape `botsim` hands to the driver.
+
+    A bot is given the same picture of the room everybody else has: where the
+    real cars are, how fast they are going and how far round they have got. The
+    poses are up to a tick old, which is exactly as stale as every car in this
+    game is to every browser other than its own.
+    """
+    out = []
+    bots = _bot_pids(r)
+    now = _now_ms()
+    for pid, c in r["cars"].items():
+        if pid in bots or c["gone"] or now - c["ts"] > POSE_STALE_MS:
+            continue
+        out.append({"pid": pid, "x": c["p"][0], "y": c["p"][1], "z": c["p"][2],
+                    "qx": c["q"][0], "qy": c["q"][1], "qz": c["q"][2],
+                    "qw": c["q"][3],
+                    "vx": c["v"][0], "vy": c["v"][1], "vz": c["v"][2],
+                    "prog": c["prog"],
+                    "done": c["ms"] is not None or c["dnf"]})
+    return out
+
+
+def _tick_bots(r):
+    """Step this room's bots and write their poses in as though they had sent them.
+
+    Called from `_pump`, so it runs at `TICK_HZ` on the same greenlet that fans
+    out the snapshot. The `dt` is measured rather than assumed: `eventlet.sleep`
+    is a floor and not a promise, and a bot stepped by a nominal 33ms while 40
+    really elapsed drifts behind the people it is racing.
+    """
+    if not r.get("bots"):
+        return
+    w = _bot_world(r)
+    if w is None:
+        return
+    now = _now_ms()
+    last = r.get("bot_t")
+    r["bot_t"] = now
+    if last is None:
+        return                       # first tick has no interval to step over
+    dt = (now - last) / 1000.0
+    # Clamped for the same reason `Stepper` has `MAX_STEPS`: a worker that was
+    # busy for a second must not fast-forward the field a second up the road.
+    if dt <= 0:
+        return
+    dt = min(dt, 0.25)
+    # Seconds since the green light, which is the only thing a bot needs the
+    # clock for: its reaction time off the line. `None` outside a race, so a bot
+    # in practice simply drives.
+    since = None
+    if r["phase"] == "racing" and r.get("t0"):
+        since = (now - r["t0"]) / 1000.0
+    try:
+        poses, events = w.tick(dt, _bot_humans(r), now, r["phase"], since)
+    except Exception:
+        # A bot world that has thrown is not worth taking the room down for.
+        # Drop it: the seats stay, the cars stop appearing, and the race carries
+        # on for the people in it.
+        app.logger.exception("bot world failed in room %s; dropping it", r["code"])
+        botsim.drop(r["code"])
+        r["bots"] = {}
+        return
+    for row in poses:
+        c = _car(r, row[0])
+        c["p"] = [row[1], row[2], row[3]]
+        c["q"] = [row[4], row[5], row[6], row[7]]
+        c["v"] = [row[8], row[9], row[10]]
+        c["prog"] = row[11]
+        c["cp"] = int(row[12])
+        c["flags"] = int(row[13])
+        c["sl"] = row[14]
+        c["ts"] = now
+    if events:
+        _bot_events(r, events, now)
+
+
+def _bot_events(r, events, now):
+    """A bot reached a checkpoint or crossed the line. Do what the room does.
+
+    The same three things `on_split`, `on_qual_time` and `on_finish` do for a
+    person, minus every check in them: those exist to bound what a *client*
+    claims, and there is no client here - the number came from the server's own
+    simulation of the server's own car.
+    """
+    w = _bot_world(r)
+    for pid, evs in events:
+        for ev in evs:
+            kind, a = ev[0], ev[1]
+            ms = ev[2] if len(ev) > 2 else 0
+            if kind == "cp":
+                if r["phase"] == "racing" and pid in r["grid"]:
+                    mine = r["splits"].setdefault(pid, {})
+                    if a not in mine:
+                        mine[a] = ms
+                        socketio.emit("race_split", {"pid": pid, "cp": a, "ms": ms},
+                                      room="room:" + r["code"])
+            elif kind == "finish":
+                _bot_finished(r, pid, a, w, now)
+
+
+def _bot_finished(r, pid, ms, w, now):
+    """A bot got to the end of its lap, in whichever session it was driving."""
+    code = r["code"]
+    if r["phase"] == "racing":
+        if pid not in r["grid"]:
+            return
+        c = _car(r, pid)
+        if c["ms"] is not None or c["dnf"]:
+            return
+        seq = r["race_seq"]
+        c["ms"] = ms
+        r["finish"].append({"pid": pid, "name": c["name"], "ms": ms,
+                            "color": c["color"]})
+        r["finish"].sort(key=lambda e: e["ms"])
+        if r["deadline"] is None:
+            r["deadline"] = _now_ms() + FINISH_GRACE_MS
+            eventlet.spawn_after(FINISH_GRACE_MS / 1000.0,
+                                 _close_race, code, "timeout", seq)
+        socketio.emit("race_progress", _race_state(r), room="room:" + code)
+        _maybe_close(code, seq)
+        return
+
+    if r["phase"] == "qualifying":
+        best = r["qual"].get(pid)
+        if best is None or ms < best:
+            r["qual"][pid] = ms
+            socketio.emit("qual_progress", {"qual": _qual_state(r)},
+                          room="room:" + code)
+            _bot_pole(r, pid, ms, w)
+    # Practice and qualifying both send it straight back out for another lap -
+    # a bot that finishes once and then parks is not practising, and a
+    # qualifying session with one lap in it is not a session.
+    if w is not None and r["phase"] in ("free", "qualifying"):
+        w.restart(pid, r.get("bot_slot", {}).get(pid, 0), now)
+
+
+def _bot_pole(r, pid, ms, w):
+    """A bot has gone quickest in qualifying, so its lap becomes the room's ghost.
+
+    Worth having rather than skipping: the one ghost a session is about is
+    whoever is on pole, and a max bot's lap is the most useful target in the
+    room - it is the record's own line, driven.
+
+    `runcheck.leaves_course` is deliberately **not** applied, unlike the check on
+    a person's pole lap. That check asks whether a replay stayed near the road,
+    and the quick levels are driving a line that jumps clean across a loop on
+    four tracks in this pool. It exists to stop a *client* fabricating a ghost
+    for the room to chase; this one came from the room's own simulation.
+    """
+    if w is None:
+        return
+    if r["pole"] and r["pole"]["ms"] <= ms:
+        return
+    frames = w.ghost_of(pid)
+    if not _sane_frames(frames):
+        return
+    c = _car(r, pid)
+    r["pole"] = {"pid": pid, "name": c["name"], "color": c["color"], "ms": ms,
+                 "hz": runcheck.GHOST_HZ, "frames": frames}
+    socketio.emit("qual_pole", _pole_meta(r), room="room:" + r["code"])
+
+
+def _sync_bots(r, game):
+    """Make the live bot world match the seats in the database.
+
+    One place, called from every path that can change either side - a bot added
+    or kicked, a track changed, a room joined. The seats are the truth and the
+    world is derived, which is the `_hot_track` rule again: a derived thing with
+    a single writer can be stale and rebuilt, but it can never contradict.
+    """
+    if not botsim.available():
+        return
+    seats = [p for p in game.players if p.is_bot]
+    if not seats:
+        if r.get("bots"):
+            botsim.drop(r["code"])
+        r["bots"] = {}
+        return
+    r["bot_slug"] = game.track
+    w = botsim.world(r["code"], game.track, create=True)
+    if w is None:
+        return
+    want = {p.pid: (p.bot_level or bots_mod.DEFAULT_LEVEL) for p in seats}
+    have = dict(w.bots)
+    for pid in have:
+        if pid not in want:
+            w.remove(pid)
+    holders = garage_mod.records_held()
+    leaders = garage_mod.time_trial_leaders()
+    for i, p in enumerate(seats):
+        if p.pid in w.bots:
+            continue
+        # Seeded off the seat, so a bot makes the same mistakes for as long as
+        # it is in the room and two bots never make them together.
+        w.add(p.pid, want[p.pid], seed=p.id * 7919 + i)
+        c = _car(r, p.pid)
+        seat = p.to_dict(_livery_for(None, holders, p.name, leaders))
+        c["name"], c["color"] = p.name, seat["color"]
+    r["bots"] = dict(w.bots)
+    r["bot_slot"] = {p.pid: i for i, p in enumerate(seats)}
+
+
 def _hard_race_ms(slug):
     """The longest a race on this track may possibly last.
 
@@ -2115,18 +2392,27 @@ def _reverse_grid(r):
 
 
 def _pump(code):
-    """Per-room broadcast loop: one merged snapshot per tick while anyone is here."""
+    """Per-room broadcast loop: one merged snapshot per tick while anyone is here.
+
+    The bots are stepped from here too, immediately before the snapshot that
+    carries them, so a bot's pose is the freshest thing in the packet rather
+    than a tick old.
+    """
     idle = 0
     while True:
         eventlet.sleep(1.0 / TICK_HZ)
         r = _rooms.get(code)
         if not r:
             return
+        _tick_bots(r)
         snap = _snapshot(r)
         _record_race(r)
-        if snap["cars"]:
+        # **Idle is measured on the people, not on the cars.** A room with bots
+        # in it never stops producing poses, so a pump that asked "did anybody
+        # report" would keep a deserted room and its whole bot world alive for
+        # ever - and the race in it could never end either.
+        if _humans(r):
             idle = 0
-            socketio.emit("poses", snap, room="room:" + code)
         else:
             idle += 1
             # An empty room in the middle of a race is a race that can never
@@ -2137,6 +2423,8 @@ def _pump(code):
             if idle > TICK_HZ * 20:      # nobody has sent a pose in 20s
                 r["loop"] = None
                 return
+        if snap["cars"]:
+            socketio.emit("poses", snap, room="room:" + code)
 
 
 def _record_race(r):
@@ -2255,6 +2543,10 @@ def on_join_room(data=None):
     # mid-race puts you back on the road, it does not put you back in the race
     # you dropped out of.
     c["gone"] = False
+    # Rebuild the bot world if the room state was swept while nobody was here.
+    # Derived from the seats and single-writer, so a miss costs a rebuild and
+    # can never contradict the roster - the `_hot_track` rule again.
+    _sync_bots(r, game)
     _ensure_pump(code)
     game.last_activity_at = datetime.utcnow()
     db.session.commit()
@@ -2409,6 +2701,10 @@ def on_set_track(data=None):
         db.session.commit()
         r["trk"] = None                  # `_hot_track`'s memo; this is its writer
         _reset_race(r)
+        # A new track is a new world: a different ribbon, a different collider
+        # and a different fast line. `_sync_bots` notices the slug moved and
+        # rebuilds, which is the same rule `_hot_track` follows one line up.
+        _sync_bots(r, game)
     socketio.emit("track_change", {"track": slug}, room="room:" + code)
     _broadcast_lobbies()
 
@@ -2444,6 +2740,113 @@ def on_set_setting(data=None):
     socketio.emit("room_settings", out, room="room:" + code)
 
 
+def _seat_bot(game, level, commit=True):
+    """Add one bot seat to a room. Returns the row, or None if it is full.
+
+    `commit=False` is for filling the grid, which seats up to seven in a row:
+    a commit each was seven write transactions before the roster went out, and
+    the press felt like it had not registered. The caller commits once.
+    """
+    if len(game.players) >= game.max_players:
+        return None
+    # Checked against what is *offered* rather than what exists, so a level that
+    # is not ready cannot be reached by editing one field in a socket payload.
+    if level not in bots_mod.OFFERED:
+        level = bots_mod.DEFAULT_LEVEL
+    used = {p.name for p in game.players}
+    name = bots_mod.pick_name(used)
+    seat = max((p.seat_order for p in game.players), default=-1) + 1
+    p = DrivePlayer(game_id=game.id, user_id=None,
+                    session_key="bot_%s" % uuid.uuid4().hex[:12],
+                    name=name, color=color_for(name), seat_order=seat,
+                    is_host=False, is_bot=True, bot_level=level)
+    db.session.add(p)
+    # `flush` gets the row an id without a write transaction, but **it does not
+    # expire anything**, and `game.players` is a loaded collection that stays
+    # cached until something does. A commit used to be what expired it. Without
+    # the explicit expire the fill loop re-reads a `game.players` that never
+    # grows, so `len(...) >= max_players` is never true and it seats bots until
+    # the process is killed - and every seat computes the same `seat_order`.
+    # One SELECT per bot, against seven write transactions before.
+    db.session.flush()
+    if commit:
+        db.session.commit()
+    else:
+        db.session.expire(game, ["players"])
+    return p
+
+
+def _host_room(code):
+    """`(game, room)` if this socket is the host of a room that can take bots.
+
+    The one gate for both bot commands: it is the host's field to set, and it
+    is set **between races** for the same reason the track and the qualifying
+    switch are - adding a car to a grid that is already lit changes what
+    everybody is in the middle of.
+    """
+    game = DriveGame.query.filter_by(code=code).first()
+    if not game:
+        return None, None
+    me = DrivePlayer.query.filter_by(game_id=game.id,
+                                     session_key=get_session_key()).first()
+    if not me or not me.is_host:
+        return None, None
+    r = _room(code)
+    if r["phase"] in LIVE_PHASES:
+        emit("room_error", {"error": "Can't change the bots mid-race."})
+        return None, None
+    return game, r
+
+
+@socketio.on("add_bot")
+def on_add_bot(data=None):
+    """Host-only: seat one bot at the chosen level."""
+    code = (data or {}).get("code", "").upper()
+    if not botsim.available():
+        emit("room_error", {"error": "Bots are switched off on this server."})
+        return
+    with _lock(code):
+        game, r = _host_room(code)
+        if not game:
+            return
+        if len([p for p in game.players if p.is_bot]) >= botsim.MAX_BOTS:
+            emit("room_error", {"error": "That is as many bots as a room takes."})
+            return
+        if not _seat_bot(game, (data or {}).get("level")):
+            emit("room_error", {"error": "The room is full."})
+            return
+        _sync_bots(r, game)
+    _broadcast_roster(game)
+
+
+@socketio.on("fill_bots")
+def on_fill_bots(data=None):
+    """Host-only: fill every empty seat with bots at the chosen level."""
+    code = (data or {}).get("code", "").upper()
+    if not botsim.available():
+        emit("room_error", {"error": "Bots are switched off on this server."})
+        return
+    with _lock(code):
+        game, r = _host_room(code)
+        if not game:
+            return
+        level = (data or {}).get("level")
+        added = 0
+        while len(game.players) < game.max_players:
+            if len([p for p in game.players if p.is_bot]) >= botsim.MAX_BOTS:
+                break
+            if not _seat_bot(game, level, commit=False):
+                break
+            added += 1
+        if not added:
+            db.session.rollback()
+            emit("room_error", {"error": "There is no room for another car."})
+            return
+        db.session.commit()
+        _sync_bots(r, game)
+    _broadcast_roster(game)
+
+
 def _reset_race(r):
     """Put the room back to free practice with nothing left over.
 
@@ -2473,6 +2876,11 @@ def _reset_race(r):
     # line the car is no longer on.
     for w in r.get("watch", {}).values():
         w.reset()
+    # And the bots go back out on the road. Same reasoning as the watchers: they
+    # are mid-lap in a session that no longer exists.
+    world = _bot_world(r)
+    if world is not None:
+        world.release()
 
 
 def _abort_race(code, why):
@@ -2782,6 +3190,12 @@ def _light_grid(code, seq, track, grid=None):
                               room="room:" + code)
                 return
             r["grid"] = grid
+            # The bots line up with everybody else, on the slots the same grid
+            # handed them, and are held there for the lights.
+            world = _bot_world(r)
+            if world is not None:
+                world.place_grid({pid: n for pid, n in grid.items()
+                                  if pid in _bot_pids(r)})
             r["races_run"] += 1
             r["phase"] = "countdown"
             r["t0"] = _now_ms() + COUNTDOWN_MS
@@ -2838,6 +3252,11 @@ def _go_green(code, seq):
             # against the grid slot the car is genuinely sitting on.
             for w in r.get("watch", {}).values():
                 w.reset()
+            # The bots' clock is the room's clock: they start the lap they are
+            # timed on at the same instant everybody else does.
+            world = _bot_world(r)
+            if world is not None:
+                world.green(t0)
         socketio.emit("race_green", {"t0": t0}, room="room:" + code)
         # The backstop. Every other way a race ends depends on somebody doing
         # something; this one does not.
@@ -3176,7 +3595,16 @@ def _judge_race(r):
     rec = r.get("rec") or {}
     track = tracks_mod.get(rec.get("track") or "")
     out = {}
+    bots = _bot_pids(r)
     for pid in r.get("grid", {}):
+        # **A bot is never judged.** Every rule in `racecheck` is about whether
+        # a *client* could have driven what it claims, and a bot has no client:
+        # its poses are the server's own simulation of the server's own car. It
+        # would also fail - the quick levels drive a line that jumps clean
+        # across a loop, which is exactly what the corridor check is looking
+        # for - and the finding would go in a table about people cheating.
+        if pid in bots:
+            continue
         reasons = {}
         w = r.get("watch", {}).get(pid)
         flagged = False
@@ -3369,7 +3797,11 @@ def _drop(sid, hard):
         db.session.delete(me)
         db.session.commit()
         remaining = sorted(game.players, key=lambda p: p.seat_order)
-        if not remaining:
+        # **A room of nothing but bots is an empty room.** They cannot leave,
+        # cannot host, and would otherwise hold the seat count above zero for
+        # ever - the room would sit in the lobby list with four cars going round
+        # it and nobody in it.
+        if not any(not p.is_bot for p in remaining):
             socketio.emit("room_closed", {"reason": "Everyone left."},
                           room="room:" + code)
             _delete_game(game)
@@ -3397,6 +3829,7 @@ def on_kick(data=None):
         if not target or target.is_host:
             return
         socketio.emit("kicked", {"pid": pid}, room="room:" + code)
+        was_bot = target.is_bot
         db.session.delete(target)
         db.session.commit()
         r = _rooms.get(code)
@@ -3407,6 +3840,11 @@ def on_kick(data=None):
                 c["dnf"], c["gone"] = True, True
             else:
                 r["cars"].pop(pid, None)
+            # The x on a bot's row is how a bot is removed - there is no second
+            # control for it, because "take that car off the grid" is the same
+            # thing whoever is driving it.
+            if was_bot:
+                _sync_bots(r, game)
         _broadcast_roster(game)
     _maybe_close(code)
 
@@ -3425,8 +3863,12 @@ def _stale_cleanup():
             for game in DriveGame.query.filter(DriveGame.status != "ended").all():
                 seen = game.last_activity_at or game.created_at
                 live = _rooms.get(game.code)
-                busy = bool(live and _live(live))
-                if not game.players or (not busy and seen and seen < cutoff):
+                # Busy means *people*. Bots report a pose thirty times a second
+                # for as long as the pump runs, so asking `_live` here would
+                # make a deserted room with a bot in it immortal.
+                busy = bool(live and _humans(live))
+                humans = [p for p in game.players if not p.is_bot]
+                if not humans or (not busy and seen and seen < cutoff):
                     socketio.emit("room_closed", {"reason": "Room expired."},
                                   room="room:" + game.code)
                     _delete_game(game)
