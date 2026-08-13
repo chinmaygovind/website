@@ -4,7 +4,7 @@ A bot called "Bot 3" is furniture. A bot called `xX_kimi_Xx` or `LEWIS_44` is
 somebody in the room, and the first time one of them beats you it matters more
 than it should. That is the whole argument for this file.
 
-So: a list of racing first names, put through the transformations a person
+So: a small list of racing names, put through the transformations a person
 actually uses when a username is taken - case, separators, leetspeak, a number
 that means something, a suffix off a streaming platform - and a second list of
 racing words to pair them with. Seeded, so the committed `bot_names.txt` is
@@ -29,52 +29,52 @@ MAX_LEN = 16
 DEFAULT_COUNT = 500
 SEED = 20260811
 
-# The base pool: names off a grid, a banking or a bedroom wall. First names and
-# surnames together and undifferentiated, because a username does not care which
-# it started as - `senna_33` and `ayrton_33` are both somebody's handle.
-BASE = """
-ayrton senna alain prost michael schumacher lewis hamilton max verstappen
-sebastian vettel fernando alonso kimi raikkonen mika hakkinen nigel mansell
-damon hill graham nelson piquet niki lauda jackie stewart jim clark fangio
-stirling moss james hunt jochen rindt gilles villeneuve jacques gerhard berger
-rubens barrichello mark webber jenson button nico rosberg daniel ricciardo
-lando norris charles leclerc george russell carlos sainz pierre gasly esteban
-ocon yuki tsunoda oscar piastri sergio perez valtteri bottas felipe massa
-juanpablo montoya david coulthard eddie irvine martin brundle johnny herbert
-jean alesi olivier panis jarno trulli giancarlo fisichella heikki kovalainen
-robert kubica nick heidfeld romain grosjean nico hulkenberg kevin magnussen
-lance stroll alex albon guanyu zhou logan sargeant franco colapinto liam lawson
-ollie bearman isack hadjar kimi antonelli jack doohan gabriel bortoleto
-keke rosberg jody scheckter emerson fittipaldi ronnie peterson didier pironi
-elio deangelis stefan bellof riccardo patrese rene arnoux patrick tambay
-dale earnhardt jeff gordon richard petty jimmie johnson darrell waltrip
-cale yarborough bobby allison davey bill elliott kyle busch kevin harvick
-tony stewart joey logano denny hamlin martin truex brad keselowski ryan blaney
-kyle larson alex bowman austin dillon bubba wallace terry labonte dale jarrett
-mark martin ricky rudd matt kenseth carl edwards greg biffle ryan newman
-lightning mcqueen mater doc hudson hornet sally ramone flo luigi guido sarge
-fillmore chick hicks strip weathers dinoco cruz ramirez jackson storm smokey
-francesco bernoulli holley shiftwell finn mcmissile miles axlerod sheriff
-dan gurney mario andretti aj foyt al unser bobby rahal helio castroneves
-dario franchitti scott dixon will power josef newgarden alex palou danica
-jacky ickx derek bell tom kristensen allan mcnish michele alboreto
-sebastien loeb ogier tommi makinen colin mcrae richard burns petter solberg
-kalle rovanpera ott tanak ken block travis pastrana juha kankkunen ari vatanen
-bjorn waldegard didier auriol marcus gronholm valentino rossi marc marquez
-giacomo agostini mike hailwood barry sheene kenny roberts
+# How many decorations to try on one drawn name before giving up on it.
+TRIES = 60
+
+# The pool is four small lists and every name in it is equally likely - see
+# POOL. First names and surnames go in together and undifferentiated, because a
+# username does not care which it started as: `senna_33` and `ayrton_33` are
+# both somebody's handle.
+
+# The 2026 grid, by team. Eleven teams under the new regulations, Cadillac
+# being the eleventh.
+F1 = """
+lando norris oscar piastri
+charles leclerc lewis hamilton
+max verstappen isack hadjar
+george russell kimi antonelli
+fernando alonso lance stroll
+pierre gasly franco colapinto
+alex albon carlos sainz
+liam lawson arvid lindblad
+esteban ocon oliver bearman
+nico hulkenberg gabriel bortoleto
+sergio perez valtteri bottas
 """.split()
 
-# The people who will actually be in these rooms. Deliberately a **tiny** slice
-# of the pool - see FRIEND_SHARE - so that turning up on the grid against one is
-# a thing that happens now and then rather than a room full of your mates.
+# Five off the wall behind the grid. Kept to five on purpose: the whole point of
+# a short pool is that you see the same handful of names all evening and start
+# to know which of them is quick.
+LEGENDS = """
+ayrton senna michael schumacher fangio niki lauda alain prost
+""".split()
+
+# The people who will actually be in these rooms.
 FRIENDS = """
-chinmay govind krish mittal reuben james sahil barapatre nihar bagkar
-shreya satheesh sritanvi koneru ameya chaudhari maxwell zhang roberto tamez
-danny gallagher celia tung peenengineering
+chinmay govind krish mittal shreya satheesh sritanvi koneru reuben james
+sahil barapatre nihar bagkar arjun suryawanshi celia tung peengineering
+maxwell zhang roberto
 """.split()
 
-# How much of the pool comes from that list. 4% of 500 is about twenty names.
-FRIEND_SHARE = 0.04
+CARS = """
+lightning mcqueen mater doc hudson sally chick hicks
+""".split()
+
+# Uniform means uniform over *this*, so a name that appears in two of the lists
+# above must not get two tickets. Order-preserving so the file stays a readable
+# diff rather than reshuffling on a set's whim.
+POOL = list(dict.fromkeys(F1 + LEGENDS + FRIENDS + CARS))
 
 # How often a name is paired with a racing word at all. Most usernames are a
 # name and a number; the word is the occasional one, not the house style.
@@ -123,15 +123,15 @@ def _case(word, rng):
     return "".join(c.upper() if i % 2 else c for i, c in enumerate(word))
 
 
-def _one(rng):
+def _one(rng, name=None):
     """One username, by whichever recipe the dice pick.
 
-    The name comes first and the decoration second, which is the order that
-    keeps the two shares above meaning what they say: `FRIEND_SHARE` of these
-    are somebody's actual mate, `PAIR_SHARE` of them get a racing word, and the
-    rest are the ordinary case/number/leetspeak business.
+    The name comes first and the decoration second. Every name in `POOL` is
+    equally likely; `PAIR_SHARE` of them then get a racing word and the rest are
+    the ordinary case/number/leetspeak business.
     """
-    name = rng.choice(FRIENDS if rng.random() < FRIEND_SHARE else BASE)
+    if name is None:
+        name = rng.choice(POOL)
 
     if rng.random() < PAIR_SHARE:
         word = rng.choice(RACING)
@@ -162,24 +162,38 @@ def _one(rng):
 
 
 def generate(count=DEFAULT_COUNT, seed=SEED):
-    """`count` distinct names, deterministically."""
+    """`count` distinct names, deterministically.
+
+    Returns `(names, unused)`, where `unused` is every entry of `POOL` that
+    reached the file zero times - see the retry below for why that can happen
+    and why it is worth saying out loud.
+    """
     rng = random.Random(seed)
-    out, seen = [], set()
+    out, seen, used = [], set(), set()
     # Bounded rather than `while True`: the recipes above can only make so many
     # short names, and a generator that cannot reach the count should say so by
     # returning fewer rather than by spinning.
     for _ in range(count * 400):
         if len(out) >= count:
             break
-        n = _one(rng)
-        if len(n) > MAX_LEN or len(n) < 3:
-            continue
-        key = n.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(n)
-    return out
+        # The name is drawn once and then decorated up to TRIES times, rather
+        # than redrawn on every miss. A long name fits only two or three of the
+        # recipes under MAX_LEN, so redrawing would quietly turn "uniform over
+        # POOL" into "uniform over the short half of POOL" - `peengineering`
+        # would have been in the pool and never once in the file.
+        name = rng.choice(POOL)
+        for _ in range(TRIES):
+            n = _one(rng, name)
+            if len(n) > MAX_LEN or len(n) < 3:
+                continue
+            key = n.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(n)
+            used.add(name)
+            break
+    return out, [n for n in POOL if n not in used]
 
 
 def main(argv=None):
@@ -190,7 +204,7 @@ def main(argv=None):
                     help="print them instead of writing the file")
     args = ap.parse_args(argv)
 
-    names = generate(args.count, args.seed)
+    names, unused = generate(args.count, args.seed)
     if args.show:
         for n in names:
             print(n)
@@ -200,7 +214,12 @@ def main(argv=None):
         f.write("\n".join(names) + "\n")
     print("%d names -> %s" % (len(names), path))
     if len(names) < args.count:
-        print("(the recipes ran out before %d; widen FIRST or MAX_LEN)" % args.count)
+        print("(the recipes ran out before %d; widen POOL or MAX_LEN)" % args.count)
+    # A pool entry too long to survive MAX_LEN is in the list and not in the
+    # game, which looks like nothing at all. Say it.
+    if unused:
+        print("(never fit MAX_LEN=%d, so nobody races as them: %s)"
+              % (MAX_LEN, ", ".join(unused)))
     return 0
 
 
