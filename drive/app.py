@@ -204,6 +204,19 @@ def _now_ms():
 # every flag at the wrong host.
 MAIN_SITE_URL = os.environ.get("MAIN_SITE_URL", "https://cgovind.com").rstrip("/")
 
+# Drive's own public origin. Only the share card needs it: `og:image` has to be
+# an absolute URL and nothing that reads one ever sees a relative path resolved.
+# It cannot come from `request` - there is no ProxyFix here, so behind nginx
+# Flask believes every request arrived over http, and a card served as http on
+# an https-only site is the sort of thing that quietly fails to render.
+SELF_URL = os.environ.get("DRIVE_URL", "https://drive.cgovind.com").rstrip("/")
+
+# One sentence, kept the same as `static/manifest.json`'s `description`. There is
+# no way to share the string with a JSON file that the browser reads directly, so
+# if you change one, change the other.
+OG_DESCRIPTION = ("Low-poly time trials and multiplayer races. Pick a track, "
+                  "chase the medal times, bump your friends off the road.")
+
 
 # ---------------------------------------------------------------------------
 # Auth helpers (shared with TTR/ERS/KoT via the users table + session cookie)
@@ -335,6 +348,9 @@ def inject_globals():
             # rather than four, so a game refers to it by absolute URL - see
             # `UserProfile.flag_path`, which returns the path half.
             "site_url": MAIN_SITE_URL,
+            # Drive's own origin and one-liner, for the share card in base.html.
+            "drive_url": SELF_URL,
+            "og_description": OG_DESCRIPTION,
             # What the heartbeat in base.html says about this page. Derived
             # from the endpoint rather than passed by each route, so a new page
             # gets a sensible answer without anybody remembering to add one -
@@ -463,6 +479,18 @@ def logout():
     session.pop("user_id", None)
     session.pop("guest_name", None)
     return redirect(url_for("index"))
+
+
+@app.route("/favicon.ico")
+def favicon():
+    """The icon for everything that never reads the `<link>` tags.
+
+    Feed readers, crawlers, chat unfurlers and older browsers all just ask the
+    origin root for `/favicon.ico`, and until this existed they got Drive's 404
+    page. The file itself is rendered from `icon.svg` like every other raster.
+    """
+    return send_from_directory(os.path.join(app.static_folder, "img"),
+                               "favicon.ico", mimetype="image/vnd.microsoft.icon")
 
 
 @app.route("/sw.js")

@@ -262,6 +262,15 @@ than 15% or move a corner more than 8 degrees before refusing.
   otherwise would. See `docs/testing.md`.
 - **Re-run `tools/shoot_tracks.py` after changing a track's geometry or sky.** A
   test asserts the preview files exist; nothing can notice that one is stale.
+- **`static/img/icon.svg` is the only drawing of the mark, and everything else
+  in `static/img` that is a picture of it is output.** The seven rasters and the
+  1200x630 share card are all rendered from it by `tools/shoot_icon.py`, so edit
+  the SVG and re-run the tool - never touch a PNG. Same failure mode as the track
+  previews: nothing detects a stale one. The split in that tool is deliberate -
+  the SVG, the two small PNGs and the `.ico` are transparent so the mark can sit
+  on the nav's paper untiled, while the app icons are painted over `--paper`
+  because iOS mattes a transparent apple-touch-icon onto black and Android crops
+  a maskable icon to a circle.
 - Tests: `scripts/tests.sh drive` - about 1000 tests in about a minute, **run
   serially on purpose** (see `docs/testing.md`). A third of that is the anti-cheat driving
   real laps and re-driving them, which is the price of the one test that

@@ -1,23 +1,69 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
   <title>Drive</title>
-  <rect width="64" height="64" rx="10" fill="#4d5460"/>
-  <!-- road markings -->
-  <g fill="#f2f2f2" opacity=".55">
-    <rect x="30.5" y="2" width="3" height="9" rx="1.5"/>
-    <rect x="30.5" y="53" width="3" height="9" rx="1.5"/>
-  </g>
-  <g fill="#f2f2f2" opacity=".8">
-    <rect x="5" y="4" width="3" height="56"/>
-    <rect x="56" y="4" width="3" height="56"/>
-  </g>
-  <!-- car, seen from above -->
-  <g>
-    <rect x="16" y="19" width="7" height="9" rx="2" fill="#1c1f26"/>
-    <rect x="41" y="19" width="7" height="9" rx="2" fill="#1c1f26"/>
-    <rect x="16" y="37" width="7" height="9" rx="2" fill="#1c1f26"/>
-    <rect x="41" y="37" width="7" height="9" rx="2" fill="#1c1f26"/>
-    <rect x="19" y="14" width="26" height="37" rx="7" fill="#c0182b"/>
-    <rect x="23" y="20" width="18" height="10" rx="3" fill="#2b3240"/>
-    <rect x="23" y="38" width="18" height="7" rx="3" fill="#8f0f1e"/>
+  <!-- A three-spoke racing wheel, held at fifteen degrees of lock.
+
+       **The turn is the mark.** Drawn square on, a wheel is a parts diagram, and
+       no amount of detail rescues that - the thing looked plain because it was
+       posed, not because it was underdrawn. Fifteen degrees is a wheel somebody
+       is driving. It costs nothing at any size (a rotation cannot cost pixels)
+       and it fixes the old off-centre complaint for free: the spokes sit at
+       2:30, 6:00 and 9:30, so the gap across the top is 150 degrees against 105
+       elsewhere, and square on that gap reads as a missing twelve o'clock spoke.
+       Turned, it reads as lock.
+
+       **Nothing at twelve.** A real wheel has a marker there and three attempts
+       at drawing one were all rejected, correctly: a block, a hairline and a tab
+       all read as a sticker applied to the rim rather than as part of it. The
+       alternatives are worse - milling a notch through the rim reads as damage
+       and swelling the rim reads as a lump. The wheel is asymmetric enough now
+       that it does not need one.
+
+       **The detail is mechanical, not applied.** Spokes wide at the hub, waisted
+       through the middle where a real one carries no load, flared into a foot at
+       the rim; a lightening slot along each; six bolts round the boss; and a 1.3
+       hairline of a third, lighter grey inside the rim, which is the lit face of
+       a round tube and is what stops the rim reading as a flat ring. All of it
+       is gone by 24px, which is the point of putting it in the shapes rather
+       than in colour: what survives at 16 is the ring, the Y and the dark
+       centre, and that was always going to be all that survived.
+
+       **No background.** The mark is the wheel and nothing else, so it sits on
+       the nav's paper without a tile. That decides the greys - dark rim, light
+       spokes, which is the way round that works on a light ground - and it means
+       the SVG, the two small rasters and the .ico are transparent while the
+       *app* icons are not. iOS mattes a transparent apple-touch-icon onto black
+       and Android crops a maskable one to a circle, so `tools/shoot_icon.py`
+       paints those over paper before writing them.
+
+       Nothing crosses 25.1 units from the centre, which keeps the whole mark
+       inside the circle Android crops to. -->
+  <defs>
+    <path id="drive-spoke" d="M28.30 34.50C28.30 37.90 30.05 40.80 30.05 45.00C30.05 48.80 28.65 50.00 28.65 54.60L35.35 54.60C35.35 50.00 33.95 48.80 33.95 45.00C33.95 40.80 35.70 37.90 35.70 34.50Z"/>
+    <rect id="drive-slot" x="31.05" y="42.30" width="1.90" height="6.40" rx=".95" fill="#000"/>
+    <mask id="drive-drill">
+      <rect width="64" height="64" fill="#fff"/>
+      <use href="#drive-slot"/>
+      <use href="#drive-slot" transform="rotate(105 32 32)"/>
+      <use href="#drive-slot" transform="rotate(-105 32 32)"/>
+    </mask>
+  </defs>
+  <g transform="rotate(15 32 32)">
+    <g fill="#949ca8" mask="url(#drive-drill)">
+      <use href="#drive-spoke"/>
+      <use href="#drive-spoke" transform="rotate(105 32 32)"/>
+      <use href="#drive-spoke" transform="rotate(-105 32 32)"/>
+    </g>
+    <circle cx="32" cy="32" r="22" fill="none" stroke="#3d444d" stroke-width="6.2"/>
+    <circle cx="32" cy="32" r="19.6" fill="none" stroke="#5c6672" stroke-width="1.3"/>
+    <circle cx="32" cy="32" r="9.3" fill="#949ca8"/>
+    <circle cx="32" cy="32" r="5.1" fill="#3d444d"/>
+    <g fill="#3d444d">
+      <circle cx="35.58" cy="25.81" r=".95"/>
+      <circle cx="39.15" cy="32.00" r=".95"/>
+      <circle cx="35.58" cy="38.19" r=".95"/>
+      <circle cx="28.43" cy="38.19" r=".95"/>
+      <circle cx="24.85" cy="32.00" r=".95"/>
+      <circle cx="28.43" cy="25.81" r=".95"/>
+    </g>
   </g>
 </svg>
