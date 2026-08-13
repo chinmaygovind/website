@@ -629,3 +629,211 @@ input[type=file] { font: inherit; font-size: 1rem; max-width: 100%; }
   .grid { grid-template-columns: repeat(3, 1fr); }
   .cell b { font-size: 1.5rem; }
 }
+
+/* ---- admin console ------------------------------------------------------
+ *
+ * Same voice as the rest of this file - xkcd Script, drawn borders, the four
+ * game accents - carrying something the rest of the site never has to: dense
+ * tables. So this section is mostly the two things a table of visits needs
+ * that a profile does not.
+ *
+ *   a monospace column   Paths, IP addresses and session ids are strings you
+ *                        read character by character, and xkcd Script is a
+ *                        handwriting font. They get a real mono face; the
+ *                        prose around them does not.
+ *   one truncation rule  `.clip` ellipsises rather than wraps, because a
+ *                        60-character path that wraps makes its row twice as
+ *                        tall as the twelve either side of it and the eye
+ *                        loses the column. The full value is always in a
+ *                        title attribute.
+ *
+ * The console is also the one page here allowed to be wide: eight columns of
+ * session at 1100px is eight columns of ellipsis.
+ */
+
+.page.admin { width: min(1500px, 96vw); }
+
+.adminbar {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  margin-bottom: 1.4rem;
+  padding-bottom: .8rem;
+  border-bottom: 3px solid var(--charcoal);
+  font-size: 1.15rem;
+}
+.adminbar b { font-weight: normal; font-size: 1.4rem; }
+.adminbar a { color: var(--ink); }
+.adminbar a.on { color: var(--link); text-decoration: underline; }
+.spacer { margin-left: auto; }
+
+/* ---- tiles -------------------------------------------------------------- */
+
+/* Four across rather than the profile's five: these labels are phrases
+   ("page views · 3,910 crawler") where a profile's are single words. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: .3rem 1.2rem;
+}
+.tiles.four { grid-template-columns: repeat(4, 1fr); }
+.tiles .cell b.small { font-size: 1.15rem; }
+/* The only number on the page that is true for the next two minutes rather
+   than for ever, so it is the only one wearing a colour. */
+.tiles .cell b.live { color: var(--good); }
+
+.split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.4rem;
+  margin-top: 1.1rem;
+  padding-top: .9rem;
+  border-top: 2px dashed var(--hair);
+  font-size: 1.05rem;
+}
+.sp { display: inline-flex; align-items: baseline; gap: .4rem; }
+.sp::before {
+  content: "";
+  width: 11px; height: 11px; border-radius: 3px;
+  background: var(--tag, var(--charcoal));
+  align-self: center;
+}
+.sp b { font-weight: normal; font-size: 1.3rem; }
+
+/* ---- traffic bars ------------------------------------------------------- */
+
+.chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 120px;
+  margin-top: 1rem;
+  padding: 0 .1rem;
+  border-bottom: 2px solid var(--charcoal);
+}
+.bar { flex: 1; height: 100%; display: flex; align-items: flex-end; min-width: 3px; }
+/* Two segments, not two bars: the pale full-height block is everything that
+   hit the site that day and the solid part of it is the people, so the ratio
+   is readable without a legend. */
+.stack {
+  width: 100%;
+  position: relative;
+  background: var(--hair);
+  border-radius: 2px 2px 0 0;
+  min-height: 1px;
+}
+.hum {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  background: var(--charcoal);
+  border-radius: 2px 2px 0 0;
+}
+.bar:hover .hum { background: var(--link); }
+.chart-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: .9rem;
+  color: var(--muted);
+  margin-top: .35rem;
+}
+
+/* ---- tables ------------------------------------------------------------- */
+
+/* Deliberately `auto` and not `table-layout: fixed`. Fixed shares the width out
+   from the declared widths and lets anything too big simply spill, and every
+   numeric column here is `width: 1%` (the usual "be as narrow as your content"
+   trick) - under fixed that meant literally 1%, so with `nowrap` on top of it
+   the counts overlapped the column beside them and the headers read
+   "Gabant seen" and "PageBrowser". Under auto, `width: 1%` does what it is
+   there for, and the long cells are held by a real `max-width` on `.clip`. */
+.tbl {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 1.05rem;
+  margin-top: .8rem;
+}
+.tbl th {
+  text-align: left;
+  font-weight: normal;
+  color: var(--muted);
+  font-size: .95rem;
+  padding: .3rem .6rem .45rem 0;
+  border-bottom: 2px solid var(--charcoal);
+  white-space: nowrap;
+}
+.tbl td {
+  padding: .42rem .6rem .42rem 0;
+  border-bottom: 1px solid var(--hair);
+  vertical-align: middle;
+}
+.tbl tr:last-child td { border-bottom: 0; }
+.tbl tbody tr:hover td { background: color-mix(in srgb, var(--link) 5%, transparent); }
+.tbl .num { text-align: right; white-space: nowrap; width: 1%; }
+.tbl th.num { text-align: right; }
+.tbl .bad { color: var(--bad); }
+.tbl.compact td { padding: .28rem .5rem .28rem 0; font-size: 1rem; }
+/* A crawler's row is kept and greyed rather than dropped - see visits.py's
+   own rule about flagging rather than filtering. */
+.isbot td { opacity: .55; }
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .92rem;
+}
+.dim { color: var(--muted); }
+/* A real length, because it is what stops a 90-character path from setting the
+   width of the whole table. Ellipsis rather than wrap: a cell that wraps makes
+   its row twice as tall as the twelve either side of it and the eye loses the
+   column. The full value is in a title attribute every time this is used. */
+.clip {
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The clickpath's own column, where the path *is* the content of the page. */
+.tbl td.clip.wide { max-width: 34rem; }
+
+.who { display: inline-flex; align-items: center; gap: .45rem; color: var(--ink); }
+.who .av-sm { flex: 0 0 auto; }
+.who:hover { color: var(--link); }
+.anon { font-style: italic; }
+
+.gtag {
+  display: inline-block;
+  font-size: .82rem;
+  padding: .05rem .4rem;
+  border: 2px solid var(--tag, var(--hair));
+  border-radius: 7px 9px 8px 10px;
+  color: var(--tag, var(--muted));
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.tagbot {
+  font-size: .78rem;
+  border: 1px solid var(--hair);
+  border-radius: 6px;
+  padding: 0 .3rem;
+  color: var(--muted);
+}
+.verb { font-size: .8rem; color: var(--bad); }
+.elo { font-size: .82rem; color: var(--muted); margin-left: .3rem; }
+
+/* ---- controls ----------------------------------------------------------- */
+
+.filters { display: flex; align-items: center; gap: .5rem; margin-top: 1rem; flex-wrap: wrap; }
+.btn.tiny { padding: .25rem .7rem; font-size: .95rem; }
+.btn.on { border-color: var(--link); color: var(--link); }
+
+.pager { display: flex; align-items: center; gap: 1rem; margin-top: 1.2rem; }
+.more { display: inline-block; margin-top: .9rem; font-size: 1.05rem; }
+.person.static { cursor: default; }
+.person.static:hover { text-decoration: none; }
+
+@media (max-width: 1100px) {
+  .tiles, .tiles.four { grid-template-columns: repeat(2, 1fr); }
+  /* Below this the eight session columns cannot all be honest, so the table
+     scrolls sideways inside its card rather than crushing every column to an
+     ellipsis. */
+  .card > .tbl { display: block; overflow-x: auto; white-space: nowrap; }
+}

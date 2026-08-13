@@ -76,11 +76,27 @@ def init_app(app: Flask):
                 link="/accounts/settings", link_text="Back to settings"), 413
         return "That upload is too large.", 413
 
+    # Who may read /admin. A comma-separated list of usernames, defaulting to
+    # the one account that would ever be on it - which matters operationally,
+    # because the deploy never touches the box's .env, so a console that
+    # *required* a new variable there would be dark until somebody SSHed in.
+    # In config rather than read at import so a test can move it: the app is
+    # built once per test session, long before any individual test runs.
+    app.config["ADMIN_USERNAMES"] = os.environ.get("ADMIN_USERNAMES", "chinmay")
+
     _configure_sqlite(app, database_url)
     db.init_app(app)
 
     from .routes import bp
     app.register_blueprint(bp)
+
+    # The admin console. Its own blueprint rather than more routes on the one
+    # above, for two reasons: it mounts at /admin rather than under /accounts,
+    # and a blueprint is what lets one `before_request` gate every route on it
+    # by construction instead of by a decorator somebody has to remember. See
+    # `accounts/admin.py`.
+    from .admin import bp as admin_bp
+    app.register_blueprint(admin_bp)
 
     with app.app_context():
         # Creates `user_profiles` and nothing else that isn't already there -

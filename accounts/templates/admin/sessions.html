@@ -1,0 +1,52 @@
+{% extends "admin/base.html" %}
+{% import "admin/_bits.html" as ad with context %}
+{% block heading %}Sessions{% endblock %}
+
+{% block body %}
+<div class="card">
+  <h2>Sessions</h2>
+  <p class="muted">A session is a run of requests from one browser with no gap
+  longer than half an hour - closing the tab and coming back after lunch is two,
+  reading one page for ten minutes is one. Click a start time to follow that
+  visitor page by page.</p>
+
+  <div class="filters">
+    <span class="muted tiny">Window</span>
+    {% for d in [1, 7, 30, 90, 365] %}
+      <a class="btn tiny {{ 'on' if days == d }}"
+         href="{{ url_for('admin.session_list', days=d, bots=1 if bots else none) }}">
+        {{ d }}d</a>
+    {% endfor %}
+    <span class="spacer"></span>
+    <a class="btn tiny {{ 'on' if bots }}"
+       href="{{ url_for('admin.session_list', days=days, bots=none if bots else 1) }}">
+      {{ 'crawlers shown' if bots else 'crawlers hidden' }}</a>
+  </div>
+
+  {% if no_log %}
+  <p class="empty">There's no readable visit log on this box, so there's nothing
+  to list.</p>
+  {% else %}
+  <p class="muted tiny">{{ total|commas }} session{{ '' if total == 1 else 's' }}
+  in the last {{ days }} days{% if not bots %}, crawlers excluded{% endif %}.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  {{ ad.sessiontable(rows) }}
+
+  {% if pages > 1 %}
+  <div class="pager">
+    {% if page > 1 %}
+      <a class="btn" href="{{ url_for('admin.session_list', page=page - 1, days=days,
+                                      bots=1 if bots else none) }}">← newer</a>
+    {% endif %}
+    <span class="muted">page {{ page }} of {{ pages }}</span>
+    {% if page < pages %}
+      <a class="btn" href="{{ url_for('admin.session_list', page=page + 1, days=days,
+                                      bots=1 if bots else none) }}">older →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

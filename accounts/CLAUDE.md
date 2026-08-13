@@ -193,9 +193,77 @@ green dot.** Two tables in the shared database, both created by raw
   around to play", and somebody in the middle of King of Tokyo is somebody you
   can ask.
 
+### The admin console (`accounts/admin.py`)
+
+**`cgovind.com/admin`, and only for Chinmay.** It collects nothing: five
+services have been writing `site_visits` for months and the only thing that ever
+read it back was the green dot, so this is the missing *read* path rather than a
+new pipeline. Its own blueprint (not more routes on `accounts.bp`) because it
+mounts outside `/accounts` and because a blueprint is what lets one
+`before_request` gate every route by construction.
+
+- **A stranger gets a plain 404**, logged out or logged in as somebody else —
+  the same Mario page any missing address gets. A 403 saying "not for you" is a
+  403 saying "there is a console here", and nothing links to this one.
+- **`strict_slashes=False` on every route is part of that gate, not tidiness.**
+  Werkzeug raises its missing-trailing-slash redirect during *routing*, before
+  any `before_request` runs, so with the default `/admin` answered a logged-out
+  stranger with a 308 to `/admin/` while every other missing path answered 404 —
+  and that difference is the console announcing itself. Matching both spellings
+  on one rule leaves no redirect to leak. `test_the_console_never_redirects_a_
+  stranger` compares the status against a genuinely absent page rather than
+  hard-coding 404, so it still means something if that ever changes.
+- **Who counts as an admin is `ADMIN_USERNAMES` in app config**, comma
+  separated, defaulting to `chinmay`. In config rather than read at import so a
+  test can move it; defaulted because **the deploy never touches the box
+  `.env`**, so a console that required a new variable there would be dark until
+  somebody SSHed in. A bot account holding the name is still refused.
+- **Read-only, and that is a security property.** No POST anywhere, so no CSRF
+  surface and no confirmation dialog to mis-wire; if the gate ever failed the
+  worst case is a disclosure rather than a deleted account. A test walks the
+  routing table and asserts every rule is GET-only.
+- **Four pages**: an overview (tiles, 30-day traffic, who is online, newest
+  accounts, recent sessions, recent games, top pages, referrers, Drive's
+  flagged laps), the full session list (paginated, `?days=`, `?bots=1`), one
+  session's clickpath, and every account. The clickpath is the reason for the
+  drill-down — following one visitor from the referrer that sent them to the
+  dead link they left on is the thing the log was always worth keeping for.
+- **Games are counted from each game's own table, never by summing
+  `*_stats.games_played`** — that column is per player, so one four-handed game
+  of KoT would count as four. TTR is `COUNT(DISTINCT game_code)`, ERS/KoT are
+  their `_games` rows with `status='ended'`, Drive is **`drive_races`** (a
+  per-race table with an indexed `created_at` that `gamestats.py` does not use,
+  because it needs one player's standings where this needs a total). **Drive's
+  solo laps are a separate tile**, because a lap alone against the clock is not
+  a game and folding it in would make one number mean two things.
+- **`drive_cheat_flags` is finally read.** Its docstring said it "is written and
+  never queried, which is the intended state until there is something to read it
+  with"; this is that something. Shown as a tally per rule rather than a
+  verdict, since the checks are deliberately calibrated to be wrong in the
+  harmless direction — a dozen of one rule is a bad connection, hundreds of one
+  rule is somebody's own build of the game.
+- **Crawlers are hidden by default and never dropped**, keeping `visits.py`'s
+  own flag-don't-filter rule and adding the toggle: "recent activity" is
+  otherwise mostly Googlebot, and every count prints the crawler figure beside
+  it.
+- **One query for the session list**, using window functions over
+  `PARTITION BY session_id` and taking the `rn = 1` row, so the landing page
+  arrives with the aggregates instead of costing a query per row. `MAX(user_id)`
+  over the partition is what credits a visit that started anonymous and then
+  logged in to the person who logged in.
+- **Every window is bounded** (30 days, `?days=` up to 365) and rides
+  `ix_visits_ts`; an unbounded version would degrade quietly as the table grows
+  rather than loudly.
+- **Two things not to repeat.** The tables are `table-layout: auto`, because
+  under `fixed` the `width: 1%` numeric columns were *literally* 1% and their
+  `nowrap` contents overlapped the column beside them — the headers read
+  "Gabant seen" and "PageBrowser". And nothing sorts on `.timestamp()`:
+  `datetime.min.timestamp()` raises on macOS, which made `?sort=seen` a 500 for
+  every account that had never been seen.
+
 ### Tests
 
-`scripts/tests.sh site` — 166 tests, about 15s, plus the `import app` check the
+`scripts/tests.sh site` — 213 tests, about 15s, plus the `import app` check the
 deploy used to be. `tests/test_no_drift.py` is the one to know about: five
 services each own a copy of `User` and now of `UserProfile`, which is this
 repo's convention and the right one for five things that deploy separately, but

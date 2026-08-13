@@ -1,0 +1,238 @@
+{% extends "admin/base.html" %}
+{% import "admin/_bits.html" as ad with context %}
+{% import "accounts/_bits.html" as bits with context %}
+{% block heading %}Overview{% endblock %}
+
+{% block body %}
+
+{# ---- the numbers -------------------------------------------------------- #}
+<div class="card">
+  <h2>cgovind.com, last {{ days }} days</h2>
+  <div class="tiles">
+    <div class="cell">
+      <b>{{ stats.accounts|commas }}</b>
+      <span>accounts{% if stats.bots %} · {{ stats.bots }} bot{{ '' if stats.bots == 1 else 's' }}{% endif %}</span>
+    </div>
+    <div class="cell">
+      <b>{{ stats.new_week|commas }}</b>
+      <span>new this week{% if stats.new_today %} · {{ stats.new_today }} today{% endif %}</span>
+    </div>
+    <div class="cell">
+      <b>{{ stats.games|commas }}</b>
+      <span>games finished</span>
+    </div>
+    <div class="cell">
+      <b>{{ stats.laps|commas }}</b>
+      <span>Drive laps</span>
+    </div>
+    <div class="cell">
+      <b>{{ stats.visitors|commas }}</b>
+      <span>visitors</span>
+    </div>
+    <div class="cell">
+      <b>{{ stats.visits|commas }}</b>
+      <span>page views{% if stats.bot_visits %} · {{ stats.bot_visits|commas }} crawler{% endif %}</span>
+    </div>
+    <div class="cell">
+      <b>{{ stats.sessions|commas }}</b>
+      <span>sessions</span>
+    </div>
+    <div class="cell">
+      <b class="{{ 'live' if stats.online }}">{{ stats.online }}</b>
+      <span>online right now</span>
+    </div>
+  </div>
+
+  {# Games finished is a sum over four tables that each count a game once, so
+     the split is worth showing: it is the only place the four are comparable. #}
+  {% if stats.per_game %}
+  <div class="split">
+    {% for g in game_list %}
+    <span class="sp" style="--tag: {{ g.accent }}">
+      <b>{{ stats.per_game.get(g.key, 0)|commas }}</b> {{ g.name }}
+    </span>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+{% if no_log %}
+<div class="card">
+  <h2>No visit log</h2>
+  <p class="muted">``site_visits`` isn't readable from here, so the traffic,
+  session and referrer panels below are empty. Everything else is from the
+  accounts and game tables and is fine.</p>
+</div>
+{% endif %}
+
+{# ---- traffic ------------------------------------------------------------ #}
+{% if chart %}
+<div class="card">
+  <h2>Traffic</h2>
+  <p class="muted tiny">One bar per day. The solid part is people, the pale top
+  is crawlers.</p>
+  <div class="chart">
+    {% for d in chart %}
+    <div class="bar" title="{{ d.day }} — {{ d.humans }} view{{ '' if d.humans == 1 else 's' }}, {{ d.visitors }} visitor{{ '' if d.visitors == 1 else 's' }}, {{ d.bots }} crawler">
+      <span class="stack" style="height: {{ d.height }}%">
+        <span class="hum" style="height: {{ d.human_share }}%"></span>
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="chart-axis">
+    <span>{{ chart[0].day.month }}/{{ chart[0].day.day }}</span>
+    <span>today</span>
+  </div>
+</div>
+{% endif %}
+
+{# ---- who is here now ---------------------------------------------------- #}
+{% if online %}
+<div class="card">
+  <h2>Online right now</h2>
+  <div class="people">
+    {% for o in online %}
+    <div class="person static">
+      {{ bits.avatar(o.user, 'sm') }}
+      <div>
+        <div class="person-name">
+          <span class="dot on" {% if o.accent %}style="--dot: {{ o.accent }}"{% endif %}></span>
+          {{ o.user.display }} {{ bits.flag(o.user) }}
+        </div>
+        <div class="person-sub">{{ o.text }}</div>
+      </div>
+      <div class="person-elos"><a class="btn tiny"
+        href="{{ url_for('accounts.profile', username=o.user.username) }}">profile</a></div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# ---- new accounts ------------------------------------------------------- #}
+<div class="card">
+  <h2>Newest accounts</h2>
+  <p class="muted tiny">The email address is here because this is the one page
+  it belongs on - it is the only field of an account that was never public.</p>
+  <table class="tbl">
+    <thead><tr>
+      <th>Who</th><th>Email</th><th>Joined</th><th class="num">Games</th><th>Last seen</th>
+    </tr></thead>
+    <tbody>
+    {% for r in newest %}
+    <tr>
+      <td>{{ ad.person(r.user) }}</td>
+      <td class="mono dim">{{ r.user.email }}</td>
+      <td>{{ ad.when(r.user.created_at) }}</td>
+      <td class="num">{{ r.played }}</td>
+      <td>{% if r.online %}<span class="dot on"></span> now
+          {% else %}<span class="dim">{{ r.seen|ago }}</span>{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="empty">No accounts yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <a class="more" href="{{ url_for('admin.account_list') }}">All {{ stats.accounts }} accounts →</a>
+</div>
+
+{# ---- recent sessions ---------------------------------------------------- #}
+<div class="card">
+  <h2>Recent sessions</h2>
+  <p class="muted tiny">One row per visit - a run of requests from one browser
+  with no half-hour gap in it. Crawlers are
+  {% if bots %}shown{% else %}hidden{% endif %};
+  <a href="{{ url_for('admin.overview', bots='' if bots else 1) }}">{{ 'hide' if bots else 'show' }} them</a>.</p>
+  {{ ad.sessiontable(recent) }}
+  <a class="more" href="{{ url_for('admin.session_list') }}">Every session →</a>
+</div>
+
+{# ---- recent games ------------------------------------------------------- #}
+<div class="card">
+  <h2>Recent games</h2>
+  <table class="tbl">
+    <thead><tr><th>Game</th><th>Code</th><th>Winner</th><th class="num">Players</th><th>When</th></tr></thead>
+    <tbody>
+    {% for g in games %}
+    <tr>
+      <td>{{ ad.gametag(g.game) }}
+        {% if g.detail %}<span class="dim">{{ g.detail }}</span>{% endif %}</td>
+      <td class="mono">{{ g.code }}</td>
+      <td>{{ g.winner or '—' }}</td>
+      <td class="num">{{ g.players or '—' }}</td>
+      <td>{{ ad.when(g.when) }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="empty">Nothing has been played yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{# ---- where they go, where they came from -------------------------------- #}
+<div class="card">
+  <div class="pair">
+    <div>
+      <h3>Most-read pages</h3>
+      <table class="tbl compact">
+        <tbody>
+        {% for p in paths %}
+        <tr>
+          <td>{{ ad.gametag(p.service) }}</td>
+          <td class="mono clip" title="{{ p.path }}">{{ p.path }}</td>
+          <td class="num">{{ p.hits|commas }}</td>
+          <td class="num dim">{{ p.visitors|commas }}</td>
+        </tr>
+        {% else %}
+        <tr><td class="empty">Nothing yet.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if paths %}<p class="muted tiny">views · visitors</p>{% endif %}
+    </div>
+    <div>
+      <h3>Sent here by</h3>
+      <table class="tbl compact">
+        <tbody>
+        {% for r in referrers %}
+        <tr><td class="clip">{{ r.host }}</td><td class="num">{{ r.hits|commas }}</td></tr>
+        {% else %}
+        <tr><td class="empty">Nobody links here yet.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% if referrers %}<p class="muted tiny">cgovind.com's own pages are left
+      out - an internal referrer is somebody navigating, not a source.</p>{% endif %}
+    </div>
+  </div>
+</div>
+
+{# ---- Drive's anti-cheat, which nothing has ever read --------------------- #}
+{% if flags %}
+<div class="card">
+  <h2>Drive flagged laps</h2>
+  <p class="muted tiny">A flag is not an accusation - the checks are tuned to be
+  wrong in the harmless direction, and a flagged car keeps its place and is only
+  left unrated. What is worth reading is the tally: a dozen of one rule is a bad
+  connection, hundreds of one rule is somebody's own build of the game.</p>
+  <table class="tbl">
+    <thead><tr><th>Who</th><th>Track</th><th>Phase</th><th class="num">Strikes</th><th>Rules</th><th>When</th></tr></thead>
+    <tbody>
+    {% for f in flags %}
+    <tr>
+      <td>{% if f.username %}<a href="{{ url_for('accounts.profile', username=f.username) }}">{{ f.name }}</a>
+          {% else %}{{ f.name }} <span class="dim">(guest)</span>{% endif %}</td>
+      <td>{{ f.track }}</td>
+      <td class="dim">{{ f.phase }}</td>
+      <td class="num">{{ f.strikes }}</td>
+      <td class="mono dim clip" title="{{ f.reasons }}">{{ f.reasons or '—' }}</td>
+      <td>{{ ad.when(f.when) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% endblock %}

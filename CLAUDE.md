@@ -15,7 +15,7 @@ the one for the thing you are changing; do not read the others.
 | you are working on | read |
 |---|---|
 | the landing page, the Wii menu, any static page | `site/CLAUDE.md` |
-| the shared profile, login, flags, avatars, presence | `accounts/CLAUDE.md` |
+| the shared profile, login, flags, avatars, presence, `/admin` | `accounts/CLAUDE.md` |
 | Egyptian Rat Screw | `ers/CLAUDE.md` |
 | King of Tokyo | `kot/CLAUDE.md` |
 | Drive | `drive/CLAUDE.md`, then **one** file from `drive/docs/` |
@@ -49,11 +49,19 @@ It has its own CI and is not tested from this repo.
   workers, two requests away from taking the site down. Nothing linked to the
   game, so the whole thing went rather than being put behind a login. **The
   `GEMINI_API_KEY` in the box `.env` should be removed and the key revoked.**
-- **`/accounts` is the one thing here that is not static** — the shared profile
-  for all four games. It lives in the `accounts/` package and is attached by
-  `accounts.init_app(app)` at the foot of `app.py`, **only when `DATABASE_URL`
-  is set**, so a checkout that just wants to serve the static tree boots with no
-  database and no database driver. See `accounts/CLAUDE.md`.
+- **`/accounts` and `/admin` are the only things here that are not static** —
+  the shared profile for all four games, and Chinmay's admin console. Both live
+  in the `accounts/` package and are attached by `accounts.init_app(app)` at the
+  foot of `app.py`, **only when `DATABASE_URL` is set**, so a checkout that just
+  wants to serve the static tree boots with no database and no database driver.
+  See `accounts/CLAUDE.md`.
+- **`/admin` is Chinmay's read-only console** over what the box already records:
+  new accounts, every visit session and its clickpath, and how much has been
+  played across the four games. **Anybody who is not in `ADMIN_USERNAMES`
+  (default `chinmay`) gets the ordinary 404**, logged in or not, because a 403
+  would confirm the console exists. Nothing links to it. It writes nothing —
+  every route is a GET. Details and the two traps in it are in
+  `accounts/CLAUDE.md`.
 - **No build step, no bundler.** Pages are self-contained static HTML with inline
   `<style>`/`<script>`, same as the old GitHub Pages site this was derived from.
   The one exception is `accounts/`, which is a normal Flask blueprint with

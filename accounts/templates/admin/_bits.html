@@ -1,0 +1,67 @@
+{# The three things every console table draws: a time, a person, and a game's tag.
+
+   Timestamps are rendered in UTC because that is what the database holds and
+   what is right before any script runs, then rewritten into the reader's own
+   zone by the script in `admin/base.html` - the same trick the profile page
+   uses. The `lt` class is what that script looks for, and the title keeps the
+   UTC so the raw value is never actually lost. #}
+
+{% import "accounts/_bits.html" as ab with context %}
+
+{% macro when(dt) -%}
+  {%- if dt -%}
+    <time class="lt" datetime="{{ dt.isoformat() }}Z"
+          title="{{ dt }} UTC">{{ dt|shortstamp }}</time>
+  {%- else -%}<span class="muted">—</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro person(user, size='sm') -%}
+  {%- if user -%}
+    <a class="who" href="{{ url_for('accounts.profile', username=user.username) }}"
+       >{{ ab.avatar(user, size) }}<span>{{ user.display }}</span>{{ ab.flag(user) }}</a>
+  {%- else -%}
+    {# Not a gap: most of the log is people who never signed in, and saying so
+       is the honest version of an empty cell. #}
+    <span class="muted anon">anonymous</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro gametag(key) -%}
+  {%- set g = game_by_key.get(key) if game_by_key else none -%}
+  {%- if g -%}
+    <span class="gtag" style="--tag: {{ g.accent }}">{{ g.short }}</span>
+  {%- else -%}
+    <span class="gtag">{{ key }}</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{# The session table, drawn on both the overview and /admin/sessions. It lives
+   here rather than in either page so the two cannot drift: the columns are the
+   whole point of both, and a version of this that showed a different set on the
+   summary than on the full list would be actively misleading. #}
+{% macro sessiontable(rows) %}
+<table class="tbl">
+  <thead><tr>
+    <th>Started</th><th>Who</th><th>Landed on</th><th class="num">Pages</th>
+    <th class="num">For</th><th>Browser</th><th>From</th><th>IP</th>
+  </tr></thead>
+  <tbody>
+  {% for s in rows %}
+  <tr class="{{ 'isbot' if s.bot }}">
+    <td><a href="{{ url_for('admin.session_page', session_id=s.id) }}">{{ when(s.started) }}</a></td>
+    <td>{{ person(s.user) }}</td>
+    <td>{{ gametag(s.service) }}
+      <span class="mono clip" title="{{ s.entry }}">{{ s.entry }}</span></td>
+    <td class="num">{{ s.hits }}</td>
+    <td class="num dim">{{ s.seconds|duration }}</td>
+    <td class="dim" title="{{ s.user_agent }}">{{ s.agent
+      }}{% if s.bot %} <span class="tagbot">bot</span>{% endif %}</td>
+    <td class="dim clip">{{ s.referrer or '—' }}</td>
+    <td class="mono dim">{{ s.ip or '—' }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="8" class="empty">No visits in this window.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}

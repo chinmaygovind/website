@@ -1,0 +1,58 @@
+{% extends "admin/base.html" %}
+{% import "admin/_bits.html" as ad with context %}
+{% block heading %}One session{% endblock %}
+
+{% block body %}
+<div class="card">
+  <h2>One visit, page by page</h2>
+  <div class="tiles four">
+    <div class="cell">
+      <b>{{ hits|length }}</b><span>requests</span>
+    </div>
+    <div class="cell">
+      <b>{{ seconds|duration }}</b><span>from first to last</span>
+    </div>
+    {# "who" rather than "signed in as", because most visits never sign in at
+       all and "signed in as anonymous" is a small lie on a page of facts. #}
+    <div class="cell">
+      <b class="small">{{ ad.person(user) }}</b><span>who</span>
+    </div>
+    <div class="cell">
+      <b class="small mono">{{ hits[0].ip or '—' }}</b><span>address</span>
+    </div>
+  </div>
+  <p class="muted tiny" style="margin-top:1rem">
+    {{ ad.when(started) }} → {{ ad.when(ended) }} ·
+    <span title="{{ hits[0].user_agent }}">{{ hits[0].agent }}</span>
+    {%- if hits[0].referrer %} · arrived from {{ hits[0].referrer }}{% endif %}
+    · <span class="mono dim">{{ session_id }}</span>
+  </p>
+</div>
+
+<div class="card">
+  <table class="tbl">
+    <thead><tr>
+      <th>When</th><th>Where</th><th>Path</th><th class="num">Status</th><th>From</th>
+    </tr></thead>
+    <tbody>
+    {% for h in hits %}
+    <tr>
+      <td>{{ ad.when(h.when) }}</td>
+      <td>{{ ad.gametag(h.service) }}</td>
+      <td class="mono clip wide" title="{{ h.path }}">
+        {%- if h.method != 'GET' %}<span class="verb">{{ h.method }}</span> {% endif -%}
+        {{ h.path }}</td>
+      {# A 404 in a clickpath is the interesting row - it is somebody arriving
+         on a dead link, which is exactly what the log is kept for. #}
+      <td class="num {{ 'bad' if h.status and h.status >= 400 }}">{{ h.status or '—' }}</td>
+      <td class="dim clip">{{ h.referrer or '—' }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if hits|length >= 500 %}
+  <p class="muted tiny">Only the first 500 requests of this session are shown.</p>
+  {% endif %}
+  <a class="more" href="{{ url_for('admin.session_list') }}">← back to all sessions</a>
+</div>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "accounts/base.html" %}
+{% block pageclass %} admin{% endblock %}
+{% block title %}{% block heading %}Console{% endblock %} · admin{% endblock %}
+
+{% block head %}
+  {# Nothing here is for anybody but the one account that can see it, and a
+     search engine that somehow got a session would still be wrong to keep it. #}
+  <meta name="robots" content="noindex, nofollow"/>
+{% endblock %}
+
+{% block subnav %}
+<div class="adminbar">
+  <b>Console</b>
+  <a href="{{ url_for('admin.overview') }}"
+     class="{{ 'on' if request.endpoint == 'admin.overview' }}">Overview</a>
+  <a href="{{ url_for('admin.session_list') }}"
+     class="{{ 'on' if request.endpoint in ('admin.session_list', 'admin.session_page') }}">Sessions</a>
+  <a href="{{ url_for('admin.account_list') }}"
+     class="{{ 'on' if request.endpoint == 'admin.account_list' }}">Accounts</a>
+  <span class="spacer"></span>
+  <span class="muted tiny">read-only</span>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Every stamp on these pages is stored and served in UTC, which is right and
+// reads like somebody else's clock. Rewrite it into the reader's own, in the
+// shape it was served in so nothing moves as the page settles, and only when
+// it parses - a browser that cannot keeps the UTC it was given. Same approach
+// as the profile page's recent lists; the title keeps the year and the zone.
+(function () {
+  var thisYear = new Date().getFullYear();
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  document.querySelectorAll('time.lt[datetime]').forEach(function (el) {
+    var d = new Date(el.getAttribute('datetime'));
+    if (isNaN(d.getTime())) return;
+    var year = d.getFullYear() === thisYear ? '' : '/' + pad(d.getFullYear() % 100);
+    el.textContent = (d.getMonth() + 1) + '/' + d.getDate() + year + ' · ' +
+      pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+    el.title = d.toString();
+  });
+})();
+</script>
+{% endblock %}

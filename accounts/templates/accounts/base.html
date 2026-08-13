@@ -27,6 +27,12 @@
     </nav>
   </div>
 
+  {# The admin console's own row of links, and the only thing that fills this.
+     It is a block here rather than a second base template so that the console
+     wears exactly the page chrome everything else does - one topbar, one
+     stylesheet, one place to change either. #}
+  {% block subnav %}{% endblock %}
+
   {% block body %}{% endblock %}
 </div>
 {% block scripts %}{% endblock %}

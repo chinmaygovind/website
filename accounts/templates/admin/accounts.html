@@ -1,0 +1,68 @@
+{% extends "admin/base.html" %}
+{% import "admin/_bits.html" as ad with context %}
+{% block heading %}Accounts{% endblock %}
+
+{% macro sortlink(key, label) -%}
+  <a class="btn tiny {{ 'on' if sort == key }}"
+     href="{{ url_for('admin.account_list', sort=key, page=page) }}">{{ label }}</a>
+{%- endmacro %}
+
+{% block body %}
+<div class="card">
+  <h2>Every account</h2>
+  <p class="muted">{{ total|commas }} account{{ '' if total == 1 else 's' }}. One
+  login across all four games, so the columns on the right are the same person
+  in each.</p>
+  <div class="filters">
+    <span class="muted tiny">Sort by</span>
+    {{ sortlink('joined', 'newest') }}
+    {{ sortlink('seen', 'last seen') }}
+    {{ sortlink('games', 'most played') }}
+    {{ sortlink('name', 'name') }}
+  </div>
+</div>
+
+<div class="card">
+  <table class="tbl">
+    <thead><tr>
+      <th>Who</th><th>Email</th><th>Joined</th>
+      {% for g in game_list %}<th class="num" title="{{ g.name }}">{{ g.short }}</th>{% endfor %}
+      <th class="num">Total</th><th>Last seen</th>
+    </tr></thead>
+    <tbody>
+    {% for r in rows %}
+    <tr>
+      <td>{{ ad.person(r.user) }}{% if r.user.is_bot %} <span class="tagbot">bot</span>{% endif %}</td>
+      <td class="mono dim clip">{{ r.user.email }}</td>
+      <td>{{ ad.when(r.user.created_at) }}</td>
+      {% for g in game_list %}
+      {% set n = r.played.get(g.key) %}
+      {# The rating beside the count, because "12 games" and "12 games at 1380"
+         are different facts about somebody and the second is the one worth
+         scanning a column of. #}
+      <td class="num {{ 'dim' if not n }}">{{ n or '—' }}{% if r.ratings.get(g.key) %}<span
+        class="elo">{{ r.ratings[g.key] }}</span>{% endif %}</td>
+      {% endfor %}
+      <td class="num"><b>{{ r.total }}</b></td>
+      <td>{% if r.online %}<span class="dot on"></span> now
+          {% else %}<span class="dim">{{ r.seen|ago }}</span>{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="{{ 5 + game_list|length }}" class="empty">No accounts yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  {% if pages > 1 %}
+  <div class="pager">
+    {% if page > 1 %}
+      <a class="btn" href="{{ url_for('admin.account_list', page=page - 1, sort=sort) }}">← back</a>
+    {% endif %}
+    <span class="muted">page {{ page }} of {{ pages }}</span>
+    {% if page < pages %}
+      <a class="btn" href="{{ url_for('admin.account_list', page=page + 1, sort=sort) }}">more →</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
