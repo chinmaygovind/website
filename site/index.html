@@ -19,7 +19,7 @@
         --ttr: #6b4226;
         --ers: #b8860b;
         --kot: #5c2678;
-        --drive: #3d8bfd; /* reserved: the drive tile is waiting on its icon */
+        --drive: #3d8bfd;
         --music: #000000;
         --settings: #000000;
         --link: #1a56ff;
@@ -171,6 +171,7 @@
       .modal-poker { border-color: var(--poker); }
       .modal-whale { border-color: var(--whale); }
       .modal-racing { border-color: var(--racing); }
+      .modal-drive { border-color: var(--drive); }
       .modal-ttr { border-color: var(--ttr); }
       .modal-ers { border-color: var(--ers); }
       .modal-kot { border-color: var(--kot); }
@@ -224,6 +225,7 @@
       .modal-poker .pane-title { color: var(--poker); }
       .modal-whale .pane-title { color: var(--whale); }
       .modal-racing .pane-title { color: var(--racing); }
+      .modal-drive .pane-title { color: var(--drive); }
       .modal-ttr .pane-title { color: var(--ttr); }
       .modal-ers .pane-title { color: var(--ers); }
       .modal-kot .pane-title { color: var(--kot); }
@@ -337,6 +339,10 @@
       }
       .modal-racing .media-img {
         border: 2px solid var(--racing);
+        border-radius: 0;
+      }
+      .modal-drive .media-img {
+        border: 2px solid var(--drive);
         border-radius: 0;
       }
       .modal-ttr .media-img {
@@ -791,6 +797,19 @@
         <span class="tile-label">SETTINGS</span>
       </button>
 
+      <button class="tile" data-modal="modal-drive">
+        <span class="tile-art">
+          <img
+            class="tile-img"
+            src="assets/icons/drive.png"
+            data-still="assets/icons/drive.png"
+            data-anim="assets/icons/drive.gif"
+            alt="DRIVE"
+          />
+        </span>
+        <span class="tile-label">DRIVE</span>
+      </button>
+
       <button class="tile" data-modal="modal-ttr">
         <span class="tile-art">
           <img
@@ -947,6 +966,30 @@
               <div class="media-frame">
                 <img class="media-img" src="assets/racing/raceengineering.png" alt="Race engineering work" />
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- drive popup -->
+    <div class="modal" id="modal-drive" hidden>
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-box modal-drive" role="dialog" aria-modal="true" aria-label="Drive">
+        <button class="modal-close" data-close aria-label="Close">&times;</button>
+        <div class="modal-body">
+          <div class="pane pane-left">
+            <img class="modal-icon" src="assets/icons/drive.gif" alt="" aria-hidden="true" />
+            <h2 class="pane-title">drive</h2>
+            <p class="pane-text">An in-browser racing game. 16 tracks with loops, jumps and hairpins. Try to get the best lap in solo time trials mode, or race your friends in multiplayer! Play <a class="here-link" href="https://drive.cgovind.com" target="_blank" rel="noopener">here</a>!</p>
+          </div>
+          <div class="pane pane-right">
+            <!-- swap each placeholder for <img class="media-img" src="assets/drive/…" alt="…" /> -->
+            <div class="media">
+              <div class="placeholder">gameplay screenshot coming soon</div>
+            </div>
+            <div class="media">
+              <div class="placeholder">track shot coming soon</div>
             </div>
           </div>
         </div>

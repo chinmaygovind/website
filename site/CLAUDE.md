@@ -9,12 +9,12 @@ self-contained HTML with inline `<style>`/`<script>`.
   and contact links across the top, all in the self-hosted xkcd Script font
   (`site/fonts/xkcd-script.woff`, from ipython/xkcd-font). Below it is a **tile
   grid** — `repeat(6, --tile)` × auto rows, so **12 slots** before it wraps to a
-  third row (2 columns on <=760px). Currently 9: resume, poker, whales, racing,
-  music, settings on the top row, then the three games — ttr, ers, kot — on the
-  second. **Keep `settings` last in the top row** (it's a Wii-menu joke), and add
-  new games to the second row so the split holds. **Drive has no tile on purpose**
-  — it had one, and it was removed because Chinmay wants to draw the icon himself;
-  `--drive` is still in `:root` waiting for it. Do not re-add it unasked.
+  third row (2 columns on <=760px). Currently 10: resume, poker, whales, racing,
+  music, settings on the top row, then the four games — drive, ttr, ers, kot — on
+  the second. **Keep `settings` last in the top row** (it's a Wii-menu joke), and
+  add new games to the second row so the split holds. Drive's tile was pulled for
+  a while (Jul 2026) so Chinmay could draw the icon himself, and came back once he
+  had — the steering wheel in `assets/icons/drive.{png,gif,xcf}` is his.
 - **Adding a tile is one repeating pattern**, all inside `site/index.html` (no
   build step, so everything is inline):
   1. a `--<name>` accent colour in `:root`, then `.modal-<name>` rules for
