@@ -159,6 +159,71 @@ ELO, socket handlers, the race recorder or `/race/<id>`.
   The car is now marked `gone` (excluded from `_snapshot` and `_live`, so it
   stops being drawn and stops holding the race open) but kept, so it is still
   in the standings and still rated. `_reset_race` is what finally drops it.
+- **The host leaving closes the room.** The seat used to pass to whoever was
+  next in seat order, which sounds generous and is not: everything about a room
+  that anybody else was waiting on is the host's - the track, the settings,
+  whether qualifying runs, which bots are on the grid, when a race starts - so
+  handing it over gives a room to somebody who did not ask for it, in the middle
+  of a session somebody else set up, and what actually happened is that nothing
+  started again until the sweep took it. The session's points go with it, which
+  is the other half of the same argument: a championship is a thing that room was
+  running, and a room under new ownership is a new room.
+  - **Only a hard leave.** A disconnect is the soft kind - the seat stays and the
+    car comes off the road - so a closed tab, a reload or a phone going through a
+    tunnel does not take everybody's race with it. `_drop(hard=True)` is the
+    Leave button, and `_leave_other_rooms` is the same rule through the other
+    door, because creating or joining a room elsewhere is leaving this one. Two
+    call sites, one rule: otherwise the way to keep a room you have walked out of
+    is to walk out of it sideways.
+  - **The reason is carried out with the reader.** `room_closed` has always had
+    one and the client threw it away, so a room ending looked exactly like a bug
+    - you were simply somewhere else. It goes to `/lobbies?closed=…` and is said
+    there, in the error box without the red, since nothing has gone wrong.
+  - The "nothing but bots is an empty room" branch in `_drop` is now unreachable:
+    anybody who is not the host leaves the host behind, and a host is a person.
+    Kept anyway - it is two lines, and the room of four bots it prevents would
+    otherwise sit in the lobby list until the 45-minute sweep.
+- **A room runs a championship, and it is nothing like the rating**
+  (`_score_race`). N points for the winner down to 1 for last, where N is the
+  size of the field, so what a win is worth is how many cars you beat. It is
+  **per session**: it lives on the live room beside `settings` and `last_order`,
+  survives a race and a track change, and is forgotten when the room is - no
+  column, no migration, nothing to sweep, and a seat that leaves and comes back
+  is a new seat starting from nothing.
+  - **A DNF scores nothing**, and the places behind the finishers go unawarded.
+    Scoring the DNF rows off their positions would pay out on the one part of a
+    result that is noise - they are ordered by whichever they happened to give up
+    in, the same reason `_rate_race` draws two of them rather than ranking them.
+    The winner is still worth the full field either way: retiring costs you your
+    own points, not everybody else's.
+  - **Everyone scores, including guests and bots**, which is the exact opposite
+    of the ELO rule one bullet down - and for the same underlying reason. A
+    rating is farmable because it leaves the room; a table that is forgotten with
+    the room is not, so the field can be the field. A bot taking third has to
+    *take* third or the table is not about the racing. Nothing here is gated on
+    the anti-cheat either: a flagged car keeps its place in the standings on the
+    screen, and points are what that place is worth in this room for the next ten
+    minutes.
+  - **The roster is the only thing that carries the tally**, so `_close_race`
+    re-broadcasts it rather than leaving the client to add the result sheet up.
+    Two reasons that are the same reason twice: a browser that walked in after
+    the lights never saw the result, and a reload has to land on the numbers
+    everybody else is looking at. That is also why `_roster` takes the *game* and
+    looks the points up itself - handed in, they would be an argument four call
+    sites have to remember, and the one that forgot would draw a room where
+    everybody's tally read zero.
+  - **The sheet shows both numbers and the sidebar shows one.** The results sheet
+    covers the drawer, so the question it has to answer is not only what the race
+    paid but who is winning the evening - hence `+4` and the session total in the
+    same gold pill the sidebar wears, one object in two places. On a phone the
+    row is already spending everything it has on the name, so the delta is
+    dropped there and the pill stays: the delta is the finishing position you are
+    looking at, and the total is the number nothing else on the sheet carries.
+    Your own pair is spelled out in words under the standings, next to the rating
+    line and for the same reason - a bare `+4 11` is a puzzle the first time you
+    meet it. The column appears for the whole room or for none of it, and only
+    once something has been scored: a column on some rows reads as "these people
+    are in it and you are not".
 - **Every socket handler takes `data=None`.** Not a style choice: every button
   that leaves a room emits `leave` with no payload, so Socket.IO called
   `on_leave(data)` with no arguments and it raised before doing anything -

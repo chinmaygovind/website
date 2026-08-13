@@ -207,6 +207,9 @@ input[type=text], input[type=password], input[type=email], input:not([type]) {
   border-radius: 8px; padding: .4rem .6rem; margin-bottom: .7rem; font-size: .95rem;
 }
 .error.show { display: block; }
+/* The same box saying something that is not a failure - "the host left, so the
+   room closed". Red would blame the reader for a room ending. */
+.error.notice { color: var(--ink); border-color: var(--line); border-style: solid; }
 
 /* --- track cards -------------------------------------------------------- */
 .tracks { display: grid; grid-template-columns: repeat(auto-fill, minmax(258px, 1fr)); gap: 1rem; }
@@ -1031,9 +1034,31 @@ body.shot .hud, body.shot #touch, body.shot #rotate, body.shot .side { display: 
 .res-row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .res-row .ms { margin-left: auto; font-family: var(--mono);
                font-variant-numeric: tabular-nums; }
+/* Championship points: what this race paid, then the session total in the pill
+   the room list wears, so the pill is one object in two places rather than two
+   numbers to reconcile. Gold because that is what a table you are trying to
+   win looks like, and there are no medals on this sheet to confuse it with -
+   medals are for laps driven alone. */
+.res-row .pt { min-width: 4.2rem; text-align: right; font-family: var(--mono);
+               font-size: .85rem; color: var(--ink-soft); }
+.res-row .pt i { font-style: normal; }
+.res-row .pt b { display: inline-block; min-width: 1.6rem; margin-left: .35rem;
+                 padding: .02rem .3rem; border-radius: 999px;
+                 background: var(--gold); color: var(--ink); font-weight: 700; }
 .res-row .el { width: 3rem; text-align: right; font-family: var(--mono); font-size: .85rem; }
 .res-row .el.up { color: #12855a; }
 .res-row .el.down { color: var(--red); }
+/* On a phone the row is already spending everything it has on the name, which
+   is what ellipsises first - so the points column gives up the half of itself
+   that can be worked out. What this race paid is the finishing position you are
+   looking at (N down to 1); the session total is the number nothing else on the
+   sheet carries, so the pill stays and the delta goes. Yours is still spelled
+   out in full on the line under the standings. */
+@media (max-width: 560px) {
+  .res-row .pt { min-width: 0; }
+  .res-row .pt i { display: none; }
+  .res-row .pt b { margin-left: 0; }
+}
 .sheet .elo-line { margin-top: .7rem; font-size: .95rem; color: var(--ink-soft); }
 
 /* The room panel: a drawer behind the hamburger, at every screen size.
@@ -1090,7 +1115,20 @@ body.touch.side-open .hud-tr { transform: none; }
 .pl { display: flex; align-items: center; gap: .4rem; font-size: .88rem; padding: .15rem 0; }
 .pl.me { color: #ffd96b; }
 .pl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pl-elo { margin-left: auto; font-family: var(--mono); font-size: .75rem; color: #b9c2d0; }
+/* One right-hand group rather than an auto margin on each number, because two
+   auto margins in a flex row split the free space between them and stand the
+   pair apart. It also pins every row's kick button to the same edge, which they
+   were not: a bot has no rating, so its x used to sit wherever its level tag
+   ended. */
+.pl-tail { margin-left: auto; display: flex; align-items: center; gap: .3rem; }
+.pl-elo { font-family: var(--mono); font-size: .75rem; color: #b9c2d0; }
+/* Points this session. Gold, matching the pill on the result sheet, and a pill
+   rather than a bare number so it is not read as a second rating. */
+.pl-pts {
+  font-family: var(--mono); font-size: .75rem; font-weight: 700;
+  min-width: 1.5rem; text-align: center; padding: .02rem .3rem;
+  border-radius: 999px; color: #ffd96b; background: rgba(255, 217, 107, .18);
+}
 .kick { background: none; border: 0; color: #ff8a7a; cursor: pointer; font-size: 1rem; }
 /* A bot's tag is its level and not the word "bot", because the level is the
    only part anybody needs while choosing who to race - that the car has nobody

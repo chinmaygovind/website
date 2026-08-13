@@ -263,6 +263,12 @@ async function openPanelParam() {
         { pid: 'c', name: 'Someone else', color: '#55e08a', ms: 44117 },
         { pid: 'd', name: 'Gave up', color: '#8fd6ff', ms: null }],
       elo: CFG.me ? { [CFG.me.pid]: { before: 1000, after: 1012, delta: 12 } } : {},
+      points: {
+        a: { got: 4, total: 11 },
+        [CFG.me ? CFG.me.pid : 'b']: { got: 3, total: 7 },
+        c: { got: 2, total: 9 },
+        d: { got: 0, total: 2 },
+      },
       why: 'all in', race: 1,
     });
   } else if ((p === 'qual' || p === 'racing' || p === 'qcount') && CFG.mode === 'room') {
@@ -3221,7 +3227,14 @@ function connect() {
   });
   socket.on('chat', addChat);
   socket.on('kicked', (d) => { if (CFG.me && d.pid === CFG.me.pid) location.href = '/lobbies'; });
-  socket.on('room_closed', () => { location.href = '/lobbies'; });
+  // The room ended under you - the host left, everybody left, or it expired.
+  // The reason is carried to the lobby list and said there, because a page
+  // that teleports you somewhere without a word is indistinguishable from a
+  // bug, and "the host left" is the one thing that explains it.
+  socket.on('room_closed', (d) => {
+    const why = (d && d.reason) || '';
+    location.href = '/lobbies' + (why ? '?closed=' + encodeURIComponent(why) : '');
+  });
   socket.on('room_error', (d) => toast(d.error || 'Error'));
 
   $('btnStartRace').onclick = () => socket.emit('start_race', { code: CFG.room });
@@ -3695,6 +3708,13 @@ function renderRoster(players) {
   // is the host's has to follow them - which is all of them, so this is the
   // one call rather than four assignments.
   applyPhase();
+  // The room's championship, shown for everybody or for nobody. A column that
+  // appears on some rows reads as "these people are in it and you are not",
+  // and before the first race of a session there is no table to show - so it
+  // arrives when the first points are scored and then covers the room,
+  // including the zeroes, because a zero next to somebody's four is the whole
+  // information.
+  const scoring = players.some(p => p.points);
   $('roster').innerHTML = players.map(p => `
     <div class="pl${CFG.me && p.pid === CFG.me.pid ? ' me' : ''}">
       <span class="st-dot" style="background:${esc(p.color)}"></span>
@@ -3702,7 +3722,10 @@ function renderRoster(players) {
       ${p.is_host ? '<span class="tag">HOST</span>' : ''}
       ${p.guest ? '<span class="tag guest">GUEST</span>' : ''}
       ${p.bot ? `<span class="tag lv lv-${esc(p.level || '')}">${esc((p.level || 'bot').toUpperCase())}</span>` : ''}
-      ${p.elo != null ? `<span class="pl-elo">${p.elo}</span>` : ''}
+      <span class="pl-tail">
+        ${p.elo != null ? `<span class="pl-elo">${p.elo}</span>` : ''}
+        ${scoring ? `<span class="pl-pts" title="Points this session">${p.points || 0}</span>` : ''}
+      </span>
       ${isHost && !p.is_host ? `<button class="kick" data-kick="${esc(p.pid)}">&times;</button>` : ''}
     </div>`).join('');
   $('roster').querySelectorAll('[data-kick]').forEach(b => {
@@ -4009,11 +4032,19 @@ function onRaceResult(d) {
   hideResults();
   $('raceStandings').innerHTML = d.standings.map((e, i) => {
     const delta = (d.elo || {})[e.pid];
+    // Two numbers in one cell: what this race paid, and the session total in
+    // the same pill the room list wears - so the pill is recognisably one thing
+    // in two places rather than two numbers to work out. The sheet covers the
+    // drawer, which is why the total is here at all: after a race the
+    // interesting question is who is winning the evening, and the answer would
+    // otherwise be behind the thing telling you the result.
+    const pts = (d.points || {})[e.pid];
     return `<div class="res-row${CFG.me && e.pid === CFG.me.pid ? ' me' : ''}">
       <span class="p">${i + 1}</span>
       <span class="st-dot" style="background:${esc(e.color || '#888')}"></span>
       <span class="nm">${esc(e.name)}</span>
       <span class="ms">${e.ms != null ? fmt(e.ms) : 'DNF'}</span>
+      <span class="pt">${pts ? `<i>${pts.got ? '+' + pts.got : '0'}</i><b>${pts.total}</b>` : ''}</span>
       <span class="el${delta ? (delta.delta >= 0 ? ' up' : ' down') : ''}">${
         delta ? (delta.delta >= 0 ? '+' : '') + delta.delta : ''}</span>
     </div>`;
@@ -4022,6 +4053,14 @@ function onRaceResult(d) {
   const elo = $('raceElo');
   elo.style.display = mine ? '' : 'none';
   if (mine) elo.innerHTML = `Rating ${mine.before} &rarr; <b>${mine.after}</b>`;
+  // One line naming the two numbers in the column above, by showing your own -
+  // the same job the rating line does, and the reason both are worth the room
+  // they take: a bare `+4  12` on a row is a puzzle the first time you see it.
+  const myPts = CFG.me ? (d.points || {})[CFG.me.pid] : null;
+  const ptsLine = $('racePoints');
+  ptsLine.style.display = myPts ? '' : 'none';
+  if (myPts) ptsLine.innerHTML = `Points <b>+${myPts.got}</b> this race &middot; ` +
+                                 `<b>${myPts.total}</b> this session`;
   // The race that has just been driven, watchable from any car in it. There is
   // no replay if nobody was on the road long enough to record one, and a button
   // leading to an empty one is worse than no button.

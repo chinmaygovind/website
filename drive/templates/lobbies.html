@@ -83,6 +83,16 @@
 <script>
 const err = document.getElementById('err');
 function showErr(m){ err.textContent = m; err.classList.add('show'); }
+// Why you are looking at this page rather than the room you were in. The room
+// says it on the way out (`room_closed`) and hands it over in the URL, because
+// the only thing that survives the redirect is the URL - and a room vanishing
+// with nothing said reads as a glitch rather than as the host leaving.
+{
+  const closed = new URLSearchParams(location.search).get('closed');
+  // Same box, without the red: nothing has gone wrong and nobody did anything
+  // wrong - the room ended, and this is the sentence that says so.
+  if (closed) { err.classList.add('notice'); showErr(closed.slice(0, 120)); }
+}
 document.getElementById('priv').onchange = e => {
   document.getElementById('pass').style.display = e.target.checked ? 'block' : 'none';
 };

@@ -585,6 +585,109 @@ def test_finishing_beats_retiring(env):
 
 
 # ---------------------------------------------------------------------------
+# The room's championship
+# ---------------------------------------------------------------------------
+# Points are the other thing a result pays out, and they are the opposite of the
+# rating in every way that matters: they never leave the room, so guests and
+# bots score, nothing is gated on the anti-cheat, and the whole table is
+# forgotten when the room is. What they need protecting from is the two ways a
+# running total goes wrong - being reset by a race, and being paid out on the
+# part of a result that is noise.
+
+def _sheet(pids, *rows):
+    """Standings the way `_close_race` builds them: finishers, then the DNFs."""
+    return [{"pid": p, "name": p, "ms": ms, "color": "#fff"}
+            for p, ms in zip(pids, rows)]
+
+
+def test_the_winner_scores_the_size_of_the_field(env):
+    """N down to 1, so a win in a full room is worth more than a win in a duel."""
+    A = env
+    r = _room(A)
+    got = A._score_race(r, _sheet("abcd", 41000, 42000, 43000, 44000))
+    assert [got[p]["got"] for p in "abcd"] == [4, 3, 2, 1]
+
+
+def test_a_dnf_scores_nothing_and_costs_the_finishers_nothing(env):
+    """Their order is the order they happened to give up in - the same noise
+    `_rate_race` refuses to rank - so it pays nothing. The places behind the
+    finishers simply go unawarded, and the winner is still worth the full field:
+    retiring costs you your own points, not everybody else's."""
+    A = env
+    r = _room(A)
+    got = A._score_race(r, _sheet("abc", 41000, None, None))
+    assert got["a"]["got"] == 3, "the field was three cars, whatever they did"
+    assert got["b"]["got"] == 0
+    assert got["c"]["got"] == 0
+
+
+def test_points_add_up_across_a_session(env):
+    """A race is not the unit here, the room is - so the tally has to survive
+    `_reset_race`, which is what puts the room back to practice between races."""
+    A = env
+    r = _room(A)
+    A._score_race(r, _sheet("ab", 41000, 42000))
+    A._reset_race(r)
+    out = A._score_race(r, _sheet("ba", 40000, 43000))
+    assert r["points"] == {"a": 2 + 1, "b": 1 + 2}
+    assert out["b"] == {"got": 2, "total": 3}, "the sheet says both numbers"
+
+
+def test_the_roster_carries_the_session_points(env):
+    """The sidebar is drawn from the roster and nothing else, so the roster is
+    where the tally has to be - including for somebody who walked in after the
+    last race and has to see the room's table rather than an empty column."""
+    A = env
+    with A.app.app_context():
+        game = A.DriveGame(code="PTS", track="sunrise")
+        A.db.session.add(game)
+        A.db.session.commit()
+        seats = [A.DrivePlayer(game_id=game.id, session_key="sk-" + n, name=n,
+                               color="#fff", seat_order=i)
+                 for i, n in enumerate(("alice", "bob"))]
+        A.db.session.add_all(seats)
+        A.db.session.commit()
+        r = _room(A, "PTS", phase="free")
+        A._score_race(r, _sheet([s.pid for s in seats], 41000, 42000))
+        assert [p["points"] for p in A._roster(game)] == [2, 1]
+
+
+def test_a_room_with_no_live_state_reports_no_points(env):
+    """A room whose state has been swept has forgotten the session, so every
+    tally is zero - which is what makes the sidebar hide the column entirely
+    rather than draw an empty one."""
+    A = env
+    with A.app.app_context():
+        game = A.DriveGame(code="COLD", track="sunrise")
+        A.db.session.add(game)
+        A.db.session.commit()
+        A.db.session.add(A.DrivePlayer(game_id=game.id, session_key="sk-a",
+                                       name="alice", color="#fff", seat_order=0))
+        A.db.session.commit()
+        assert "COLD" not in A._rooms
+        assert [p["points"] for p in A._roster(game)] == [0]
+
+
+def test_the_result_sheet_is_told_what_the_race_paid(env, monkeypatch):
+    """Both numbers on the wire, because the sheet covers the drawer: after a
+    race the interesting question is who is winning the evening, and the answer
+    would otherwise be behind the thing telling you the result."""
+    A = env
+    sent = []
+    monkeypatch.setattr(A.socketio, "emit",
+                        lambda ev, *a, **k: sent.append((ev, a[0] if a else None)))
+    monkeypatch.setattr(A, "_broadcast_lobbies", lambda *a, **k: None)
+    monkeypatch.setattr(A.eventlet, "spawn_after", lambda *a, **k: None)
+    r = _room(A)
+    _add_car(A, r, "a", ms=41000)
+    _add_car(A, r, "b", ms=42000)
+    A._close_race("TEST", "all in", r["race_seq"])
+    result = dict(sent)["race_result"]
+    assert result["points"]["a"] == {"got": 2, "total": 2}
+    assert result["points"]["b"] == {"got": 1, "total": 1}
+
+
+# ---------------------------------------------------------------------------
 # The replay
 # ---------------------------------------------------------------------------
 # Recorded off the poses the server already has, on the ghost's clock, so that
@@ -891,6 +994,84 @@ def test_leaving_takes_your_name_with_you(env, monkeypatch):
         left = [p.name for p in A.DriveGame.query.get(gid).players]
         assert left == ["stay"]
         assert gone_pid not in r["cars"]
+        # The counterpart to the rule below: only the *host* leaving ends a
+        # room. Anybody else leaving is one fewer car.
+        assert A.DriveGame.query.filter_by(code="BYE").first() is not None
+
+
+def _host_and_guest(A, code="OWNED"):
+    """A room with a host and somebody else in it. Returns `(game_id, room)`."""
+    game = A.DriveGame(code=code, track="sunrise")
+    A.db.session.add(game)
+    A.db.session.commit()
+    host = A.DrivePlayer(game_id=game.id, session_key="sk-host", name="host",
+                         color="#fff", seat_order=0, is_host=True)
+    other = A.DrivePlayer(game_id=game.id, session_key="sk-other", name="other",
+                          color="#0f0", seat_order=1)
+    A.db.session.add_all([host, other])
+    A.db.session.commit()
+    r = _room(A, code, phase="free")
+    _add_car(A, r, host.pid, on_grid=False)
+    _add_car(A, r, other.pid, on_grid=False)
+    A._sid_room["sid-host"] = (code, host.pid)
+    return game.id, r
+
+
+def test_the_host_leaving_closes_the_room(env, monkeypatch):
+    """The seat used to pass to whoever was next in seat order, which hands a
+    room to somebody who did not ask for it - the track, the settings, the grid
+    and every button the room was waiting on were the host's. So it closes, and
+    everybody is told why rather than being moved without a word.
+    """
+    A = env
+    sent = []
+    monkeypatch.setattr(A.socketio, "emit",
+                        lambda ev, *a, **k: sent.append((ev, a[0] if a else None)))
+    monkeypatch.setattr(A, "_broadcast_lobbies", lambda *a, **k: None)
+    with A.app.app_context():
+        _host_and_guest(A)
+        with A.app.test_request_context():
+            from flask import request, session
+            request.sid = "sid-host"
+            session["session_key"] = "sk-host"
+            A.on_leave()
+        assert A.DriveGame.query.filter_by(code="OWNED").first() is None
+        assert A.DrivePlayer.query.count() == 0, "the other seat went with it"
+        assert "OWNED" not in A._rooms, "and the session it was running"
+        closed = dict(sent).get("room_closed")
+        assert closed and "host" in closed["reason"].lower()
+
+
+def test_the_host_losing_their_connection_does_not(env, monkeypatch):
+    """A disconnect is the soft kind - the seat stays, the car comes off the
+    road - so a tab closing or a phone going through a tunnel must not take
+    everybody's race with it. Only a deliberate leave ends the room."""
+    A = env
+    monkeypatch.setattr(A.socketio, "emit", lambda *a, **k: None)
+    monkeypatch.setattr(A, "_broadcast_lobbies", lambda *a, **k: None)
+    with A.app.app_context():
+        _host_and_guest(A)
+        with A.app.test_request_context():
+            from flask import request, session
+            request.sid = "sid-host"
+            session["session_key"] = "sk-host"
+            A.on_disconnect()
+        assert A.DriveGame.query.filter_by(code="OWNED").first() is not None
+        assert A.DrivePlayer.query.filter_by(name="host").first() is not None
+
+
+def test_hosting_somewhere_else_closes_the_room_you_left(env, monkeypatch):
+    """Creating or joining another room is leaving this one, and it reaches a
+    different function (`_leave_other_rooms`) than the Leave button does. Two
+    doors, one rule - or the way to keep a room you have walked out of is to
+    walk out of it sideways."""
+    A = env
+    monkeypatch.setattr(A.socketio, "emit", lambda *a, **k: None)
+    monkeypatch.setattr(A, "_broadcast_lobbies", lambda *a, **k: None)
+    with A.app.app_context():
+        _host_and_guest(A)
+        A._leave_other_rooms("sk-host")
+        assert A.DriveGame.query.filter_by(code="OWNED").first() is None
 
 
 # ---------------------------------------------------------------------------
@@ -932,7 +1113,7 @@ def test_two_people_choosing_one_colour_both_keep_it(env):
         env.db.session.add_all(seats)
         env.db.session.commit()
 
-        roster = env._roster(game.players)
+        roster = env._roster(game)
         assert [p["livery"]["body"] for p in roster] == ["#7b6cf6", "#7b6cf6"]
         # And the dot, the standings row and the nameplate agree with the car -
         # `color` is answered off the livery, so nothing points at somebody in a
@@ -960,13 +1141,13 @@ def test_a_seat_takes_the_colour_you_chose_and_not_the_one_you_were_given(env):
         env.db.session.commit()
 
         hashed = garage.color_for("alice")
-        assert env._roster(game.players)[0]["color"] == hashed
+        assert env._roster(game)[0]["color"] == hashed
 
         env.db.session.add(env.DriveGarage(
             user_id=u.id, livery_json=garage.dumps({"body": "#17bfa8"}),
             earned_json="[]"))
         env.db.session.commit()
-        assert env._roster(game.players)[0]["color"] == "#17bfa8"
+        assert env._roster(game)[0]["color"] == "#17bfa8"
         assert seat.color == hashed, "the column is the seed, not the answer"
 
 
@@ -986,7 +1167,7 @@ def test_a_guest_seat_is_still_hashed_off_the_name_it_typed(env):
                 game_id=game.id, session_key="sk-" + n, name=n,
                 color=garage.color_for(n), seat_order=i))
         env.db.session.commit()
-        roster = env._roster(game.players)
+        roster = env._roster(game)
         assert roster[0]["color"] != roster[1]["color"]
         assert all(p["livery"]["body"] == p["color"] for p in roster)
 

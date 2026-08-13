@@ -759,7 +759,7 @@ def room(code):
         tuning_json=tuning.as_json(), room=game,
         me_json=script_json(me.to_dict(_livery_for(me.linked_user,
                                                    name=me.name))),
-        roster_json=script_json(_roster(game.players)),
+        roster_json=script_json(_roster(game)),
         name=get_effective_name(), user=user,
         pb_ms=(pb.time_ms if pb else None), next_slug=_next_slug(track["slug"]),
         pb_splits=({track["slug"]: pb.splits} if pb else {}),
@@ -1711,16 +1711,20 @@ def _leave_other_rooms(sk, keep_code=None):
     for p in list(_my_players(sk)):
         g = p.game
         if g.code != keep_code:
+            was_host = p.is_host
             db.session.delete(p)
             db.session.commit()
             remaining = sorted(g.players, key=lambda q: q.seat_order)
+            # **The host leaving closes the room**, and creating or joining
+            # another room is leaving this one. Same rule as `_drop`, which is
+            # the same decision reached through the Leave button, and the
+            # reasoning for it is written down there.
+            if was_host:
+                _close_room(g, "The host left, so the room closed.")
             # Bots do not keep a room alive; see `_drop`.
-            if not any(not q.is_bot for q in remaining):
-                _delete_game(g)
+            elif not any(not q.is_bot for q in remaining):
+                _close_room(g, "Everyone left.")
             else:
-                if p.is_host and not any(q.is_host for q in remaining):
-                    remaining[0].is_host = True
-                    db.session.commit()
                 _broadcast_roster(g)
 
 
@@ -1743,18 +1747,32 @@ def _seated_room(sk=None):
     return seats[0].game.code if seats else None
 
 
-def _roster(players):
-    """Every seat with its livery, working the two whole-field queries out once.
+def _roster(game):
+    """Every seat with its livery and its session points, working the two
+    whole-field queries out once.
 
     The one place a roster is built, so the gate check cannot be applied on
     three paths and forgotten on the fourth. Both `records_held` and
     `time_trial_leaders` are the same answer for everybody in the room, so they
     are asked once here rather than eight times inside `_livery_for`.
+
+    **It takes the game rather than its players so it can find the points
+    itself** (`_score_race` keeps them on the live room, which is keyed by
+    code). Handed in as an argument they would be a thing four call sites have
+    to remember, and the one that forgot would render a room where everybody's
+    tally silently read zero - which is the failure the paragraph above is
+    about. A room with no live state has no session to report, so the answer
+    there is zero for everybody and the sidebar shows no column at all.
     """
     holders = garage_mod.records_held()
     leaders = garage_mod.time_trial_leaders()
-    return [pl.to_dict(_livery_for(pl.linked_user, holders, pl.name, leaders))
-            for pl in players]
+    points = (_rooms.get(game.code) or {}).get("points", {})
+    out = []
+    for pl in game.players:
+        seat = pl.to_dict(_livery_for(pl.linked_user, holders, pl.name, leaders))
+        seat["points"] = points.get(pl.pid, 0)
+        out.append(seat)
+    return out
 
 
 def _add_player(game, host=False):
@@ -1867,7 +1885,7 @@ def _broadcast_lobbies():
 
 
 def _broadcast_roster(game):
-    socketio.emit("roster", {"players": _roster(game.players),
+    socketio.emit("roster", {"players": _roster(game),
                              "track": game.track},
                   room="room:" + game.code)
     _broadcast_lobbies()
@@ -1884,6 +1902,24 @@ def _delete_game(game):
     botsim.drop(game.code)
     db.session.delete(game)
     db.session.commit()
+
+
+def _close_room(game, reason):
+    """End a room and tell whoever is in it why.
+
+    One helper because a room ends for three different reasons now - the host
+    leaving, the last person leaving, and the sweep - and everybody still on the
+    page needs the same three things to happen in every case: told, deleted,
+    and the lobby list brought up to date. The reason is carried through to the
+    lobbies page rather than dropped, because a room vanishing under you looks
+    exactly like a bug if nothing says what happened.
+
+    The sweep does its own version of this, deliberately: it can close several
+    rooms in one pass and batches the single `_broadcast_lobbies` at the end.
+    """
+    socketio.emit("room_closed", {"reason": reason}, room="room:" + game.code)
+    _delete_game(game)
+    _broadcast_lobbies()
 
 
 # ---------------------------------------------------------------------------
@@ -1975,6 +2011,12 @@ def _room(code):
                             # `_reverse_grid`. Survives a reset; it is history,
                             # not race state.
                             "last_order": [],
+                            # The room's championship: pid -> points, added up
+                            # over every race run here. Survives a reset and a
+                            # track change for the same reason `last_order`
+                            # does, and goes when the room does - see
+                            # `_score_race`.
+                            "points": {},
                             # Every car's poses through the race being driven,
                             # written out as a DriveRace when it ends.
                             "rec": None,
@@ -2642,7 +2684,7 @@ def on_join_room(data=None):
     db.session.commit()
     emit("room_hello", {"track": game.track,
                         "me": seat,
-                        "players": _roster(game.players),
+                        "players": _roster(game),
                         "race": _race_state(r), "chat": r["chat"][-30:],
                         "settings": dict(r["settings"]),
                         "server_ms": _now_ms()})
@@ -2940,9 +2982,10 @@ def on_fill_bots(data=None):
 def _reset_race(r):
     """Put the room back to free practice with nothing left over.
 
-    `last_order` and `settings` deliberately survive: one is the result of the
-    race that just happened and is the next grid, the other is what the host
-    has said about the room.
+    `last_order`, `points` and `settings` deliberately survive: the first is the
+    result of the race that just happened and is the next grid, the second is
+    the room's championship and is the whole point of there being more than one
+    race, and the third is what the host has said about the room.
     """
     r["phase"] = "free"
     r["t0"] = r["deadline"] = r["hard_end"] = r["qual_end"] = None
@@ -3555,6 +3598,14 @@ def _close_race(code, why, seq=None):
                 c["dnf"] = True
                 standings.append({"pid": pid, "name": c["name"], "ms": None,
                                   "color": c["color"]})
+            # The championship the room is running, updated the moment the
+            # standings are settled. Unlike the rating it does not care whether
+            # there is a `game` row to write to - the table is the room's own
+            # and lives in memory - and unlike the rating it pays out to
+            # everybody, so it is not gated on the anti-cheat either: a flagged
+            # car keeps its place in the standings on the screen, and points are
+            # what that place is worth in this room for the next ten minutes.
+            points = _score_race(r, standings)
             elo_delta = {}
             race_id = None
             # Judged before either of the next two lines: the rating needs the
@@ -3576,8 +3627,17 @@ def _close_race(code, why, seq=None):
             r["last_order"] = [e["pid"] for e in standings]
             closed_seq = r["race_seq"]
             socketio.emit("race_result", {"standings": standings, "why": why,
-                                          "elo": elo_delta, "race": race_id},
+                                          "elo": elo_delta, "points": points,
+                                          "race": race_id},
                           room="room:" + code)
+            # The sidebar tally has moved, and the roster is the one thing that
+            # carries it - so it is re-sent rather than left to the client to
+            # add up out of the result sheet. Two reasons and they are the same
+            # reason twice: a browser that walked in after the lights never saw
+            # the result, and a reload has to land on the numbers everybody else
+            # is looking at.
+            if game:
+                _broadcast_roster(game)
         # Scheduled rather than slept through inline. Two reasons, one of them
         # production and one of them the tests.
         #
@@ -3737,6 +3797,45 @@ def _record_flags(r, game, flagged, race_id):
     db.session.commit()
 
 
+def _score_race(r, standings):
+    """The room's championship points for one race, and the running tally with
+    them added in. `{pid: {"got": n, "total": t}}`.
+
+    **N for the winner down to 1 for last, where N is the size of the field.**
+    So what a win is worth is how many cars you beat: a race in a full room
+    moves the table more than a duel does, which is the right way round for a
+    thing meant to hold a whole evening together.
+
+    **A DNF scores nothing**, and the places behind the finishers simply go
+    unawarded. Scoring the DNF rows off their positions would be paying out on
+    the one part of a result that is noise - they are ordered by whichever they
+    happened to give up in, which is exactly why `_rate_race` draws two of them
+    rather than ranking them. A tally that survives a whole session has to be
+    built out of the parts of a result that mean something, and the winner is
+    still worth the full field either way: retiring costs you your own points,
+    not everybody else's.
+
+    Everyone in the standings scores, including guests and bots. This is not
+    ELO - there is nothing here anybody can farm, because it does not leave the
+    room - so the field is the field, and a bot taking third has to *take* third
+    or the table is not about the racing.
+
+    **It is a session, not a record.** It lives on the live room, so it survives
+    a race (`_reset_race` leaves it alone), a track change and the results
+    sheet, and it goes when the room does. No column, no migration, nothing to
+    sweep - the same trade `settings` makes. A seat that leaves and comes back
+    is a new seat with a new pid and starts from nothing, which is the honest
+    reading of "leaving the room".
+    """
+    n = len(standings)
+    out = {}
+    for i, e in enumerate(standings):
+        got = 0 if e["ms"] is None else n - i
+        total = r["points"][e["pid"]] = r["points"].get(e["pid"], 0) + got
+        out[e["pid"]] = {"got": got, "total": total}
+    return out
+
+
 def _rate_race(game, standings, skip=()):
     """Pairwise ELO over the finishing order, counting only logged-in accounts.
 
@@ -3887,19 +3986,37 @@ def _drop(sid, hard):
         db.session.delete(me)
         db.session.commit()
         remaining = sorted(game.players, key=lambda p: p.seat_order)
+        # **The host leaving closes the room.** The seat used to be handed to
+        # whoever was next in seat order, which sounds generous and is not: the
+        # room is the host's - the track, the settings, the grid, when a race
+        # starts, which bots are in it - and everything about it that anybody
+        # else was waiting for was theirs to press. Passing it to whoever
+        # happened to join first hands the room to somebody who did not ask for
+        # it, in the middle of a session somebody else set up, and the usual
+        # outcome is a room that nobody starts anything in until it is swept.
+        # The session's points go with it, which is the other half: a
+        # championship is a thing the room was running, and a room with a new
+        # owner is a new room.
+        #
+        # It only fires on a **hard** leave - the Leave button, or joining
+        # somewhere else - because a disconnect is the soft kind: closing a tab
+        # or losing wifi keeps the seat, so the host's train going into a tunnel
+        # does not take everybody's race with it.
+        if was_host:
+            _close_room(game, "The host left, so the room closed.")
+            return
         # **A room of nothing but bots is an empty room.** They cannot leave,
         # cannot host, and would otherwise hold the seat count above zero for
         # ever - the room would sit in the lobby list with four cars going round
         # it and nobody in it.
+        #
+        # Unreachable while every room has a host, now that the branch above
+        # takes the host's own departure: anybody else leaving leaves the host
+        # behind, and a host is a person. Kept because it is two lines, and
+        # because what it prevents would otherwise wait on the 45-minute sweep.
         if not any(not p.is_bot for p in remaining):
-            socketio.emit("room_closed", {"reason": "Everyone left."},
-                          room="room:" + code)
-            _delete_game(game)
-            _broadcast_lobbies()
+            _close_room(game, "Everyone left.")
             return
-        if was_host and not any(p.is_host for p in remaining):
-            remaining[0].is_host = True
-            db.session.commit()
         _broadcast_roster(game)
 
 
