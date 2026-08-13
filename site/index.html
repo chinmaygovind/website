@@ -341,7 +341,11 @@
         border: 2px solid var(--racing);
         border-radius: 0;
       }
-      .modal-drive .media-img {
+      /* the drive shots are letterboxed against the blurred backdrop, so the
+         border goes on the frame rather than on the image the way the other
+         modals do it -- on the image it traced the shot and left the filler
+         outside the line, which read as two rectangles rather than one */
+      .modal-drive .media-frame {
         border: 2px solid var(--drive);
         border-radius: 0;
       }
