@@ -1028,6 +1028,26 @@ def test_the_nav_offers_the_garage_and_the_account_page_offers_logging_out(env):
     assert 'href="/logout"' not in other, "not on somebody else's page"
 
 
+def test_the_discord_invite_is_on_the_pages_and_never_over_the_game(env):
+    """The one link in the nav that leaves the site, and the one place it must
+    not be. `_nav.html` is not included by `play.html`, so this is really a test
+    that it stays that way: a bright blue call to action sitting over a lap in
+    progress is a way of losing the lap."""
+    invite = b"discord.gg/BvPuJznswA"
+    # Logged out, where most people arriving from a posted link will see it.
+    c = env.app.test_client()
+    for url in ("/", "/leaderboard", "/track/sunrise", "/login"):
+        assert invite in c.get(url).data, url
+    assert invite not in c.get("/solo/sunrise").data, "not on the play page"
+
+    # And logged in, where the nav grows a name, a rating and two more links -
+    # the row it has to keep fitting into.
+    c = env.app.test_client()
+    _login(c, _user(env, "quick"))
+    for url in ("/lobbies", "/garage", "/account"):
+        assert invite in c.get(url).data, url
+
+
 def test_a_guest_is_offered_a_login_and_not_a_garage(env):
     """A garage a guest cannot own would be a door onto a locked room."""
     html = env.app.test_client().get("/leaderboard").get_data(as_text=True)

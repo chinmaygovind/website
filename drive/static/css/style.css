@@ -121,6 +121,33 @@ a:hover { text-decoration: underline; }
 .brand:hover { text-decoration: none; }
 .brand small { color: var(--ink-soft); font-size: .8rem; }
 .brand-ico { width: 26px; height: 26px; }
+/* The Discord invite, next to the brand. Built like a `.btn` - the same 2px
+   rule and the same hard offset shadow - because anything else in this nav
+   would read as pasted on top of the site rather than part of it. Blurple is
+   Discord's own and is the one colour here that is not the site's; that is the
+   point of it, and it is why nothing else in the nav is a filled pill.
+   Smaller than a real button: it is an aside next to the wordmark, not the
+   thing the page is for. */
+.discord {
+  display: inline-flex; align-items: center; gap: .4rem;
+  font-family: var(--sans); font-size: .74rem; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase; white-space: nowrap;
+  color: #fff; background: #5865f2;
+  border: 2px solid var(--line); border-radius: 8px;
+  padding: .32rem .6rem;
+  box-shadow: 2px 2px 0 rgba(29, 29, 31, .25);
+  transition: transform .09s ease-out, box-shadow .09s ease-out, background .12s;
+}
+.discord:hover {
+  background: #4752c4; text-decoration: none;
+  transform: translate(-1px, -1px); box-shadow: 4px 4px 0 rgba(29, 29, 31, .28);
+}
+.discord:active { transform: translate(2px, 2px); box-shadow: none; }
+.discord:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+/* `fill` and not `stroke`: the Discord mark is one solid shape, unlike the HUD
+   icons here, which are drawn as outlines. */
+.discord-ico { width: 17px; height: 13px; fill: currentColor; flex: none; }
+
 .nav-right { margin-left: auto; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
 .nav-right a { color: var(--ink); font-size: 1.05rem; }
 .nav-right a.active { color: var(--red); text-decoration: underline; }
