@@ -53,14 +53,18 @@ self-contained HTML with inline `<style>`/`<script>`.
 
 ## Being found
 
-- **`site/sitemap.xml` is the only way most of this site is discoverable**, which
-  is why it is load-bearing and not decoration: see the next section — nothing
-  here is linked from `/`, so a crawler that arrives finds one page and stops.
-  It is hand-kept, so `tests/test_seo.py` resolves every URL in it against the
-  tree and fails on a rename; a sitemap full of 404s is worse than none.
-  `robots.txt` names it and disallows `projects/ibec/` (an unmodified site
-  template that came in with the project). Each game subdomain carries its own —
-  a sitemap may only list URLs on its own host — and Drive generates one from
+- **`site/sitemap.xml` lists the landing page and nothing else, on purpose.** It
+  briefly listed all twelve reachable pages; Chinmay does not want the unlinked
+  ones found, so they came out and `robots.txt` disallows them (`/home/`,
+  `/projects/`, `/games/`, `/channels/`, `/wii/`). They are **still on disk and
+  still answer** if you know the address — this is a decision about what search
+  engines are told, not a deletion. It is still hand-kept, so `tests/test_seo.py`
+  resolves every URL in it against the tree, fails on a rename, and fails if the
+  sitemap ever lists something robots.txt disallows.
+- **The four games cannot be in that sitemap and do not need to be.** A sitemap
+  may only list URLs on its own host, so a `drive.cgovind.com` entry would
+  invalidate the file. They are found the better way: the landing page links to
+  all four, and Drive serves its own sitemap from its own host, generated from
   the track pool.
 - **`<link rel="canonical">` on the landing page is the www fix.**
   `www.cgovind.com` and `cgovind.com` both answer 200 with no redirect between
@@ -68,10 +72,16 @@ self-contained HTML with inline `<style>`/`<script>`.
   nginx redirect and **the deploy never touches nginx**, so the canonical settles
   which address is real without a hand-applied config change, and stays right if
   a redirect is ever added.
-- **`chinmaygovind.github.io` is still live and still ranks for Chinmay's name**,
-  and it never mentions this domain. It is a different repo, so nothing here can
-  fix it — but it is the biggest single reason searching his name does not land
-  on `cgovind.com`.
+- **`chinmaygovind.github.io` now redirects here** (2026-08-14). It was live,
+  ranking for Chinmay's name, and never mentioned this domain, which was the
+  biggest single reason searching his name did not land on `cgovind.com`. It is
+  a different repo: GitHub Pages serves its **`gh-pages` branch**, published
+  from `public/` by `npm run deploy`, so the redirect had to be committed to
+  both or the next deploy there would put the old site back. Pages cannot serve
+  a 301, so it is a canonical plus a zero-delay meta refresh plus a
+  `location.replace`. Its old pages are left on disk and dropped from the index
+  with robots.txt — **but its root is deliberately still crawlable**, because a
+  crawler that cannot fetch the redirect cannot follow it either.
 
 ## Unlinked pages (nothing on the site links to these)
 
