@@ -104,8 +104,18 @@ def retuned(rt, what, mult):
     return _Ctx()
 
 
+@pytest.mark.slow
 def test_every_track_can_be_built_without_a_browser(rt):
     """`buildTrack` has to survive in QuickJS, for every track in the pool.
+
+    **Marked `slow` on purpose**, which `conftest.py` asks to be a decision
+    somebody makes rather than a reflex. This is the one test in drive whose
+    cost is O(the pool): it builds *every* track, and at sixteen it takes about
+    11.5s against the 10s per-test budget. There is no sleep in it and no loop
+    that grew - the loop is the point - so the budget is measuring the size of
+    the game here rather than a mistake, and it will only drift further with the
+    next track. The guard still covers the other 1,100 tests, which is what it
+    was for.
 
     The verifier re-drives a submitted lap through the game's own `static/js`
     (`jsrt.bundle`), and the first thing it does is `buildTrack` - so anything

@@ -130,8 +130,18 @@ def test_coming_back_round_having_skipped_one_still_warns(rt, slug):
         % (slug, events))
 
 
+@pytest.mark.slow
 def test_a_point_to_point_track_is_unaffected(rt):
-    """Nothing here may touch the thirteen tracks that are not rings."""
+    """Nothing here may touch the tracks that are not rings.
+
+    **Marked `slow` for the same reason as
+    `test_every_track_can_be_built_without_a_browser`**, and it is the same
+    shape: a `buildTrack` over the entire pool, which at sixteen tracks is about
+    11s against the 10s budget. The two of them are the only tests in drive that
+    cost O(the pool), which is why they are the only two carrying this marker -
+    and why which of them trips the budget first depends on what else the
+    machine is doing rather than on either of them changing.
+    """
     flags = rt.call(
         "TRACKS.map(function (t) {"
         "  var c = new Course(buildTrack(t, T));"
