@@ -728,6 +728,12 @@ body.room .solo-only { display: none; }
    rather than leaving two holes where somebody else's buttons would be. */
 .sheet-actions.even { grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); }
 .sheet-actions.even .btn { white-space: nowrap; }
+/* The solo finish sheet has four: Retry, Share, Leaderboard, Exit. Three
+   columns leaves the fourth alone on a second row against the left edge, and
+   four across a 460px sheet gives "Leaderboard" about 95px to be said in. Two
+   rows of two is the one arrangement that neither orphans a button nor squeezes
+   a word, and it holds at any type size - which a fourth column would not. */
+.sheet-actions.pairs { grid-template-columns: repeat(2, 1fr); }
 @media (max-width: 520px) { .sheet-actions { grid-template-columns: 1fr; } }
 
 /* --- panels that close with an X -----------------------------------------

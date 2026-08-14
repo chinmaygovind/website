@@ -394,8 +394,17 @@
       <div class="res-line"><span>WR:</span><b id="resWr">--:--.---</b><i id="resWrRank"></i></div>
     </div>
     <div id="resNote"></div>
-    <div class="sheet-actions">
+    <div class="sheet-actions{% if mode == 'solo' %} pairs{% endif %}">
       <button class="btn dark" id="btnRetry">Retry</button>
+      {# Solo only: a lap set in a room never reaches the board, so there is
+         nothing there to link anybody to. Rendered **disabled** rather than
+         added when the answer arrives - the sheet is drawn the instant you
+         cross the line and `/api/run` names the lap a moment later, and a
+         button that appears late moves the row under a finger already on its
+         way to Retry. `setShare` in game.js is what wakes it up. #}
+      {% if mode == 'solo' %}
+      <button class="btn secondary" id="btnShare" disabled>Share</button>
+      {% endif %}
       {# `board-link` is repointed by loadTrack: the switcher changes the track
          under a page the template rendered for a different one. #}
       <a class="btn secondary board-link" href="/track/{{ track.slug }}">Leaderboard</a>

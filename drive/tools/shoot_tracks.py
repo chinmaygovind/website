@@ -17,6 +17,10 @@ will keep showing the old one. That staleness is the price of a real picture;
 nothing in the test suite can notice it, because nothing in the test suite can
 see.
 
+It also re-makes each shot track's **share card** (`shoot_og_cards.py`), which is
+a layout over the picture and therefore goes stale with it. So this one command
+is the whole answer to "I changed a track".
+
 For *authoring* a track, `track_views.py` is the one you want - a plan view and
 several along the road. This tool takes the one picture the switcher shows, and
 its framing is deliberately fixed: nothing downstream can tell a re-framed
@@ -92,6 +96,20 @@ def main(argv):
         print("  ! %s: %s" % (url.rsplit("/", 1)[-1], msg))
     print("%d/%d written to %s"
           % (len(wanted) - len(failed), len(wanted), os.path.relpath(OUT, ROOT)))
+
+    # The share cards are a layout over the pictures just taken, so they are
+    # stale the moment those move. Re-made here rather than left to be
+    # remembered: this tool already exists because nothing downstream can tell a
+    # stale preview from a fresh one, and that is twice as true of a card
+    # somebody only ever sees in someone else's feed. Only for the tracks that
+    # were actually shot, and never for one whose shot failed.
+    shot = [t for t in tracks_mod.summaries()
+            if t["slug"] in wanted and t["slug"] not in failed]
+    if shot:
+        import shoot_og_cards
+        print("share cards")
+        failed += shoot_og_cards.shoot(shot)
+
     return 1 if failed or errors else 0
 
 

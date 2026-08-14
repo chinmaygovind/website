@@ -165,6 +165,31 @@ the track cards, `/account`, `/leaderboard`, or the in-game board panel.
   a touchscreen - which is why the mark sits next to a column whose figures are
   still ordered top to bottom, and is not the only place the rule is written
   down.
+- **A lap is shareable, and the link is one that already existed.** The finish
+  sheet's **Share** button hands over `/solo/<slug>?watch=<id>` - the same URL the
+  public board has always used to hand a lap to the game, so there is no new kind
+  of page behind it and `openRequestedLap` does the rest. The id comes back from
+  `/api/run` as `time_id`, and it is the **row's** id rather than that run's:
+  `drive_times` keeps one row per player per track, so the only shareable solo lap
+  anybody has is their best one. `navigator.share` on a phone, the clipboard
+  everywhere else. Three things fall out of it. The button is **solo only** - a
+  room lap never reaches the board, so there would be nothing to point at - and it
+  is rendered **disabled** rather than added when the answer arrives, because the
+  sheet is drawn the instant you cross the line and a button that appears late
+  moves the row under a finger already going for Retry. A **guest** has no row and
+  so no lap, which makes this the one screen where an account buys something
+  immediate: the button says *Log in to share* rather than going grey. And
+  `?panel=finish` opens the sheet without driving a lap, the same way `?panel=`
+  reaches every other panel.
+- **What a link unfurls into is decided in Python, not in a Jinja block.**
+  `og_title`, `og_description` and `og_image` are context variables with defaults
+  in `inject_globals` (the site's one-liner and the wheel); `_track_og()` passes a
+  track's own card and blurb over them on `/solo/<slug>` and `/track/<slug>`, and
+  when the URL names a lap, the time and whose it is. `_shared_lap` is what
+  resolves `?watch=`, and it insists on a row **on this track** that **has a
+  replay** - the first for the reason `/api/ghost` scopes it, the second because a
+  card promising a lap that then toasts "that lap is no longer there" is worse
+  than the generic one.
 - **The board is in the game.** "View others" opens the leaderboard over the track;
   clicking a row opens that lap - its checkpoint splits against your own PB's, who set
   it, and **Watch it** / **Race this ghost**. Picking somebody to chase is something you

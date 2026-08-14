@@ -219,7 +219,8 @@ than 15% or move a corner more than 8 degrees before refusing.
   QuickJS before it goes up), `racecheck.py` (the *room's* anti-cheat, which is
   a different question - see below), `models.py`, `app.py`, `static/js/` (`trackmesh.js`, `physics.js`,
   `course.js`, `render.js`, `sound.js`, `game.js`, `pending.js`, vendored
-  `three.module.js`), `tools/shoot_tracks.py` (the switcher's preview pictures),
+  `three.module.js`), `tools/shoot_tracks.py` (the switcher's preview pictures,
+  and each track's share card via `tools/shoot_og_cards.py`),
   `tools/track_views.py` (a plan view and several from the road, for authoring),
   `tools/validate_track.py` (one track, every check, one report),
   `tools/snapshot_tracks.py` (proof that a refactor moved no geometry). The play
@@ -262,6 +263,11 @@ than 15% or move a corner more than 8 degrees before refusing.
   otherwise would. See `docs/testing.md`.
 - **Re-run `tools/shoot_tracks.py` after changing a track's geometry or sky.** A
   test asserts the preview files exist; nothing can notice that one is stale.
+  It now also re-makes that track's **share card** (`static/img/og/<slug>.png`,
+  1200x630), which is a layout over the preview and so goes stale with it -
+  `tools/shoot_og_cards.py` is that step alone, for when the layout changed and
+  the tracks did not. A card is what a pasted link to a track unfurls into, so a
+  stale one is only ever seen in somebody else's feed.
 - **`static/img/icon.svg` is the only drawing of the mark, and everything else
   in `static/img` that is a picture of it is output.** The seven rasters and the
   1200x630 share card are all rendered from it by `tools/shoot_icon.py`, so edit

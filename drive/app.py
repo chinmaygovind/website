@@ -349,8 +349,13 @@ def inject_globals():
             # `UserProfile.flag_path`, which returns the path half.
             "site_url": MAIN_SITE_URL,
             # Drive's own origin and one-liner, for the share card in base.html.
+            # `og_title` falling back to the page's own <title> and `og_image` to
+            # the wheel are the defaults every page that is not about one track
+            # wants; the track pages pass `_track_og()` over the top of them.
             "drive_url": SELF_URL,
             "og_description": OG_DESCRIPTION,
+            "og_title": None,
+            "og_image": "/static/img/og.png",
             # What the heartbeat in base.html says about this page. Derived
             # from the endpoint rather than passed by each route, so a new page
             # gets a sensible answer without anybody remembering to add one -
@@ -661,6 +666,54 @@ def solo(slug):
     return _play_solo(slug)
 
 
+def fmt_ms(ms):
+    """A lap time written the way the game writes it: `1:11.234`.
+
+    The templates each had this as an inline format string, which was fine while
+    a time was only ever *rendered*; a share card's title is built in Python and
+    has to say the same thing, and two spellings of a lap time is the sort of
+    difference nobody notices until one of them rounds the other way.
+    """
+    return "%d:%06.3f" % (ms // 60000, (ms % 60000) / 1000.0)
+
+
+def _shared_lap(slug):
+    """The lap named by `?watch=<id>`, when there is one and it can be played.
+
+    Only for the unfurl: the *game* fetches the ghost itself through
+    `/api/ghost`, and this is the server answering "what is this link a link
+    to" for a crawler that will never run any of that. Scoped to the track for
+    the same reason `/api/ghost` scopes it, and it insists on a stored replay -
+    a card promising somebody's lap that then toasts "that lap is no longer
+    there" is worse than the generic one.
+    """
+    who = request.args.get("watch", "")
+    if not who.isdigit():
+        return None
+    return (DriveTime.query.filter_by(id=int(who), track=slug)
+            .filter(DriveTime.ghost.isnot(None)).first())
+
+
+def _track_og(track, lap=None):
+    """The unfurl for a page about one track - or about one lap on it.
+
+    A pasted link is most of how this travels, so what it shows is worth being
+    specific about: the track's own card rather than the wheel, its blurb rather
+    than the site's one-liner, and - when the link names a lap - the time and
+    whose it is, because "1:11.234 on Big Red" is an argument and "Drive" is not.
+    """
+    og = {"og_image": "/static/img/og/%s.png" % track["slug"],
+          "og_title": "%s | Drive" % track["name"],
+          "og_description": track["blurb"]}
+    if lap is not None:
+        who = lap.user.display if lap.user else "Somebody"
+        og["og_title"] = "%s on %s | Drive" % (fmt_ms(lap.time_ms), track["name"])
+        og["og_description"] = (
+            "%s drove %s here. Open it to watch the lap, then try to beat it."
+            % (who, fmt_ms(lap.time_ms)))
+    return og
+
+
 def _play_solo(slug):
     track = tracks_mod.get(slug)
     _remember_track(slug)
@@ -668,6 +721,7 @@ def _play_solo(slug):
     pb = DriveTime.query.filter_by(user_id=user.id, track=slug).first() if user else None
     return render_template(
         "play.html", mode="solo", track=track,
+        **_track_og(track, _shared_lap(slug)),
         track_json=script_json(_track_payload(track["slug"])),
         track_scenery=tracks_mod.scenery_source(track["slug"]),
         tuning_json=tuning.as_json(), room=None, me_json="null",
@@ -916,6 +970,7 @@ def track_board(slug):
              "medal": r.medal_shown, "has_ghost": bool(r.ghost)} for r in rows]
     return render_template("track.html", track=track, rows=rows, laps=laps,
                            starts=starts, tracks=tracks_mod.summaries(),
+                           **_track_og(track),
                            user=get_current_user(), name=get_effective_name())
 
 
@@ -1595,6 +1650,12 @@ def api_run():
                         "pb_ms": row.time_ms if row else None,
                         "rank": _rank_of(row) if row else None,
                         "run_rank": run_rank,
+                        # The lap that is *on the board* for them, which while a
+                        # quicker one is being checked is still the older one -
+                        # so a share link made here plays a real lap rather than
+                        # one no read path can see yet. None on a first-ever lap
+                        # of a track, which is held with no row behind it.
+                        "time_id": row.id if row else None,
                         "record_ms": best.time_ms if best else None,
                         "is_record": False,
                         "note": "Being checked - a lap this quick is re-driven on "
@@ -1631,6 +1692,13 @@ def api_run():
                     "medal": row.medal_shown, "pb_ms": row.time_ms,
                     "rank": rank, "run_rank": run_rank,
                     "record_ms": best.time_ms if best else None,
+                    # What the Share button on the finish sheet links to:
+                    # `/solo/<slug>?watch=<id>`. It is the *row's* id and not
+                    # this run's, because a run is not a thing that exists -
+                    # `drive_times` keeps one row per player per track and a
+                    # better lap overwrites it wholesale, so the only shareable
+                    # solo lap anybody has on a track is their best one.
+                    "time_id": row.id,
                     "is_record": bool(best and best.id == row.id)})
 
 

@@ -232,7 +232,7 @@ function boot() {
 }
 
 /**
- * `?panel=settings|help|tracks|board|qual|racing` opens a panel on load.
+ * `?panel=settings|help|tracks|board|finish|qual|racing` opens a panel on load.
  *
  * There is no browser in CI and a screenshot cannot click, so this is the only
  * way to look at a panel's layout without a person driving the mouse - the same
@@ -252,6 +252,15 @@ async function openPanelParam() {
   if (p === 'settings') toggleMenu(true);
   else if (p === 'help') toggleHelp(true);
   else if (p === 'tracks') toggleTracks(true);
+  else if (p === 'finish' && CFG.mode !== 'room') {
+    // The solo finish sheet, which otherwise costs a clean lap to look at - and
+    // a *good* one, since the interesting version of this layout is the one with
+    // a medal, a rank and a record on it. `share` is set because the Share
+    // button spends nearly all its life armed, and an unarmed one is the state
+    // that needs no checking.
+    showResults({ time: 71234, medal: 'gold', rank: 3, pb: 71234, pbRank: 3,
+                  wr: 68950, share: 1 });
+  }
   else if (p === 'result' && CFG.mode === 'room') {
     // The sheet at the end of a race, which otherwise takes a race to look at.
     S.isHost = true;
@@ -344,6 +353,9 @@ function loadTrack(track, opts = {}) {
   S.renderer.setTrack(S.built);
   S.course = new Course(S.built);
   S.run = new Run(S.course, track);
+  // A lap id belongs to the track it was set on - `?watch=` is scoped to the
+  // track at the server, so a stale one survives the switch only to fail.
+  S.shareId = null;
   S.car = new Car(T, S.built);
   S.car.id = CFG.me ? CFG.me.pid : 'me';
   // The car you built, from the garage. A room's seat carries its own copy so
@@ -757,6 +769,11 @@ function bindInput() {
   $('btnRestart').onclick = () => restartRun();
   $('btnCheckpoint').onclick = () => backToCheckpoint();
   $('btnRetry').onclick = () => resetToStart();
+  // Wrapped rather than passed by name, like every other line here: this
+  // function is lifted whole into QuickJS by `test_touch.py`, where `shareLap`
+  // is outside the slice - so naming it binds a reference that does not resolve,
+  // while calling it from an arrow is only ever reached by a real click.
+  if ($('btnShare')) $('btnShare').onclick = () => shareLap();
   $('btnSound').onclick = () => setSound(!S.sound.enabled);
   $('btnMusic').onclick = () => {
     setMusic(!S.sound.musicOn);
@@ -2968,7 +2985,7 @@ async function onFinish() {
         // been ignored.
         showResults({ time: run.time, medal, rank: d.run_rank,
                       pb: d.pb_ms, pbRank: d.rank, wr: d.record_ms,
-                      note: d.note || null });
+                      share: d.time_id, note: d.note || null });
       }
       // Solo, a new PB is a new ghost - **but only if your own lap is the one
       // you asked to drive against.**
@@ -2999,7 +3016,8 @@ async function onFinish() {
       }
       if (!racing) {
         showResults({ time: run.time, medal, rank: d.run_rank, pb: S.bestTime,
-                      wr: d.record_ms, note: d.note || d.error || null });
+                      wr: d.record_ms, guest: !!d.guest,
+                      note: d.note || d.error || null });
       }
     }
   } catch (e) {
@@ -3083,6 +3101,61 @@ function showResults(r) {
   $('resWr').textContent = r.wr != null ? fmt(r.wr) : '--:--.---';
   // Only ever a problem, never a summary - the numbers above are the summary.
   $('resNote').innerHTML = r.note ? `<div>${esc(r.note)}</div>` : '';
+  setShare(r.share, r.guest);
+}
+
+/**
+ * Arm (or disarm) the Share button for the lap the sheet is showing.
+ *
+ * Called from `showResults`, which runs twice per lap - once on the line with
+ * nothing known and once when `/api/run` has answered - so the ordinary path is
+ * disabled, then enabled a moment later with an id.
+ *
+ * A guest has no row on any board and therefore no lap anybody could be sent to,
+ * which makes this the one place in the game where an account buys something
+ * concrete and immediate. So the button stays lit and says what is missing,
+ * rather than going grey with no explanation.
+ */
+function setShare(id, guest) {
+  const b = $('btnShare');
+  if (!b) return;                 // room and replay do not have one
+  S.shareId = id || null;
+  b.disabled = !id && !guest;
+  b.textContent = id ? 'Share' : 'Log in to share';
+}
+
+/**
+ * Hand over a link to the lap on the board: `/solo/<slug>?watch=<id>`.
+ *
+ * Deliberately not a new kind of page. That URL is how the public board has
+ * always handed a lap to the game - `openRequestedLap` watches it, and the
+ * ghost is then there to chase - so what this adds is a way to *get* the link
+ * from the one screen where somebody has just done something worth sending. The
+ * server gives it a share card naming the track and the time (`_track_og`), so
+ * what lands in a chat window is the lap rather than the word "Drive".
+ */
+async function shareLap() {
+  if (!S.shareId) {
+    location.href = '/login?next=' + encodeURIComponent(location.pathname);
+    return;
+  }
+  const url = location.origin + '/solo/' + S.track.slug + '?watch=' + S.shareId;
+  try {
+    // The phone answer and the desktop one. `navigator.share` opens the OS
+    // sheet, which is what somebody on a phone means by sharing; everywhere it
+    // does not exist, the clipboard is the whole of it.
+    if (navigator.share) {
+      await navigator.share({ title: 'Drive - ' + S.track.name, url });
+      return;
+    }
+    await navigator.clipboard.writeText(url);
+    toast('Link copied - it opens your lap as a ghost');
+  } catch (e) {
+    // Dismissing the OS share sheet rejects, and a share nobody wanted is not a
+    // failure worth saying anything about.
+    if (e && e.name === 'AbortError') return;
+    toast(url);
+  }
 }
 
 function hideResults() { $('results').style.display = 'none'; }
