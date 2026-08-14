@@ -207,9 +207,18 @@ scripts/tests.sh drive -- -k ghost -x     # after --, straight to pytest
   than cloning to find out.** This repo's `.git` is ~484MB of committed media and
   `site/` is ~513MB on disk, so a full-history checkout would cost more than the
   tests it is trying to save. Every job is a sparse checkout of just its own
-  module (for `site` that is the root files only, since `import app` never reads
-  `site/`). The suites then run as a parallel matrix, so a two-game change costs
+  module. The suites then run as a parallel matrix, so a two-game change costs
   one game's wall time.
+  - **`site` gets `scripts`, `accounts`, `tests` and `site/assets/flags`, and
+    that last one is not the whole story.** `actions/checkout`'s sparse mode is
+    a **cone**, which also takes the *files of every parent directory* on the
+    way to a pattern - so `site/assets/flags` quietly drags in `site/`'s own
+    files (`index.html`, `robots.txt`, `sitemap.xml`) and `site/assets/`'s,
+    while `site/wii/`, `site/home/`, `site/games/` and the rest stay absent.
+    A test that reads a page out of `site/` therefore passes locally and fails
+    in CI, and one that guards itself on the wrong sentinel (`site/assets`,
+    which *is* there) fails twice. `tests/test_seo.py` uses `site/fonts` and
+    says why.
 - If nothing testable changed the `test` job is skipped, and `deploy` treats
   skipped as fine - hence its `always() && ...` guard, since a skipped need would
   otherwise skip the deploy too. A **failed** suite does block the deploy.

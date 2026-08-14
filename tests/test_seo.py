@@ -37,9 +37,41 @@ def locs():
     return [e.text for e in root.iter(NS + "loc")]
 
 
+def site_tree_is_here():
+    """Whether `site/`'s pages are on disk, or only the sliver CI checks out.
+
+    **In the Action every job is a sparse checkout of its own module**, and the
+    `site` job asks for `scripts`, `accounts`, `tests` and `site/assets/flags` -
+    `site/` is ~513MB and the suite's other 222 tests never read it.
+    `actions/checkout` sparse mode is a **cone**, which includes the files of
+    every parent directory on the way to each pattern. So `site/assets/flags`
+    drags in `site/`'s own files - `index.html`, `robots.txt`, `sitemap.xml`,
+    all of which the tests here read quite happily - and `site/assets/`'s, while
+    leaving `site/wii/`, `site/home/`, `site/games/` and the rest absent.
+
+    That makes the sentinel fiddly, and getting it wrong is silent. It cannot be
+    `site/assets`, which **exists in CI** for the reason above. It cannot be any
+    directory the sitemap lists, which would be circular. `site/fonts/` is
+    neither: it holds the xkcd Script face the landing page is set in, it is in
+    every real checkout, and the cone does not reach it.
+    """
+    return os.path.isdir(os.path.join(SITE, "fonts"))
+
+
 def test_the_sitemap_is_well_formed_xml():
     """It is parsed by machines only, so nothing else would ever notice."""
     assert locs(), "sitemap lists no URLs"
+
+
+def test_every_sitemap_url_is_on_this_host():
+    """Cheap half of the check, and the half that needs no pages on disk.
+
+    A sitemap may only list URLs on its own host - a `drive.cgovind.com` entry
+    in here would invalidate the file rather than help Drive - so this runs
+    everywhere, including the sparse CI checkout.
+    """
+    wrong = [u for u in locs() if not u.startswith(ORIGIN + "/")]
+    assert not wrong, "not on this host: %s" % wrong
 
 
 def test_every_url_in_the_sitemap_is_a_page_that_exists():
@@ -47,10 +79,20 @@ def test_every_url_in_the_sitemap_is_a_page_that_exists():
 
     Resolved against the tree rather than over HTTP, so it fails on the laptop
     that made the change instead of in somebody's Search Console a month later.
+
+    **Skipped where `site/` is not checked out, which means it does not run in
+    CI** - the same trade `test_no_drift.py` makes for `ttr/`, and the same
+    danger, since a skip reads as a pass. It is tolerable only because the two
+    things that would break it, editing the sitemap and renaming a page, are
+    both done in a full checkout by somebody who can run this. If that ever
+    stops being true, the fix is to check `site/` out for this job, not to
+    weaken the assertion.
     """
+    if not site_tree_is_here():
+        pytest.skip("site/ is not checked out here (sparse CI checkout), so "
+                    "there are no pages to resolve the sitemap against")
     missing = []
     for url in locs():
-        assert url.startswith(ORIGIN + "/"), "not on this host: %s" % url
         path = url[len(ORIGIN):].strip("/")
         # `app.py` serves GitHub-Pages-style directory indexes, so `/wii/` is
         # `site/wii/index.html`. A bare path is a file as written.
