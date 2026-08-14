@@ -4,7 +4,57 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="favicon.ico" />
-    <title>Chinmay's Website</title>
+    <!-- The name is in the title because the search that should land here is
+         somebody's name, not "website". It was "Chinmay's Website", which is
+         the one phrasing that contains neither the thing people type nor the
+         domain they would recognise. -->
+    <title>Chinmay Govind - cgovind.com</title>
+    <meta
+      name="description"
+      content="Chinmay Govind's website: four browser games I built and run
+               (Drive, Ticket to Ride, Egyptian Rat Screw, King of Tokyo), plus
+               poker, whale research, Penn Electric Racing, music and a resume."
+    />
+    <!-- **The canonical is the whole of the www fix.** `www.cgovind.com` and
+         `cgovind.com` both answer 200 with no redirect between them, so a
+         crawler sees two complete copies of the site and splits the credit for
+         it across both. Doing that properly is an nginx redirect, and the
+         deploy deliberately never touches nginx - this settles which of the two
+         addresses is the real one without needing a hand-applied config change,
+         and stays correct if one is ever added. -->
+    <link rel="canonical" href="https://cgovind.com/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="cgovind.com" />
+    <meta property="og:title" content="Chinmay Govind" />
+    <meta
+      property="og:description"
+      content="Four browser games I built and run, plus poker, whales, racing and music."
+    />
+    <meta property="og:url" content="https://cgovind.com/" />
+    <meta property="og:image" content="https://cgovind.com/assets/icons/drive.png" />
+    <meta name="twitter:card" content="summary" />
+    <!-- Who this is, in the form a search engine reads rather than infers. The
+         `sameAs` list is the point of it: these profiles already rank for this
+         name and this is what tells Google they and this domain are one person.
+         Kept to accounts that are actually his and actually public. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Person",
+        "name": "Chinmay Govind",
+        "url": "https://cgovind.com/",
+        "affiliation": {
+          "@type": "CollegeOrUniversity",
+          "name": "University of Pennsylvania"
+        },
+        "sameAs": [
+          "https://github.com/chinmaygovind/",
+          "https://www.linkedin.com/in/chinmaygovind/",
+          "https://www.instagram.com/sirchinmay/",
+          "https://www.worldcubeassociation.org/persons/2018GOVI03"
+        ]
+      }
+    </script>
     <style>
       @font-face {
         font-family: "xkcd Script";

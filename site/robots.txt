@@ -1,3 +1,15 @@
 # https://www.robotstxt.org/robotstxt.html
 User-agent: *
 Disallow:
+
+# `projects/ibec/` is an unmodified site template that was copied in with the
+# project and still carries its demo pages (committees, contact, membership,
+# left-/right-/no-sidebar). None of it is Chinmay's writing and none of it is
+# linked from anywhere, so it is kept out of the index rather than left to be
+# found and judged as thin content on this domain.
+Disallow: /projects/ibec/
+
+# Nothing here is linked from the landing page - its tiles open modals or point
+# at the game subdomains - so without this line a crawler can discover exactly
+# one page of this site.
+Sitemap: https://cgovind.com/sitemap.xml

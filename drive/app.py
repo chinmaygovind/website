@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 load_dotenv()
 
-from flask import (Flask, render_template, request, jsonify,
+from flask import (Flask, render_template, request, jsonify, Response,
                    redirect, url_for, session, send_from_directory, abort)
 from flask_socketio import SocketIO, join_room, leave_room, emit
 from sqlalchemy import func
@@ -356,6 +356,10 @@ def inject_globals():
             "og_description": OG_DESCRIPTION,
             "og_title": None,
             "og_image": "/static/img/og.png",
+            # Off by default: a page is indexable unless it is one of the few
+            # that will not exist next week. Derived from the endpoint rather
+            # than passed by each route, the same way `presence_where` is.
+            "robots_noindex": (request.endpoint or "") in NOINDEX_ENDPOINTS,
             # What the heartbeat in base.html says about this page. Derived
             # from the endpoint rather than passed by each route, so a new page
             # gets a sensible answer without anybody remembering to add one -
@@ -375,6 +379,13 @@ def inject_globals():
                             if bots_mod.DEFAULT_LEVEL in bots_mod.OFFERED
                             else bots_mod.OFFERED[0]),
             "asset_version": ASSET_VERSION}
+
+
+# Pages that are gone tomorrow. A room code lives for one evening and a replay
+# is one race, so both would be crawled, indexed, and then be dead results on a
+# small site. `robots.txt` disallows the same three paths; this covers the
+# crawler that has the URL already and never asks for `robots.txt`.
+NOINDEX_ENDPOINTS = {"room", "race_replay"}
 
 
 PRESENCE_BY_ENDPOINT = {
@@ -504,6 +515,59 @@ def service_worker():
     resp.headers["Content-Type"] = "application/javascript"
     resp.headers["Service-Worker-Allowed"] = "/"
     return resp
+
+
+# The pages of Drive that are worth being found, and the ones that are not.
+#
+# `drive.cgovind.com` had no `robots.txt` at all, which is not the same as
+# allowing everything: a crawler asking for one got the Mario 404 page, and the
+# host had no way to name its own sitemap. Both are here rather than in
+# `static/` because the track pool is the source of truth for what exists and a
+# file on disk would be a second list of tracks to keep in step.
+#
+# The disallows are the useful half. A room code lives for one evening, a join
+# link is that code again, and `/race/<id>` is a replay of one race - all three
+# are real pages that would be crawled, indexed, and then be gone, which is how
+# a small site accumulates a large number of dead results.
+_ROBOTS = """User-agent: *
+Disallow: /api/
+Disallow: /room/
+Disallow: /j/
+Disallow: /race/
+Disallow: /login
+Disallow: /register
+
+Sitemap: %s/sitemap.xml
+"""
+
+
+@app.route("/robots.txt")
+def robots():
+    return Response(_ROBOTS % SELF_URL, mimetype="text/plain")
+
+
+@app.route("/sitemap.xml")
+def sitemap():
+    """Every track, twice: the game and its board.
+
+    Generated rather than written down, so a track added to the pool is in here
+    the moment it exists - the same reason the switcher and the home page build
+    their lists from `tracks_mod` instead of a hand-kept copy.
+
+    No `lastmod`. A track page changes whenever somebody sets a time on it,
+    which is not a thing this can know without a query per track, and a date
+    that is wrong is worse than one that is absent.
+    """
+    urls = ["/", "/solo", "/leaderboard", "/lobbies"]
+    for t in tracks_mod.TRACKS:
+        urls.append("/solo/%s" % t["slug"])
+        urls.append("/track/%s" % t["slug"])
+    body = ["<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+            "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">"]
+    for path in urls:
+        body.append("  <url><loc>%s%s</loc></url>" % (SELF_URL, path))
+    body.append("</urlset>")
+    return Response("\n".join(body), mimetype="application/xml")
 
 
 # ---------------------------------------------------------------------------

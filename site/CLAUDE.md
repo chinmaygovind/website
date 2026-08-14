@@ -51,6 +51,28 @@ self-contained HTML with inline `<style>`/`<script>`.
 - `site/{images,audio,videos}/` - shared media (Wii menu art + channel media).
 - `site/404.html`, `favicon.ico`, `robots.txt` at the root.
 
+## Being found
+
+- **`site/sitemap.xml` is the only way most of this site is discoverable**, which
+  is why it is load-bearing and not decoration: see the next section — nothing
+  here is linked from `/`, so a crawler that arrives finds one page and stops.
+  It is hand-kept, so `tests/test_seo.py` resolves every URL in it against the
+  tree and fails on a rename; a sitemap full of 404s is worse than none.
+  `robots.txt` names it and disallows `projects/ibec/` (an unmodified site
+  template that came in with the project). Each game subdomain carries its own —
+  a sitemap may only list URLs on its own host — and Drive generates one from
+  the track pool.
+- **`<link rel="canonical">` on the landing page is the www fix.**
+  `www.cgovind.com` and `cgovind.com` both answer 200 with no redirect between
+  them, so a crawler sees two whole copies of the site. Doing it properly is an
+  nginx redirect and **the deploy never touches nginx**, so the canonical settles
+  which address is real without a hand-applied config change, and stays right if
+  a redirect is ever added.
+- **`chinmaygovind.github.io` is still live and still ranks for Chinmay's name**,
+  and it never mentions this domain. It is a different repo, so nothing here can
+  fix it — but it is the biggest single reason searching his name does not land
+  on `cgovind.com`.
+
 ## Unlinked pages (nothing on the site links to these)
 
 The landing page's tiles only open modals or point off-site (ttr/ers/kot subdomains,

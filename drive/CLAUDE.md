@@ -268,6 +268,15 @@ than 15% or move a corner more than 8 degrees before refusing.
   `tools/shoot_og_cards.py` is that step alone, for when the layout changed and
   the tracks did not. A card is what a pasted link to a track unfurls into, so a
   stale one is only ever seen in somebody else's feed.
+- **`/robots.txt` and `/sitemap.xml` are routes, not files**, because the track
+  pool is what says which pages exist and a file on disk would be a second list
+  to keep in step. The sitemap is every track twice (the game and its board);
+  the disallows are the pages that are gone tomorrow - a room code, a join link,
+  a race replay - which are also `noindex` at the page via `NOINDEX_ENDPOINTS`,
+  since the two catch different crawlers. **Every page carries
+  `<link rel="canonical">` built from `request.path`**, which is what stops the
+  share links (`/solo/<slug>?watch=<id>`) making one duplicate page per lap on
+  the board.
 - **`static/img/icon.svg` is the only drawing of the mark, and everything else
   in `static/img` that is a picture of it is output.** The seven rasters and the
   1200x630 share card are all rendered from it by `tools/shoot_icon.py`, so edit

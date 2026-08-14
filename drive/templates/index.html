@@ -1,6 +1,31 @@
 {% extends "base.html" %}
-{% block title %}Drive{% endblock %}
+{# "Drive" alone is a word nobody can rank for and that says nothing in a list
+   of results. The rest is what the game actually is, in the words somebody
+   looking for it would use. `og_title` falls back to this, so it is the title
+   of the share card too. #}
+{% block title %}Drive - low-poly time trials and online racing{% endblock %}
 {% set active_page = 'home' %}
+{% block head %}
+{# What this page is, in the form a search engine reads rather than infers.
+   `VideoGame` with a `BrowserApplication` playing platform is the honest
+   description: no download, no install, runs where the link opens. #}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "VideoGame",
+  "name": "Drive",
+  "url": "{{ drive_url }}/",
+  "description": {{ og_description|tojson }},
+  "image": "{{ drive_url }}/static/img/og.png",
+  "gamePlatform": "Web browser",
+  "applicationCategory": "Game",
+  "operatingSystem": "Any",
+  "playMode": ["SinglePlayer", "MultiPlayer"],
+  "author": {"@type": "Person", "name": "Chinmay Govind", "url": "{{ site_url }}/"},
+  "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}
+}
+</script>
+{% endblock %}
 {% block body %}
 {% include "_nav.html" %}
 {# The home page is no longer the way in - Drive now and the Solo tab both go

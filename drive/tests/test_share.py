@@ -161,6 +161,58 @@ def test_nonsense_in_watch_is_ignored_rather_than_fatal(env):
 
 
 # ---------------------------------------------------------------------------
+# What a crawler sees
+# ---------------------------------------------------------------------------
+
+def test_a_shared_lap_canonicalises_to_the_bare_track(env):
+    """The one duplicate the share button creates, and the one line that fixes it.
+
+    Every lap on a board is a `?watch=` of the same page, so without a canonical
+    a track with forty times on it is forty near-identical URLs.
+    """
+    can = re.compile(r'<link rel="canonical" href="([^"]+)"')
+    c = env.app.test_client()
+    plain = can.search(c.get("/solo/bigred").get_data(as_text=True)).group(1)
+    shared = can.search(
+        c.get("/solo/bigred?watch=7").get_data(as_text=True)).group(1)
+    assert plain == shared == "https://drive.cgovind.com/solo/bigred"
+
+
+def test_a_room_is_not_indexed_and_a_track_is(env):
+    """A room code lives for one evening; indexing it buys a dead result."""
+    c = env.app.test_client()
+    _login(c, _user(env))
+    c.post("/create", json={"track": "sunrise"})
+    with env.app.app_context():
+        code = env.DriveGame.query.first().code
+    assert b'name="robots" content="noindex' in c.get("/room/" + code).data
+    assert b'name="robots" content="noindex' not in c.get("/solo/sunrise").data
+
+
+def test_robots_names_the_sitemap_and_hides_what_is_ephemeral(env):
+    txt = env.app.test_client().get("/robots.txt").get_data(as_text=True)
+    assert "Sitemap: https://drive.cgovind.com/sitemap.xml" in txt
+    for path in ("/api/", "/room/", "/j/", "/race/"):
+        assert "Disallow: %s" % path in txt
+
+
+def test_the_sitemap_is_valid_and_lists_every_track(env):
+    """Generated from the pool, so a new track is in it the day it lands."""
+    import xml.etree.ElementTree as ET
+    import tracks as tracks_mod
+    body = env.app.test_client().get("/sitemap.xml").get_data(as_text=True)
+    ns = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
+    root = ET.fromstring(body)
+    assert root.tag == ns + "urlset"
+    locs = {e.text for e in root.iter(ns + "loc")}
+    for t in tracks_mod.TRACKS:
+        assert "https://drive.cgovind.com/solo/%s" % t["slug"] in locs
+        assert "https://drive.cgovind.com/track/%s" % t["slug"] in locs
+    # Nothing robots.txt just said to stay out of.
+    assert not [u for u in locs if "/room/" in u or "/race/" in u or "/api/" in u]
+
+
+# ---------------------------------------------------------------------------
 # The button
 # ---------------------------------------------------------------------------
 

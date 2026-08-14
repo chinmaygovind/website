@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The pages of cgovind.com worth being found.
+
+  This is not decoration: the landing page's tiles only open modals or point at
+  the game subdomains, so **no internal page here is linked from `/` at all**.
+  Without this file a crawler that reaches the site can discover exactly one
+  page of it, which is why everything below has been unreachable to search for
+  as long as it has existed.
+
+  Two deliberate omissions. `projects/ibec/` is seven leftover pages of an
+  unmodified site template (committees, contact, membership, the sidebar demos)
+  and is somebody else's boilerplate rather than anything of Chinmay's, so it is
+  disallowed in robots.txt rather than listed here. `404.html` is reachable only
+  by being wrong, which is not a page.
+
+  Each game lives on its own subdomain and carries its own sitemap; a sitemap
+  may only list URLs on its own host, so drive.cgovind.com's is served by Drive
+  (`drive/app.py`) and named from that host's robots.txt.
+
+  `lastmod` is deliberately absent rather than guessed. A date that does not
+  move when the page does is worse than none: it teaches a crawler to distrust
+  the ones that are right.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://cgovind.com/</loc>
+    <priority>1.0</priority>
+  </url>
+
+  <!-- The old projects landing page. Nothing links to it any more, and the
+       things it links to are reachable only through it, so listing it is what
+       keeps that half of the site findable. -->
+  <url>
+    <loc>https://cgovind.com/home/</loc>
+    <priority>0.8</priority>
+  </url>
+
+  <!-- The Wii menu recreation, which is the most linkable thing here after the
+       games and has been unreachable to search since it moved to /wii/. -->
+  <url>
+    <loc>https://cgovind.com/wii/</loc>
+    <priority>0.8</priority>
+  </url>
+
+  <url><loc>https://cgovind.com/projects/astro/</loc><priority>0.6</priority></url>
+  <url><loc>https://cgovind.com/projects/quickcal/</loc><priority>0.6</priority></url>
+  <url><loc>https://cgovind.com/projects/robot-tour/</loc><priority>0.6</priority></url>
+
+  <url><loc>https://cgovind.com/games/bridge/</loc><priority>0.6</priority></url>
+  <url><loc>https://cgovind.com/games/flip/</loc><priority>0.6</priority></url>
+  <url><loc>https://cgovind.com/games/klotski/</loc><priority>0.6</priority></url>
+
+  <url><loc>https://cgovind.com/channels/mii/</loc><priority>0.5</priority></url>
+  <url><loc>https://cgovind.com/channels/music/</loc><priority>0.5</priority></url>
+  <url><loc>https://cgovind.com/channels/codebusters/</loc><priority>0.5</priority></url>
+</urlset>

@@ -21,6 +21,16 @@
      All three are ordinary context variables with defaults in `inject_globals`,
      so a route overrides one by passing it to `render_template` - a Jinja block
      cannot be set from Python, and this is decided in Python. #}
+  {# `request.path` and not `request.url`, which is the whole point: the query
+     string is what makes a duplicate here. Every shared lap is
+     `/solo/<slug>?watch=<id>`, so without this one line a track with forty laps
+     on its board is forty near-identical pages to a crawler, all of them the
+     same track. Naming the bare path collapses them onto it. #}
+  <link rel="canonical" href="{{ drive_url }}{{ request.path }}"/>
+  {# A room code lives for one evening and a replay is one race, so both are
+     pages that would be indexed and then be gone. Kept out at the page as well
+     as in robots.txt, since the two answer different crawlers. #}
+  {% if robots_noindex %}<meta name="robots" content="noindex, follow"/>{% endif %}
   <meta property="og:type" content="website"/>
   <meta property="og:site_name" content="Drive"/>
   <meta property="og:title" content="{{ og_title or self.title() }}"/>
