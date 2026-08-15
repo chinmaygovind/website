@@ -1,7 +1,7 @@
 {
   "name": "Drive",
   "short_name": "Drive",
-  "description": "Low-poly time trials and multiplayer races. Pick a track, chase the medal times, bump your friends off the road.",
+  "description": "Race to set the best lap and beat your friends, all in the browser! Pick a track, chase the medal times, bump your friends off the road! Made by Chinmay Govind",
   "start_url": "/",
   "scope": "/",
   "display": "fullscreen",

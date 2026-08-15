@@ -8,12 +8,10 @@
          somebody's name, not "website". It was "Chinmay's Website", which is
          the one phrasing that contains neither the thing people type nor the
          domain they would recognise. -->
-    <title>Chinmay Govind - cgovind.com</title>
+    <title>Chinmay Govind | cgovind.com</title>
     <meta
       name="description"
-      content="Chinmay Govind's website: four browser games I built and run
-               (Drive, Ticket to Ride, Egyptian Rat Screw, King of Tokyo), plus
-               poker, whale research, Penn Electric Racing, music and a resume."
+      content="Welcome to cgovind.com! Check out stuff made by Chinmay Govind."
     />
     <!-- **The canonical is the whole of the www fix.** `www.cgovind.com` and
          `cgovind.com` both answer 200 with no redirect between them, so a
@@ -25,13 +23,28 @@
     <link rel="canonical" href="https://cgovind.com/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="cgovind.com" />
-    <meta property="og:title" content="Chinmay Govind" />
+    <!-- Kept word-for-word the same as the <title> and description above, so the
+         Discord/iMessage/Slack card and the Google result say one thing rather
+         than two. Change one, change the other. -->
+    <meta property="og:title" content="Chinmay Govind | cgovind.com" />
     <meta
       property="og:description"
-      content="Four browser games I built and run, plus poker, whales, racing and music."
+      content="Welcome to cgovind.com! Check out stuff made by Chinmay Govind."
     />
     <meta property="og:url" content="https://cgovind.com/" />
-    <meta property="og:image" content="https://cgovind.com/assets/icons/drive.png" />
+    <!-- The favicon guy, not a game icon. This was `assets/icons/drive.png`,
+         which put the Drive steering wheel on every share of the site itself -
+         one of four tiles standing in for the whole page. `favicon.png` is the
+         256x256 frame out of `favicon.ico`, extracted because a `.ico` is not
+         reliably rendered as an `og:image`. It is deliberately opaque: the
+         drawing is black line art, so on a transparent background it would be
+         invisible against Discord's dark card. -->
+    <meta property="og:image" content="https://cgovind.com/favicon.png" />
+    <meta property="og:image:width" content="256" />
+    <meta property="og:image:height" content="256" />
+    <meta property="og:image:alt" content="A stick figure in a top hat" />
+    <!-- `summary`, not `summary_large_image`: the image is a square drawing, and
+         the wide card would crop it to a letterbox strip of its middle. -->
     <meta name="twitter:card" content="summary" />
     <!-- Who this is, in the form a search engine reads rather than infers. The
          `sameAs` list is the point of it: these profiles already rank for this
