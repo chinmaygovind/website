@@ -216,7 +216,7 @@ SELF_URL = os.environ.get("DRIVE_URL", "https://drive.cgovind.com").rstrip("/")
 # if you change one, change the other.
 OG_DESCRIPTION = ("Race to set the best lap and beat your friends, all in the "
                   "browser! Pick a track, chase the medal times, bump your "
-                  "friends off the road! Made by Chinmay Govind")
+                  "friends off the road! Made by Chinmay Govind.")
 
 
 # ---------------------------------------------------------------------------
