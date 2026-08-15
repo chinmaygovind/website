@@ -16,12 +16,20 @@ self-contained HTML with inline `<style>`/`<script>`.
   row wraps *within that row* rather than into the row below. **Keep `settings`
   last in the top row** (it's a Wii-menu joke), and add new games to the
   `GAMES` section so the split holds.
-  **The label has three placements and two of them are forced.** Above 900px it
-  sits in a column of its own to the left (`--rowlbl`), which is what `--tile`
-  came down from 14vw to 13vw to pay for. From 761 to 900 it goes *above* its
-  row: `--tile` has bottomed out at its 110px floor there while the screen keeps
-  shrinking, so six tiles are already most of the page and a label column
-  overflows the viewport by ~36px at 780. At 760 and below it stays above the
+  **The labels cost the tiles nothing** — they were added without a single icon
+  moving, and there is a check for that: shoot the page before and after and
+  diff the pixels (`ImageChops.difference(...).getbbox()`), and the only band
+  that differs is the strip the labels are in. That is what `position: absolute`
+  on `.rowlabel` buys — it hangs in the margin left over beside six tiles rather
+  than taking a column. Two things it needs: the row is `width: max-content;
+  margin: 0 auto` so that `right: 100%` means "the left edge of the tiles", and
+  the label needs an explicit `width: max-content`, because an absolute box
+  positioned entirely outside its containing block gets no available width and
+  shrink-to-fit collapses it to its longest word.
+  **Below 900px the label goes above its row instead**, back in the flow and
+  spanning the grid: `--tile` has bottomed out at its 110px floor there while
+  the screen keeps shrinking, so six tiles are already most of the page and
+  there is no margin to hang anything in. At 760 and below it stays above the
   row and the grid drops to two columns, which is the phone layout. Drive's tile was pulled for
   a while (Jul 2026) so Chinmay could draw the icon himself, and came back once he
   had — the steering wheel in `assets/icons/drive.{png,gif,xcf}` is his.

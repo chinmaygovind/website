@@ -73,8 +73,7 @@
         --music: #000000;
         --settings: #000000;
         --link: #1a56ff;
-        --tile: clamp(110px, min(13vw, 30vh), 240px);
-        --rowlbl: clamp(62px, 8vw, 150px);
+        --tile: clamp(110px, min(14vw, 30vh), 240px);
       }
       * { box-sizing: border-box; }
       html, body {
@@ -144,17 +143,23 @@
 
       /* ---- tile grid (imaginary 6 x 2 squares) ----
          Two labelled rows rather than one twelve-slot grid: the split was
-         always there (six about me, then the games) and now it says so. Each
-         row is its own grid of the same six columns, so the tiles line up
-         across the two exactly as they did when they shared one.
+         always there (six about me, then the games) and now it says so.
 
-         The label sits in a column of its own to the left. It is reserved
-         width and not something hung in the margin, because the margin is
-         whatever is left over after six tiles and there is not always any: at
-         1024px the six columns and their gaps are most of the screen. Which is
-         also why `--tile` is a little smaller once there is a label to fit -
-         6 x 14vw + label does not fit in 94vw, and the row would otherwise
-         quietly overflow into a horizontal scrollbar. */
+         **The tiles are exactly where they were before there were any labels.**
+         Each row is still a `repeat(6, --tile)` grid - six columns even in the
+         row with only four things in it, which is what keeps the two rows lined
+         up with each other and both of them where the single grid put them -
+         and the row is `width: max-content` centred, which is what
+         `justify-content: center` was doing.
+
+         The label is what pays for that: it is `position: absolute` against the
+         row, so it takes no space at all and hangs in whatever margin is left
+         over beside six tiles. `right: 100%` is the outside of the row's own
+         box, and because the row is max-content that box is the tiles. There is
+         not much margin (68px at 1440), so it is small type and may wrap to two
+         lines - `max-width` is that margin, measured in the only terms
+         available here: half of the viewport minus the row, which is what
+         `(100vw - 100%) / 2` says when `100%` is the row's own width. */
       .tiles {
         flex: 1;
         display: flex;
@@ -164,30 +169,52 @@
         padding: 0 3vw 3vh;
       }
       .tilerow {
+        position: relative;
+        width: max-content;
+        max-width: 100%;
+        margin: 0 auto;
         display: grid;
-        grid-template-columns: var(--rowlbl) repeat(6, var(--tile));
+        grid-template-columns: repeat(6, var(--tile));
         gap: 1vw;
-        justify-content: center;
         align-items: center;
       }
       .rowlabel {
+        position: absolute;
+        right: 100%;
+        top: 50%;
+        transform: translateY(-50%);
         margin: 0;
+        padding-right: 0.5rem;
+        /* `width: max-content` and not the shrink-to-fit an absolute box gets by
+           default. The element sits entirely *outside* its containing block, so
+           the space available to it computes as none and shrink-to-fit collapses
+           it to its longest word - "ABOUT ME" broke into two lines even on a
+           1920 screen with 192px of margin to sit in. Sized to its content and
+           then clamped, it takes one line wherever one line fits. */
+        width: max-content;
+        max-width: max(3rem, calc((100vw - 100%) / 2 - 0.5rem));
         font-weight: 400;
-        font-size: clamp(1rem, 1.75vw, 1.9rem);
-        letter-spacing: 0.06em;
-        line-height: 1.05;
+        font-size: clamp(0.78rem, 1.05vw, 1.15rem);
+        letter-spacing: 0.05em;
+        line-height: 1.2;
         text-align: right;
       }
-      /* Between the phone layout and about 900px there is no room beside the
-         row for a label: `--tile` has bottomed out at its 110px floor while the
-         screen keeps shrinking, so six tiles and their gaps are already wider
-         than the page. Measured at 780px, a label column overflows the viewport
-         by 36px and the grid - which is centred - spills off both edges. So in
-         that band the label goes above its row, which is where the phone puts
-         it anyway. It spans the full grid, so it lines up with the first tile. */
+      /* Below about 900px there is no margin to hang it in: `--tile` has
+         bottomed out at its 110px floor while the screen keeps shrinking, so
+         six tiles and their gaps are most of the page. There the label comes
+         back into the flow above its own row, spanning the grid so it lines up
+         with the first tile - which is what the phone wants anyway. */
       @media (max-width: 900px) {
-        .tilerow { grid-template-columns: repeat(6, var(--tile)); }
-        .rowlabel { grid-column: 1 / -1; text-align: left; }
+        .rowlabel {
+          position: static;
+          transform: none;
+          width: auto;
+          max-width: none;
+          padding-right: 0;
+          grid-column: 1 / -1;
+          text-align: left;
+          font-size: clamp(1.1rem, 2.4vw, 1.5rem);
+        }
         /* A label above its row needs more air between the rows than one
            beside it, or GAMES sits on the row above's captions. */
         .tiles { gap: 1.3rem; }
