@@ -21,9 +21,18 @@
       <b>{{ stats.games|commas }}</b>
       <span>games finished</span>
     </div>
+    {# Deliberately the tile before `visitors`, because the gap between the two
+       is the point and it is about an order of magnitude. A visitor is a
+       browser that asked for a page, and most of them here are machines - some
+       wearing a perfectly ordinary iPhone string, which no regex can catch.
+       This one is somebody who *finished a timed lap*, which a scanner cannot
+       fake because it takes the game loading and running. See
+       `admin.drive_players` for why the path is `/api/run` and not
+       `/api/start`. Windowed like the traffic tiles, since the question it
+       exists for - "did that post work" - has a date. #}
     <div class="cell">
-      <b>{{ stats.laps|commas }}</b>
-      <span>Drive laps</span>
+      <b>{{ stats.drivers.players|commas }}</b>
+      <span>drove a lap{% if stats.drivers.signed_in %} · {{ stats.drivers.signed_in }} signed in{% endif %}</span>
     </div>
     <div class="cell">
       <b>{{ stats.visitors|commas }}</b>
@@ -52,6 +61,13 @@
       <b>{{ stats.per_game.get(g.key, 0)|commas }}</b> {{ g.name }}
     </span>
     {% endfor %}
+    {# All-time, unlike the tiles, and it sits here rather than up there for
+       that reason: this row is the four games' lifetime totals, which is the
+       one place a lifetime lap count is comparable to anything. #}
+    {% set drive = game_list|selectattr('key', 'equalto', 'drive')|first %}
+    <span class="sp" style="--tag: {{ drive.accent if drive else 'inherit' }}">
+      <b>{{ stats.laps|commas }}</b> Drive laps
+    </span>
   </div>
   {% endif %}
 </div>

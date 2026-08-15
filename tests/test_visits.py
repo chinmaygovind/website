@@ -121,6 +121,48 @@ def test_a_crawler_is_flagged_and_kept(client, wipe):
     assert [r["is_bot"] for r in rows(wipe)] == [1, 0]
 
 
+@pytest.mark.parametrize("agent", [
+    # Every one of these was counted as a *person* on the thirty days around
+    # Drive's launch, and each arrived once, to `/` or `/.env`, from a different
+    # address. They are the reason `BOT_RE` grew its last three lines.
+    "Python-urllib/3.13",
+    "python-urllib3/2.7.0",
+    "Mozilla/5.0 (l9scan/2.0.834313e20323e2735313e24353; +https://leakix.net)",
+    "Mozilla/5.0 (compatible; research-scan/1.0)",
+    "Mozilla/5.0 (compatible; CensysInspect/1.1; +https://about.censys.io/)",
+    "Mozilla/5.0 (compatible; SecurityScanner/1.0)",
+    "Mozilla/5.0 (compatible; NetcraftSurveyAgent/1.0; +info@netcraft.com)",
+    "Mozilla/5.0 zgrab/0.x",
+    "Go-http-client/1.1",
+    "Hello from Palo Alto Networks, find out more about our scans in "
+    "https://docs-cortex.paloaltonetworks.com/r/1/Cortex-Xpanse/Scanning-activity",
+    "",                      # no User-Agent at all is never a browser
+    "Mozilla/5.0",           # nor is the fossil on its own
+])
+def test_the_scanners_that_were_passing_as_people_are_flagged(agent):
+    assert visits.is_crawler(agent), "%r still counts as a person" % agent
+
+
+@pytest.mark.parametrize("agent", [
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15"
+    " (KHTML, like Gecko) Version/26.2 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko)"
+    " Chrome/151.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:153.0) Gecko/20100101"
+    " Firefox/153.0",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 26_5_2 like Mac OS X)"
+    " AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/151.0.7922.112"
+    " Mobile/15E148 Safari/604.1",
+    "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko)"
+    " Chrome/151.0.0.0 Mobile Safari/537.36",
+])
+def test_the_widened_pattern_still_lets_real_browsers_through(agent):
+    """The half of the trade that matters. `scan`, `research` and `python-` are
+    broad tokens deliberately, so the guard against them is a browser from every
+    engine - these are the five commonest real agents on the box."""
+    assert not visits.is_crawler(agent), "%r was mistaken for a crawler" % agent
+
+
 def test_the_address_comes_from_the_proxy_header(client, wipe):
     """Every one of these services listens on 127.0.0.1 with nginx in front, so
     remote_addr is always the proxy - without this every row would say the box

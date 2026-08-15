@@ -423,6 +423,47 @@ def test_drive_laps_are_counted_apart_from_games(client, db, as_admin):
     db.session.commit()
 
 
+def test_a_player_is_somebody_who_drove_and_not_somebody_who_arrived(
+        client, db, as_admin):
+    """The tile exists because `visitors` is not a count of people, and this is
+    the specific mistake it must not repeat.
+
+    ``/api/start`` is the tempting path - "who began a lap" - and it is wrong,
+    because ``noteStart()`` in `drive/static/js/game.js` returns early unless
+    the driver is logged in. On the r/WebGames launch, 21 people drove and 3 had
+    accounts; reading starts would have called that three players. So: a guest
+    who finishes a lap counts, and a browser that only ever loaded the page does
+    not.
+    """
+    as_admin("chinmay")
+    db.session.execute(text("DELETE FROM site_visits"))
+    now = datetime.utcnow()
+
+    def visit(visitor, path, user_id=None, service="drive", is_bot=0):
+        db.session.execute(text(
+            "INSERT INTO site_visits (ts, service, visitor_id, session_id,"
+            " user_id, method, path, status, is_bot)"
+            " VALUES (:ts, :sv, :v, :v, :u, 'POST', :p, 200, :b)"),
+            {"ts": visits.stamp(now), "sv": service, "v": visitor,
+             "u": user_id, "p": path, "b": is_bot})
+
+    visit("guest", "/api/run")                    # a stranger who drove
+    visit("guest", "/api/run")                    # ...twice
+    visit("member", "/api/run", user_id=1)        # somebody with an account
+    visit("member", "/api/start", user_id=1)      # which only they can post
+    visit("looker", "/")                          # loaded the page, never drove
+    visit("robot", "/api/run", is_bot=1)          # and a crawler cannot be one
+    db.session.commit()
+
+    got = admin.drive_players(db.session.connection(), now - timedelta(days=30))
+    assert got["players"] == 2, "expected the guest and the member, got %s" % got
+    assert got["signed_in"] == 1
+    assert got["laps"] == 3
+
+    old = admin.drive_players(db.session.connection(), now + timedelta(days=1))
+    assert old["players"] == 0, "the tile ignored its own window"
+
+
 def test_drive_flagged_laps_are_finally_readable(client, db, as_admin):
     """``drive_cheat_flags`` is written by the lap verifier and, until this
     page, was never read by anything at all."""

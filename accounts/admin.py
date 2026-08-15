@@ -287,6 +287,47 @@ def game_counts(conn):
     return counts, laps
 
 
+# The one number the traffic tiles cannot give you. `visitors` counts browsers
+# that asked for a page, and on this site most of them are machines wearing a
+# plausible User-Agent (see `visits.is_crawler`, which explains why no regex
+# fixes that). A lap is behaviour: `/api/run` is posted by `game.js` when a
+# timed run *finishes*, so it cannot arrive without the game having been loaded,
+# driven and completed.
+#
+# **It has to be `/api/run` and not `/api/start`.** Both are logged - neither is
+# in `visits.SKIP_PREFIXES` - and `/api/start` looks like the better question,
+# "who began a lap". But `noteStart()` in `drive/static/js/game.js` returns
+# early unless `CFG.loggedIn`, because a start is a tally kept in a row and a
+# guest has no row: guests never send it at all. Of the 29 people the
+# r/WebGames post sent on 2026-08-14, 21 drove a lap and 3 had accounts, so
+# `/api/start` would have reported the launch as three players. `/api/run` is
+# posted by everybody, guests included - their browser keeps the run and hands
+# it over if they ever log in - which is exactly the population this tile is
+# for: strangers who tried the game.
+
+def drive_players(conn, cut):
+    """``{"players", "signed_in", "laps"}`` - people who actually drove.
+
+    Windowed like the traffic tiles beside it rather than all-time, because the
+    question it answers is "did that post work", and that question has a date.
+    """
+    empty = {"players": 0, "signed_in": 0, "laps": 0}
+    if not _have_visits(conn):
+        return empty
+    row = _row(conn,
+               "SELECT COUNT(DISTINCT visitor_id) AS players,"
+               "       COUNT(DISTINCT user_id) AS signed_in,"
+               "       COUNT(*) AS laps"
+               "  FROM site_visits"
+               " WHERE service = 'drive' AND path = '/api/run'"
+               "   AND is_bot = 0 AND ts > :cut", cut=_stamp(cut))
+    if not row:
+        return empty
+    return {"players": row.get("players") or 0,
+            "signed_in": row.get("signed_in") or 0,
+            "laps": row.get("laps") or 0}
+
+
 def played_for(conn, user_ids):
     """``{user_id: {game_key: games played}}`` for a page of people.
 
@@ -611,6 +652,7 @@ def headline(conn, cut, days):
     stats["games"] = sum(counts.values())
     stats["per_game"] = counts
     stats["laps"] = laps
+    stats["drivers"] = drive_players(conn, cut)
 
     stats.update({"visits": 0, "bot_visits": 0, "visitors": 0,
                   "sessions": 0, "visits_today": 0, "online": 0})
