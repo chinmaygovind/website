@@ -7,12 +7,22 @@ self-contained HTML with inline `<style>`/`<script>`.
 
 - `site/index.html` is the landing page: white page, big "hey!" left, welcome line
   and contact links across the top, all in the self-hosted xkcd Script font
-  (`site/fonts/xkcd-script.woff`, from ipython/xkcd-font). Below it is a **tile
-  grid** — `repeat(6, --tile)` × auto rows, so **12 slots** before it wraps to a
-  third row (2 columns on <=760px). Currently 10: resume, poker, whales, racing,
-  music, settings on the top row, then the four games — drive, ttr, ers, kot — on
-  the second. **Keep `settings` last in the top row** (it's a Wii-menu joke), and
-  add new games to the second row so the split holds. Drive's tile was pulled for
+  (`site/fonts/xkcd-script.woff`, from ipython/xkcd-font). Below it are **two
+  labelled tile rows** — `<section class="tilerow">` each holding an
+  `<h2 class="rowlabel">` and its tiles, `ABOUT ME` over resume, poker, whales,
+  racing, music, settings and `GAMES` over drive, ttr, ers, kot. Each row is its
+  own `repeat(6, --tile)` grid, so the two line up as they did when they shared
+  one twelve-slot grid, and **six is still the row width**: a seventh tile in a
+  row wraps *within that row* rather than into the row below. **Keep `settings`
+  last in the top row** (it's a Wii-menu joke), and add new games to the
+  `GAMES` section so the split holds.
+  **The label has three placements and two of them are forced.** Above 900px it
+  sits in a column of its own to the left (`--rowlbl`), which is what `--tile`
+  came down from 14vw to 13vw to pay for. From 761 to 900 it goes *above* its
+  row: `--tile` has bottomed out at its 110px floor there while the screen keeps
+  shrinking, so six tiles are already most of the page and a label column
+  overflows the viewport by ~36px at 780. At 760 and below it stays above the
+  row and the grid drops to two columns, which is the phone layout. Drive's tile was pulled for
   a while (Jul 2026) so Chinmay could draw the icon himself, and came back once he
   had — the steering wheel in `assets/icons/drive.{png,gif,xcf}` is his.
 - **Adding a tile is one repeating pattern**, all inside `site/index.html` (no

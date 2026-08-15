@@ -73,7 +73,8 @@
         --music: #000000;
         --settings: #000000;
         --link: #1a56ff;
-        --tile: clamp(110px, min(14vw, 30vh), 240px);
+        --tile: clamp(110px, min(13vw, 30vh), 240px);
+        --rowlbl: clamp(62px, 8vw, 150px);
       }
       * { box-sizing: border-box; }
       html, body {
@@ -141,16 +142,55 @@
       }
       .contact-name { text-decoration: none; }
 
-      /* ---- tile grid (imaginary 6 x 2 squares) ---- */
+      /* ---- tile grid (imaginary 6 x 2 squares) ----
+         Two labelled rows rather than one twelve-slot grid: the split was
+         always there (six about me, then the games) and now it says so. Each
+         row is its own grid of the same six columns, so the tiles line up
+         across the two exactly as they did when they shared one.
+
+         The label sits in a column of its own to the left. It is reserved
+         width and not something hung in the margin, because the margin is
+         whatever is left over after six tiles and there is not always any: at
+         1024px the six columns and their gaps are most of the screen. Which is
+         also why `--tile` is a little smaller once there is a label to fit -
+         6 x 14vw + label does not fit in 94vw, and the row would otherwise
+         quietly overflow into a horizontal scrollbar. */
       .tiles {
         flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 1vw;
+        padding: 0 3vw 3vh;
+      }
+      .tilerow {
         display: grid;
-        grid-template-columns: repeat(6, var(--tile));
-        grid-auto-rows: var(--tile);
+        grid-template-columns: var(--rowlbl) repeat(6, var(--tile));
         gap: 1vw;
         justify-content: center;
-        align-content: center;
-        padding: 0 3vw 3vh;
+        align-items: center;
+      }
+      .rowlabel {
+        margin: 0;
+        font-weight: 400;
+        font-size: clamp(1rem, 1.75vw, 1.9rem);
+        letter-spacing: 0.06em;
+        line-height: 1.05;
+        text-align: right;
+      }
+      /* Between the phone layout and about 900px there is no room beside the
+         row for a label: `--tile` has bottomed out at its 110px floor while the
+         screen keeps shrinking, so six tiles and their gaps are already wider
+         than the page. Measured at 780px, a label column overflows the viewport
+         by 36px and the grid - which is centred - spills off both edges. So in
+         that band the label goes above its row, which is where the phone puts
+         it anyway. It spans the full grid, so it lines up with the first tile. */
+      @media (max-width: 900px) {
+        .tilerow { grid-template-columns: repeat(6, var(--tile)); }
+        .rowlabel { grid-column: 1 / -1; text-align: left; }
+        /* A label above its row needs more air between the rows than one
+           beside it, or GAMES sits on the row above's captions. */
+        .tiles { gap: 1.3rem; }
       }
       .tile {
         width: var(--tile);
@@ -693,10 +733,22 @@
           column-gap: 1.4rem;
           row-gap: 0.5rem;
         }
+        /* Two tiles across, and the label goes above its own row rather than
+           beside it - there is no margin to the left of a phone. */
         .tiles {
-          grid-template-columns: repeat(2, var(--tile));
-          align-content: start;
+          justify-content: flex-start;
+          gap: 1.4rem;
           padding-top: 1rem;
+        }
+        .tilerow {
+          grid-template-columns: repeat(2, var(--tile));
+          gap: 1vw 3vw;
+        }
+        .rowlabel {
+          grid-column: 1 / -1;
+          text-align: left;
+          font-size: clamp(1.3rem, 5.5vw, 2.2rem);
+          margin-bottom: -0.2rem;
         }
 
         /* keep the popup inside the visible viewport and scroll within it */
@@ -773,6 +825,11 @@
     </header>
 
     <main class="tiles">
+      <!-- Two rows, each with its own heading: the top six are about Chinmay,
+           the bottom four are the games. Keep `settings` last in the top row
+           (it is a Wii menu joke) and add a new game to the second. -->
+      <section class="tilerow">
+      <h2 class="rowlabel">ABOUT ME</h2>
       <button class="tile" data-modal="modal-resume">
         <span class="tile-art">
           <img
@@ -850,7 +907,10 @@
         </span>
         <span class="tile-label">SETTINGS</span>
       </button>
+      </section>
 
+      <section class="tilerow">
+      <h2 class="rowlabel">GAMES</h2>
       <button class="tile" data-modal="modal-drive">
         <span class="tile-art">
           <img
@@ -902,6 +962,7 @@
         </span>
         <span class="tile-label">KING OF TOKYO</span>
       </button>
+      </section>
     </main>
 
     <!-- resume popup -->
