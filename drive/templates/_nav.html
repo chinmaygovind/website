@@ -33,12 +33,15 @@
      Not on the play page. `_nav.html` is not included there, which is the
      behaviour we want anyway - a bright blue button over a lap in progress is a
      way of losing the lap. #}
-  {# `leaves-frame`: hidden when the game is running inside a portal's iframe.
-     It is the one link here that goes off this site entirely, and a portal's
-     whole business is not sending the player somewhere else - both CrazyGames
-     and Poki name external links as grounds for rejection. At our own address
-     it is exactly as it was. #}
-  <a class="discord leaves-frame" href="https://discord.gg/BvPuJznswA"
+  {# Shown everywhere, including inside a portal's frame. It was hidden there
+     for a while on the assumption that any outbound link is a rejection risk;
+     CrazyGames' content rules actually permit community links (Discord, the
+     developer's own site) *on menus*, which is exactly where this is - the play
+     page does not include this nav. What they forbid is app store links,
+     cross-promotion of other portals, and custom fullscreen buttons, none of
+     which this is. It opens in a new tab like every link that leaves Drive,
+     which is the part that matters in a frame. #}
+  <a class="discord" href="https://discord.gg/BvPuJznswA"
      target="_blank" rel="noopener noreferrer" aria-label="Join the Discord">
     {# Two labels, one shown: on a phone the brand row also carries a name and a
        rating, and the forty-odd pixels "Join the" costs are the difference

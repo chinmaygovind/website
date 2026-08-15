@@ -181,15 +181,6 @@ def test_the_door_is_in_the_head_and_not_behind_the_module(plain_env):
     assert html.index("classList.add('framed')") < html.index("</head>")
 
 
-def test_the_one_link_that_leaves_the_site_is_marked(plain_env):
-    """`leaves-frame` is what hides it inside a portal, and it is a class in a
-    template - so nothing but a test notices it being dropped."""
-    html = plain_env.app.test_client().get("/leaderboard").get_data(as_text=True)
-    assert "discord.gg" in html
-    i = html.index("discord.gg")
-    assert "leaves-frame" in html[max(0, i - 300):i]
-
-
 def test_touch_is_decided_once(plain_env):
     """`window.DRIVE_TOUCH` is the only answer, and game.js must read it.
 
@@ -277,6 +268,23 @@ def test_every_link_that_leaves_drive_opens_a_new_tab(plain_env):
                 "%s: link to %s would navigate the frame away: %s"
                 % (path, url, tag))
             assert "noopener" in tag, "%s: %s needs rel=noopener" % (path, url)
+
+
+def test_the_privacy_notice_exists_and_can_be_found(plain_env):
+    """A policy nobody can reach is not a policy, and a portal checks for it.
+
+    CrazyGames will not take a game that collects anything beyond the SDK's own
+    events without a notice, and `visits.py` writes a row per request carrying
+    an IP and a user agent. Reachability is the half worth pinning: the page
+    itself is hard to delete by accident, whereas the two links to it are one
+    line each in templates nobody edits for this reason.
+    """
+    client = plain_env.app.test_client()
+    assert client.get("/privacy").status_code == 200
+    for path in ("/", "/solo/sunrise"):
+        assert "/privacy" in client.get(path).get_data(as_text=True), (
+            "no way to reach the privacy notice from %s" % path)
+    assert "/privacy" in client.get("/sitemap.xml").get_data(as_text=True)
 
 
 def test_nothing_refuses_to_be_framed(plain_env):

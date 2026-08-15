@@ -584,7 +584,7 @@ def sitemap():
     which is not a thing this can know without a query per track, and a date
     that is wrong is worse than one that is absent.
     """
-    urls = ["/", "/solo", "/leaderboard", "/lobbies"]
+    urls = ["/", "/solo", "/leaderboard", "/lobbies", "/privacy"]
     for t in tracks_mod.TRACKS:
         urls.append("/solo/%s" % t["slug"])
         urls.append("/track/%s" % t["slug"])
@@ -1037,6 +1037,22 @@ def api_race(race_id):
     return jsonify({"ok": True, "id": race.id, "track": race.track,
                     "hz": race.hz or REPLAY_HZ, "ms": race.ms,
                     "why": race.why, "cars": cars})
+
+
+@app.route("/privacy")
+def privacy():
+    """What is kept and why, in one page.
+
+    A requirement rather than a nicety: CrazyGames will not take a game that
+    collects anything beyond the SDK's own events without one, and `visits.py`
+    writes a row per request. Their guidance is an unobtrusive notice over a
+    blocking consent wall, so this is a page reachable from the menus and from
+    the in-game settings sheet, and nothing stands in front of the game.
+
+    It is in the sitemap and deliberately *not* in `NOINDEX_ENDPOINTS`: a policy
+    nobody can find is not a policy.
+    """
+    return render_template("privacy.html", active_page="privacy")
 
 
 @app.route("/track/<slug>")

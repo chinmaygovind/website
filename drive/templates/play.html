@@ -600,6 +600,15 @@
          game and the other leaves the page, and leaving is the last thing to
          offer. The red one is last of the two for the same reason - it is the
          only control on this sheet you cannot undo by pressing it again. -->
+    {# The privacy notice, and this is the whole of how it appears in front of a
+       player: one quiet line at the foot of a sheet you opened yourself. A
+       portal requires the notice to exist and be reachable; it explicitly
+       prefers that over a consent dialog in front of the game, and a driving
+       game is the wrong place to be read a policy. In the frame it opens a new
+       tab like every other link out. #}
+    <p class="sheet-fine">
+      <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy</a>
+    </p>
     <div class="sheet-foot">
       <div class="btn-grid two">
         <a class="btn secondary board-link" href="/track/{{ track.slug }}">View Leaderboard</a>

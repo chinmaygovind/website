@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Privacy | Drive{% endblock %}
+
+{# Required rather than decorative: CrazyGames' technical requirements say any
+   game collecting data beyond the SDK's own events has to carry a Privacy Policy
+   notice, and Drive writes a row per request in `site_visits`. Their guidance is
+   an unobtrusive notice rather than a blocking popup, so this is a page linked
+   from the foot of the menus and from the in-game settings sheet, not a consent
+   wall in front of the game.
+
+   **Everything on this page is a claim about code, so it has to be checked
+   against the code when the code moves.** The list of what is stored is
+   `visits.py`'s schema plus the `users` and `drive_*` tables; the cookie
+   section is the two cookies `visits.py` and Flask actually set. If a new
+   column or a third cookie appears, this page is wrong until it is edited, and
+   nothing will fail to tell you so. #}
+
+{% block body %}
+{% include "_nav.html" %}
+<div class="wrap prose">
+  <h1>Privacy</h1>
+  <p class="lede">Drive is a hobby project run by one person. It shows no ads, has
+    no trackers on it, and sells nothing to anybody. What it keeps is listed below
+    in full.</p>
+
+  <h2>If you just play</h2>
+  <p>You can drive every track without an account. For each request your browser
+    makes, the server writes one row recording the time, the page, the referring
+    page, your browser's user agent string, your IP address, and a random id kept
+    in a cookie so that several page views can be recognised as one visit. That is
+    what tells me whether anybody is playing and which tracks they choose.</p>
+  <p>Lap times you set without an account are kept <em>in your own browser</em>,
+    not on the server, until you make an account. Clearing your browser data
+    removes them.</p>
+
+  <h2>If you make an account</h2>
+  <p>An account stores a username, an email address, and a hash of your password
+    &mdash; never the password itself. Alongside it Drive keeps what you would
+    expect a racing game to keep: your best lap on each track, a recording of the
+    car's movement during those laps so other players can race your ghost, your
+    rating, your medals, and the car you built in the garage. Your username, your
+    times and your ghosts are public, because a leaderboard is the point of them.
+    Your email address is never shown to anyone.</p>
+  <p>One account works across Drive, Ticket to Ride, Egyptian Rat Screw and King
+    of Tokyo, because they share one accounts system on
+    <a href="{{ site_url }}" target="_blank" rel="noopener noreferrer">cgovind.com</a>.</p>
+
+  <h2>Cookies</h2>
+  <p>Two, both strictly functional, neither used for advertising:</p>
+  <p><b>cgv</b> &mdash; a random visitor id, so repeat visits can be counted as one
+    person rather than as many. Lasts two years.<br/>
+    <b>session</b> &mdash; keeps you logged in, or remembers your guest name. Lasts
+    thirty days.</p>
+  <p>When Drive is played inside another site that embeds it, both cookies are
+    partitioned: the browser keeps a separate copy for that site, and it cannot be
+    connected to your account here.</p>
+
+  <h2>What is not here</h2>
+  <p>No advertising, no advertising identifiers, no analytics service, no social
+    network buttons, no data sold or shared with anybody. Nothing is collected
+    beyond what is written above, and none of it leaves the one server this runs
+    on.</p>
+
+  <h2>Removing your data</h2>
+  <p>Ask and it is deleted &mdash; account, times, ghosts and all.
+    <a href="mailto:chinmaygov@gmail.com">chinmaygov@gmail.com</a>, or the
+    <a href="https://discord.gg/BvPuJznswA" target="_blank" rel="noopener noreferrer">Discord</a>.
+    If you are under 13, please ask a parent or guardian before making an account.</p>
+
+  <p class="muted" style="margin-top:2rem">Last updated 15 August 2026.</p>
+</div>
+{% endblock %}

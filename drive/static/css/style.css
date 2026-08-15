@@ -845,14 +845,27 @@ html.framed #frameStart .fs-go {
 html.is-touch .fs-click { display: none; }
 html.is-touch .fs-tap { display: inline; }
 
-/* The links that leave the game are a trap in a frame: a portal reviewer
-   clicking one lands on a personal site inside a 800x600 box with no way back,
-   and "navigates the player away" is a stated rejection reason on both portals.
-   The play page has no nav at all (`_nav.html` is not included there), so this
-   is only ever the handful of ways out of a panel - and `.leaves-frame` marks
-   them rather than a blanket `a { }`, because the track switcher and the
-   leaderboard are pages of the game and belong inside the frame. */
-html.framed .leaves-frame { display: none; }
+/* The privacy line at the foot of the settings sheet, and the page it opens.
+   Quiet on purpose: it has to be findable, not read. */
+.sheet-fine {
+  margin: .9rem 0 0; text-align: center; font-size: .8rem;
+}
+.sheet-fine a { color: var(--muted, #9aa0ab); text-decoration: underline; }
+.sheet-fine a:hover { color: inherit; }
+.site-fine { margin: 2.6rem 0 0; text-align: center; font-size: .82rem; opacity: .6; }
+.prose { max-width: 62ch; }
+.prose h2 { margin: 2rem 0 .4rem; font-size: 1.1rem; }
+.prose p { margin: 0 0 .9rem; line-height: 1.65; }
+
+/* There was a `.leaves-frame` rule here that hid outbound links inside a frame.
+   It is gone, and the reason is worth keeping: the assumption was that a portal
+   rejects any link off the site, and CrazyGames' content rules actually permit
+   community links (a Discord, the developer's own site) on menus - what they
+   forbid is app store links, cross-promotion of other portals, and custom
+   fullscreen buttons. The thing that genuinely matters in a frame is that such a
+   link opens a *new tab* rather than navigating the frame, and that is on the
+   links themselves - see `icon_out` in account.html and the sweep in
+   `test_every_link_that_leaves_drive_opens_a_new_tab`. */
 
 /* Same hint, the symbols you actually have in front of you. */
 .hint-touch { display: none; }
