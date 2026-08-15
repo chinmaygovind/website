@@ -152,25 +152,80 @@ a:hover { text-decoration: underline; }
 .nav-right { margin-left: auto; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
 .nav-right a { color: var(--ink); font-size: 1.05rem; }
 .nav-right a.active { color: var(--red); text-decoration: underline; }
-.nav-user { color: var(--ink-soft); font-size: .95rem; }
+/* Who you are is a flex item of the nav now rather than the first thing inside
+   `.nav-right`, because on a phone that row becomes a tab bar of equal columns
+   and a name is not one of the places. Two consequences here, both so that the
+   desktop looks exactly as it did:
 
-/* The nav on a phone: two rows on purpose rather than three by accident.
-   A wordmark, an invitation and five places is more than 360px of anything, so
-   the question was never whether this wraps but where. The invite is pushed to
-   the far end of the brand's row and the row of places is given the whole
-   width, which pins it to a line of its own. Left as it was, the invite was
-   just another item in the wrap: it took the last of the brand row's space,
-   knocked Solo and Multiplayer onto the next line, and on a 360px screen went
-   onto a third line itself - three rows of sticky nav over a game.
-   The label shortens to just "Discord" here because at 360 the long one is the
-   ~40px that decides whether the button shares the brand's row at all. */
+   `order` and not source order decides the line. The markup is brand, name,
+   invite, places (the order a phone wants); the desktop wants the invite up
+   against the wordmark, which is what `order: 1` on it buys.
+
+   And exactly one item may carry the auto margin. Whichever comes first in the
+   visual order wins the whole gap, so the ones after it are pinned back to 0 -
+   otherwise flexbox splits the free space evenly between every auto margin and
+   opens a hole between your name and the links it belongs beside. */
+.nav-user { color: var(--ink-soft); font-size: .95rem; margin-left: auto; order: 2; }
+.discord { order: 1; }
+.nav-right { order: 3; }
+.nav-user ~ .nav-right { margin-left: 0; }
+/* The icons are a phone thing. On a desktop this row is words. */
+.nav-right .icn { display: none; }
+
+/* The nav on a phone: a brand row and a tab bar, and never a third row.
+
+   A wordmark, an invitation, a name, a rating and five places is more than
+   360px of anything, so the question was never whether this wraps but where.
+   Wrapping it as words could not answer that: the five links alone are ~310px
+   of text, so a signed-in nav took three rows at 390 and the row of places
+   broke in a different place at every width. As a tab bar it is one grid row of
+   equal columns - icon over a small caps label, the way a phone app does it -
+   which fits five destinations across 320px and cannot wrap, because a grid
+   with `grid-auto-flow: column` has nowhere to wrap to.
+
+   The brand row is then only ever three things, and each of them is pinned:
+   the wordmark drops its byline and does not shrink, the invite keeps the short
+   label and does not shrink, and the name in between is the one item allowed to
+   give way - it ellipsises rather than wrapping, which is what stops a 30
+   character username (the column is `String(30)`) pushing the invite onto a row
+   of its own and putting the third row back. */
 @media (max-width: 620px) {
-  .nav { gap: .5rem .7rem; padding: .6rem .85rem; }
-  .discord { margin-left: auto; }
+  .nav { gap: .45rem .6rem; padding: .5rem .8rem .3rem; }
+  .brand { font-size: 1.2rem; flex: none; }
+  .brand small { display: none; }
+  /* The name goes back in front of the invite, and is the only item on the row
+     that gives way.
+
+     `flex: 1 1 0` and not `0 1 auto`, which is the whole trick and was worth a
+     picture of a 30 character username to find: this is a *wrapping* flex row,
+     and a wrapping row breaks the line before it shrinks anything, so an item
+     sized by its content pushes the invite onto a row of its own however small
+     its `min-width` is. Sized from zero it can never cause the break, and it
+     then grows into whatever the wordmark and the invite left - which is the
+     space an ellipsis is measured against. */
+  .nav-user {
+    order: 1; font-size: .82rem;
+    flex: 1 1 0; min-width: 0; text-align: right;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .discord { order: 2; flex: none; margin-left: auto; }
+  .nav-user ~ .discord { margin-left: 0; }
   .discord-long { display: none; }
   .discord-short { display: inline; }
-  .nav-right { width: 100%; margin-left: 0; justify-content: flex-start; gap: .35rem 1.05rem; }
-  .nav-right a { font-size: 1rem; }
+  .nav-right {
+    order: 3; width: 100%; margin-left: 0;
+    display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 0;
+  }
+  .nav-right a {
+    display: flex; flex-direction: column; align-items: center; gap: .15rem;
+    font-family: var(--sans); font-size: .56rem; font-weight: 700;
+    letter-spacing: .045em; text-transform: uppercase; white-space: nowrap;
+    padding: .3rem .1rem .2rem;
+  }
+  .nav-right .icn { display: block; width: 21px; height: 21px; }
+  /* Red is enough to say which tab you are on, and an underline under a
+     two-line tab underlines the label rather than the tab. */
+  .nav-right a.active { text-decoration: none; }
 }
 .badge, .tag {
   font-family: var(--sans); font-size: .58rem; letter-spacing: .06em;

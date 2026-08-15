@@ -1,8 +1,34 @@
 # Drive: the pages and the boards
 
 Read this before changing the home page, `/solo` and its track switcher,
-the track cards, `/account`, `/leaderboard`, or the in-game board panel.
+the track cards, `/account`, `/leaderboard`, the nav, or the in-game board panel.
 
+- **The nav is two shapes, and the phone one is a tab bar.** `_nav.html` is a
+  wordmark, the Discord invite, who you are, and the row of places
+  (`.nav-right`). Above 620px that is one line of words. Below it the whole
+  thing is more than a phone is wide - the five links alone are ~310px of text -
+  so it becomes a brand row and, under it, `.nav-right` as a **grid with
+  `grid-auto-flow: column`**: equal columns, icon over a small caps label, which
+  fits five destinations across 320px and *cannot* wrap, because a single-row
+  grid has nowhere to wrap to. It used to wrap as words, which is how a
+  signed-in nav ended up three rows deep on a 390px screen with the row of
+  places breaking in a different place at every width.
+  Three things this asks of anybody editing the nav, each of which looks
+  perfectly fine in a desktop browser while being broken on a phone:
+  - **Only destinations go in `.nav-right`.** Anything else in there becomes a
+    column of the tab bar. The name and rating used to live at the head of that
+    row and now sit beside the wordmark instead.
+  - **Every link in it carries an `.icn`** (`display: none` until the
+    breakpoint). Without one it is a bald column.
+  - **The brand row must not wrap**, so only the name may shrink, and it does it
+    with `flex: 1 1 0` rather than a `min-width` - a *wrapping* flex row breaks
+    the line before it shrinks anything, so a 30 character username sized by its
+    content pushes the invite onto a row of its own. Sized from zero it never
+    causes the break and ellipsises into what is left.
+
+  `tests/test_app.py` pins the first two and the invite's two labels. Nothing
+  can test the layout itself: there is no browser in CI, so **shoot the nav at
+  320/360/390 before shipping a change to it**.
 - **The home page is a headline, two doors and how to play.** "Race online!", then
   a red **Drive now** (`/solo`) beside a yellow **Race your friends** (`/lobbies`) -
   two halves of the game rather than a primary and a fallback, which is why the

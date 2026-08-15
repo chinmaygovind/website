@@ -7,6 +7,7 @@ that talks to the database gets its own empty one per test.
 
 import json as json_mod
 import os
+import re
 import sys
 import tempfile
 
@@ -1067,6 +1068,34 @@ def test_the_invite_carries_one_label_at_each_size(env):
         css = f.read()
     assert ".discord-short { display: none; }" in css, "the desktop label alone"
     assert ".discord-long { display: none; }" in css, "the phone label alone"
+
+
+def test_the_row_of_places_is_places_only_and_every_one_has_an_icon(env):
+    """On a phone `.nav-right` is a tab bar: one grid row of equal columns, icon
+    over label. Two things have to stay true of the markup for that to work, and
+    a desktop browser shows neither of them going wrong.
+
+    Nothing but a destination may live in that row. The name and rating used to
+    be the first thing inside it, and there it becomes a column of the tab bar -
+    a cell with somebody's username in it between Solo and Multiplayer, which on
+    a desktop is exactly where the name has always sat and looks perfect.
+
+    And every link in it needs its icon, because the icon is what makes five
+    destinations fit across 320px. A link added without one is a bald column
+    that is invisible until somebody opens the site on a phone."""
+    c = env.app.test_client()
+    _login(c, _user(env, "quick"))          # the nav at its fullest: five places
+    nav = re.search(r'<nav class="nav">.*?</nav>',
+                    c.get("/leaderboard").get_data(as_text=True), re.S)
+    assert nav, "no nav on the page"
+    row = re.search(r'<div class="nav-right">(.*?)</div>', nav.group(0), re.S)
+    assert row, "no row of places in the nav"
+
+    assert "nav-user" not in row.group(1), "your name is not one of the places"
+    links = re.findall(r"<a [^>]*>(.*?)</a>", row.group(1), re.S)
+    assert len(links) == 5, "solo, multiplayer, records, account, garage"
+    for link in links:
+        assert 'class="icn"' in link, "no icon on: " + link.strip()
 
 
 def test_a_guest_is_offered_a_login_and_not_a_garage(env):

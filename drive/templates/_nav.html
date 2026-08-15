@@ -1,5 +1,29 @@
+{# Every link in the row of places carries an icon that only a phone ever sees:
+   `.nav-right .icn` is `display: none` until the nav goes to its two-row phone
+   shape, where the row becomes a tab bar of icon-over-label and the icon is
+   what lets five destinations fit across 320px. Inline SVG rather than a glyph,
+   the same rule the rest of the game follows, and the same 24x24 outline
+   language as the in-game icons - the wheel and the podium are lifted from
+   `account.html`, where they already mean "drive this" and "the board". #}
+{% macro icn(paths) %}<svg class="icn" viewBox="0 0 24 24" aria-hidden="true">{{ paths }}</svg>{% endmacro %}
+{% set icon_wheel %}<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.6"/><path d="M12 9.4V3M9.75 13.3 4.2 16.5M14.25 13.3 19.8 16.5"/>{% endset %}
+{% set icon_people %}<circle cx="9.2" cy="8.6" r="3.3"/><path d="M3.4 19.4a5.9 5.9 0 0 1 11.6 0"/><path d="M16.4 5.9a3.3 3.3 0 0 1 0 5.4"/><path d="M17.8 13.9a5.9 5.9 0 0 1 2.8 4.6"/>{% endset %}
+{% set icon_board %}<path d="M3.5 20.5h17"/><path d="M5.5 20.5v-7h4v7"/><path d="M9.5 20.5v-12h5v12"/><path d="M14.5 20.5v-5h4v5"/>{% endset %}
+{% set icon_person %}<circle cx="12" cy="8.4" r="3.6"/><path d="M5 19.6a7 7 0 0 1 14 0"/>{% endset %}
+{% set icon_garage %}<path d="M3.5 10.6 12 5.2l8.5 5.4"/><path d="M5.6 20.4v-9.1h12.8v9.1"/><path d="M8.4 20.4v-5.9h7.2v5.9"/><path d="M8.4 17.6h7.2"/>{% endset %}
+{% set icon_in %}<path d="M11 4.6H6.1A1.6 1.6 0 0 0 4.5 6.2v11.6A1.6 1.6 0 0 0 6.1 19.4H11"/><path d="M14.6 8.4 18.2 12l-3.6 3.6"/><path d="M18.2 12H8.8"/>{% endset %}
 <nav class="nav">
   <a class="brand" href="/"><img src="/static/img/icon.svg" alt="" class="brand-ico"/> Drive <small>· cgovind</small></a>
+  {# Who you are sits beside the wordmark rather than at the head of the row of
+     places, which is where it used to be. On a phone that row is a tab bar of
+     equal columns and a name is not one of the places; up here it is on the
+     line that is already about identity, and `.nav-user + .nav-right` keeps the
+     desktop looking exactly as it did. #}
+  {% if current_user %}
+    <span class="nav-user">{{ current_user.display }}{% if current_user.drive %} · {{ current_user.drive.elo or 1000 }}{% endif %}</span>
+  {% elif effective_name and effective_name != 'Guest' %}
+    <span class="nav-user">{{ effective_name }} <span class="badge">GUEST</span></span>
+  {% endif %}
   {# Beside the brand rather than in `.nav-right`, which is the row of places on
      this site - this is the one link in the nav that leaves it, and an
      invitation rather than a page, so it reads as its own thing. Inline SVG for
@@ -11,37 +35,32 @@
      way of losing the lap. #}
   <a class="discord" href="https://discord.gg/BvPuJznswA"
      target="_blank" rel="noopener noreferrer" aria-label="Join the Discord">
-    {# Two labels, one shown: on a phone the nav is already two rows and the
-       forty-odd pixels "Join the" costs decide whether the button gets to share
-       the wordmark's row or takes a third one for itself. The invitation is
-       what a desktop reader sees; the phone gets the name of the place. The
-       swap is `.discord-long` / `.discord-short` in the stylesheet, and
-       `aria-label` says the long thing at both sizes. #}
+    {# Two labels, one shown: on a phone the brand row also carries a name and a
+       rating, and the forty-odd pixels "Join the" costs are the difference
+       between the invite sharing that row and taking one of its own. The
+       invitation is what a desktop reader sees; the phone gets the name of the
+       place. The swap is `.discord-long` / `.discord-short` in the stylesheet,
+       and `aria-label` says the long thing at both sizes. #}
     <span class="discord-long">Join the Discord!</span><span class="discord-short">Discord</span>
     <svg class="discord-ico" viewBox="0 0 127.14 96.36" aria-hidden="true"><path d="M107.7,8.07A105.15,105.15,0,0,0,81.47,0a72.06,72.06,0,0,0-3.36,6.83A97.68,97.68,0,0,0,49,6.83,72.37,72.37,0,0,0,45.64,0,105.89,105.89,0,0,0,19.39,8.09C2.79,32.65-1.71,56.6.54,80.21h0A105.73,105.73,0,0,0,32.71,96.36,77.7,77.7,0,0,0,39.6,85.25a68.42,68.42,0,0,1-10.85-5.18c.91-.66,1.8-1.34,2.66-2a75.57,75.57,0,0,0,64.32,0c.87.71,1.76,1.39,2.66,2a68.68,68.68,0,0,1-10.87,5.19,77,77,0,0,0,6.89,11.1A105.25,105.25,0,0,0,126.6,80.22h0C129.24,52.84,122.09,29.11,107.7,8.07ZM42.45,65.69C36.18,65.69,31,60,31,53s5-12.74,11.43-12.74S54,46,53.89,53,48.84,65.69,42.45,65.69Zm42.24,0C78.41,65.69,73.25,60,73.25,53s5-12.74,11.44-12.74S96.23,46,96.12,53,91.08,65.69,84.69,65.69Z"/></svg>
   </a>
   <div class="nav-right">
-    {% if current_user %}
-      <span class="nav-user">{{ current_user.display }}{% if current_user.drive %} · {{ current_user.drive.elo or 1000 }}{% endif %}</span>
-    {% elif effective_name and effective_name != 'Guest' %}
-      <span class="nav-user">{{ effective_name }} <span class="badge">GUEST</span></span>
-    {% endif %}
     <!-- Solo is a door into the game, not a page: it drops you onto the track
          you were last driving, and the switcher in there changes it. -->
-    <a href="/solo" class="{% if active_page == 'solo' %}active{% endif %}">Solo</a>
-    <a href="/lobbies" class="{% if active_page == 'lobbies' %}active{% endif %}">Multiplayer</a>
-    <a href="/leaderboard" class="{% if active_page == 'leaderboard' %}active{% endif %}">Records</a>
+    <a href="/solo" class="{% if active_page == 'solo' %}active{% endif %}">{{ icn(icon_wheel) }}Solo</a>
+    <a href="/lobbies" class="{% if active_page == 'lobbies' %}active{% endif %}">{{ icn(icon_people) }}Multiplayer</a>
+    <a href="/leaderboard" class="{% if active_page == 'leaderboard' %}active{% endif %}">{{ icn(icon_board) }}Records</a>
     {% if current_user %}
-      <a href="/account" class="{% if active_page == 'account' %}active{% endif %}">Account</a>
+      <a href="/account" class="{% if active_page == 'account' %}active{% endif %}">{{ icn(icon_person) }}Account</a>
       {# The slot Log out used to hold. Logging out is a thing you do once, at
          the end, and it was sitting in the nav of every page being the one
          control whose second press cannot be undone - so it has moved next to
          your name on your own account page, where you already go to look at
          yourself. It costs a click; the slot buys somewhere to build a car.
          Accounts only, because a livery has to belong to somebody. #}
-      <a href="/garage" class="{% if active_page == 'garage' %}active{% endif %}">Garage</a>
+      <a href="/garage" class="{% if active_page == 'garage' %}active{% endif %}">{{ icn(icon_garage) }}Garage</a>
     {% else %}
-      <a href="/login">Log in</a>
+      <a href="/login">{{ icn(icon_in) }}Log in</a>
     {% endif %}
   </div>
 </nav>
