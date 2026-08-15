@@ -296,6 +296,23 @@ p { line-height: 1.55; }
 @media (max-width: 560px) {
   .btn-grid.two, .btn-grid.three { grid-template-columns: 1fr; }
 }
+/* The home page's two doors, which stay side by side on a phone.
+
+   They are the two halves of the game, and stacked they stop reading as a pair
+   and start reading as a first choice and a second one. At 1.3rem they cannot
+   share a line - the two labels are 222px and 143px of button, against 325px of
+   360px screen - so on a phone they come down to 1rem and grow into the row
+   instead: 164 + 103 leaves 48px, split between them, and the row is full.
+
+   Not `.btn-grid.two`, which is the site's other answer and the wrong one here.
+   Equal columns would size both to whatever "Race your friends" needs, and half
+   of a 320px screen is not enough for it at any size worth tapping. Different
+   lengths of label want different widths of button; only the *line* has to be
+   shared. The wrap is left in as the floor: below ~305px they stack again,
+   which is the right thing to do rather than spill. */
+@media (max-width: 620px) {
+  .cta .btn { flex: 1 1 auto; font-size: 1rem; padding: .62rem .6rem; }
+}
 
 input[type=text], input[type=password], input[type=email], input:not([type]) {
   font-family: var(--display); font-size: 1.05rem;

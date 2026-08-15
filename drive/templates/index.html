@@ -36,8 +36,10 @@
   <h1>Race online!</h1>
 
   {# Two ways in, and they are not a primary and a fallback - they are the two
-     halves of the game. Red is the clock, yellow is the other cars. #}
-  <div class="row" style="margin:.9rem 0 1.8rem">
+     halves of the game. Red is the clock, yellow is the other cars. `.cta` is
+     what keeps them on one line on a phone, where stacking them made the second
+     one look like the fallback it is not. #}
+  <div class="row cta" style="margin:.9rem 0 1.8rem">
     <a class="btn big" href="/solo">Drive now</a>
     <a class="btn yellow big" href="/lobbies">Race your friends</a>
   </div>

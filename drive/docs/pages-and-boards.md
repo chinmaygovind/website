@@ -32,7 +32,13 @@ the track cards, `/account`, `/leaderboard`, the nav, or the in-game board panel
 - **The home page is a headline, two doors and how to play.** "Race online!", then
   a red **Drive now** (`/solo`) beside a yellow **Race your friends** (`/lobbies`) -
   two halves of the game rather than a primary and a fallback, which is why the
-  second one is a colour of its own rather than the white secondary. There is no
+  second one is a colour of its own rather than the white secondary. **They stay
+  side by side on a phone** (`.cta`), because stacked they stop reading as a pair
+  and start reading as a first choice and a second one. At 1.3rem they cannot
+  share a 360px line, so below 620px they come down to 1rem and grow into the
+  row. Not `.btn-grid.two`: equal columns would size both buttons to whatever
+  "Race your friends" needs, and half a 320px screen is not enough for it at any
+  size worth tapping. There is no
   grey standfirst under the headline: it restated the three paragraphs below it.
   Those are one each - what a run is, what Solo is, what Multiplayer is - and the
   track cards follow, so the page is read once and clicked from thereafter.

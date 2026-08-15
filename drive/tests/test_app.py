@@ -1098,6 +1098,21 @@ def test_the_row_of_places_is_places_only_and_every_one_has_an_icon(env):
         assert 'class="icn"' in link, "no icon on: " + link.strip()
 
 
+def test_the_two_doors_share_a_row(env):
+    """Drive now and Race your friends are the two halves of the game, not a
+    primary and a fallback, and `.cta` is what keeps them on one line on a
+    phone - it shrinks them to 1rem and lets them grow into the row, which is
+    the only way both labels fit across 320px.
+
+    Pinned because losing the class is invisible on the desktop the page is
+    written on: there they are 1.3rem and side by side either way, and the
+    stacking only comes back on a screen no test can see."""
+    html = env.app.test_client().get("/").get_data(as_text=True)
+    row = re.search(r'<div class="row cta"[^>]*>(.*?)</div>', html, re.S)
+    assert row, "the two doors are not in a `.cta` row"
+    assert 'href="/solo"' in row.group(1) and 'href="/lobbies"' in row.group(1)
+
+
 def test_a_guest_is_offered_a_login_and_not_a_garage(env):
     """A garage a guest cannot own would be a door onto a locked room."""
     html = env.app.test_client().get("/leaderboard").get_data(as_text=True)
