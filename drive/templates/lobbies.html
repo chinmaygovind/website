@@ -67,7 +67,12 @@
     <div class="panel online-now">
       <h2 style="margin-top:0">Online now</h2>
       {% for p in online %}
-      <a class="row online-row" href="{{ site_url }}/accounts/{{ p.username }}">
+      {# New tab, like every link that leaves Drive - see the note on
+         `icon_out` in account.html. A whole row is an easy thing to click by
+         accident, and inside a portal's frame this one would replace the game
+         with the main site. #}
+      <a class="row online-row" href="{{ site_url }}/accounts/{{ p.username }}"
+         target="_blank" rel="noopener noreferrer">
         <span class="dot"></span>
         <b>{{ p.username }}</b>
         <span class="muted" style="margin-left:auto">{{ p.label }}</span>

@@ -86,6 +86,20 @@ def _set_a_session(A):
     return client.post("/guest", json={"name": "Rosa"})
 
 
+def _a_user(A, name="rosa"):
+    with A.app.app_context():
+        u = A.User(username=name, email=name + "@example.com")
+        u.set_password("password123")
+        A.db.session.add(u)
+        A.db.session.commit()
+        return u.id
+
+
+def _login(client, uid):
+    with client.session_transaction() as s:
+        s["user_id"] = uid
+
+
 def test_a_framed_session_cookie_survives_being_third_party(secure_env):
     """SameSite=None and Partitioned, or the portal player has no session at all."""
     resp = _set_a_session(secure_env)
@@ -115,24 +129,31 @@ def test_a_plain_http_checkout_keeps_the_cookie_it_always_had(plain_env):
     assert "Secure" not in line
 
 
-def test_only_our_own_cookie_is_rewritten(secure_env):
-    """The hook rebuilds the Set-Cookie list, so anything else on it must survive."""
-    A = secure_env
+def test_the_visitor_cookie_survives_being_third_party_too(secure_env):
+    """`cgv` is the analytics id, and `Lax` made it useless in a frame.
 
-    @A.app.route("/_t_extra")
-    def _extra():
-        from flask import make_response, session
-        session["guest_name"] = "Rosa"
-        r = make_response("ok")
-        r.set_cookie("unrelated", "1")
-        return r
+    Not a crash and not a gap in the data - something worse, because it looks
+    like data. A `Lax` cookie is never sent from a framed page, so every request
+    a portal player made arrived with no id, was handed a fresh one, and counted
+    as a new person: one "new visitor" per page view, which has the shape of a
+    traffic spike and is indistinguishable from one afterwards.
+    """
+    resp = _set_a_session(secure_env)
+    line = _session_cookie(resp, "cgv")
+    assert line is not None, "no visitor cookie was set at all"
+    assert "SameSite=None" in line
+    assert "Partitioned" in line
+    assert "Secure" in line
 
-    resp = A.app.test_client().get("/_t_extra")
-    lines = resp.headers.getlist("Set-Cookie")
-    ours = [c for c in lines if c.startswith("session=")]
-    theirs = [c for c in lines if c.startswith("unrelated=")]
-    assert len(ours) == 1 and "Partitioned" in ours[0]
-    assert len(theirs) == 1 and "Partitioned" not in theirs[0]
+
+def test_the_visitor_cookie_is_unchanged_on_a_plain_http_box(plain_env):
+    """Same reasoning as the session cookie: Secure over http is no cookie."""
+    resp = _set_a_session(plain_env)
+    line = _session_cookie(resp, "cgv")
+    assert line is not None
+    assert "SameSite=Lax" in line
+    assert "Partitioned" not in line
+    assert "Secure" not in line
 
 
 def test_the_play_page_carries_the_door_and_the_class_that_shows_it(plain_env):
@@ -223,6 +244,39 @@ def test_no_template_comment_leaks_onto_the_page(plain_env):
         html = client.get(path).get_data(as_text=True)
         assert "#}" not in html, "unclosed template comment leaked into " + path
         assert "{#" not in html, "unclosed template comment leaked into " + path
+
+
+def test_every_link_that_leaves_drive_opens_a_new_tab(plain_env):
+    """A link out navigates *the frame*, which is how a portal loses the game.
+
+    The player ends up looking at cgovind.com in a 960px box on somebody else's
+    page, with no back button and no way to return - and the portal counts that
+    as the game sending its traffic away, which both CrazyGames and Poki name as
+    grounds for rejection.
+
+    Written as a sweep over the rendered HTML rather than a list of three known
+    links, because the failure mode is a *fourth* one being added later: there is
+    nothing about writing `href="{{ site_url }}/accounts/..."` that suggests it
+    needs a target, and at our own address the omission is invisible.
+    """
+    import re
+    client = plain_env.app.test_client()
+    uid = _a_user(plain_env)
+    _login(client, uid)
+    for path in ("/account", "/lobbies", "/login", "/leaderboard", "/"):
+        html = client.get(path).get_data(as_text=True)
+        for tag in re.findall(r"<a\b[^>]*>", html):
+            href = re.search(r'href="([^"]*)"', tag)
+            if not href:
+                continue
+            url = href.group(1)
+            leaves = url.startswith("http") and "drive.cgovind.com" not in url
+            if not leaves:
+                continue
+            assert 'target="_blank"' in tag, (
+                "%s: link to %s would navigate the frame away: %s"
+                % (path, url, tag))
+            assert "noopener" in tag, "%s: %s needs rel=noopener" % (path, url)
 
 
 def test_nothing_refuses_to_be_framed(plain_env):

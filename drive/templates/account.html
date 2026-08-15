@@ -12,7 +12,15 @@
 {% macro icon_board() %}<svg class="icn" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 20.5h17"/><path d="M5.5 20.5v-7h4v7"/><path d="M9.5 20.5v-12h5v12"/><path d="M14.5 20.5v-5h4v5"/></svg>{% endmacro %}
 {# The box-with-an-arrow-out-of-it, which is the one shape that says "this
    leaves Drive" without a word - and it does leave: the profile it points at
-   is on the main site. #}
+   is on the main site.
+
+   Every link wearing this icon opens in a new tab, and that is not politeness.
+   Drive is framed inside game portals now, and a link that leaves the site
+   navigates *the frame*: the player is left looking at cgovind.com in a 960px
+   box on somebody else's page, with no back button and no game. A new tab is
+   the only way for a link out to exist at all in there. In a sandboxed frame
+   without `allow-popups` it simply does nothing, which is still the right
+   answer - nothing beats losing the game. #}
 {% macro icon_out() %}<svg class="icn" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.5 4.5H19.5V10.5"/><path d="M19.5 4.5 11 13"/><path d="M18 14.5v4a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6h4"/></svg>{% endmacro %}
 
 {% macro track_actions(slug) %}
@@ -47,6 +55,7 @@
      name is editable and the address of a profile is not. #}
   <p class="lede">{{ stats.elo_tier }} · rating {{ stats.elo or 1000 }}
     <a class="elsewhere" href="{{ site_url }}/accounts/{{ user.username }}"
+      target="_blank" rel="noopener noreferrer"
       >{{ icon_out() }}{% if is_me %}Your cgovind account{% else %}@{{ user.username }} on cgovind{% endif %}</a></p>
 
   {# One box. The medal tally is three more counts of the same kind, so it lives
