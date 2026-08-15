@@ -1048,6 +1048,27 @@ def test_the_discord_invite_is_on_the_pages_and_never_over_the_game(env):
         assert invite in c.get(url).data, url
 
 
+def test_the_invite_carries_one_label_at_each_size(env):
+    """The button says "Join the Discord!" on a desktop and "Discord" on a
+    phone, which is two spans in the markup and one `display: none` in the
+    stylesheet keeping exactly one of them visible.
+
+    Worth pinning because losing the rule is silent everywhere anybody would
+    look: the label reads correctly on the desktop where it is written, the
+    existing invite test only asks for the URL, and there is no browser in CI.
+    The symptom is a phone showing "Join the Discord!Discord", which is also the
+    width the mobile nav was rearranged to avoid."""
+    html = env.app.test_client().get("/").get_data(as_text=True)
+    assert 'class="discord-long">Join the Discord!' in html
+    assert 'class="discord-short">Discord' in html
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(here, "..", "static", "css", "style.css")) as f:
+        css = f.read()
+    assert ".discord-short { display: none; }" in css, "the desktop label alone"
+    assert ".discord-long { display: none; }" in css, "the phone label alone"
+
+
 def test_a_guest_is_offered_a_login_and_not_a_garage(env):
     """A garage a guest cannot own would be a door onto a locked room."""
     html = env.app.test_client().get("/leaderboard").get_data(as_text=True)

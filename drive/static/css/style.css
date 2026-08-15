@@ -147,11 +147,31 @@ a:hover { text-decoration: underline; }
 /* `fill` and not `stroke`: the Discord mark is one solid shape, unlike the HUD
    icons here, which are drawn as outlines. */
 .discord-ico { width: 17px; height: 13px; fill: currentColor; flex: none; }
+.discord-short { display: none; }
 
 .nav-right { margin-left: auto; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
 .nav-right a { color: var(--ink); font-size: 1.05rem; }
 .nav-right a.active { color: var(--red); text-decoration: underline; }
 .nav-user { color: var(--ink-soft); font-size: .95rem; }
+
+/* The nav on a phone: two rows on purpose rather than three by accident.
+   A wordmark, an invitation and five places is more than 360px of anything, so
+   the question was never whether this wraps but where. The invite is pushed to
+   the far end of the brand's row and the row of places is given the whole
+   width, which pins it to a line of its own. Left as it was, the invite was
+   just another item in the wrap: it took the last of the brand row's space,
+   knocked Solo and Multiplayer onto the next line, and on a 360px screen went
+   onto a third line itself - three rows of sticky nav over a game.
+   The label shortens to just "Discord" here because at 360 the long one is the
+   ~40px that decides whether the button shares the brand's row at all. */
+@media (max-width: 620px) {
+  .nav { gap: .5rem .7rem; padding: .6rem .85rem; }
+  .discord { margin-left: auto; }
+  .discord-long { display: none; }
+  .discord-short { display: inline; }
+  .nav-right { width: 100%; margin-left: 0; justify-content: flex-start; gap: .35rem 1.05rem; }
+  .nav-right a { font-size: 1rem; }
+}
 .badge, .tag {
   font-family: var(--sans); font-size: .58rem; letter-spacing: .06em;
   border: 1px solid currentColor; border-radius: 3px; padding: .1rem .25rem;
