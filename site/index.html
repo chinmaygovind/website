@@ -194,7 +194,11 @@
         width: max-content;
         max-width: max(3rem, calc((100vw - 100%) / 2 - 0.5rem));
         font-weight: 400;
-        font-size: clamp(0.78rem, 1.05vw, 1.15rem);
+        /* The floor stays where it is while the middle and the cap go up. Under
+           about 1046px the floor is what applies, and that is the band where
+           the margin is tightest - at 901px there is 42px of it and "ABOUT" is
+           37px of word, and a word cannot wrap. */
+        font-size: clamp(0.8rem, 1.3vw, 1.45rem);
         letter-spacing: 0.05em;
         line-height: 1.2;
         text-align: right;
@@ -213,7 +217,7 @@
           padding-right: 0;
           grid-column: 1 / -1;
           text-align: left;
-          font-size: clamp(1.1rem, 2.4vw, 1.5rem);
+          font-size: clamp(1.25rem, 2.8vw, 1.7rem);
         }
         /* A label above its row needs more air between the rows than one
            beside it, or GAMES sits on the row above's captions. */
