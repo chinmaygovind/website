@@ -213,6 +213,7 @@
       &middot; drag down the pedal to drift</span>
   </div>
 
+
   <!-- Watching somebody's lap. The whole HUD would be lying during a replay -
        it is not your clock and not your speed - so this replaces it. -->
   <div id="watchBar" style="display:none">
@@ -372,6 +373,26 @@
     </div>
     <p class="muted guest-only" id="tracksNote" style="display:none">Only the host can change the track.</p>
     <div class="tgrid" id="tGrid"></div>
+  </div>
+</div>
+<!-- Framed only: the click that gives us the keyboard.
+
+     An iframe does not receive key events until something inside it has been
+     clicked, so on a portal the game loads, renders, sounds perfect and simply
+     does not respond to W - which reads as a broken game, and is exactly what a
+     reviewer plays once and rejects. There is no way to take focus without a
+     gesture; the only fix is to ask for the gesture, so this is a door rather
+     than a notice. It is also the gesture the audio context needs (autoplay is
+     blocked harder in a frame than at the top level), so the same click buys
+     both. Hidden entirely when we are not framed - see `html.framed` in the
+     stylesheet - because at our own address the keyboard is already ours. -->
+<div id="frameStart">
+  <div class="fs-card">
+    <img src="/static/img/icon.svg" alt="" class="fs-ico"/>
+    <b>Drive</b>
+    {# The word follows the device, the same rule the start hint and the
+       controls sheet follow: it never names a gesture you do not have. #}
+    <span class="fs-go"><span class="fs-click">Click</span><span class="fs-tap">Tap</span> to play</span>
   </div>
 </div>
 <div id="rotate">Turn your phone sideways to drive</div>
@@ -740,6 +761,38 @@
     maxRoom: {{ max_room }}
   };
   {% if pb_ms %}window.DRIVE_CFG.pbs["{{ track.slug }}"] = {{ pb_ms }};{% endif %}
+
+  // The framed door, handled here rather than in game.js on purpose: a track
+  // build is the better part of a second, and the whole point of this overlay is
+  // to be in front of the player *before* they have tried the keys and concluded
+  // the game is broken. A classic inline script runs at parse time; the module
+  // does not.
+  //
+  // `window.focus()` is what actually moves the keyboard into this document.
+  // Focusing the frame's own body as well covers the browsers that ignore the
+  // first call - neither is reliable alone, both together have not failed.
+  (function () {
+    var el = document.getElementById('frameStart');
+    if (!el || !document.documentElement.classList.contains('framed')) return;
+    el.addEventListener('click', function () {
+      el.remove();
+      try { window.focus(); } catch (e) {}
+      try { document.body.focus(); } catch (e) {}
+      // Sound, and **only if the module is already here** - never on a timer.
+      //
+      // `Sound.start()` builds the AudioContext, and a context built outside a
+      // user gesture is born suspended on every mobile browser and stays that
+      // way; on iOS a `resume()` from a `setTimeout` is not a gesture either, so
+      // polling until game.js arrives would reliably produce a silent game on a
+      // phone. Inside this handler we are in the gesture and it works.
+      //
+      // Nothing is lost when the module has not loaded yet: the first pedal
+      // press calls `S.sound.start()` from its own `touchstart` (see `tb` in
+      // game.js) and the first keypress does the same, both of them real
+      // gestures. This is an early start, not the only one.
+      if (window.DriveSound) { window.DriveSound.start(); window.DriveSound.resume(); }
+    }, { once: true });
+  })();
 </script>
 {# This track's own mesh code, if it has any: `tracks/<slug>/scenery.js`.
 

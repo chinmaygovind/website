@@ -18,6 +18,7 @@ load_dotenv()
 
 from flask import (Flask, render_template, request, jsonify, Response,
                    redirect, url_for, session, send_from_directory, abort)
+from flask.sessions import SecureCookieSessionInterface
 from flask_socketio import SocketIO, join_room, leave_room, emit
 from sqlalchemy import func
 
@@ -79,6 +80,66 @@ if _cookie_domain:
     app.config["SESSION_COOKIE_DOMAIN"] = _cookie_domain
 if os.environ.get("SESSION_COOKIE_SECURE", "").lower() in ("1", "true", "yes"):
     app.config["SESSION_COOKIE_SECURE"] = True
+    # **The game has to work inside somebody else's page.** A portal (CrazyGames,
+    # Poki) does not host the files - it puts `<iframe src="drive.cgovind.com/...">`
+    # on a page of its own, so every request the browser makes for us is
+    # *third-party*, and an unset SameSite defaults to `Lax`, which means "do not
+    # send this cookie when the top-level site is not ours". Not degraded: never
+    # sent. The session cookie *is* the session, so `get_current_user()` would
+    # return None on every request, `/guest` could not keep a name, and the
+    # Socket.IO handshake would see an anonymous stranger - a logged-in player
+    # would appear logged out with no way to fix it.
+    #
+    # `None` requires `Secure`, which is why this hangs off the secure branch
+    # rather than standing on its own: it is the one condition under which a
+    # browser will accept it, and it keeps http://localhost:5005 (where a Secure
+    # cookie is never sent at all) working exactly as it did.
+    app.config["SESSION_COOKIE_SAMESITE"] = "None"
+
+
+class _PartitionedSession(SecureCookieSessionInterface):
+    """The session interface, plus CHIPS `Partitioned` on the cookie it writes.
+
+    Chrome's third-party cookie rules need more than `SameSite=None` now: an
+    un-partitioned third-party cookie is blocked whatever its SameSite says.
+    `Partitioned` opts into a jar keyed by the *top-level* site, so a player
+    framed on crazygames.com gets a session that works and is theirs alone.
+
+    The cost is worth knowing: a partitioned jar is per-portal, so logging in
+    inside CrazyGames' frame does not log you in on drive.cgovind.com, and vice
+    versa. That is the browser's rule rather than a choice on offer here - the
+    alternative is no session at all.
+
+    **This has to be the session interface and cannot be an `after_request`,
+    which is where it was first written and why that did not work.** Flask adds
+    the session cookie in `save_session`, and `save_session` runs *after* every
+    `after_request` handler has already been and gone - so the hook ran on every
+    response, found no session cookie on any of them, and did nothing, silently
+    and with all its own tests passing except the one that read the header.
+    Overriding here is the only point that is downstream of the cookie existing.
+
+    Rewriting the header rather than passing `partitioned=True` keeps this
+    working across Werkzeug versions - the kwarg is recent, and Flask does not
+    thread it through - and costs one string concatenation per response that
+    writes a session.
+    """
+
+    def save_session(self, app, session, response):
+        super().save_session(app, session, response)
+        if app.config.get("SESSION_COOKIE_SAMESITE") != "None":
+            return
+        name = app.config.get("SESSION_COOKIE_NAME", "session")
+        cookies = response.headers.getlist("Set-Cookie")
+        if not any(c.startswith(name + "=") for c in cookies):
+            return
+        response.headers.pop("Set-Cookie")
+        for c in cookies:
+            if c.startswith(name + "=") and "Partitioned" not in c:
+                c += "; Partitioned"
+            response.headers.add("Set-Cookie", c)
+
+
+app.session_interface = _PartitionedSession()
 
 # One resolution of "which database", in models.py, because `verify.py` runs in
 # a process of its own and has to arrive at the same file this does.

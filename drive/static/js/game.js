@@ -136,6 +136,14 @@ const S = {
   touch: false,
 };
 
+// The one handle on the sound from outside this module, and it exists for one
+// caller: the framed "Click to play" door in play.html. Everywhere else the
+// audio context is built by the first keypress (`bindInput`), but inside a
+// portal's iframe that click is the only user gesture we are promised, and the
+// door is a classic inline script that runs long before this module does. Same
+// shape as `window.DrivePending`, and deliberately just the sound - not `S`.
+window.DriveSound = S.sound;
+
 const input = { throttle: 0, brake: 0, steer: 0, handbrake: false };
 const keys = new Set();          // keyboard
 
@@ -755,8 +763,11 @@ function bindInput() {
   // otherwise takes two browsers and somebody driving five seconds up the road.
   const cu = /[?&]catchup=([0-9.]+)\b/.exec(location.search);
   S.catchupDemo = cu ? parseFloat(cu[1]) : null;
-  if ('ontouchstart' in window || location.search.indexOf('touch=1') >= 0 ||
-      (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) {
+  // Asked and answered in base.html's head, because the framed door needs the
+  // same answer before this module exists. Two computations of it could drift;
+  // one of them being in a template and the other here is exactly the kind of
+  // drift nothing notices until a phone is holding it.
+  if (window.DRIVE_TOUCH) {
     S.touch = true;
     document.body.classList.add('touch');
   }

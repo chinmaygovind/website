@@ -33,7 +33,12 @@
      Not on the play page. `_nav.html` is not included there, which is the
      behaviour we want anyway - a bright blue button over a lap in progress is a
      way of losing the lap. #}
-  <a class="discord" href="https://discord.gg/BvPuJznswA"
+  {# `leaves-frame`: hidden when the game is running inside a portal's iframe.
+     It is the one link here that goes off this site entirely, and a portal's
+     whole business is not sending the player somewhere else - both CrazyGames
+     and Poki name external links as grounds for rejection. At our own address
+     it is exactly as it was. #}
+  <a class="discord leaves-frame" href="https://discord.gg/BvPuJznswA"
      target="_blank" rel="noopener noreferrer" aria-label="Join the Discord">
     {# Two labels, one shown: on a phone the brand row also carries a name and a
        rating, and the forty-odd pixels "Join the" costs are the difference

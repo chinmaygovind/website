@@ -801,6 +801,59 @@ body.touch .mapbtns { display: none; }
   padding: .45rem 1.1rem; border-radius: 999px; font-size: 1rem;
   white-space: nowrap; max-width: 92vw; overflow: hidden; text-overflow: ellipsis;
 }
+/* The framed door. Hidden by default and shown only inside somebody else's page,
+   because at our own address the keyboard is already ours and a click-through
+   would be a toll on every visitor for nothing. `html.framed` is set by the
+   inline script in base.html's head, so this never flashes.
+
+   It covers everything (the HUD's own stacking tops out well below this) and it
+   is opaque rather than a scrim: a portal's frame is the player's first sight of
+   the game, and a half-lit road under a notice looks like something failing to
+   load. `pointer-events` is the whole mechanism - the click has to land in this
+   document, and anywhere in it will do. */
+/* **Shown on every framed device, touch included, and that is deliberate.**
+   Hiding it on touch was tried and is wrong for the one audience this whole
+   exercise is for: a touchscreen Chromebook answers `ontouchstart` yes and is
+   then played with its keyboard, so the door it did not get is the focus it
+   never receives and a game that ignores WASD. Costing a phone one tap is the
+   cheaper mistake by a wide margin.
+   `#frameStart` is a top-level element in play.html, beside `#rotate`, so this
+   z-index is measured against the page rather than against the HUD - nested
+   inside it, an ancestor's stacking context capped it and the portrait notice
+   drew straight through the door. */
+#frameStart { display: none; }
+html.framed #frameStart {
+  display: flex; position: fixed; inset: 0; z-index: 9000;
+  align-items: center; justify-content: center;
+  background: var(--paper, #faf8f4); cursor: pointer;
+}
+html.framed #frameStart .fs-card {
+  display: flex; flex-direction: column; align-items: center; gap: .5rem;
+  font-family: var(--display); text-align: center;
+}
+html.framed #frameStart .fs-ico { width: 72px; height: 72px; }
+html.framed #frameStart b { font-size: 1.6rem; letter-spacing: .02em; }
+html.framed #frameStart .fs-go {
+  font-size: 1rem; opacity: .72;
+  border: 1px solid currentColor; border-radius: 999px; padding: .35rem 1.1rem;
+}
+/* Click or Tap, whichever this device actually does. `html.is-touch` is set in
+   the same head script that sets `framed`, so it is right on the first paint -
+   `body.touch` arrives with game.js, which is far too late for a door that is
+   already in front of the player. */
+.fs-tap { display: none; }
+html.is-touch .fs-click { display: none; }
+html.is-touch .fs-tap { display: inline; }
+
+/* The links that leave the game are a trap in a frame: a portal reviewer
+   clicking one lands on a personal site inside a 800x600 box with no way back,
+   and "navigates the player away" is a stated rejection reason on both portals.
+   The play page has no nav at all (`_nav.html` is not included there), so this
+   is only ever the handful of ways out of a panel - and `.leaves-frame` marks
+   them rather than a blanket `a { }`, because the track switcher and the
+   leaderboard are pages of the game and belong inside the frame. */
+html.framed .leaves-frame { display: none; }
+
 /* Same hint, the symbols you actually have in front of you. */
 .hint-touch { display: none; }
 body.touch .hint-keys { display: none; }
@@ -1398,6 +1451,13 @@ body.side-open #touch { display: none; }
 }
 @media (orientation: portrait) and (max-width: 620px) {
   body.touch.playing #rotate { display: flex; }
+  /* And the start hint goes with it. It sits above the scrim, so in portrait it
+     printed "Hold the right pedal to start" straight through the middle of
+     "Turn your phone sideways to drive" - two instructions crossing each other,
+     one of them for a screen you are being asked to stop using. Everything else
+     in the HUD is behind the scrim and merely dim, which is correct: it is the
+     game you are about to play, showing through. */
+  body.touch.playing #startHint { display: none; }
 }
 
 @media (max-width: 860px) {

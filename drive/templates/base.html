@@ -46,6 +46,40 @@
   <meta name="apple-mobile-web-app-title" content="Drive"/>
   <meta name="mobile-web-app-capable" content="yes"/>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ asset_version }}"/>
+  {# Are we inside somebody else's page? A portal frames the game rather than
+     hosting it, and two things then differ enough to need saying in CSS: the
+     links that leave the game are a trap in a frame, and the keyboard does not
+     reach us until the player has clicked inside it.
+
+     In the head and inline, before the stylesheet has painted anything, because
+     a class that arrives with game.js arrives several hundred milliseconds and
+     one full track build too late - the overlay it drives would flash in after
+     the player had already pressed W and wondered why nothing happened.
+     `try` because a cross-origin `window.top` throws on access in some browsers
+     rather than answering, and a throw here is a blank page.
+
+     `?framed=1` forces it on at the top level, for the same reason `?touch=1`
+     and `?panel=` exist: there is no browser in CI, a screenshot cannot embed
+     itself in a portal, and this is the only way to look at the door's layout
+     without one. #}
+  <script>
+    try {
+      if (window.self !== window.top || /[?&]framed=1(&|$)/.test(location.search))
+        document.documentElement.classList.add('framed');
+    } catch (e) { document.documentElement.classList.add('framed'); }
+    // Is this a device that drives with its thumbs? **Answered here and only
+    // here.** It used to be computed inside game.js's `init`, which was the only
+    // consumer until the framed door arrived - and the door is drawn long before
+    // the module loads, so it would have asked the same question a second time
+    // and the two could drift. `game.js` reads this rather than recomputing it.
+    //
+    // Not a width: a tablet is 1180px across and still has no keyboard, which is
+    // why `body.touch` has always been about the pointer instead.
+    window.DRIVE_TOUCH = ('ontouchstart' in window
+      || location.search.indexOf('touch=1') >= 0
+      || !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches));
+    if (window.DRIVE_TOUCH) document.documentElement.classList.add('is-touch');
+  </script>
   {% block head %}{% endblock %}
 </head>
 <body class="{% block bodyclass %}{% endblock %}">
