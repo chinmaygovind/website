@@ -236,6 +236,20 @@ function boot() {
     where: CFG.mode === 'replay' ? 'replay' : (CFG.mode === 'room' ? 'room' : 'solo'),
     track: S.track.slug,
   });
+  // The world is built and the first frame is about to be drawn: this is the
+  // moment the player could press W, which is exactly what a portal means by
+  // gameplay starting. It is measured from the start of loading, so it must not
+  // be announced any earlier - a `gameplayStart` at the top of `init` would
+  // report a download time with the track build left out of it.
+  //
+  // `syncPaused` says it again on every panel toggle and the call is idempotent,
+  // so this is the first word rather than the only one. It is here and not in
+  // `syncPaused` because arriving with a panel open (`?panel=`, or the room
+  // drawer, which opens itself) would otherwise mean the game never reported
+  // starting at all.
+  if (window.DrivePortal && !S.menuOpen && !S.helpOpen) {
+    window.DrivePortal.gameplayStart();
+  }
   requestAnimationFrame(frame);
 }
 
@@ -1230,6 +1244,16 @@ function syncPaused() {
                   $('boardOv').style.display !== 'none' ||
                   $('tracksOv').style.display !== 'none';
   S.paused = anyOpen && CFG.mode === 'solo';
+  // A portal wants to know when the player is actually playing rather than
+  // reading a sheet, and this is already the one place that question is
+  // answered - deriving it a second time is how the two would come to disagree.
+  // `anyOpen` and not `S.paused`: a panel open during a race does not pause the
+  // game, but the player is still looking at a menu rather than at the road.
+  // `DrivePortal` is a no-op everywhere except inside a portal's frame.
+  if (window.DrivePortal) {
+    if (anyOpen) window.DrivePortal.gameplayStop();
+    else window.DrivePortal.gameplayStart();
+  }
 }
 
 function toggleBoard(force) {
@@ -1982,9 +2006,41 @@ function viewKeys() {
 // ---------------------------------------------------------------------------
 let lastFrame = performance.now();
 
+// Warming up: how many frames in a row have come back quickly. See `noteWarm`,
+// which is what holds the framed door shut until they do.
+let warmRun = 0;
+
+/**
+ * Tell the door when the renderer is genuinely smooth.
+ *
+ * Not "the world is built": a built world still has shader programs left to
+ * link, and each one stalls the frame that first needs it. So the test is the
+ * symptom rather than any of its causes - twelve consecutive frames under 34ms
+ * means the thing is actually running, whatever machine it is on and whatever
+ * was left to compile.
+ *
+ * Consecutive is the whole of it. A *mean* would be dragged under the line by
+ * the good frames between the stalls, which is exactly the state we are waiting
+ * to leave: 2fps for ten seconds is not uniformly slow, it is fast frames with
+ * compilation spikes through them.
+ *
+ * There is no time limit in here on purpose. The promise that the door always
+ * opens is a `setTimeout` owned by the door itself, because a limit checked from
+ * inside the frame loop is not a limit at all: the case it exists for is frames
+ * not arriving, and a page whose rAF is throttled - an iframe below the fold, a
+ * portal still showing its own splash, a background tab - would sit on Loading
+ * for ever waiting for the frame that was going to notice the wait was too long.
+ */
+function noteWarm(ms) {
+  if (!window.DriveDoor || window.DriveDoor.isReady()) return;
+  warmRun = ms < 34 ? warmRun + 1 : 0;
+  if (warmRun >= 12) window.DriveDoor.ready();
+}
+
 function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(0.1, (now - lastFrame) / 1000);
+  noteWarm(now - lastFrame);
   lastFrame = now;
 
   // Above the early returns, so the counter keeps counting in a replay and while

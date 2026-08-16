@@ -1388,6 +1388,39 @@ export class Renderer {
     this.hemi.groundColor.set(H ? H.ground : 0x5a6172);
     this.hemi.intensity = H && H.intensity != null ? H.intensity : 0.72;
     this.started = false;
+    this.precompile();
+  }
+
+  /**
+   * Build every shader this world needs *now*, instead of during the first laps.
+   *
+   * WebGL compiles a program the first time a material is actually drawn, and
+   * three.js does nothing to bring that forward - so a track whose scenery comes
+   * over the horizon in pieces compiles in pieces, each one a stall on the frame
+   * that first shows it. The result is a game that judders for the first several
+   * seconds and is then perfect, which is the exact shape of the problem and the
+   * reason it is so easy to miss: **Chrome caches compiled programs on disk, per
+   * origin**, so the second load is smooth and every load after it is smooth.
+   * Developing on one origin for months means never seeing the cold start that
+   * every new player gets, and a game portal is by definition a cold origin with
+   * a reviewer watching.
+   *
+   * `compile` walks the scene and prepares everything in it against the lights
+   * that are in it, which is why this is called at the foot of `setTrack` rather
+   * than in the constructor: it has to run once the world and its sun are in.
+   * It is deliberately the blocking one and not `compileAsync` - this is load
+   * time, where a few hundred milliseconds are invisible next to the download,
+   * and the async version would hand the cost straight back to the first laps
+   * for anything that had not finished.
+   *
+   * Cars, ghosts and rivals arrive later and are not covered here. That is a
+   * handful of programs against the track's many, and they are added at moments
+   * that are already not a hot lap.
+   */
+  precompile() {
+    // Never fatal. A driver that cannot precompile still renders; it just
+    // renders the way it did before this existed.
+    try { this.renderer.compile(this.scene, this.camera); } catch (e) {}
   }
 
   /**

@@ -270,6 +270,93 @@ def test_every_link_that_leaves_drive_opens_a_new_tab(plain_env):
             assert "noopener" in tag, "%s: %s needs rel=noopener" % (path, url)
 
 
+def test_the_portal_sdk_is_never_fetched_off_a_portal(plain_env):
+    """The script tag must not be in the markup - it is built at runtime, framed only.
+
+    Two separate promises rest on this. Their SDK is a third-party script on
+    somebody else's CDN, and /privacy says in as many words that this site loads
+    no third-party anything; a `<script src="sdk.crazygames.com">` sitting in the
+    play page would make that untrue for every player on drive.cgovind.com. And
+    off a CrazyGames domain the SDK is documented to enter "disabled" mode where
+    every call throws, so fetching it here buys a request and a hazard and no
+    feature.
+    """
+    html = plain_env.app.test_client().get("/solo/sunrise").get_data(as_text=True)
+    assert "<script src=\"https://sdk.crazygames.com" not in html
+    assert "sdk.crazygames.com/crazygames-sdk-v2.js" in html, (
+        "the loader is gone entirely; a portal launch needs gameplayStart")
+    # The guard that keeps it that way, and the flag that lets it be watched.
+    i = html.index("sdk.crazygames.com")
+    guard = html[max(0, i - 1200):i]
+    assert "classList.contains('framed')" in guard
+    assert "useLocalSdk=true" in guard
+
+
+def test_nothing_calls_the_sdk_without_a_guard(plain_env):
+    """Every call goes through `send`, which is the only place with a try/catch.
+
+    "All the calls to the SDK methods will throw an error" is their own
+    description of the disabled environment, so a direct
+    `CrazyGames.SDK.game.gameplayStart()` anywhere would raise on this site at
+    the moment the game became playable. game.js may only speak to the wrapper.
+    """
+    js_path = os.path.join(os.path.dirname(__file__), "..", "static", "js", "game.js")
+    js = open(js_path).read()
+    assert "CrazyGames" not in js, "game.js is talking to the SDK directly"
+    assert "window.DrivePortal" in js
+    html = plain_env.app.test_client().get("/solo/sunrise").get_data(as_text=True)
+    # In the page, the module is only ever reached through the wrapper's `send`.
+    for call in ("gameplayStart", "gameplayStop"):
+        direct = "SDK.game.%s(" % call
+        assert direct not in html, "unguarded %s in the page" % call
+
+
+def test_the_door_waits_for_a_warm_renderer(plain_env):
+    """Both halves of the loading gate, because either alone is a bug.
+
+    The gate exists because of what CrazyGames saw and this site never could:
+    WebGL links a shader program the first time a material is drawn and Chrome
+    caches those per origin, so a cold origin ran at about 2fps for ten seconds
+    and then perfectly. The fix is to draw those frames behind an opaque door.
+
+    Without the click guard, an impatient player opens the door onto the
+    juddering game the door exists to hide. Without the timer, a throttled iframe
+    (below the fold, background tab) never gets the frames that would notice it
+    should open, and the game is unreachable behind a Loading screen for ever.
+    """
+    html = plain_env.app.test_client().get("/solo/sunrise").get_data(as_text=True)
+    assert "fs-wait" in html and "fs-ready" in html
+    assert "isReady()" in html, "the click is not gated on the door being open"
+    assert "setTimeout(ready, 8000)" in html, "the door has no guaranteed opening"
+    # And the listener may not be spent by a press that did nothing.
+    #
+    # Comments are stripped before looking, because the line that says why this
+    # is not `{ once: true }` contains the words `{ once: true }` - the first
+    # version of this test failed on the note explaining the fix.
+    door = html[html.index("window.DriveDoor"):]
+    code = "\n".join(l for l in door[:6000].splitlines()
+                     if not l.lstrip().startswith("//"))
+    assert "once: true" not in code, (
+        "a press while Loading would consume the only listener")
+
+
+def test_the_shaders_are_built_before_the_first_frame(plain_env):
+    """`precompile` hangs off `setTrack`, which is the one place a world is installed.
+
+    Both paths need it and only one is obvious: the initial load, and the track
+    switcher, which builds a whole new world without navigating. Hanging it off
+    `setTrack` is what makes the second one free.
+    """
+    js_path = os.path.join(os.path.dirname(__file__), "..", "static", "js", "render.js")
+    js = open(js_path).read()
+    assert "precompile()" in js
+    assert "renderer.compile(" in js
+    # It has to be called from setTrack, after the world and its lights are in.
+    set_track = js[js.index("  setTrack(built) {"):]
+    body = set_track[:set_track.index("\n  /**")]
+    assert "this.precompile();" in body, "precompile is not called from setTrack"
+
+
 def test_the_privacy_notice_exists_and_can_be_found(plain_env):
     """A policy nobody can reach is not a policy, and a portal checks for it.
 

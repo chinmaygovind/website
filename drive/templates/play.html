@@ -390,9 +390,13 @@
   <div class="fs-card">
     <img src="/static/img/icon.svg" alt="" class="fs-ico"/>
     <b>Drive</b>
+    {# Two states, and the door only opens in the second. Until the renderer has
+       drawn enough consecutive warm frames to be trusted, this says Loading and
+       a press does nothing - see `DriveDoor` below for why that wait exists. #}
+    <span class="fs-go fs-wait">Loading&hellip;</span>
     {# The word follows the device, the same rule the start hint and the
        controls sheet follow: it never names a gesture you do not have. #}
-    <span class="fs-go"><span class="fs-click">Click</span><span class="fs-tap">Tap</span> to play</span>
+    <span class="fs-go fs-ready"><span class="fs-click">Click</span><span class="fs-tap">Tap</span> to play</span>
   </div>
 </div>
 <div id="rotate">Turn your phone sideways to drive</div>
@@ -771,6 +775,85 @@
   };
   {% if pb_ms %}window.DRIVE_CFG.pbs["{{ track.slug }}"] = {{ pb_ms }};{% endif %}
 
+  // The portal SDK, wrapped so the rest of the game never has to know it exists.
+  //
+  // CrazyGames needs one event to launch: `gameplayStart`, fired when the player
+  // can actually drive. It is how they measure the initial download - they time
+  // from the start of loading to that event - so it favours us, since only the
+  // track being driven is ever sent.
+  //
+  // **Three things about it are load-bearing and none is obvious.**
+  //
+  // It is only loaded inside a frame. On our own domain the SDK is useless (see
+  // below), and it is a third-party script on somebody else's CDN: loading it on
+  // every play page would put a request nobody needs in front of every player,
+  // and would make the privacy notice at /privacy untrue the day it shipped.
+  //
+  // Off a CrazyGames domain the SDK "enters disabled mode" and **every call to
+  // it throws** - their words. So nothing here calls it directly: `send` is
+  // wrapped, and the environment is checked before a module is kept at all. An
+  // unguarded `gameplayStart()` would raise on drive.cgovind.com at the exact
+  // moment the game became playable, which is to say on essentially every lap
+  // anybody drives here.
+  //
+  // And the game becomes playable before a script off a CDN can be relied on to
+  // have arrived, so the state is held here (`playing`) and replayed when and if
+  // the SDK turns up. The alternative is a race that resolves differently on a
+  // slow connection, which is the kind of bug that only ever reproduces for
+  // other people.
+  //
+  // `?useLocalSdk=true` is their own flag for forcing local mode, which logs the
+  // events to the console; it is honoured here so this can be watched without
+  // being on their site.
+  window.DrivePortal = (function () {
+    var api = null;        // the SDK's game module, once it is known to be usable
+    var playing = false;   // what the game has told us, heard or not
+
+    function send(fn) {
+      if (!api) return;
+      try { api[fn](); } catch (e) { /* disabled, or a shape we do not know */ }
+    }
+
+    function load() {
+      var framed = document.documentElement.classList.contains('framed');
+      if (!framed && location.search.indexOf('useLocalSdk=true') < 0) return;
+      var s = document.createElement('script');
+      s.src = 'https://sdk.crazygames.com/crazygames-sdk-v2.js';
+      s.async = true;
+      s.onload = function () {
+        var SDK = window.CrazyGames && window.CrazyGames.SDK;
+        if (!SDK || !SDK.game) return;
+        try {
+          SDK.getEnvironment(function (err, env) {
+            if (err || env === 'disabled') return;
+            api = SDK.game;
+            if (playing) send('gameplayStart');
+          });
+        } catch (e) { /* no environment call: stay quiet rather than guess */ }
+      };
+      // Blocked by an extension, offline, or their CDN having a bad morning.
+      // None of it is the game's problem and none of it may stop a lap.
+      s.onerror = function () {};
+      document.head.appendChild(s);
+    }
+
+    load();
+
+    return {
+      // Both are idempotent, because the callers are state changes rather than
+      // events: `syncPaused` runs on every panel toggle and would otherwise
+      // report a resume each time a sheet was closed on an already-running game.
+      gameplayStart: function () {
+        if (playing) return;
+        playing = true; send('gameplayStart');
+      },
+      gameplayStop: function () {
+        if (!playing) return;
+        playing = false; send('gameplayStop');
+      },
+    };
+  })();
+
   // The framed door, handled here rather than in game.js on purpose: a track
   // build is the better part of a second, and the whole point of this overlay is
   // to be in front of the player *before* they have tried the keys and concluded
@@ -780,10 +863,56 @@
   // `window.focus()` is what actually moves the keyboard into this document.
   // Focusing the frame's own body as well covers the browsers that ignore the
   // first call - neither is reliable alone, both together have not failed.
+  // `DriveDoor.ready()` is game.js saying the renderer is warm, and until it is
+  // called this door does not open.
+  //
+  // **The reason is a bug a portal found and this site never could.** WebGL
+  // links a shader program the first time a material is actually drawn, and
+  // Chrome caches those programs on disk *per origin* - so on
+  // drive.cgovind.com, after months of loads, they are always warm and the game
+  // always starts instantly. On CrazyGames it was a cold origin, every program
+  // compiled during the first laps, and the game ran at about 2fps for ten
+  // seconds before becoming perfect. Perfect afterwards is what makes it so
+  // easy to dismiss, and a reviewer only watches the first ten seconds.
+  //
+  // `Renderer.precompile` moves most of that work to load. This handles the
+  // rest, and it is the part that does not depend on guessing right: the frames
+  // are drawn behind an opaque door, and the door opens when they are actually
+  // coming out smoothly. Whatever the machine, whatever is left to compile, the
+  // first frame the player sees is a warm one.
+  window.DriveDoor = (function () {
+    var el = document.getElementById('frameStart');
+    var opened = false;
+    function ready() {
+      if (!el || opened) return;
+      opened = true;
+      el.classList.add('ready');
+    }
+    // **The door always opens, and this is the line that promises it.**
+    //
+    // A timer and not a frame count, because the case it covers is frames not
+    // arriving: an iframe below the fold, a portal still showing its own splash,
+    // a background tab. Chrome throttles rAF in all three, so a deadline checked
+    // from inside the frame loop would be waiting on the very thing that has
+    // stopped. `setTimeout` still fires when throttled - later than asked, but
+    // it fires - and a slow game somebody can play beats a Loading screen that
+    // never ends.
+    //
+    // Eight seconds is chosen against what it is racing: a cold shader cache
+    // costs about ten, and the warm-frame check normally opens the door well
+    // inside a second. Anything reaching this line is already having a bad time.
+    setTimeout(ready, 8000);
+    return { ready: ready, isReady: function () { return opened; } };
+  })();
+
   (function () {
     var el = document.getElementById('frameStart');
     if (!el || !document.documentElement.classList.contains('framed')) return;
     el.addEventListener('click', function () {
+      // A press while it still says Loading is not a press. Deliberately silent:
+      // there is nothing useful to say beyond what the word already says, and
+      // the wait is seconds.
+      if (!window.DriveDoor.isReady()) return;
       el.remove();
       try { window.focus(); } catch (e) {}
       try { document.body.focus(); } catch (e) {}
@@ -800,7 +929,11 @@
       // game.js) and the first keypress does the same, both of them real
       // gestures. This is an early start, not the only one.
       if (window.DriveSound) { window.DriveSound.start(); window.DriveSound.resume(); }
-    }, { once: true });
+    });
+    // Not `{ once: true }`, which is what this was: a press while the door still
+    // said Loading would have spent the only listener there was, and the door
+    // would then have been permanently shut over a game that went on to load
+    // perfectly well. An impatient first click is the likeliest click there is.
   })();
 </script>
 {# This track's own mesh code, if it has any: `tracks/<slug>/scenery.js`.

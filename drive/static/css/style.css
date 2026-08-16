@@ -837,6 +837,17 @@ html.framed #frameStart .fs-go {
   font-size: 1rem; opacity: .72;
   border: 1px solid currentColor; border-radius: 999px; padding: .35rem 1.1rem;
 }
+/* Loading until game.js says the frames are coming out warm, then the door.
+   `Loading` is deliberately quieter and borderless - it is a state, not a
+   control, and it must not look like something you can press. */
+html.framed #frameStart .fs-ready { display: none; }
+html.framed #frameStart.ready .fs-wait { display: none; }
+html.framed #frameStart.ready .fs-ready { display: inline; }
+html.framed #frameStart .fs-wait {
+  border-color: transparent; opacity: .5;
+}
+html.framed #frameStart { cursor: default; }
+html.framed #frameStart.ready { cursor: pointer; }
 /* Click or Tap, whichever this device actually does. `html.is-touch` is set in
    the same head script that sets `framed`, so it is right on the first paint -
    `body.touch` arrives with game.js, which is far too late for a door that is
