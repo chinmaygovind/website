@@ -7,6 +7,7 @@ slug = "twist"
 name = "Twin Loop"
 blurb = "Two full loops that step out sideways. Carry speed in."
 difficulty = 3
+medals = (19.4, 20.4, 21.5)
 ground = None
 order = 40
 width = 11.0

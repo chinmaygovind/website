@@ -304,6 +304,36 @@ def test_gold_is_faster_than_the_estimate(track):
         "gold must ask for more than the relaxed-racing-line estimate"
 
 
+@pytest.mark.parametrize("track", ALL, ids=IDS)
+def test_gold_is_cut_from_the_board_and_not_from_the_estimate(track):
+    """Every track in the pool has been played, so every one declares its times.
+
+    `ideal` is a good estimate of a lap and a poor estimate of a standard - it is
+    out by 0.744 to 0.888 of itself depending on the track, which is a spread no
+    single multiplier covers. The derivation is still there and is still what a
+    brand new folder gets; this is the assertion that the *pool* is not using it,
+    because a track quietly falling back is a track whose gold went soft and
+    nothing else would say so.
+    """
+    assert track["medal_times"], (
+        "%s has no cut medal times - run tools/set_medals.py" % track["slug"])
+    assert track["medals"]["gold"] == track["medal_times"][0]
+
+
+@pytest.mark.parametrize("track", ALL, ids=IDS)
+def test_every_medal_time_is_a_whole_tenth(track):
+    """Rounded up, and the card shows one decimal.
+
+    Two decimals on a medal time is a number that looks measured when it is a
+    policy, and `16.44` invites the question of what happened to the hundredth.
+    Up rather than down, so re-cutting cannot take a medal off a lap that had
+    already cleared the bar - see `laptime.ceil_tenth`.
+    """
+    for name, t in track["medals"].items():
+        assert abs(t * 10 - round(t * 10)) < 1e-9, \
+            "%s %s is %.3f, not a tenth" % (track["slug"], name, t)
+
+
 @pytest.mark.parametrize("track", [t for t in ALL if t.get("closed")],
                          ids=[t["slug"] for t in ALL if t.get("closed")])
 def test_a_closed_lap_actually_closes(track):

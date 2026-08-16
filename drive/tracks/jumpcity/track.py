@@ -7,6 +7,7 @@ slug = "jumpcity"
 name = "Jump City"
 blurb = "Four gaps with nothing under them. Launch, land, repeat."
 difficulty = 4
+medals = (20.8, 21.9, 23.0)
 ground = None
 order = 60
 width = 12.0

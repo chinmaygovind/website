@@ -308,6 +308,13 @@ RESPAWN_DELAY = 0.45       # pause after falling before you pop back
 # A medal already earned is not taken away: `DriveTime.medal` is written when
 # the run is stored, so tightening these only applies to laps driven from here
 # on - the same way nobody's medal moved when `author` was retired.
+# **This is the fallback now, not the pool's medals.** Every track that has been
+# played carries three times cut from its own board (`medals` in its `track.py`,
+# written by `tools/set_medals.py`); these multipliers are what a brand new
+# folder gets so that it is playable and medalled on its first run. The reason
+# for the split is in `tracks/__init__.py`: one global multiplier cannot span a
+# per-track error of 0.744 to 0.888, and at 0.92 this gave gold to 92.7% of every
+# time ever set on the site.
 MEDAL_MULT = {
     "gold": 0.92,
     "silver": 0.99,

@@ -7,6 +7,7 @@ slug = "eight"
 name = "Figure Eight"
 blurb = "Short, and it crosses over itself."
 difficulty = 2
+medals = (16.6, 17.5, 18.4)
 ground = -1.2
 order = 80
 width = 12.0

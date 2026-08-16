@@ -7,6 +7,7 @@ slug = "gauntlet"
 name = "The Gauntlet"
 blurb = "Loops, gaps, hairpins, elevation. Everything, twice over."
 difficulty = 5
+medals = (35.2, 37.0, 38.9)
 ground = None
 order = 90
 width = 12.0

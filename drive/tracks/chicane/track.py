@@ -7,6 +7,7 @@ slug = "chicane"
 name = "Chicane Park"
 blurb = "Quick direction changes and two very slow hairpins."
 difficulty = 2
+medals = (14.4, 15.2, 16.0)
 ground = -1.2
 order = 20
 width = 11.0

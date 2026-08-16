@@ -7,6 +7,7 @@ slug = "spiral"
 name = "Spiral Ascent"
 blurb = "A long banked spiral to the top and a dive down the outside."
 difficulty = 4
+medals = (21.3, 22.4, 23.6)
 ground = None
 order = 70
 width = 11.0

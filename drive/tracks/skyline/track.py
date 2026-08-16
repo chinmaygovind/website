@@ -7,6 +7,7 @@ slug = "skyline"
 name = "Skyline Sprint"
 blurb = "Up and over a floating skyline. Miss a corner and you fall."
 difficulty = 3
+medals = (18.0, 18.9, 19.9)
 ground = None
 order = 30
 width = 11.0

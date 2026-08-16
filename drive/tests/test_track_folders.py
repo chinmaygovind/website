@@ -69,6 +69,19 @@ CASES = {
     # No `build` at all.
     "no_build": ('slug = "zzscratch"\nname = "S"\nblurb = "x"\n'
                  'difficulty = 2\n', "build"),
+    # Medal times in the wrong order. Slow-to-fast reads perfectly well as a
+    # thing somebody would type, and a pool that accepted it would ship a card
+    # where bronze is the hardest medal and nothing anywhere would say so.
+    "medals_backwards": ('slug = "zzscratch"\nname = "S"\nblurb = "x"\n'
+                         'difficulty = 2\nmedals = (20.0, 18.0, 16.0)\n'
+                         'def build(b):\n    b.start()\n    b.finish()\n',
+                         "increasing"),
+    # Two times where there must be three - the likeliest way to mistype the
+    # tuple the tool writes.
+    "medals_short": ('slug = "zzscratch"\nname = "S"\nblurb = "x"\n'
+                     'difficulty = 2\nmedals = (20.0, 22.0)\n'
+                     'def build(b):\n    b.start()\n    b.finish()\n',
+                     "three"),
     # Builds fine, but the loop cannot be closed inside the solver's guards.
     "unclosable": ('slug = "zzscratch"\nname = "S"\nblurb = "x"\n'
                    'difficulty = 2\nclosed = True\n'
@@ -152,7 +165,14 @@ def test_a_good_scratch_folder_just_works(scratch):
     assert t is not None, "a valid folder did not reach the pool"
     # `_reload` stops before medal times, so derive them here - once, in the one
     # test that is about a track working rather than about a track failing.
+    #
+    # This is also the assertion that a folder nobody has driven yet is still a
+    # playable, medalled track. Every track in the shipped pool declares times
+    # cut from its board, and if that were the *only* way to get medals then a
+    # new track would arrive with no standard on it at all - which is the state
+    # `tools/set_medals.py` cannot fix, because it needs laps that do not exist.
     import laptime
+    assert t["medal_times"] is None, "a scratch folder declared medal times"
     assert laptime.medals(laptime.ideal_lap(t))["gold"] > 0
 
 

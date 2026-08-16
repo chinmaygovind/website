@@ -271,7 +271,41 @@ built thing would only have been a way to be told the wrong answer.)*
   times did not move when it went, so nobody lost a medal - an old `author` row is
   shown as a gold by `DriveTime.medal_shown`, and `_MEDAL_FIELD` keeps the key so
   improving on one still decrements the right counter.
-- **`MEDAL_MULT` is set against real times, not against the estimate.** It was
+- **Medal times are cut from the board now, not derived from the ribbon.** Each
+  `track.py` carries `medals = (gold, silver, bronze)`, written by
+  `tools/set_medals.py` from the times people have actually driven;
+  `laptime.medals` is the **fallback** for a folder nobody has played yet, which
+  is what keeps a brand new track playable and medalled on its first run.
+  - **Why the derivation had to go.** `ideal` is a fine estimate of a *lap* and a
+    poor estimate of a *standard*, and the error is per track rather than global:
+    `WR/ideal` runs 0.744 (Chicane Park) to 0.888 (Spiral Ascent). At the 0.92
+    that shipped, **92.7% of every time ever set on this site earned gold**, and
+    on eight of the sixteen tracks *everybody* on the board had one. Tighten the
+    multiplier until Chicane Park means something and Spiral Ascent, Heights and
+    Skyline have no attainable gold at all. The note below already predicted this
+    and said the fix was a better `laptime.py`; the fix that was actually
+    available was to stop guessing and read the board.
+  - **Gold is `min(5th best, WR x 1.06)`, rounded up to a tenth.** The fifth best
+    is the target and lands at top-5 pace on a board deep enough to have one. The
+    cap is for the boards that are not: Big Red has five times on it, so its
+    fifth best *is* its slowest, 15.8% off the record, and gold would have gone
+    to everyone who ever finished it. Twist and Cloudbreak have the same cliff
+    one row down. The cap binds on 4 of 16 and costs nothing on the other 12.
+  - **Silver and bronze are two equal 5% steps**, so they are proportional to the
+    lap: 0.9s apart on Sunrise Circuit, 3s on Big Red.
+  - **Everything is rounded up**, never down - see `laptime.ceil_tenth`. A medal
+    time is a bar to clear, and rounding it down moves the bar under laps that
+    had already cleared it.
+  - **The numbers are frozen, not queried live.** Medals read off the current
+    board would move under the player every time somebody set a record; the card
+    in the corner is a target, not a running commentary. Re-run the tool when the
+    boards have moved enough to be worth re-cutting.
+  - **Nobody loses a medal they already have.** `DriveTime.medal` is written when
+    the run is stored, so this only applies to laps driven from here on - the
+    same way nothing moved when `author` was retired. An old row keeps its gold
+    while a new player driving the same time now gets silver, and that is the
+    intended behaviour rather than a wrinkle.
+- **`MEDAL_MULT` is the fallback's shape, and it was set against real times.** It was
   1.04 / 1.18 / 1.42, calibrated off the simulated driver, and it was far too
   soft: every record actually set on the site sits between **0.77 and 0.90 of
   `ideal`** (mean 0.85), so a 1.04 gold was slower than what people were

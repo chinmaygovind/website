@@ -3,9 +3,15 @@
 Every other test in `test_tracks.py` asks whether a ribbon is *well formed*. None
 of them can notice that a ribbon is well formed **somewhere else** - a track
 shifted ten units sideways, a corner opened by two degrees, a straight three
-units longer. Those pass every structural check and change every time on the
-board, because `laptime` derives the medal times from the geometry and the
-leaderboard is only comparable against geometry that has not moved.
+units longer. Those pass every structural check and change every
+lap the track is worth, because the leaderboard is only comparable against
+geometry that has not moved - a board is one column of times against one road,
+and moving the road under it makes the old rows mean something else.
+
+(This used to say "because `laptime` derives the medal times from the geometry".
+It does not any more - see `test_the_ideal_lap_did_not_move` - but the reason the
+ribbon has to hold still is the board itself, which was always the better half of
+that sentence.)
 
 So this compares against `tests/data/tracks_snapshot.json`, written by
 `tools/snapshot_tracks.py`. It was taken before the pool was split into one
@@ -130,27 +136,36 @@ def test_the_pool_order_is_unchanged():
 
 
 @pytest.mark.parametrize("slug", IDS)
-def test_the_medal_times_did_not_move(slug):
-    """The one that would silently re-grade laps somebody already drove.
+def test_the_ideal_lap_did_not_move(slug):
+    """The simulated lap is what still connects this file to a player.
 
-    Checked before the geometry, and separately from it, because this is the
-    consequence that reaches a player. A track may be allowed to shift by a
-    hundredth of a unit (see `TOLERANCE`); its gold time may not move at all.
+    **It used to assert the medal times, and it cannot any more.** Those are cut
+    from the board by `tools/set_medals.py` and declared in each `track.py` now,
+    precisely because deriving them from geometry made them a worse standard than
+    the geometry deserved - so they no longer move when a ribbon does, and
+    asserting them here would be asserting that nobody has re-cut them. That is a
+    deliberate human decision with its own guard
+    (`test_gold_is_cut_from_the_board_and_not_from_the_estimate`), not something
+    this file can catch.
+
+    `ideal` is the piece that is still derived, so it is still the number that
+    goes wrong when a corner opens by two degrees, and it keeps this test's job:
+    a ribbon that moved somewhere else while passing every structural check.
+
+    The `medals` field in the snapshot is left in place and deliberately not read.
+    It is what the old derivation produced, which is worth being able to look up -
+    the whole argument for the change is the gap between those numbers and what
+    people actually drive.
     """
     if slug not in OLD or slug not in NEW:
         pytest.skip("covered by test_the_pool_is_the_same_set_of_tracks")
-    assert NEW[slug]["medals"] == OLD[slug]["medals"], (
-        "%s: medal times moved from %s to %s. Every lap on the board for this "
-        "track was graded against the old ones."
-        % (slug, OLD[slug]["medals"], NEW[slug]["medals"]))
-    # The ideal lap gets the track's tolerance where the medals get none. It is a
-    # raw simulation result at full precision, so a hundredth of a unit of road
-    # shows up in it; the medals are rounded to 1/100s and are what a player is
-    # actually graded against. Spa moves 71.339 -> 71.340 and its golds do not
-    # move at all, which is exactly the distinction worth drawing.
+    # A track may be allowed to shift by a hundredth of a unit (see `TOLERANCE`),
+    # and `ideal` is a raw simulation result at full precision, so that shows up
+    # here where it would not in a time rounded to a tenth. Spa moves
+    # 71.339 -> 71.340.
     slack = 0.05 if slug in TOLERANCE else 0.0
     assert abs(NEW[slug]["ideal"] - OLD[slug]["ideal"]) <= slack, (
-        "%s: the ideal lap moved %.3f -> %.3f, so the medals are about to."
+        "%s: the ideal lap moved %.3f -> %.3f, so the ribbon moved with it."
         % (slug, OLD[slug]["ideal"], NEW[slug]["ideal"]))
 
 

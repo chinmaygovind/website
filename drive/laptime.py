@@ -336,7 +336,30 @@ def raw_lap(track):
 
 
 def medals(ideal):
-    return {k: round(ideal * m, 2) for k, m in T.MEDAL_MULT.items()}
+    """Medal times derived from the ribbon, for a track with no cut times.
+
+    The fallback, not the usual case - see `tracks/__init__.py`. Rounded up to a
+    tenth like the cut ones, so a new track's card does not read differently from
+    every other card in the game.
+    """
+    return {k: ceil_tenth(ideal * m) for k, m in T.MEDAL_MULT.items()}
+
+
+def named_medals(times):
+    """A `(gold, silver, bronze)` tuple as the dict the rest of the game wants."""
+    return dict(zip(("gold", "silver", "bronze"), (float(t) for t in times)))
+
+
+def ceil_tenth(seconds):
+    """Up to the next tenth of a second.
+
+    Up and never down, because a medal time is a bar to clear: rounding 16.44 to
+    16.4 moves the bar under two laps that had already cleared it, and a medal
+    that can be taken away by a rounding rule is the one kind of unfairness this
+    card cannot explain. The epsilon is for the usual reason - 16.4 arrives from
+    the multiplication as 16.400000000000002 and would otherwise round to 16.5.
+    """
+    return math.ceil(seconds * 10 - 1e-9) / 10
 
 
 def line_length(track):

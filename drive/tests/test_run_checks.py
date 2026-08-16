@@ -161,9 +161,20 @@ def test_a_checked_lap_reaches_the_board_the_next_time_anyone_reads_it(env, laps
         t = env.DriveTime.query.get(row.drive_time_id)
         assert t.medal == runcheck.medal_for(
             __import__("tracks").get("sunrise"), row.time_ms)
-        assert (env.DriveStats.query.filter_by(user_id=t.user_id).one().golds or 0) \
-            + (env.DriveStats.query.filter_by(user_id=t.user_id).one().silvers or 0) \
-            + (env.DriveStats.query.filter_by(user_id=t.user_id).one().bronzes or 0) >= 1
+        # The counter agrees with the medal, whichever way that falls.
+        #
+        # **This used to assert `>= 1`, and it stopped being true when the medal
+        # times were cut from the board.** `driver.js` laps Sunrise in 20.05s;
+        # every one of the thirteen humans on that board is between 16.27 and
+        # 17.1, so bronze at 18.2 is comfortably inside human range and outside
+        # the autopilot's - it is a crude driver, not evidence of a bad standard.
+        # Asserting agreement instead is the stronger test anyway: it is the one
+        # that catches a medal written to the row without the counter moving,
+        # which is the bug this line was here for.
+        st = env.DriveStats.query.filter_by(user_id=t.user_id).one()
+        counted = (st.golds or 0) + (st.silvers or 0) + (st.bronzes or 0)
+        assert counted == (1 if t.medal else 0), (
+            "medal %r on the row but %d counted" % (t.medal, counted))
 
 
 def test_a_lap_the_car_could_not_have_driven_never_reaches_the_board(env, laps):

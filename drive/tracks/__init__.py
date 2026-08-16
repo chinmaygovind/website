@@ -27,13 +27,29 @@ takes a `Builder` and lays the road. Everything else is optional:
                 so `test_barriers_are_opt_in` stops asking for barriers.
     scenery     True if the folder ships a `scenery.js`. Checked, so a typo in
                 the filename is an error rather than a track with no building.
+    medals      ``(gold, silver, bronze)`` in seconds, cut from the board by
+                `tools/set_medals.py`. **Generated, not authored** - the same
+                deal `hotlap.json` has. Omit it and the three times are derived
+                from the ribbon instead, so a brand new track is playable and
+                medalled on its first run; run the tool once it has been driven.
 
 Everything derived stays derived
 --------------------------------
-``pole_side``, ``gate_ceil``, the ideal lap and the three medal times are all
-computed here from the ribbon. A new track gets them for free and cannot get them
-wrong - and retuning the car in `tuning.py` retunes every medal on every track,
-which is why there is no second copy of `ACCEL` anywhere.
+``pole_side``, ``gate_ceil`` and the ideal lap are all computed here from the
+ribbon. A new track gets them for free and cannot get them wrong - and retuning
+the car in `tuning.py` retunes the ideal lap on every track, which is why there
+is no second copy of `ACCEL` anywhere.
+
+The medal times are the **one exception**, and it was earned rather than chosen.
+They were derived too, as `ideal` times a global multiplier, and `ideal` turns
+out to be a fine estimate of a lap and a poor estimate of a standard: against the
+records people actually set it is out by 0.744 to 0.888 of itself *depending on
+the track*. No single multiplier spans that. The one that shipped gave gold to
+92.7% of every time ever set here, and tightening it enough to fix that left
+three tracks with no attainable gold at all. So a track that has been played
+declares its own, cut from the board by `tools/set_medals.py`; a track that has
+not falls back to the derivation, which is what keeps "a track is one folder"
+true.
 
 Order matters more than it looks
 --------------------------------
@@ -138,9 +154,34 @@ def _meta(mod, folder):
         "closed": bool(getattr(mod, "closed", False)),
         "exposed": bool(getattr(mod, "exposed", False)),
         "wants_scenery": bool(getattr(mod, "scenery", False)),
+        # Three medal times in seconds, fastest first, or None to derive them
+        # from the ribbon. Cut from the board by `tools/set_medals.py` - see
+        # `_medal_times` below for why a track that has been played gets to
+        # overrule the simulation about how quick it is.
+        "medal_times": _medals_decl(folder, getattr(mod, "medals", None)),
         "build": mod.build,
         "module": mod,
     }
+
+
+def _medals_decl(folder, raw):
+    """Validate an optional `medals = (gold, silver, bronze)` declaration."""
+    if raw is None:
+        return None
+    try:
+        v = tuple(float(x) for x in raw)
+    except (TypeError, ValueError):
+        raise ValueError("tracks/%s/track.py: medals must be three numbers "
+                         "(gold, silver, bronze) in seconds, not %r"
+                         % (folder, raw))
+    if len(v) != 3:
+        raise ValueError("tracks/%s/track.py: medals needs exactly three times, "
+                         "got %d" % (folder, len(v)))
+    if not (v[0] < v[1] < v[2]):
+        raise ValueError("tracks/%s/track.py: medals must be strictly "
+                         "increasing (gold, silver, bronze), got %r"
+                         % (folder, v))
+    return v
 
 
 def _assemble():
@@ -239,6 +280,8 @@ def _one(e):
          # swaps the world in place, so it has to know to go and fetch the
          # scenery before it builds. See `/scenery/<slug>.js` in app.py.
          "scenery": e["wants_scenery"],
+         # The three times cut from the board, or None to derive them below.
+         "medal_times": e["medal_times"],
          "cell": CELL, "level": LEVEL, "station": STATION}
     t.update(built.build())
     # Both derived from the ribbon rather than authored, so a new track gets them
@@ -294,9 +337,26 @@ EXPOSED = {t["slug"] for t in TRACKS if t["exposed"]}
 # the import down here rather than at the top.
 import laptime  # noqa: E402
 
+# **A track that has been played overrules the simulation about how quick it is,
+# and a track that has not been played still gets medals.**
+#
+# `laptime.ideal_lap` is a good estimate of a lap and a poor estimate of a
+# *standard*: measured against the records people actually set, it is out by
+# 0.744 to 0.888 of itself depending on the track. One global multiplier over
+# that spread cannot be both hard on Chicane Park and possible on Spiral Ascent -
+# tighten it until Chicane means something and Spiral Ascent has no gold at all,
+# which is the state `docs/runs-and-scoring.md` already predicted and blamed on
+# the estimate rather than on the multiplier.
+#
+# So the numbers are cut from the board by `tools/set_medals.py` and written into
+# each `track.py`, and this is only the fallback. Frozen values and not a live
+# query on purpose: medals read off the current board would move under the player
+# every time somebody set a record, and the card in the corner is a target rather
+# than a running commentary.
 for _t in TRACKS:
     _t["ideal"] = laptime.ideal_lap(_t)
-    _t["medals"] = laptime.medals(_t["ideal"])
+    _t["medals"] = (laptime.named_medals(_t["medal_times"])
+                    if _t["medal_times"] else laptime.medals(_t["ideal"]))
 
 
 def scenery_path(slug):
