@@ -661,8 +661,14 @@
     <div class="sheet-foot">
       <div class="btn-grid two">
         <a class="btn secondary board-link" href="/track/{{ track.slug }}">View Leaderboard</a>
+        {# The word names **what you are leaving**, not the act of leaving.
+           "Leave" on its own is the one label on this sheet that does not say
+           where the press lands, and the three destinations are genuinely
+           different places - the lobby list, the Drive home page, or back into
+           a seat. Somebody who opened settings mid-race to turn the music down
+           is one ambiguous red button away from ending it. #}
         {% if mode == 'room' %}
-        <a class="btn danger" id="btnQuit" href="/lobbies">Leave Room</a>
+        <a class="btn danger" id="btnQuit" href="/lobbies">Exit Multiplayer</a>
         {% elif back %}
         {# The other way out of a replay, and it goes where the first one goes -
            having the two disagree is how somebody finds this button expecting
@@ -670,8 +676,10 @@
            this sheet means the press you cannot undo, and this one is a page
            load back into a seat that was never given up. #}
         <a class="btn secondary" id="btnQuit" href="/room/{{ back }}">Back to Room</a>
+        {% elif mode == 'replay' %}
+        <a class="btn danger" id="btnQuit" href="/">Exit Replay</a>
         {% else %}
-        <a class="btn danger" id="btnQuit" href="/">Leave</a>
+        <a class="btn danger" id="btnQuit" href="/">Exit Solo</a>
         {% endif %}
       </div>
     </div>

@@ -51,8 +51,9 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
 - **Settings is only settings.** Title, an X, and the things you set. The
   session controls moved to the HUD. It is **Splits and the ghost car, then
   Sound and Music, then the two ways out** - a white *View Leaderboard* beside
-  the red *Leave*, the red one last because it is the only control on the sheet
-  that pressing again does not undo. Every label on it is **Title Case**, down
+  the red *Exit Solo* / *Exit Multiplayer*, the red one last because it is the
+  only control on the sheet that pressing again does not undo (and it names what
+  it is leaving for the same reason - see below). Every label on it is **Title Case**, down
   to the state a switch is in (*Ghost: On*). It is also the one sheet wider
   than `.sheet.wide` (`.sheet.wide.settings`, 720px): its top row is four
   choices *and* a switch beside them, and in a room the four include
@@ -161,6 +162,29 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   standing choice by name - ids are digits, so the two cannot collide - which
   makes a ghost setting linkable and, with `--dump-dom`, checkable without a
   browser to click in.
+- **There is one panel in front of you, and opening another replaces it.**
+  Settings, the controls sheet, the board and the track switcher are four
+  overlays over the same road, and no arrangement of two of them reads as
+  anything but a mistake. They used to know about each other **in pairs**, and
+  only in the pairs somebody had happened to hit: settings closed controls,
+  controls closed settings, the board closed settings. Nothing closed the
+  switcher and the switcher closed nothing - so `P` over the board, or `L` over
+  the controls sheet, put two sheets up and left the one underneath to reappear
+  when the top one was dismissed. `closeOtherPanels` is now the single answer and
+  it lives **inside the four toggles**, which is what makes it true for every way
+  in: the keys, the four buttons in the corner, `?panel=`, and the *View Others*
+  chip inside settings, which opens the board from a sheet that then has to get
+  out of the way. It only ever runs on the way *open*, or closing one would
+  re-enter it. `tests/test_panels.py` drives the real functions through QuickJS
+  over all sixteen ordered pairs, so a fifth panel added without a line in
+  `closeOtherPanels` fails eight times rather than passing quietly.
+- **The way out says what it is a way out of.** The red button at the foot of
+  settings is *Exit Solo*, *Exit Multiplayer* or *Back to Room*, never a bare
+  "Leave". It was the one label on that sheet that did not say where the press
+  lands, and the three destinations are genuinely different places - the lobby
+  list, the Drive home page, or back into a seat that was never given up.
+  Somebody who opened settings mid-race to turn the music down was one ambiguous
+  red button away from ending it.
 - **Escape closes what is in front of you before it opens anything.** It works
   innermost first - a replay, then a panel opened from another panel, then the
   panel itself - and *then* means "open settings". The controls sheet was

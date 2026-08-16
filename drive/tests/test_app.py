@@ -1373,8 +1373,32 @@ def test_the_way_out_of_a_replay_is_back_into_the_room(env):
     rid = _seated(env, c)
     html = c.get("/race/%d" % rid).get_data(as_text=True)
     assert '"BACK42"' in html, "the room code has to reach the page"
-    assert "Back to room" in html and ">Leave<" not in html
+    assert "Back to room" in html and ">Exit Replay<" not in html
     assert 'href="/room/BACK42"' in html
+
+
+def test_the_way_out_says_what_it_is_a_way_out_of(env):
+    """"Leave" was the one label on the settings sheet that did not say where the
+    press lands, and the three destinations are genuinely different places - the
+    lobby list, the Drive home page, or back into a seat you never gave up.
+    Somebody who opened settings mid-race to turn the music down was one
+    ambiguous red button away from ending it.
+    """
+    c = env.app.test_client()
+    solo = c.get("/solo/sunrise").get_data(as_text=True)
+    assert ">Exit Solo<" in solo
+    assert ">Exit Multiplayer<" not in solo
+
+    rid = _seated(env, c, code="EXIT01")
+    _login(c, _user(env, "roomer"))
+    room = c.get("/room/EXIT01").get_data(as_text=True)
+    assert ">Exit Multiplayer<" in room
+    assert ">Exit Solo<" not in room
+
+    # And the bare word is gone from the sheet in every mode, which is the thing
+    # that would come back if somebody added a fourth.
+    for html in (solo, room, c.get("/race/%d" % rid).get_data(as_text=True)):
+        assert ">Leave<" not in html
 
 
 def test_a_replay_opened_by_nobody_in_particular_still_leads_to_the_lobbies(env):

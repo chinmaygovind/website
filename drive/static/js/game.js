@@ -1516,6 +1516,7 @@ function syncPaused() {
 
 function toggleBoard(force) {
   const on = force != null ? force : $('boardOv').style.display === 'none';
+  if (on) closeOtherPanels('board');
   $('boardOv').style.display = on ? '' : 'none';
   syncPaused();
   if (!on) return;
@@ -1524,7 +1525,9 @@ function toggleBoard(force) {
 }
 
 async function openBoard() {
-  toggleMenu(false);
+  // `toggleBoard(true)` closes settings itself now, along with the other two -
+  // the hand-wired `toggleMenu(false)` that used to be here was the only pair
+  // anybody had got round to.
   toggleBoard(true);
   const list = $('boardList');
   list.innerHTML = '<p class="muted empty">Loading…</p>';
@@ -1788,6 +1791,7 @@ async function openRaceReplay() {
 
 function toggleTracks(force) {
   const on = force != null ? force : $('tracksOv').style.display === 'none';
+  if (on) closeOtherPanels('tracks');
   $('tracksOv').style.display = on ? '' : 'none';
   $('btnTracks').classList.toggle('on', on);
   syncPaused();
@@ -3496,19 +3500,48 @@ function hideResults() {
   $('results').style.display = 'none';
 }
 
+/**
+ * There is one panel in front of you, and opening another replaces it.
+ *
+ * The four - settings, controls, the board, the track switcher - used to know
+ * about each other in pairs, and only in the pairs somebody had happened to hit:
+ * settings closed controls, controls closed settings, the board closed settings.
+ * Nothing closed the switcher and the switcher closed nothing, so `P` over the
+ * board, or `L` over the controls sheet, stacked two sheets and left the one
+ * underneath to reappear when the top one was dismissed.
+ *
+ * Doing it here rather than at each of the four keys is what makes it true for
+ * *every* way in: the keys, the four buttons in the corner, `?panel=`, and the
+ * View Others chip inside settings, which opens the board from a sheet that then
+ * has to get out of the way.
+ *
+ * Only ever called on the way *open*, so a close can never re-enter it.
+ */
+function closeOtherPanels(keep) {
+  if (keep !== 'menu' && S.menuOpen) toggleMenu(false);
+  if (keep !== 'help' && S.helpOpen) toggleHelp(false);
+  if (keep !== 'board' && $('boardOv').style.display !== 'none') toggleBoard(false);
+  if (keep !== 'tracks' && $('tracksOv').style.display !== 'none') toggleTracks(false);
+}
+
 function toggleMenu(force) {
-  S.menuOpen = force != null ? force : !S.menuOpen;
-  if (S.menuOpen) toggleHelp(false);
-  $('menu').style.display = S.menuOpen ? '' : 'none';
-  $('btnSettings').classList.toggle('on', S.menuOpen);
+  const on = force != null ? force : !S.menuOpen;
+  // Before the state moves, not after: `syncPaused` reads the DOM, and closing
+  // three panels *after* opening this one walks the portal through a spurious
+  // "playing again" and back.
+  if (on) closeOtherPanels('menu');
+  S.menuOpen = on;
+  $('menu').style.display = on ? '' : 'none';
+  $('btnSettings').classList.toggle('on', on);
   syncPaused();
 }
 
 function toggleHelp(force) {
-  S.helpOpen = force != null ? force : !S.helpOpen;
-  if (S.helpOpen) toggleMenu(false);
-  $('help').style.display = S.helpOpen ? '' : 'none';
-  $('btnHelp').classList.toggle('on', S.helpOpen);
+  const on = force != null ? force : !S.helpOpen;
+  if (on) closeOtherPanels('help');
+  S.helpOpen = on;
+  $('help').style.display = on ? '' : 'none';
+  $('btnHelp').classList.toggle('on', on);
   syncPaused();
 }
 
