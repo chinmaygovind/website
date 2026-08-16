@@ -212,6 +212,14 @@
     <span class="hint-touch">Hold the right pedal to start &middot; steer on the left
       &middot; drag down the pedal to drift</span>
   </div>
+  <!-- What the game is *for*, said once, to somebody who has never seen it.
+       The line above tells you which key makes the car go; this tells you why
+       you would press it. It is only ever on Sunrise Circuit, which is where a
+       first visit lands, and only on the first one - see `startOnboarding` in
+       game.js. Deliberately a thin line at the top rather than anything you
+       have to dismiss: a modal in front of a driving game on the first ten
+       seconds of a first visit is a toll, and the road is the pitch. -->
+  <div id="firstBanner" style="display:none">Try to set your best time on this track!</div>
 
 
   <!-- Watching somebody's lap. The whole HUD would be lying during a replay -
@@ -400,6 +408,20 @@
   </div>
 </div>
 <div id="rotate">Turn your phone sideways to drive</div>
+
+<!-- The coach marks, drawn over the results sheet at the end of a first lap.
+     Four labels with an arrow each, hooking up at the four buttons in the top
+     right corner - the leaderboard, the track switcher, the controls and the
+     settings. Nothing in here is written by the template: every tip is placed
+     off its own button's `getBoundingClientRect`, because the bar moves with the
+     safe area, with the mode (a room shows people where solo shows a podium) and
+     with the drawer sliding it sideways, and a hardcoded offset would be wrong
+     on three of those. `buildTour` in game.js fills it in.
+
+     Top level and not inside `.hud`, for the same reason the framed door is:
+     `.hud` is `position: fixed`, which makes it a stacking context, so anything
+     inside it is capped below the results overlay however high its z-index. -->
+<div id="tour" style="display:none" aria-hidden="true"></div>
 
 <!-- Results.
      Your time, big and in the middle, with the medal it earned beside it and

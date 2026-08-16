@@ -102,6 +102,9 @@ const S = {
   // real race and looking correct in every screenshot anybody could take.
   previewOrder: null,
   hintShown: false,
+  // The first-visit coach marks: whether they are up, the four tips being
+  // placed, and the clock that takes them down if nothing else does.
+  tourOn: false, tourTips: [], tourTimer: null,
   sessionBest: null,       // rooms only: best practice lap since you arrived
   qualBest: null,          // your best lap of this qualifying session
   qualRef: null,           // and its distance/time table, for split deltas
@@ -250,6 +253,7 @@ function boot() {
   if (window.DrivePortal && !S.menuOpen && !S.helpOpen) {
     window.DrivePortal.gameplayStart();
   }
+  showFirstGoal();
   requestAnimationFrame(frame);
 }
 
@@ -520,6 +524,253 @@ function markHintSeen() {
   S.hintShown = true;
   try { sessionStorage.setItem('drive.hint', '1'); } catch (e) {}
   $('startHint').style.display = 'none';
+}
+
+// ---------------------------------------------------------------------------
+// The first visit
+// ---------------------------------------------------------------------------
+/**
+ * Two things a first-time player is never told, said once each and then never
+ * again.
+ *
+ * The start hint above is a different question and it answers it well: it says
+ * which key makes the car move. What it cannot say is *why* - a stranger who
+ * arrives on a road with a clock on it does not necessarily know the clock is
+ * the game - or where the rest of the game is, which is four 38px icons in a
+ * corner that nothing has ever pointed at.
+ *
+ * `localStorage` and not `sessionStorage`, unlike the start hint, and the
+ * difference is deliberate: the start hint is worth repeating tomorrow because
+ * a reload is a fresh pair of hands on the keys, while being told what a
+ * leaderboard is twice is being talked down to. The cost is the same as every
+ * other preference here - it is per browser, so clearing site data makes you
+ * new again. That is the right side to be wrong on.
+ */
+const SEEN_GOAL = 'drive.seen.goal';
+const SEEN_TOUR = 'drive.seen.tour';
+
+function firstTime(key) {
+  try {
+    if (localStorage.getItem(key) === '1') return false;
+    localStorage.setItem(key, '1');
+    return true;
+  } catch (e) {
+    // Private browsing, or storage turned off. Nothing here is worth showing
+    // on every single load, so a browser that cannot remember gets neither.
+    return false;
+  }
+}
+
+/**
+ * True when this page is a camera rather than a player.
+ *
+ * `?shot=` takes the switcher's preview pictures and the share cards, and
+ * `?panel=` opens a sheet so a screenshot can reach a state a click otherwise
+ * would - including `?panel=finish`, which puts the results sheet up without
+ * anybody having driven. All of them would come back with the onboarding
+ * painted over the picture, and the previews are checked in.
+ */
+function beingPhotographed() {
+  return S.shot || /[?&](shot|panel)=/.test(location.search);
+}
+
+/**
+ * `?tour=1` shows both of these to somebody who has seen them before.
+ *
+ * There is no browser in CI and the whole point of this pair is that they
+ * happen exactly once, so without it the only way to look at either is to clear
+ * site data and drive a lap - which is a thing you have to remember to do, and
+ * so is a thing that stops being done. It forces them on **and does not write
+ * the seen flag**, so a look does not spend a real player's first visit.
+ * `?panel=finish&tour=1` is the results sheet with the marks over it.
+ */
+function tourForced() { return /[?&]tour=1\b/.test(location.search); }
+
+/** The goal line, on the first visit to the track a first visit lands on. */
+function showFirstGoal() {
+  if (CFG.mode !== 'solo') return;
+  const forced = tourForced();
+  if (!forced && beingPhotographed()) return;
+  if (!forced && S.track.slug !== 'sunrise') return;
+  const el = $('firstBanner');
+  whenPlayable(() => {
+    // The flag is spent here and not at boot. Inside a frame the door holds
+    // this back for as much as eight seconds, and somebody who closes the tab
+    // while it is still up would otherwise have paid their one first visit for
+    // a banner that was never on the screen.
+    if (!forced && !firstTime(SEEN_GOAL)) return;
+    el.style.display = '';
+    // Two frames, not one: the element has to be laid out at `opacity: 0`
+    // before the class that transitions it to 1 can have anything to animate
+    // from, and a single rAF after `display` still lands in the same style
+    // recalculation on some builds.
+    requestAnimationFrame(() => requestAnimationFrame(() => el.classList.add('in')));
+    setTimeout(() => {
+      el.classList.remove('in');
+      setTimeout(() => { el.style.display = 'none'; }, 500);
+    }, 9000);
+  });
+}
+
+/**
+ * Wait for the framed door, if there is one.
+ *
+ * Inside a portal's frame the game opens behind an opaque click-to-play card
+ * that stays up until the renderer is warm, which can be eight seconds - so a
+ * banner shown at boot spends its whole life behind it and is gone by the time
+ * anybody can see the road. The door removes itself on the click that opens it.
+ */
+function whenPlayable(fn) {
+  if (!document.documentElement.classList.contains('framed') || !$('frameStart')) {
+    fn();
+    return;
+  }
+  const t = setInterval(() => {
+    if (document.getElementById('frameStart')) return;
+    clearInterval(t);
+    fn();
+  }, 200);
+}
+
+// Left to right, and the order is load-bearing rather than cosmetic. The labels
+// are one right-aligned column and the buttons are a row, so each arrow runs
+// along its own line and then turns up - which means arrow *k* passes under
+// every upright standing to its left. Ordering left button to top label makes
+// every one of those uprights end above the line it would have crossed, so the
+// four arrows nest instead of tangling. Reverse this list and it is a thicket.
+const TOUR_TIPS = [
+  ['btnBoard', "View this track's best times!"],
+  ['btnTracks', 'Check out the other tracks!'],
+  ['btnHelp', 'View the Controls'],
+  ['btnSettings', 'Settings'],
+];
+
+/**
+ * Point at the four buttons in the corner, once, over the first results sheet.
+ *
+ * The moment is chosen and not incidental. A lap has just been driven, so the
+ * player now has a time and a reason to care where it ranks; and the results
+ * sheet is the one screen in the game where nothing is moving and there is
+ * nothing to crash into, so it is the only place a paragraph of pointing is not
+ * taking something away from somebody.
+ *
+ * Every tip is measured off its own button. The bar moves with the safe area,
+ * with the mode and with the room drawer sliding it sideways, so a hardcoded
+ * corner offset would be wrong on a phone, in a room and mid-animation.
+ */
+function startTour() {
+  if (S.tourOn || CFG.mode !== 'solo') return;
+  const forced = tourForced();
+  if (!forced && beingPhotographed()) return;
+  if (!forced && !firstTime(SEEN_TOUR)) return;
+  const layer = $('tour');
+  if (!layer) return;
+  layer.innerHTML = '';
+  S.tourTips = [];
+  for (const [id, say] of TOUR_TIPS) {
+    const btn = $(id);
+    if (!btn) continue;              // the room shows people where solo shows a podium
+    const el = document.createElement('div');
+    el.className = 'tour-tip';
+    el.style.transitionDelay = (S.tourTips.length * 90) + 'ms';
+    const text = document.createElement('span');
+    text.className = 'tour-say';
+    text.textContent = say;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'tour-arrow');
+    el.append(text, svg);
+    layer.appendChild(el);
+    S.tourTips.push({ el, svg, btn, rank: S.tourTips.length });
+  }
+  if (!S.tourTips.length) return;
+
+  S.tourOn = true;
+  document.body.classList.add('tour');
+  layer.style.display = '';
+  placeTour();
+  requestAnimationFrame(() => requestAnimationFrame(() => layer.classList.add('in')));
+
+  // Armed late on purpose. The sheet appears the instant the car crosses the
+  // line, and a finger already on its way down to Retry would otherwise dismiss
+  // four labels nobody had a chance to read.
+  setTimeout(() => {
+    if (!S.tourOn) return;
+    document.addEventListener('click', endTour, true);
+    document.addEventListener('keydown', endTour, true);
+  }, 800);
+  S.tourTimer = setTimeout(endTour, 16000);
+  window.addEventListener('resize', placeTour);
+}
+
+/**
+ * An elbow: out along the label's own line, a rounded corner, then straight up
+ * into the button with a head on it.
+ *
+ * Drawn in real pixels rather than in a fixed viewBox scaled to fit. The box is
+ * a different size for every tip - anything from 37x26 to 170x116 - and a
+ * stretched viewBox would give the four arrowheads four different shapes and
+ * the four strokes four different weights.
+ */
+function arrowPath(w, h) {
+  const x = w - 12;                        // the upright, under the button's centre
+  const y = h - 4;                         // the run, level with the label
+  const r = Math.max(2, Math.min(12, (x - 4) / 2, (y - 10) / 2));
+  return `<path d="M 2 ${y} H ${x - r} Q ${x} ${y} ${x} ${y - r} V 6"/>` +
+         `<path d="M ${x - 4.5} 11.5 L ${x} 6 L ${x + 4.5} 11.5"/>`;
+}
+
+/**
+ * Put every tip where its button currently is.
+ *
+ * The labels are one right-aligned column clear of the whole button bar, rather
+ * than each one tucked under its own button: four sentences staggered under
+ * four 38px icons would have each one crossing the uprights of the tips below
+ * it, which is what this looked like the first time.
+ */
+function placeTour() {
+  const bar = document.querySelector('.hud-tr .btnbar');
+  if (!bar || !(S.tourTips || []).length) return;
+  const col = bar.getBoundingClientRect().left - 6;     // where every label ends
+  for (const t of S.tourTips) {
+    const r = t.btn.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const h = 26 + t.rank * 34;
+    // The upright sits 12 in from the svg's right edge, so anchoring that edge
+    // 12 past the button's centre lands it on the centre; the width is then
+    // whatever it takes to reach back to the column.
+    const w = Math.max(24, Math.round(cx + 12 - col));
+    t.el.style.top = (r.bottom + 4) + 'px';
+    t.el.style.right = Math.max(4, Math.round(window.innerWidth - (cx + 12))) + 'px';
+    t.svg.setAttribute('width', w);
+    t.svg.setAttribute('height', h);
+    t.svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    t.svg.innerHTML = arrowPath(w, h);
+  }
+}
+
+/**
+ * Take it all down. Safe to call from anywhere and however many times: the
+ * three ways out (a click, a key, the clock) all arrive at this.
+ */
+function endTour() {
+  if (!S.tourOn) return;
+  S.tourOn = false;
+  clearTimeout(S.tourTimer);
+  document.removeEventListener('click', endTour, true);
+  document.removeEventListener('keydown', endTour, true);
+  window.removeEventListener('resize', placeTour);
+  // The class goes first, so the click that ends the tour has the HUD back at
+  // its ordinary height before the button under it opens a panel - otherwise
+  // the bar would float over the sheet it just opened.
+  document.body.classList.remove('tour');
+  const layer = $('tour');
+  layer.classList.remove('in');
+  setTimeout(() => {
+    if (S.tourOn) return;              // started again while it was fading out
+    layer.style.display = 'none';
+    layer.innerHTML = '';
+    S.tourTips = [];
+  }, 450);
 }
 
 // ---------------------------------------------------------------------------
@@ -3169,6 +3420,11 @@ function showResults(r) {
   // Only ever a problem, never a summary - the numbers above are the summary.
   $('resNote').innerHTML = r.note ? `<div>${esc(r.note)}</div>` : '';
   setShare(r.share, r.guest);
+  // A first lap is finished and there is a sheet in front of it: the one moment
+  // in the game where pointing at four buttons takes nothing away from anybody.
+  // This runs twice per lap and `startTour` is idempotent, so it is on the first
+  // call - the one on the line - rather than on the one the server answers.
+  startTour();
 }
 
 /**
@@ -3225,7 +3481,9 @@ async function shareLap() {
   }
 }
 
-function hideResults() { $('results').style.display = 'none'; }
+// The marks point at buttons the sheet is what lit up; with the sheet gone
+// there is a road behind them again and they would be litter over it.
+function hideResults() { endTour(); $('results').style.display = 'none'; }
 
 function toggleMenu(force) {
   S.menuOpen = force != null ? force : !S.menuOpen;

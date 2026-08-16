@@ -187,6 +187,44 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   they cannot guess; by the second run it is a label floating over the road on every
   restart. Remembered in `sessionStorage`, so a reload does not restart the lecture,
   and the touch and keyboard wordings are two spans switched by `body.touch`.
+- **The first visit gets two more things, and they are once-*ever* rather than once
+  per session.** The start hint above says which key drives; neither of these is
+  about the keys. `#firstBanner` is a pill at the top centre on the first visit to
+  Sunrise - which `_last_track` makes the track a first visit lands on - saying
+  what the clock is for, and it fades itself after nine seconds. `#tour` is four
+  labels with elbow arrows over the first results sheet, pointing at the
+  leaderboard, the switcher, the controls and settings: four 38px icons that carry
+  most of the game and that nothing had ever pointed at. `localStorage`
+  (`drive.seen.goal`, `drive.seen.tour`) and not `sessionStorage`, because a reload
+  is a fresh pair of hands on the keys and worth telling twice, while being told
+  what a leaderboard is twice is being talked down to. A browser that throws on
+  storage is shown **neither**, which is the right side to be wrong on. Five things
+  about them are load-bearing:
+  - **`.hud` is what lifts over the results sheet, not `.hud-tr`.** The parent is
+    `position: fixed`, so it is a stacking context and caps every z-index inside
+    it - the obvious one-line fix does nothing at all. The same trap the framed
+    door fell into, and why `#tour` itself is a sibling of `#rotate` at the foot of
+    the page rather than a child of the HUD.
+  - **Lifting the HUD means fading the rest of it and turning its clicks off.**
+    `.hud-bc` is 340px across the bottom centre and `.hud-tr` is a tall
+    transparent column: at `opacity: 0` both are still hit-testable, and once they
+    are above the sheet they are what the click aimed at Retry lands on. Only
+    `.btnbar` keeps `pointer-events`.
+  - **The tips are one right-aligned column and the order is left button to top
+    label.** Each arrow runs along its own line then turns up, so arrow *k* passes
+    under every upright to its left; that ordering makes each of those uprights
+    end above the line it would have crossed. Reverse `TOUR_TIPS` and the four
+    tangle. Each one is measured off its own button's `getBoundingClientRect`,
+    because the bar moves with the safe area, with the mode and with the drawer.
+  - **The results sheet steps aside below 900px.** A phone in landscape is 812px
+    against a 460px sheet, so the column lands on the player's own lap time.
+  - **Both stay out of every photograph.** `?shot=` makes the switcher's previews
+    and the share cards through the real page and `?panel=finish` reaches the
+    results sheet without driving; `beingPhotographed()` is what keeps the marks
+    out of files that are committed and that nothing can notice are spoiled.
+    **`?tour=1` is the way to look at either** - it forces both on *without*
+    writing the seen flag, so a look does not spend a real first visit, and
+    `?panel=finish&tour=1` is the sheet with the marks over it.
 - **`?panel=settings|help|tracks|board|qual|racing` (plus `&row=N`) opens a panel
   on load**, for the same reason `?touch=1` exists: there is no browser in CI and a
   screenshot cannot click, so it is the only way to look at a panel's layout.

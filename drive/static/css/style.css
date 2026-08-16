@@ -801,6 +801,96 @@ body.touch .mapbtns { display: none; }
   padding: .45rem 1.1rem; border-radius: 999px; font-size: 1rem;
   white-space: nowrap; max-width: 92vw; overflow: hidden; text-overflow: ellipsis;
 }
+
+/* --- the first visit ------------------------------------------------------ */
+
+/* The goal line. Top centre, which in a time trial is the one part of the HUD
+   with nothing in it - the start/end race buttons that live there only exist in
+   a room. It reads nothing and blocks nothing: `pointer-events: none` because a
+   banner you can accidentally click is a banner that eats the click that was
+   meant for the road behind it. */
+#firstBanner {
+  position: absolute; top: calc(14px + env(safe-area-inset-top, 0px));
+  left: 50%; transform: translate(-50%, -6px);
+  background: var(--hud); color: #fff; border: 1px solid var(--hud-line);
+  padding: .38rem 1rem; border-radius: 999px; font-size: .95rem;
+  white-space: nowrap; max-width: 92vw; overflow: hidden; text-overflow: ellipsis;
+  backdrop-filter: blur(6px); pointer-events: none;
+  opacity: 0; transition: opacity .45s ease, transform .45s ease;
+}
+#firstBanner.in { opacity: 1; transform: translate(-50%, 0); }
+
+/* The coach marks over the results sheet.
+   Lifting `.hud` is what puts the four buttons over the sheet's scrim, and it
+   has to be `.hud` rather than `.hud-tr`: the parent is `position: fixed` and so
+   is a stacking context, which caps every z-index inside it. That lifts the
+   whole HUD, so everything in it that is not the button bar is faded out for the
+   few seconds this lasts - which is the right look anyway, since the point is
+   that the corner is the only lit thing on the screen. The `pointer-events` is
+   not decoration: an invisible `.hud-bc` still catches the click aimed at the
+   Retry button underneath it. */
+.hud > *, .hud-tr > * { transition: opacity .25s ease; }
+body.tour .hud { z-index: 70; }
+/* Two selectors and not one, because `.hud-tr` is a column and only its top row
+   is being pointed at: the medal table underneath it is in the same box and
+   sat lit up behind the labels until this second line existed. */
+body.tour .hud > *:not(.hud-tr),
+body.tour .hud-tr > *:not(.btnbar) { opacity: 0; pointer-events: none; }
+/* `.hud-tr` is a tall transparent column and lifting it puts that whole box over
+   the results sheet, where it would eat the click aimed at Retry. Only the row
+   being pointed at takes clicks; the box itself stops taking any. */
+body.tour .hud-tr { pointer-events: none; }
+body.tour .hud-tr .btnbar { pointer-events: auto; }
+#tour {
+  position: fixed; inset: 0; z-index: 71; pointer-events: none;
+  font-family: var(--sans); color: #fff;
+}
+.tour-tip {
+  position: absolute; display: flex; align-items: flex-end; gap: 3px;
+  opacity: 0; transform: translateY(-8px);
+  transition: opacity .4s ease, transform .4s ease;
+}
+#tour.in .tour-tip { opacity: 1; transform: none; }
+/* White text over whatever the sky happens to be, so it carries its own
+   darkness rather than trusting the scrim under it. */
+/* A plate, and not bare white text with a shadow, which is what this was.
+   Over the scrim on a desktop the bare text looked better - but a phone in
+   landscape is 812px wide and the results sheet is 460 of them, so the column
+   lands on white paper and white text on it is simply not there. The plate is
+   the same ink as every other floating thing in the game, so it reads as one
+   more piece of HUD rather than as a box that arrived to solve a problem. */
+.tour-say {
+  white-space: nowrap; font-size: .9rem; font-weight: 600; line-height: 1;
+  background: rgba(12, 14, 20, .82); border: 1px solid var(--hud-line);
+  border-radius: 999px; padding: .3rem .7rem;
+  backdrop-filter: blur(6px);
+  /* Down onto the arrow's own line: `flex-end` puts the bottom of the text box
+     level with the bottom of the svg, and the stroke runs 4px above that. */
+  transform: translateY(9px);
+}
+.tour-arrow {
+  fill: none; stroke: #fff; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .9));
+}
+/* A phone in landscape is 812px wide and the sheet is 460 of them, so a column
+   of labels to the left of the button bar lands squarely on the player's own
+   lap time - the one number they just earned. The sheet steps aside for the few
+   seconds the marks are up and steps back when they go. Only here: on a desktop
+   there is a whole screen of scrim between the two and moving anything would be
+   fidgeting. */
+.sheet.result { transition: transform .3s ease; }
+@media (max-width: 900px) {
+  .tour-say { font-size: .72rem; padding: .24rem .5rem; }
+  body.tour .sheet.result { transform: translateX(calc(-50vw + 50% + 12px)); }
+}
+@media (max-width: 560px) {
+  #firstBanner { font-size: .82rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #firstBanner, .tour-tip, .sheet.result { transition: none; }
+}
+
 /* The framed door. Hidden by default and shown only inside somebody else's page,
    because at our own address the keyboard is already ours and a click-through
    would be a toll on every visitor for nothing. `html.framed` is set by the
