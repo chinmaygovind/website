@@ -137,6 +137,43 @@ def test_the_directory_lists_everybody_and_finds_them_by_either_name(client, mak
     assert "Nobody here is called" in body(client.get("/accounts/?q=zzzz"))
 
 
+def test_an_account_a_game_portal_made_is_not_in_the_directory(client, make_user, db):
+    """Somebody who arrived at Drive through CrazyGames is a real account here -
+    same table, same leaderboard, and their profile page works - but they did
+    not come to cgovind.com and did not choose a name on it. This list is the
+    people you might go and play with; if Drive does well on a portal, an
+    unfiltered one is a page of `cg-9f3a1c2b` with the handful of people this
+    site is actually for somewhere underneath.
+
+    The table belongs to Drive, so this is raw SQL behind a `table_exists`
+    check - a box without Drive installed has to render the directory, not 500.
+    """
+    from sqlalchemy import text
+    make_user("chinmay")
+    uid = make_user("cg-9f3a1c2b")
+    db.session.execute(text(
+        "CREATE TABLE IF NOT EXISTS drive_portal_users ("
+        "portal TEXT, portal_user_id TEXT, user_id INTEGER)"))
+    db.session.execute(text(
+        "INSERT INTO drive_portal_users (portal, portal_user_id, user_id) "
+        "VALUES ('crazygames', 'u-1', :uid)"), {"uid": uid})
+    db.session.commit()
+
+    page = body(client.get("/accounts/"))
+    assert "chinmay" in page
+    assert "cg-9f3a1c2b" not in page
+    # Off the roll call, not off the site: the profile is still a profile,
+    # because a leaderboard row has to link somewhere.
+    assert client.get("/accounts/cg-9f3a1c2b").status_code == 200
+
+
+def test_the_directory_survives_drive_not_being_installed(client, make_user, db):
+    """No `drive_portal_users` table is an ordinary state, not an error - the
+    same reason every read in `gamestats.py` is guarded that way."""
+    make_user("chinmay")
+    assert "chinmay" in body(client.get("/accounts/"))
+
+
 def test_bots_are_not_people(client, make_user, db):
     """They have accounts because the games needed somewhere to hang a rating."""
     make_user("chinmay")

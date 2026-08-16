@@ -323,6 +323,34 @@ def test_every_link_that_leaves_drive_opens_a_new_tab(plain_env):
             assert "noopener" in tag, "%s: %s needs rel=noopener" % (path, url)
 
 
+def _portal_js():
+    return open(os.path.join(os.path.dirname(__file__), "..", "static", "js",
+                             "portal.js"), encoding="utf-8").read()
+
+
+def _code(js):
+    """`js` with its comments taken out.
+
+    The same trick `test_the_door_waits_for_a_warm_renderer` needs and for the
+    same reason: the note explaining why the v2 spelling is wrong necessarily
+    contains the v2 spelling, so a test that reads the whole file fails on the
+    documentation of the thing it is checking for.
+    """
+    out, depth = [], 0
+    for line in js.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("/*"):
+            depth += 1
+        if depth:
+            if "*/" in stripped:
+                depth -= 1
+            continue
+        if stripped.startswith("//") or stripped.startswith("*"):
+            continue
+        out.append(line.split("//")[0] if "://" not in line else line)
+    return "\n".join(out)
+
+
 def test_the_portal_sdk_is_never_fetched_off_a_portal(plain_env):
     """The script tag must not be in the markup - it is built at runtime, framed only.
 
@@ -333,16 +361,42 @@ def test_the_portal_sdk_is_never_fetched_off_a_portal(plain_env):
     off a CrazyGames domain the SDK is documented to enter "disabled" mode where
     every call throws, so fetching it here buys a request and a hazard and no
     feature.
+
+    **The loader lives in `static/js/portal.js` now**, not inline in play.html,
+    because the portal build has no login of its own and the token that decides
+    who you are has to be fetched on every page. What did not move is this rule.
     """
-    html = plain_env.app.test_client().get("/solo/sunrise").get_data(as_text=True)
-    assert "<script src=\"https://sdk.crazygames.com" not in html
-    assert "sdk.crazygames.com/crazygames-sdk-v2.js" in html, (
+    for path in ("/", "/solo/sunrise", "/leaderboard"):
+        html = plain_env.app.test_client().get(path).get_data(as_text=True)
+        assert "sdk.crazygames.com" not in html, (
+            "%s names their CDN in the markup" % path)
+
+    js = _portal_js()
+    assert "sdk.crazygames.com/crazygames-sdk-v3.js" in js, (
         "the loader is gone entirely; a portal launch needs gameplayStart")
     # The guard that keeps it that way, and the flag that lets it be watched.
-    i = html.index("sdk.crazygames.com")
-    guard = html[max(0, i - 1200):i]
+    i = js.index("sdk.crazygames.com")
+    guard = js[max(0, i - 1500):i]
+    assert "function wanted()" in guard
     assert "classList.contains('framed')" in guard
     assert "useLocalSdk=true" in guard
+
+
+def test_the_sdk_is_the_version_the_account_docs_describe(plain_env):
+    """v3, and not a mixture.
+
+    v2 and v3 differ in a way that fails *silently*: what were async getters
+    became plain properties, so `SDK.getEnvironment(cb)` against v3 calls
+    `undefined` and `SDK.environment` against v2 reads `undefined` - neither
+    raises, and both end with the SDK looking absent. The user module the portal
+    build signs people in with only exists in v3, so the whole file is v3 and
+    nothing may be left behind from the other.
+    """
+    js = _code(_portal_js())
+    assert "crazygames-sdk-v2.js" not in js
+    assert "getEnvironment(" not in js, "that is the v2 spelling"
+    assert "api.init()" in js, "v3 has to be initialised before anything works"
+    assert "api.environment === 'disabled'" in js
 
 
 def test_nothing_calls_the_sdk_without_a_guard(plain_env):
@@ -357,11 +411,22 @@ def test_nothing_calls_the_sdk_without_a_guard(plain_env):
     js = open(js_path).read()
     assert "CrazyGames" not in js, "game.js is talking to the SDK directly"
     assert "window.DrivePortal" in js
+
+    # And in portal.js, which is the only file allowed to name them, every
+    # *synchronous* call is inside `call()` - the one place with the try/catch.
+    # The user module's calls return promises instead, so what makes them safe is
+    # a `.catch`, which both of the two chains that start one carry.
+    portal_js = _portal_js()
+    for line in portal_js.splitlines():
+        if "SDK.game." in line:
+            assert "call(function" in line, "unguarded %s" % line.strip()
+    for fn in ("function identify()", "function signIn()"):
+        body = portal_js[portal_js.index(fn):]
+        body = body[:body.index("\n  }\n")]
+        assert ".catch(" in body, "%s can reject onto the page" % fn
     html = plain_env.app.test_client().get("/solo/sunrise").get_data(as_text=True)
-    # In the page, the module is only ever reached through the wrapper's `send`.
     for call in ("gameplayStart", "gameplayStop"):
-        direct = "SDK.game.%s(" % call
-        assert direct not in html, "unguarded %s in the page" % call
+        assert "SDK.game.%s(" % call not in html, "unguarded %s in the page" % call
 
 
 def test_the_door_waits_for_a_warm_renderer(plain_env):
@@ -427,15 +492,50 @@ def test_the_privacy_notice_exists_and_can_be_found(plain_env):
     assert "/privacy" in client.get("/sitemap.xml").get_data(as_text=True)
 
 
-def test_nothing_refuses_to_be_framed(plain_env):
-    """An `X-Frame-Options` or a `frame-ancestors` anywhere here is a blank frame.
+def test_the_sitelock_names_every_crazygames_domain(plain_env):
+    """`frame-ancestors`, on everything, listing all of them.
 
-    Nothing sets one today. This is a guard rather than a discovery: the header
-    is the sort of thing a security sweep adds by default, and the symptom on a
-    portal is a white box with no error in any console.
+    **This test used to assert the opposite** - that nothing here refuses to be
+    framed - because nothing did, and an `X-Frame-Options` added by a security
+    sweep would have shown up on a portal as a white box with no error in any
+    console. That risk has not gone away; it has been replaced by a policy that
+    names who may frame us, and the same failure now looks like a domain missing
+    from the list.
+
+    Which is the part worth pinning. CrazyGames serve from twenty-odd separate
+    registrable domains and their own documentation offers `crazygames.*` as a
+    wildcard - **and CSP has no TLD wildcard**. A browser silently drops a source
+    expression it cannot parse, so the header would read as though it covered
+    them and www.crazygames.fr would get a blank frame.
     """
+    import portal
+
     for path in ("/", "/solo/sunrise", "/leaderboard"):
         resp = plain_env.app.test_client().get(path)
         assert "X-Frame-Options" not in resp.headers, path
         csp = resp.headers.get("Content-Security-Policy", "")
-        assert "frame-ancestors" not in csp, path
+        assert csp.startswith("frame-ancestors "), path
+        assert "'self'" in csp, path
+        # Every domain, and the .com wildcard that carries games/developer/www
+        # and the language subdomains with it.
+        assert "https://*.crazygames.com" in csp, path
+        for host in ("www.crazygames.fr", "www.crazygames.com.br",
+                     "www.crazygames.co.kr", "www.crazygames.pl"):
+            assert "https://" + host in csp, "%s: %s is not whitelisted" % (path, host)
+        assert "crazygames.*" not in csp, (
+            "that is not valid CSP - the browser drops the whole expression")
+
+
+def test_the_sitelock_can_be_changed_without_a_deploy(plain_env, monkeypatch):
+    """`FRAME_ANCESTORS` in the box `.env` replaces the list.
+
+    The deploy never touches a box `.env`, which is why this exists: a second
+    portal, or CrazyGames adding a domain, should not have to wait for a release
+    to stop being a blank frame.
+    """
+    import portal
+
+    monkeypatch.setenv("FRAME_ANCESTORS", "'self' https://poki.com")
+    assert portal.frame_ancestors() == "'self' https://poki.com"
+    monkeypatch.delenv("FRAME_ANCESTORS")
+    assert "crazygames" in portal.frame_ancestors()

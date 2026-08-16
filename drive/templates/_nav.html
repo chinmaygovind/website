@@ -68,7 +68,11 @@
          Accounts only, because a livery has to belong to somebody. #}
       <a href="/garage" class="{% if active_page == 'garage' %}active{% endif %}">{{ icn(icon_garage) }}Garage</a>
     {% else %}
-      <a href="/login">{{ icn(icon_in) }}Log in</a>
+      {# "Sign in" rather than "Log in" in a portal, and the page behind it is a
+         different page: there is no account to log into there, only the
+         portal's own, so the word that matches what happens is theirs. Still
+         one link and one route - `login.html` is the thing that branches. #}
+      <a href="/login">{{ icn(icon_in) }}{% if portal %}Sign in{% else %}Log in{% endif %}</a>
     {% endif %}
   </div>
 </nav>

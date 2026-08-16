@@ -349,3 +349,30 @@ def test_every_roster_is_escaped_before_it_reaches_a_script_block(game):
     assert "def script_json(" in src, "%s has no script_json helper" % game
     assert "roster_json=script_json(" in src, \
         "%s still builds its roster with a raw json dump" % game
+
+
+def test_a_portal_avatar_lands_on_a_name_the_site_will_serve():
+    """Drive writes profile pictures into `accounts/`'s avatar directory now.
+
+    A player signing in through CrazyGames arrives with a `profilePictureUrl`,
+    and `drive/portal.py` fetches it, re-encodes it through Pillow and stores it
+    beside every uploaded avatar - so it is *two* services writing files that one
+    route serves. `accounts.avatars.is_safe_name` re-checks the shape at serve
+    time rather than trusting a column five services can write, which means a
+    name of any other shape is stored successfully, recorded successfully, and
+    then 404s for ever, with nothing anywhere reporting it.
+
+    So this asserts the two ends agree: the name drive builds is a name accounts
+    will serve.
+    """
+    import accounts.avatars as avatars
+    src = source("drive", "portal.py")
+    got = re.search(r'name = ("%[ds]-%s\.webp".*)\n', src)
+    assert got, "drive/portal.py no longer names its avatars in one place"
+    # The literal drive actually writes, evaluated with the same kind of inputs.
+    import hashlib
+    name = "%d-%s.webp" % (7, hashlib.sha256(b"whatever").hexdigest()[:8])
+    assert avatars.is_safe_name(name), (
+        "drive stores avatars under a name accounts/ refuses to serve: %s" % name)
+    assert "hexdigest()[:8]" in src, (
+        "the digest length has to match `is_safe_name`, which wants exactly 8")

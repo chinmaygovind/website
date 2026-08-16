@@ -45,6 +45,30 @@
     of Tokyo, because they share one accounts system on
     <a href="{{ site_url }}" target="_blank" rel="noopener noreferrer">cgovind.com</a>.</p>
 
+  {# Only rendered in the portal build. A CrazyGames player is told what
+     CrazyGames' presence here costs them; a visitor to drive.cgovind.com is
+     not, because on this domain none of it happens - `portal.js` loads no
+     third-party script outside a frame, and there is no account to sync. A
+     paragraph about somebody else's SDK on a page that never loads it would be
+     the one kind of privacy notice that is worse than none. #}
+  {% if portal %}
+  <h2>If you play on CrazyGames</h2>
+  <p>Inside CrazyGames the game loads their SDK, which is a script served by them
+    and covered by
+    <a href="https://www.crazygames.com/privacy" target="_blank" rel="noopener noreferrer">their
+    privacy policy</a> rather than this one. Drive uses it for two things: telling
+    them when a lap actually starts, which is how they measure loading, and
+    signing you in.</p>
+  <p>If you are signed in to CrazyGames, an account is made for you here
+    automatically and you never type anything. What is stored is your CrazyGames
+    user id, the name you use there, and a copy of your profile picture &mdash;
+    re-encoded and kept on this server, so no page here ever asks their servers
+    for it. There is no password, because there is nothing to log into. Your
+    times then sit on the same public leaderboard as everybody else's.</p>
+  <p>Your CrazyGames email address is never sent to this game, and Drive never
+    asks you for one in there.</p>
+  {% endif %}
+
   <h2>Cookies</h2>
   <p>Two, both strictly functional, neither used for advertising:</p>
   <p><b>cgv</b> &mdash; a random visitor id, so repeat visits can be counted as one
@@ -58,8 +82,9 @@
   <h2>What is not here</h2>
   <p>No advertising, no advertising identifiers, no analytics service, no social
     network buttons, no data sold or shared with anybody. Nothing is collected
-    beyond what is written above, and none of it leaves the one server this runs
-    on.</p>
+    beyond what is written above{% if portal %}, and nothing leaves this server
+    except what is needed to check that the CrazyGames sign-in above is
+    genuine{% else %}, and none of it leaves the one server this runs on{% endif %}.</p>
 
   <h2>Removing your data</h2>
   <p>Ask and it is deleted &mdash; account, times, ghosts and all.
@@ -67,6 +92,6 @@
     <a href="https://discord.gg/BvPuJznswA" target="_blank" rel="noopener noreferrer">Discord</a>.
     If you are under 13, please ask a parent or guardian before making an account.</p>
 
-  <p class="muted" style="margin-top:2rem">Last updated 15 August 2026.</p>
+  <p class="muted" style="margin-top:2rem">Last updated 16 August 2026.</p>
 </div>
 {% endblock %}

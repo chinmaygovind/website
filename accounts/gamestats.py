@@ -110,6 +110,17 @@ GAMES = [
 GAME_BY_KEY = {g["key"]: g for g in GAMES}
 
 
+def table_exists(conn, name):
+    """Is this game's table on this box?
+
+    The public spelling of the check below, for the one caller outside this
+    module: the directory hides the accounts a game portal made, and "Drive is
+    not installed here" has to be an answer rather than an exception for exactly
+    the reason every read in this file does.
+    """
+    return _table_exists(conn, name)
+
+
 def _table_exists(conn, name):
     row = conn.execute(
         text("SELECT 1 FROM sqlite_master WHERE type='table' AND name=:n"),

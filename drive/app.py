@@ -12,6 +12,7 @@ import random
 import string
 from functools import wraps
 from datetime import datetime, timedelta
+from urllib import parse as urlparse
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -25,6 +26,7 @@ import models as models_mod
 from models import (db, User, DriveStats, DriveTime, DriveStart, DriveRunCheck,
                     DriveGame, DrivePlayer, DriveRace, DriveGarage, DrivePrefs,
                     DriveCheatFlag)
+import portal as portal_mod
 import tracks as tracks_mod
 import tuning
 import laptime
@@ -328,6 +330,85 @@ def require_name(f):
     return wrapped
 
 
+# ---------------------------------------------------------------------------
+# Portals: one flag, decided here, read everywhere
+# ---------------------------------------------------------------------------
+#
+# **The server has to know, and it has to know on the first byte of the first
+# response.** `html.framed` in base.html is a client-side check and it is the
+# right answer for the two things it does (the door, and hiding links that leave
+# the frame); it is the wrong answer for this, because the difference between
+# the two builds of Drive is whether a page *contains* a username-and-password
+# form at all, and by the time a script could take one out it has already been
+# sent to a reviewer's browser.
+#
+# So it is a query parameter on the URL submitted to the portal
+# (`https://drive.cgovind.com/solo?portal=crazygames`) and it sticks in the
+# session, because a portal only ever gets to set the *entry* URL - every link,
+# form and socket after that is ours, and none of them would carry it.
+#
+# Typing the parameter on drive.cgovind.com puts you in the portal build, which
+# is deliberate: it is how the two versions get looked at without a portal, the
+# same way `?framed=1` and `?touch=1` already work. It can only ever take login
+# UI *away*, so there is nothing to gain by it. `?portal=none` is the way back.
+
+def portal_mode():
+    """Which portal this player is inside, or None on cgovind.com's own site."""
+    p = session.get("portal")
+    return p if p in portal_mod.PORTALS else None
+
+
+@app.before_request
+def _remember_the_portal():
+    asked = request.args.get("portal")
+    if asked is None:
+        return
+    if asked in portal_mod.PORTALS:
+        session.permanent = True
+        session["portal"] = asked
+    else:
+        # Anything unrecognised - and `?portal=none`, which is the spelling
+        # meant for a person - leaves. A stale flag would otherwise be a session
+        # with no login page and no way to reach one.
+        session.pop("portal", None)
+
+
+def portal_only_404(f):
+    """404 in a portal: this is one of the routes that must not exist there.
+
+    A 404 and not a redirect or a 403. The rule being satisfied is "the game does
+    not offer external login options", and the honest reading of that is that the
+    endpoint is gone - a 403 saying "not here" is a reviewer's screenshot of an
+    email login that answers back. It is the same argument `/admin` makes on the
+    main site, for the same reason.
+    """
+    @wraps(f)
+    def wrapped(*a, **kw):
+        if portal_mode():
+            abort(404)
+        return f(*a, **kw)
+    return wrapped
+
+
+@app.after_request
+def _sitelock(resp):
+    """Who is allowed to frame Drive.
+
+    On every response rather than on the pages, because a header that is only
+    sometimes there is a sitelock that is only sometimes on. In production nginx
+    serves `/static/` off disk and never sees this, which is correct - a
+    stylesheet is not a framing surface.
+
+    `frame-ancestors` and nothing else in the policy: Drive's pages are full of
+    inline `<style>` and `<script>`, which is the house style throughout this
+    repo, so a `default-src` here would be a large change wearing a small one.
+    That is worth doing and is not this.
+    """
+    resp.headers.setdefault("Content-Security-Policy",
+                            "frame-ancestors " + portal_mod.frame_ancestors())
+    return resp
+
+
 # Addresses under cgovind.com/accounts that are pages rather than people.
 # Registering one of these would create an account whose own profile URL - and
 # whose password-reset link - went somewhere else entirely, so it is refused
@@ -416,6 +497,12 @@ ASSET_VERSION = os.environ.get("ASSET_VERSION") or _derive_asset_version()
 def inject_globals():
     return {"current_user": get_current_user(),
             "effective_name": get_effective_name(),
+            # Which portal is framing us, or None here. Every template that
+            # differs between the two builds of Drive differs on this one name -
+            # the nav's log-in link, the login page itself, the way out to the
+            # shared profile - so there is one thing to check when the question
+            # is "what does a CrazyGames player see".
+            "portal": portal_mode(),
             "track_names": {t["slug"]: t["name"] for t in tracks_mod.TRACKS},
             # Where the flag art lives. It is one copy on the main site
             # rather than four, so a game refers to it by absolute URL - see
@@ -485,6 +572,7 @@ def login_page():
 
 
 @app.route("/login", methods=["POST"])
+@portal_only_404
 def login():
     data = request.json or {}
     ident = data.get("username", "").strip()
@@ -499,6 +587,7 @@ def login():
 
 
 @app.route("/register", methods=["POST"])
+@portal_only_404
 def register():
     data = request.json or {}
     username = data.get("username", "").strip()
@@ -537,6 +626,18 @@ def register():
 GUEST_BAD_CHARS = re.compile("[\x00-\x1f\x7f<>\u200b-\u200f\u202a-\u202e\u2066-\u2069]")
 
 
+def clean_display_name(name):
+    """Strip a name down to what this site is willing to print.
+
+    The guest form *rejects* a bad character and says so, because somebody typed
+    it and can retype it. A name arriving from CrazyGames has nobody to tell:
+    refusing it would mean an account with no name at all, so the same rule is
+    applied by removal instead. `portal.resolve_user` is handed this function
+    rather than carrying a second copy of the regex - one rule, two manners.
+    """
+    return GUEST_BAD_CHARS.sub("", name or "").strip()
+
+
 @app.route("/guest", methods=["POST"])
 def guest_login():
     """A name is all a guest needs - but it is still a name on other people's screens.
@@ -564,10 +665,79 @@ def guest_login():
 
 
 @app.route("/logout")
+@portal_only_404
 def logout():
+    """Not in a portal, and that is their rule rather than an oversight.
+
+    CrazyGames forbid a game that lets you log out *and* offers an external way
+    back in. Here the second half is already gone, so a logout would sign you
+    out of an account you did not sign into and the very next page load would
+    silently sign you back in from the same token - a control whose only
+    possible effect is to look broken.
+    """
     session.pop("user_id", None)
     session.pop("guest_name", None)
     return redirect(url_for("index"))
+
+
+# ---------------------------------------------------------------------------
+# Signing in through the portal
+# ---------------------------------------------------------------------------
+
+@app.route("/api/portal/auth", methods=["POST"])
+def portal_auth():
+    """The CrazyGames SDK's token in, a signed-in cgovind.com account out.
+
+    This is the whole of authentication in the portal build. `portal.js` calls
+    it on every load - not only on a fresh sign-in - because their instruction
+    is to check who the player is *every time the game starts*: a token is good
+    for an hour and the same browser might be a different person tomorrow.
+
+    Three things worth knowing about the shape.
+
+    **It is a no-op when the session already holds this account**, which is the
+    common case by a mile - one indexed lookup, no writes, no commit. A page
+    load in Drive is a track build and several hundred kilobytes of geometry;
+    it does not also need a profile sync.
+
+    **A token that does not verify is not an error to the player.** They stay a
+    guest and the game plays. Their key endpoint being unreachable, an expired
+    token, a clock a minute out - none of that is worth a screen, and every one
+    of them resolves itself on the next load.
+
+    **It answers the same shape whatever happened**, so the page has one branch:
+    who you are now, and whether that is an account.
+    """
+    if not portal_mode():
+        abort(404)
+    # **Login CSRF, which is a real thing here and nowhere else in Drive.** The
+    # session cookie is `SameSite=None` in production - it has to be, or a
+    # framed player has no session at all - so a form on any site could POST
+    # here with a token of the attacker's own and log somebody else's browser
+    # into *their* account, quietly collecting the laps that browser then drove.
+    # The page's own `fetch` is same-origin and sends this header; a browser
+    # sends it on any cross-site POST too, which is what makes the check work.
+    # Absent means not a browser (curl, the test client), which has no session
+    # to ride and nothing to gain.
+    #
+    # The host and not the scheme: there is no ProxyFix here, so behind nginx
+    # Flask believes every request arrived over http and `request.host_url`
+    # would never match an https Origin.
+    origin = request.headers.get("Origin")
+    if origin and urlparse.urlparse(origin).netloc != request.host:
+        abort(403)
+    data = request.json or {}
+    claims = portal_mod.verify_token(data.get("token"))
+    if not claims:
+        return jsonify({"ok": False, "name": get_effective_name(),
+                        "loggedIn": bool(get_current_user())})
+
+    user, _created = portal_mod.resolve_user(portal_mode(), claims,
+                                             clean_name=clean_display_name)
+    session.permanent = True
+    session["user_id"] = user.id
+    session.pop("guest_name", None)
+    return jsonify({"ok": True, "name": user.display, "loggedIn": True})
 
 
 @app.route("/favicon.ico")

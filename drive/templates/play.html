@@ -835,84 +835,20 @@
   };
   {% if pb_ms %}window.DRIVE_CFG.pbs["{{ track.slug }}"] = {{ pb_ms }};{% endif %}
 
-  // The portal SDK, wrapped so the rest of the game never has to know it exists.
-  //
-  // CrazyGames needs one event to launch: `gameplayStart`, fired when the player
-  // can actually drive. It is how they measure the initial download - they time
-  // from the start of loading to that event - so it favours us, since only the
-  // track being driven is ever sent.
-  //
-  // **Three things about it are load-bearing and none is obvious.**
-  //
-  // It is only loaded inside a frame. On our own domain the SDK is useless (see
-  // below), and it is a third-party script on somebody else's CDN: loading it on
-  // every play page would put a request nobody needs in front of every player,
-  // and would make the privacy notice at /privacy untrue the day it shipped.
-  //
-  // Off a CrazyGames domain the SDK "enters disabled mode" and **every call to
-  // it throws** - their words. So nothing here calls it directly: `send` is
-  // wrapped, and the environment is checked before a module is kept at all. An
-  // unguarded `gameplayStart()` would raise on drive.cgovind.com at the exact
-  // moment the game became playable, which is to say on essentially every lap
-  // anybody drives here.
-  //
-  // And the game becomes playable before a script off a CDN can be relied on to
-  // have arrived, so the state is held here (`playing`) and replayed when and if
-  // the SDK turns up. The alternative is a race that resolves differently on a
-  // slow connection, which is the kind of bug that only ever reproduces for
-  // other people.
-  //
-  // `?useLocalSdk=true` is their own flag for forcing local mode, which logs the
-  // events to the console; it is honoured here so this can be watched without
-  // being on their site.
-  window.DrivePortal = (function () {
-    var api = null;        // the SDK's game module, once it is known to be usable
-    var playing = false;   // what the game has told us, heard or not
-
-    function send(fn) {
-      if (!api) return;
-      try { api[fn](); } catch (e) { /* disabled, or a shape we do not know */ }
-    }
-
-    function load() {
-      var framed = document.documentElement.classList.contains('framed');
-      if (!framed && location.search.indexOf('useLocalSdk=true') < 0) return;
-      var s = document.createElement('script');
-      s.src = 'https://sdk.crazygames.com/crazygames-sdk-v2.js';
-      s.async = true;
-      s.onload = function () {
-        var SDK = window.CrazyGames && window.CrazyGames.SDK;
-        if (!SDK || !SDK.game) return;
-        try {
-          SDK.getEnvironment(function (err, env) {
-            if (err || env === 'disabled') return;
-            api = SDK.game;
-            if (playing) send('gameplayStart');
-          });
-        } catch (e) { /* no environment call: stay quiet rather than guess */ }
-      };
-      // Blocked by an extension, offline, or their CDN having a bad morning.
-      // None of it is the game's problem and none of it may stop a lap.
-      s.onerror = function () {};
-      document.head.appendChild(s);
-    }
-
-    load();
-
-    return {
-      // Both are idempotent, because the callers are state changes rather than
-      // events: `syncPaused` runs on every panel toggle and would otherwise
-      // report a resume each time a sheet was closed on an already-running game.
-      gameplayStart: function () {
-        if (playing) return;
-        playing = true; send('gameplayStart');
-      },
-      gameplayStop: function () {
-        if (!playing) return;
-        playing = false; send('gameplayStop');
-      },
-    };
-  })();
+  // The portal SDK lives in `static/js/portal.js` now, loaded by base.html on
+  // every page rather than only on this one, because the portal build has no
+  // login of its own and who you are is decided by a token it fetches. What is
+  // left here is the one thing that *is* this page's business: a reload would
+  // mean building the track a second time, in the middle of the load the portal
+  // is timing, so this page takes the news as an event instead. Nothing on this
+  // screen but the name depends on it - `/api/run` reads the session on the
+  // server, not what the page believed when it was drawn.
+  window.DrivePortalNoReload = true;
+  document.addEventListener('drive:identity', function (e) {
+    if (!e.detail || !e.detail.loggedIn || !window.DRIVE_CFG) return;
+    window.DRIVE_CFG.name = e.detail.name;
+    window.DRIVE_CFG.loggedIn = true;
+  });
 
   // The framed door, handled here rather than in game.js on purpose: a track
   // build is the better part of a second, and the whole point of this overlay is

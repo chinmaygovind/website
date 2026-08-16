@@ -27,6 +27,7 @@ rest of the repo; any one of them is 11-28KB.
 | `docs/badges.md` | adding, changing or recolouring a badge |
 | `docs/hud-and-controls.md` | the in-game HUD, the settings/help sheets, the keys, touch controls, `sound.js`, the type |
 | `docs/pages-and-boards.md` | the home page, `/solo` and its track switcher, the track cards, `/account`, `/leaderboard` |
+| `docs/portal.md` | `portal.py`, `static/js/portal.js`, `/api/portal/auth`, the sitelock, `login.html`, who a player is inside a frame |
 | `docs/testing.md` | adding or removing a test, a surprising test failure, shipping a rendering change |
 
 If a change spans two of them, read two. If you are only reading code to answer a
@@ -254,6 +255,15 @@ than 15% or move a corner more than 8 degrees before refusing.
   punished**, and the only consequence a car can suffer is going unrated,
   silently. Read `docs/rooms-and-races.md` before touching `on_pose`,
   `on_finish`, `on_qual_time` or `_rate_race`.
+- **There are two builds of Drive and the server decides which one you get.**
+  A portal (CrazyGames) frames the game rather than hosting it, and its rules
+  forbid a game offering any login of its own - so `?portal=crazygames` on the
+  entry URL sticks in the session, `app.portal_mode()` is the one thing that
+  reads it, and in that build `/login`, `/register` and `/logout` **404** while
+  the CrazyGames SDK signs people in against the shared `users` table. Every
+  response also carries a `frame-ancestors` sitelock. Anything touching login,
+  the nav, `/privacy` or who a player is has to work in both. Read
+  `docs/portal.md`.
 - **Nothing cosmetic may touch the simulation** - not ride height, not `CAR_RADIUS`,
   not the wheel radius, not a gram of mass. A cosmetic that changed how the car
   drives would make every time on the board mean something different.

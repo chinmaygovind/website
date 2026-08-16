@@ -1,13 +1,39 @@
 {% extends "base.html" %}
-{% block title %}Log in | Drive{% endblock %}
+{% block title %}{% if portal %}Sign in{% else %}Log in{% endif %} | Drive{% endblock %}
 {% block body %}
 {% include "_nav.html" %}
+{# **Two pages, one file, and the difference is a requirement rather than a
+   preference.** Inside a portal, CrazyGames forbid a game offering any login of
+   its own - Facebook, Google or email - and Drive's is username-and-password
+   over email, so in there it does not exist. Not hidden: the POST routes 404 as
+   well (`portal_only_404`), and this branch is what stops the form being *sent*
+   to a reviewer's browser in the first place.
+
+   What is left in the portal build is what they do allow: their own sign-in,
+   offered rather than demanded, and a name to race under for somebody who wants
+   neither. Notice which one is the plain button and which is the accent - a
+   login must not be the primary call to action, and here the primary action is
+   going and driving. #}
 <div class="wrap narrow">
-  <h1>Log in</h1>
-  <p class="muted">Your cgovind.com account works here - the same one as Ticket to
-  Ride, Egyptian Rat Screw and King of Tokyo.</p>
+  {% if portal %}
+    <h1>Who are you?</h1>
+    <p class="muted">Sign in with CrazyGames and your times, your rating and the
+    car you built follow you to every machine you play on. Or pick a name and go.</p>
+  {% else %}
+    <h1>Log in</h1>
+    <p class="muted">Your cgovind.com account works here - the same one as Ticket to
+    Ride, Egyptian Rat Screw and King of Tokyo.</p>
+  {% endif %}
   <div class="error" id="err"></div>
 
+  {% if portal %}
+    <div class="panel">
+      <button class="btn" style="width:100%" id="cgIn" onclick="doPortal()">Sign in with CrazyGames</button>
+      <p class="muted" style="font-size:.9rem;margin-bottom:0">You already have an
+      account if you are signed in to CrazyGames - there is nothing to make and
+      nothing to remember.</p>
+    </div>
+  {% else %}
   <div class="panel">
     <div id="loginForm">
       <div class="field"><label>Username or email</label><input id="lu" autocomplete="username"/></div>
@@ -24,6 +50,7 @@
       <p class="muted" style="font-size:.9rem">Already have one? <a href="#" onclick="show('login');return false">Log in</a></p>
     </div>
   </div>
+  {% endif %}
 
   <h3>Or just play</h3>
   <p class="muted" style="margin-top:-.3rem">Pick a name to race with. Guest times
@@ -66,10 +93,32 @@ async function doGuest(){
   const [ok,d] = await post('/guest', {name: document.getElementById('gn').value});
   ok ? location.href = NEXT : showErr(d.error || 'Enter a name.');
 }
+{% if portal %}
+// The portal's own sign-in modal, then the token straight to the server. The
+// button is disabled while their modal is up because it can only have one at a
+// time - a second call rejects with `showAuthPromptInProgress`, which would put
+// an error on screen for a player who did nothing wrong.
+async function doPortal(){
+  const btn = document.getElementById('cgIn');
+  if (!window.DrivePortal) {
+    // portal.js itself did not load - an extension, or a bad morning for our
+    // own static host. The guest form below is still the whole way in.
+    showErr('Sign-in is not available right now. You can still play as a guest.');
+    return;
+  }
+  btn.disabled = true;
+  const who = await window.DrivePortal.signIn();
+  btn.disabled = false;
+  if (who && who.loggedIn) location.href = NEXT;
+  else if (who && who.cancelled) err.classList.remove('show');
+  else showErr('CrazyGames could not sign you in just now. You can still play as a guest.');
+}
+{% endif %}
 document.addEventListener('keydown', e => { if (e.key === 'Enter') {
-  if (document.getElementById('regForm').style.display !== 'none') doRegister();
+  const reg = document.getElementById('regForm');
+  if (reg && reg.style.display !== 'none') doRegister();
   else if (document.activeElement && document.activeElement.id === 'gn') doGuest();
-  else doLogin();
+  else if (document.getElementById('loginForm')) doLogin();
 }});
 </script>
 {% endblock %}

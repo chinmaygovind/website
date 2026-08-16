@@ -22,7 +22,7 @@ from datetime import datetime
 
 from flask import (Blueprint, abort, current_app, jsonify, redirect,
                    render_template, request, send_from_directory, session, url_for)
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, text
 
 from . import avatars, gamestats, mail, naming, places, presence, tokens
 from .models import User, UserProfile, db
@@ -161,9 +161,26 @@ def directory():
     to hang a rating, not because they are people - and so is any account with
     no rating anywhere *and* no profile, which is what a registration that
     never went anywhere looks like.
+
+    **And so are the accounts a game portal made.** Somebody arriving at Drive
+    through CrazyGames gets a real account here - same table, same leaderboard,
+    same profile page - but they did not come to cgovind.com and did not choose
+    a name on it, and this list is meant to be people you might go and play
+    with. If Drive does well there, an unfiltered directory would be a page of
+    strangers called `cg-9f3a1c2b` with the eleven people this site is actually
+    for somewhere underneath. Their profiles still work and a leaderboard still
+    links to them: it is the *roll call* they are off, not the site.
+
+    Raw SQL through `_table_exists` for the reason `gamestats.py` gives at
+    length: `drive_portal_users` belongs to a service that may not be installed
+    on this box at all, and a missing game is an ordinary state a page must
+    render rather than a 500.
     """
     q = (request.args.get("q") or "").strip()
     users = User.query.filter(User.is_bot.isnot(True))
+    if gamestats.table_exists(db.session.connection(), "drive_portal_users"):
+        users = users.filter(
+            text("users.id NOT IN (SELECT user_id FROM drive_portal_users)"))
     if q:
         like = "%%%s%%" % q.lower()
         users = (users.outerjoin(UserProfile, UserProfile.user_id == User.id)

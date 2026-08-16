@@ -12,3 +12,22 @@ gunicorn==23.0.0
 # because a port is a thing that can disagree with the game.
 quickjs==1.19.4
 pytest==8.3.4
+
+# Signing in through a game portal (CrazyGames). Their SDK hands the page a JWT
+# and the *server* is what checks it - a client that decoded its own token could
+# name anybody - so this box needs RS256, which means PyJWT and the `cryptography`
+# backend it verifies with. Pillow is for the same flow's profile picture: what
+# arrives from their CDN is decoded and re-encoded before a byte of it is stored,
+# exactly as `accounts/` does with an upload.
+#
+# All three are soft: `portal.py` imports them inside the functions that need
+# them and a missing one turns portal sign-in off rather than breaking the game,
+# so a checkout that only serves drive.cgovind.com is unaffected.
+#
+# Pin only to versions that ship a wheel for the Python in use. Pillow 11.1
+# does not build on 3.14 - it goes to source, looks for libjpeg headers, and the
+# venv setup fails outright rather than the tests failing, which is a confusing
+# way to find out.
+PyJWT==2.10.1
+cryptography==46.0.5
+Pillow==12.1.1

@@ -103,6 +103,22 @@
       || !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches));
     if (window.DRIVE_TOUCH) document.documentElement.classList.add('is-touch');
   </script>
+  {# Which portal is framing us, decided on the server (`app.portal_mode`) and
+     not by looking around - the two builds of Drive differ in whether a page
+     *contains* a login form, which is settled before a script could run.
+     `DRIVE_PORTAL_ME` is who the page was drawn for, and it is what stops
+     `portal.js` reloading a page that is already right. #}
+  <script>
+    window.DRIVE_PORTAL = {{ (portal or None)|tojson }};
+    window.DRIVE_PORTAL_ME = {{ (current_user.username if current_user else None)|tojson }};
+  </script>
+  {# In the head and on every page, because in the portal build this file *is*
+     the login: it fetches a token and hands it to the server, and a copy that
+     only ran on the play page would leave the leaderboard and the lobbies
+     looking at a guest. It self-gates - off a frame it loads nothing and
+     touches no network at all - so the cost on drive.cgovind.com is one
+     same-origin file nginx serves off disk. #}
+  <script src="{{ url_for('static', filename='js/portal.js') }}?v={{ asset_version }}"></script>
   {% block head %}{% endblock %}
 </head>
 <body class="{% block bodyclass %}{% endblock %}">

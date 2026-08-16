@@ -154,6 +154,38 @@ class UserProfile(db.Model):
         return None
 
 
+class DrivePortalUser(db.Model):
+    """Which CrazyGames player is which cgovind.com account.
+
+    **Drive's table, not a column on ``users``.** ``google_id`` sits on the
+    shared row and it would have been the obvious place to put a
+    ``crazygames_id`` beside it - but that row is defined five times, once per
+    service, and adding a column means editing all five copies, moving the drift
+    tests, and ALTERing the live database by hand. A portal is something *Drive*
+    is submitted to; the account it lands on is an ordinary shared account that
+    the other four games can use without ever knowing where it came from. So the
+    knowledge lives here, on the one side that has it.
+
+    ``portal`` is a slug rather than a flag so a second portal costs a row and
+    not a schema. The two of them are the key together, since two portals will
+    happily hand out the same id for different people.
+
+    The three ``last_`` columns are a cache of what the portal last told us, and
+    they are what keeps `_sync_profile` from doing two indexed lookups and a
+    picture download on every page load that changed nothing.
+    """
+    __tablename__ = "drive_portal_users"
+
+    portal         = db.Column(db.String(16), primary_key=True)
+    portal_user_id = db.Column(db.String(64), primary_key=True)
+    user_id        = db.Column(db.Integer, db.ForeignKey("users.id"),
+                               nullable=False, index=True)
+    last_username  = db.Column(db.String(30), nullable=True)
+    last_avatar_url = db.Column(db.String(512), nullable=True)
+    last_seen      = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at     = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class DriveStats(db.Model):
     """Drive stats, one row per user."""
     __tablename__ = "drive_stats"
