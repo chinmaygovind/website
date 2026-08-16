@@ -816,7 +816,12 @@ function bindInput() {
     // corner and nothing else.
     if (e.code === 'KeyT') { e.preventDefault(); backToCheckpoint(); }
     if (e.code === 'Enter') { e.preventDefault(); hostStart(); }
-    if (e.code === 'Escape') onEscape();
+    // O does everything Escape does, because in fullscreen Escape is not ours:
+    // the browser takes it to leave fullscreen and the game never sees it, so
+    // the one key that gets you out of a panel is the one key that is missing
+    // exactly when the game fills the screen. O for Options, and it lands in the
+    // same right-hand cluster as the other panel keys - H, K, L, O, P.
+    if (e.code === 'Escape' || e.code === 'KeyO') onEscape();
     if (e.code === 'KeyH') toggleHelp();
     // The track switcher, from the road. Changing track is the most common
     // thing there is to do that is not driving, and reaching for it should not
@@ -2223,7 +2228,7 @@ function hostStart() {
 }
 
 /**
- * Escape: close whatever is in front of me.
+ * Escape (or O): close whatever is in front of me.
  *
  * Innermost first - a replay, then a panel opened from another panel, then the
  * panel itself - and only when there is nothing left does it mean "open

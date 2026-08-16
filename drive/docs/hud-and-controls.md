@@ -191,6 +191,15 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   missing from that list, so pressing Escape while reading it opened the
   settings sheet on top: the one key everybody presses to get out of something
   put something else in the way.
+- **`O` is Escape's second key, because in fullscreen Escape is not ours.** The
+  browser takes it to leave fullscreen and the keydown never reaches the game, so
+  the one key that gets you out of a panel goes missing exactly when the game
+  fills the screen. `O` for Options, and it sits in the same right-hand cluster
+  as every other panel key - H, K, L, O, P. It is a full alias rather than a
+  "just open settings" key: it runs the same `onEscape` chain, so somebody who
+  never presses Escape still closes the board and the switcher with it. The
+  controls sheet says `Esc / O` and so do the tooltips on the gear and on the
+  settings sheet's X.
 - **The `?` sheet is Controls, and it is the controls and nothing else.** It
   used to open on the track blurb and close on two paragraphs about grass and
   crests, which is reading matter in front of somebody who pressed it to find
