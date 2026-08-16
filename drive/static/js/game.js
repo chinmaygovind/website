@@ -227,6 +227,8 @@ const S = {
 // door is a classic inline script that runs long before this module does. Same
 // shape as `window.DrivePending`, and deliberately just the sound - not `S`.
 window.DriveSound = S.sound;
+// TEMPORARY - cover art only. Revert before committing.
+window.__cover = { S, CarView, THREE };
 
 const input = { throttle: 0, brake: 0, steer: 0, handbrake: false };
 const keys = new Set();          // keyboard
@@ -1110,6 +1112,19 @@ function bindInput() {
     S.shotMode = sh[1];
     S.car.frozen = true;
     document.body.classList.add('shot');
+    // The way in for a tool that wants to compose its own picture:
+    // `tools/shoot_covers.py` puts a field of cars on the ribbon and flies a
+    // camera round it, and neither is a thing the game itself ever does, so
+    // there is no sensible query parameter for it - it needs the world.
+    //
+    // **Inside the `?shot=` branch on purpose.** An ordinary play page exposes
+    // nothing; this one already has no HUD, a frozen car and no run, so there
+    // is nothing here to cheat with that the page was going to do anyway. The
+    // client is untrusted regardless - every lap near the top of a board is
+    // re-driven server-side by `verify.py` - but a handle on the live game
+    // hanging off every page would still be a thing to explain, and it does
+    // not have to exist.
+    window.DriveShot = { S, CarView, THREE };
     const at = /^at:([0-9.]+)$/.exec(S.shotMode);
     if (at) {
       // The car stays visible here, and that is the point of this mode: it is
