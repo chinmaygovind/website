@@ -219,7 +219,23 @@
        game.js. Deliberately a thin line at the top rather than anything you
        have to dismiss: a modal in front of a driving game on the first ten
        seconds of a first visit is a toll, and the road is the pitch. -->
-  <div id="firstBanner" style="display:none">Try to set your best time on this track!</div>
+  <div id="firstBanner" style="display:none">
+    <span class="fb-goal">Try to set your best time on this track!</span>
+    {# The keys, spelled out. The start hint below says how to *start*; this says
+       how to drive, which is the thing somebody who has never played a driving
+       game in a browser has no reason to know. Both wordings follow the device,
+       the same `.hint-keys`/`.hint-touch` rule the start hint and the controls
+       sheet follow: it never names a key you do not have. #}
+    <span class="fb-how hint-keys">
+      <b>W</b>/<b>&uarr;</b> accelerate &middot; <b>S</b>/<b>&darr;</b> brake
+      &middot; <b>A</b><b>D</b>/<b>&larr;</b><b>&rarr;</b> steer
+    </span>
+    <span class="fb-how hint-touch">
+      Right pedal to accelerate &middot; left pedal to brake
+      &middot; arrows to steer
+    </span>
+    <span class="fb-cps">Go through all the checkpoints!</span>
+  </div>
 
 
   <!-- Watching somebody's lap. The whole HUD would be lying during a replay -
@@ -458,6 +474,13 @@
       <a class="btn secondary" id="btnExit"
          href="{% if mode == 'room' %}/lobbies{% else %}/{% endif %}">Exit</a>
     </div>
+    {# The first result only, and shown for as long as that sheet is up rather
+       than for as long as the coach marks are. The two are the same moment but
+       not the same lifetime: the arrows go on the first click, and this is the
+       sentence that says what to do with the rest of the evening. `body.first-
+       result` in the stylesheet is what reveals it. #}
+    <p class="res-next">Try to climb the leaderboard of this track, or get a
+      <b>gold medal</b> on all the tracks!</p>
   </div>
 </div>
 
@@ -929,13 +952,19 @@
 
   (function () {
     var el = document.getElementById('frameStart');
-    if (!el || !document.documentElement.classList.contains('framed')) return;
+    if (!el || !document.documentElement.classList.contains('needs-door')) return;
     el.addEventListener('click', function () {
       // A press while it still says Loading is not a press. Deliberately silent:
       // there is nothing useful to say beyond what the word already says, and
       // the wait is seconds.
       if (!window.DriveDoor.isReady()) return;
       el.remove();
+      document.documentElement.classList.remove('needs-door');
+      // Remembered for the rest of the tab. The keyboard this click fetches
+      // belongs to the browsing context and survives navigating inside the
+      // frame, so the trip out to the leaderboard and back must not ask again -
+      // see the head script in base.html.
+      try { sessionStorage.setItem('drive.door', '1'); } catch (e) {}
       try { window.focus(); } catch (e) {}
       try { document.body.focus(); } catch (e) {}
       // Sound, and **only if the module is already here** - never on a timer.

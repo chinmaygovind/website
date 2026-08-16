@@ -27,6 +27,11 @@ sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
+def _css():
+    return open(os.path.join(os.path.dirname(__file__), "..", "static", "css",
+                             "style.css"), encoding="utf-8").read()
+
+
 def _boot(secure):
     """Import a fresh `app` with SESSION_COOKIE_SECURE on or off.
 
@@ -167,6 +172,54 @@ def test_the_play_page_carries_the_door_and_the_class_that_shows_it(plain_env):
     assert 'id="frameStart"' in html
     assert "window.self !== window.top" in html
     assert "classList.add('framed')" in html
+
+
+def test_the_door_is_shown_once_per_tab_and_not_once_per_page(plain_env):
+    """`needs-door` is a different question from `framed`, and that is the point.
+
+    The door buys exactly one thing: the keyboard, which an iframe does not get
+    until something inside it is clicked. Focus then belongs to this browsing
+    context and survives navigating *within* the frame - so the trip out to the
+    leaderboard and back was charging a second and third click for something
+    already paid for, which is what a portal player actually complained about.
+
+    `sessionStorage` is the right lifetime rather than a convenient one: per tab
+    and per partition, so a genuinely new browsing context - a new tab, which has
+    not been clicked in - correctly gets the door again.
+    """
+    html = plain_env.app.test_client().get("/solo/sunrise").get_data(as_text=True)
+    assert "classList.add('needs-door')" in html
+    assert "sessionStorage.getItem('drive.door')" in html
+    assert "sessionStorage.setItem('drive.door', '1')" in html
+    css = _css()
+    assert "html.needs-door #frameStart" in css
+    assert "html.framed #frameStart" not in css, (
+        "the door is back on `framed`, so it reappears on every framed page")
+
+
+def test_the_door_flag_is_read_before_the_stylesheet_paints(plain_env):
+    """Same reason `framed` is in the head: a class that arrives late flashes.
+
+    A door that paints and then removes itself a moment later is worse than
+    either behaviour on its own - it reads as the game glitching on load, on the
+    one screen a portal reviewer actually watches.
+    """
+    html = plain_env.app.test_client().get("/solo/sunrise").get_data(as_text=True)
+    assert html.index("classList.add('needs-door')") < html.index("</head>")
+
+
+def test_a_browser_with_no_session_storage_still_gets_the_door(plain_env):
+    """The `catch` adds the class rather than skipping it.
+
+    No storage means no memory of the click, and the two ways to be wrong are not
+    equal: a door shown twice is a nuisance, a keyboard that never arrives is a
+    game that ignores W forever.
+    """
+    html = plain_env.app.test_client().get("/solo/sunrise").get_data(as_text=True)
+    i = html.index("sessionStorage.getItem('drive.door')")
+    tail = html[i:i + 700]
+    catch = tail[tail.index("catch"):]
+    assert "classList.add('needs-door')" in catch, catch[:300]
 
 
 def test_the_door_is_in_the_head_and_not_behind_the_module(plain_env):

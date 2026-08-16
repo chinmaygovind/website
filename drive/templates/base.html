@@ -67,6 +67,29 @@
       if (window.self !== window.top || /[?&]framed=1(&|$)/.test(location.search))
         document.documentElement.classList.add('framed');
     } catch (e) { document.documentElement.classList.add('framed'); }
+    // **Two classes, because being framed and needing the door are two
+    // questions.** The door buys one thing the frame cannot get for itself: the
+    // keyboard, which an iframe does not receive until something inside it has
+    // been clicked. Focus then belongs to this browsing context and *stays*
+    // there across navigations within the frame - so the leaderboard, the
+    // account page and the drive back into /solo were each charging a second,
+    // third and fourth click for something already paid for.
+    //
+    // `sessionStorage` is exactly the right lifetime: per tab, per partition,
+    // cleared when the tab closes. A new tab is a new browsing context that
+    // genuinely has not been clicked in, and it correctly gets the door again.
+    // `?framed=1` skips the check so the layout can still be photographed.
+    try {
+      var doorDone = sessionStorage.getItem('drive.door') === '1'
+                     && location.search.indexOf('framed=1') < 0;
+      if (document.documentElement.classList.contains('framed') && !doorDone)
+        document.documentElement.classList.add('needs-door');
+    } catch (e) {
+      // No storage is no memory of the click, and a door shown twice is a
+      // nuisance where a keyboard that never arrives is a broken game.
+      if (document.documentElement.classList.contains('framed'))
+        document.documentElement.classList.add('needs-door');
+    }
     // Is this a device that drives with its thumbs? **Answered here and only
     // here.** It used to be computed inside game.js's `init`, which was the only
     // consumer until the framed door arrived - and the door is drawn long before

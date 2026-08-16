@@ -813,12 +813,27 @@ body.touch .mapbtns { display: none; }
   position: absolute; top: calc(14px + env(safe-area-inset-top, 0px));
   left: 50%; transform: translate(-50%, -6px);
   background: var(--hud); color: #fff; border: 1px solid var(--hud-line);
-  padding: .38rem 1rem; border-radius: 999px; font-size: .95rem;
-  white-space: nowrap; max-width: 92vw; overflow: hidden; text-overflow: ellipsis;
+  padding: .5rem 1.1rem; border-radius: 12px; font-size: .95rem;
+  max-width: 92vw; text-align: center; line-height: 1.45;
   backdrop-filter: blur(6px); pointer-events: none;
   opacity: 0; transition: opacity .45s ease, transform .45s ease;
 }
 #firstBanner.in { opacity: 1; transform: translate(-50%, 0); }
+/* Three lines and a hierarchy, because they are three different kinds of thing:
+   what to aim at, which keys do it, and the one rule that decides whether a lap
+   counts at all. Flowing them into one paragraph made the goal and the rule
+   read as more key names. */
+#firstBanner .fb-goal { display: block; font-weight: 600; }
+#firstBanner .fb-how { color: #cdd5e2; font-size: .88rem; }
+#firstBanner .fb-cps { display: block; color: #cdd5e2; font-size: .88rem; }
+/* The same key caps the controls sheet uses. A letter set in the body face next
+   to the word "accelerate" reads as emphasis; in a box it reads as a key. */
+#firstBanner b {
+  display: inline-block; min-width: 1.15em; padding: 0 .25em;
+  margin: 0 .04em; border: 1px solid var(--hud-line); border-radius: 4px;
+  background: rgba(255, 255, 255, .1); color: #fff;
+  font-family: var(--mono); font-size: .8rem; font-weight: 600;
+}
 
 /* The coach marks over the results sheet.
    Lifting `.hud` is what puts the four buttons over the sheet's scrim, and it
@@ -873,6 +888,22 @@ body.tour .hud-tr .btnbar { pointer-events: auto; }
   stroke-linecap: round; stroke-linejoin: round;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .9));
 }
+/* What to do with the rest of the evening, under the first result anybody sets.
+   Hidden by default and revealed by `body.first-result`, which lasts as long as
+   that sheet does - the arrows above it go on the first click, and this is a
+   sentence rather than a label on a button, so it needs longer than they do. */
+.res-next { display: none; }
+body.first-result .res-next {
+  display: block; margin: .9rem 0 0; text-align: center;
+  font-size: .88rem; line-height: 1.45; color: #6b7280;
+}
+/* Gold, but not `var(--gold)`. That value is a *background* everywhere else it
+   is used - the medal pill, the yellow button - with dark ink over it, and as
+   text on the sheet's paper it comes out at about 2:1, which is a colour you can
+   see rather than a word you can read. This is the same hue taken down until it
+   passes. */
+body.first-result .res-next b { color: #b8860b; font-weight: 700; }
+
 /* A phone in landscape is 812px wide and the sheet is 460 of them, so a column
    of labels to the left of the button bar lands squarely on the player's own
    lap time - the one number they just earned. The sheet steps aside for the few
@@ -893,8 +924,14 @@ body.tour .hud-tr .btnbar { pointer-events: auto; }
 
 /* The framed door. Hidden by default and shown only inside somebody else's page,
    because at our own address the keyboard is already ours and a click-through
-   would be a toll on every visitor for nothing. `html.framed` is set by the
+   would be a toll on every visitor for nothing. `html.needs-door` is set by the
    inline script in base.html's head, so this never flashes.
+
+   **`needs-door` and not `framed`, and the difference is one click per page.**
+   Framed says where we are; needs-door says whether the keyboard still has to be
+   fetched. It is fetched once per tab - focus stays with this browsing context
+   across navigations inside the frame - so charging again for the trip out to
+   the leaderboard and back was charging twice for one thing.
 
    It covers everything (the HUD's own stacking tops out well below this) and it
    is opaque rather than a scrim: a portal's frame is the player's first sight of
@@ -912,32 +949,32 @@ body.tour .hud-tr .btnbar { pointer-events: auto; }
    inside it, an ancestor's stacking context capped it and the portrait notice
    drew straight through the door. */
 #frameStart { display: none; }
-html.framed #frameStart {
+html.needs-door #frameStart {
   display: flex; position: fixed; inset: 0; z-index: 9000;
   align-items: center; justify-content: center;
   background: var(--paper, #faf8f4); cursor: pointer;
 }
-html.framed #frameStart .fs-card {
+html.needs-door #frameStart .fs-card {
   display: flex; flex-direction: column; align-items: center; gap: .5rem;
   font-family: var(--display); text-align: center;
 }
-html.framed #frameStart .fs-ico { width: 72px; height: 72px; }
-html.framed #frameStart b { font-size: 1.6rem; letter-spacing: .02em; }
-html.framed #frameStart .fs-go {
+html.needs-door #frameStart .fs-ico { width: 72px; height: 72px; }
+html.needs-door #frameStart b { font-size: 1.6rem; letter-spacing: .02em; }
+html.needs-door #frameStart .fs-go {
   font-size: 1rem; opacity: .72;
   border: 1px solid currentColor; border-radius: 999px; padding: .35rem 1.1rem;
 }
 /* Loading until game.js says the frames are coming out warm, then the door.
    `Loading` is deliberately quieter and borderless - it is a state, not a
    control, and it must not look like something you can press. */
-html.framed #frameStart .fs-ready { display: none; }
-html.framed #frameStart.ready .fs-wait { display: none; }
-html.framed #frameStart.ready .fs-ready { display: inline; }
-html.framed #frameStart .fs-wait {
+html.needs-door #frameStart .fs-ready { display: none; }
+html.needs-door #frameStart.ready .fs-wait { display: none; }
+html.needs-door #frameStart.ready .fs-ready { display: inline; }
+html.needs-door #frameStart .fs-wait {
   border-color: transparent; opacity: .5;
 }
-html.framed #frameStart { cursor: default; }
-html.framed #frameStart.ready { cursor: pointer; }
+html.needs-door #frameStart { cursor: default; }
+html.needs-door #frameStart.ready { cursor: pointer; }
 /* Click or Tap, whichever this device actually does. `html.is-touch` is set in
    the same head script that sets `framed`, so it is right on the first paint -
    `body.touch` arrives with game.js, which is far too late for a door that is

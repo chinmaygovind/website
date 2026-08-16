@@ -608,7 +608,7 @@ function showFirstGoal() {
     setTimeout(() => {
       el.classList.remove('in');
       setTimeout(() => { el.style.display = 'none'; }, 500);
-    }, 9000);
+    }, 13000);   // three lines to read, not one
   });
 }
 
@@ -621,7 +621,10 @@ function showFirstGoal() {
  * anybody can see the road. The door removes itself on the click that opens it.
  */
 function whenPlayable(fn) {
-  if (!document.documentElement.classList.contains('framed') || !$('frameStart')) {
+  // `needs-door` and not `framed`: a second page in the same framed tab is not
+  // shown the door at all, and waiting for an element that is never going to be
+  // removed would mean the banner never appears there.
+  if (!document.documentElement.classList.contains('needs-door') || !$('frameStart')) {
     fn();
     return;
   }
@@ -686,6 +689,10 @@ function startTour() {
 
   S.tourOn = true;
   document.body.classList.add('tour');
+  // Two classes and two lifetimes. The arrows go on the first click; the line
+  // under the buttons is a sentence about what to do next and stays as long as
+  // the sheet it is written on - `hideResults` is what takes it off.
+  document.body.classList.add('first-result');
   layer.style.display = '';
   placeTour();
   requestAnimationFrame(() => requestAnimationFrame(() => layer.classList.add('in')));
@@ -3483,7 +3490,11 @@ async function shareLap() {
 
 // The marks point at buttons the sheet is what lit up; with the sheet gone
 // there is a road behind them again and they would be litter over it.
-function hideResults() { endTour(); $('results').style.display = 'none'; }
+function hideResults() {
+  endTour();
+  document.body.classList.remove('first-result');
+  $('results').style.display = 'none';
+}
 
 function toggleMenu(force) {
   S.menuOpen = force != null ? force : !S.menuOpen;
