@@ -259,7 +259,13 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   per session.** The start hint above says which key drives; neither of these is
   about the keys. `#firstBanner` is a pill at the top centre on the first visit to
   Sunrise - which `_last_track` makes the track a first visit lands on - saying
-  what the clock is for, and it fades itself after nine seconds. `#tour` is four
+  what the clock is for, and it fades itself after nine seconds. **It had a third
+  line naming the keys and that line is gone**, which is what this paragraph
+  always claimed and briefly stopped being true of: the start hint says the same
+  thing a few pixels lower and is timed to the moment it is wanted, on a touch
+  device the two wordings were nearly the same sentence, and the key caps were
+  what wrapped the pill to four lines on a phone. Keys have one home on the play
+  page and it is the hint. `#tour` is four
   labels with elbow arrows over the first results sheet, pointing at the
   leaderboard, the switcher, the controls and settings: four 38px icons that carry
   most of the game and that nothing had ever pointed at. `localStorage`

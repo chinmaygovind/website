@@ -819,21 +819,17 @@ body.touch .mapbtns { display: none; }
   opacity: 0; transition: opacity .45s ease, transform .45s ease;
 }
 #firstBanner.in { opacity: 1; transform: translate(-50%, 0); }
-/* Three lines and a hierarchy, because they are three different kinds of thing:
-   what to aim at, which keys do it, and the one rule that decides whether a lap
-   counts at all. Flowing them into one paragraph made the goal and the rule
-   read as more key names. */
+/* Two lines and a hierarchy, because they are two different kinds of thing:
+   what to aim at, and the one rule that decides whether a lap counts at all.
+   Flowing them into one paragraph made the rule read as part of the aim.
+
+   There were three, and the middle one named the keys. It is gone: `#startHint`
+   says the same thing a few pixels lower and is timed to the moment you need
+   it, and the key caps in here were what made this wrap to four lines on a
+   phone. Nothing in this pill is in a key cap any more, so the `#firstBanner b`
+   rule that styled them went with it. */
 #firstBanner .fb-goal { display: block; font-weight: 600; }
-#firstBanner .fb-how { color: #cdd5e2; font-size: .88rem; }
 #firstBanner .fb-cps { display: block; color: #cdd5e2; font-size: .88rem; }
-/* The same key caps the controls sheet uses. A letter set in the body face next
-   to the word "accelerate" reads as emphasis; in a box it reads as a key. */
-#firstBanner b {
-  display: inline-block; min-width: 1.15em; padding: 0 .25em;
-  margin: 0 .04em; border: 1px solid var(--hud-line); border-radius: 4px;
-  background: rgba(255, 255, 255, .1); color: #fff;
-  font-family: var(--mono); font-size: .8rem; font-weight: 600;
-}
 
 /* The coach marks over the results sheet.
    Lifting `.hud` is what puts the four buttons over the sheet's scrim, and it
@@ -915,8 +911,16 @@ body.first-result .res-next b { color: #b8860b; font-weight: 700; }
   .tour-say { font-size: .72rem; padding: .24rem .5rem; }
   body.tour .sheet.result { transform: translateX(calc(-50vw + 50% + 12px)); }
 }
+/* On a phone this pill is competing with the road for a screen that is 375px
+   tall in landscape, so it gives up the padding and the leading a desktop can
+   afford. `max-width` comes down as well: at 92vw a line runs the full width of
+   the screen and reads as a banner across the game rather than a note over it. */
 @media (max-width: 560px) {
-  #firstBanner { font-size: .82rem; }
+  #firstBanner {
+    font-size: .78rem; padding: .38rem .8rem; border-radius: 10px;
+    max-width: 80vw; line-height: 1.3;
+  }
+  #firstBanner .fb-cps { font-size: .84rem; }
 }
 @media (prefers-reduced-motion: reduce) {
   #firstBanner, .tour-tip, .sheet.result { transition: none; }

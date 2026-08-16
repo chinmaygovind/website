@@ -213,27 +213,24 @@
       &middot; drag down the pedal to drift</span>
   </div>
   <!-- What the game is *for*, said once, to somebody who has never seen it.
-       The line above tells you which key makes the car go; this tells you why
+       The hint above tells you which key makes the car go; this tells you why
        you would press it. It is only ever on Sunrise Circuit, which is where a
        first visit lands, and only on the first one - see `startOnboarding` in
        game.js. Deliberately a thin line at the top rather than anything you
        have to dismiss: a modal in front of a driving game on the first ten
-       seconds of a first visit is a toll, and the road is the pitch. -->
+       seconds of a first visit is a toll, and the road is the pitch.
+
+       **It says why and never how.** There used to be a `.fb-how` line in here
+       spelling out accelerate/brake/steer, and it was the information the hint
+       above already carries - on a touch device the two were nearly the same
+       sentence. It was also most of the height: those key caps wrapped to two
+       and three lines on a phone, which is how a pill meant to be a thin line
+       came to take a quarter of a landscape screen on the one visit it shows.
+       The keys have one home on this page and it is the hint, which is already
+       timed to the moment they are wanted. -->
+
   <div id="firstBanner" style="display:none">
     <span class="fb-goal">Try to set your best time on this track!</span>
-    {# The keys, spelled out. The start hint below says how to *start*; this says
-       how to drive, which is the thing somebody who has never played a driving
-       game in a browser has no reason to know. Both wordings follow the device,
-       the same `.hint-keys`/`.hint-touch` rule the start hint and the controls
-       sheet follow: it never names a key you do not have. #}
-    <span class="fb-how hint-keys">
-      <b>W</b>/<b>&uarr;</b> accelerate &middot; <b>S</b>/<b>&darr;</b> brake
-      &middot; <b>A</b><b>D</b>/<b>&larr;</b><b>&rarr;</b> steer
-    </span>
-    <span class="fb-how hint-touch">
-      Right pedal to accelerate &middot; left pedal to brake
-      &middot; arrows to steer
-    </span>
     <span class="fb-cps">Go through all the checkpoints!</span>
   </div>
 
