@@ -430,3 +430,64 @@ def test_a_cross_site_post_cannot_sign_this_browser_in(env, signed):
                     json={"token": _token(signed, userId="u-1", username="Nick")},
                     headers={"Origin": "http://localhost"})
     assert r.status_code == 200 and r.get_json()["ok"]
+
+
+# ---------------------------------------------------------------------------
+# The fallback, for a frame that arrived without the parameter
+# ---------------------------------------------------------------------------
+
+def test_a_crazygames_frame_is_the_portal_build_even_without_the_parameter(env):
+    """The expensive failure, and the one nobody would notice in testing.
+
+    The parameter is on the URL submitted to CrazyGames, but what they actually
+    frame is not entirely ours to decide - a QA preview, a share link, an embed
+    built from the bare domain. Without the flag that frame gets the cgovind.com
+    build, login form and all, which is the one thing their checklist refuses a
+    game for.
+    """
+    client = env.app.test_client()
+    html = client.get("/login", headers={
+        "Sec-Fetch-Dest": "iframe",
+        "Referer": "https://www.crazygames.com/game/drive",
+    }).get_data(as_text=True)
+    assert 'type="password"' not in html
+    assert "Sign in with CrazyGames" in html
+
+
+def test_the_fallback_takes_the_language_domains_too(env):
+    """It reads the sitelock list, so anywhere allowed to frame us is a portal."""
+    for ref in ("https://de.crazygames.com/g", "https://www.crazygames.fr/g",
+                "https://games.crazygames.com/g", "https://crazygames.com/g"):
+        client = env.app.test_client()
+        client.get("/", headers={"Sec-Fetch-Dest": "iframe", "Referer": ref})
+        with client.session_transaction() as s:
+            assert s.get("portal") == "crazygames", ref
+
+
+def test_somebody_elses_frame_is_not_a_portal(env):
+    """A lookalike domain must not reach it, and an ordinary embed must not either.
+
+    `crazygames.evil.example` is the one the obvious regex over the string
+    "crazygames." would have let through. Nothing terrible follows from a false
+    positive - the flag can only take login UI away, and signing in still needs
+    a token CrazyGames signed - but a site that embeds Drive should get Drive.
+    """
+    for ref in ("https://crazygames.evil.example/g", "https://evil-crazygames.com/g",
+                "https://itch.io/g", ""):
+        client = env.app.test_client()
+        client.get("/", headers={"Sec-Fetch-Dest": "iframe", "Referer": ref})
+        with client.session_transaction() as s:
+            assert "portal" not in s, ref
+
+
+def test_an_ordinary_navigation_from_crazygames_is_not_a_frame(env):
+    """Somebody clicking a link to Drive *from* CrazyGames is a visitor here.
+
+    `Sec-Fetch-Dest` is `document` for that, not `iframe`, and they should get
+    the real site with a real login - they left the portal to come here.
+    """
+    client = env.app.test_client()
+    client.get("/", headers={"Sec-Fetch-Dest": "document",
+                             "Referer": "https://www.crazygames.com/game/drive"})
+    with client.session_transaction() as s:
+        assert "portal" not in s

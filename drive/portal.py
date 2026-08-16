@@ -94,6 +94,32 @@ CRAZYGAMES_ANCESTORS = [
 ]
 
 
+def host_portal(host):
+    """The portal whose page this hostname is, or None.
+
+    Derived from the sitelock list rather than written twice: the question "may
+    this site frame us" and the question "is this site a portal" have to have
+    the same answer, and a second list would drift.
+
+    Used only as a *fallback* for a frame that arrived without `?portal=` on it
+    (see `app._remember_the_portal`). Matching is exact, or one label under a
+    wildcard - so `de.crazygames.com` matches `*.crazygames.com` and
+    `crazygames.evil.example` matches nothing, which the obvious regex over the
+    string "crazygames." would have let through.
+    """
+    host = (host or "").lower().rstrip(".")
+    if not host:
+        return None
+    for entry in CRAZYGAMES_ANCESTORS:
+        pattern = entry.split("://", 1)[-1]
+        if pattern.startswith("*."):
+            if host == pattern[2:] or host.endswith(pattern[1:]):
+                return CRAZYGAMES
+        elif host == pattern:
+            return CRAZYGAMES
+    return None
+
+
 def frame_ancestors():
     """The value of ``Content-Security-Policy: frame-ancestors``.
 

@@ -358,10 +358,38 @@ def portal_mode():
     return p if p in portal_mod.PORTALS else None
 
 
+def _framed_by_a_portal():
+    """A portal's frame that arrived without `?portal=` on the URL.
+
+    **The belt to the parameter's braces, and the reason is the review rather
+    than the player.** The parameter is on the URL submitted to CrazyGames, but
+    what they actually frame is not entirely ours to decide - a QA preview, a
+    share link, an embed built from the bare domain - and the failure is the
+    expensive one: without the flag the frame gets the cgovind.com build, login
+    form and all, which is the single thing their checklist refuses a game for.
+
+    `Sec-Fetch-Dest: iframe` is the browser saying this navigation is a frame,
+    and the referrer names whose page it is. Both are sent cross-origin by every
+    browser that matters - the referrer trimmed to its origin by the default
+    policy, which is all this needs. Neither is trusted for anything: the only
+    thing this can do is take login UI away, and signing in still needs a token
+    CrazyGames signed.
+    """
+    if request.headers.get("Sec-Fetch-Dest") != "iframe":
+        return None
+    ref = request.headers.get("Referer") or request.headers.get("Origin") or ""
+    return portal_mod.host_portal(urlparse.urlparse(ref).hostname)
+
+
 @app.before_request
 def _remember_the_portal():
     asked = request.args.get("portal")
     if asked is None:
+        if "portal" not in session:
+            found = _framed_by_a_portal()
+            if found:
+                session.permanent = True
+                session["portal"] = found
         return
     if asked in portal_mod.PORTALS:
         session.permanent = True
