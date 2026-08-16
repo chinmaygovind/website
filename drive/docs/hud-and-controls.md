@@ -82,11 +82,16 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   has always changed track, which is the more common thing to do and the harder
   muscle memory to move; `K` is admitted to have no mnemonic, and every letter
   with a claim on "splits" or "lap" is a driving key or already taken.
-- **The defaults are your own best lap and a car to chase**, for somebody who has
-  never opened the sheet: `storedGhostMode()` falls back to `me` and
-  `drive.ghostcar` to `true`.
-- **Nothing but you may write your splits choice, and three things used to.** All
-  three were the same shape - the *setting* said one thing and the road did
+- **The defaults are your own best lap and no car**, for somebody who has never
+  opened the sheet: `storedGhostMode()` falls back to `me` and `drive.ghostcar`
+  to `false`. **The car used to default on.** A first lap of a track is one you
+  are reading, and a translucent car driving the racing line through it is in
+  front of the road rather than beside it - while the deltas, which are the half
+  of a reference lap you can read at 200km/h, cost nothing to leave on. So the
+  two halves of the old single switch now default differently, which is most of
+  why splitting them was worth doing.
+- **Nothing but you may write your splits choice, and four things used to.** All
+  of them were the same shape - the *setting* said one thing and the road did
   another, with the setting telling the truth about what you had chosen and a lie
   about what you were chasing:
   - **A new PB.** `/api/run`'s handler called `loadGhost('me')` unconditionally, so
@@ -103,21 +108,51 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
     "somewhere new is somewhere you are looking at rather than attacking", which is
     a fair thing to want and the wrong way to get it: a setting that turns itself
     off when you go somewhere is not a setting. Gone.
+  - **Arriving anywhere at all**, which is the one the account store found.
+    `loadTrack` re-applies the mode it already has, and both landing on a page
+    and switching track go through it, so the write there was your own setting
+    being handed back to itself - harmless while it was a `localStorage` line and
+    three wrong things once it was a request: a POST to `/api/prefs` on every
+    page load, the `me` that a chased lap falls back to filed as a standing
+    choice, and a `pole` picked in a room rewritten to `me` the next time you
+    opened a time trial, since `storedGhostMode` filters `pole` out there. It is
+    `remember: false` now, like the ghost car beside it.
 
-  Four tests pin this group, and one of them is worth knowing about: the first
+  Five tests pin this group, and one of them is worth knowing about: the first
   version of the `run` test asserted `"mode !== 'run'" in body`, which **passed
   with the fix reverted**, because that comparison also appears three lines up
-  clearing `S.ghostRun`. It now parses the guard on the `localStorage.setItem`
+  clearing `S.ghostRun`. It now parses the guard on the `rememberPref` call
   itself. A source-reading test that cannot fail is worse than no test, and that
   one proved it by not failing.
-- **Storage is `localStorage`, not an account setting**, which was a choice rather
-  than the default. It already persists across sessions - the complaint was never
-  that the preference was *lost*, it was that other code overwrote it - and Drive
-  is playable with no account at all, so a per-user table would leave every guest
-  without the setting. The cost is that it is per-browser: clearing site data or
-  moving to another machine starts you back at `me` with the car on. A
-  `drive_prefs` table would fix that (and `create_all` makes tables, so it needs no
-  migration) if it ever matters.
+- **Storage is `localStorage` for everybody, and `drive_prefs` as well for an
+  account.** The local copy is still the primary one and is written on every
+  change, because Drive is playable with no account at all and a per-user table
+  alone would leave every guest without a memory. What the table adds is the half
+  `localStorage` cannot do: the settings follow the *person* rather than the
+  browser, so they survive moving between machines and are the same on both sides
+  of a login. The two stored that way are the splits mode and the ghost car -
+  the two that change what the road looks like - and the allow-list saying so
+  exists twice on purpose, as `ACCOUNT_PREFS` in `game.js` and `PREF_SPEC` in
+  `app.py`, because the client decides what to send and the server decides what
+  it will keep. Four things about it:
+  - **The account answers first.** `accountPref()` is consulted ahead of
+    `localStorage` in both `storedGhostMode` and `storedFlag`, so a machine you
+    have never driven on - or one somebody else set up - is not the answer.
+  - **`CFG.prefs` is `null` when the account has never chosen**, and that is a
+    different thing from `{}`. It is the one case where the settings sitting in
+    this browser are adopted as the account's (`adoptLocalPrefs`, once, at boot),
+    which is what stops this landing as "everybody who was already playing lost
+    their settings". An account with a row is never overwritten by the machine.
+  - **`/api/prefs` is POST-only and merges.** The page embeds what it needs in
+    `DRIVE_CFG.prefs`, so the settings are right on the first frame rather than a
+    request later - the same reason the livery comes down with the page - and
+    every one of the three play modes has to pass `prefs_json`, because a mode
+    that forgot would render a Jinja blank into the config block and the game
+    would not boot at all. A guest gets a 401, which is what stops the client
+    posting into the void rather than a refusal to let them choose.
+  - **Sound, music, FPS and ping stay local**, and that is a judgement rather
+    than an oversight: muting a game is about the room you are sitting in, not
+    about you. Adding one is a line in each allow-list.
 - **Sound and Music are two switches because they are two buses.** `Sound.sfx`
   carries the car and the world, `Music`'s own bus sits beside it under the
   master, and `mute` is the sfx gain rather than the master's - so muting the

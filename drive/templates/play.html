@@ -815,6 +815,11 @@
     cards: {{ cards|tojson }},
     pbSplits: {{ pb_splits|tojson }},
     loggedIn: {{ 'true' if user else 'false' }},
+    {# The settings that follow the account instead of the browser: which lap the
+       splits are measured against, and whether the ghost car is drawn. `null`
+       means nobody has chosen - a guest, or an account that has never touched
+       the sheet - and the two are told apart by `loggedIn`. #}
+    prefs: {{ prefs_json|safe }},
     {# Which finished race this page is a replay of, in replay mode only. #}
     race: {% if race %}{{ race.id }}{% else %}null{% endif %},
     {# The room the watcher still holds a seat in, so the way out of a replay can

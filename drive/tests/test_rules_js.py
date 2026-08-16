@@ -26,6 +26,7 @@ What the rest have in common is that they used to be bugs:
 * a lap driven in a room used to go on the leaderboard, tow and all.
 """
 
+import json
 import os
 import re
 
@@ -644,9 +645,13 @@ def test_a_lap_chased_off_the_board_is_never_saved_as_your_setting():
     the fix reverted, because that same comparison also appears three lines up
     clearing `S.ghostRun` - a source-reading test that cannot fail is worse than no
     test, and this one proved it by not failing.
+
+    The write is `rememberPref` rather than a bare `localStorage.setItem` since the
+    setting started following the account as well as the browser; the guard on it is
+    the thing this test is about and is unchanged.
     """
     body = _body("setGhostMode")
-    m = re.search(r"if \(([^)]*)\)\s*\{\s*try \{ localStorage\.setItem\("
+    m = re.search(r"if \(([^)]*)\)\s*\{\s*rememberPref\("
                   r"'drive\.ghost', ([^)]+)\)", body)
     assert m, "the drive.ghost write is no longer a guarded one-liner; re-read this"
     cond, value = m.group(1), m.group(2)
@@ -656,11 +661,127 @@ def test_a_lap_chased_off_the_board_is_never_saved_as_your_setting():
         f"`run` is still being filed as `me`, which overwrites a real choice: {value}"
 
 
-def test_the_defaults_are_your_best_lap_and_a_car_to_chase():
-    """Both asked for explicitly: splits start on your PB and the ghost car is on,
-    for somebody who has never opened the settings sheet."""
+def test_the_defaults_are_your_best_lap_and_no_car():
+    """What somebody who has never opened the settings sheet gets: the splits
+    measured against their own best lap, and **no ghost car**.
+
+    The car used to default on. A first lap of a track is one you are reading,
+    and a translucent car driving the racing line through it is in front of the
+    road rather than beside it - while the deltas, which are the half of a
+    reference lap you can actually read at 200km/h, cost nothing to leave on.
+    """
     assert "return ok.includes(v) ? v : 'me'" in _body("storedGhostMode")
-    assert "storedFlag('drive.ghostcar', true)" in _game_src()
+    assert "storedFlag('drive.ghostcar', false)" in _game_src()
+
+
+# --- two settings follow the account, the rest stay in the browser ----------
+
+PREF_STUB = """
+var store = {};
+var posted = [];
+var localStorage = {
+  getItem: (k) => (k in store ? store[k] : null),
+  setItem: (k, v) => { store[k] = String(v); },
+};
+function fetch(u, o) { posted.push([u, JSON.parse(o.body)]); return {catch: () => {}}; }
+"""
+
+
+def _pref_ctx(cfg):
+    ctx = jsrt.quickjs.Context()
+    ctx.eval(PREF_STUB)
+    ctx.eval("var CFG = %s;" % json.dumps(cfg))
+    for fn in ("accountPref", "lsGet", "rememberPref", "postPrefs",
+               "adoptLocalPrefs", "storedGhostMode", "storedFlag", "rememberFlag"):
+        ctx.eval(_fn(fn))
+    ctx.eval("var ACCOUNT_PREFS = " + re.search(
+        r"const ACCOUNT_PREFS = (\{[^}]*\});", _game_src()).group(1) + ";")
+    return ctx
+
+
+def test_the_account_answers_before_the_browser_does():
+    """The whole point of storing these two against a user: a machine that has
+    never been driven on, or one somebody else set up, must not be the answer."""
+    ctx = _pref_ctx({"mode": "solo", "loggedIn": True,
+                     "prefs": {"ghost": "wr", "ghostcar": True}})
+    ctx.eval("store['drive.ghost'] = 'off'; store['drive.ghostcar'] = '0';")
+    assert ctx.eval("storedGhostMode()") == "wr"
+    assert ctx.eval("storedFlag('drive.ghostcar', false)") is True
+
+
+def test_a_guest_still_has_every_setting_they_ever_had():
+    """No account is not a reason to lose your settings - Drive is playable
+    without one, which is why `localStorage` stayed the primary store."""
+    ctx = _pref_ctx({"mode": "solo", "loggedIn": False, "prefs": None})
+    ctx.eval("store['drive.ghost'] = 'wr'; store['drive.ghostcar'] = '1';")
+    assert ctx.eval("storedGhostMode()") == "wr"
+    assert ctx.eval("storedFlag('drive.ghostcar', false)") is True
+    # And nothing is sent anywhere on their behalf.
+    ctx.eval("rememberFlag('drive.ghostcar', false); adoptLocalPrefs();")
+    assert ctx.eval("posted.length") == 0
+
+
+def test_changing_a_setting_writes_it_both_places():
+    """Locally as well as to the account, so the value is there on the next load
+    before any request comes back - and so logging out does not read as every
+    setting being forgotten."""
+    ctx = _pref_ctx({"mode": "solo", "loggedIn": True, "prefs": {}})
+    ctx.eval("rememberPref('drive.ghost', 'wr'); rememberFlag('drive.ghostcar', true);")
+    assert ctx.eval("store['drive.ghost']") == "wr"
+    assert ctx.eval("store['drive.ghostcar']") == "1"
+    assert json.loads(ctx.eval("JSON.stringify(posted)")) == [
+        ["/api/prefs", {"ghost": "wr"}], ["/api/prefs", {"ghostcar": True}]]
+
+
+def test_a_setting_that_is_not_account_shaped_never_leaves_the_browser():
+    """Muting the game is about the room you are sitting in, not about you. The
+    allow-list is what says so, and it is the same list the server checks."""
+    ctx = _pref_ctx({"mode": "solo", "loggedIn": True, "prefs": {}})
+    ctx.eval("rememberFlag('drive.sound', false); rememberFlag('drive.fps', true);")
+    assert ctx.eval("store['drive.sound']") == "0"
+    assert ctx.eval("posted.length") == 0
+
+
+def test_logging_in_carries_the_settings_this_browser_was_holding():
+    """`prefs: null` means the account has never chosen, which is the one case
+    where the local copy is that person's answer rather than noise."""
+    ctx = _pref_ctx({"mode": "solo", "loggedIn": True, "prefs": None})
+    ctx.eval("store['drive.ghost'] = 'wr'; store['drive.ghostcar'] = '1';")
+    ctx.eval("adoptLocalPrefs();")
+    assert json.loads(ctx.eval("JSON.stringify(posted)")) == [
+        ["/api/prefs", {"ghost": "wr", "ghostcar": True}]]
+
+
+def test_an_account_that_has_chosen_is_not_overwritten_by_the_machine():
+    """The adoption is once, on the way in. An account with a row is the answer
+    from then on, or driving on a friend's laptop would rewrite your settings."""
+    ctx = _pref_ctx({"mode": "solo", "loggedIn": True, "prefs": {"ghost": "off"}})
+    ctx.eval("store['drive.ghost'] = 'wr';")
+    ctx.eval("adoptLocalPrefs();")
+    assert ctx.eval("posted.length") == 0
+    assert ctx.eval("storedGhostMode()") == "off"
+
+
+def test_a_fresh_account_on_a_fresh_browser_makes_no_row():
+    """Nothing chosen anywhere is nothing to save: the defaults are code, not a
+    row full of them, so changing a default later moves everybody who never
+    touched the sheet."""
+    ctx = _pref_ctx({"mode": "solo", "loggedIn": True, "prefs": None})
+    ctx.eval("adoptLocalPrefs();")
+    assert ctx.eval("posted.length") == 0
+    assert ctx.eval("storedGhostMode()") == "me"
+    assert ctx.eval("storedFlag('drive.ghostcar', false)") is False
+
+
+def test_arriving_somewhere_does_not_count_as_choosing_anything():
+    """`loadTrack` re-applies the mode you already have, and arriving and
+    switching track both land there - so a write would post to `/api/prefs` on
+    every page load, file the `run` fallback of `me` as a standing choice, and
+    rewrite a room's `pole` to `me` the first time you opened a time trial."""
+    body = _body("loadTrack")
+    m = re.search(r"setGhostMode\(S\.ghostMode, \{([^}]*)\}\)", body)
+    assert m, "loadTrack no longer re-applies the mode; re-read this rule"
+    assert "remember: false" in m.group(1)
 
 
 def test_switching_track_leaves_the_ghost_car_alone():

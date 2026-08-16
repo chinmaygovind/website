@@ -1720,3 +1720,82 @@ def test_an_unknown_track_skips_the_track_checks_rather_than_failing_them(env):
     with A.app.app_context():
         r = {"code": "NOSUCH", "t0": A._now_ms() - 20000}
         assert A._finish_is_possible(r, {"prog": 0.0}, 16000)
+
+
+# ---------------------------------------------------------------------------
+# The two settings that follow the account
+# ---------------------------------------------------------------------------
+#
+# Which lap the splits are measured against and whether the ghost car is drawn
+# are remembered against a user as well as in the browser, because they are the
+# two that decide what the road looks like. Everything else in the settings
+# sheet stays in `localStorage`, where a guest can have it too.
+
+def test_a_guest_is_told_no_rather_than_given_a_row(env):
+    """There is nowhere to put a guest's settings - and the 401 is what stops
+    `game.js` posting into the void for the rest of the session, not a refusal
+    to let them choose. They keep the local copy every setting has always had."""
+    r = env.app.test_client().post("/api/prefs", json={"ghostcar": True})
+    assert r.status_code == 401
+    with env.app.app_context():
+        assert env.DrivePrefs.query.count() == 0
+
+
+def test_a_setting_saved_here_is_read_by_the_page_over_there(env):
+    """The whole ask: change it in a time trial, walk into a room, still there.
+    Both pages read the row rather than the browser, so this is the crossing."""
+    c = env.app.test_client()
+    _login(c, _user(env, "quick"))
+    assert c.post("/api/prefs", json={"ghost": "wr", "ghostcar": True}).status_code == 200
+    page = c.get("/solo/sunrise").get_data(as_text=True)
+    assert '"ghost":"wr"' in page and '"ghostcar":true' in page
+
+
+def test_the_switches_are_merged_and_never_replace_each_other(env):
+    """The client posts the one switch that moved, so a write that replaced the
+    row would mean turning the ghost car off also forgot which lap you chose."""
+    c = env.app.test_client()
+    uid = _user(env, "quick")
+    _login(c, uid)
+    c.post("/api/prefs", json={"ghost": "wr"})
+    c.post("/api/prefs", json={"ghostcar": False})
+    with env.app.app_context():
+        row = env.DrivePrefs.query.filter_by(user_id=uid).first()
+        assert row.prefs == {"ghost": "wr", "ghostcar": False}
+
+
+def test_only_a_setting_may_be_stored_against_you(env):
+    """A blob nobody validates is how a settings row becomes somewhere to keep
+    arbitrary text against a user id. The allow-list is checked on the way in,
+    and a body that is entirely junk is a 400 rather than an empty row."""
+    c = env.app.test_client()
+    uid = _user(env, "quick")
+    _login(c, uid)
+    assert c.post("/api/prefs", json={"admin": True, "ghost": "x" * 4000}).status_code == 400
+    # A good key alongside a bad one saves the good one and drops the bad one.
+    assert c.post("/api/prefs", json={"ghost": "wr", "note": "hello"}).status_code == 200
+    with env.app.app_context():
+        assert env.DrivePrefs.query.filter_by(user_id=uid).first().prefs == {"ghost": "wr"}
+
+
+def test_an_account_that_has_never_chosen_sends_null_rather_than_nothing(env):
+    """`null` is what tells the client the account has never chosen, which is the
+    one case where the settings sitting in this browser are adopted rather than
+    ignored. An empty object would read as "chosen: nothing", and would strand
+    the settings of everybody who was already playing before this existed."""
+    c = env.app.test_client()
+    _login(c, _user(env, "quick"))
+    assert "prefs: null" in c.get("/solo/sunrise").get_data(as_text=True)
+    assert "prefs: null" in env.app.test_client().get("/solo/sunrise").get_data(as_text=True)
+
+
+def test_every_mode_of_the_play_page_carries_the_settings(env):
+    """One template, three modes, and a mode that forgot to pass them would be a
+    Jinja blank rather than a null - which is a syntax error inside the config
+    block, so the game would not boot at all."""
+    c = env.app.test_client()
+    _login(c, _user(env, "quick"))
+    rid = _seated(env, c, code="PREFS1", status="finished")
+    c.post("/api/prefs", json={"ghost": "off"})
+    for url in ("/solo/sunrise", "/room/PREFS1", "/race/%d" % rid):
+        assert '"ghost":"off"' in c.get(url).get_data(as_text=True), url

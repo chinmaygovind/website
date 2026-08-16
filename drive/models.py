@@ -5,8 +5,8 @@ of Tokyo - same physical table, same columns - so one account works across
 every game at cgovind.com. This module maps only the account/identity columns of
 ``users``; Drive keeps its own per-user stats in ``drive_stats``, its best times
 in ``drive_times``, its attempt counts in ``drive_starts``, what each car looks
-like in ``drive_garage`` and its lobbies in ``drive_games`` /
-``drive_players``.
+like in ``drive_garage``, the two settings that follow an account in
+``drive_prefs`` and its lobbies in ``drive_games`` / ``drive_players``.
 ``create_all`` uses CREATE TABLE IF NOT EXISTS, so Drive never clobbers the
 shared ``users`` table.
 
@@ -452,6 +452,45 @@ class DriveGarage(db.Model):
             return set(got) if isinstance(got, list) else set()
         except Exception:
             return set()
+
+
+class DrivePrefs(db.Model):
+    """The settings that follow the account rather than the browser.
+
+    Everything in the settings sheet is remembered in ``localStorage``, which is
+    the right store for it: Drive is playable with no account at all, and a
+    per-user table would leave every guest without a memory. This table is the
+    other half - **for somebody logged in, two of those settings follow them**
+    instead of staying on the machine they last drove on. Which lap the splits
+    are measured against and whether the ghost car is drawn are the two, because
+    they are the two that change how the road looks, and having them reset by
+    walking from a time trial into a room is the complaint that put this here.
+
+    One JSON column rather than a column per setting, and that is the same
+    reason ``drive_garage`` is its own table: ``create_all`` makes tables and not
+    columns, so a third setting added to a blob arrives on the live database by
+    itself where a third column would need a hand migration over SSH.
+
+    **A missing row is not a special case.** It means "nothing chosen yet", which
+    is exactly what an account that has never opened the sheet should get: the
+    defaults, from the same code a guest runs.
+    """
+    __tablename__ = "drive_prefs"
+
+    user_id    = db.Column(db.Integer, db.ForeignKey("users.id"), primary_key=True)
+    prefs_json = db.Column(db.Text, default="{}")
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship("User", backref=db.backref("drive_prefs", uselist=False,
+                                                      cascade="all, delete-orphan"))
+
+    @property
+    def prefs(self):
+        try:
+            got = json.loads(self.prefs_json or "{}")
+            return got if isinstance(got, dict) else {}
+        except Exception:
+            return {}
 
 
 class DriveGame(db.Model):

@@ -32,6 +32,82 @@ const fmt = (ms) => {
 };
 const fmtDelta = (ms) => (ms >= 0 ? '+' : '') + (ms / 1000).toFixed(3);
 
+// ---------------------------------------------------------------------------
+// Settings that follow you, and settings that stay on the machine
+// ---------------------------------------------------------------------------
+// Every switch in the sheet is remembered in `localStorage`, which is the right
+// store for a game playable with no account at all. **Two of them are also
+// remembered against the account**, because they are the two that decide what
+// the road looks like and having them reset by walking from a time trial into a
+// room - or by opening the game on a different machine - is a setting that does
+// not feel like one.
+//
+// The map is storage key -> the name the server knows it by (`PREF_SPEC` in
+// `app.py`), and it is the whole of what is account-shaped: adding the sound
+// switch here would be one line, and is deliberately not done, because muting a
+// game is a thing about the room you are sitting in rather than about you.
+const ACCOUNT_PREFS = { 'drive.ghost': 'ghost', 'drive.ghostcar': 'ghostcar' };
+
+/** What the account has chosen for a setting, or `undefined` for nothing yet. */
+function accountPref(storageKey) {
+  const name = ACCOUNT_PREFS[storageKey];
+  const p = CFG.prefs;
+  return (name && p && Object.prototype.hasOwnProperty.call(p, name))
+    ? p[name] : undefined;
+}
+
+function lsGet(key) {
+  try { return localStorage.getItem(key); } catch (e) { return null; }
+}
+
+/**
+ * Write a setting down: on this machine always, and against the account when
+ * there is one.
+ *
+ * `localStorage` is written either way rather than only for a guest, so that
+ * logging out does not read as every setting being forgotten, and so the value
+ * is there on the next load before any request comes back.
+ */
+function rememberPref(storageKey, value) {
+  try { localStorage.setItem(storageKey, value === true ? '1'
+                                       : value === false ? '0' : value); } catch (e) {}
+  const name = ACCOUNT_PREFS[storageKey];
+  if (!name || !CFG.loggedIn || typeof fetch !== 'function') return;
+  if (!CFG.prefs) CFG.prefs = {};
+  CFG.prefs[name] = value;
+  postPrefs({ [name]: value });
+}
+
+/** Fire and forget: a settings write nobody is waiting on. */
+function postPrefs(body) {
+  fetch('/api/prefs', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).catch(() => {});
+}
+
+/**
+ * The first load after logging in, for somebody whose settings are in a browser.
+ *
+ * `CFG.prefs` is `null` for an account with no row, which is different from an
+ * empty one: it means nothing has ever been chosen *for the account*, and the
+ * choices this browser is already holding are almost certainly that person's.
+ * So they are carried up once, and from then on the account is the answer.
+ * Nothing to carry means nothing is sent and no row is made, which is what
+ * leaves a fresh account on the defaults.
+ */
+function adoptLocalPrefs() {
+  if (!CFG.loggedIn || CFG.prefs || typeof fetch !== 'function') return;
+  const body = {};
+  const mode = lsGet('drive.ghost');
+  if (['off', 'me', 'wr', 'pole'].includes(mode)) body.ghost = mode;
+  const car = lsGet('drive.ghostcar');
+  if (car != null) body.ghostcar = car === '1';
+  if (!Object.keys(body).length) return;
+  CFG.prefs = body;
+  postPrefs(body);
+}
+
 /**
  * The lap you picked last time is the lap you probably still want.
  *
@@ -41,22 +117,21 @@ const fmtDelta = (ms) => (ms >= 0 ? '+' : '') + (ms / 1000).toFixed(3);
  */
 function storedGhostMode() {
   const ok = CFG.mode === 'room' ? ['off', 'me', 'pole', 'wr'] : ['off', 'me', 'wr'];
-  try {
-    const v = localStorage.getItem('drive.ghost');
-    return ok.includes(v) ? v : 'me';
-  } catch (e) { return 'me'; }
+  const acct = accountPref('drive.ghost');
+  const v = acct === undefined ? lsGet('drive.ghost') : acct;
+  return ok.includes(v) ? v : 'me';
 }
 
 /** A remembered on/off, for the three switches in settings. */
 function storedFlag(key, dflt) {
-  try {
-    const v = localStorage.getItem(key);
-    return v == null ? dflt : v === '1';
-  } catch (e) { return dflt; }
+  const acct = accountPref(key);
+  if (typeof acct === 'boolean') return acct;
+  const v = lsGet(key);
+  return v == null ? dflt : v === '1';
 }
 
 function rememberFlag(key, on) {
-  try { localStorage.setItem(key, on ? '1' : '0'); } catch (e) {}
+  rememberPref(key, on === true);
 }
 
 // ---------------------------------------------------------------------------
@@ -79,7 +154,13 @@ const S = {
   // Whether that lap is *drawn* as a car. Nothing to do with which lap it is:
   // wanting the splits off a lap you do not want a translucent car driving in
   // front of you is an ordinary thing to want, and it used to be unaskable.
-  showGhost: storedFlag('drive.ghostcar', true),
+  //
+  // **It defaults off**, which it did not. A first lap of a track is one you are
+  // reading, and a translucent car driving the racing line through it is in
+  // front of the road rather than beside it. The splits still default to your
+  // own best, so somebody who never opens the sheet gets the deltas - the half
+  // of a reference lap you actually read at speed - without the car.
+  showGhost: storedFlag('drive.ghostcar', false),
   // Both readouts default off: a number over the road is asked for, not given.
   showFps: storedFlag('drive.fps', false),
   showPing: storedFlag('drive.ping', false),
@@ -215,6 +296,9 @@ function syncTouch() {
 // Boot
 // ---------------------------------------------------------------------------
 function boot() {
+  // Before anything draws, and after `S` has read them: an account playing here
+  // for the first time keeps the settings this browser was already holding.
+  adoptLocalPrefs();
   S.renderer = new Renderer($('gl'));
   loadTrack(S.track);
   bindInput();
@@ -436,7 +520,14 @@ function loadTrack(track, opts = {}) {
   // A lap chased off the board does not survive the trip, though: `run` names a
   // specific lap on a specific track, so it cannot mean anything here.
   if (S.ghostMode === 'run') S.ghostMode = 'me';
-  setGhostMode(S.ghostMode, { quiet: true });
+  // **`remember: false`, because this is the game re-applying what you already
+  // chose.** Arriving and switching track both land here, so a write would mean
+  // three wrong things: a request to `/api/prefs` on every page load, the `me`
+  // two lines up being filed as your standing choice when it is only what a
+  // chased lap falls back to, and - in a room - a `pole` you picked being
+  // rewritten to `me` the next time you opened a time trial, since
+  // `storedGhostMode` filters it out there. Same rule as the ghost car below.
+  setGhostMode(S.ghostMode, { quiet: true, remember: false });
   applyPhase();
   markActiveTrack();
 }
@@ -1221,7 +1312,7 @@ function setGhostMode(mode, opts = {}) {
   // quietly and permanently rewrote a `wr` preference to `me`. Your setting is
   // what you chose, and only you choose it.
   if (opts.remember !== false && mode !== 'run') {
-    try { localStorage.setItem('drive.ghost', mode); } catch (e) {}
+    rememberPref('drive.ghost', mode);
   }
   $('ghostOpts').querySelectorAll('[data-ghost]').forEach(b => {
     // "View others" is a door, not a state - it lights up only while the lap you

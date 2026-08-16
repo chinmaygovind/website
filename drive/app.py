@@ -23,7 +23,8 @@ from sqlalchemy import func
 
 import models as models_mod
 from models import (db, User, DriveStats, DriveTime, DriveStart, DriveRunCheck,
-                    DriveGame, DrivePlayer, DriveRace, DriveGarage, DriveCheatFlag)
+                    DriveGame, DrivePlayer, DriveRace, DriveGarage, DrivePrefs,
+                    DriveCheatFlag)
 import tracks as tracks_mod
 import tuning
 import laptime
@@ -154,6 +155,52 @@ def _garage_row(user, create=False):
         db.session.add(row)
         db.session.commit()
     return row
+
+
+# ---------------------------------------------------------------------------
+# The two settings that follow the account
+# ---------------------------------------------------------------------------
+# The rest of the settings sheet lives in `localStorage` and stays there: Drive
+# is playable with no account, and a per-user table would leave every guest
+# without a memory. These two are the ones worth carrying across a login, and
+# the allow-list is deliberately in one place, checked on the way *in* - the
+# client posts whatever a button was pressed, and a blob nobody validates is how
+# a settings row becomes a place to store arbitrary text against a user id.
+#
+# Adding a third setting is a line here and a line in `ACCOUNT_PREFS` in
+# `game.js`. `pole` is accepted because it is a real choice inside a room; the
+# client filters it back out of a time trial, where it cannot mean anything.
+PREF_SPEC = {
+    "ghost": lambda v: v if v in ("off", "me", "wr", "pole") else None,
+    "ghostcar": lambda v: v if isinstance(v, bool) else None,
+}
+
+
+def _clean_prefs(raw):
+    """What of a posted body is actually a setting. Everything else is dropped."""
+    if not isinstance(raw, dict):
+        return {}
+    out = {}
+    for key, check in PREF_SPEC.items():
+        if key in raw:
+            val = check(raw[key])
+            if val is not None:
+                out[key] = val
+    return out
+
+
+def _prefs_for(user):
+    """What this account has chosen, or None for "nothing yet".
+
+    None rather than `{}` on purpose, and the client reads the difference: an
+    account with no row is one whose settings may still be sitting in the
+    browser it has always played in, and that is the one case where the local
+    copy is adopted rather than ignored. See `adoptLocalPrefs` in `game.js`.
+    """
+    if not user:
+        return None
+    row = DrivePrefs.query.filter_by(user_id=user.id).first()
+    return _clean_prefs(row.prefs) if row else None
 
 
 def _earned_for(user, row=None, holders=None, leaders=None):
@@ -826,6 +873,11 @@ def _play_solo(slug):
         # `color_for(None)` is the one guest red.
         car_color=_car_livery(user)["body"],
         car_livery=script_json(_car_livery(user)),
+        # The settings that follow the account, embedded for the same reason the
+        # livery is: they decide what the first frame looks like, so fetching
+        # them would mean a ghost car appearing a request late. `null` for a
+        # guest, and for an account that has never chosen.
+        prefs_json=script_json(_prefs_for(user)),
         tracks=tracks_mod.summaries(), cards=_track_cards())
 
 
@@ -872,6 +924,38 @@ def api_garage():
     return jsonify(dict(garage_mod.payload(
         user, garage_mod.loads(row.livery_json if row else None), got,
         garage_mod.progress(user)), ok=True))
+
+
+@app.route("/api/prefs", methods=["POST"])
+def api_prefs():
+    """Remember a settings choice against the account rather than the browser.
+
+    POST only. Nothing reads this over HTTP: the page embeds what it needs in
+    `DRIVE_CFG.prefs`, so the settings are right on the first frame rather than
+    after a request - the same reason the livery comes down with the page.
+
+    **A guest is told no and carries on.** They keep the `localStorage` copy
+    every setting has always had; the 401 is what stops `game.js` posting into
+    the void for the rest of the session, not a refusal to let them choose.
+
+    Merged rather than replaced, because the client posts the one switch that
+    moved, and two switches racing each other must not each drop the other.
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"ok": False, "error": "Not logged in."}), 401
+    clean = _clean_prefs(request.json or {})
+    if not clean:
+        return jsonify({"ok": False, "error": "Nothing to save."}), 400
+    row = DrivePrefs.query.filter_by(user_id=user.id).first()
+    if row is None:
+        row = DrivePrefs(user_id=user.id, prefs_json="{}")
+        db.session.add(row)
+    merged = dict(row.prefs, **clean)
+    row.prefs_json = json_mod.dumps(merged)
+    row.updated_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({"ok": True, "prefs": merged})
 
 
 @app.route("/lobbies")
@@ -943,6 +1027,9 @@ def room(code):
         # `color_for(None)` is the one guest red.
         car_color=_car_livery(user)["body"],
         car_livery=script_json(_car_livery(user)),
+        # The settings that follow the account - see `_play_solo`. Every mode
+        # has to pass them: a blank here is a syntax error in the config block.
+        prefs_json=script_json(_prefs_for(user)),
         tracks=tracks_mod.summaries(), cards=_track_cards())
 
 
@@ -1007,6 +1094,9 @@ def race_replay(race_id):
         # `color_for(None)` is the one guest red.
         car_color=_car_livery(user)["body"],
         car_livery=script_json(_car_livery(user)),
+        # The settings that follow the account - see `_play_solo`. Every mode
+        # has to pass them: a blank here is a syntax error in the config block.
+        prefs_json=script_json(_prefs_for(user)),
         # Where the way out of the replay goes. A race is watched from the room
         # that drove it, so the way out of it should be the way back in - and
         # the seat is still there to go back to, see `_seated_room`. `None` is
