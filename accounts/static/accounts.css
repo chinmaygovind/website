@@ -793,6 +793,18 @@ input[type=file] { font: inherit; font-size: 1rem; max-width: 100%; }
 }
 /* The clickpath's own column, where the path *is* the content of the page. */
 .tbl td.clip.wide { max-width: 34rem; }
+/* `max-width` is ignored on a non-replaced *inline* box, so the `max-width`
+   above silently did nothing to the one `.clip` that is a <span> rather than a
+   <td> - the session table's "Landed on" cell. It went unnoticed for as long as
+   entry paths were `/` and `/solo/sunrise`; on 2026-08-15 Drive started being
+   opened from games.crazygames.com, whose embed URL carries a 517-character
+   query string, and that one cell set the width of a `table-layout: auto`
+   table and pushed Pages, For, Browser, From and IP off the right of the
+   screen. Above 1100px there is no scroll container to catch it, so the
+   columns were not narrowed, they were simply gone. Scoped to `span` because
+   `.clip` is on real `<td>`s everywhere else and `inline-block` would break
+   those. */
+span.clip { display: inline-block; vertical-align: bottom; }
 
 .who { display: inline-flex; align-items: center; gap: .45rem; color: var(--ink); }
 .who .av-sm { flex: 0 0 auto; }
