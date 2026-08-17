@@ -64,12 +64,16 @@
     <!-- Who this is, in the form a search engine reads rather than infers. The
          `sameAs` list is the point of it: these profiles already rank for this
          name and this is what tells Google they and this domain are one person.
-         Kept to accounts that are actually his and actually public. -->
+         Kept to accounts that are actually his and actually public.
+         `alternateName` is there because "cgovind" is a thing people type and
+         the page never says it in prose - it is only ever the domain, the
+         HackerOne handle and the email prefix, none of which read as a name. -->
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
         "@type": "Person",
         "name": "Chinmay Govind",
+        "alternateName": "cgovind",
         "url": "https://cgovind.com/",
         "affiliation": {
           "@type": "CollegeOrUniversity",
@@ -79,7 +83,8 @@
           "https://github.com/chinmaygovind/",
           "https://www.linkedin.com/in/chinmaygovind/",
           "https://www.instagram.com/sirchinmay/",
-          "https://www.worldcubeassociation.org/persons/2018GOVI03"
+          "https://www.worldcubeassociation.org/persons/2018GOVI03",
+          "https://hackerone.com/cgovind"
         ]
       }
     </script>
@@ -143,12 +148,19 @@
         width: 100%;
         padding: 1.4rem 3vw;
       }
-      h1 {
+      /* Was the bare `h1` selector, back when "hey!" was the heading. The <h1>
+         is now the welcome line beside it (see the header markup for why), so
+         both of these have to say their own weight and margin rather than
+         inherit a browser default that just moved. */
+      .hey {
         margin: 0;
+        font-weight: bold;
         line-height: 1;
         font-size: clamp(2.5rem, 11vw, 8rem);
       }
       .welcome {
+        margin: 0;
+        font-weight: normal;
         text-align: center;
         line-height: 1.12;
         font-size: clamp(1.1rem, 3vw, 2.8rem);
@@ -1010,12 +1022,20 @@
   </head>
   <body>
     <header class="top">
-      <h1>hey!</h1>
-      <p class="welcome">
+      <!-- **The <h1> is the welcome line, not "hey!", and the swap is only for
+           search.** These render exactly as they did - the two rules in the
+           stylesheet were renamed with them - but a page's <h1> is the one
+           heading a search engine weighs most, and this page's used to be a
+           greeting that contains neither Chinmay's name nor anything anybody
+           searches. The name was one element below it the whole time. "hey!" is
+           still the big word on the left; it is simply a <p> now, which is what
+           a greeting is. -->
+      <p class="hey">hey!</p>
+      <h1 class="welcome">
         <span class="welcome-lead">welcome to</span>
         <span class="name">chinmay govind's</span>
         <span class="welcome-lead welcome-tail">website</span>
-      </p>
+      </h1>
       <address class="contacts">
         <a class="contact" href="mailto:chinmaygov@gmail.com" aria-label="Email chinmaygov@gmail.com">
           <svg viewBox="0 0 512 512" aria-hidden="true"><path d="M48 64C21.5 64 0 85.5 0 112c0 15.1 7.1 29.3 19.2 38.4L236.8 313.6c11.4 8.5 27 8.5 38.4 0L492.8 150.4c12.1-9.1 19.2-23.3 19.2-38.4c0-26.5-21.5-48-48-48H48zM0 176V384c0 35.3 28.7 64 64 64H448c35.3 0 64-28.7 64-64V176L294.4 339.2c-22.8 17.1-54 17.1-76.8 0L0 176z"/></svg>

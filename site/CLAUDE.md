@@ -173,6 +173,16 @@ flash the way this page used to. `drive/` is already `block`, for its own reason
   invalidate the file. They are found the better way: the landing page links to
   all four, and Drive serves its own sitemap from its own host, generated from
   the track pool.
+- **The `<h1>` is the welcome line; "hey!" is a `<p>`** (2026-08-17). They render
+  exactly as before — the stylesheet's bare `h1` rule became `.hey` and both it
+  and `.welcome` now state the `margin`/`font-weight` the browser default used to
+  supply, so neither depends on which tag it happens to be. The swap is only for
+  search: the `<h1>` is the heading weighed most, and this page's was a greeting
+  containing neither Chinmay's name nor anything anybody types, while the name
+  sat in the `<p>` one element below it.
+- **`alternateName: "cgovind"` is in the JSON-LD** because the page never says
+  that string as a name — only as the domain, the HackerOne handle and the email
+  prefix — and "cgovind" is a query Chinmay expects to land here.
 - **`<link rel="canonical">` on the landing page is the www fix.**
   `www.cgovind.com` and `cgovind.com` both answer 200 with no redirect between
   them, so a crawler sees two whole copies of the site. Doing it properly is an
