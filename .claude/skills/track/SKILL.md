@@ -28,9 +28,83 @@ describe what was wrong. That is what made a track take four or five rounds.
 writes PNGs. **Read them.** Fixing what you can see costs one tool call; asking
 the user costs a round trip.
 
+## What made the last one take four hours
+
+Tokyo Drift cost about four hours and **roughly 80% of that was aesthetic
+direction**, not geometry. The layout passed all seventeen track tests on the
+first write. What ate the time was five separate rounds of Chinmay loading the
+page, driving, and saying "it doesn't look like a city", "too purple", "the
+floor is dead", "that's not rain". Each of those is a full round trip.
+
+Two things caused it and both are avoidable:
+
+- **The references were never looked at.** He said "Tokyo city, the Tokyo Drift
+  garage scene, Neo Bowser City" and the whole palette got built from a mental
+  image of those words instead. Pink dusk instead of midnight, brown terrain, a
+  dead floor - all of it findable in ten seconds against one screenshot.
+- **Changes went out one at a time, serially.** Three floor effects were once
+  invented on a hunch, shipped together, and rejected together. That round
+  bought nothing.
+
+So: **references first, then a long list of questions, then build.** Steps 0 and
+0.5 exist to spend ten cheap minutes buying back three expensive hours.
+
 ## Steps
 
-Work through these in order. Do not stop between them to ask permission.
+Work through these in order. Do not stop between them to ask permission,
+**except** for steps 0 and 0.5, whose entire job is to ask.
+
+### 0. Get reference images, and actually look at them
+
+**Ask for two or three pictures of the thing before writing a single colour.**
+
+```
+Before I start - drop me 2-3 reference images of the look you want
+(paste them straight in, or save them somewhere and give me the path).
+A screenshot of the game or film you have in mind is worth more than
+any amount of me describing colours back to you.
+```
+
+**You can only see an image that is pasted into the conversation or that exists
+on disk for the Read tool.** `WebFetch` returns text, so "let me go find a
+reference" does not work - you will get a description of a picture, which is
+exactly the mental-model problem that caused this. If he has no images to hand,
+say so plainly and expect the palette to take an extra round.
+
+Once you have them, **Read every one and write down what you took from it**
+before touching a palette - three or four bullets, in the message:
+
+- the two or three colours that dominate, and roughly how dark the darkest is
+- what is emitting light and what is only reflecting it
+- how much of the frame is sky, ground, and stuff
+- one thing that would be wrong to copy
+
+That written-down version is what you check renders against later. A reference
+you looked at once and did not write down is a reference you have forgotten by
+the third render.
+
+### 0.5. Ask a lot of questions
+
+**At least ten, before any code.** Use `AskUserQuestion` - it takes four at a
+time, so this is three calls and about a minute of clicking for him. Every one
+of these was a question that got answered *after* the track was built last time,
+and each one cost a rebuild.
+
+Ask about the place: setting; time of day and weather; a real place or invented;
+and **how much bespoke geometry it deserves** - palette only, palette plus a
+capability that already exists (`terrain`, `below`, `shore`, an interior, the
+city, rain), or something new written for this track. That last one is the
+single biggest driver of how long it takes, so ask it explicitly rather than
+inferring it.
+
+Ask about the driving: length tier; difficulty; the one signature feature you
+would describe the track by; flowing or technical corners.
+
+Ask about the shape: elevation profile (flat, climb, descent, up-then-down);
+jumps (none, one big, several); boost pads; ground or floating.
+
+Offer a recommendation as the first option in each - he will usually take it,
+and the ones he does not are precisely the ones worth having asked.
 
 ### 1. Write `track.py`
 
@@ -80,6 +154,13 @@ cd drive && venv/bin/python -m pytest tests/test_tracks.py -q -k <slug>
 
 Every failure here is a mistake somebody has already made. Fix them all.
 
+**Only this, and only `-k <slug>`, until the very end.** It is four seconds. The
+full `scripts/tests.sh drive` is eighty and tells you nothing extra about a
+track you are still shaping - it was run six times during the last track, which
+is seven minutes of watching tests about garage badges pass. Run the full suite
+**once**, after step 6, before pushing. Same for `validate_track.py`: it boots a
+browser *and* runs pytest, so it belongs at the end and not in the loop.
+
 ### 3. Measure it against the sixteen that are already good
 
 ```bash
@@ -98,10 +179,18 @@ look fine in code.
 
 ```bash
 cd drive && venv/bin/python tools/track_views.py <slug>
+cd drive && venv/bin/python tools/track_views.py <slug> --at 0.02,0.31,0.5,0.8
 ```
 
-Writes `drive/tools/views/<slug>/plan.png` plus five along the road. **Read every
-one with the Read tool.**
+**Read `views/<slug>/sheet.png` and nothing else.** It tiles the plan view and
+every road view into one picture, so a round is one Read instead of six - and it
+puts the plan and the road side by side, where a leg that left the building and
+the corner it wrecked are visible in the same glance.
+
+**Batch the fractions.** A browser boot is most of what a picture costs, so
+`--at 0.31` four times is four boots and about six minutes; `--at 0.02,0.31,0.5,0.8`
+is one boot and ninety seconds. This is the biggest single difference between a
+fast authoring round and a slow one.
 
 **Read `drive/docs/track-defects.md` first and check the pictures against it.**
 It is short, and it is the running list of everything that has gone wrong in a
@@ -124,6 +213,20 @@ only mechanism that carries a lesson from one track to the next.
   meant.
 
 Fix what you can see, and re-render. This loop is the point of the skill.
+
+**When the thing in doubt is a *look*, render variants and let him choose - do
+not pick one and wait.** Geometry is worth iterating on, because he is attached
+to a layout and wants it nudged. A palette is not: it is cheap, disposable, and
+entirely a matter of taste, so the fast move is three of them in one message.
+Copy the palette to `palette.py`, shoot the sheet, `git stash` it, try the next.
+Three variants in one round beats three rounds of one variant every time, and it
+is the difference between his taste being a slow feedback signal and a fast
+filter.
+
+The same rule kills the worst kind of round: **never invent several aesthetic
+changes at once and ship them together.** Three floor effects once went out on a
+hunch in one go and all three came back rejected, so nothing was learned about
+any of them.
 
 ### 5. Validate
 

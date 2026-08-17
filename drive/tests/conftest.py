@@ -121,24 +121,39 @@ def lap_splits(track, frames):
 
 
 # ---------------------------------------------------------------------------
-# Tracks that have landed but have no board yet
+# Tracks that have landed but are not yet cut to anybody's pace
 # ---------------------------------------------------------------------------
 
 # **Two things in this suite are cut from times people have actually driven**,
-# and neither can exist on the commit that adds a track: `tools/set_medals.py`
-# reads the board, and `tools/hotlap.py` reads the standing record off a running
-# site. Both have a documented fallback - derived medals from `laptime.ideal`,
-# and the relaxed line for the quick bots - so a new track works, it is just not
-# yet *tuned* to anybody's pace.
+# and neither can exist on the commit that adds a track: `tools/hotlap.py` reads
+# the standing record off a running site, and `tools/set_medals.py` reads the
+# board. Both have a documented fallback - the relaxed line for the quick bots,
+# and derived medals from `laptime.ideal` - so a new track works, it is just not
+# yet tuned to anybody's pace. Without somewhere to say that, a new track cannot
+# ship at all: the site has to be live for anyone to drive it and the deploy is
+# gated on this suite.
 #
-# Without somewhere to say that, a new track cannot ship at all: the site has to
-# be live for anyone to drive it, and the deploy is gated on this suite. That is
-# a deadlock, and this set is how it is broken. It is deliberately one list
-# rather than one per test, so a track cannot be forgotten in half of them.
+# **These are two lists and not one, because the two become available at
+# different times.** A hot lap needs exactly one lap to exist. Cut medals need a
+# *board*: gold is `min(5th best, WR x 1.06)`, and on a one-row board the fifth
+# best degenerates to the record itself, so gold comes out equal to the record
+# and nobody but its holder can ever earn it - strictly worse than the soft
+# derived gold it replaced. `drive_times` holds one row per user per track, so a
+# thin board is not fixed by driving more laps; it is fixed by more people
+# playing. Tokyo Drift is the track that found this: it had a hot lap the day it
+# shipped and could not have honest medals for weeks.
 #
-# **Delete the entry once the first laps land**, then re-cut both:
-#     venv/bin/python tools/set_medals.py --db instance/tickettoride.db --write
+# Each test asserts the *absence* of what it is waiting for, so an entry left
+# behind after the real thing lands fails loudly instead of quietly disabling a
+# check.
+
+# Waiting on a single lap. Drop the entry, then:
 #     venv/bin/python tools/hotlap.py <slug> --site https://drive.cgovind.com
-NO_BOARD_YET = {
-    "tokyo",      # added Aug 2026
+NO_HOTLAP_YET = set()
+
+# Waiting on a board deep enough to cut a standard from - five or so distinct
+# players. Drop the entry, then, on the box:
+#     venv/bin/python tools/set_medals.py --db instance/tickettoride.db --write
+NO_CUT_MEDALS_YET = {
+    "tokyo",      # added Aug 2026; one time on the board
 }

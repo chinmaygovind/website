@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import bots as bots_mod                                    # noqa: E402
 import botsim                                              # noqa: E402
 import tracks as tracks_mod                                # noqa: E402
-from conftest import NO_BOARD_YET                          # noqa: E402
+from conftest import NO_HOTLAP_YET                          # noqa: E402
 
 needs_js = pytest.mark.skipif(not botsim.available(),
                               reason="quickjs is not installed")
@@ -113,15 +113,15 @@ def test_every_track_has_a_usable_hot_lap(slug):
     a half-written file.
 
     The exception is a track that has only just landed and has no record to cut
-    a line from at all; see `NO_BOARD_YET` in conftest.
+    a line from at all; see `NO_HOTLAP_YET` in conftest.
     """
     hot = bots_mod.hotlap(slug)
-    if slug in NO_BOARD_YET:
+    if slug in NO_HOTLAP_YET:
         # Still checked, if it is there: an entry left behind after the file
         # arrives would silently stop testing a track that is being tested
         # everywhere else.
         assert not hot, (
-            "tracks/%s has a hotlap.json now - drop it from NO_BOARD_YET in "
+            "tracks/%s has a hotlap.json now - drop it from NO_HOTLAP_YET in "
             "tests/conftest.py so it is checked like every other track" % slug)
         pytest.skip("%s has no record on the board yet, so no fast line" % slug)
     assert hot, "no hotlap.json in tracks/%s - run tools/hotlap.py" % slug

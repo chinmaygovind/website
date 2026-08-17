@@ -12,6 +12,16 @@ revert the sky`.
     cd drive && venv/bin/python tools/track_views.py costco
     cd drive && venv/bin/python tools/track_views.py costco --n 8
     cd drive && venv/bin/python tools/track_views.py spa --at 0.42
+    cd drive && venv/bin/python tools/track_views.py spa --at 0.1,0.3,0.42,0.9
+    cd drive && venv/bin/python tools/track_views.py spa --no-sheet
+
+**`--at` takes a list, and there is a `sheet.png`, and both are about what a
+round costs rather than about what it shows.** A browser boot is nearly all of
+the ninety seconds a run takes, so four separate `--at` calls pay it four times -
+six minutes for four pictures that one call gets in one. And the pictures are
+read by a model, so six files is six reads, six lots of tokens, and six chances
+to look at one and forget another; `sheet.png` tiles them all into one image with
+the plan beside the road views. **Read the sheet, not the parts.**
 
 Writes to `tools/views/<slug>/` (gitignored - these are working pictures, not
 assets):
@@ -20,6 +30,7 @@ assets):
     at-000.png    on the road at the start
     at-020.png    ...a fifth of the way round
     ...
+    sheet.png     all of the above, tiled and labelled - the one to read
 
 **What each view is for.** The plan is the one that finds mistakes: a leg that
 left the building, a hairpin that bulged into the aisle beside it, a closing
@@ -64,7 +75,8 @@ def main(argv):
 
     if not args:
         print(__doc__.strip().splitlines()[0])
-        print("\nusage: track_views.py <slug> [--n 5] [--at 0.42] [--plan-only]")
+        print("\nusage: track_views.py <slug> [--n 5] [--at 0.1,0.4,0.8] "
+              "[--plan-only] [--no-sheet]")
         return 1
     slug = args[0]
 
@@ -82,7 +94,11 @@ def main(argv):
         return 1
 
     if "at" in opts:
-        fracs = [float(opts["at"])]
+        # A list, because a browser boot is most of what a picture costs and
+        # asking for three fractions one at a time paid it three times. This is
+        # the single biggest thing between an authoring round taking twenty
+        # seconds and taking two minutes.
+        fracs = [float(x) for x in str(opts["at"]).replace(" ", "").split(",") if x]
     elif "plan-only" in opts:
         fracs = []
     else:
@@ -109,12 +125,69 @@ def main(argv):
                                     if size else "FAILED"))
         errors = list(cam.errors)
 
+    if "no-sheet" not in opts:
+        sheet = _sheet(where, [n for n, _ in shots])
+        if sheet:
+            print("    %-14s %6.1f kB   <- read this one"
+                  % ("sheet.png", os.path.getsize(sheet) / 1024.0))
+
     if errors:
         print("\n  JS errors - a track whose scenery throws still renders the road:")
         for url, msg in errors:
             print("    ! %s" % msg)
         return 1
     return 0
+
+
+def _sheet(where, names):
+    """Tile every view into one picture.
+
+    **This exists because of what an authoring round actually costs.** The
+    pictures are looked at by a model, and six separate PNGs is six reads - six
+    round trips, six lots of tokens, and six chances to look at one and forget
+    another. One sheet is one read, and it has the useful side effect of putting
+    the plan view and the road views side by side, where a leg that left the
+    building and the corner it wrecked are visible in the same glance.
+
+    Pillow is already a dependency (`requirements.txt`, for the profile-picture
+    flow), so this costs nothing to have.
+    """
+    try:
+        from PIL import Image, ImageDraw
+    except Exception:
+        return None
+    ims = []
+    for n in names:
+        p = os.path.join(where, n)
+        if os.path.exists(p):
+            ims.append((n, Image.open(p).convert("RGB")))
+    if not ims:
+        return None
+    # Two columns: wide enough that a road view is still readable, few enough
+    # that the sheet is not so tall it gets scaled into uselessness.
+    cols = 2
+    tw = 620
+    scaled = []
+    for n, im in ims:
+        h = max(1, round(im.height * tw / im.width))
+        scaled.append((n, im.resize((tw, h), Image.LANCZOS)))
+    rows = (len(scaled) + cols - 1) // cols
+    rh = [max(s[1].height for s in scaled[r * cols:(r + 1) * cols]) for r in range(rows)]
+    pad, label = 6, 16
+    out = Image.new("RGB", (cols * tw + (cols + 1) * pad,
+                            sum(rh) + rows * (label + pad) + pad), (18, 18, 22))
+    d = ImageDraw.Draw(out)
+    y = pad
+    for r in range(rows):
+        x = pad
+        for n, im in scaled[r * cols:(r + 1) * cols]:
+            d.text((x + 2, y), n, fill=(190, 190, 200))
+            out.paste(im, (x, y + label))
+            x += tw + pad
+        y += rh[r] + label + pad
+    path = os.path.join(where, "sheet.png")
+    out.save(path)
+    return path
 
 
 def _length(track):
