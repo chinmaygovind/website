@@ -311,9 +311,21 @@ def test_laptime_does_not_drive_a_cap_like_tarmac():
         % (real, as_road))
 
 
+@pytest.mark.slow
 def test_the_cap_model_changes_nothing_on_a_track_without_any():
     """The seventeen tracks that predate this have to be untouched, the same way
-    the boost loop had to be a no-op on the twelve that predated pads."""
+    the boost loop had to be a no-op on the twelve that predated pads.
+
+    **Marked `slow`, and it is the first test in drive to need it.** This relaxes
+    and speed-profiles the whole pool twice - 34 of the most expensive thing in
+    `laptime.py` - so it costs 4.6s on a laptop and 11.7s on a slow CI runner,
+    where it tripped the 10s per-test budget one run after passing on a runner
+    that did the same suite 25% quicker. It is neither of the two things that
+    budget is looking for: no sleep, and the loop is O(pool) on purpose. Raising
+    the budget instead would have been the wrong lever - 10s is deliberately
+    under the 12s sleep that prompted it, so a budget loose enough for this test
+    could no longer catch that. See `tests/conftest.py`.
+    """
     for t in tracks_mod.TRACKS:
         if any(e.get("bn") for e in t["line"]):
             continue

@@ -16,10 +16,12 @@ under `pytest-xdist` (`-n 4 --dist loadfile`), where `pytest_sessionfinish` runs
 per worker and an exit status set there does not reliably reach the controller. A
 failed report does, and it names the culprit instead of just the total.
 
-Mark a test `@pytest.mark.slow` to opt out. Nothing in drive needs it today - the
-slowest legitimate test is `test_a_real_lap_passes_the_anti_cheat[rainbow]` at about
-1.6s, so the 5s budget leaves 3x headroom - and that is the point: if something needs
-the marker, that is a decision somebody should make on purpose.
+Mark a test `@pytest.mark.slow` to opt out, which is a decision somebody should make
+on purpose. **Exactly one test in drive has needed it**, and it is worth knowing which
+kind: `test_the_cap_model_changes_nothing_on_a_track_without_any` speed-profiles the
+whole track pool twice, so it is O(pool) rather than slow by accident, and it grows
+every time a track is added. That is the honest use of the marker - the guard is for
+a sleep or a loop that grew *unnoticed*, and a test whose cost is the point is neither.
 """
 
 import pytest
