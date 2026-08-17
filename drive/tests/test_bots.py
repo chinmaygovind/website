@@ -29,6 +29,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import bots as bots_mod                                    # noqa: E402
 import botsim                                              # noqa: E402
 import tracks as tracks_mod                                # noqa: E402
+from conftest import NO_BOARD_YET                          # noqa: E402
 
 needs_js = pytest.mark.skipif(not botsim.available(),
                               reason="quickjs is not installed")
@@ -102,22 +103,6 @@ def test_a_room_never_seats_two_bots_with_the_same_name():
 # The recorded fast lines
 # ---------------------------------------------------------------------------
 
-# Tracks nobody has set a time on yet, so there is no record to cut a fast line
-# from. **This is the one case where a missing hot lap is not a mistake**, and
-# without somewhere to say so a new track cannot be shipped at all: `hotlap.py`
-# reads `/api/ghost/<slug>?who=wr` off a running site, the site has to be live
-# for anyone to drive it, and the deploy is gated on this suite. That is a
-# deadlock, and the entry below is how it is broken.
-#
-# **Delete the entry the day the first record lands**, then:
-#     venv/bin/python tools/hotlap.py <slug> --site https://drive.cgovind.com
-# Until then the quick bots drive the relaxed line on it and are slower, which
-# is the documented fallback and costs nothing else.
-NO_RECORD_YET = {
-    "tokyo",      # added Aug 2026; needs a lap on the live board
-}
-
-
 @pytest.mark.parametrize("slug", [t["slug"] for t in tracks_mod.TRACKS])
 def test_every_track_has_a_usable_hot_lap(slug):
     """`tools/hotlap.py` has been run and what it wrote still lines up.
@@ -128,16 +113,16 @@ def test_every_track_has_a_usable_hot_lap(slug):
     a half-written file.
 
     The exception is a track that has only just landed and has no record to cut
-    a line from at all; see `NO_RECORD_YET`.
+    a line from at all; see `NO_BOARD_YET` in conftest.
     """
     hot = bots_mod.hotlap(slug)
-    if slug in NO_RECORD_YET:
+    if slug in NO_BOARD_YET:
         # Still checked, if it is there: an entry left behind after the file
         # arrives would silently stop testing a track that is being tested
         # everywhere else.
         assert not hot, (
-            "tracks/%s has a hotlap.json now - drop it from NO_RECORD_YET in "
-            "tests/test_bots.py so it is checked like every other track" % slug)
+            "tracks/%s has a hotlap.json now - drop it from NO_BOARD_YET in "
+            "tests/conftest.py so it is checked like every other track" % slug)
         pytest.skip("%s has no record on the board yet, so no fast line" % slug)
     assert hot, "no hotlap.json in tracks/%s - run tools/hotlap.py" % slug
     n = len(hot["p"])

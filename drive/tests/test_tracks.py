@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import laptime
 import tracks as tracks_mod
 import tuning as T
+from conftest import NO_BOARD_YET
 
 ALL = tracks_mod.TRACKS
 IDS = [t["slug"] for t in ALL]
@@ -315,6 +316,14 @@ def test_gold_is_cut_from_the_board_and_not_from_the_estimate(track):
     because a track quietly falling back is a track whose gold went soft and
     nothing else would say so.
     """
+    if track["slug"] in NO_BOARD_YET:
+        # A track nobody has driven has no times to cut from, so it uses the
+        # derivation this test exists to forbid - see `NO_BOARD_YET`. Asserted
+        # the other way so a stale entry cannot hide a real fallback.
+        assert not track["medal_times"], (
+            "%s has cut medal times now - drop it from NO_BOARD_YET in "
+            "tests/conftest.py" % track["slug"])
+        pytest.skip("%s has no board to cut medals from yet" % track["slug"])
     assert track["medal_times"], (
         "%s has no cut medal times - run tools/set_medals.py" % track["slug"])
     assert track["medals"]["gold"] == track["medal_times"][0]

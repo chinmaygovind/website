@@ -118,3 +118,27 @@ def lap_splits(track, frames):
         at = hits[0] if hits else at
         out.append(int(round(at / runcheck.GHOST_HZ * 1000)))
     return out
+
+
+# ---------------------------------------------------------------------------
+# Tracks that have landed but have no board yet
+# ---------------------------------------------------------------------------
+
+# **Two things in this suite are cut from times people have actually driven**,
+# and neither can exist on the commit that adds a track: `tools/set_medals.py`
+# reads the board, and `tools/hotlap.py` reads the standing record off a running
+# site. Both have a documented fallback - derived medals from `laptime.ideal`,
+# and the relaxed line for the quick bots - so a new track works, it is just not
+# yet *tuned* to anybody's pace.
+#
+# Without somewhere to say that, a new track cannot ship at all: the site has to
+# be live for anyone to drive it, and the deploy is gated on this suite. That is
+# a deadlock, and this set is how it is broken. It is deliberately one list
+# rather than one per test, so a track cannot be forgotten in half of them.
+#
+# **Delete the entry once the first laps land**, then re-cut both:
+#     venv/bin/python tools/set_medals.py --db instance/tickettoride.db --write
+#     venv/bin/python tools/hotlap.py <slug> --site https://drive.cgovind.com
+NO_BOARD_YET = {
+    "tokyo",      # added Aug 2026
+}
