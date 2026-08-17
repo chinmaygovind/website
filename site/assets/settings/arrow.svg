@@ -1,0 +1,10 @@
+<!-- Cursor picker: the ordinary pointer, drawn here only so that "giant" can
+     render it at any size. A CSS `cursor: url(...)` is capped at 128x128 and
+     ignored outright by some browsers when it is an SVG, so every drawn cursor
+     on this page is a DOM element that follows the mouse instead. The tip is
+     at (2, 2), which is the hotspot the script positions by. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 92" width="64" height="92">
+  <path d="M4 4 L4 70 L21 55 L32 80 L44 74 L33 50 L55 48 Z"
+        fill="#ffffff" stroke="#141414" stroke-width="6"
+        stroke-linejoin="round" stroke-linecap="round" />
+</svg>

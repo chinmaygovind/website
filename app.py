@@ -16,6 +16,8 @@ import base64
 import hmac
 import json
 import os
+import subprocess
+import sys
 import threading
 import time
 from urllib import error as urlerror
@@ -23,6 +25,7 @@ from urllib import parse as urlparse
 from urllib import request as urlrequest
 
 import accounts
+import flask
 from dotenv import load_dotenv
 from flask import Flask, redirect, request, send_from_directory, abort
 from werkzeug.utils import safe_join
@@ -155,6 +158,66 @@ def github_commits():
     _github_cache["commits"] = commits
     _github_cache["fetched_at"] = now
     return {"commits": commits}
+
+
+# What the settings popup's "about" panel reads. Four of its rows are facts only
+# the server knows - which commit is deployed, when it was committed, how big the
+# static tree is, and how long this process has been up - and the page has no
+# build step to bake any of them in at deploy time, so it asks.
+#
+# **Everything here is measured once and cached for the life of the process**,
+# which is exactly right for all four: the checkout cannot change under a running
+# gunicorn (the deploy resets the tree and *then* restarts the service), and the
+# start time is by definition fixed. So this shells out to git twice on the first
+# request of a boot and never again. `started` is the one field recomputed per
+# request, since the whole point of it is that it counts up.
+#
+# It fails to an empty dict rather than a 500: the box has a full checkout (the
+# deploy does `git reset --hard`), but a plain `pip install` copy or a source
+# tarball has no `.git`, and a settings panel is not worth taking a page down
+# for. The client hides any row whose value is missing.
+_APP_STARTED = time.time()
+_version_cache = None
+
+
+def _git(*args):
+    """One `git` call in the repo, or "" if git or the checkout is unavailable."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", BASE_DIR, *args],
+            capture_output=True, text=True, timeout=5,
+        )
+        return out.stdout.strip() if out.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+@app.route("/api/version")
+def version():
+    """Deployed commit, its date, the size of site/, and this process's uptime."""
+    global _version_cache
+    if _version_cache is None:
+        # os.walk over site/ is ~600MB of media but only ever stats it, never
+        # reads it. Still, it is the reason this whole dict is cached rather
+        # than the git calls alone.
+        total = 0
+        for root, _dirs, files in os.walk(SITE_DIR):
+            for name in files:
+                try:
+                    total += os.path.getsize(os.path.join(root, name))
+                except OSError:
+                    pass
+        _version_cache = {
+            "commit": _git("rev-parse", "--short", "HEAD"),
+            "commits": _git("rev-list", "--count", "HEAD"),
+            "committed": _git("log", "-1", "--format=%cI"),
+            "bytes": total,
+            "runtime": "Python %d.%d · Flask %s" % (
+                sys.version_info[0], sys.version_info[1],
+                getattr(flask, "__version__", "?"),
+            ),
+        }
+    return dict(_version_cache, uptime=int(time.time() - _APP_STARTED))
 
 
 # Steps walked today, for the same "fast facts" list. **Nothing here fetches

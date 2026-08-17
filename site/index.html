@@ -4,31 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="favicon.ico" />
-    <!-- The name is in the title because the search that should land here is
-         somebody's name, not "website". It was "Chinmay's Website", which is
-         the one phrasing that contains neither the thing people type nor the
-         domain they would recognise. -->
     <title>Chinmay Govind | cgovind.com</title>
     <meta
       name="description"
       content="Welcome to cgovind.com! Check out my projects, games, and other stuff."
     />
-    <!-- **The canonical is the whole of the www fix.** `www.cgovind.com` and
-         `cgovind.com` both answer 200 with no redirect between them, so a
-         crawler sees two complete copies of the site and splits the credit for
-         it across both. Doing that properly is an nginx redirect, and the
-         deploy deliberately never touches nginx - this settles which of the two
-         addresses is the real one without needing a hand-applied config change,
-         and stays correct if one is ever added. -->
     <link rel="canonical" href="https://cgovind.com/" />
-    <!-- The whole page is set in this one face, so it is fetched here at the top
-         of the head rather than when the first text needs it. Without the
-         preload the browser only discovers the font *after* it has parsed the
-         stylesheet below and laid out something that uses it, which is late
-         enough to be visible. `crossorigin` is not optional and not about
-         hosting: fonts are fetched in CORS mode even same-origin, and a preload
-         whose mode does not match the real request is thrown away and fetched
-         again - a preload that costs an extra 139KB and saves nothing. -->
     <link
       rel="preload"
       href="fonts/xkcd-script.woff2"
@@ -38,36 +19,17 @@
     />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="cgovind.com" />
-    <!-- Kept word-for-word the same as the <title> and description above, so the
-         Discord/iMessage/Slack card and the Google result say one thing rather
-         than two. Change one, change the other. -->
     <meta property="og:title" content="Chinmay Govind | cgovind.com" />
     <meta
       property="og:description"
       content="Welcome to cgovind.com! Check out my projects, games, and other stuff."
     />
     <meta property="og:url" content="https://cgovind.com/" />
-    <!-- The favicon guy, not a game icon. This was `assets/icons/drive.png`,
-         which put the Drive steering wheel on every share of the site itself -
-         one of four tiles standing in for the whole page. `favicon.png` is the
-         256x256 frame out of `favicon.ico`, extracted because a `.ico` is not
-         reliably rendered as an `og:image`. It is deliberately opaque: the
-         drawing is black line art, so on a transparent background it would be
-         invisible against Discord's dark card. -->
     <meta property="og:image" content="https://cgovind.com/favicon.png" />
     <meta property="og:image:width" content="256" />
     <meta property="og:image:height" content="256" />
     <meta property="og:image:alt" content="A stick figure in a top hat" />
-    <!-- `summary`, not `summary_large_image`: the image is a square drawing, and
-         the wide card would crop it to a letterbox strip of its middle. -->
     <meta name="twitter:card" content="summary" />
-    <!-- Who this is, in the form a search engine reads rather than infers. The
-         `sameAs` list is the point of it: these profiles already rank for this
-         name and this is what tells Google they and this domain are one person.
-         Kept to accounts that are actually his and actually public.
-         `alternateName` is there because "cgovind" is a thing people type and
-         the page never says it in prose - it is only ever the domain, the
-         HackerOne handle and the email prefix, none of which read as a name. -->
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -89,17 +51,6 @@
       }
     </script>
     <style>
-      /* **`block`, not `swap`, and the difference is the flash.** `swap` means
-         "draw the text in Comic Sans now and re-draw it in this font whenever it
-         turns up", so every load where the font was not already in hand painted
-         the page in the wrong face first. `block` holds the text invisible
-         instead, for up to three seconds, then paints it once and correctly -
-         and with the preload above plus the year-long cache app.py now puts on
-         `/fonts/`, the wait is a first-visit-only fraction of a second.
-         `optional` was the other candidate and is worse here: it never swaps
-         late, so one slow first load would leave the *entire* page in Comic Sans
-         until a reload. The woff2 is the same font 23% smaller (182KB -> 139KB);
-         the woff stays behind it for anything that cannot read woff2. */
       @font-face {
         font-family: "xkcd Script";
         src: url("fonts/xkcd-script.woff2") format("woff2"),
@@ -107,6 +58,7 @@
         font-display: block;
       }
       :root {
+        color-scheme: light;
         --charcoal: #333333;
         --poker: #16295c;
         --whale: #1565c0;
@@ -117,29 +69,85 @@
         --drive: #3d8bfd;
         --music: #000000;
         --settings: #000000;
-        /* the colour a modal draws its edge, title and picture frames in; every
-           .modal-<name> below overrides it with its own */
         --accent: var(--charcoal);
         --link: #1a56ff;
         --per-orange: #e5601a;
+
+        --bg: #ffffff;
+        --fg: #000000;
+        --panel: #ffffff;
+        --hair: rgba(0, 0, 0, 0.12);
+        --wash: rgba(0, 0, 0, 0.02);
+        --wash-2: rgba(0, 0, 0, 0.06);
+        --faint: rgba(0, 0, 0, 0.4);
+        --thumb: rgba(0, 0, 0, 0.28);
+        --thumb-hover: rgba(0, 0, 0, 0.5);
+        --name-blue: blue;
+
+        --penn-red: #990000;
+        --penn-blue: #2f70f0;
+        --fav-blue: #1a56ff;
+        --dedede-gold: #d4a017;
+        --dedede-blue: #2a63c9;
+        --star: #f5b301;
+
         --tile: clamp(110px, min(14vw, 30vh), 240px);
+      }
+      html[data-theme="dark"] {
+        color-scheme: dark;
+        --charcoal: #d8d8d8;
+        --poker: #7f9ae8;
+        --whale: #5aa9f0;
+        --racing: #ff6b7a;
+        --ttr: #c69a72;
+        --ers: #e8c04a;
+        --kot: #b07ede;
+        --drive: #6ea8ff;
+        --music: #e8e8e8;
+        --settings: #e8e8e8;
+        --link: #7aa2ff;
+        --per-orange: #ff8a4a;
+
+        --bg: #101114;
+        --fg: #ececec;
+        --panel: #191b20;
+        --hair: rgba(255, 255, 255, 0.16);
+        --wash: rgba(255, 255, 255, 0.03);
+        --wash-2: rgba(255, 255, 255, 0.08);
+        --faint: rgba(255, 255, 255, 0.42);
+        --thumb: rgba(255, 255, 255, 0.28);
+        --thumb-hover: rgba(255, 255, 255, 0.5);
+        --name-blue: #7fa6ff;
+
+        --penn-red: #ff6b6b;
+        --penn-blue: #7fa6ff;
+        --fav-blue: #7aa2ff;
+        --dedede-gold: #e8bb43;
+        --dedede-blue: #6f9dff;
+        --star: #ffc93c;
       }
       * { box-sizing: border-box; }
       html, body {
         margin: 0;
-        background: #fff;
+        background: var(--bg);
       }
       body {
-        color: #000;
+        color: var(--fg);
         font-family: "xkcd Script", "Comic Sans MS", cursive;
         min-height: 100vh;
         min-height: 100dvh;
         display: flex;
         flex-direction: column;
       }
+      html, body, .modal-box, .pane-right {
+        transition: background-color 0.25s ease, color 0.25s ease,
+                    border-color 0.25s ease;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html, body, .modal-box, .pane-right { transition: none; }
+      }
       p { margin: 0; }
 
-      /* ---- header ---- */
       .top {
         display: grid;
         grid-template-columns: 1fr auto 1fr;
@@ -148,10 +156,6 @@
         width: 100%;
         padding: 1.4rem 3vw;
       }
-      /* Was the bare `h1` selector, back when "hey!" was the heading. The h1
-         is now the welcome line beside it (see the header markup for why), so
-         both of these have to say their own weight and margin rather than
-         inherit a browser default that just moved. */
       .hey {
         margin: 0;
         font-weight: bold;
@@ -169,7 +173,7 @@
       .welcome-tail { margin-top: 0.5em; }
       .name {
         display: block;
-        color: blue;
+        color: var(--name-blue);
         font-size: clamp(1.9rem, 6vw, 5.8rem);
         line-height: 1.04;
       }
@@ -185,37 +189,18 @@
         display: flex;
         align-items: center;
         gap: 0.6rem;
-        color: #000;
+        color: var(--fg);
         text-decoration: none;
         white-space: nowrap;
       }
       .contact svg {
         width: 1.35em;
         height: 1.35em;
-        fill: #000;
+        fill: currentColor;
         flex-shrink: 0;
       }
       .contact-name { text-decoration: none; }
 
-      /* ---- tile grid (imaginary 6 x 2 squares) ----
-         Two labelled rows rather than one twelve-slot grid: the split was
-         always there (six about me, then the games) and now it says so.
-
-         **The tiles are exactly where they were before there were any labels.**
-         Each row is still a `repeat(6, --tile)` grid - six columns even in the
-         row with only four things in it, which is what keeps the two rows lined
-         up with each other and both of them where the single grid put them -
-         and the row is `width: max-content` centred, which is what
-         `justify-content: center` was doing.
-
-         The label is what pays for that: it is `position: absolute` against the
-         row, so it takes no space at all and hangs in whatever margin is left
-         over beside six tiles. `right: 100%` is the outside of the row's own
-         box, and because the row is max-content that box is the tiles. There is
-         not much margin (68px at 1440), so it is small type and may wrap to two
-         lines - `max-width` is that margin, measured in the only terms
-         available here: half of the viewport minus the row, which is what
-         `(100vw - 100%) / 2` says when `100%` is the row's own width. */
       .tiles {
         flex: 1;
         display: flex;
@@ -241,29 +226,14 @@
         transform: translateY(-50%);
         margin: 0;
         padding-right: 0.5rem;
-        /* `width: max-content` and not the shrink-to-fit an absolute box gets by
-           default. The element sits entirely *outside* its containing block, so
-           the space available to it computes as none and shrink-to-fit collapses
-           it to its longest word - "ABOUT ME" broke into two lines even on a
-           1920 screen with 192px of margin to sit in. Sized to its content and
-           then clamped, it takes one line wherever one line fits. */
         width: max-content;
         max-width: max(3rem, calc((100vw - 100%) / 2 - 0.5rem));
         font-weight: 400;
-        /* The floor stays where it is while the middle and the cap go up. Under
-           about 1046px the floor is what applies, and that is the band where
-           the margin is tightest - at 901px there is 42px of it and "ABOUT" is
-           37px of word, and a word cannot wrap. */
         font-size: clamp(0.8rem, 1.3vw, 1.45rem);
         letter-spacing: 0.05em;
         line-height: 1.2;
         text-align: right;
       }
-      /* Below about 900px there is no margin to hang it in: `--tile` has
-         bottomed out at its 110px floor while the screen keeps shrinking, so
-         six tiles and their gaps are most of the page. There the label comes
-         back into the flow above its own row, spanning the grid so it lines up
-         with the first tile - which is what the phone wants anyway. */
       @media (max-width: 900px) {
         .rowlabel {
           position: static;
@@ -272,16 +242,9 @@
           max-width: none;
           padding-right: 0;
           grid-column: 1 / -1;
-          /* Beside its row the label is right-aligned, hard against the tiles.
-             Above the row there is nothing to sit against, and the grid it is
-             heading is itself centred (`.tilerow` is `width: max-content;
-             margin: 0 auto`), so the label centres over it rather than hanging
-             off the left edge. */
           text-align: center;
           font-size: clamp(1.25rem, 2.8vw, 1.7rem);
         }
-        /* A label above its row needs more air between the rows than one
-           beside it, or GAMES sits on the row above's captions. */
         .tiles { gap: 1.3rem; }
       }
       .tile {
@@ -298,9 +261,7 @@
         align-items: center;
         justify-content: center;
         gap: 0.4rem;
-        transition: transform 0.15s ease;
       }
-      .tile:hover { transform: translateY(-4px); }
       .tile-art {
         flex: 1;
         width: 100%;
@@ -319,7 +280,6 @@
         letter-spacing: 0.06em;
       }
 
-      /* ---- modal ---- */
       .modal {
         position: fixed;
         inset: 0;
@@ -336,16 +296,12 @@
         inset: 0;
         background: rgba(0, 0, 0, 0.55);
       }
-      /* Each modal declares its colour once, as --accent, and everything inside
-         it that is drawn in that colour reads the variable: the box's own edge,
-         the title, and every picture frame. Before this the same hex was named
-         in three places per tile and the frames had drifted apart. */
       .modal-box {
         position: relative;
         width: min(1150px, 94vw);
         height: min(780px, 90vh);
         height: min(780px, 90dvh);
-        background: #fff;
+        background: var(--panel);
         border: 7px solid var(--accent);
         border-radius: 16px;
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
@@ -399,7 +355,7 @@
       }
       .pane-left { overflow: auto; position: relative; }
       .pane-right {
-        border-left: 1px solid rgba(0, 0, 0, 0.12);
+        border-left: 1px solid var(--hair);
         gap: 1rem;
         overflow: hidden;
       }
@@ -408,17 +364,11 @@
         font-size: clamp(1.6rem, 3vw, 2.6rem);
         color: var(--accent);
       }
-      /* A second copy of the resume modal's title, sitting with the PDF so that
-         the phone layout can put the PDF first and still lead with a heading.
-         `display: none` keeps it out of the accessibility tree too, so exactly
-         one of the two is ever a heading. */
       .title-mobile { display: none; }
       .pane-text {
         font-size: clamp(1.1rem, 2vw, 1.6rem);
         line-height: 1.5;
       }
-      /* `p { margin: 0 }` up top, so a second paragraph would otherwise run
-         straight on from the first with nothing between them. */
       .pane-text + .pane-text { margin-top: 0.7em; }
       .facts {
         margin: 0;
@@ -434,8 +384,6 @@
         align-items: baseline;
         flex-wrap: wrap;
       }
-      /* `display: flex` above beats `hidden`'s UA `display: none`, so a row
-         that starts hidden (the steps line) needs this to actually stay hidden. */
       .fact[hidden] { display: none; }
       .fact dt, .fact dd { margin: 0; }
       .fact dt::after { content: ":"; }
@@ -443,13 +391,12 @@
         color: var(--link);
         text-decoration: underline;
       }
-      .penn-red { color: #990000; }
-      .penn-blue { color: #2f70f0; }
-      .fav-blue { color: #1a56ff; }
-      /* King Dedede: the gold of the crown, the blue of the king */
-      .dedede-gold { color: #d4a017; }
-      .dedede-blue { color: #2a63c9; }
-      .star { color: #f5b301; }
+      .penn-red { color: var(--penn-red); }
+      .penn-blue { color: var(--penn-blue); }
+      .fav-blue { color: var(--fav-blue); }
+      .dedede-gold { color: var(--dedede-gold); }
+      .dedede-blue { color: var(--dedede-blue); }
+      .star { color: var(--star); }
       .pdf-wrap {
         flex: 1;
         min-height: 0;
@@ -458,15 +405,8 @@
         width: 100%;
         height: 100%;
       }
-      /* The phone stand-in for that iframe, swapped in at 760px. It carries no
-         background here on purpose: a background image declared inside a media
-         query that does not match is never fetched, so a desktop pays nothing
-         for a 170KB picture it will not show. */
       .pdf-shot { display: none; }
-      /* The heading over the fast facts, likewise phones only - on a wide screen
-         the facts sit directly under the modal's own "resume" title. */
       .facts-heading { display: none; }
-      /* poker: center the video embed vertically in its pane */
       .modal-poker .pane-right { justify-content: center; }
       .video-wrap {
         width: 100%;
@@ -479,7 +419,6 @@
         border: 0;
         display: block;
       }
-      /* stacked media (whales article + poster, racing placeholders) */
       .media {
         flex: 1;
         min-height: 0;
@@ -490,15 +429,6 @@
       .media-frame { flex: 1; min-height: 0; }
       .media-frame a { display: contents; }
 
-      /* ---- fit frame ----
-         One filled box that takes any aspect ratio. A photo whose shape does not
-         match its slot leaves empty space either side; cropping it loses the shot
-         and letterboxing it leaves a dead bar. So the frame is filled with a
-         blurred, blown-up copy of that same photo, with the shot on top at its own
-         aspect ratio -- the leftover space becomes the shot's own colour.
-         Used by every modal photo AND by the concert stage. `fitFrame` in the
-         script is the only thing that adds it, because the backdrop has to be the
-         media's own src and there is no build step to author that twice. */
       .fit-frame {
         position: relative;
         overflow: hidden;
@@ -516,8 +446,6 @@
         filter: blur(26px) saturate(1.4) brightness(0.6);
         transform: scale(1.2);
       }
-      /* position:relative keeps the media above .fit-bg, which is absolutely
-         positioned and would otherwise paint over a static sibling */
       .fit-frame img,
       .fit-frame video {
         position: relative;
@@ -530,15 +458,6 @@
       }
       .fit-frame .placeholder { position: relative; }
 
-      /* ---- the frame ----
-         Every picture, clip and PDF in every modal is framed the same way: a 2px
-         line in that modal's --accent, 6px corners, drawn on the *box* and never
-         on the media inside it. On the media it traced the shot and left the
-         blurred filler outside the line, which reads as two rectangles rather
-         than one - worst in racing, where a wide screenshot in a tall slot drew
-         a small red box floating in grey. Drive was the only one that already
-         had it right and now it is the rule. `overflow: hidden` is what makes
-         the corners real: the shot and its backdrop are both clipped to them. */
       .media-frame,
       .pdf-frame,
       .pdf-shot,
@@ -548,18 +467,10 @@
         border-radius: 6px;
         overflow: hidden;
       }
-      /* the frame carries the line, so the media inside it carries none - and no
-         corners of its own either, since it is clipped to the frame's */
       .media-img {
         border: 0;
         border-radius: 0;
       }
-      /* drive's two are a 16:9 clip over a 16:9 still, and each frame is exactly
-         the shape of what is in it rather than stretching to the pane: a 16:9
-         picture in a full-height slot is a small image between two tall bars of
-         its own blurred backdrop. `min-height: 0` with `flex-shrink: 1` lets the
-         pair give way on a short screen instead of overflowing, and the column
-         is centred in the pane rather than filling it. */
       .modal-drive .pane-right { justify-content: center; }
       .modal-drive .media { flex: 0 1 auto; }
       .modal-drive .media-frame {
@@ -567,21 +478,17 @@
         aspect-ratio: 16 / 9;
         min-height: 0;
       }
-      /* art that is not here yet: the same 2px line and the same corners as a
-         real frame, dashed and washed out so it reads as a slot rather than a
-         picture. The grey line first is the fallback for a browser without
-         `color-mix` - it is what this was before, so nothing gets worse. */
       .placeholder {
         flex: 1;
         min-height: 0;
         display: flex;
         align-items: center;
         justify-content: center;
-        border: 2px dashed rgba(0, 0, 0, 0.25);
-        border-color: color-mix(in srgb, var(--accent) 40%, #fff);
+        border: 2px dashed var(--hair);
+        border-color: color-mix(in srgb, var(--accent) 40%, var(--panel));
         border-radius: 6px;
-        background: rgba(0, 0, 0, 0.02);
-        color: rgba(0, 0, 0, 0.4);
+        background: var(--wash);
+        color: var(--faint);
         font-size: clamp(1rem, 1.6vw, 1.3rem);
         text-align: center;
         padding: 1rem;
@@ -593,14 +500,11 @@
         color: var(--link);
         text-decoration: underline;
       }
-      /* Penn Electric Racing is orange, not the racing modal's red. */
       .per-link {
         color: var(--per-orange);
         text-decoration: underline;
         font-weight: 700;
       }
-      /* poker: the list of things Chinmay learned from. Bulletless, because the
-         bullet lands miles from the text at this font size. */
       .link-list {
         margin: 0.9rem 0 0;
         padding: 0;
@@ -615,7 +519,6 @@
         opacity: 0.6;
       }
 
-      /* ---- music tile: spotify + concert gallery ---- */
       .spotify-section {
         margin-top: 1.4rem;
         display: flex;
@@ -639,11 +542,6 @@
         flex-direction: column;
         gap: 0.7rem;
         overflow-y: auto;
-        /* Exactly four rows: 4 x 54px of album art + 3 x 0.7rem of gap. The
-           list scrolls, and a scroll box cut *between* two rows reads as a
-           list that continues, while one cut through the middle of a row
-           reads as a broken page. Every size below re-does this sum with its
-           own row height rather than picking a round number. */
         max-height: 250px;
       }
       .spotify-tracks::-webkit-scrollbar {
@@ -654,11 +552,11 @@
         background: transparent;
       }
       .spotify-tracks::-webkit-scrollbar-thumb {
-        background: rgba(0, 0, 0, 0.28);
+        background: var(--thumb);
         border-radius: 999px;
       }
       .spotify-tracks::-webkit-scrollbar-thumb:hover {
-        background: rgba(0, 0, 0, 0.5);
+        background: var(--thumb-hover);
       }
       .spotify-tracks::-webkit-scrollbar-button {
         display: none;
@@ -678,7 +576,7 @@
       }
       a.spotify-track-link:hover,
       a.spotify-track-link:focus-visible {
-        background: rgba(0, 0, 0, 0.06);
+        background: var(--wash-2);
       }
       a.spotify-track-link:hover .spotify-track-name {
         text-decoration: underline;
@@ -704,7 +602,7 @@
         height: 22px;
         border-radius: 50%;
         background: #1db954;
-        box-shadow: 0 0 0 2px #fff;
+        box-shadow: 0 0 0 2px var(--panel);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -774,14 +672,10 @@
         flex-direction: column;
         gap: 1rem;
       }
-      /* the stage is a .fit-frame (added by the script) plus its own size; the
-         line and the corners come from the shared frame rule above, and the
-         aspect-ratio handling itself lives up in .fit-frame */
       .concert-stage {
         flex: 1;
         min-height: 220px;
       }
-      /* which shot you are on, and a way to jump straight to a clip */
       .concert-thumbs {
         display: flex;
         gap: 0.4rem;
@@ -819,7 +713,7 @@
         align-items: center;
         justify-content: space-between;
         gap: 1rem;
-        border-top: 1px solid rgba(0, 0, 0, 0.12);
+        border-top: 1px solid var(--hair);
         padding-top: 1rem;
         flex-shrink: 0;
       }
@@ -857,7 +751,534 @@
         opacity: 0.6;
       }
 
-      /* ---- mobile ---- */
+      .about {
+        margin: 0.4rem 0 0;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        column-gap: 1.2rem;
+        row-gap: 0.62rem;
+        font-size: clamp(0.95rem, 1.45vw, 1.15rem);
+        line-height: 1.25;
+      }
+      .about dt { color: var(--faint); }
+      .about dd {
+        margin: 0;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        word-break: break-word;
+      }
+      .about .is-missing { display: none; }
+
+      .set-list {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        margin: 0;
+        padding: 0 0.6rem 0 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+      }
+      .set-list::-webkit-scrollbar { width: 6px; }
+      .set-list::-webkit-scrollbar-track { background: transparent; }
+      .set-list::-webkit-scrollbar-thumb {
+        background: var(--thumb);
+        border-radius: 999px;
+      }
+      .set-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 0.6rem 1rem;
+        padding: 0.62rem 0;
+        border-bottom: 1px solid var(--hair);
+      }
+      .set-row:last-child { border-bottom: none; }
+      .set-name { flex: 1 1 10rem; min-width: 0; }
+      .set-name-text { font-size: clamp(1.05rem, 1.7vw, 1.35rem); }
+
+      .switch {
+        flex-shrink: 0;
+        position: relative;
+        width: 76px;
+        height: 34px;
+        padding: 0;
+        border: 2px solid var(--accent);
+        border-radius: 999px;
+        background: var(--wash);
+        font: inherit;
+        color: var(--faint);
+        cursor: pointer;
+        transition: background 0.2s ease, color 0.2s ease;
+      }
+      .switch::after {
+        content: "";
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background: var(--accent);
+        transition: transform 0.22s cubic-bezier(0.34, 1.4, 0.64, 1);
+      }
+      .switch .switch-label {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        right: 10px;
+        font-size: 0.78rem;
+        letter-spacing: 0.06em;
+      }
+      .switch[aria-checked="true"] {
+        background: color-mix(in srgb, var(--accent) 22%, transparent);
+        color: var(--accent);
+      }
+      .switch[aria-checked="true"]::after { transform: translateX(42px); }
+      .switch[aria-checked="true"] .switch-label { right: auto; left: 10px; }
+      .switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+      .segmented {
+        flex-shrink: 0;
+        position: relative;
+        display: flex;
+        border: 2px solid var(--accent);
+        border-radius: 999px;
+        background: var(--wash);
+        overflow: hidden;
+      }
+      .seg-thumb {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        border-radius: 999px;
+        background: color-mix(in srgb, var(--accent) 22%, transparent);
+        transition: transform 0.22s cubic-bezier(0.34, 1.3, 0.64, 1), width 0.22s ease;
+        pointer-events: none;
+      }
+      .segmented button {
+        position: relative;
+        z-index: 1;
+        border: none;
+        background: none;
+        font: inherit;
+        font-size: 0.85rem;
+        letter-spacing: 0.04em;
+        color: var(--faint);
+        padding: 0.42rem 0.85rem;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: color 0.2s ease;
+      }
+      .segmented button[aria-pressed="true"] { color: var(--accent); }
+      .segmented button:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
+
+      .stepper {
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        border: 2px solid var(--accent);
+        border-radius: 999px;
+        background: var(--wash);
+        overflow: hidden;
+      }
+      .stepper button {
+        border: none;
+        background: none;
+        font: inherit;
+        font-size: 1.1rem;
+        line-height: 1;
+        color: var(--accent);
+        padding: 0.35rem 0.7rem;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+      .stepper button:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+      .stepper button:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; }
+      .step-value {
+        width: 8.2rem;
+        text-align: center;
+        font-size: 0.88rem;
+        letter-spacing: 0.03em;
+        color: var(--accent);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .slider {
+        flex-shrink: 0;
+        width: 150px;
+        height: 22px;
+        margin: 0;
+        background: none;
+        -webkit-appearance: none;
+        appearance: none;
+        cursor: pointer;
+      }
+      .slider:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+      .slider::-webkit-slider-runnable-track {
+        height: 8px;
+        border-radius: 999px;
+        border: 2px solid var(--accent);
+        background: var(--wash);
+      }
+      .slider::-moz-range-track {
+        height: 8px;
+        border-radius: 999px;
+        border: 2px solid var(--accent);
+        background: var(--wash);
+      }
+      .slider::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 20px;
+        height: 20px;
+        margin-top: -8px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      .slider::-moz-range-thumb {
+        width: 20px;
+        height: 20px;
+        border: none;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+
+      .slider-temp::-webkit-slider-runnable-track {
+        background: linear-gradient(90deg, #3f97e0 0%, #ffffff 50%, #e2452f 100%);
+      }
+      .slider-temp::-moz-range-track {
+        background: linear-gradient(90deg, #3f97e0 0%, #ffffff 50%, #e2452f 100%);
+      }
+
+      .set-reset {
+        margin-top: auto;
+        align-self: flex-start;
+        border: 2px solid var(--accent);
+        border-radius: 999px;
+        background: none;
+        font: inherit;
+        font-size: clamp(0.95rem, 1.5vw, 1.15rem);
+        color: var(--accent);
+        padding: 0.5rem 1.2rem;
+        cursor: pointer;
+        transition: background 0.15s ease, transform 0.15s ease;
+      }
+      .set-reset:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+      .set-reset:active { transform: scale(0.97); }
+      .set-reset.is-armed {
+        border-color: var(--racing);
+        color: var(--racing);
+        animation: reset-nag 0.6s ease-in-out infinite alternate;
+      }
+      @keyframes reset-nag { to { transform: scale(1.04); } }
+
+      #modal-settings .pane-left { display: flex; flex-direction: column; }
+      #modal-settings .pane-right { overflow: hidden; }
+
+      html[data-theme="dark"] [data-modal="modal-resume"] .tile-img,
+      html[data-theme="dark"] #modal-resume .modal-icon {
+        filter: invert(1);
+      }
+
+      #dim-layer {
+        position: fixed;
+        inset: 0;
+        z-index: 96;
+        background: #000;
+        opacity: var(--dim, 0);
+        pointer-events: none;
+        transition: opacity 0.12s linear;
+      }
+
+      .top, .tiles { zoom: var(--zoom, 1); }
+
+      #cookie-layer {
+        position: fixed;
+        inset: 0;
+        z-index: 90;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      .cookie {
+        position: absolute;
+        top: -14vh;
+        will-change: transform;
+        animation-name: cookie-fall;
+        animation-fill-mode: forwards;
+        animation-timing-function: cubic-bezier(0.11, 0, 0.5, 0);
+      }
+      @keyframes cookie-fall {
+        to { transform: translateY(128vh) rotate(var(--spin)); }
+      }
+
+      #snow-layer {
+        position: fixed;
+        inset: 0;
+        z-index: 89;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      .flake {
+        position: absolute;
+        top: -6vh;
+        border-radius: 50%;
+        background: radial-gradient(circle at 38% 32%,
+          #ffffff 0 34%, #b4dcf5 62%, #6fa8d0 100%);
+        box-shadow: 0 0 5px 1px rgba(86, 146, 196, 0.7);
+        will-change: transform;
+        animation: flake-fall linear forwards;
+      }
+      @keyframes flake-fall {
+        to { transform: translate(var(--drift), 112vh); }
+      }
+      #frost-layer {
+        position: fixed;
+        inset: 0;
+        z-index: 91;
+        pointer-events: none;
+        opacity: var(--frost, 0);
+        transition: opacity 0.3s linear;
+        background:
+          radial-gradient(ellipse 104% 98% at 50% 50%,
+            transparent 18%, rgba(196, 231, 255, 0.72) 60%, rgba(240, 251, 255, 0.97) 100%),
+          radial-gradient(circle at 6% 12%, rgba(255, 255, 255, 0.95) 0 5%, transparent 26%),
+          radial-gradient(circle at 94% 22%, rgba(255, 255, 255, 0.9) 0 4%, transparent 22%),
+          radial-gradient(circle at 16% 88%, rgba(255, 255, 255, 0.9) 0 5%, transparent 24%),
+          radial-gradient(circle at 88% 92%, rgba(255, 255, 255, 0.95) 0 4%, transparent 20%),
+          radial-gradient(ellipse 150% 130% at 50% 50%,
+            transparent 45%, rgba(126, 184, 226, 0.55) 100%);
+        backdrop-filter: blur(3px);
+        -webkit-backdrop-filter: blur(3px);
+        -webkit-mask-image: radial-gradient(ellipse 108% 100% at 50% 50%,
+          transparent 20%, #000 76%);
+        mask-image: radial-gradient(ellipse 108% 100% at 50% 50%,
+          transparent 20%, #000 76%);
+      }
+      html[data-frozen] *,
+      html[data-frozen] *::before,
+      html[data-frozen] *::after {
+        animation-play-state: paused !important;
+        transition: none !important;
+      }
+
+      #fire-layer {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 55vh;
+        z-index: 92;
+        width: 100%;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.4s linear;
+        image-rendering: pixelated;
+      }
+      #fire-layer.is-on { opacity: 1; }
+      #heat-layer {
+        position: fixed;
+        inset: 0;
+        z-index: 93;
+        pointer-events: none;
+        opacity: var(--heat, 0);
+        transition: opacity 0.3s linear;
+        background:
+          radial-gradient(ellipse 140% 95% at 50% 108%,
+            rgba(255, 122, 24, 0.62) 0%, rgba(255, 72, 20, 0.3) 45%, transparent 78%),
+          linear-gradient(to top, rgba(255, 96, 18, 0.42), rgba(255, 140, 40, 0.14) 60%, transparent);
+        mix-blend-mode: multiply;
+      }
+      html[data-theme="dark"] #heat-layer { mix-blend-mode: screen; }
+
+      html[data-power="low"] { filter: grayscale(1); }
+      html[data-power="low"] *:not(.cookie):not(.flake) {
+        animation-duration: 5s !important;
+        transition-duration: 0.9s !important;
+      }
+      #battery {
+        position: fixed;
+        top: 1rem;
+        right: 1rem;
+        z-index: 94;
+        display: none;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.85rem;
+        color: var(--fg);
+        pointer-events: none;
+      }
+      html[data-power="low"] #battery { display: flex; }
+      .battery-shell {
+        position: relative;
+        width: 42px;
+        height: 20px;
+        border: 2px solid currentColor;
+        border-radius: 4px;
+        padding: 2px;
+      }
+      .battery-shell::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 100%;
+        transform: translateY(-50%);
+        width: 3px;
+        height: 8px;
+        border-radius: 0 2px 2px 0;
+        background: currentColor;
+      }
+      .battery-fill {
+        height: 100%;
+        width: var(--charge, 100%);
+        border-radius: 1px;
+        background: #e2452f;
+        transition: width 1s linear;
+      }
+
+      #crt-layer {
+        position: fixed;
+        inset: 0;
+        z-index: 95;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.35s ease;
+        background: repeating-linear-gradient(
+          to bottom,
+          rgba(0, 0, 0, 0.22) 0px,
+          rgba(0, 0, 0, 0.22) 1px,
+          transparent 1px,
+          transparent 3px
+        );
+        box-shadow: inset 0 0 14vw 4vw rgba(0, 0, 0, 0.55);
+      }
+      html[data-crt="on"] #crt-layer {
+        opacity: 1;
+        animation: crt-flicker 4.5s steps(1) infinite;
+      }
+      @keyframes crt-flicker {
+        0%, 42%, 44%, 78%, 100% { opacity: 1; }
+        43% { opacity: 0.86; }
+        79% { opacity: 0.92; }
+      }
+      html[data-crt="on"] body {
+        filter: saturate(1.25) contrast(1.08) brightness(0.97);
+      }
+
+      html[data-flipped="on"] body {
+        transform: rotate(180deg);
+        transform-origin: center center;
+      }
+
+      @property --dx   { syntax: "<length>"; inherits: false; initial-value: 0px; }
+      @property --fx   { syntax: "<length>"; inherits: false; initial-value: 0px; }
+      @property --dy   { syntax: "<length>"; inherits: false; initial-value: 0px; }
+      @property --gy   { syntax: "<length>"; inherits: false; initial-value: 0px; }
+      @property --lift { syntax: "<length>"; inherits: false; initial-value: 0px; }
+      @property --rot  { syntax: "<angle>";  inherits: false; initial-value: 0deg; }
+      @property --sc   { syntax: "<number>"; inherits: false; initial-value: 1; }
+      .tilerow {
+        transform: translateY(var(--gy));
+        transition: --gy 0.75s cubic-bezier(0.5, 1.45, 0.6, 1);
+      }
+      html[data-gravity="off"] .tilerow {
+        transition: --gy 1.15s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      .tile {
+        transform:
+          translate(calc(var(--dx) + var(--fx)), calc(var(--dy) + var(--lift)))
+          rotate(var(--rot))
+          scale(var(--sc));
+        transition:
+          --dx 0.18s ease-out, --dy 0.18s ease-out, --lift 0.18s ease-out,
+          --sc 0.25s ease-out, --rot 0.35s ease-out;
+      }
+      .tile:hover { --lift: -4px; }
+      html[data-gravity="off"] .tile {
+        transition:
+          --fx 0.9s ease-out, --dx 0.18s ease-out, --dy 0.18s ease-out,
+          --lift 0.18s ease-out, --sc 0.25s ease-out, --rot 0.9s ease-out;
+        animation: tile-bob 3.4s ease-in-out infinite alternate;
+      }
+      @keyframes tile-bob { to { --lift: -10px; } }
+
+      html[data-difficulty="hard"] .tile { transition: transform 0.09s ease-out; }
+      html[data-difficulty="easy"] .tile { --sc: 1.12; }
+
+      html[data-nocursor],
+      html[data-nocursor] * { cursor: none !important; }
+      #fake-cursor {
+        position: fixed;
+        left: 0;
+        top: 0;
+        z-index: 300;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+        filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.4));
+        will-change: transform;
+      }
+      #fake-cursor.is-on { opacity: 1; }
+      .trail-dot {
+        position: fixed;
+        z-index: 299;
+        width: 12px;
+        height: 12px;
+        margin: -6px 0 0 -6px;
+        border-radius: 50%;
+        background: var(--name-blue);
+        pointer-events: none;
+        animation: trail-fade 0.6s ease-out forwards;
+      }
+      @keyframes trail-fade {
+        to { opacity: 0; transform: scale(0.15); }
+      }
+
+      #saver {
+        position: fixed;
+        inset: 0;
+        z-index: 400;
+        background: #000;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.6s ease;
+      }
+      #saver.is-on { opacity: 1; pointer-events: auto; cursor: none; }
+      #saver-logo {
+        position: absolute;
+        width: 150px;
+        height: 150px;
+        background: currentColor;
+        color: #4fc3f7;
+        -webkit-mask: url("assets/settings/dvd.png") center / contain no-repeat;
+        mask: url("assets/settings/dvd.png") center / contain no-repeat;
+        transition: color 0.25s linear;
+        will-change: transform;
+      }
+
+      #curtain {
+        position: fixed;
+        inset: 0;
+        z-index: 500;
+        background: #000;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.25s ease;
+      }
+      #curtain.is-on { opacity: 1; pointer-events: auto; }
+
+      @media (prefers-reduced-motion: reduce) {
+        .cookie,
+        .flake,
+        html[data-gravity="off"] .tile,
+        html[data-crt="on"] #crt-layer,
+        .set-reset.is-armed { animation: none; }
+        .trail-dot { display: none; }
+      }
+
       @media (max-width: 760px) {
         :root { --tile: clamp(120px, 40vw, 200px); }
         .top {
@@ -879,8 +1300,6 @@
           column-gap: 1.4rem;
           row-gap: 0.5rem;
         }
-        /* Two tiles across, and the label goes above its own row rather than
-           beside it - there is no margin to the left of a phone. */
         .tiles {
           justify-content: flex-start;
           gap: 1.4rem;
@@ -896,7 +1315,6 @@
           margin-bottom: -0.2rem;
         }
 
-        /* keep the popup inside the visible viewport and scroll within it */
         .modal {
           align-items: flex-start;
           padding: 2vh 3vw;
@@ -918,14 +1336,9 @@
         }
         .pane-right {
           border-left: none;
-          border-top: 1px solid rgba(0, 0, 0, 0.12);
+          border-top: 1px solid var(--hair);
           overflow: visible;
         }
-        /* A PDF in an iframe is a desktop-only trick. Every phone viewer draws a
-           fixed, non-scrollable snapshot of the top of the page instead, so the
-           preview was about a quarter of the resume with no way to reach the
-           rest. A flat picture of page 1 behaves the same everywhere, sits at
-           the page's own 612:792, and opens the real PDF when tapped. */
         .pdf-wrap { flex: none; height: auto; }
         .pdf-frame { display: none; }
         .pdf-shot {
@@ -933,36 +1346,32 @@
           aspect-ratio: 612 / 792;
           background: url("assets/resume-preview.png") center / contain no-repeat;
         }
-        /* On a phone the resume itself is what the tile promised, so it goes
-           above the fast facts rather than below a screenful of them. The
-           heading travels with it and the copy in the left pane is hidden, and
-           .pane-left drops back to `position: static` so the corner gif keeps
-           resolving against .modal-box and stays exactly where it was. */
         #modal-resume .pane-right { order: -1; border-top: none; }
         #modal-resume .pane-left {
           position: static;
-          border-top: 1px solid rgba(0, 0, 0, 0.12);
+          border-top: 1px solid var(--hair);
         }
         #modal-resume .pane-left > .pane-title { display: none; }
         #modal-resume .title-mobile { display: block; margin-bottom: 0; }
-        /* Says what the list under the resume is. Bold, but the same face and
-           the same size as the facts themselves - it labels them, it does not
-           compete with the modal's title above the PDF. */
         .facts-heading {
           display: block;
           margin: 0 0 0.55rem;
           font-size: clamp(1rem, 1.7vw, 1.4rem);
           font-weight: 700;
         }
+        #modal-settings .pane-right { overflow: visible; }
+        .set-list {
+          flex: none;
+          overflow: visible;
+          padding-right: 0;
+        }
+        .set-reset { margin-top: 1.2rem; }
         .media { flex: none; }
-        /* needs to outrank `.fit-frame img`, and must not catch the concert
-           stage, which is sized by .concert-stage instead */
         .fit-frame .media-img { max-height: 46vh; max-height: 46dvh; }
         .placeholder { flex: none; height: 26vh; height: 26dvh; }
-        /* the top half is full width now, so shift the gif clear of the close X */
         .modal-icon { top: 1.1rem; right: 3.2rem; }
         .spotify-section { flex: none; }
-        .spotify-tracks { max-height: 187px; gap: 0.55rem; }  /* 4 x 40 + 3 x 8.8 */
+        .spotify-tracks { max-height: 187px; gap: 0.55rem; }
         .spotify-track-art, .spotify-track-art img { width: 40px; height: 40px; }
         .spotify-track-play { width: 18px; height: 18px; right: -4px; bottom: -4px; }
         .spotify-track-play svg { width: 10px; height: 10px; }
@@ -972,26 +1381,11 @@
         .concert-thumb { width: 46px; height: 36px; }
       }
 
-      /* ---- short viewports ----
-         The modal is height-bound long before it is width-bound: every screen
-         gets the same `min(780px, 90dvh)` box, so a 1280x720 laptop has 130px
-         less to work with than a desktop at the same width, and a phone turned
-         sideways has 400px less. The music modal is the one that notices,
-         because it is the only pane with four stacked sections in it — at 720px
-         tall the whole `top artists` row sat below the fold of a pane that
-         scrolls without saying so, and in landscape the concert arrows and
-         caption were cut clean off by `.pane-right`'s `overflow: hidden`, with
-         no way to reach them at all.
-         **These come after the width query on purpose**: a small phone matches
-         both, and where they disagree the height is the tighter constraint. */
       @media (max-height: 800px) {
         .pane { padding: 1.5rem 1.6rem; }
         .pane-title { margin-bottom: 0.6rem; }
         .spotify-section { margin-top: 0.9rem; gap: 0.7rem; }
         .spotify-heading { margin-bottom: 0.35rem; }
-        /* four of the shorter rows: 4 x 41 + 3 x 8. Smaller than the desktop
-           list, so the artists under it stay on screen instead of falling
-           below the fold of a pane that scrolls without saying so. */
         .spotify-tracks { max-height: 188px; gap: 0.5rem; }
         .spotify-track-art, .spotify-track-art img { width: 40px; height: 40px; }
         .spotify-track-play { width: 18px; height: 18px; right: -4px; bottom: -4px; }
@@ -1002,16 +1396,10 @@
         .spotify-artist { width: 56px; }
         .spotify-artist img { width: 46px; height: 46px; }
       }
-      /* A phone in landscape, or a very short desktop window. */
       @media (max-height: 560px) {
         .pane { padding: 1.1rem 1.3rem; }
-        /* Nothing in a pane may become unreachable. The left one has always
-           scrolled; the right one clipped its own navigation instead. The top
-           padding stays put while the rest tightens, because that is the strip
-           the close X floats in — without it the photo slides up under the X
-           and there is no longer anything white behind it. */
         .pane-right { overflow: auto; padding-top: 2.2rem; }
-        .spotify-tracks { max-height: 139px; }  /* three rows: 3 x 41 + 2 x 8 */
+        .spotify-tracks { max-height: 139px; }
         .concert-stage { min-height: 110px; }
         .concert-thumb { width: 44px; height: 34px; }
         .concert-nav { padding-top: 0.6rem; }
@@ -1019,21 +1407,30 @@
         .concert-artist { font-size: 0.95rem; }
       }
     </style>
+    <script>
+      (function () {
+        var d = document.documentElement;
+        var s = {};
+        try { s = JSON.parse(localStorage.getItem("cgovind:settings")) || {}; } catch (e) {}
+        var dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        d.dataset.theme = s.theme || (dark ? "dark" : "light");
+        d.dataset.crt = s.crt || "off";
+        d.dataset.flipped = s.flipped || "off";
+        d.dataset.gravity = s.gravity || "on";
+        d.dataset.difficulty = s.difficulty || "normal";
+        d.dataset.cursor = s.cursor || "default";
+        d.dataset.power = s.power || "normal";
+        var b = s.brightness == null ? 100 : +s.brightness;
+        d.style.setProperty("--dim", (100 - b) / 100 * 0.88);
+        d.style.setProperty("--zoom", (s.zoom == null ? 100 : +s.zoom) / 100);
+        if (["crosshair", "giant", "invisible", "wii", "master"].indexOf(d.dataset.cursor) >= 0) {
+          d.setAttribute("data-nocursor", "");
+        }
+      })();
+    </script>
   </head>
   <body>
     <header class="top">
-      <!-- **The h1 is the welcome line, not "hey!", and the swap is only for
-           search.** These render exactly as they did - the two rules in the
-           stylesheet were renamed with them - but a page's h1 is the one
-           heading a search engine weighs most, and this page's used to be a
-           greeting that contains neither Chinmay's name nor anything anybody
-           searches. The name was one element below it the whole time. "hey!" is
-           still the big word on the left; it is simply a p now, which is what a
-           greeting is.
-
-           Tag names are written bare here, without angle brackets, on purpose:
-           an audit tool that counts headings with a regex does not know a
-           comment from markup, and this page reported three h1s to one. -->
       <p class="hey">hey!</p>
       <h1 class="welcome">
         <span class="welcome-lead">welcome to</span>
@@ -1061,9 +1458,6 @@
     </header>
 
     <main class="tiles">
-      <!-- Two rows, each with its own heading: the top six are about Chinmay,
-           the bottom four are the games. Keep `settings` last in the top row
-           (it is a Wii menu joke) and add a new game to the second. -->
       <section class="tilerow">
       <h2 class="rowlabel">ABOUT ME</h2>
       <button class="tile" data-modal="modal-resume">
@@ -1201,7 +1595,6 @@
       </section>
     </main>
 
-    <!-- resume popup -->
     <div class="modal" id="modal-resume" hidden>
       <div class="modal-backdrop" data-close></div>
       <div class="modal-box modal-resume" role="dialog" aria-modal="true" aria-label="Resume">
@@ -1219,10 +1612,7 @@
               <div class="fact"><dt>favorite color</dt><dd><span class="fav-blue">blue</span></dd></div>
               <div class="fact"><dt>typing speed</dt><dd>150 wpm</dd></div>
               <div class="fact"><dt>smash main</dt><dd><span class="dedede-gold">King</span> <span class="dedede-blue">Dedede</span></dd></div>
-              <!-- Pushed from my phone hourly; hidden unless the reading is
-                   recent, since a stale "steps today" is just a wrong number. -->
               <div class="fact" id="fact-steps-row" hidden><dt>steps today</dt><dd><span id="fact-steps"></span></dd></div>
-              <!-- everything below here is a link out; the plain facts are above. -->
               <div class="fact"><dt><a class="fact-link" href="https://puzzles.usatoday.com/" target="_blank" rel="noopener">USA Today Crossword</a></dt><dd>PB 2m 41s</dd></div>
               <div class="fact"><dt><a class="fact-link" href="https://www.duolingo.com/profile/ChinmayGov" target="_blank" rel="noopener">Duolingo Streak</a></dt><dd><span id="fact-duo">2112 days</span></dd></div>
               <div class="fact"><dt><a class="fact-link" href="https://www.worldcubeassociation.org/persons/2018GOVI03" target="_blank" rel="noopener">3x3 Rubik's Cube</a></dt><dd>PB: 18.04s</dd></div>
@@ -1235,16 +1625,11 @@
             <h2 class="pane-title title-mobile">resume</h2>
             <p class="pane-caption">click <a class="here-link" href="assets/Chinmay_Govind_Resume.pdf" target="_blank" rel="noopener">here</a> to open my resume</p>
             <div class="pdf-wrap">
-              <!-- src is held in data-src and set by the script at the foot of
-                   the page, because `display: none` does not stop an iframe
-                   loading and a phone never shows this one. -->
               <iframe
                 class="pdf-frame"
                 data-src="assets/Chinmay_Govind_Resume.pdf"
                 title="Chinmay Govind resume"
               ></iframe>
-              <!-- Phones only; see .pdf-shot in the stylesheet. The picture is a
-                   CSS background so that a desktop never downloads it. -->
               <a
                 class="pdf-shot"
                 href="assets/Chinmay_Govind_Resume.pdf"
@@ -1258,7 +1643,6 @@
       </div>
     </div>
 
-    <!-- poker popup -->
     <div class="modal" id="modal-poker" hidden>
       <div class="modal-backdrop" data-close></div>
       <div class="modal-box modal-poker" role="dialog" aria-modal="true" aria-label="Poker">
@@ -1297,7 +1681,6 @@
       </div>
     </div>
 
-    <!-- whales popup -->
     <div class="modal" id="modal-whale" hidden>
       <div class="modal-backdrop" data-close></div>
       <div class="modal-box modal-whale" role="dialog" aria-modal="true" aria-label="Whales">
@@ -1330,7 +1713,6 @@
       </div>
     </div>
 
-    <!-- racing popup -->
     <div class="modal" id="modal-racing" hidden>
       <div class="modal-backdrop" data-close></div>
       <div class="modal-box modal-racing" role="dialog" aria-modal="true" aria-label="Racing">
@@ -1357,7 +1739,6 @@
       </div>
     </div>
 
-    <!-- drive popup -->
     <div class="modal" id="modal-drive" hidden>
       <div class="modal-backdrop" data-close></div>
       <div class="modal-box modal-drive" role="dialog" aria-modal="true" aria-label="Drive">
@@ -1370,11 +1751,6 @@
           </div>
           <div class="pane pane-right">
             <div class="media">
-              <!-- the store preview cut, rendered by drive/tools/shoot_video.py --
-                   it opens on the Spa cover and runs through a time trial, the
-                   multiplayer pack and a race win, so it says everything the two
-                   stills it replaced said, moving. Silent by construction, so
-                   autoplaying it on open needs no mute button. -->
               <div class="media-frame">
                 <video
                   class="media-video"
@@ -1389,8 +1765,6 @@
                   aria-label="Drive Demo Video"
                 ></video>
               </div>
-              <!-- Rainbow Road, eight cars deep. The clip is the whole game in
-                   fifteen seconds; this is the one shot worth holding still. -->
               <div class="media-frame">
                 <img class="media-img" src="assets/drive/multiplayer.png" alt="An eight-player race down Rainbow Road in Drive" />
               </div>
@@ -1400,7 +1774,6 @@
       </div>
     </div>
 
-    <!-- ttr popup -->
     <div class="modal" id="modal-ttr" hidden>
       <div class="modal-backdrop" data-close></div>
       <div class="modal-box modal-ttr" role="dialog" aria-modal="true" aria-label="Ticket to Ride">
@@ -1427,7 +1800,6 @@
       </div>
     </div>
 
-    <!-- ers popup -->
     <div class="modal" id="modal-ers" hidden>
       <div class="modal-backdrop" data-close></div>
       <div class="modal-box modal-ers" role="dialog" aria-modal="true" aria-label="Egyptian Rat Screw">
@@ -1454,7 +1826,6 @@
       </div>
     </div>
 
-    <!-- king of tokyo popup -->
     <div class="modal" id="modal-kot" hidden>
       <div class="modal-backdrop" data-close></div>
       <div class="modal-box modal-kot" role="dialog" aria-modal="true" aria-label="King of Tokyo">
@@ -1481,7 +1852,6 @@
       </div>
     </div>
 
-    <!-- music popup -->
     <div class="modal" id="modal-music" hidden>
       <div class="modal-backdrop" data-close></div>
       <div class="modal-box modal-music" role="dialog" aria-modal="true" aria-label="Music">
@@ -1524,7 +1894,6 @@
       </div>
     </div>
 
-    <!-- settings popup -->
     <div class="modal" id="modal-settings" hidden>
       <div class="modal-backdrop" data-close></div>
       <div class="modal-box modal-settings" role="dialog" aria-modal="true" aria-label="Settings">
@@ -1533,38 +1902,68 @@
           <div class="pane pane-left">
             <img class="modal-icon" src="assets/icons/settings.gif" alt="" aria-hidden="true" />
             <h2 class="pane-title">settings</h2>
-            <p class="pane-text">Placeholder &mdash; nothing here yet.</p>
+            <dl class="about">
+              <dt data-row="version">Software Version</dt>
+              <dd data-row="version" id="about-version">&mdash;</dd>
+              <dt data-row="updated">Last Updated</dt>
+              <dd data-row="updated" id="about-updated">&mdash;</dd>
+              <dt data-row="runtime">Runtime</dt>
+              <dd data-row="runtime" id="about-runtime">&mdash;</dd>
+              <dt data-row="capacity">Capacity</dt>
+              <dd data-row="capacity" id="about-capacity">&mdash;</dd>
+              <dt>Storage Used</dt>
+              <dd id="about-storage">&mdash;</dd>
+              <dt>Region</dt>
+              <dd id="about-region">&mdash;</dd>
+              <dt>Display</dt>
+              <dd id="about-display">&mdash;</dd>
+              <dt>Browser</dt>
+              <dd id="about-browser">&mdash;</dd>
+              <dt data-row="uptime">Server Uptime</dt>
+              <dd data-row="uptime" id="about-uptime">&mdash;</dd>
+              <dt>Session</dt>
+              <dd id="about-session">&mdash;</dd>
+            </dl>
+            <button class="set-reset" id="set-reset" type="button">Restore factory settings</button>
           </div>
           <div class="pane pane-right">
-            <div class="placeholder">more soon</div>
+            <div class="set-list" id="set-list"></div>
           </div>
         </div>
       </div>
     </div>
 
+    <div id="snow-layer" aria-hidden="true"></div>
+    <div id="cookie-layer" aria-hidden="true"></div>
+    <div id="frost-layer" aria-hidden="true"></div>
+    <div id="heat-layer" aria-hidden="true"></div>
+    <canvas id="fire-layer" aria-hidden="true"></canvas>
+    <div id="crt-layer" aria-hidden="true"></div>
+    <div id="dim-layer" aria-hidden="true"></div>
+    <div id="battery" aria-hidden="true">
+      <span class="battery-shell"><span class="battery-fill"></span></span>
+      <span id="battery-pct">100%</span>
+    </div>
+    <img id="fake-cursor" src="" alt="" aria-hidden="true" />
+    <div id="saver" aria-hidden="true"><div id="saver-logo"></div></div>
+    <div id="curtain" aria-hidden="true"></div>
+
     <script>
-      // hover a tile -> play its gif; leave -> back to the still png
       document.querySelectorAll(".tile-img").forEach(function (img) {
         var still = img.dataset.still;
         var anim = img.dataset.anim;
-        new Image().src = anim; // preload the gif so the first hover is instant
+        new Image().src = anim;
         var tile = img.closest(".tile");
         tile.addEventListener("mouseenter", function () { img.src = anim; });
         tile.addEventListener("mouseleave", function () { img.src = still; });
       });
 
-      // open the popup for a tile
       document.querySelectorAll(".tile").forEach(function (tile) {
         tile.addEventListener("click", function () {
           var modal = document.getElementById(tile.dataset.modal);
           if (!modal) return;
           modal.hidden = false;
           document.body.style.overflow = "hidden";
-          // a preview clip starts when the popup does. preload="none" means
-          // nothing is fetched until here, so a visitor who never opens drive
-          // never pays for the 8MB; play() is muted so no gesture is needed
-          // beyond the click that opened this, and a rejected promise (a data
-          // saver, say) just leaves the poster up.
           modal.querySelectorAll("video[data-autoplay]").forEach(function (v) {
             var p = v.play();
             if (p && p.catch) p.catch(function () {});
@@ -1572,12 +1971,9 @@
         });
       });
 
-      // close on the X, on the backdrop, or with Escape
       function closeModal(modal) {
         modal.hidden = true;
         document.body.style.overflow = "";
-        // hiding the modal does not stop playback, so a concert clip would keep
-        // playing its audio over a page that looks idle
         modal.querySelectorAll("video").forEach(function (v) { v.pause(); });
       }
       document.querySelectorAll(".modal").forEach(function (modal) {
@@ -1591,10 +1987,6 @@
         }
       });
 
-      // Make `box` a fit frame (see .fit-frame in the stylesheet): fill it with a
-      // blurred, blown-up copy of `src` behind whatever media it holds, so a shot
-      // whose shape does not match the box sits on its own colour, not a bar.
-      // Every modal photo and the concert stage go through here.
       function fitFrame(box, src) {
         box.classList.add("fit-frame");
         var bg = box.querySelector(".fit-bg");
@@ -1603,14 +1995,9 @@
           bg.className = "fit-bg";
           box.insertBefore(bg, box.firstChild);
         }
-        // assigned as a property rather than built into a style string, so a
-        // filename containing a quote or a bracket cannot break out of the rule
         bg.style.backgroundImage = src ? 'url("' + encodeURI(src) + '")' : "";
       }
 
-      // every static modal photo sits in a .media-frame, whether or not it is
-      // also wrapped in a link. A frame holding a video backs onto its poster,
-      // which is that video's own first frame.
       document.querySelectorAll(".media-frame").forEach(function (frame) {
         var media = frame.querySelector("img, video");
         var src = !media
@@ -1621,12 +2008,6 @@
         fitFrame(frame, src || "");
       });
 
-      // The resume PDF is only ever previewed in the iframe on a wide screen -
-      // below 760px the page shows a picture of page 1 instead, because phone
-      // viewers render a clipped, non-scrollable snapshot in an iframe. Hiding
-      // the iframe does not stop it loading, though, so its src waits here until
-      // a screen that will actually show it turns up. The listener matters for a
-      // phone turned sideways, which crosses the breakpoint after load.
       (function () {
         var frame = document.querySelector(".pdf-frame[data-src]");
         if (!frame) return;
@@ -1640,20 +2021,13 @@
         if (wide.addEventListener) wide.addEventListener("change", load);
       })();
 
-      // fast facts: age ticking to the second, from 7:31am on 31 Jul 2006.
-      // Pinned to a UTC instant (07:31 EDT = 11:31 UTC) rather than a local
-      // Date, so the seconds are the same number for a visitor in any timezone.
-      // The years/days part still has to be counted in calendar terms - a year
-      // is not a fixed number of milliseconds - so it walks the birthday
-      // forward and then measures the remainder as elapsed time.
       (function () {
         var el = document.getElementById("fact-age");
         if (!el) return;
-        var BORN_H = 11, BORN_M = 31; // 7:31am Eastern, in UTC
+        var BORN_H = 11, BORN_M = 31;
 
         function tick() {
           var now = new Date();
-          // most recent birthday that has already happened
           var years = now.getUTCFullYear() - 2006;
           var last = Date.UTC(now.getUTCFullYear(), 6, 31, BORN_H, BORN_M);
           if (now.getTime() < last) {
@@ -1674,9 +2048,6 @@
         setInterval(tick, 1000);
       })();
 
-      // Every live pane fetches JSON and patches itself in. Failure is silent by
-      // design: each one already has a sensible placeholder in the markup, so a
-      // missing API key or an offline box just leaves the page as authored.
       function getJSON(url, fn) {
         fetch(url)
           .then(function (r) { return r.json(); })
@@ -1684,23 +2055,18 @@
           .catch(function () {});
       }
 
-      // fast facts: live Duolingo streak via the same-origin proxy in app.py
       getJSON("/api/duolingo-streak", function (d) {
         if (!d || typeof d.streak !== "number") return;
         var el = document.getElementById("fact-duo");
         if (el) el.textContent = d.streak.toLocaleString() + " days";
       });
 
-      // fast facts: all-time public commit count, via the proxy in app.py
       getJSON("/api/github-commits", function (d) {
         if (!d || typeof d.commits !== "number") return;
         var el = document.getElementById("fact-commits");
         if (el) el.textContent = d.commits.toLocaleString();
       });
 
-      // fast facts: steps today, pushed here by a Shortcuts automation on my
-      // phone. The row stays hidden unless the server has a *recent* reading -
-      // unlike the other facts there is no honest fallback for a stale one.
       getJSON("/api/steps", function (d) {
         if (!d || typeof d.steps !== "number" || !d.fresh) return;
         var el = document.getElementById("fact-steps");
@@ -1710,16 +2076,12 @@
         row.hidden = false;
       });
 
-      // music tile: names/urls below come from Spotify's API or my own JSON,
-      // but escape anyway since they land in innerHTML
       function escapeHtml(s) {
         return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
           return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
         });
       }
 
-      // music tile: recently played, from chinmay's Spotify via the
-      // same-origin proxy in app.py (see /api/spotify/*)
       getJSON("/api/spotify/recent", function (d) {
         if (!d || !d.tracks || !d.tracks.length) return;
         var el = document.getElementById("spotify-tracks");
@@ -1746,7 +2108,6 @@
         }).join("");
       });
 
-      // music tile: top artists, same proxy
       getJSON("/api/spotify/top-artists", function (d) {
         if (!d || !d.artists || !d.artists.length) return;
         var el = document.getElementById("spotify-artists");
@@ -1759,12 +2120,6 @@
         }).join("");
       });
 
-      // music tile: concert gallery, driven by assets/music/concerts.json.
-      // To add a concert later: drop its media under site/assets/music/<slug>/ and
-      // append { "artist": "...", "date": "...", "photos": ["assets/music/..."],
-      // "videos": [{ "src": "assets/music/...", "poster": "assets/music/..." }] }
-      // to that JSON file -- no code changes needed. Both lists are optional.
-      // Newest concert first; the carousel keeps whatever order the file has.
       (function () {
         var stage = document.getElementById("concert-stage");
         if (!stage) return;
@@ -1776,10 +2131,8 @@
 
         var concerts = [];
         var concertIdx = 0;
-        var shotIdx = 0;   // which photo or clip within the current concert
+        var shotIdx = 0;
 
-        // one concert's media as a single list, photos then clips; the stage and
-        // the thumb strip both walk it, so they cannot disagree about the order
         function shotsOf(c) {
           if (!c) return [];
           var shots = (c.photos || []).map(function (src) {
@@ -1791,8 +2144,6 @@
           return shots;
         }
 
-        // built as elements rather than an HTML string: the values come from a
-        // JSON file, and this way none of them is ever parsed as markup
         function shotNode(shot, artist) {
           if (!shot.video) {
             var img = document.createElement("img");
@@ -1804,7 +2155,7 @@
           video.src = shot.src;
           if (shot.still) video.poster = shot.still;
           video.controls = true;
-          video.preload = "none";   // opening the modal must not pull 90MB of clips
+          video.preload = "none";
           video.playsInline = true;
           video.setAttribute("aria-label", artist + " concert clip");
           return video;
@@ -1878,11 +2229,819 @@
           render();
         });
 
-        render();   // the empty state, until the file arrives
+        render();
         getJSON("assets/music/concerts.json", function (data) {
           if (Array.isArray(data)) concerts = data;
           render();
         });
+      })();
+      (function () {
+        var root = document.documentElement;
+        var KEY = "cgovind:settings";
+
+        function read(key) {
+          try { return JSON.parse(localStorage.getItem(key)); } catch (e) { return null; }
+        }
+        function write(key, value) {
+          try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+          paintStorage();
+        }
+        function drop(key) {
+          try { localStorage.removeItem(key); } catch (e) {}
+        }
+
+        var store = read(KEY) || {};
+        var tiles = [].slice.call(document.querySelectorAll(".tile"));
+        var rows = [].slice.call(document.querySelectorAll(".tilerow"));
+        var header = document.querySelector(".top");
+        var calm = window.matchMedia("(prefers-reduced-motion: reduce)");
+        var osDark = window.matchMedia("(prefers-color-scheme: dark)");
+
+        function rand(a, b) { return a + Math.random() * (b - a); }
+        function el(tag, cls) {
+          var n = document.createElement(tag);
+          if (cls) n.className = cls;
+          return n;
+        }
+        function attr(name) {
+          return function (v) { root.dataset[name] = v; };
+        }
+
+        var SETTINGS = [
+          {
+            key: "theme", name: "Appearance", type: "seg",
+            options: [["light", "light"], ["dark", "dark"]],
+            def: function () { return osDark.matches ? "dark" : "light"; },
+            on: attr("theme")
+          },
+          {
+            key: "brightness", name: "Brightness", type: "slider",
+            min: 0, max: 100, def: "100",
+            on: function (v) {
+              root.style.setProperty("--dim", (100 - (+v)) / 100 * 0.88);
+            }
+          },
+          {
+            key: "temp", name: "Temperature", type: "slider",
+            min: -100, max: 100, cls: "slider-temp", def: "0",
+            on: function (v) { temperature(+v); }
+          },
+          {
+            key: "power", name: "Low Power Mode", type: "switch", def: "off",
+            on: function (v) { power(v === "on"); }
+          },
+          {
+            key: "zoom", name: "Zoom", type: "step",
+            options: [["50", "50%"], ["75", "75%"], ["100", "100%"],
+                      ["125", "125%"], ["150", "150%"], ["200", "200%"]],
+            def: "100",
+            on: function (v) {
+              root.style.setProperty("--zoom", (+v) / 100);
+              setTimeout(relayout, 60);
+            }
+          },
+          {
+            key: "cursor", name: "Cursor", type: "step",
+            options: [["default", "default"], ["crosshair", "crosshair"],
+                      ["giant", "giant"], ["trail", "trail"],
+                      ["invisible", "invisible"], ["wii", "wii remote"],
+                      ["master", "master hand"]],
+            def: "default",
+            on: function (v) { attr("cursor")(v); cursor(v); }
+          },
+          {
+            key: "cookies", name: "Cookies", type: "switch",
+            def: "off", transient: true,
+            on: function (v, initial) { cookies(v === "on", initial); }
+          },
+          {
+            key: "crt", name: "CRT", type: "switch", def: "off",
+            on: attr("crt")
+          },
+          {
+            key: "gravity", name: "Gravity", type: "switch", def: "on",
+            on: function (v) { gravity(v === "on"); }
+          },
+          {
+            key: "flipped", name: "Flipped", type: "switch", def: "off",
+            on: attr("flipped")
+          },
+          {
+            key: "difficulty", name: "Difficulty", type: "seg",
+            options: [["easy", "easy"], ["normal", "normal"], ["hard", "hard"]],
+            def: "normal",
+            on: function (v) {
+              attr("difficulty")(v);
+              if (v === "normal") tiles.forEach(clearDodge);
+              measure();
+            }
+          },
+          {
+            key: "saver", name: "Screensaver", type: "switch",
+            def: "off", transient: true,
+            on: function (v, initial) {
+              if (initial) return;
+              if (v === "on") startSaver(); else stopSaver();
+            }
+          }
+        ];
+
+        var byKey = {};
+        SETTINGS.forEach(function (s) { byKey[s.key] = s; });
+
+        function defaultOf(s) {
+          return typeof s.def === "function" ? s.def() : s.def;
+        }
+        function get(key) {
+          var s = byKey[key];
+          if (!s.transient && store[key] != null) return store[key];
+          return defaultOf(s);
+        }
+        function set(key, value, initial) {
+          var s = byKey[key];
+          if (!s.transient) {
+            store[key] = value;
+            if (!initial) write(KEY, store);
+          } else {
+            s.live = value;
+          }
+          if (s.paint) s.paint(value);
+          s.on(value, !!initial);
+        }
+        function shown(key) {
+          var s = byKey[key];
+          return s.transient ? (s.live || defaultOf(s)) : get(key);
+        }
+
+        function switchEl(spec) {
+          var b = el("button", "switch");
+          b.type = "button";
+          b.setAttribute("role", "switch");
+          b.setAttribute("aria-label", spec.name);
+          var lab = el("span", "switch-label");
+          b.appendChild(lab);
+          spec.paint = function (v) {
+            var on = v === "on";
+            b.setAttribute("aria-checked", on ? "true" : "false");
+            lab.textContent = on ? "ON" : "OFF";
+          };
+          b.addEventListener("click", function () {
+            set(spec.key, shown(spec.key) === "on" ? "off" : "on");
+          });
+          return b;
+        }
+
+        function segEl(spec) {
+          var wrap = el("div", "segmented");
+          wrap.setAttribute("role", "group");
+          wrap.setAttribute("aria-label", spec.name);
+          var thumb = el("div", "seg-thumb");
+          wrap.appendChild(thumb);
+          var btns = spec.options.map(function (opt) {
+            var b = el("button");
+            b.type = "button";
+            b.textContent = opt[1];
+            b.dataset.value = opt[0];
+            b.addEventListener("click", function () { set(spec.key, opt[0]); });
+            wrap.appendChild(b);
+            return b;
+          });
+          spec.paint = function (v) {
+            var cur = btns[0];
+            btns.forEach(function (b) {
+              var on = b.dataset.value === v;
+              b.setAttribute("aria-pressed", on ? "true" : "false");
+              if (on) cur = b;
+            });
+            if (!cur.offsetWidth) return;
+            thumb.style.width = cur.offsetWidth + "px";
+            thumb.style.transform = "translateX(" + cur.offsetLeft + "px)";
+          };
+          return wrap;
+        }
+
+        function stepEl(spec) {
+          var wrap = el("div", "stepper");
+          wrap.setAttribute("role", "group");
+          wrap.setAttribute("aria-label", spec.name);
+          var prev = el("button");
+          var val = el("div", "step-value");
+          var next = el("button");
+          prev.type = next.type = "button";
+          prev.textContent = "‹";
+          next.textContent = "›";
+          prev.setAttribute("aria-label", "Previous " + spec.name.toLowerCase());
+          next.setAttribute("aria-label", "Next " + spec.name.toLowerCase());
+          val.setAttribute("aria-live", "polite");
+          wrap.appendChild(prev);
+          wrap.appendChild(val);
+          wrap.appendChild(next);
+
+          function step(by) {
+            var vals = spec.options.map(function (o) { return o[0]; });
+            var i = vals.indexOf(shown(spec.key));
+            if (i < 0) i = 0;
+            set(spec.key, vals[(i + by + vals.length) % vals.length]);
+          }
+          prev.addEventListener("click", function () { step(-1); });
+          next.addEventListener("click", function () { step(1); });
+
+          spec.paint = function (v) {
+            var hit = spec.options.filter(function (o) { return o[0] === v; })[0];
+            val.textContent = hit ? hit[1] : v;
+          };
+          return wrap;
+        }
+
+        function sliderEl(spec) {
+          var r = el("input", "slider" + (spec.cls ? " " + spec.cls : ""));
+          r.type = "range";
+          r.min = spec.min;
+          r.max = spec.max;
+          r.setAttribute("aria-label", spec.name);
+          r.addEventListener("input", function () { set(spec.key, r.value); });
+          spec.paint = function (v) { r.value = v; };
+          return r;
+        }
+
+        var BUILD = { "switch": switchEl, seg: segEl, step: stepEl, slider: sliderEl };
+        var list = document.getElementById("set-list");
+        if (list) {
+          SETTINGS.forEach(function (spec) {
+            var row = el("div", "set-row");
+            var name = el("div", "set-name");
+            var text = el("span", "set-name-text");
+            text.textContent = spec.name;
+            name.appendChild(text);
+            row.appendChild(name);
+            row.appendChild(BUILD[spec.type](spec));
+            list.appendChild(row);
+          });
+        }
+
+        function repaint() {
+          SETTINGS.forEach(function (s) { if (s.paint) s.paint(shown(s.key)); });
+        }
+
+        function txt(id, value) {
+          var n = document.getElementById(id);
+          if (n) n.textContent = value;
+        }
+        function hideRow(name) {
+          document.querySelectorAll('.about [data-row="' + name + '"]')
+            .forEach(function (n) { n.classList.add("is-missing"); });
+        }
+        function bytes(n) {
+          if (n >= 1e9) return (n / 1e9).toFixed(1) + " GB";
+          if (n >= 1e6) return Math.round(n / 1e6) + " MB";
+          if (n >= 1e3) return Math.round(n / 1e3) + " KB";
+          return n + " bytes";
+        }
+        function clock(secs) {
+          var d = Math.floor(secs / 86400);
+          var h = Math.floor(secs / 3600) % 24;
+          var m = Math.floor(secs / 60) % 60;
+          var s = Math.floor(secs) % 60;
+          function pad(v) { return (v < 10 ? "0" : "") + v; }
+          return (d ? d + "d " : "") + pad(h) + ":" + pad(m) + ":" + pad(s);
+        }
+
+        try {
+          txt("about-region", Intl.DateTimeFormat().resolvedOptions().timeZone || "Unknown");
+        } catch (e) {
+          txt("about-region", "Unknown");
+        }
+
+        function paintDisplay() {
+          txt("about-display", window.innerWidth + " × " + window.innerHeight);
+        }
+        paintDisplay();
+
+        (function () {
+          var ua = navigator.userAgent;
+          var names = [
+            ["Edg", "Edge"], ["OPR", "Opera"], ["Firefox", "Firefox"],
+            ["Chrome", "Chrome"], ["Safari", "Safari"]
+          ];
+          var browser = "Unknown";
+          for (var i = 0; i < names.length; i++) {
+            var m = ua.match(new RegExp(names[i][0] + "/(\\d+)"));
+            if (m) { browser = names[i][1] + " " + m[1]; break; }
+          }
+          var os = /Windows/.test(ua) ? "Windows"
+            : /Android/.test(ua) ? "Android"
+            : /iPhone|iPad|iPod/.test(ua) ? "iOS"
+            : /Mac OS X/.test(ua) ? "macOS"
+            : /Linux/.test(ua) ? "Linux" : "";
+          txt("about-browser", browser + (os ? " on " + os : ""));
+        })();
+
+        function paintStorage() {
+          var total = 0;
+          try {
+            for (var i = 0; i < localStorage.length; i++) {
+              var k = localStorage.key(i);
+              if (k.indexOf("cgovind:") !== 0) continue;
+              total += k.length + (localStorage.getItem(k) || "").length;
+            }
+          } catch (e) { total = 0; }
+          txt("about-storage", bytes(total));
+        }
+
+        var loadedAt = Date.now();
+        setInterval(function () {
+          txt("about-session", clock((Date.now() - loadedAt) / 1000));
+        }, 1000);
+
+        var uptimeAt = null;
+        fetch("/api/version")
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (d.commit) {
+              txt("about-version", d.commit + (d.commits ? " (build " + d.commits + ")" : ""));
+            } else { hideRow("version"); }
+
+            if (d.committed) {
+              var when = new Date(d.committed);
+              txt("about-updated",
+                when.toLocaleDateString(undefined,
+                  { year: "numeric", month: "short", day: "2-digit" }) +
+                " " +
+                when.toLocaleTimeString(undefined,
+                  { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }));
+            } else { hideRow("updated"); }
+
+            if (d.runtime) txt("about-runtime", d.runtime); else hideRow("runtime");
+            if (d.bytes) txt("about-capacity", bytes(d.bytes)); else hideRow("capacity");
+
+            if (typeof d.uptime === "number") {
+              uptimeAt = { secs: d.uptime, at: Date.now() };
+              tickUptime();
+            } else { hideRow("uptime"); }
+          })
+          .catch(function () {
+            ["version", "updated", "capacity", "uptime"].forEach(hideRow);
+          });
+
+        function tickUptime() {
+          if (!uptimeAt) return;
+          txt("about-uptime", clock(uptimeAt.secs + (Date.now() - uptimeAt.at) / 1000));
+        }
+        setInterval(tickUptime, 1000);
+
+        var cookieLayer = document.getElementById("cookie-layer");
+        var crunch = null;
+        var cookieTimer = null;
+
+        function cookies(on, initial) {
+          clearTimeout(cookieTimer);
+          if (!on) {
+            if (cookieLayer) cookieLayer.textContent = "";
+            return;
+          }
+          if (initial) { set("cookies", "off", true); return; }
+
+          var last = 0;
+          for (var i = 0; i < 90; i++) {
+            var delay = rand(0, 0.85);
+            var dur = rand(0.95, 1.8);
+            crumb(delay, dur);
+            last = Math.max(last, delay + dur);
+          }
+          try {
+            crunch = crunch || new Audio("assets/settings/cookies.mp3");
+            crunch.currentTime = 0;
+            var p = crunch.play();
+            if (p && p.catch) p.catch(function () {});
+          } catch (e) {}
+          cookieTimer = setTimeout(function () { set("cookies", "off"); }, (last + 0.3) * 1000);
+        }
+
+        function crumb(delay, dur) {
+          if (!cookieLayer || calm.matches) return;
+          var c = el("div", "cookie");
+          c.textContent = "🍪";
+          c.style.left = rand(-2, 100) + "vw";
+          c.style.fontSize = rand(16, 46) + "px";
+          c.style.setProperty("--spin", rand(-900, 900) + "deg");
+          c.style.animationDuration = dur + "s";
+          c.style.animationDelay = delay + "s";
+          c.addEventListener("animationend", function () { c.remove(); });
+          cookieLayer.appendChild(c);
+        }
+
+        var snowLayer = document.getElementById("snow-layer");
+        var fireCanvas = document.getElementById("fire-layer");
+        var temp = 0;
+        var snowTimer = null;
+
+        function temperature(v) {
+          temp = Math.max(-1, Math.min(1, v / 100));
+          var cold = Math.max(0, -temp);
+          var hot = Math.max(0, temp);
+
+          clearInterval(snowTimer);
+          snowTimer = null;
+          if (cold > 0.02 && !calm.matches) {
+            snowTimer = setInterval(flake, 620 - 575 * cold);
+          }
+          if (!cold) snowLayer.textContent = "";
+          root.style.setProperty("--frost", Math.max(0, (cold - 0.6) / 0.4).toFixed(3));
+          if (cold > 0.92) root.setAttribute("data-frozen", "");
+          else root.removeAttribute("data-frozen");
+
+          root.style.setProperty("--heat", (hot * 0.85).toFixed(3));
+          fire(hot);
+        }
+
+        function flake() {
+          if (!snowLayer || snowLayer.childElementCount > 260) return;
+          var f = el("div", "flake");
+          var size = rand(3, 8);
+          f.style.width = size + "px";
+          f.style.height = size + "px";
+          f.style.left = rand(-4, 100) + "vw";
+          f.style.opacity = rand(0.45, 1);
+          f.style.setProperty("--drift", rand(-14, 14) + "vw");
+          var dur = rand(5.5, 12);
+          f.style.animationDuration = dur + "s";
+          f.addEventListener("animationend", function () { f.remove(); });
+          setTimeout(function () { f.remove(); }, (dur + 4) * 1000);
+          snowLayer.appendChild(f);
+        }
+
+        var FIRE_PALETTE = [
+          [7, 7, 7], [31, 7, 7], [47, 15, 7], [71, 15, 7], [87, 23, 7], [103, 31, 7],
+          [119, 31, 7], [143, 39, 7], [159, 47, 7], [175, 63, 7], [191, 71, 7],
+          [199, 71, 7], [223, 79, 7], [223, 87, 7], [223, 87, 7], [215, 95, 7],
+          [215, 95, 7], [215, 103, 15], [207, 111, 15], [207, 119, 15], [207, 127, 15],
+          [207, 135, 23], [199, 135, 23], [199, 143, 23], [199, 151, 31], [191, 159, 31],
+          [191, 159, 31], [191, 167, 39], [191, 167, 39], [191, 175, 47], [183, 175, 47],
+          [183, 183, 47], [183, 183, 55], [207, 207, 111], [223, 223, 159],
+          [239, 239, 199], [255, 255, 255]
+        ];
+        var FIRE_SCALE = 5;
+        var fw = 0, fh = 0, fbuf = null, fimg = null, fctx = null, fraf = null;
+        var fireHeat = 0;
+
+        function fireSize() {
+          if (!fireCanvas) return;
+          fw = Math.ceil(window.innerWidth / FIRE_SCALE);
+          fh = Math.ceil(window.innerHeight * 0.55 / FIRE_SCALE);
+          fireCanvas.width = fw;
+          fireCanvas.height = fh;
+          fctx = fireCanvas.getContext("2d");
+          fbuf = new Uint8Array(fw * fh);
+          fimg = fctx.createImageData(fw, fh);
+        }
+
+        function fire(hot) {
+          if (!fireCanvas) return;
+          fireHeat = hot;
+          if (hot < 0.02) {
+            fireCanvas.classList.remove("is-on");
+            cancelAnimationFrame(fraf);
+            fraf = null;
+            return;
+          }
+          if (!fbuf) fireSize();
+          fireCanvas.classList.add("is-on");
+          if (!fraf) fraf = requestAnimationFrame(burn);
+        }
+
+        function burn() {
+          fraf = requestAnimationFrame(burn);
+          var base = Math.round(36 * Math.min(1, fireHeat * 1.15));
+          var bottom = (fh - 1) * fw;
+          for (var x = 0; x < fw; x++) {
+            fbuf[bottom + x] = Math.max(0, base - ((Math.random() * 4) | 0));
+          }
+          for (var col = 0; col < fw; col++) {
+            for (var y = fh - 1; y > 0; y--) {
+              var src = y * fw + col;
+              var decay = (Math.random() * 3) | 0;
+              var nx = col - decay + 1;
+              if (nx < 0 || nx >= fw) nx = col;
+              fbuf[(y - 1) * fw + nx] = Math.max(0, fbuf[src] - (decay & 1));
+            }
+          }
+          var data = fimg.data;
+          for (var i = 0; i < fbuf.length; i++) {
+            var c = FIRE_PALETTE[fbuf[i]];
+            var o = i * 4;
+            data[o] = c[0]; data[o + 1] = c[1]; data[o + 2] = c[2];
+            data[o + 3] = fbuf[i] === 0 ? 0 : Math.min(255, fbuf[i] * 110);
+          }
+          fctx.putImageData(fimg, 0, 0);
+        }
+
+        var batteryPct = document.getElementById("battery-pct");
+        var batteryFill = document.querySelector(".battery-fill");
+        var charge = 100, chargeTimer = null;
+
+        function power(on) {
+          root.dataset.power = on ? "low" : "normal";
+          clearInterval(chargeTimer);
+          if (!on) return;
+          charge = 100;
+          paintCharge();
+          chargeTimer = setInterval(function () {
+            charge = Math.max(1, charge - 1);
+            paintCharge();
+            if (charge <= 1) clearInterval(chargeTimer);
+          }, 900);
+        }
+
+        function paintCharge() {
+          if (batteryFill) batteryFill.style.setProperty("--charge", charge + "%");
+          if (batteryPct) batteryPct.textContent = charge + "%";
+        }
+
+        function gravity(on) {
+          root.dataset.gravity = on ? "on" : "off";
+          tiles.forEach(function (t) {
+            if (on) {
+              t.style.removeProperty("--rot");
+              t.style.removeProperty("--fx");
+              t.style.animationDelay = "";
+            } else {
+              t.style.setProperty("--rot", rand(-9, 9) + "deg");
+              t.style.setProperty("--fx", rand(-14, 14) + "px");
+              t.style.animationDelay = -rand(0, 3.4) + "s";
+            }
+          });
+
+          if (on) {
+            rows.forEach(function (r) { r.style.removeProperty("--gy"); });
+            setTimeout(measure, 900);
+            return;
+          }
+
+          var ceiling = header ? header.getBoundingClientRect().bottom + 16 : 16;
+          var top = Infinity;
+          rows.forEach(function (r) {
+            var prev = r.style.transition;
+            r.style.transition = "none";
+            r.style.setProperty("--gy", "0px");
+            top = Math.min(top, r.getBoundingClientRect().top);
+            r.style.transition = prev;
+          });
+          var rise = Math.max(0, top - ceiling);
+          rows.forEach(function (r) { r.style.setProperty("--gy", -rise + "px"); });
+          setTimeout(measure, 1300);
+        }
+
+        var px = -9999, py = -9999, pending = false;
+
+        function clearDodge(t) {
+          t.style.removeProperty("--dx");
+          t.style.removeProperty("--dy");
+        }
+
+        function measure() {
+          tiles.forEach(function (t) {
+            var prev = t.style.transition;
+            var dx = t.style.getPropertyValue("--dx");
+            var dy = t.style.getPropertyValue("--dy");
+            t.style.transition = "none";
+            t.style.setProperty("--dx", "0px");
+            t.style.setProperty("--dy", "0px");
+            var r = t.getBoundingClientRect();
+            t._cx = r.left + r.width / 2;
+            t._cy = r.top + r.height / 2;
+            t._r = r.width;
+            if (dx) t.style.setProperty("--dx", dx); else t.style.removeProperty("--dx");
+            if (dy) t.style.setProperty("--dy", dy); else t.style.removeProperty("--dy");
+            void t.offsetHeight;
+            t.style.transition = prev;
+          });
+        }
+
+        function relayout() {
+          repaint();
+          measure();
+          paintDisplay();
+          fireSize();
+          if (get("gravity") === "off") gravity(false);
+        }
+
+        function dodge() {
+          pending = false;
+          var mode = root.dataset.difficulty;
+          if (mode === "normal") return;
+          tiles.forEach(function (t) {
+            if (t.dataset.modal === "modal-settings") return;
+            var dx = t._cx - px, dy = t._cy - py;
+            var dist = Math.sqrt(dx * dx + dy * dy) || 1;
+            var reach = t._r * 1.25;
+            if (dist > reach) { clearDodge(t); return; }
+            var near = 1 - dist / reach;
+            var amt = mode === "hard" ? near * t._r * 0.9 : near * -16;
+            t.style.setProperty("--dx", (dx / dist * amt).toFixed(1) + "px");
+            t.style.setProperty("--dy", (dy / dist * amt).toFixed(1) + "px");
+          });
+        }
+
+        var CURSORS = {
+          crosshair: { src: "assets/settings/crosshair.svg",  w: 56,  hx: 0.5,  hy: 0.5,   tilt: false, lag: 1 },
+          giant:     { src: "assets/settings/arrow.svg",      w: 108, hx: 0.06, hy: 0.043, tilt: false, lag: 1 },
+          wii:       { src: "images/cursor.png",              w: 62,  hx: 0.48, hy: 0.06,  tilt: true,  lag: 1 },
+          master:    { src: "assets/settings/masterhand.png", w: 120, hx: 0.01, hy: 0.49,  tilt: false, lag: 0.14 }
+        };
+        var fake = document.getElementById("fake-cursor");
+        var mode = null, rot = 0, wantRot = 0, lastX = null;
+        var drawX = 0, drawY = 0, loop = null;
+
+        function cursor(v) {
+          mode = CURSORS[v] || null;
+          if (mode || v === "invisible") root.setAttribute("data-nocursor", "");
+          else root.removeAttribute("data-nocursor");
+
+          if (!mode) {
+            fake.classList.remove("is-on");
+            cancelAnimationFrame(loop);
+            loop = null;
+            return;
+          }
+          fake.src = mode.src;
+          fake.style.width = mode.w + "px";
+          fake.style.transformOrigin = (mode.hx * 100) + "% " + (mode.hy * 100) + "%";
+          drawX = px; drawY = py;
+          if (!loop) loop = requestAnimationFrame(spin);
+        }
+
+        function spin() {
+          loop = requestAnimationFrame(spin);
+          if (!mode) return;
+          rot += (wantRot - rot) * 0.2;
+          drawX += (px - drawX) * mode.lag;
+          drawY += (py - drawY) * mode.lag;
+
+          var x = drawX, y = drawY;
+          var flip = root.dataset.flipped === "on";
+          if (flip) {
+            x = window.innerWidth - x;
+            y = window.innerHeight - y;
+          }
+          var w = fake.offsetWidth || mode.w;
+          var h = fake.offsetHeight || mode.w;
+          fake.style.transform =
+            "translate(" + (x - w * mode.hx) + "px," + (y - h * mode.hy) + "px)" +
+            " rotate(" + (rot * (mode.tilt ? 1 : 0) + (flip ? 180 : 0)) + "deg)";
+        }
+
+        var trailAt = null;
+        function trail() {
+          if (root.dataset.cursor !== "trail" || calm.matches) return;
+          if (trailAt) {
+            var dx = px - trailAt[0], dy = py - trailAt[1];
+            if (dx * dx + dy * dy < 260) return;
+          }
+          trailAt = [px, py];
+          var d = el("div", "trail-dot");
+          d.style.left = px + "px";
+          d.style.top = py + "px";
+          d.addEventListener("animationend", function () { d.remove(); });
+          document.body.appendChild(d);
+        }
+
+        var saver = document.getElementById("saver");
+        var logo = document.getElementById("saver-logo");
+        var HUES = ["#4fc3f7", "#ff5252", "#ffd54f", "#69f0ae", "#e040fb", "#ff8a65", "#ffffff"];
+        var saverRaf = null, saverOn = false, armAt = 0;
+        var sx = 0, sy = 0, svx = 3.1, svy = 2.5, hue = 0;
+
+        function startSaver() {
+          if (saverOn) return;
+          saverOn = true;
+          saver.classList.add("is-on");
+          sx = rand(0, Math.max(1, window.innerWidth - 150));
+          sy = rand(0, Math.max(1, window.innerHeight - 150));
+          armAt = Date.now() + 450;
+          saverRaf = requestAnimationFrame(bounce);
+        }
+
+        function stopSaver() {
+          if (!saverOn) return;
+          saverOn = false;
+          saver.classList.remove("is-on");
+          cancelAnimationFrame(saverRaf);
+          saverRaf = null;
+        }
+
+        function wake() {
+          if (!saverOn || Date.now() < armAt) return;
+          set("saver", "off");
+        }
+
+        function bounce() {
+          saverRaf = requestAnimationFrame(bounce);
+          var w = window.innerWidth - 150, h = window.innerHeight - 150;
+          sx += svx; sy += svy;
+          if (sx <= 0) { sx = 0; svx = Math.abs(svx); hit(); }
+          if (sx >= w) { sx = w; svx = -Math.abs(svx); hit(); }
+          if (sy <= 0) { sy = 0; svy = Math.abs(svy); hit(); }
+          if (sy >= h) { sy = h; svy = -Math.abs(svy); hit(); }
+          logo.style.transform = "translate(" + sx + "px," + sy + "px)";
+        }
+
+        function hit() {
+          hue = (hue + 1) % HUES.length;
+          logo.style.color = HUES[hue];
+        }
+
+        var STAGES = [
+          "Restore factory settings",
+          "Are you sure?",
+          "Are you really sure?",
+          "Are you absolutely sure?"
+        ];
+        var resetBtn = document.getElementById("set-reset");
+        var curtain = document.getElementById("curtain");
+        var restart = null;
+        var stage = 0;
+
+        function disarm() {
+          stage = 0;
+          if (!resetBtn) return;
+          resetBtn.textContent = STAGES[0];
+          resetBtn.classList.remove("is-armed");
+        }
+
+        function factoryReset() {
+          disarm();
+          curtain.classList.add("is-on");
+          try {
+            restart = restart || new Audio("assets/settings/restart.mp3");
+            restart.currentTime = 0;
+            var p = restart.play();
+            if (p && p.catch) p.catch(function () {});
+          } catch (e) {}
+
+          setTimeout(function () {
+            stopSaver();
+            drop(KEY);
+            store = {};
+            SETTINGS.forEach(function (s) { s.live = null; });
+            SETTINGS.forEach(function (s) { set(s.key, defaultOf(s), true); });
+            paintStorage();
+            repaint();
+          }, 620);
+
+          setTimeout(function () { curtain.classList.remove("is-on"); }, 1900);
+        }
+
+        if (resetBtn) {
+          resetBtn.addEventListener("click", function () {
+            stage++;
+            if (stage >= STAGES.length) { factoryReset(); return; }
+            resetBtn.textContent = STAGES[stage];
+            resetBtn.classList.toggle("is-armed", stage === STAGES.length - 1);
+          });
+        }
+
+        document.addEventListener("mousemove", function (e) {
+          px = e.clientX;
+          py = e.clientY;
+          if (lastX !== null) wantRot = Math.max(-22, Math.min(22, (px - lastX) * 1.1));
+          lastX = px;
+          if (mode && !fake.classList.contains("is-on")) fake.classList.add("is-on");
+          trail();
+          wake();
+          if (root.dataset.difficulty !== "normal" && !pending) {
+            pending = true;
+            requestAnimationFrame(dodge);
+          }
+        }, { passive: true });
+
+        document.addEventListener("mouseleave", function () {
+          fake.classList.remove("is-on");
+        });
+
+        ["mousedown", "keydown", "touchstart", "wheel", "scroll"].forEach(function (ev) {
+          window.addEventListener(ev, wake, { passive: true });
+        });
+
+        window.addEventListener("resize", relayout);
+
+        tiles.forEach(function (t) {
+          t.addEventListener("click", function () {
+            if (t.dataset.modal !== "modal-settings") return;
+            disarm();
+            repaint();
+          });
+        });
+
+        if (osDark.addEventListener) {
+          osDark.addEventListener("change", function (e) {
+            if (store.theme == null) root.dataset.theme = e.matches ? "dark" : "light";
+          });
+        }
+
+        SETTINGS.forEach(function (s) { set(s.key, get(s.key), true); });
+        paintStorage();
+        measure();
+        repaint();
       })();
     </script>
   </body>
