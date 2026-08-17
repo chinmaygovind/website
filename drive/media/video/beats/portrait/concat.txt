@@ -1,0 +1,5 @@
+file '/home/cgovind/Github/website/drive/video/beats/portrait/cover.mp4'
+file '/home/cgovind/Github/website/drive/video/beats/portrait/pack.mp4'
+file '/home/cgovind/Github/website/drive/video/beats/portrait/firstperson.mp4'
+file '/home/cgovind/Github/website/drive/video/beats/portrait/ramp.mp4'
+file '/home/cgovind/Github/website/drive/video/beats/portrait/win.mp4'

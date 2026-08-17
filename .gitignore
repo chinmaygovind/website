@@ -33,3 +33,16 @@ drive/todo.txt
 # five-view set per track per attempt would be tens of megabytes of pictures
 # nobody reads twice.
 drive/tools/views/
+
+# Intermediate frames from `drive/tools/shoot_video.py`. The script renders each
+# beat to a few hundred PNGs and ffmpeg stitches them into the mp4s beside them,
+# then the next run clears and re-renders the lot - so these are build output,
+# not source. Committed they would be 221MB of the repo forever, on top of the
+# ~484MB of media already in .git that CI works around with sparse checkouts.
+# The finished clips (drive/media/video/*.mp4 and beats/) ARE committed.
+drive/media/video/frames/
+
+# Contact sheets from the same script's `--probe`, used once to pick the start
+# time of each beat by eye. Those times are now constants in the script, so the
+# sheets are scouting output the same way drive/tools/views/ is.
+drive/media/video/probe/
