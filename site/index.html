@@ -383,6 +383,9 @@
         align-items: baseline;
         flex-wrap: wrap;
       }
+      /* `display: flex` above beats `hidden`'s UA `display: none`, so a row
+         that starts hidden (the steps line) needs this to actually stay hidden. */
+      .fact[hidden] { display: none; }
       .fact dt, .fact dd { margin: 0; }
       .fact dt::after { content: ":"; }
       .fact-link {
@@ -392,6 +395,9 @@
       .penn-red { color: #990000; }
       .penn-blue { color: #2f70f0; }
       .fav-blue { color: #1a56ff; }
+      /* King Dedede: the gold of the crown, the blue of the king */
+      .dedede-gold { color: #d4a017; }
+      .dedede-blue { color: #2a63c9; }
       .star { color: #f5b301; }
       .pdf-wrap {
         flex: 1;
@@ -475,11 +481,18 @@
         border: 2px solid var(--racing);
         border-radius: 0;
       }
-      /* the drive shots are letterboxed against the blurred backdrop, so the
-         border goes on the frame rather than on the image the way the other
-         modals do it -- on the image it traced the shot and left the filler
-         outside the line, which read as two rectangles rather than one */
+      /* drive is one 16:9 clip rather than the stacked stills it used to be, so
+         the frame is sized to the clip and centred instead of stretching to the
+         pane -- a 16:9 video in a full-height pane is a small picture between
+         two tall bars of its own blurred backdrop. The border stays on the frame
+         rather than on the media the way the other modals do it: it is the frame
+         that is exactly the shape of what is inside it. */
+      .modal-drive .pane-right { justify-content: center; }
+      .modal-drive .media { flex: 0 0 auto; }
       .modal-drive .media-frame {
+        flex: 0 0 auto;
+        aspect-ratio: 16 / 9;
+        max-height: 100%;
         border: 2px solid var(--drive);
         border-radius: 0;
       }
@@ -1017,17 +1030,23 @@
         <div class="modal-body">
           <div class="pane pane-left">
             <img class="modal-icon" src="assets/icons/resume.gif" alt="" aria-hidden="true" />
-            <h2 class="pane-title">fast facts about me</h2>
+            <h2 class="pane-title">resume</h2>
             <dl class="facts">
               <div class="fact"><dt>name</dt><dd>Chinmay Govind</dd></div>
-              <div class="fact"><dt>age</dt><dd><span id="fact-age">19</span> years</dd></div>
+              <div class="fact"><dt>age</dt><dd><span id="fact-age">20 years</span></dd></div>
               <div class="fact"><dt>school</dt><dd><span class="penn-red">university</span> of <span class="penn-blue">pennsylvania</span></dd></div>
-              <div class="fact"><dt>height</dt><dd>5' 9</dd></div>
               <div class="fact"><dt>favorite color</dt><dd><span class="fav-blue">blue</span></dd></div>
-              <div class="fact"><dt><a class="fact-link" href="https://puzzles.usatoday.com/" target="_blank" rel="noopener">USA Today Crossword</a> PB: 2:41</dd></div>
+              <div class="fact"><dt><a class="fact-link" href="https://puzzles.usatoday.com/" target="_blank" rel="noopener">USA Today Crossword</a></dt><dd>PB: 2m 41s</dd></div>
+              <div class="fact"><dt>typing speed</dt><dd>150 wpm</dd></div>
               <div class="fact"><dt><a class="fact-link" href="https://www.duolingo.com/profile/ChinmayGov" target="_blank" rel="noopener">Duolingo Streak</a></dt><dd><span id="fact-duo">2084</span></dd></div>
               <div class="fact"><dt><a class="fact-link" href="https://www.worldcubeassociation.org/persons/2018GOVI03" target="_blank" rel="noopener">3x3 Rubik's Cube</a></dt><dd>PB: 18.04s</dd></div>
+              <div class="fact"><dt><a class="fact-link" href="https://github.com/chinmaygovind" target="_blank" rel="noopener">commits this year</a></dt><dd><span id="fact-commits">354</span></dd></div>
               <div class="fact"><dt><a class="fact-link" href="https://plancke.io/hypixel/player/stats/bheta#BedWars" target="_blank" rel="noopener">Hypixel Bedwars</a></dt><dd>582 <span class="star">&#9733;</span></dd></div>
+              <div class="fact"><dt><a class="fact-link" href="https://statsroyale.com/profile/82GYC2GVL" target="_blank" rel="noopener">Clash Royale wins</a></dt><dd>6,613</dd></div>
+              <div class="fact"><dt>smash main</dt><dd><span class="dedede-gold">King</span> <span class="dedede-blue">Dedede</span></dd></div>
+              <!-- Pushed from my phone hourly; hidden unless the reading is
+                   recent, since a stale "steps today" is just a wrong number. -->
+              <div class="fact" id="fact-steps-row" hidden><dt>steps today</dt><dd><span id="fact-steps"></span></dd></div>
             </dl>
           </div>
           <div class="pane pane-right">
@@ -1144,13 +1163,24 @@
           </div>
           <div class="pane pane-right">
             <div class="media">
+              <!-- the store preview cut, rendered by drive/tools/shoot_video.py --
+                   it opens on the Spa cover and runs through a time trial, the
+                   multiplayer pack and a race win, so it says everything the two
+                   stills it replaced said, moving. Silent by construction, so
+                   autoplaying it on open needs no mute button. -->
               <div class="media-frame">
-                <img class="media-img" src="assets/drive/timetrial.png" alt="A solo time trial lap of Chicane Park" />
-              </div>
-            </div>
-            <div class="media">
-              <div class="media-frame">
-                <img class="media-img" src="assets/drive/multiplayer.png" alt="An eight car multiplayer race down Rainbow Road" />
+                <video
+                  class="media-video"
+                  src="assets/drive/drive-landscape.mp4"
+                  poster="assets/drive/drive-landscape-poster.jpg"
+                  data-autoplay
+                  muted
+                  loop
+                  playsinline
+                  preload="none"
+                  controls
+                  aria-label="Fifteen seconds of Drive: a time trial lap, a multiplayer pack and a race win"
+                ></video>
               </div>
             </div>
           </div>
@@ -1317,6 +1347,15 @@
           if (!modal) return;
           modal.hidden = false;
           document.body.style.overflow = "hidden";
+          // a preview clip starts when the popup does. preload="none" means
+          // nothing is fetched until here, so a visitor who never opens drive
+          // never pays for the 8MB; play() is muted so no gesture is needed
+          // beyond the click that opened this, and a rejected promise (a data
+          // saver, say) just leaves the poster up.
+          modal.querySelectorAll("video[data-autoplay]").forEach(function (v) {
+            var p = v.play();
+            if (p && p.catch) p.catch(function () {});
+          });
         });
       });
 
@@ -1357,23 +1396,52 @@
       }
 
       // every static modal photo sits in a .media-frame, whether or not it is
-      // also wrapped in a link
+      // also wrapped in a link. A frame holding a video backs onto its poster,
+      // which is that video's own first frame.
       document.querySelectorAll(".media-frame").forEach(function (frame) {
-        var img = frame.querySelector("img");
-        fitFrame(frame, img ? img.getAttribute("src") : "");
+        var media = frame.querySelector("img, video");
+        var src = !media
+          ? ""
+          : media.tagName === "VIDEO"
+          ? media.getAttribute("poster")
+          : media.getAttribute("src");
+        fitFrame(frame, src || "");
       });
 
-      // fast facts: live age from birthday (Jul 31 2006)
+      // fast facts: age ticking to the second, from 7:31am on 31 Jul 2006.
+      // Pinned to a UTC instant (07:31 EDT = 11:31 UTC) rather than a local
+      // Date, so the seconds are the same number for a visitor in any timezone.
+      // The years/days part still has to be counted in calendar terms - a year
+      // is not a fixed number of milliseconds - so it walks the birthday
+      // forward and then measures the remainder as elapsed time.
       (function () {
-        var born = new Date(2006, 6, 31); // month is 0-indexed, so 6 = July
-        var now = new Date();
-        var age = now.getFullYear() - born.getFullYear();
-        var beforeBirthday =
-          now.getMonth() < born.getMonth() ||
-          (now.getMonth() === born.getMonth() && now.getDate() < born.getDate());
-        if (beforeBirthday) age--;
         var el = document.getElementById("fact-age");
-        if (el) el.textContent = age;
+        if (!el) return;
+        var BORN_H = 11, BORN_M = 31; // 7:31am Eastern, in UTC
+
+        function two(n) { return (n < 10 ? "0" : "") + n; }
+
+        function tick() {
+          var now = new Date();
+          // most recent birthday that has already happened
+          var years = now.getUTCFullYear() - 2006;
+          var last = Date.UTC(now.getUTCFullYear(), 6, 31, BORN_H, BORN_M);
+          if (now.getTime() < last) {
+            years--;
+            last = Date.UTC(now.getUTCFullYear() - 1, 6, 31, BORN_H, BORN_M);
+          }
+          var rest = now.getTime() - last;
+          var days = Math.floor(rest / 86400000);
+          rest -= days * 86400000;
+          var h = Math.floor(rest / 3600000);
+          var m = Math.floor((rest % 3600000) / 60000);
+          var s = Math.floor((rest % 60000) / 1000);
+          el.textContent =
+            years + " years, " + days + " days, " + h + ":" + two(m) + ":" + two(s);
+        }
+
+        tick();
+        setInterval(tick, 1000);
       })();
 
       // Every live pane fetches JSON and patches itself in. Failure is silent by
@@ -1391,6 +1459,25 @@
         if (!d || typeof d.streak !== "number") return;
         var el = document.getElementById("fact-duo");
         if (el) el.textContent = d.streak;
+      });
+
+      // fast facts: this year's public commit count, via the proxy in app.py
+      getJSON("/api/github-commits", function (d) {
+        if (!d || typeof d.commits !== "number") return;
+        var el = document.getElementById("fact-commits");
+        if (el) el.textContent = d.commits.toLocaleString();
+      });
+
+      // fast facts: steps today, pushed here by a Shortcuts automation on my
+      // phone. The row stays hidden unless the server has a *recent* reading -
+      // unlike the other facts there is no honest fallback for a stale one.
+      getJSON("/api/steps", function (d) {
+        if (!d || typeof d.steps !== "number" || !d.fresh) return;
+        var el = document.getElementById("fact-steps");
+        var row = document.getElementById("fact-steps-row");
+        if (!el || !row) return;
+        el.textContent = d.steps.toLocaleString();
+        row.hidden = false;
       });
 
       // music tile: names/urls below come from Spotify's API or my own JSON,

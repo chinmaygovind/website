@@ -13,6 +13,7 @@ it every ``/projects/...``, ``/games/...`` and ``/channels/...`` link would 404.
 """
 
 import base64
+import hmac
 import json
 import os
 import threading
@@ -105,6 +106,136 @@ def duolingo_streak():
     _duolingo_cache["streak"] = streak
     _duolingo_cache["fetched_at"] = now
     return {"streak": streak}
+
+
+# Commits Chinmay has pushed this calendar year, for the same "fast facts" list.
+# GitHub's commit *search* is the only endpoint that answers this in one call -
+# the REST API can only list commits per repository, which would be 35 calls and
+# still miss forks. The catch is that search is limited to **10 requests a minute
+# for anonymous callers**, shared by everyone behind this box's IP, so the hourly
+# cache is not politeness here, it is the thing that keeps the endpoint working.
+# Search also only indexes **public** repos, which is the honest number to show
+# anyway. Setting GITHUB_TOKEN in .env raises the limit to 30/min; it is not
+# needed and nothing breaks without it.
+GITHUB_USERNAME = "chinmaygovind"
+GITHUB_CACHE_TTL = 3600  # seconds
+_github_cache = {"commits": None, "year": None, "fetched_at": 0.0}
+
+
+@app.route("/api/github-commits")
+def github_commits():
+    """Return this year's public commit count for Chinmay (see the note above)."""
+    now = time.time()
+    year = time.gmtime(now).tm_year
+    if (
+        _github_cache["commits"] is not None
+        and _github_cache["year"] == year
+        and now - _github_cache["fetched_at"] < GITHUB_CACHE_TTL
+    ):
+        return {"commits": _github_cache["commits"], "year": year}
+
+    query = "author:%s author-date:>=%d-01-01" % (GITHUB_USERNAME, year)
+    url = "https://api.github.com/search/commits?per_page=1&q=" + urlparse.quote(query)
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "cgovind.com fast-facts",
+    }
+    token = os.environ.get("GITHUB_TOKEN", "")
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    try:
+        with urlrequest.urlopen(urlrequest.Request(url, headers=headers), timeout=5) as resp:
+            data = json.loads(resp.read())
+        commits = int(data["total_count"])
+    except (urlerror.URLError, KeyError, ValueError, TypeError, TimeoutError):
+        # A rate-limited minute or a flaky search index shouldn't blank the line;
+        # serve the last good count, or let the page keep the number in its markup.
+        if _github_cache["commits"] is not None:
+            return {"commits": _github_cache["commits"], "year": _github_cache["year"], "stale": True}
+        return {"commits": None}, 502
+
+    _github_cache["commits"] = commits
+    _github_cache["year"] = year
+    _github_cache["fetched_at"] = now
+    return {"commits": commits, "year": year}
+
+
+# Steps walked today, for the same "fast facts" list. **Nothing here fetches
+# anything** - Apple Health is on-device only and iCloud health sync is
+# end-to-end encrypted, so no server can ever ask Apple for this. The data flows
+# the other way: an hourly iOS Shortcuts automation on Chinmay's phone POSTs the
+# number here, and this endpoint only ever repeats back what it was last told.
+#
+# Two consequences worth knowing before changing any of it:
+#
+# * **It is stored on disk, not in memory.** The website runs `gunicorn -w 2`,
+#   so the worker that receives the POST is usually not the worker answering the
+#   next GET; an in-process variable would make the number appear and disappear
+#   depending on which worker you landed on. Same reason the Spotify refresh
+#   token is a file. The write is a temp-file rename so a reader never catches a
+#   half-written file.
+# * **A stale number is worse than no number**, because "steps today" reading
+#   yesterday's total is simply false. So the GET reports how old the reading is
+#   and the page *hides the line entirely* past STEPS_MAX_AGE rather than
+#   showing a stale count. Phone off, out of signal, automation disabled - the
+#   row quietly vanishes and comes back on its own. That is also why the row is
+#   `hidden` in the markup instead of carrying a placeholder number: every other
+#   fast fact can fall back to a hardcoded value that stays true, and this one
+#   cannot.
+#
+# The POST is authenticated by a shared secret in the box .env (STEPS_SECRET),
+# compared with hmac.compare_digest. Without it set, the endpoint refuses every
+# write - it must never be the case that a missing config turns into an open
+# "write anything to Chinmay's website" endpoint.
+STEPS_FILE = os.path.join(BASE_DIR, "instance", "steps.json")
+STEPS_MAX_AGE = 3 * 3600  # seconds; hourly automation, with slack for a missed run
+STEPS_MAX = 500000  # a plausibility ceiling; the world record day is ~350k
+
+
+def _steps_read():
+    try:
+        with open(STEPS_FILE) as f:
+            data = json.load(f)
+        return int(data["steps"]), float(data["at"])
+    except (OSError, ValueError, TypeError, KeyError):
+        return None, 0.0
+
+
+def _steps_write(steps, at):
+    """Atomically replace the stored reading (see the note about -w 2)."""
+    tmp = STEPS_FILE + ".tmp"
+    os.makedirs(os.path.dirname(STEPS_FILE), exist_ok=True)
+    with open(tmp, "w") as f:
+        json.dump({"steps": steps, "at": at}, f)
+    os.replace(tmp, STEPS_FILE)
+
+
+@app.route("/api/steps", methods=["GET", "POST"])
+def steps():
+    """GET the last reported step count; POST a new one from the phone."""
+    if request.method == "GET":
+        steps_value, at = _steps_read()
+        if steps_value is None:
+            return {"steps": None}
+        age = time.time() - at
+        return {"steps": steps_value, "age": int(age), "fresh": age < STEPS_MAX_AGE}
+
+    secret = os.environ.get("STEPS_SECRET", "")
+    if not secret:
+        return {"error": "not configured"}, 503
+    body = request.get_json(silent=True) or {}
+    given = body.get("secret", "")
+    if not isinstance(given, str) or not hmac.compare_digest(given, secret):
+        return {"error": "nope"}, 403
+    try:
+        steps_value = int(body["steps"])
+    except (KeyError, ValueError, TypeError):
+        return {"error": "steps must be a number"}, 400
+    if not 0 <= steps_value <= STEPS_MAX:
+        return {"error": "steps out of range"}, 400
+
+    _steps_write(steps_value, time.time())
+    return {"ok": True, "steps": steps_value}
 
 
 # Chinmay's own Spotify account (recently played + top artists) for the landing
