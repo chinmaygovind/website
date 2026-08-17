@@ -52,6 +52,21 @@ self-contained HTML with inline `<style>`/`<script>`.
   and top-artists from the Spotify proxy, plus a concert carousel driven by
   `site/assets/music/concerts.json` (add a concert by appending to that JSON —
   no code change).
+- **The resume modal is two different things above and below 760px.** Wide, it is
+  facts on the left and the PDF in an iframe on the right. On a phone the PDF
+  comes *first* and the facts sit under it, because that is what the tile
+  promised — and the iframe is replaced by `site/assets/resume-preview.png`, a
+  flat render of page 1, because **a PDF in an iframe is a desktop-only trick**:
+  phone viewers draw a fixed, non-scrollable snapshot of the top of the page, so
+  the preview was about a quarter of the resume with no way to reach the rest.
+  Neither side pays for the other: the picture is a CSS `background-image` inside
+  the media query, which is never fetched when the query does not match, and the
+  iframe's `src` waits in `data-src` until a wide screen asks for it, since
+  `display: none` does not stop an iframe loading. **Re-render the picture
+  whenever the PDF changes** — `python3 tools/render_resume_preview.py` — and
+  `tests/test_resume_preview.py` fails if you forget, by comparing a stamped
+  sha256 of the PDF, because a stale preview does not look broken, it looks like
+  last year's resume.
 - `site/wii/index.html` is the Wii menu (was `public/wii/index.html`, briefly at
   root). Warning screen fades into a channel grid. The bottom-left gray slot is a
   **Ticket to Ride channel** (`#channel-ttr`) whose click handler navigates to `/ttr`.

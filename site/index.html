@@ -419,6 +419,14 @@
         border: 1px solid rgba(0, 0, 0, 0.15);
         border-radius: 6px;
       }
+      /* The phone stand-in for that iframe, swapped in at 760px. It carries no
+         background here on purpose: a background image declared inside a media
+         query that does not match is never fetched, so a desktop pays nothing
+         for a 170KB picture it will not show. */
+      .pdf-shot { display: none; }
+      /* The heading over the fast facts, likewise phones only - on a wide screen
+         the facts sit directly under the modal's own "resume" title. */
+      .facts-heading { display: none; }
       /* poker: center the video embed vertically in its pane */
       .modal-poker .pane-right { justify-content: center; }
       .video-wrap {
@@ -842,7 +850,20 @@
           border-top: 1px solid rgba(0, 0, 0, 0.12);
           overflow: visible;
         }
-        .pdf-wrap { flex: none; height: 60vh; height: 60dvh; }
+        /* A PDF in an iframe is a desktop-only trick. Every phone viewer draws a
+           fixed, non-scrollable snapshot of the top of the page instead, so the
+           preview was about a quarter of the resume with no way to reach the
+           rest. A flat picture of page 1 behaves the same everywhere, sits at
+           the page's own 612:792, and opens the real PDF when tapped. */
+        .pdf-wrap { flex: none; height: auto; }
+        .pdf-frame { display: none; }
+        .pdf-shot {
+          display: block;
+          aspect-ratio: 612 / 792;
+          background: url("assets/resume-preview.png") center / contain no-repeat;
+          border: 1px solid rgba(0, 0, 0, 0.15);
+          border-radius: 6px;
+        }
         /* On a phone the resume itself is what the tile promised, so it goes
            above the fast facts rather than below a screenful of them. The
            heading travels with it and the copy in the left pane is hidden, and
@@ -855,6 +876,15 @@
         }
         #modal-resume .pane-left > .pane-title { display: none; }
         #modal-resume .title-mobile { display: block; margin-bottom: 0; }
+        /* Says what the list under the resume is. Bold, but the same face and
+           the same size as the facts themselves - it labels them, it does not
+           compete with the modal's title above the PDF. */
+        .facts-heading {
+          display: block;
+          margin: 0 0 0.55rem;
+          font-size: clamp(1rem, 1.7vw, 1.4rem);
+          font-weight: 700;
+        }
         .media { flex: none; }
         /* needs to outrank `.fit-frame img`, and must not catch the concert
            stage, which is sized by .concert-stage instead */
@@ -1052,6 +1082,7 @@
           <div class="pane pane-left">
             <img class="modal-icon" src="assets/icons/resume.gif" alt="" aria-hidden="true" />
             <h2 class="pane-title">resume</h2>
+            <h3 class="facts-heading">fast facts about me</h3>
             <dl class="facts">
               <div class="fact"><dt>name</dt><dd>Chinmay Govind</dd></div>
               <div class="fact"><dt>age</dt><dd><span id="fact-age">20 yr</span></dd></div>
@@ -1076,11 +1107,23 @@
             <h2 class="pane-title title-mobile">resume</h2>
             <p class="pane-caption">click <a class="here-link" href="assets/Chinmay_Govind_Resume.pdf" target="_blank" rel="noopener">here</a> to open my resume</p>
             <div class="pdf-wrap">
+              <!-- src is held in data-src and set by the script at the foot of
+                   the page, because `display: none` does not stop an iframe
+                   loading and a phone never shows this one. -->
               <iframe
                 class="pdf-frame"
-                src="assets/Chinmay_Govind_Resume.pdf"
+                data-src="assets/Chinmay_Govind_Resume.pdf"
                 title="Chinmay Govind resume"
               ></iframe>
+              <!-- Phones only; see .pdf-shot in the stylesheet. The picture is a
+                   CSS background so that a desktop never downloads it. -->
+              <a
+                class="pdf-shot"
+                href="assets/Chinmay_Govind_Resume.pdf"
+                target="_blank"
+                rel="noopener"
+                aria-label="Open Chinmay Govind's resume as a PDF"
+              ></a>
             </div>
           </div>
         </div>
@@ -1431,6 +1474,25 @@
           : media.getAttribute("src");
         fitFrame(frame, src || "");
       });
+
+      // The resume PDF is only ever previewed in the iframe on a wide screen -
+      // below 760px the page shows a picture of page 1 instead, because phone
+      // viewers render a clipped, non-scrollable snapshot in an iframe. Hiding
+      // the iframe does not stop it loading, though, so its src waits here until
+      // a screen that will actually show it turns up. The listener matters for a
+      // phone turned sideways, which crosses the breakpoint after load.
+      (function () {
+        var frame = document.querySelector(".pdf-frame[data-src]");
+        if (!frame) return;
+        var wide = window.matchMedia("(min-width: 761px)");
+        function load() {
+          if (wide.matches && !frame.getAttribute("src")) {
+            frame.setAttribute("src", frame.getAttribute("data-src"));
+          }
+        }
+        load();
+        if (wide.addEventListener) wide.addEventListener("change", load);
+      })();
 
       // fast facts: age ticking to the second, from 7:31am on 31 Jul 2006.
       // Pinned to a UTC instant (07:31 EDT = 11:31 UTC) rather than a local
