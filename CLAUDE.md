@@ -34,6 +34,11 @@ It has its own CI and is not tested from this repo.
   as static files with **GitHub-Pages-style directory indexes**: a request to
   `/foo/` serves `site/foo/index.html`, and `/foo` 301-redirects to `/foo/` so
   relative links keep working. Path safety via `werkzeug.utils.safe_join`.
+- **Static files revalidate on every request** (Flask's `no-cache` default), with
+  one exception: `fonts/` is served with a year's `max-age`, because every page on
+  this domain blocks on one font file and the round trip to revalidate it was
+  visible as a flash of the fallback face. See `site/CLAUDE.md` → **The font**
+  before extending that to anything else; `index.html` must not have it.
 - `/` serves the landing page (`site/index.html`); the Wii menu is at `/wii/`
   (`site/wii/index.html`). `/ttr`, `/ers` and `/kot` (each with and without the
   trailing slash) 302-redirect to `TTR_URL` / `ERS_URL` / `KOT_URL` (env; default

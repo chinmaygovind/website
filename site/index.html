@@ -21,6 +21,21 @@
          addresses is the real one without needing a hand-applied config change,
          and stays correct if one is ever added. -->
     <link rel="canonical" href="https://cgovind.com/" />
+    <!-- The whole page is set in this one face, so it is fetched here at the top
+         of the head rather than when the first text needs it. Without the
+         preload the browser only discovers the font *after* it has parsed the
+         stylesheet below and laid out something that uses it, which is late
+         enough to be visible. `crossorigin` is not optional and not about
+         hosting: fonts are fetched in CORS mode even same-origin, and a preload
+         whose mode does not match the real request is thrown away and fetched
+         again - a preload that costs an extra 139KB and saves nothing. -->
+    <link
+      rel="preload"
+      href="fonts/xkcd-script.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="cgovind.com" />
     <!-- Kept word-for-word the same as the <title> and description above, so the
@@ -69,10 +84,22 @@
       }
     </script>
     <style>
+      /* **`block`, not `swap`, and the difference is the flash.** `swap` means
+         "draw the text in Comic Sans now and re-draw it in this font whenever it
+         turns up", so every load where the font was not already in hand painted
+         the page in the wrong face first. `block` holds the text invisible
+         instead, for up to three seconds, then paints it once and correctly -
+         and with the preload above plus the year-long cache app.py now puts on
+         `/fonts/`, the wait is a first-visit-only fraction of a second.
+         `optional` was the other candidate and is worse here: it never swaps
+         late, so one slow first load would leave the *entire* page in Comic Sans
+         until a reload. The woff2 is the same font 23% smaller (182KB -> 139KB);
+         the woff stays behind it for anything that cannot read woff2. */
       @font-face {
         font-family: "xkcd Script";
-        src: url("fonts/xkcd-script.woff") format("woff");
-        font-display: swap;
+        src: url("fonts/xkcd-script.woff2") format("woff2"),
+             url("fonts/xkcd-script.woff") format("woff");
+        font-display: block;
       }
       :root {
         --charcoal: #333333;
@@ -85,7 +112,11 @@
         --drive: #3d8bfd;
         --music: #000000;
         --settings: #000000;
+        /* the colour a modal draws its edge, title and picture frames in; every
+           .modal-<name> below overrides it with its own */
+        --accent: var(--charcoal);
         --link: #1a56ff;
+        --per-orange: #e5601a;
         --tile: clamp(110px, min(14vw, 30vh), 240px);
       }
       * { box-sizing: border-box; }
@@ -293,29 +324,33 @@
         inset: 0;
         background: rgba(0, 0, 0, 0.55);
       }
+      /* Each modal declares its colour once, as --accent, and everything inside
+         it that is drawn in that colour reads the variable: the box's own edge,
+         the title, and every picture frame. Before this the same hex was named
+         in three places per tile and the frames had drifted apart. */
       .modal-box {
         position: relative;
         width: min(1150px, 94vw);
         height: min(780px, 90vh);
         height: min(780px, 90dvh);
         background: #fff;
-        border: 7px solid var(--charcoal);
+        border: 7px solid var(--accent);
         border-radius: 16px;
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
         display: flex;
         flex-direction: column;
         overflow: hidden;
       }
-      .modal-resume { border-color: var(--charcoal); }
-      .modal-poker { border-color: var(--poker); }
-      .modal-whale { border-color: var(--whale); }
-      .modal-racing { border-color: var(--racing); }
-      .modal-drive { border-color: var(--drive); }
-      .modal-ttr { border-color: var(--ttr); }
-      .modal-ers { border-color: var(--ers); }
-      .modal-kot { border-color: var(--kot); }
-      .modal-music { border-color: var(--music); }
-      .modal-settings { border-color: var(--settings); }
+      .modal-resume { --accent: var(--charcoal); }
+      .modal-poker { --accent: var(--poker); }
+      .modal-whale { --accent: var(--whale); }
+      .modal-racing { --accent: var(--racing); }
+      .modal-drive { --accent: var(--drive); }
+      .modal-ttr { --accent: var(--ttr); }
+      .modal-ers { --accent: var(--ers); }
+      .modal-kot { --accent: var(--kot); }
+      .modal-music { --accent: var(--music); }
+      .modal-settings { --accent: var(--settings); }
       .modal-close {
         position: absolute;
         top: 6px;
@@ -359,26 +394,20 @@
       .pane-title {
         margin: 0 0 1rem;
         font-size: clamp(1.6rem, 3vw, 2.6rem);
+        color: var(--accent);
       }
       /* A second copy of the resume modal's title, sitting with the PDF so that
          the phone layout can put the PDF first and still lead with a heading.
          `display: none` keeps it out of the accessibility tree too, so exactly
          one of the two is ever a heading. */
       .title-mobile { display: none; }
-      .modal-resume .pane-title { color: var(--charcoal); }
-      .modal-poker .pane-title { color: var(--poker); }
-      .modal-whale .pane-title { color: var(--whale); }
-      .modal-racing .pane-title { color: var(--racing); }
-      .modal-drive .pane-title { color: var(--drive); }
-      .modal-ttr .pane-title { color: var(--ttr); }
-      .modal-ers .pane-title { color: var(--ers); }
-      .modal-kot .pane-title { color: var(--kot); }
-      .modal-music .pane-title { color: var(--music); }
-      .modal-settings .pane-title { color: var(--settings); }
       .pane-text {
         font-size: clamp(1.1rem, 2vw, 1.6rem);
         line-height: 1.5;
       }
+      /* `p { margin: 0 }` up top, so a second paragraph would otherwise run
+         straight on from the first with nothing between them. */
+      .pane-text + .pane-text { margin-top: 0.7em; }
       .facts {
         margin: 0;
         display: flex;
@@ -416,8 +445,6 @@
       .pdf-frame {
         width: 100%;
         height: 100%;
-        border: 1px solid rgba(0, 0, 0, 0.15);
-        border-radius: 6px;
       }
       /* The phone stand-in for that iframe, swapped in at 760px. It carries no
          background here on purpose: a background image declared inside a media
@@ -438,7 +465,7 @@
         width: 100%;
         height: 100%;
         border: 0;
-        border-radius: 6px;
+        display: block;
       }
       /* stacked media (whales article + poster, racing placeholders) */
       .media {
@@ -490,42 +517,48 @@
         display: block;
       }
       .fit-frame .placeholder { position: relative; }
-      .media-img { border-radius: 6px; }
-      .modal-whale .media-img {
-        border: 2px solid #000;
+
+      /* ---- the frame ----
+         Every picture, clip and PDF in every modal is framed the same way: a 2px
+         line in that modal's --accent, 6px corners, drawn on the *box* and never
+         on the media inside it. On the media it traced the shot and left the
+         blurred filler outside the line, which reads as two rectangles rather
+         than one - worst in racing, where a wide screenshot in a tall slot drew
+         a small red box floating in grey. Drive was the only one that already
+         had it right and now it is the rule. `overflow: hidden` is what makes
+         the corners real: the shot and its backdrop are both clipped to them. */
+      .media-frame,
+      .pdf-frame,
+      .pdf-shot,
+      .video-wrap,
+      .concert-stage {
+        border: 2px solid var(--accent);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      /* the frame carries the line, so the media inside it carries none - and no
+         corners of its own either, since it is clipped to the frame's */
+      .media-img {
+        border: 0;
         border-radius: 0;
       }
-      .modal-racing .media-img {
-        border: 2px solid var(--racing);
-        border-radius: 0;
-      }
-      /* drive is one 16:9 clip rather than the stacked stills it used to be, so
-         the frame is sized to the clip and centred instead of stretching to the
-         pane -- a 16:9 video in a full-height pane is a small picture between
-         two tall bars of its own blurred backdrop. The border stays on the frame
-         rather than on the media the way the other modals do it: it is the frame
-         that is exactly the shape of what is inside it. */
+      /* drive's two are a 16:9 clip over a 16:9 still, and each frame is exactly
+         the shape of what is in it rather than stretching to the pane: a 16:9
+         picture in a full-height slot is a small image between two tall bars of
+         its own blurred backdrop. `min-height: 0` with `flex-shrink: 1` lets the
+         pair give way on a short screen instead of overflowing, and the column
+         is centred in the pane rather than filling it. */
       .modal-drive .pane-right { justify-content: center; }
-      .modal-drive .media { flex: 0 0 auto; }
+      .modal-drive .media { flex: 0 1 auto; }
       .modal-drive .media-frame {
-        flex: 0 0 auto;
+        flex: 0 1 auto;
         aspect-ratio: 16 / 9;
-        max-height: 100%;
-        border: 2px solid var(--drive);
-        border-radius: 0;
+        min-height: 0;
       }
-      .modal-ttr .media-img {
-        border: 2px solid var(--ttr);
-        border-radius: 0;
-      }
-      .modal-ers .media-img {
-        border: 2px solid var(--ers);
-        border-radius: 0;
-      }
-      .modal-kot .media-img {
-        border: 2px solid var(--kot);
-        border-radius: 0;
-      }
+      /* art that is not here yet: the same 2px line and the same corners as a
+         real frame, dashed and washed out so it reads as a slot rather than a
+         picture. The grey line first is the fallback for a browser without
+         `color-mix` - it is what this was before, so nothing gets worse. */
       .placeholder {
         flex: 1;
         min-height: 0;
@@ -533,6 +566,7 @@
         align-items: center;
         justify-content: center;
         border: 2px dashed rgba(0, 0, 0, 0.25);
+        border-color: color-mix(in srgb, var(--accent) 40%, #fff);
         border-radius: 6px;
         background: rgba(0, 0, 0, 0.02);
         color: rgba(0, 0, 0, 0.4);
@@ -546,6 +580,27 @@
       .here-link {
         color: var(--link);
         text-decoration: underline;
+      }
+      /* Penn Electric Racing is orange, not the racing modal's red. */
+      .per-link {
+        color: var(--per-orange);
+        text-decoration: underline;
+        font-weight: 700;
+      }
+      /* poker: the list of things Chinmay learned from. Bulletless, because the
+         bullet lands miles from the text at this font size. */
+      .link-list {
+        margin: 0.9rem 0 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 0.7rem;
+        font-size: clamp(1rem, 1.6vw, 1.3rem);
+        line-height: 1.4;
+      }
+      .link-list-note {
+        opacity: 0.6;
       }
 
       /* ---- music tile: spotify + concert gallery ---- */
@@ -572,7 +627,12 @@
         flex-direction: column;
         gap: 0.7rem;
         overflow-y: auto;
-        max-height: 270px;
+        /* Exactly four rows: 4 x 54px of album art + 3 x 0.7rem of gap. The
+           list scrolls, and a scroll box cut *between* two rows reads as a
+           list that continues, while one cut through the middle of a row
+           reads as a broken page. Every size below re-does this sum with its
+           own row height rather than picking a round number. */
+        max-height: 250px;
       }
       .spotify-tracks::-webkit-scrollbar {
         width: 6px;
@@ -702,13 +762,12 @@
         flex-direction: column;
         gap: 1rem;
       }
-      /* the stage is a .fit-frame (added by the script) plus its own size and
-         border -- the aspect-ratio handling itself lives up in .fit-frame */
+      /* the stage is a .fit-frame (added by the script) plus its own size; the
+         line and the corners come from the shared frame rule above, and the
+         aspect-ratio handling itself lives up in .fit-frame */
       .concert-stage {
         flex: 1;
         min-height: 220px;
-        border-radius: 8px;
-        border: 2px solid #000;
       }
       /* which shot you are on, and a way to jump straight to a clip */
       .concert-thumbs {
@@ -733,7 +792,7 @@
       }
       .concert-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
       .concert-thumb:hover { opacity: 0.85; }
-      .concert-thumb.is-current { opacity: 1; border-color: #000; }
+      .concert-thumb.is-current { opacity: 1; border-color: var(--accent); }
       .concert-thumb .play-dot {
         position: absolute;
         inset: 0;
@@ -754,7 +813,7 @@
       }
       .concert-arrow {
         background: none;
-        border: 2px solid #000;
+        border: 2px solid var(--accent);
         color: inherit;
         font-size: 1.5rem;
         line-height: 1;
@@ -861,8 +920,6 @@
           display: block;
           aspect-ratio: 612 / 792;
           background: url("assets/resume-preview.png") center / contain no-repeat;
-          border: 1px solid rgba(0, 0, 0, 0.15);
-          border-radius: 6px;
         }
         /* On a phone the resume itself is what the tile promised, so it goes
            above the fast facts rather than below a screenful of them. The
@@ -893,7 +950,7 @@
         /* the top half is full width now, so shift the gif clear of the close X */
         .modal-icon { top: 1.1rem; right: 3.2rem; }
         .spotify-section { flex: none; }
-        .spotify-tracks { max-height: 180px; gap: 0.55rem; }
+        .spotify-tracks { max-height: 187px; gap: 0.55rem; }  /* 4 x 40 + 3 x 8.8 */
         .spotify-track-art, .spotify-track-art img { width: 40px; height: 40px; }
         .spotify-track-play { width: 18px; height: 18px; right: -4px; bottom: -4px; }
         .spotify-track-play svg { width: 10px; height: 10px; }
@@ -901,6 +958,53 @@
         .spotify-track-artist { font-size: 0.85rem; }
         .concert-stage { flex: none; height: 260px; min-height: 0; }
         .concert-thumb { width: 46px; height: 36px; }
+      }
+
+      /* ---- short viewports ----
+         The modal is height-bound long before it is width-bound: every screen
+         gets the same `min(780px, 90dvh)` box, so a 1280x720 laptop has 130px
+         less to work with than a desktop at the same width, and a phone turned
+         sideways has 400px less. The music modal is the one that notices,
+         because it is the only pane with four stacked sections in it — at 720px
+         tall the whole `top artists` row sat below the fold of a pane that
+         scrolls without saying so, and in landscape the concert arrows and
+         caption were cut clean off by `.pane-right`'s `overflow: hidden`, with
+         no way to reach them at all.
+         **These come after the width query on purpose**: a small phone matches
+         both, and where they disagree the height is the tighter constraint. */
+      @media (max-height: 800px) {
+        .pane { padding: 1.5rem 1.6rem; }
+        .pane-title { margin-bottom: 0.6rem; }
+        .spotify-section { margin-top: 0.9rem; gap: 0.7rem; }
+        .spotify-heading { margin-bottom: 0.35rem; }
+        /* four of the shorter rows: 4 x 41 + 3 x 8. Smaller than the desktop
+           list, so the artists under it stay on screen instead of falling
+           below the fold of a pane that scrolls without saying so. */
+        .spotify-tracks { max-height: 188px; gap: 0.5rem; }
+        .spotify-track-art, .spotify-track-art img { width: 40px; height: 40px; }
+        .spotify-track-play { width: 18px; height: 18px; right: -4px; bottom: -4px; }
+        .spotify-track-play svg { width: 10px; height: 10px; }
+        .spotify-track-name { font-size: 1rem; }
+        .spotify-track-artist { font-size: 0.85rem; }
+        .spotify-artists { gap: 0.7rem; }
+        .spotify-artist { width: 56px; }
+        .spotify-artist img { width: 46px; height: 46px; }
+      }
+      /* A phone in landscape, or a very short desktop window. */
+      @media (max-height: 560px) {
+        .pane { padding: 1.1rem 1.3rem; }
+        /* Nothing in a pane may become unreachable. The left one has always
+           scrolled; the right one clipped its own navigation instead. The top
+           padding stays put while the rest tightens, because that is the strip
+           the close X floats in — without it the photo slides up under the X
+           and there is no longer anything white behind it. */
+        .pane-right { overflow: auto; padding-top: 2.2rem; }
+        .spotify-tracks { max-height: 139px; }  /* three rows: 3 x 41 + 2 x 8 */
+        .concert-stage { min-height: 110px; }
+        .concert-thumb { width: 44px; height: 34px; }
+        .concert-nav { padding-top: 0.6rem; }
+        .concert-arrow { width: 2rem; height: 2rem; font-size: 1.2rem; }
+        .concert-artist { font-size: 0.95rem; }
       }
     </style>
   </head>
@@ -1140,6 +1244,18 @@
             <img class="modal-icon" src="assets/icons/poker.gif" alt="" aria-hidden="true" />
             <h2 class="pane-title">poker</h2>
             <p class="pane-text">I like to play cards. I may not be the best, but I do get pretty lucky.</p>
+            <p class="pane-text">Here are some resources I used when I first started to play poker. I'm still not very good, but they helped me learn the basics.</p>
+            <ul class="link-list">
+              <li>
+                <a class="here-link" href="https://www.dummies.com/article/home-auto-hobbies/games/card-games/poker/understanding-poker-198916/" target="_blank" rel="noopener">Understanding Poker</a><span class="link-list-note">: the basics of playing the game</span>
+              </li>
+              <li>
+                <a class="here-link" href="https://www.pokerprofessor.com/university/how-to-win-at-poker/bankroll-challenge" target="_blank" rel="noopener">The Bankroll Challenge</a><span class="link-list-note">: teaches you starting ranges, pre-flop and post-flop play</span>
+              </li>
+              <li>
+                <a class="here-link" href="https://gtowizard.com/pokerarena" target="_blank" rel="noopener">Poker Arena</a><span class="link-list-note">: gives mathematical analysis of your play</span>
+              </li>
+            </ul>
           </div>
           <div class="pane pane-right">
             <div class="video-wrap">
@@ -1166,7 +1282,7 @@
           <div class="pane pane-left">
             <img class="modal-icon" src="assets/icons/whale.gif" alt="" aria-hidden="true" />
             <h2 class="pane-title">whales</h2>
-            <p class="pane-text">In</p>
+            <p class="pane-text">In summer of 2025, I had the chance to work in the Penn Undergraduate Research Program under Dr. John Spiesberger in his whales research group. I got to work on novel methods for using machine learning to calculate time differences of arrival of whale calls in order to track their locations. I'm super grateful to Dr. Spiesberger and Ari Spiesberger as well as PURM for giving me my first professional machine learning experience!</p>
           </div>
           <div class="pane pane-right">
             <div class="media">
@@ -1199,7 +1315,7 @@
           <div class="pane pane-left">
             <img class="modal-icon" src="assets/icons/racing.gif" alt="" aria-hidden="true" />
             <h2 class="pane-title">racing</h2>
-            <p class="pane-text">Filler text about racing goes here. I'll write this in later.</p>
+            <p class="pane-text">At Penn, I am a software lead for <a class="per-link" href="https://www.pennelectricracing.com/" target="_blank" rel="noopener">Penn Electric Racing</a>. The software team works on the embedded firmware and controls on the car as well as our cloud-based telemetry and data storage systems. If you are interested in joining the software team, please reach out!</p>
           </div>
           <div class="pane pane-right">
             <div class="media">
@@ -1248,6 +1364,11 @@
                   controls
                   aria-label="Fifteen seconds of Drive: a time trial lap, a multiplayer pack and a race win"
                 ></video>
+              </div>
+              <!-- Rainbow Road, eight cars deep. The clip is the whole game in
+                   fifteen seconds; this is the one shot worth holding still. -->
+              <div class="media-frame">
+                <img class="media-img" src="assets/drive/multiplayer.png" alt="An eight-player race down Rainbow Road in Drive" />
               </div>
             </div>
           </div>

@@ -7,7 +7,8 @@ self-contained HTML with inline `<style>`/`<script>`.
 
 - `site/index.html` is the landing page: white page, big "hey!" left, welcome line
   and contact links across the top, all in the self-hosted xkcd Script font
-  (`site/fonts/xkcd-script.woff`, from ipython/xkcd-font). Below it are **two
+  (`site/fonts/xkcd-script.woff2`, from ipython/xkcd-font — see **The font** below).
+  Below it are **two
   labelled tile rows** — `<section class="tilerow">` each holding an
   `<h2 class="rowlabel">` and its tiles, `ABOUT ME` over resume, poker, whales,
   racing, music, settings and `GAMES` over drive, ttr, ers, kot. Each row is its
@@ -35,8 +36,8 @@ self-contained HTML with inline `<style>`/`<script>`.
   had — the steering wheel in `assets/icons/drive.{png,gif,xcf}` is his.
 - **Adding a tile is one repeating pattern**, all inside `site/index.html` (no
   build step, so everything is inline):
-  1. a `--<name>` accent colour in `:root`, then `.modal-<name>` rules for
-     `border-color`, `.pane-title` colour, and `.media-img` border;
+  1. a `--<name>` accent colour in `:root`, then **one** line wiring it up:
+     `.modal-<name> { --accent: var(--<name>); }`;
   2. a `<button class="tile" data-modal="modal-<name>">` with a `.tile-img` whose
      `data-still`/`data-anim` are `assets/icons/<name>.png` / `.gif` — the script
      at the bottom swaps to the gif on hover and preloads it, so **every tile
@@ -47,6 +48,29 @@ self-contained HTML with inline `<style>`/`<script>`.
   The generic script wires open/close (X, backdrop, Escape) off those classes —
   a new tile needs no JS. Icon sources are GIMP `.xcf` files kept next to the
   exported png/gif in `site/assets/icons/`.
+- **`--accent` is the modal's colour and every rule that draws in it reads the
+  variable** — the box's 7px edge, `.pane-title`, the picture frames, the dashed
+  placeholders, the concert arrows and thumbs. It used to be the same hex named
+  in three places per tile, which is how the frames drifted apart in the first
+  place; now a tile cannot half-change colour.
+- **Every picture, clip and PDF is framed the same way: a 2px `--accent` line
+  with 6px corners, on the *frame* and never on the media inside it.** One rule
+  covers `.media-frame`, `.pdf-frame`, `.pdf-shot`, `.video-wrap` and
+  `.concert-stage`, and `.media-img` explicitly carries no border and no radius
+  of its own. **The border has to be on the frame** because the frame is also
+  the `.fit-frame`: a shot that does not match its slot is centred on a blurred
+  blow-up of itself, so a border on the image traced the shot and left the
+  filler outside the line — two rectangles, worst in racing, where a wide
+  screenshot in a tall slot drew a small red box floating in grey. `overflow:
+  hidden` on the frame is what makes the corners real, clipping both the shot
+  and its backdrop. Drive was the only modal that already did this; it is now
+  the rule and drive's own block is just the 16:9 sizing.
+- **Drive's pane is the demo clip over a Rainbow Road still**, and both frames
+  are `aspect-ratio: 16/9` rather than stretching to the pane, because a 16:9
+  picture in a full-height slot is a small image between two tall bars of its
+  own backdrop. `flex: 0 1 auto; min-height: 0` lets the pair give way on a
+  short screen (landscape phone) instead of overflowing — they pillarbox
+  against the backdrop, which still reads as one rectangle.
 - Two panes are live rather than static: the resume tile's fast facts patch in a
   computed age and the Duolingo streak, and the music tile fills recently-played
   and top-artists from the Spotify proxy, plus a concert carousel driven by
@@ -67,6 +91,24 @@ self-contained HTML with inline `<style>`/`<script>`.
   `tests/test_resume_preview.py` fails if you forget, by comparing a stamped
   sha256 of the PDF, because a stale preview does not look broken, it looks like
   last year's resume.
+- **The modals are height-bound before they are width-bound, and only the two
+  width breakpoints (900/760) used to know it.** Every screen gets the same
+  `min(780px, 90dvh)` box, so a 1280x720 laptop has 130px less than a desktop at
+  the same width and a phone turned sideways has 400px less. The music modal is
+  the one that notices, because its left pane stacks four things: at 720px tall
+  the whole `top artists` row sat below the fold of a pane that scrolls without
+  saying so, and in landscape the concert arrows and caption were cut off
+  outright by `.pane-right`'s `overflow: hidden`. Two `max-height` queries at the
+  foot of the stylesheet fix it — 800px compacts the Spotify side, 560px
+  compacts the concert side and gives `.pane-right` an `overflow` so nothing in
+  it can be unreachable. **They come after the width query on purpose**: a small
+  phone matches both, and the height is the tighter constraint.
+  `.spotify-tracks` is its own scroll box inside that pane, and **its
+  `max-height` is always an exact number of rows** (`4 x 54 + 3 x 0.7rem`
+  desktop, and each query re-does the sum with its own row height): cut between
+  two rows it reads as a list that continues, cut through the middle of one it
+  reads as a broken page. Check a change with a screenshot at 1024x600 and at
+  844x390, not just at a phone width — width alone will not reproduce any of this.
 - `site/wii/index.html` is the Wii menu (was `public/wii/index.html`, briefly at
   root). Warning screen fades into a channel grid. The bottom-left gray slot is a
   **Ticket to Ride channel** (`#channel-ttr`) whose click handler navigates to `/ttr`.
@@ -83,6 +125,38 @@ self-contained HTML with inline `<style>`/`<script>`.
   robot-tour, bridge, flip, klotski), copied unchanged.
 - `site/{images,audio,videos}/` - shared media (Wii menu art + channel media).
 - `site/404.html`, `favicon.ico`, `robots.txt` at the root.
+
+## The font
+
+The page is set entirely in xkcd Script, so how it loads *is* how the page loads.
+It used to flash: every visitor, on every visit, saw a moment of Comic Sans before
+it snapped into the right face. Three things caused that and all three are fixed —
+if you touch one, know what the other two are doing.
+
+- **The font was never cached.** `send_from_directory` defaults to
+  `Cache-Control: no-cache`, which means "revalidate every time", so a returning
+  visitor still paid a round trip to be told a 182KB file had not changed — and
+  the page was drawn in the fallback until that 304 landed. `app.py` now serves
+  anything under `fonts/` with a year's `max-age` (`_max_age()`), which is the
+  single biggest part of the fix and the only one that helps repeat visits.
+  **Nothing else on the site is cached like that**, deliberately: `index.html`
+  under the same rule would take a year to update.
+- **`font-display: block`, not `swap`.** `swap` is an instruction to paint the
+  wrong font first. `block` holds the text invisible instead and paints once.
+  `optional` is the trap: it never swaps in late, so one slow first load leaves
+  the whole page in Comic Sans until a reload.
+- **`<link rel="preload">` in the head**, because otherwise the font is only
+  discovered after the stylesheet is parsed and something using it is laid out.
+  It needs `crossorigin` even though the font is same-origin — fonts fetch in
+  CORS mode, and a preload whose mode does not match the real request is
+  discarded and fetched twice.
+
+Measured on a throttled link (50KB/s, 400ms RTT) the text is correct at 1.5s
+while the tile icons are still arriving; the preload is what puts the font ahead
+of them. `.woff2` is the same font 23% smaller (182KB → 139KB); the `.woff` stays
+beside it as the second `src` and is what `accounts/`, `ers/` and `kot/` still
+use — **those three are still on `swap` and still ask for the `.woff`**, so they
+flash the way this page used to. `drive/` is already `block`, for its own reason.
 
 ## Being found
 

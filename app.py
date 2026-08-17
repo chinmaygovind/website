@@ -494,6 +494,29 @@ def drive():
     return redirect(DRIVE_URL, code=302)
 
 
+# **The fonts are the one thing here worth caching hard, and not caching them
+# was visible.** Flask's default for a static file is `Cache-Control: no-cache`,
+# which does not mean "do not store" - it means "revalidate every time" - so a
+# returning visitor still paid a network round trip to be told the font had not
+# changed. Every page on this domain is set in that font and blocks on it, so
+# that round trip was the flash of Comic Sans people saw on *every* load, not
+# just their first. `/accounts` shares the same file (`/fonts/…`), so this fixes
+# both.
+#
+# A year is safe because the file is immutable in practice - it is a font, it has
+# not changed since it was added, and nothing generates it. **If it is ever
+# replaced, change its filename**, because for a year the old one is all anybody
+# who has been here will use. Everything else keeps the revalidating default:
+# `index.html` in particular must never be cached like this, or an edit would
+# take a year to reach the people who visit most.
+FONT_MAX_AGE = 31536000  # one year, in seconds
+
+
+def _max_age(path):
+    """How long the browser may keep this file without asking again."""
+    return FONT_MAX_AGE if path.startswith("fonts/") else None
+
+
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")
 def serve(path):
@@ -512,7 +535,7 @@ def serve(path):
         abort(404)
 
     if os.path.isfile(target):
-        return send_from_directory(SITE_DIR, path)
+        return send_from_directory(SITE_DIR, path, max_age=_max_age(path))
 
     abort(404)
 
