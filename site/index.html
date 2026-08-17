@@ -229,7 +229,12 @@
           max-width: none;
           padding-right: 0;
           grid-column: 1 / -1;
-          text-align: left;
+          /* Beside its row the label is right-aligned, hard against the tiles.
+             Above the row there is nothing to sit against, and the grid it is
+             heading is itself centred (`.tilerow` is `width: max-content;
+             margin: 0 auto`), so the label centres over it rather than hanging
+             off the left edge. */
+          text-align: center;
           font-size: clamp(1.25rem, 2.8vw, 1.7rem);
         }
         /* A label above its row needs more air between the rows than one
@@ -355,6 +360,11 @@
         margin: 0 0 1rem;
         font-size: clamp(1.6rem, 3vw, 2.6rem);
       }
+      /* A second copy of the resume modal's title, sitting with the PDF so that
+         the phone layout can put the PDF first and still lead with a heading.
+         `display: none` keeps it out of the accessibility tree too, so exactly
+         one of the two is ever a heading. */
+      .title-mobile { display: none; }
       .modal-resume .pane-title { color: var(--charcoal); }
       .modal-poker .pane-title { color: var(--poker); }
       .modal-whale .pane-title { color: var(--whale); }
@@ -803,7 +813,6 @@
         }
         .rowlabel {
           grid-column: 1 / -1;
-          text-align: left;
           font-size: clamp(1.3rem, 5.5vw, 2.2rem);
           margin-bottom: -0.2rem;
         }
@@ -834,6 +843,18 @@
           overflow: visible;
         }
         .pdf-wrap { flex: none; height: 60vh; height: 60dvh; }
+        /* On a phone the resume itself is what the tile promised, so it goes
+           above the fast facts rather than below a screenful of them. The
+           heading travels with it and the copy in the left pane is hidden, and
+           .pane-left drops back to `position: static` so the corner gif keeps
+           resolving against .modal-box and stays exactly where it was. */
+        #modal-resume .pane-right { order: -1; border-top: none; }
+        #modal-resume .pane-left {
+          position: static;
+          border-top: 1px solid rgba(0, 0, 0, 0.12);
+        }
+        #modal-resume .pane-left > .pane-title { display: none; }
+        #modal-resume .title-mobile { display: block; margin-bottom: 0; }
         .media { flex: none; }
         /* needs to outrank `.fit-frame img`, and must not catch the concert
            stage, which is sized by .concert-stage instead */
@@ -1052,6 +1073,7 @@
             </dl>
           </div>
           <div class="pane pane-right">
+            <h2 class="pane-title title-mobile">resume</h2>
             <p class="pane-caption">click <a class="here-link" href="assets/Chinmay_Govind_Resume.pdf" target="_blank" rel="noopener">here</a> to open my resume</p>
             <div class="pdf-wrap">
               <iframe
