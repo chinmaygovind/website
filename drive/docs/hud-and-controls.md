@@ -236,8 +236,9 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   controls sheet says `Esc / O` and so do the tooltips on the gear and on the
   settings sheet's X.
 - **The `?` sheet is Controls, and it is the controls and nothing else.** It
-  used to open on the track blurb and close on two paragraphs about grass and
-  crests, which is reading matter in front of somebody who pressed it to find
+  used to open on a one-line description of the track and close on two
+  paragraphs about grass and crests, which is reading matter in front of
+  somebody who pressed it to find
   out which key drifts. **The table follows the device** - `body.touch` swaps
   the keyboard rows for the gestures (`.keys-only` / `.touch-only`, the same
   mechanism as the start hint), so it never describes controls you do not have.
@@ -349,7 +350,9 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   length on the iPad. The bottom-left corner belongs to the steering thumb
   whenever there is one - `body.touch`, not a width, since a tablet is 1180px
   wide and still drives with its thumbs - so the minimap moves up under the
-  track card there and the blurb goes with it.
+  track card there. That used to have to hide the track's one-line description as
+  well, to make the room; the card is the name and the session type now, so there
+  is nothing left up there to drop.
 - **Touch controls: four driving buttons and no handbrake button.** Steering left,
   throttle and brake right, checkpoint and restart small above the steering. There
   is deliberately no fifth button, because there is nowhere a thumb can reach one:

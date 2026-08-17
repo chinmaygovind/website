@@ -5,7 +5,6 @@ A sheer dive on boost pads, launched twice over a drowned city.
 
 slug = "bigred"
 name = "Big Red"
-blurb = "A sheer dive on boost pads, launched twice over a drowned city."
 difficulty = 4
 medals = (60.0, 63.0, 66.2)
 ground = None

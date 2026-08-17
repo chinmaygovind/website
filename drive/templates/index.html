@@ -79,7 +79,6 @@
             {% for i in range(5) %}<span class="pip {% if i < t.difficulty %}on{% endif %}"></span>{% endfor %}
           </span>
         </div>
-        <div class="blurb">{{ t.blurb }}</div>
         <div class="tcard-foot">
           {% if pb %}
             <span class="medal {{ pb.medal_shown or 'none' }}"></span>

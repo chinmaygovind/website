@@ -510,7 +510,7 @@ def test_every_track_folder_loads():
     All three ways a folder can fail are covered, because they happen at
     different moments and only the last one used to be caught: **importing**
     `track.py` (a syntax error, or anything raising at module level),
-    **reading** its declarations (a missing `blurb`, a slug that disagrees with
+    **reading** its declarations (a missing `name`, a slug that disagrees with
     the folder name), and **building** the ribbon (a loop that will not close, a
     palette missing a colour). See `tests/test_track_folders.py`, which proves
     each of them is contained rather than fatal.
@@ -580,9 +580,9 @@ def test_the_pool_uses_the_whole_vocabulary():
 
 
 def test_the_figure_eight_actually_crosses_over_itself():
-    """It is called Figure Eight and its blurb promises a crossing, so it has to
-    have one. An earlier layout quietly stopped crossing when a section length
-    changed and became a long thin oval with a misleading name."""
+    """It is called Figure Eight, so it has to cross over itself. An earlier
+    layout quietly stopped crossing when a section length changed and became a
+    long thin oval with a misleading name."""
     t = tracks_mod.get("eight")
     cross = tracks_mod.crossings(t)
     assert cross, "the figure eight does not cross over itself anywhere"

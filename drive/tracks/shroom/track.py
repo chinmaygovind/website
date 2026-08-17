@@ -5,7 +5,6 @@ A gorge road with a circuit's corners on it, and mushrooms where the road runs o
 
 slug = "shroom"
 name = "Shroom Street"
-blurb = "Spa's corners in a green gorge, and four mushrooms where the road runs out."
 difficulty = 4
 # Cut against the first real lap driven here, 41.109 by Chinmay, rather than
 # derived from `laptime.ideal_lap` - see `tools/set_medals.py` for why the

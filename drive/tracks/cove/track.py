@@ -5,7 +5,6 @@ A coast road down to the beach and out along the pier. Long.
 
 slug = "cove"
 name = "Sandy Cove"
-blurb = "A coast road down to the beach and out along the pier. Long."
 difficulty = 5
 medals = (57.7, 60.6, 63.7)
 ground = -1.2

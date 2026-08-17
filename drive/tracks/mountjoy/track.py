@@ -5,7 +5,6 @@ Off the valley floor on a boost pad, up onto the peak, then all the way down.
 
 slug = "mountjoy"
 name = "Mount Joy"
-blurb = "A boost pad, a ski jump onto the peak, then the whole mountain down."
 difficulty = 4
 medals = (61.3, 64.4, 67.7)
 ground = None

@@ -5,7 +5,6 @@ Threaded between rock spires, miles above the cloud.
 
 slug = "pillars"
 name = "Cloudbreak"
-blurb = "Threaded between rock spires, miles above the cloud."
 difficulty = 5
 medals = (49.8, 52.3, 55.0)
 ground = None

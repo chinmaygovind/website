@@ -43,7 +43,7 @@ PLACES = 6
 # Everything a track carries. Named explicitly rather than dumping the dict,
 # because a new key appearing should be a deliberate decision to snapshot it and
 # not something that silently starts being compared.
-KEYS = ("slug", "name", "blurb", "ground", "difficulty", "exposed", "closed",
+KEYS = ("slug", "name", "ground", "difficulty", "exposed", "closed",
         "cell", "level", "station", "checkpoints", "spawn", "sections",
         "gates", "line", "pole_side", "gate_ceil", "ideal", "medals")
 

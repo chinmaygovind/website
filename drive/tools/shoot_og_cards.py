@@ -62,7 +62,7 @@ def card_html(track):
         '<i class="%s"></i>' % ("on" if i < track["difficulty"] else "")
         for i in range(5))
     return CARD_HTML % {"red": RED, "domain": DOMAIN, "name": track["name"],
-                        "blurb": track["blurb"], "pips": pips}
+                        "pips": pips}
 
 
 # The photograph is the card and the type sits in a scrim over the foot of it.
@@ -91,20 +91,23 @@ body{width:1200px;height:630px;position:relative;
          text-shadow:0 1px 3px rgba(0,0,0,.85),0 2px 16px rgba(0,0,0,.7)}
 h1{margin:0;font-weight:900;font-size:104px;line-height:.94;letter-spacing:-.025em;
    text-shadow:0 2px 18px rgba(0,0,0,.55)}
-.foot{display:flex;align-items:flex-end;gap:22px;margin-top:18px}
-p{margin:0;font-weight:400;font-size:32px;line-height:1.25;color:#d7d8e0;
-  max-width:30ch;text-shadow:0 1px 10px rgba(0,0,0,.6)}
-/* Hard right, on the blurb's last baseline: a rating belongs in a corner. Left
-   to sit wherever the blurb stopped wrapping, it reads as a stray fifth word. */
-.pips{display:flex;gap:8px;flex:none;margin-left:auto;padding-bottom:6px}
-.pips i{width:15px;height:15px;border-radius:50%%;background:rgba(255,255,255,.28)}
+/* The name used to have a one-line description under it and the pips sat on that
+   line's last baseline. The description is gone (tracks no longer declare one),
+   so the foot is the rating alone - and it stays hard left under the name rather
+   than being pushed to the far corner, because with nothing beside it the
+   `margin-left:auto` that kept it out of the text's way stranded five small dots
+   1100px from the only other thing on the card. */
+.foot{display:flex;align-items:center;margin-top:22px}
+.pips{display:flex;gap:9px;flex:none}
+.pips i{width:17px;height:17px;border-radius:50%%;background:rgba(255,255,255,.28);
+        box-shadow:0 1px 6px rgba(0,0,0,.5)}
 .pips i.on{background:#fff}
 </style>
 <div class="shot"></div><div class="scrim"></div>
 <div class="txt">
   <div class="eyebrow">%(domain)s</div>
   <h1>%(name)s</h1>
-  <div class="foot"><p>%(blurb)s</p><div class="pips">%(pips)s</div></div>
+  <div class="foot"><div class="pips">%(pips)s</div></div>
 </div>
 """
 

@@ -15,7 +15,7 @@ and were held together by a test that scraped one with a regex.
 
 What `track.py` must define
 ---------------------------
-``slug``, ``name``, ``blurb``, ``difficulty`` (1-5), and ``build(b)`` - which
+``slug``, ``name``, ``difficulty`` (1-5), and ``build(b)`` - which
 takes a `Builder` and lays the road. Everything else is optional:
 
     ground      world Y of the solid ground plane. ``None`` means the track
@@ -110,15 +110,15 @@ def _meta(mod, folder):
 
     Named errors rather than an AttributeError, because the reader of this message
     is often somebody adding their first track and the difference between
-    "``blurb`` is missing from tracks/quarry/track.py" and
-    "``module 'tracks.quarry.track' has no attribute 'blurb'``" is most of whether
+    "``name`` is missing from tracks/quarry/track.py" and
+    "``module 'tracks.quarry.track' has no attribute 'name'``" is most of whether
     they can fix it without reading this file.
     """
     def need(attr):
         if not hasattr(mod, attr):
             raise ValueError(
                 "tracks/%s/track.py is missing `%s`. A track needs slug, name, "
-                "blurb, difficulty and build(b)." % (folder, attr))
+                "difficulty and build(b)." % (folder, attr))
         return getattr(mod, attr)
 
     slug = need("slug")
@@ -138,7 +138,6 @@ def _meta(mod, folder):
     return {
         "slug": slug,
         "name": need("name"),
-        "blurb": need("blurb"),
         "difficulty": diff,
         "ground": getattr(mod, "ground", None),
         "order": getattr(mod, "order", DEFAULT_ORDER),
@@ -202,7 +201,7 @@ def _assemble():
     Three things can go wrong and all three are guarded per track, because the
     likeliest of them is the first: **importing** `track.py` (a syntax error, or
     anything that raises at module level), **reading** its declarations (a missing
-    `blurb`, a slug that disagrees with the folder), and **building** the ribbon (a
+    `name`, a slug that disagrees with the folder), and **building** the ribbon (a
     loop that will not close).
     """
     broken, entries = {}, []
@@ -272,7 +271,7 @@ def _one(e):
         # nothing point-to-point pays for it.
         built, closure = solver.close(e["build"], fresh)
 
-    t = {"slug": e["slug"], "name": e["name"], "blurb": e["blurb"],
+    t = {"slug": e["slug"], "name": e["name"],
          "ground": e["ground"], "difficulty": e["difficulty"],
          "exposed": e["exposed"], "closed": e["closed"],
          # Whether this track ships a `scenery.js`. On the track rather than
@@ -404,7 +403,7 @@ def summaries():
     scenery and the track payload at the same time rather than one after the
     other. See `ensureScenery` in game.js.
     """
-    return [{k: t[k] for k in ("slug", "name", "blurb", "difficulty", "ideal",
+    return [{k: t[k] for k in ("slug", "name", "difficulty", "ideal",
                                "medals", "checkpoints", "scenery")}
             for t in TRACKS]
 

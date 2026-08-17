@@ -30,7 +30,6 @@
     <div class="card">
       <div class="trackname" id="trackName">{{ track.name }}</div>
       <div class="mode" id="modeLabel">{% if mode == 'room' %}Multiplayer - Free practice{% elif mode == 'replay' %}Race replay{% else %}Solo time trial{% endif %}</div>
-      <div class="trackblurb" id="trackBlurb">{{ track.blurb }}</div>
     </div>
     <!-- Frame rate and round trip, off unless asked for.
          **Above the position card, not below it.** The position card appears the
@@ -717,11 +716,12 @@
 </div>
 
 <!-- Controls.
-     The controls and nothing else. This used to open on the track's blurb and
-     close on two paragraphs of advice about grass and crests, which is reading
-     matter in front of somebody who pressed a button marked "?" because they
-     wanted to know which key drifts. The prose that was worth keeping is in
-     CLAUDE.md, where it is documentation rather than a wall in the way.
+     The controls and nothing else. This used to open on a one-line description
+     of the track and close on two paragraphs of advice about grass and crests,
+     which is reading matter in front of somebody who pressed a button marked "?"
+     because they wanted to know which key drifts. The prose that was worth
+     keeping is in CLAUDE.md, where it is documentation rather than a wall in the
+     way; the track's description is gone from the game altogether.
      The table follows the device: `body.touch` swaps the keyboard rows for the
      gestures, so it is never describing controls you do not have. -->
 <div class="overlay" id="help" style="display:none">

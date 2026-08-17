@@ -116,7 +116,6 @@ Containers, cranes, and a long blast down the quay.
 
 slug = "dockyard"          # must equal the folder name
 name = "Dockyard"
-blurb = "Containers, cranes, and a long blast down the quay."
 difficulty = 3             # 1-5
 ground = -1.2              # world Y of the ground plane; None to float in the void
 order = 160                # where it sits in the pool; existing tracks are 10..150

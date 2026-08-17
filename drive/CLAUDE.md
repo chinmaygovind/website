@@ -155,7 +155,7 @@ derived from the ribbon.
 
 ```
 tracks/dockyard/
-    track.py      required: slug, name, blurb, difficulty, build(b)
+    track.py      required: slug, name, difficulty, build(b)
     palette.py    optional: PALETTE = {...}. Without one it gets a neutral default
                   that renders correctly on the first run.
     scenery.js    optional: mesh code only this track needs. Costco's is the

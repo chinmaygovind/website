@@ -5,7 +5,6 @@ Half-pipes in deep space, and almost no barriers. Do not fall.
 
 slug = "rainbow"
 name = "Rainbow Road"
-blurb = "Half-pipes in deep space, and almost no barriers. Do not fall."
 difficulty = 5
 medals = (50.0, 52.5, 55.2)
 ground = None

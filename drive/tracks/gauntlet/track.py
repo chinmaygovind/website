@@ -5,7 +5,6 @@ Loops, gaps, hairpins, elevation. Everything, twice over.
 
 slug = "gauntlet"
 name = "The Gauntlet"
-blurb = "Loops, gaps, hairpins, elevation. Everything, twice over."
 difficulty = 5
 medals = (35.2, 37.0, 38.9)
 ground = None

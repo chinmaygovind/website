@@ -479,15 +479,15 @@ function loadTrack(track, opts = {}) {
   resetToStart();
 
   $('trackName').textContent = track.name;
-  $('trackBlurb').textContent = track.blurb;
   // Everything else on the page that names the track. All of it was rendered by
   // the template for the track you *arrived* on, and the switcher changes the
   // world underneath it - so a leaderboard link left alone quietly sends you to
   // the board for a track you stopped driving several switches ago.
   document.title = track.name + ' | Drive';
-  // The help sheet's blurb used to be repointed here too. It is gone: that
-  // sheet is the controls table now, and the blurb is already on the track
-  // card in the corner, where it does not have to be opened to be read.
+  // A one-line description of the track used to be repointed here too, on the
+  // corner card and before that in the help sheet. There is no such field any
+  // more: the name and the difficulty pips are what tell tracks apart, and a
+  // sentence you read once and never again was only ever in the way.
   document.querySelectorAll('.board-link').forEach((a) => {
     a.href = '/track/' + track.slug;
   });
@@ -1941,7 +1941,6 @@ function renderTrackCards() {
           <span class="diff">${[0, 1, 2, 3, 4].map(i =>
             `<span class="pip${i < c.difficulty ? ' on' : ''}"></span>`).join('')}</span>
         </span>
-        <span class="tcard2-blurb">${esc(c.blurb)}</span>
         <!-- Your time and nothing else. The record was here too and it made
              every card an argument: two times, two names, one of them somebody
              else's. This is a menu for choosing where to drive - what you have

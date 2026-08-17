@@ -36,7 +36,6 @@ TRACKS_DIR = os.path.join(os.path.dirname(__file__), "..", "tracks")
 # Enough of a track to load, so each case below differs in exactly one way.
 GOOD = '''slug = "%s"
 name = "Scratch"
-blurb = "A scratch track written by a test."
 difficulty = 2
 ground = -1.2
 order = 9000
@@ -55,35 +54,39 @@ SLUG = "zzscratch"
 CASES = {
     # The likeliest thing a first-time contributor pushes.
     "syntax": ('slug = "zzscratch"\nthis is not python\n', "this"),
-    # Forgetting one of the five required declarations.
-    "missing_field": ('slug = "zzscratch"\nname = "S"\ndifficulty = 2\n'
-                      'def build(b):\n    b.start()\n    b.finish()\n', "blurb"),
+    # Forgetting one of the four required declarations. The expectation names the
+    # missing field rather than just mentioning it, because the error also lists
+    # every required declaration - so a bare "name" would pass whichever one had
+    # actually been left out.
+    "missing_field": ('slug = "zzscratch"\ndifficulty = 2\n'
+                      'def build(b):\n    b.start()\n    b.finish()\n',
+                      "missing `name`"),
     # Renaming the folder and not the slug, or the other way round.
-    "slug_mismatch": ('slug = "somewhere_else"\nname = "S"\nblurb = "x"\n'
+    "slug_mismatch": ('slug = "somewhere_else"\nname = "S"\n'
                       'difficulty = 2\ndef build(b):\n    b.start()\n'
                       '    b.finish()\n', "folder name is the slug"),
     # A declaration that is present but wrong.
-    "bad_difficulty": ('slug = "zzscratch"\nname = "S"\nblurb = "x"\n'
+    "bad_difficulty": ('slug = "zzscratch"\nname = "S"\n'
                        'difficulty = 11\ndef build(b):\n    b.start()\n'
                        '    b.finish()\n', "difficulty"),
     # No `build` at all.
-    "no_build": ('slug = "zzscratch"\nname = "S"\nblurb = "x"\n'
+    "no_build": ('slug = "zzscratch"\nname = "S"\n'
                  'difficulty = 2\n', "build"),
     # Medal times in the wrong order. Slow-to-fast reads perfectly well as a
     # thing somebody would type, and a pool that accepted it would ship a card
     # where bronze is the hardest medal and nothing anywhere would say so.
-    "medals_backwards": ('slug = "zzscratch"\nname = "S"\nblurb = "x"\n'
+    "medals_backwards": ('slug = "zzscratch"\nname = "S"\n'
                          'difficulty = 2\nmedals = (20.0, 18.0, 16.0)\n'
                          'def build(b):\n    b.start()\n    b.finish()\n',
                          "increasing"),
     # Two times where there must be three - the likeliest way to mistype the
     # tuple the tool writes.
-    "medals_short": ('slug = "zzscratch"\nname = "S"\nblurb = "x"\n'
+    "medals_short": ('slug = "zzscratch"\nname = "S"\n'
                      'difficulty = 2\nmedals = (20.0, 22.0)\n'
                      'def build(b):\n    b.start()\n    b.finish()\n',
                      "three"),
     # Builds fine, but the loop cannot be closed inside the solver's guards.
-    "unclosable": ('slug = "zzscratch"\nname = "S"\nblurb = "x"\n'
+    "unclosable": ('slug = "zzscratch"\nname = "S"\n'
                    'difficulty = 2\nclosed = True\n'
                    'def build(b):\n'
                    '    b.start(run=20)\n'

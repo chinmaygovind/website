@@ -5,7 +5,6 @@ A climb made of hairpins, then a fast plunge back down.
 
 slug = "heights"
 name = "Hairpin Heights"
-blurb = "A climb made of hairpins, then a fast plunge back down."
 difficulty = 4
 medals = (19.5, 20.5, 21.6)
 ground = None

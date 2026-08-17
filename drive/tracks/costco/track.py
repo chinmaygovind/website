@@ -5,7 +5,6 @@ Welcome to Costco!
 
 slug = "costco"
 name = "Costco Wholesale"
-blurb = "Welcome to Costco!"
 difficulty = 3
 medals = (44.6, 46.9, 49.3)
 ground = -1.2

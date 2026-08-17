@@ -225,7 +225,14 @@ def test_everything_derived_from_the_ribbon_did_not_move(slug):
     # 300.353274 where the snapshot has the old pasted 300.35. Numeric drift is
     # held to the same tolerance as the stations; anything that is not a number
     # still has to match exactly.
-    for k in ("name", "blurb", "ground", "difficulty", "exposed", "closed",
+    #
+    # This list, not the snapshot file, is what is compared. The file still
+    # carries a `blurb` per track - the one-line description tracks used to
+    # declare - and dropping the key here is the whole of retiring it: the
+    # snapshot is a *historical* baseline that proved the folder-per-track split
+    # moved no geometry, so re-running the tool to tidy one dead metadata key
+    # would rewrite every coordinate in it and throw that away.
+    for k in ("name", "ground", "difficulty", "exposed", "closed",
               "cell", "level", "station", "checkpoints", "spawn", "sections",
               "gates", "pole_side", "gate_ceil"):
         if k not in old and k not in new:

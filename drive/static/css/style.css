@@ -340,7 +340,7 @@ input[type=text], input[type=password], input[type=email], input:not([type]) {
 }
 .tcard:hover { text-decoration: none; transform: translate(-1px, -2px); }
 /* The same rendered shot the in-game switcher uses (tools/shoot_tracks.py). A
-   name and a blurb tell you a track exists; a picture tells you which one. */
+   name tells you a track exists; a picture tells you which one. */
 .tshot {
   aspect-ratio: 16 / 9; background: #dfe4ea center/cover no-repeat;
   border-bottom: 2px solid var(--line);
@@ -348,7 +348,6 @@ input[type=text], input[type=password], input[type=email], input:not([type]) {
 .tcard-in { padding: .8rem 1rem .9rem; display: flex; flex-direction: column; gap: .4rem; flex: 1; }
 .tcard-top { display: flex; align-items: baseline; gap: .5rem; }
 .tcard h3 { margin: 0; font-size: 1.25rem; }
-.tcard .blurb { color: var(--ink-soft); font-size: .92rem; line-height: 1.4; flex: 1; }
 .diff { display: flex; gap: 2px; margin-left: auto; }
 .pip { width: 7px; height: 7px; border-radius: 50%; border: 1px solid var(--line); }
 .pip.on { background: var(--red); }
@@ -518,9 +517,6 @@ body.playing { overflow: hidden; background: #9ed2f0; }
    - the map stops being pushed to the floor and simply follows the last card. */
 body.touch .hud-bl { margin-top: 0; }
 body.touch #minimap { width: 118px; height: 92px; }
-/* Which puts the map directly under the track card, so the blurb goes - it is
-   the one thing up there you read once and never again, and the map is not. */
-body.touch .trackblurb { display: none; }
 /* Restart and last-checkpoint, sitting on the minimap. Both are things you reach
    for mid-run after a mistake, so they cannot be behind a menu - and this is the
    corner your eye is already in when you have just gone off. On a phone the
@@ -749,7 +745,6 @@ body.touch .mapbtns { display: none; }
 
 .trackname { font-family: var(--display); font-size: 1.25rem; font-weight: 700;
              line-height: 1.1; letter-spacing: .01em; }
-.trackblurb { font-size: .78rem; color: #b9c2d0; max-width: 240px; margin-top: .3rem; }
 
 .mrow { display: flex; align-items: center; gap: .45rem; font-size: .82rem; padding: .1rem 0; }
 .mrow b { margin-left: auto; font-family: var(--mono); }
@@ -1245,10 +1240,6 @@ body.room .solo-only { display: none; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .tcard2-top .diff { flex: none; }
-.tcard2-blurb {
-  color: var(--ink-soft); font-size: .8rem; line-height: 1.35;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-}
 .tcard2-foot { display: flex; align-items: center; gap: .35rem; font-size: .8rem;
                font-variant-numeric: tabular-nums; }
 /* Everyone sees the same grid in a room; for a guest it just does not pick. */
@@ -1619,7 +1610,6 @@ body.side-open #touch { display: none; }
   /* Minimap out of the bottom-left corner - that is the steering thumb's. */
   .hud-bl { margin-top: 0; }
   #minimap { width: 118px; height: 92px; }
-  .trackblurb { display: none; }
   .hud-bc { width: 300px; max-width: 46vw; }
   .hud-bc .timer { font-size: 1.9rem; }
   .stat.spd b { font-size: 1.5rem; }
@@ -1658,8 +1648,6 @@ body.side-open #touch { display: none; }
   .hud-bl { margin-top: 0; }
   #minimap { width: 96px; height: 74px; }
   .trackname { font-size: 1.05rem; }
-  /* The blurb is the first thing to go when the height is what is short. */
-  .trackblurb { display: none; }
   #startHint { bottom: 52%; }
 }
 

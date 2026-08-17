@@ -1033,13 +1033,20 @@ def _track_og(track, lap=None):
     """The unfurl for a page about one track - or about one lap on it.
 
     A pasted link is most of how this travels, so what it shows is worth being
-    specific about: the track's own card rather than the wheel, its blurb rather
-    than the site's one-liner, and - when the link names a lap - the time and
-    whose it is, because "1:11.234 on Big Red" is an argument and "Drive" is not.
+    specific about: the track's own card rather than the wheel, its name in the
+    title, and - when the link names a lap - the time and whose it is, because
+    "1:11.234 on Big Red" is an argument and "Drive" is not.
+
+    **No `og_description` on the bare track link**, so `inject_globals`' site
+    one-liner stands. Tracks used to declare a `blurb` and this passed it over
+    that default; the field is gone - it was a sentence you read once and never
+    again, on four screens - and the honest replacement is nothing rather than a
+    line assembled out of the numbers, which is what a crawler would read as
+    boilerplate anyway. The *lap* description below is still worth having,
+    because it is about a lap somebody drove rather than about the road.
     """
     og = {"og_image": "/static/img/og/%s.png" % track["slug"],
-          "og_title": "%s | Drive" % track["name"],
-          "og_description": track["blurb"]}
+          "og_title": "%s | Drive" % track["name"]}
     if lap is not None:
         who = lap.user.display if lap.user else "Somebody"
         og["og_title"] = "%s on %s | Drive" % (fmt_ms(lap.time_ms), track["name"])

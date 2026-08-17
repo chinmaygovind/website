@@ -5,7 +5,6 @@ Wide, flowing and forgiving - the one to learn the car on.
 
 slug = "sunrise"
 name = "Sunrise Circuit"
-blurb = "Wide, flowing and forgiving - the one to learn the car on."
 difficulty = 1
 medals = (16.4, 17.3, 18.2)
 ground = -1.2

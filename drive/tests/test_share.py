@@ -1,7 +1,7 @@
 """What a link to Drive looks like when somebody pastes it, and how they get one.
 
 Two halves of one feature. **The card**: a page about one track unfurls with that
-track's own picture and blurb rather than the site's wheel, and a link that names
+track's own picture and name rather than the site's wheel, and a link that names
 a lap unfurls with the time and whose it is. **The button**: `/api/run` hands
 back the id of the row the lap is on, which is what the finish sheet's Share
 turns into `/solo/<slug>?watch=<id>`.
@@ -84,8 +84,12 @@ def test_a_track_page_unfurls_as_that_track(env):
     assert og["image"].startswith("https://")
     assert "/static/img/og/bigred.png?v=" in og["image"]
     assert og["title"].startswith("Big Red")
-    # The track's own line, not the site's one-liner.
-    assert "drowned city" in og["description"]
+    # The *title* is what is specific now. A track has no description of its own
+    # any more, so this falls through to the site's one-liner - and that is worth
+    # asserting rather than skipping, because the way removing the field would
+    # have gone wrong is `content=""`: a card with a blank second line, which is
+    # not an error anywhere and is only ever seen in somebody else's feed.
+    assert "Race to set the best lap" in og["description"]
 
 
 def test_the_public_board_unfurls_as_its_track_too(env):

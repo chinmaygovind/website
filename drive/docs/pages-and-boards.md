@@ -52,7 +52,7 @@ the track cards, `/account`, `/leaderboard`, the nav, or the in-game board panel
   time none of it did: you arrived from the home page on `/solo/<slug>`, changed
   track, and the leaderboard button still went to the board for the track you
   arrived on. `loadTrack` now repoints every `.board-link`, the page title and the
-  help sheet's blurb, and `switchTrack` rewrites the URL with `history.replaceState`
+  name on the corner card, and `switchTrack` rewrites the URL with `history.replaceState`
   (not `pushState` - a switch is a setting inside one session, not somewhere to go
   Back out of; the query string is dropped because `?ghost=`/`?watch=` name a lap on
   the track you just left). **A room's URL is left alone** - it is the join code and
@@ -216,12 +216,16 @@ the track cards, `/account`, `/leaderboard`, the nav, or the in-game board panel
 - **What a link unfurls into is decided in Python, not in a Jinja block.**
   `og_title`, `og_description` and `og_image` are context variables with defaults
   in `inject_globals` (the site's one-liner and the wheel); `_track_og()` passes a
-  track's own card and blurb over them on `/solo/<slug>` and `/track/<slug>`, and
+  track's own card and title over them on `/solo/<slug>` and `/track/<slug>`, and
   when the URL names a lap, the time and whose it is. `_shared_lap` is what
   resolves `?watch=`, and it insists on a row **on this track** that **has a
   replay** - the first for the reason `/api/ghost` scopes it, the second because a
   card promising a lap that then toasts "that lap is no longer there" is worse
-  than the generic one.
+  than the generic one. **It deliberately leaves `og_description` alone for a bare
+  track link**, so the site's one-liner stands: a track used to declare a
+  one-line description and this passed it over that default, and with the field
+  gone the honest answer is the default rather than a sentence assembled out of
+  the difficulty and the gold time.
 - **The board is in the game.** "View others" opens the leaderboard over the track;
   clicking a row opens that lap - its checkpoint splits against your own PB's, who set
   it, and **Watch it** / **Race this ghost**. Picking somebody to chase is something you

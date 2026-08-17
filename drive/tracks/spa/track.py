@@ -7,7 +7,6 @@ from tracks.builder import FREE
 
 slug = "spa"
 name = "Spa-Francorchamps"
-blurb = "The Ardennes circuit, compressed. Wide, fast, and a full closed lap."
 difficulty = 4
 medals = (63.5, 66.7, 70.1)
 ground = -1.2

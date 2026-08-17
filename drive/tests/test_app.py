@@ -669,18 +669,20 @@ def test_every_link_that_names_the_track_is_repointable(env):
     html = env.app.test_client().get("/solo/sunrise").get_data(as_text=True)
     assert html.count('class="btn secondary board-link"') == 2, (
         "both leaderboard links must be repointable")
-    # The help sheet used to name the track as well, and had to be repointed
-    # with the rest. It is the controls table now and names nothing, so the
-    # blurb lives only on the track card - which is rewritten by `loadTrack`
-    # through `trackName` / `trackBlurb`.
+    # Two things that used to name the track and had to be repointed with the
+    # rest: the help sheet (the controls table now, and it names nothing) and a
+    # one-line description on the corner card, which is gone from the game
+    # altogether. The card is down to the track's *name*, so that is the one
+    # thing `loadTrack` still has to rewrite up there.
     assert 'id="helpBlurb"' not in html
-    assert 'id="trackBlurb"' in html
+    assert 'id="trackBlurb"' not in html
+    assert 'id="trackName"' in html
 
     src = open(os.path.join(os.path.dirname(__file__), "..",
                             "static", "js", "game.js")).read()
     load = src[src.index("function loadTrack("):]
     load = load[:load.index("\n}\n")]
-    for needle in ("board-link", "document.title", "trackBlurb"):
+    for needle in ("board-link", "document.title", "trackName"):
         assert needle in load, "loadTrack leaves %s stale" % needle
 
 

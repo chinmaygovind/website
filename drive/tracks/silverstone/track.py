@@ -7,7 +7,6 @@ from tracks.builder import FREE
 
 slug = "silverstone"
 name = "Silverstone"
-blurb = "The British Grand Prix circuit, compressed. Flat, fast, and wide open."
 difficulty = 4
 ground = -1.2
 order = 180

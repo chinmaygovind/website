@@ -5,7 +5,6 @@ I wonder if you know / How they live in Tokyo
 
 slug = "tokyo"
 name = "Tokyo Drift"
-blurb = "I wonder if you know / How they live in Tokyo"
 difficulty = 5
 # Set by hand rather than cut by `tools/set_medals.py`, because one lap on the
 # board is not a top five to aim at. Gold at 48.0 against a 53.66 ideal, which is
