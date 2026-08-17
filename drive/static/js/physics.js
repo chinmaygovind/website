@@ -61,6 +61,7 @@ export class Car {
     this.slipCharge = 0;       // 0..1, how full the tow is
     this.slipBoost = 0;        // seconds of boost left
     this.padBoost = 0;         // seconds of boost-pad left
+    this.bounceLock = 0;       // seconds a cap stays spent after throwing us
     this.catchupBoost = 0;     // 0..1, how much help for being down the road
     this._bumpCooldown = new Map();
     this._wallHit = 0;
@@ -188,6 +189,15 @@ export class Car {
       if (this.padBoost <= 0) this.onBoostPad && this.onBoostPad();
       this.padBoost = T.PAD_BOOST;
     }
+    // A cap is spent for a moment after it fires, which is the opposite rule to
+    // a pad's. A pad *re-arms* while you stay on it, because a long pad should
+    // hold the engine open all the way up Mount Joy's ramp. A cap must not:
+    // `grounded` stays true across COYOTE and the ground probe still finds the
+    // surface 2.6 units up, so a cap that re-armed every step would keep topping
+    // the car's normal velocity back up to BOUNCE_VEL for as long as it could
+    // still see the cap - which is a car pinned to a launch speed rather than
+    // one thrown by it, and it fires the callback about eight times per hop.
+    this.bounceLock = Math.max(0, this.bounceLock - dt);
 
     // --- gravity, always -------------------------------------------------
     this.vel.y -= T.GRAVITY * dt;
@@ -207,9 +217,32 @@ export class Car {
       } else if (pen < 0) {
         this.vel.addScaledVector(n, T.SUSP * pen * dt);
       }
-      // Cancel motion into the surface (this is also the landing impact).
+      // Cancel motion into the surface (this is also the landing impact) -
+      // unless the surface is a mushroom cap, which reflects it instead.
+      //
+      // The bounce is deliberately *this* line rather than a term added after
+      // it. Cancelling the landing and then launching would spend one step with
+      // the car resting on the cap, and a step on the ground is a step of grip,
+      // of the suspension spring and of ALIGN_GROUND - which came out as a
+      // visible squash before the throw, and read as the cap catching the car
+      // rather than rejecting it.
       const vn = this.vel.dot(n);
-      if (vn < 0) this.vel.addScaledVector(n, -vn);
+      let bounced = false;
+      if (this.surface === KIND.BOUNCE && this.bounceLock <= 0) {
+        // `-vn` is how fast we are going *into* the cap, so it is positive on
+        // any real arrival and zero for a car that merely rolled onto one. The
+        // larger of the floor and the reflection, never the sum - see
+        // BOUNCE_VEL in tuning.py.
+        const out = Math.max(T.BOUNCE_VEL, -vn * T.BOUNCE_REST);
+        // Guarded rather than assigned, so a cap can never *slow* a car that is
+        // already leaving faster than it would have thrown it.
+        if (out > vn) this.vel.addScaledVector(n, out - vn);
+        this.bounceLock = T.BOUNCE_LOCK;
+        bounced = true;
+        this.onBounce && this.onBounce(out);
+      } else if (vn < 0) {
+        this.vel.addScaledVector(n, -vn);
+      }
 
       // Hold the car onto a surface only where nothing else could hold it: past
       // STICK_TILT (about 32 degrees) and on into fully inverted, which in
@@ -305,7 +338,14 @@ export class Car {
       // above covers what is left.
 
       this._alignUp(n, T.ALIGN_GROUND, dt);
-      if (!wasGrounded && prevAir > 0.15) this.onLand && this.onLand(prevAir);
+      // A cap does not thud. `onBounce` has already fired for this contact, and
+      // letting the landing fire as well is two sounds and two camera kicks for
+      // one event - and the louder of the two is the impact, so a hop off the
+      // biggest drop on the track reads as hitting the mushroom rather than as
+      // being thrown by it.
+      if (!wasGrounded && prevAir > 0.15 && !bounced) {
+        this.onLand && this.onLand(prevAir);
+      }
     } else {
       // --- airborne -------------------------------------------------------
       this.airTime += dt;

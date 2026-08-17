@@ -559,6 +559,14 @@ function wireCarEvents() {
     // impact - the FOV punch and the air round the car carry the rest.
     S.renderer.kick(0.35);
   };
+  car.onBounce = (mag) => {
+    S.sound.bounce(mag);
+    // Deliberately smaller than a landing of the same violence. `Car.step`
+    // suppresses `onLand` for a contact that bounced, so this is the *only*
+    // camera event a hop gets - and a cap is a good thing happening to you, so
+    // it gets a pad's kick rather than a landing's.
+    S.renderer.kick(0.3);
+  };
   car.onLand = (airTime) => {
     S.sound.land(airTime);
     if (airTime > 0.5) S.renderer.kick(Math.min(0.8, airTime * 0.5));

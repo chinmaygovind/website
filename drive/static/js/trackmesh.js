@@ -22,7 +22,12 @@ import * as THREE from './vendor/three.module.js';
 // steering normal, the racing line all treat it identically. It is a separate
 // kind purely so the car can *notice* it, the same way OFFROAD is a surface
 // rather than an object standing on one. See `Builder.boost` in tracks.py.
-export const KIND = { ROAD: 0, WALL: 1, OFFROAD: 2, BOOST: 3 };
+// BOUNCE is the same again and the only surface that *gives* rather than takes:
+// a mushroom cap, which reflects the landing instead of absorbing it. Same
+// shape of thing - the ground query, the steering normal and the racing line
+// all treat it as road - so it needs no collision code of its own either. See
+// `Builder.bounce` in tracks/builder.py and BOUNCE_VEL in tuning.py.
+export const KIND = { ROAD: 0, WALL: 1, OFFROAD: 2, BOOST: 3, BOUNCE: 4 };
 
 // ---------------------------------------------------------------------------
 // Palette
@@ -462,6 +467,13 @@ export function buildTrack(track, T) {
   // hue skew either side is the iridescence, and it is what stops the two
   // halves of the road looking like one flat colour.
   const roadColor = (i, u) => {
+    // A cap is not tarmac and must not be striped like it: the alternating
+    // every-four-stations shade below is what makes a long road read as moving,
+    // and on a fourteen-unit disc it is one band across the middle of the
+    // mushroom, which reads as a join rather than as a cap.
+    if (line[i] && line[i].bn) {
+      return pal.cap != null ? pal.cap : 0xc4342c;
+    }
     if (!pal.rainbow) return i % 8 < 4 ? pal.road : shade(pal.road, 0.045);
     const a = Math.abs(u);
     const h = (i * pal.rainbow) / 360 + 0.038 * u;
@@ -528,6 +540,149 @@ export function buildTrack(track, T) {
     }
   }
 
+  // ---- mushroom caps ------------------------------------------------------
+  // The whole mushroom is here, and that is the second version of this. The
+  // first drew only the spots, per *station pair*, and left the rim, the gills
+  // and the stalk to the one track that had caps on it. Two things were wrong
+  // with that and they are the same thing twice.
+  //
+  // **A cap has to be drawn as one object, because that is what it is.** Per
+  // pair, the widest thing you can know about is two stations of a 13-wide road
+  // - so the top of the cap was the road strip itself, and a straight-edged
+  // strip sitting on a round disc reads as *a square tile planted on a
+  // mushroom*, which is exactly what it looked like. The top is now a filled
+  // ellipse wider than the road, drawn once per run, so the silhouette from
+  // above is a circle and the road is buried inside it.
+  //
+  // **A pattern needs the whole cap to be a pattern at all.** Spots hashed per
+  // pair cannot be anything but noise: there is no frame in which to place a
+  // ring, so they came out as scattered lozenges. They are two concentric
+  // interleaved rings in the cap's own polar frame now, which is what an
+  // Amanita actually does and the only version of this that looks designed.
+  //
+  // And it belongs in the engine rather than in a track's `scenery.js` for the
+  // Costco's reason: the rim and the top have to agree about the cap's radius,
+  // and two files cannot hold one number.
+  const CAP_OVER = 1.86;   // rim radius across, as a multiple of the half width
+  const CAP_NOSE = 7.0;    // how far the cap runs past the road's ends
+  // Nearly circular by construction: with a 26-unit run those two put the cap at
+  // 20 along by 22 across. A cap twice as long as it is wide reads as a lozenge
+  // however well it is shaded, and roundness is the whole tell of a mushroom.
+  const CAP_SINK = 0.12;   // top's drop under the road, so the two never fight
+  // The dome, as (radius, depth below the top) - a quarter-ellipse rolling into a
+  // slight flare at the lip. One straight band from the top edge to the rim was
+  // the first go and it is nearly vertical, which reads as a **drum**: the cap
+  // needs a shoulder to be a cap.
+  //
+  // Hand-sampled rather than computed, and the samples are bunched where they
+  // are for a reason: the road is 15.5 wide against a 22-wide cap, so everything
+  // inside about r=0.54 is *under the road* and never seen. The shoulder from
+  // there out to the rim is the entire visible profile, so that is where the
+  // detail goes.
+  const CAP_PROFILE = [[0.00, 0.00], [0.52, 0.08], [0.78, 0.38],
+                       [0.93, 1.00], [1.02, 2.20], [1.06, 4.20]];
+  const CAP_UNDER = 6.4;   // from the rim in and down to the top of the stalk
+  const CAP_SEG = 24;      // segments round a cap
+  const STALK_TOP = 0.30, STALK_BOT = 0.20, STALK_DROP = 46.0;
+  const SPOT_LIFT = 0.07;  // spots ride over the road, not under it
+  const SPOT_SEG = 9;      // segments per spot; odd, so no two edges are parallel
+  // The pattern. Two rings, counts coprime-ish and offset by half a step so they
+  // interleave instead of lining up into spokes, and the outer spots smaller -
+  // which is both what a cap does and what stops the rim looking crowded.
+  const SPOTS = [{ r: 0.40, n: 6, size: 0.115, phase: 0.0 },
+                 { r: 0.72, n: 10, size: 0.088, phase: Math.PI / 10 }];
+
+  function mushroom(i0, i1) {
+    const a = line[i0].p, b = line[i1].p;
+    const mid = line[(i0 + i1) >> 1];
+    const cx = (a[0] + b[0]) / 2, cy = (a[1] + b[1]) / 2, cz = (a[2] + b[2]) / 2;
+    let fx = b[0] - a[0], fz = b[2] - a[2];
+    const fl = Math.hypot(fx, fz) || 1;
+    fx /= fl; fz /= fl;
+    const lx = mid.lat[0], lz = mid.lat[2];
+    const rl = fl / 2 + CAP_NOSE, rw = mid.hw * CAP_OVER;
+    const red = pal.cap != null ? pal.cap : 0xc4342c;
+    const gill = pal.capStalk != null ? pal.capStalk : 0xe8dcbe;
+
+    // A point at polar (th, k) on the cap, at height y.
+    const P = (th, k, y) => {
+      const u = Math.cos(th) * rl * k, v = Math.sin(th) * rw * k;
+      return [cx + fx * u + lx * v, y, cz + fz * u + lz * v];
+    };
+    const topY = cy - CAP_SINK;
+    const last = CAP_PROFILE[CAP_PROFILE.length - 1];
+    const rimY = topY - last[1];
+    const gillY = rimY - CAP_UNDER;
+
+    for (let s = 0; s < CAP_SEG; s++) {
+      const t0 = (s / CAP_SEG) * Math.PI * 2, t1 = ((s + 1) / CAP_SEG) * Math.PI * 2;
+      // Shaded off the angle to the light's azimuth, because there are no shadow
+      // maps here and twenty-four facets at one colour is a coin, not a dome.
+      const k0 = 0.5 + 0.5 * Math.cos(t0 - 2.15);
+      // The crown, as a fan from the centre. This is the fix for the square tile:
+      // it fills everything between the road's straight edges and the round rim.
+      //
+      // **`t1` before `t0`, and a fan does not wind like the bands below it.**
+      // With `lat` as road-right and `n` as up, `n x lat` is forward - so going
+      // centre, t0, t1 in this frame produces a *downward* normal, and `solid` is
+      // `MeshLambertMaterial`, which is `FrontSide`. Wound the other way the whole
+      // top is culled from above and you look straight through the cap at its own
+      // gills and stalk: the mushroom came out as a cream ring with a grey ellipse
+      // in the middle of it and nothing said a word. Same trap as Spa's invisible
+      // pit building, and the reason `docs/track-defects.md` says to copy the
+      // engine's own ground-quad winding rather than reason it out.
+      const [r1, d1] = CAP_PROFILE[1];
+      solid.quad(P(0, 0, topY), P(t1, r1, topY - d1), P(t0, r1, topY - d1),
+                 P(0, 0, topY), shade(red, -0.02 + 0.20 * k0));
+      // ...and then the shoulder, band by band down to the lip. These *do* wind
+      // like side walls - t0 to t1, then back along the next ring - which is the
+      // one pattern in here that was right the first time.
+      for (let m = 1; m + 1 < CAP_PROFILE.length; m++) {
+        const [ra, da] = CAP_PROFILE[m], [rb, db] = CAP_PROFILE[m + 1];
+        solid.quad(P(t0, ra, topY - da), P(t1, ra, topY - da),
+                   P(t1, rb, topY - db), P(t0, rb, topY - db),
+                   shade(red, -0.02 - 0.075 * m + 0.22 * k0));
+      }
+      // `bright` because these face down: a downward quad gets nothing from a key
+      // light overhead and only the hemisphere's ground colour from below, and
+      // these hang over a gorge with nothing under them to bounce - so a
+      // "correctly" lit gill is very nearly black. Costco's ceiling, again.
+      bright.quad(P(t0, last[0], rimY), P(t1, last[0], rimY),
+                  P(t1, STALK_TOP, gillY), P(t0, STALK_TOP, gillY), gill);
+      // The stalk, tapered and carried down into the fog rather than landing on
+      // anything. Parallel sides read as a pipe.
+      solid.quad(P(t0, STALK_TOP, gillY), P(t1, STALK_TOP, gillY),
+                 P(t1, STALK_BOT, gillY - STALK_DROP),
+                 P(t0, STALK_BOT, gillY - STALK_DROP),
+                 shade(gill, -0.34 + 0.20 * k0));
+    }
+
+    // The spots, last, so they sit over both the crown and the road.
+    const dot = pal.capSpot != null ? pal.capSpot : 0xf0e6cd;
+    for (const ring of SPOTS) {
+      for (let q = 0; q < ring.n; q++) {
+        const th = ring.phase + (q / ring.n) * Math.PI * 2;
+        const ox = Math.cos(th) * rl * ring.r, ov = Math.sin(th) * rw * ring.r;
+        // A fan of SPOT_SEG, not a pair of trapezoids. Six vertices reads as a
+        // hexagon from the car - you can count the sides - and these are the most
+        // looked-at marks on the track. A fan is also winding-proof, which two
+        // hand-wound trapezoids are not.
+        const at = (m) => {
+          const p = (m / SPOT_SEG) * Math.PI * 2;
+          return [cx + fx * (ox + Math.cos(p) * rl * ring.size)
+                     + lx * (ov + Math.sin(p) * rw * ring.size),
+                  cy + SPOT_LIFT,
+                  cz + fz * (ox + Math.cos(p) * rl * ring.size)
+                     + lz * (ov + Math.sin(p) * rw * ring.size)];
+        };
+        const mid = [cx + fx * ox + lx * ov, cy + SPOT_LIFT, cz + fz * ox + lz * ov];
+        for (let m = 0; m < SPOT_SEG; m++) {
+          bright.quad(mid, at(m + 1), at(m), mid, dot);
+        }
+      }
+    }
+  }
+
   // ---- the road: one strip of quads between consecutive stations -----------
   //
   // This loop is the entire track geometry. Everything the old grid version
@@ -555,7 +710,8 @@ export function buildTrack(track, T) {
       // Wound so the surface normal comes out along `n`, which is what lets the
       // ground query find the road while the car is upside down inside a
       // corkscrew - or high on the wall of a pipe.
-      col.addQuad(p0, p1, q1, q0, a.bp ? KIND.BOOST : KIND.ROAD);
+      col.addQuad(p0, p1, q1, q0,
+                  a.bp ? KIND.BOOST : a.bn ? KIND.BOUNCE : KIND.ROAD);
       roadBuf.quad(p0, p1, q1, q0, roadColor(i, (u0 + u1) / 2));
     }
     if (a.bp) padStrip(i);
@@ -575,23 +731,43 @@ export function buildTrack(track, T) {
     solid.quad(aL, bL, bLu, aLu, shade(pal.road, -0.16));   // left flank
     solid.quad(bR, aR, aRu, bRu, shade(pal.road, -0.16));   // right flank
 
-    // Kerbs: painted stripes just inside each edge, alternating colour.
-    const stripe = (i % 4 < 2) ? pal.kerb : pal.kerb2;
-    bright.quad(inset(a, -1, 0), inset(b, -1, 0),
-                inset(b, -1, KERB_W), inset(a, -1, KERB_W), stripe);
-    bright.quad(inset(a, 1, KERB_W), inset(b, 1, KERB_W),
-                inset(b, 1, 0), inset(a, 1, 0), stripe);
+    // Kerbs: painted stripes just inside each edge, alternating colour - but not
+    // on a mushroom cap, for the same reason its road quads are not striped
+    // tarmac either. A kerb is a marking painted at the edge of a *road*, and a
+    // cap is a thing growing out of a gorge: rumble strips down both sides of one
+    // read as a red road with a mushroom's colours rather than as a mushroom.
+    if (!a.bn) {
+      const stripe = (i % 4 < 2) ? pal.kerb : pal.kerb2;
+      bright.quad(inset(a, -1, 0), inset(b, -1, 0),
+                  inset(b, -1, KERB_W), inset(a, -1, KERB_W), stripe);
+      bright.quad(inset(a, 1, KERB_W), inset(b, 1, KERB_W),
+                  inset(b, 1, 0), inset(a, 1, 0), stripe);
+    }
 
     if (a.wl && b.wl) wallStrip(aL, bL, a.n, b.n, RAIL_H, pal.rail);
     if (a.wr && b.wr) wallStrip(aR, bR, a.n, b.n, RAIL_H, pal.rail);
 
     // Where the road stops dead - the lip of a jump - paint the end face so you
-    // can see exactly where it goes.
-    if (i + 2 < line.length && line[i + 2].air) {
+    // can see exactly where it goes. Not on a cap: the flared rim under it
+    // already says where the mushroom ends, far better than a stripe does, and
+    // `pal.deco` over `pal.cap` is a warm bar on a red disc - too low-contrast to
+    // inform anybody and just loud enough to look like a mistake.
+    if (i + 2 < line.length && line[i + 2].air && !a.bn) {
       solid.quad(bL, bR, bRu, bLu, shade(pal.deco, -0.1));
       bright.quad(inset(b, -1, 0), inset(b, 1, 0),
                   sink(inset(b, 1, 0), b, 0.4), sink(inset(b, -1, 0), b, 0.4), pal.deco);
     }
+  }
+
+  // One mushroom per maximal run of cap stations. A separate pass rather than a
+  // branch inside the road loop, because a cap is one object spanning seven or
+  // eight station pairs and the road loop's whole subject is a single pair.
+  for (let i = 0; i < line.length; i++) {
+    if (!line[i].bn) continue;
+    let j = i;
+    while (j + 1 < line.length && line[j + 1].bn) j++;
+    mushroom(i, j);
+    i = j;
   }
 
   // ---- supports -----------------------------------------------------------
@@ -634,6 +810,15 @@ export function buildTrack(track, T) {
     // out around the ride height and the `< 1.5` test below skips the legs
     // entirely - which is correct: the road there is built on a hillside, not
     // held up in the air.
+    //
+    // A mushroom cap holds itself up. It is the one kind of road in the game
+    // that is free-standing *by construction* - it is a cap on a stalk over a
+    // gorge - so a trestle under one is a steel pier bolted to the underside of
+    // a mushroom. On a void track `base` is a flat `e.p[1] - 16`, so every cap
+    // was getting the full fifteen units of both posts and the cross-beam
+    // hanging in the open air beneath it, which from the cap above reads as grey
+    // structure poking up through the red.
+    if (e.bn) continue;
     const base = terrain ? terrain.height(e.p[0], e.p[2])
                : groundY != null ? groundY : e.p[1] - 16;
     const drop = e.p[1] - THICK - base;

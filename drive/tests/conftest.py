@@ -149,11 +149,17 @@ def lap_splits(track, frames):
 
 # Waiting on a single lap. Drop the entry, then:
 #     venv/bin/python tools/hotlap.py <slug> --site https://drive.cgovind.com
-NO_HOTLAP_YET = set()
+NO_HOTLAP_YET = {
+    "shroom",     # added Aug 2026; nobody has driven it, so there is no record
+                  # to cut a line off. Set a lap and then:
+                  #     venv/bin/python tools/hotlap.py shroom \
+                  #         --site http://localhost:5005
+}
 
 # Waiting on a board deep enough to cut a standard from - five or so distinct
 # players. Drop the entry, then, on the box:
 #     venv/bin/python tools/set_medals.py --db instance/tickettoride.db --write
-NO_CUT_MEDALS_YET = {
-    "tokyo",      # added Aug 2026; one time on the board
-}
+# Empty: every track in the pool now declares its own three times. Kept rather
+# than deleted because it is the escape hatch a brand-new folder needs on the
+# commit that adds it - a track nobody has driven has no board to cut from.
+NO_CUT_MEDALS_YET = set()

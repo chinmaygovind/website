@@ -226,6 +226,41 @@ SLIP_ACCEL_MULT = 1.5      # engine force while boosting; top speed x sqrt(1.5)
 PAD_BOOST = 1.3            # seconds the boost lasts after leaving the pad
 PAD_ACCEL_MULT = 1.7       # engine force while boosting; top speed x sqrt(1.7)
 
+# --- bounce pads (mushroom caps) -------------------------------------------
+# Road that throws the car back into the air instead of absorbing its landing.
+# Every other surface here *takes* something - grass takes speed, a wall takes
+# speed and your line - and this is the only one that hands the car a direction
+# it did not arrive with.
+#
+# It is two numbers because a cap has to answer two different arrivals, and one
+# number could only ever answer one of them. Roll across a cap at road level
+# with no vertical speed at all and there is nothing to reflect, so BOUNCE_VEL
+# is a **floor**: the launch a cap gives you for touching it at all. Fall onto
+# one from a height and BOUNCE_REST returns a fraction of what you arrived with,
+# so a cap taken hard throws you higher than a cap taken gently and a chain of
+# them has a rhythm instead of a fixed pitch.
+#
+# The car takes **the larger of the two, never the sum**, which is the same rule
+# a pad and a tow follow and for the same reason: they are two answers to one
+# question. Summing them makes the cap at the bottom of the biggest drop on the
+# track the one that fires you somewhere unrecoverable, which is exactly the cap
+# a player has the least control over arriving at.
+#
+# BOUNCE_VEL is sized off **hang time**, which is the number that actually
+# matters here - see AIR_PITCH: the nose keeps rotating down for as long as the
+# throttle is held in the air, so a flight much past 1.5s lands nose-first
+# however it was authored, and that is what broke Big Red's main jump. 21 u/s
+# peaks 7.4 units up and is back down 1.4 seconds later, which sits at the top
+# of the pool's existing 1-1.5s jumps and deliberately not past it.
+#
+# BOUNCE_REST is under 1 so the chain is *decaying* rather than divergent. At
+# 0.68 the reflection only beats the floor past about a 7-unit fall, so an
+# ordinary cap-to-cap hop is the flat 21 and it is only a real drop onto a cap
+# that throws you higher than the last one did.
+BOUNCE_VEL = 21.0          # launch a cap gives you for touching it at all
+BOUNCE_REST = 0.68         # fraction of arrival speed a hard landing returns
+BOUNCE_LOCK = 0.12         # seconds a cap behaves as ordinary road after firing
+
 # --- catching up -----------------------------------------------------------
 # A race where somebody drops three seconds is over, and everyone still in it
 # spends the rest of the lap driving alone. So a car behind the leader gets a
@@ -340,6 +375,7 @@ _EXPORT = [
     "SLIP_RANGE", "SLIP_HALF_W", "SLIP_ALIGN", "SLIP_MIN_SPEED", "SLIP_CHARGE",
     "SLIP_DECAY", "SLIP_BOOST", "SLIP_ACCEL_MULT",
     "PAD_BOOST", "PAD_ACCEL_MULT",
+    "BOUNCE_VEL", "BOUNCE_REST", "BOUNCE_LOCK",
     "CATCHUP_DEAD", "CATCHUP_FULL", "CATCHUP_ACCEL_MULT", "CATCHUP_SMOOTH",
 ]
 

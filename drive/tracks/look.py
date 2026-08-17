@@ -42,6 +42,7 @@ KNOWN = REQUIRED + (
     "snow",           # the white slab under Figure Eight
     "gravel",         # run-off colour, where there is run-off
     "pad", "padBase",  # boost pads
+    "cap", "capSpot",  # mushroom caps: the disc, and the spots on it
     "rain",           # falling rain: the only animated scenery there is, so it
                       # lives in render.js and not in a track's scenery.js
     "prop2",          # second structural colour: trestles, columns

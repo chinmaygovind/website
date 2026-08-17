@@ -48,6 +48,69 @@ collider, or any track palette/sky.
   stone; `kind: 'downtown'` plus a thin haze is a city with lit windows and some
   cloud drifting over it.
 
+## Bounce pads (mushroom caps)
+
+Added Aug 2026 for Shroom Street, which is the only track with any. It is the
+**fifth collider kind** and the first one added since the pool was built, so the
+note on gravel further down - that a new surface means a `KIND`, a constant in
+`tuning.py` and a term in `laptime.py` - is the price that was actually paid here
+rather than a reason not to.
+
+- **A cap is a surface, like a pad.** `Builder.bounce(length)` flags the stations
+  it lays, their road quads go into the collider as `KIND.BOUNCE`, and the ground
+  query the car already runs finds it - so it needs no collision code, and would
+  work inside a loop for the same reason a pad and a half-pipe do.
+- **It is the only surface in the game that gives rather than takes.** Grass takes
+  speed, a wall takes speed and your line, a pad hands you engine you still have
+  to use; a cap hands the car a *direction it did not arrive with*.
+- **It is the landing-impact line itself, not a term after it.** `Car.step`
+  normally kills motion into the surface (`if (vn < 0) vel += n * -vn`); on a cap
+  that becomes a reflection. Doing it as an added impulse instead spends one step
+  with the car resting on the cap - a step of grip, of the suspension spring and
+  of `ALIGN_GROUND` - and the bounce reads as the mushroom catching the car.
+- **Two numbers, and it takes the larger, never the sum.** `BOUNCE_VEL` is a floor
+  (roll onto a cap with no normal velocity and there is nothing to reflect);
+  `BOUNCE_REST` returns a fraction of a real arrival. Summing them makes the cap
+  at the bottom of the biggest drop the one that fires you somewhere
+  unrecoverable, which is the cap a player has least control over arriving at.
+  Same rule, same reason, as a pad and a tow.
+- **A cap goes quiet after firing (`BOUNCE_LOCK`); a pad re-arms.** Opposite rules
+  and both are deliberate. A pad must re-arm or Mount Joy's ramp runs out of
+  engine half way up. A cap must not: `grounded` survives `COYOTE` and the probe
+  reaches `PROBE` units, so a re-arming cap keeps topping the car's normal
+  velocity back up for as long as it can see the surface - a car pinned to a
+  launch speed rather than thrown by it, and eight callbacks for one hop.
+- **`onLand` is suppressed on a bounce.** Otherwise one contact is two sounds and
+  two camera kicks, and the louder is the impact - so the best moment on the track
+  reads as hitting the mushroom.
+- **Hang time is fixed, so reach is purely a function of exit speed.** This is the
+  number the whole track is authored around. `BOUNCE_VEL` sets the flight at ~1.4s
+  whatever the arrival, which puts touchdown 48 units downrange at 34 u/s and 67
+  at 48 - a nineteen-unit spread nobody can trim, because it is set by a corner
+  two hundred units back. Hence caps are **long** (26 units, not a pad's 14) and
+  **wide** (20 against a 13-wide road, because the car aims at one out of the air
+  with only `AIR_STEER`). Big Red's 46-unit landing straight is the pool's
+  cautionary tale for exactly this.
+- **`laptime.py` models a cap as free flight, and that makes the lap *faster*.**
+  The surprise is worth writing down. A cap modelled as road gets a cornering
+  limit, and because the gaps either side of it are bowed and `_corner_speed`
+  measures curvature on the 3D line, the bow's **vertical** bend read as a tight
+  corner: the model braked hard into every mushroom for the car going up and
+  coming down. Same failure as Big Red's main jump by a different route. Treating
+  it as free flight is both correct (a ballistic car has no cornering grip) and
+  worth 3.6s on this track.
+- **`test_every_gap_is_clearable` has to know.** A cap launches along its own
+  normal regardless of grade, and on a flat cap the geometric launch angle is
+  zero - so without adding `BOUNCE_VEL` to `vy` a chain of caps reads as gaps
+  entered dead level and nothing clears anything.
+- **Two things a cap is not allowed to wear**, both in `buildTrack` and both
+  general rather than track-specific: kerbs (a rumble strip down each side reads
+  as a red road, not a mushroom) and a trestle (a cap is free-standing by
+  construction, and on a void track `base` is a flat `p[1] - 16` so every station
+  gets one). Its road quads are also excluded from the every-four-stations shade
+  that makes tarmac read as moving, which on a 26-unit disc is one band across the
+  middle of the mushroom.
+
 ## Closed circuits, terrain and trackside furniture
 
 All three of these exist for Spa and nothing else uses them yet. They are

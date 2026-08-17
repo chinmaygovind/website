@@ -218,6 +218,38 @@ New entries, unsorted, until somebody files them. One line is enough.
 - Too much straight before the first real feature. A long intro reads as the
   track not having started yet.
 - One boost pad on a track that has slow corners everywhere is a wasted lever.
+- **A base colour checked against the swatch and not against the bounce.** The
+  palette note says pick colours cooler than they look; this is the next step of
+  it. A pale sand road read as *correct* in `plan.png` and as olive-grey from the
+  car, because the plan view is lit flat and shadowless while in the world a sage
+  `hemi.ground` lands on every upward face. Judge a road colour in a road view,
+  never in the plan, and if it has gone grey suspect the bounce before the road.
+- **A height field that treats a free-standing surface as ground.** Shroom
+  Street's mushroom caps are road, so the first field built ground from them -
+  which filled the gorge in under the one thing the gorge exists for, and every
+  cap came out sitting in a shallow green bowl with its stalk buried. Anything
+  that is deliberately over a void (`bn`, and `air` already) has to be excluded
+  from the station list the field is derived from.
+- **A terrain carve whose depth is measured off one global floor.** `minY - DEPTH`
+  is the right depth only where the road is at `minY`. Thirty units higher up the
+  same track it is thirty units too deep and reaches a hundred units further out
+  before its wall climbs back to the surface - so two compact canyons came out as
+  long diagonal trenches across the plan view, with roads elsewhere standing on
+  trestles over ground dug from under them. Measure it off the nearest station of
+  the feature being carved.
+- **A carve switched on at a distance threshold instead of blended over one.**
+  One cell at meadow height beside one cell at full carve depth is a single
+  near-vertical quad falling seventy units, and a ring of those reads as grey
+  shards thrown across the infield rather than as a cliff. Ramp the carve in over
+  40-odd units.
+- **On a void track, every station gets a trestle.** `base` is a flat
+  `p[1] - 16` with no terrain, so `drop` clears the 1.5 threshold everywhere and
+  supports are drawn under the whole ribbon. Fine where a height field buries
+  them; anything genuinely free-standing has to opt out, or it wears steel piers.
+- **A painted mark built from four vertices reads as a diamond.** Mushroom spots
+  as single quads looked stencilled on. Six vertices as two trapezoids is the
+  cheapest thing that reads as round, and it is worth the extra quads on a mark
+  that is the signature of the track.
 - **The floor is dead.** A ground track's plate is one flat quad in one colour,
   and however good the scenery standing on it is, half of every frame is that
   quad. Anything laid on it - street grid, light spill, puddles - is a handful of

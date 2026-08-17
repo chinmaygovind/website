@@ -230,6 +230,8 @@ class Builder:
         # for a measured length and back off again, so unlike the cross-section
         # it is never a mode you can leave running by accident.
         self._pad = False
+        # Same again for a mushroom cap. See `bounce`.
+        self._cap = False
 
     # -- internals ---------------------------------------------------------
     def _pf(self):
@@ -267,6 +269,9 @@ class Builder:
         # see `boost` below.
         if self._pad and not air:
             e["bp"] = 1
+        # A mushroom cap is a property of the surface too - see `bounce`.
+        if self._cap and not air:
+            e["bn"] = 1
         if fix:
             e["fix"] = 1
         if kick:
@@ -498,6 +503,51 @@ class Builder:
             self.sections[-1] = {"t": "boost", "len": length, "rise": rise}
         finally:
             self._pad = False
+        return self
+
+    def bounce(self, length=14.0, rise=0.0, ease=True):
+        """A mushroom cap: road that throws you back up instead of catching you.
+
+        The same shape of thing as ``boost`` and built the same way - the cap is
+        the *surface*, not an object standing on it. The stations are flagged,
+        their road quads go into the collider as ``KIND.BOUNCE``, and the ground
+        query the car already runs finds it, so nothing in the collision code has
+        to know caps exist. What it does to the car is in physics.js; how much,
+        in tuning.py.
+
+        Unlike ``boost`` this is **not** restricted to a straight, and the
+        difference is worth stating because the two look like the same rule. A
+        pad is a strip you accelerate *along*, so a pad mid-corner takes away the
+        decision the corner was for. A cap is a single point you touch and leave:
+        the car is on it for one physics step out of the roughly 170 the hop
+        takes, so "along" is not a thing that happens on one, and a cap on a bend
+        is just a cap you have to be pointing the right way when you leave.
+
+        It does want to be **flat**, though, and that is a real constraint rather
+        than taste: the launch is along the station's own normal, so a cap on a
+        grade fires the car off to one side of where the road goes, and a cap on
+        a banked station fires it at the wall. ``rise`` exists to let a chain of
+        caps step down a chasm without each one needing its own gap; keep it
+        small, and keep ``ease`` on, because an un-eased rise marks the stations
+        ``kick`` and a cap does not need help throwing you.
+
+        **Widen the road over a cap** with ``width()`` either side of it. A cap is
+        a target the car arrives at out of the air with ``AIR_STEER``'s fraction
+        of its steering, and a 12-wide disc at the end of a fifty-unit flight is
+        a coin toss rather than a line. Every cap on Shroom Street is 20 wide
+        against a 13-wide road.
+        """
+        self._cap = True
+        try:
+            self.straight(length, rise=rise, ease=ease)
+            # `straight` records itself as it starts and nothing else appends
+            # while it runs, so this is that entry - rewritten rather than added
+            # to, exactly as `boost` does it, or one authored primitive shows up
+            # in `sections` twice and every leg index after it moves, which is
+            # what the closure solver keys its substitutions on.
+            self.sections[-1] = {"t": "bounce", "len": length, "rise": rise}
+        finally:
+            self._cap = False
         return self
 
     def gap(self, length, drop=0.0, bow=None):

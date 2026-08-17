@@ -264,6 +264,14 @@ def test_every_gap_is_clearable(track):
         drop = max(0.0, lip[1] - line[min(j, len(line) - 1)]["p"][1])
         # range of a projectile launched at theta, landing `drop` lower
         vx, vy = v * math.cos(theta), v * math.sin(theta)
+        # Leaving a mushroom cap you are not launched by the grade at all - the
+        # cap throws you along its own normal at BOUNCE_VEL regardless, and on a
+        # flat cap `theta` is zero, so without this a chain of caps over a chasm
+        # reads as a series of gaps entered dead level and nothing clears
+        # anything. Only ever *added* to whatever the geometry was already worth,
+        # because that is what physics.js does to the normal component.
+        if line[i - 1].get("bn"):
+            vy += T.BOUNCE_VEL
         flight = (vy + math.sqrt(max(0.0, vy * vy + 2 * T.GRAVITY * drop))) / T.GRAVITY
         reach = vx * flight
         assert reach >= span * 0.9, (

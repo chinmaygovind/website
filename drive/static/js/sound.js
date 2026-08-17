@@ -275,6 +275,23 @@ export class Sound {
   }
 
   /**
+   * A mushroom cap throwing the car.
+   *
+   * Sweeps **up** where every other event here sweeps down, which is the whole
+   * of what makes it read as a launch rather than as an impact - a landing, a
+   * bump and a wall are all falling pitches, and a rising one is the only thing
+   * in the mix that says the car went somewhere good. `mag` is the launch speed,
+   * so a hard arrival onto a cap is both higher and louder than a gentle one,
+   * the same way `bump` scales off its magnitude.
+   */
+  bounce(mag) {
+    const k = Math.min(1, (mag || 21) / 30);
+    this._blip({ freq: 240, to: 760 + 260 * k, type: 'sine', dur: 0.2,
+                 gain: 0.11 + 0.05 * k });
+    this._blip({ freq: 120, to: 380, type: 'triangle', dur: 0.26, gain: 0.09 });
+  }
+
+  /**
    * Where the ears are.
    *
    * They ride the **chase camera**, not the car, because the camera is where you

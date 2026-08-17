@@ -242,7 +242,17 @@ def speed_profile(track):
         for i in range(n):
             e = line[i]
             top = T.MAX_SPEED * math.sqrt(T.PAD_ACCEL_MULT) if boost[i] else T.MAX_SPEED
-            if e.get("air"):
+            if e.get("air") or e.get("bn"):
+                # Mid-flight, or on a mushroom cap - which is very nearly the
+                # same thing. A cap throws the car at BOUNCE_VEL the instant it
+                # touches, so of the ~170 physics steps a hop takes the car is
+                # on the surface for one: there is no cornering limit to apply
+                # because there is nothing there to corner on. Modelling a cap
+                # as ordinary road instead would hand the whole disc a grip
+                # budget and a full engine term, which is precisely the shape of
+                # the bug that made four of Big Red's pads worth 0.29s instead
+                # of 1.8 - a surface the model thinks you are using and the car
+                # never touches.
                 cap.append(top)          # no steering authority matters mid-flight
             elif e.get("crad"):
                 # A corkscrew. Its curvature is not something you steer, so the
@@ -277,8 +287,8 @@ def speed_profile(track):
             if ds[i - 1] < 1e-6:
                 continue
             u = v[i - 1]
-            if line[i - 1].get("air"):
-                a = slope(i - 1)             # coasting through the air
+            if line[i - 1].get("air") or line[i - 1].get("bn"):
+                a = slope(i - 1)             # coasting through the air, or on a cap
             else:
                 eng = T.ACCEL * (T.PAD_ACCEL_MULT if boost[i - 1] else 1.0)
                 a = eng - T.DRAG * u * u + slope(i - 1)
