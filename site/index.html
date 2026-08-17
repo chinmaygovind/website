@@ -1033,20 +1033,22 @@
             <h2 class="pane-title">resume</h2>
             <dl class="facts">
               <div class="fact"><dt>name</dt><dd>Chinmay Govind</dd></div>
-              <div class="fact"><dt>age</dt><dd><span id="fact-age">20 years</span></dd></div>
+              <div class="fact"><dt>age</dt><dd><span id="fact-age">20 yr</span></dd></div>
               <div class="fact"><dt>school</dt><dd><span class="penn-red">university</span> of <span class="penn-blue">pennsylvania</span></dd></div>
+              <div class="fact"><dt>hometown</dt><dd>mechanicsburg, PA</dd></div>
               <div class="fact"><dt>favorite color</dt><dd><span class="fav-blue">blue</span></dd></div>
-              <div class="fact"><dt><a class="fact-link" href="https://puzzles.usatoday.com/" target="_blank" rel="noopener">USA Today Crossword</a></dt><dd>PB: 2m 41s</dd></div>
               <div class="fact"><dt>typing speed</dt><dd>150 wpm</dd></div>
-              <div class="fact"><dt><a class="fact-link" href="https://www.duolingo.com/profile/ChinmayGov" target="_blank" rel="noopener">Duolingo Streak</a></dt><dd><span id="fact-duo">2084</span></dd></div>
-              <div class="fact"><dt><a class="fact-link" href="https://www.worldcubeassociation.org/persons/2018GOVI03" target="_blank" rel="noopener">3x3 Rubik's Cube</a></dt><dd>PB: 18.04s</dd></div>
-              <div class="fact"><dt><a class="fact-link" href="https://github.com/chinmaygovind" target="_blank" rel="noopener">commits this year</a></dt><dd><span id="fact-commits">354</span></dd></div>
-              <div class="fact"><dt><a class="fact-link" href="https://plancke.io/hypixel/player/stats/bheta#BedWars" target="_blank" rel="noopener">Hypixel Bedwars</a></dt><dd>582 <span class="star">&#9733;</span></dd></div>
-              <div class="fact"><dt><a class="fact-link" href="https://statsroyale.com/profile/82GYC2GVL" target="_blank" rel="noopener">Clash Royale wins</a></dt><dd>6,613</dd></div>
               <div class="fact"><dt>smash main</dt><dd><span class="dedede-gold">King</span> <span class="dedede-blue">Dedede</span></dd></div>
               <!-- Pushed from my phone hourly; hidden unless the reading is
                    recent, since a stale "steps today" is just a wrong number. -->
               <div class="fact" id="fact-steps-row" hidden><dt>steps today</dt><dd><span id="fact-steps"></span></dd></div>
+              <!-- everything below here is a link out; the plain facts are above. -->
+              <div class="fact"><dt><a class="fact-link" href="https://puzzles.usatoday.com/" target="_blank" rel="noopener">USA Today Crossword</a></dt><dd>PB 2m 41s</dd></div>
+              <div class="fact"><dt><a class="fact-link" href="https://www.duolingo.com/profile/ChinmayGov" target="_blank" rel="noopener">Duolingo Streak</a></dt><dd><span id="fact-duo">2112 days</span></dd></div>
+              <div class="fact"><dt><a class="fact-link" href="https://www.worldcubeassociation.org/persons/2018GOVI03" target="_blank" rel="noopener">3x3 Rubik's Cube</a></dt><dd>PB: 18.04s</dd></div>
+              <div class="fact"><dt><a class="fact-link" href="https://github.com/chinmaygovind" target="_blank" rel="noopener">Github Commits (public)</a></dt><dd><span id="fact-commits">658</span></dd></div>
+              <div class="fact"><dt><a class="fact-link" href="https://plancke.io/hypixel/player/stats/bheta#BedWars" target="_blank" rel="noopener">Hypixel Bedwars</a></dt><dd>582 <span class="star">&#9733;</span></dd></div>
+              <div class="fact"><dt><a class="fact-link" href="https://statsroyale.com/profile/82GYC2GVL" target="_blank" rel="noopener">Clash Royale wins</a></dt><dd>6,613</dd></div>
             </dl>
           </div>
           <div class="pane pane-right">
@@ -1419,8 +1421,6 @@
         if (!el) return;
         var BORN_H = 11, BORN_M = 31; // 7:31am Eastern, in UTC
 
-        function two(n) { return (n < 10 ? "0" : "") + n; }
-
         function tick() {
           var now = new Date();
           // most recent birthday that has already happened
@@ -1437,7 +1437,7 @@
           var m = Math.floor((rest % 3600000) / 60000);
           var s = Math.floor((rest % 60000) / 1000);
           el.textContent =
-            years + " years, " + days + " days, " + h + ":" + two(m) + ":" + two(s);
+            years + " yr, " + days + " d, " + h + " hr, " + m + " min, " + s + " sec";
         }
 
         tick();
@@ -1458,10 +1458,10 @@
       getJSON("/api/duolingo-streak", function (d) {
         if (!d || typeof d.streak !== "number") return;
         var el = document.getElementById("fact-duo");
-        if (el) el.textContent = d.streak;
+        if (el) el.textContent = d.streak.toLocaleString() + " days";
       });
 
-      // fast facts: this year's public commit count, via the proxy in app.py
+      // fast facts: all-time public commit count, via the proxy in app.py
       getJSON("/api/github-commits", function (d) {
         if (!d || typeof d.commits !== "number") return;
         var el = document.getElementById("fact-commits");

@@ -108,33 +108,31 @@ def duolingo_streak():
     return {"streak": streak}
 
 
-# Commits Chinmay has pushed this calendar year, for the same "fast facts" list.
-# GitHub's commit *search* is the only endpoint that answers this in one call -
-# the REST API can only list commits per repository, which would be 35 calls and
-# still miss forks. The catch is that search is limited to **10 requests a minute
-# for anonymous callers**, shared by everyone behind this box's IP, so the hourly
-# cache is not politeness here, it is the thing that keeps the endpoint working.
-# Search also only indexes **public** repos, which is the honest number to show
-# anyway. Setting GITHUB_TOKEN in .env raises the limit to 30/min; it is not
-# needed and nothing breaks without it.
+# Every commit Chinmay has ever pushed to a public repo, for the same "fast
+# facts" list. GitHub's commit *search* is the only endpoint that answers this in
+# one call - the REST API can only list commits per repository, which would be 35
+# calls and still miss forks. The catch is that search is limited to **10 requests
+# a minute for anonymous callers**, shared by everyone behind this box's IP, so the
+# hourly cache is not politeness here, it is the thing that keeps the endpoint
+# working. Search also only indexes **public** repos, which is why the line on the
+# page says so rather than claiming a total it cannot see. Setting GITHUB_TOKEN in
+# .env raises the limit to 30/min; it is not needed and nothing breaks without it.
 GITHUB_USERNAME = "chinmaygovind"
 GITHUB_CACHE_TTL = 3600  # seconds
-_github_cache = {"commits": None, "year": None, "fetched_at": 0.0}
+_github_cache = {"commits": None, "fetched_at": 0.0}
 
 
 @app.route("/api/github-commits")
 def github_commits():
-    """Return this year's public commit count for Chinmay (see the note above)."""
+    """Return Chinmay's all-time public commit count (see the note above)."""
     now = time.time()
-    year = time.gmtime(now).tm_year
     if (
         _github_cache["commits"] is not None
-        and _github_cache["year"] == year
         and now - _github_cache["fetched_at"] < GITHUB_CACHE_TTL
     ):
-        return {"commits": _github_cache["commits"], "year": year}
+        return {"commits": _github_cache["commits"]}
 
-    query = "author:%s author-date:>=%d-01-01" % (GITHUB_USERNAME, year)
+    query = "author:%s" % GITHUB_USERNAME
     url = "https://api.github.com/search/commits?per_page=1&q=" + urlparse.quote(query)
     headers = {
         "Accept": "application/vnd.github+json",
@@ -151,13 +149,12 @@ def github_commits():
         # A rate-limited minute or a flaky search index shouldn't blank the line;
         # serve the last good count, or let the page keep the number in its markup.
         if _github_cache["commits"] is not None:
-            return {"commits": _github_cache["commits"], "year": _github_cache["year"], "stale": True}
+            return {"commits": _github_cache["commits"], "stale": True}
         return {"commits": None}, 502
 
     _github_cache["commits"] = commits
-    _github_cache["year"] = year
     _github_cache["fetched_at"] = now
-    return {"commits": commits, "year": year}
+    return {"commits": commits}
 
 
 # Steps walked today, for the same "fast facts" list. **Nothing here fetches
