@@ -42,6 +42,8 @@ KNOWN = REQUIRED + (
     "snow",           # the white slab under Figure Eight
     "gravel",         # run-off colour, where there is run-off
     "pad", "padBase",  # boost pads
+    "rain",           # falling rain: the only animated scenery there is, so it
+                      # lives in render.js and not in a track's scenery.js
     "prop2",          # second structural colour: trestles, columns
     "rainbow", "rainbowLanes",  # Rainbow Road's per-station hue sweep
 )

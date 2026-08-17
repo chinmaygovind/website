@@ -2724,6 +2724,16 @@ function shotCamera() {
  * that is too low.
  */
 function planCamera() {
+  // **Fog off, always.** This camera is fitted to the track's own extent, so on
+  // a long track it sits well over a thousand units up - past the `fogFar` of
+  // most palettes and every realistic night one. The whole world then resolves
+  // to flat fog colour and the picture is a solid rectangle with no track in it,
+  // which reads as a broken renderer rather than as a camera behind weather.
+  // Nothing in the pool showed it because they are all daylight tracks whose fog
+  // happens to reach further than their own plan height; Tokyo Drift's 900 is
+  // the first that does not, and lifting a *palette* to suit an authoring tool
+  // would be the wrong way round. A plan drawing has no atmosphere in it.
+  S.renderer.scene.fog = null;
   const pts = S.built.line.map(e => e.p);
   let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, hi = -Infinity;
   for (const p of pts) {

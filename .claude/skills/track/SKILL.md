@@ -80,7 +80,21 @@ cd drive && venv/bin/python -m pytest tests/test_tracks.py -q -k <slug>
 
 Every failure here is a mistake somebody has already made. Fix them all.
 
-### 3. Render it, and look
+### 3. Measure it against the sixteen that are already good
+
+```bash
+cd drive && venv/bin/python tools/pool_stats.py <slug>
+```
+
+The pool is a labelled set of good tracks and this reads it back: 26 numbers,
+compared against the other fifteen. It says *unlike the pool*, not *wrong* — Big
+Red's 223-unit drop flags every time and is the point of the track. Go through
+every `>>` and satisfy yourself it was deliberate. What it reliably catches is
+the mistake with no visual signature: a scatter density ten times anything else,
+a `fogFar` a tenth of anything else, a two-stop sky. Those are typos, and they
+look fine in code.
+
+### 4. Render it, and look
 
 ```bash
 cd drive && venv/bin/python tools/track_views.py <slug>
@@ -88,6 +102,17 @@ cd drive && venv/bin/python tools/track_views.py <slug>
 
 Writes `drive/tools/views/<slug>/plan.png` plus five along the road. **Read every
 one with the Read tool.**
+
+**Read `drive/docs/track-defects.md` first and check the pictures against it.**
+It is short, and it is the running list of everything that has gone wrong in a
+track here — the road buried in the ground, geometry floating, a corner arriving
+with no warning, a crest hiding the next braking point, a sky washing the kerbs
+out. Looking *for* known failures finds far more than looking at a picture and
+seeing what you happen to see.
+
+**When Chinmay spots something you missed, add it to that file** before fixing
+it. One line, no need to generalise it. That is how the list grows, and it is the
+only mechanism that carries a lesson from one track to the next.
 
 - **`plan.png`** is what catches layout mistakes: a leg that left the building, a
   hairpin that bulged into the one beside it, a crossing that is not where you
@@ -100,7 +125,7 @@ one with the Read tool.**
 
 Fix what you can see, and re-render. This loop is the point of the skill.
 
-### 4. Validate
+### 5. Validate
 
 ```bash
 cd drive && venv/bin/python tools/validate_track.py <slug>
@@ -109,7 +134,7 @@ cd drive && venv/bin/python tools/validate_track.py <slug>
 Geometry, seam closure, medal times, the preview, the track tests, and the
 browser console. Everything must be `ok`.
 
-### 5. Take the switcher preview
+### 6. Take the switcher preview
 
 ```bash
 cd drive && venv/bin/python tools/shoot_tracks.py <slug>
@@ -119,7 +144,7 @@ Nothing in the suite can notice a stale preview, so this is a step and not an
 afterthought. Only commit this track's PNG - if others come back modified, that is
 antialiasing noise from a different browser build, so `git checkout` them.
 
-### 6. Serve it and hand over the link
+### 7. Serve it and hand over the link
 
 ```bash
 cd drive && PORT=5005 venv/bin/python app.py

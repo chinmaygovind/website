@@ -1307,6 +1307,148 @@ const RIVAL_STREAKS = 26;
 const EYE_UP = 0.98;
 const EYE_FWD = 0.5;
 
+// ---------------------------------------------------------------------------
+// Rain
+// ---------------------------------------------------------------------------
+//
+// Turned on by a `rain` block in a palette. Nothing else in the world moves, so
+// this is the only animated scenery in the game and it is worth saying why it
+// has to be.
+//
+// **Baked rain does not work, at all.** A field of world-fixed streaks slides
+// past the car like a forest of thin poles - the parallax is the giveaway, and
+// it reads as scenery rather than as weather. Rain has to fall, which means a
+// per-frame update, which means it lives here and not in a `scenery.js`.
+//
+// Three things make it read, and only the first is obvious:
+//
+//  - **It falls**, at `speed`, wrapping inside a box that follows the camera.
+//    The box is world-aligned and the wrap is relative to the camera, so drops
+//    keep true parallax against the world while never running out around you.
+//  - **The streaks lean slightly into the car's own motion** - a *fraction* of
+//    the true apparent direction, not all of it. Physically a drop's direction
+//    is its velocity minus yours, and the honest version of that leans 25
+//    degrees at racing speed and reads as rain flying at the windscreen rather
+//    than falling past it. Damped to `rake`, the wind sets the direction, the
+//    weather keeps it, and the throttle just nudges it. The camera's velocity is
+//    differenced from its own position here rather than passed in, so no call
+//    site had to change.
+//  - **Direction and length stay near enough constant.** Both were tried the
+//    physical way first and both had to come down: rain that stretches and
+//    swings as you accelerate stops being weather and becomes an effect.
+//
+// One geometry, one draw call, `LineSegments`. Line width is not settable in
+// WebGL, and for rain that is the right width anyway.
+class Rain {
+  constructor(scene, cfg) {
+    const c = cfg || {};
+    this.count = Math.max(1, c.count != null ? c.count : 2600);
+    this.speed = c.speed != null ? c.speed : 92;
+    this.len = c.len != null ? c.len : 2.6;
+    this.box = c.box != null ? c.box : 150;      // half-width of the follow box
+    this.high = c.high != null ? c.high : 90;    // its height
+    this.wind = c.wind || [5, 0];
+    // How much of the car's own velocity leans the streaks. 1 is physically
+    // right and looks like the rain is attacking you; see `update`.
+    this.rake = c.rake != null ? c.rake : 0.18;
+    this.head = new Float32Array(this.count * 3);
+    this.verts = new Float32Array(this.count * 6);
+    // Seeded so a replay and the lap it replays get the same weather. Nothing
+    // depends on it, but a screenshot that changes every reload is a nuisance.
+    let s = 0x9e3779b9;
+    const rnd = () => {
+      s = (s + 0x6d2b79f5) | 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    for (let i = 0; i < this.count; i++) {
+      this.head[i * 3] = (rnd() * 2 - 1) * this.box;
+      this.head[i * 3 + 1] = rnd() * this.high;
+      this.head[i * 3 + 2] = (rnd() * 2 - 1) * this.box;
+    }
+    const geo = new THREE.BufferGeometry();
+    this.attr = new THREE.BufferAttribute(this.verts, 3);
+    this.attr.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('position', this.attr);
+    this.mesh = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+      color: c.color != null ? c.color : 0xa8c4e0,
+      transparent: true,
+      opacity: c.opacity != null ? c.opacity : 0.32,
+      depthWrite: false,
+    }));
+    // The vertices are rewritten around the camera every frame, so three's own
+    // bounding sphere is always a frame stale and would pop the whole field out
+    // of view at the worst moment.
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 2;
+    this.geo = geo;
+    this.scene = scene;
+    this.last = null;
+    scene.add(this.mesh);
+  }
+
+  update(dt, camera) {
+    if (!(dt > 0)) dt = 1 / 60;
+    const cam = camera.position;
+    // The camera's own velocity, differenced rather than asked for.
+    if (!this.last) this.last = cam.clone();
+    let vx = (cam.x - this.last.x) / dt;
+    let vy = (cam.y - this.last.y) / dt;
+    let vz = (cam.z - this.last.z) / dt;
+    this.last.copy(cam);
+    // A teleport - a respawn, a track switch, the replay scrubbing - is not
+    // speed, and taking it as speed rakes every streak flat across the screen
+    // for one frame.
+    if (Math.abs(vx) > 400 || Math.abs(vy) > 400 || Math.abs(vz) > 400) vx = vy = vz = 0;
+
+    // **The rake is deliberately a fraction of the real thing.** Physically a
+    // drop's apparent direction is its velocity minus yours, and at 45 u/s
+    // against a 95 u/s fall that is a 25-degree lean - which is correct, looks
+    // wrong, and reads as the rain flying *at* the car rather than falling past
+    // it. The eye expects weather to have one direction and to keep it, so the
+    // velocity term is damped hard and the wind is left to set the lean. What
+    // survives is just enough response to feel connected to the throttle.
+    const rake = this.rake;
+    const dx = this.wind[0] - vx * rake;
+    const dy = -this.speed - vy * rake;
+    const dz = (this.wind[1] || 0) - vz * rake;
+    const mag = Math.hypot(dx, dy, dz) || 1;
+    // Barely longer at speed, for the same reason. With the rake damped `mag`
+    // hardly moves, so this is near enough constant - which is the point: a
+    // streak that stretches as you accelerate is the other half of what made it
+    // look like it was coming for you.
+    const L = Math.min(this.len * 1.8, this.len + mag * 0.010);
+    const ux = (dx / mag) * L, uy = (dy / mag) * L, uz = (dz / mag) * L;
+
+    const B = this.box, H = this.high, h = this.head, v = this.verts;
+    const fall = this.speed * dt, wx = this.wind[0] * dt, wz = (this.wind[1] || 0) * dt;
+    for (let i = 0; i < this.count; i++) {
+      const j = i * 3;
+      let px = h[j] + wx, py = h[j + 1] - fall, pz = h[j + 2] + wz;
+      // Wrap inside a box centred on the camera. Modulo rather than a single
+      // step, so a drop still lands inside the box after a big jump.
+      let o = px - cam.x;
+      if (o > B || o < -B) px -= Math.floor((o + B) / (2 * B)) * 2 * B;
+      o = pz - cam.z;
+      if (o > B || o < -B) pz -= Math.floor((o + B) / (2 * B)) * 2 * B;
+      o = py - (cam.y - H * 0.35);
+      if (o > H || o < 0) py -= Math.floor(o / H) * H;
+      h[j] = px; h[j + 1] = py; h[j + 2] = pz;
+      const k = i * 6;
+      v[k] = px; v[k + 1] = py; v[k + 2] = pz;
+      v[k + 3] = px - ux; v[k + 4] = py - uy; v[k + 5] = pz - uz;
+    }
+    this.attr.needsUpdate = true;
+  }
+
+  dispose() {
+    this.scene.remove(this.mesh);
+    this.geo.dispose();
+    this.mesh.material.dispose();
+  }
+}
+
 export class Renderer {
   constructor(canvas) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -1361,6 +1503,11 @@ export class Renderer {
     this.scene.add(built.group);
 
     const pal = built.palette;
+    // Weather is per track and the switcher rebuilds the world without
+    // navigating, so it has to be torn down here rather than at page load or a
+    // switch off a wet track leaves it raining on a dry one.
+    if (this.rain) { this.rain.dispose(); this.rain = null; }
+    if (pal.rain) this.rain = new Rain(this.scene, pal.rain);
     const spec = (pal.sky && pal.sky.stops) ? pal.sky : null;
     // Fog is the haze the world dissolves into, so it has to be the colour of
     // the sky at the horizon or the join shows.
@@ -1543,6 +1690,7 @@ export class Renderer {
 
   render(dt) {
     this.particles.update(dt, this.camera);
+    if (this.rain) this.rain.update(dt, this.camera);
     this.renderer.render(this.scene, this.camera);
   }
 

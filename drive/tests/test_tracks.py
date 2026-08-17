@@ -370,6 +370,32 @@ def test_a_closed_lap_actually_closes(track):
 
 
 @pytest.mark.parametrize("track", ALL, ids=IDS)
+def test_the_road_is_never_buried_in_its_own_ground(track):
+    """A ground track's road has to stay above the quad that is drawn under it.
+
+    `track.ground` is one flat collidable quad at a world Y. A ribbon that dips
+    below it does not clip, or warn, or fail anything - the quad simply draws
+    straight through the road, and the first anybody knows is a render with the
+    tarmac buried in grass. It was found by eye every time until this test.
+
+    **Spa is the exception and it is the only one**: `pal.terrain` swaps that
+    flat quad for a height field sampled off the ribbon, so the ground follows
+    the road down all 63 units of it. The exemption is keyed on the palette
+    rather than on the slug, because what makes it safe is the height field, and
+    the next track that grows one should inherit the exemption without editing
+    this test.
+    """
+    g = track["ground"]
+    if g is None or (track.get("pal") or {}).get("terrain"):
+        return                      # floats in the void, or carries a height field
+    low = min(e["p"][1] for e in track["line"])
+    assert low >= g - 0.01, (
+        f"{track['slug']} drops to y={low:.1f}, which is {g - low:.1f} below its "
+        f"ground plane at y={g}. The flat ground quad will draw through the road. "
+        f"Either lift the ribbon or give the palette a `terrain` height field.")
+
+
+@pytest.mark.parametrize("track", ALL, ids=IDS)
 def test_barriers_are_opt_in(track):
     """Rails on every corner look like a bobsleigh run and remove the only
     interesting decision on a corner exit. Ground-level tracks get none."""

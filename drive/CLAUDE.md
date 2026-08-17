@@ -18,6 +18,7 @@ rest of the repo; any one of them is 11-28KB.
 
 | doc | read it before touching |
 |---|---|
+| `docs/track-defects.md` | **any track work at all.** The running list of what goes wrong in a track and what is already checked for you. Deliberately short - it is meant to be read every time, unlike the rest of this table |
 | `docs/tracks-and-geometry.md` | `tracks/`, `trackmesh.js`, `course.js`, the collider, boost pads, a track's palette or sky |
 | `docs/runs-and-scoring.md` | `/api/run`, `/api/start`, `/api/activity`, `runcheck.py`, `verify.py`, `laptime.py`, `pending.js`, medals, ghost recording, the anti-cheat |
 | `docs/racing-physics.md` | car-to-car contact, the slipstream, catch-up, remote-car interpolation, rival sound |
@@ -175,10 +176,22 @@ Optional declarations in `track.py`: `ground` (None floats in the void), `order`
 `tracks/__init__.py` documents each one and names the folder in every error.
 
 **Use `/track`.** The skill runs the whole loop - write it, run the track tests,
-render a plan view and five from the road, *look at them*, fix what shows, check
-the medal times, take the switcher preview, then serve it on
-`localhost:5005/solo/<slug>` for you to drive. Authoring blind is what made a
-track cost four or five rounds; the pictures are what removes them.
+measure it against the pool, render a plan view and five from the road, *look at
+them* against `docs/track-defects.md`, fix what shows, check the medal times,
+take the switcher preview, then serve it on `localhost:5005/solo/<slug>` for you
+to drive. Authoring blind is what made a track cost four or five rounds; the
+pictures are what removes them.
+
+**The two things that make a round cheaper than looking.** `docs/track-defects.md`
+is the running list of failure modes, so the render step looks *for* known
+problems rather than at a picture; append to it whenever something new turns up,
+one line, no need to work out the rule. And `tools/pool_stats.py <slug>` profiles
+a track on 26 numbers against the other fifteen - the pool is a labelled set of
+good tracks and this is the only thing that reads it back. It says *unlike the
+pool*, never *wrong*: Big Red's 223-unit drop flags every run and is the point of
+the track. What it catches is the mistake with no visual signature - a scatter
+density ten times anything else, a `fogFar` a tenth of anything else - which is
+the class you would otherwise find by rendering a bad picture.
 
 **A folder that does not load is left out of the pool rather than being fatal**,
 with a warning naming it. Raising would mean one bad contributor track stops the
