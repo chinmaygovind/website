@@ -5,7 +5,7 @@ A long banked spiral to the top and a dive down the outside.
 
 slug = "spiral"
 name = "Spiral Ascent"
-difficulty = 4
+difficulty = 2
 medals = (21.3, 22.4, 23.6)
 ground = None
 order = 70

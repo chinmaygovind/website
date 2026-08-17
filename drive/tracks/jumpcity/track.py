@@ -5,7 +5,7 @@ Four gaps with nothing under them. Launch, land, repeat.
 
 slug = "jumpcity"
 name = "Jump City"
-difficulty = 4
+difficulty = 2
 medals = (20.8, 21.9, 23.0)
 ground = None
 order = 60

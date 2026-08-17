@@ -5,7 +5,7 @@ Two full loops that step out sideways. Carry speed in.
 
 slug = "twist"
 name = "Twin Loop"
-difficulty = 3
+difficulty = 2
 medals = (19.4, 20.4, 21.5)
 ground = None
 order = 40

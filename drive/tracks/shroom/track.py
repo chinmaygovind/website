@@ -5,7 +5,7 @@ A gorge road with a circuit's corners on it, and mushrooms where the road runs o
 
 slug = "shroom"
 name = "Shroom Street"
-difficulty = 4
+difficulty = 2
 # Cut against the first real lap driven here, 41.109 by Chinmay, rather than
 # derived from `laptime.ideal_lap` - see `tools/set_medals.py` for why the
 # estimate makes a poor standard.

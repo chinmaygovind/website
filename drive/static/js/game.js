@@ -1938,7 +1938,7 @@ function renderTrackCards() {
       <span class="tcard2-body">
         <span class="tcard2-top">
           <b>${esc(c.name)}</b>
-          <span class="diff">${[0, 1, 2, 3, 4].map(i =>
+          <span class="diff d${c.difficulty}">${[0, 1, 2, 3, 4].map(i =>
             `<span class="pip${i < c.difficulty ? ' on' : ''}"></span>`).join('')}</span>
         </span>
         <!-- Your time and nothing else. The record was here too and it made

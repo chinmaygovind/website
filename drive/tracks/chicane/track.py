@@ -5,7 +5,7 @@ Quick direction changes and two very slow hairpins.
 
 slug = "chicane"
 name = "Chicane Park"
-difficulty = 2
+difficulty = 1
 medals = (14.4, 15.2, 16.0)
 ground = -1.2
 order = 20

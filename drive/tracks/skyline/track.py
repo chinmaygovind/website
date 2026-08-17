@@ -5,7 +5,7 @@ Up and over a floating skyline. Miss a corner and you fall.
 
 slug = "skyline"
 name = "Skyline Sprint"
-difficulty = 3
+difficulty = 1
 medals = (18.0, 18.9, 19.9)
 ground = None
 order = 30

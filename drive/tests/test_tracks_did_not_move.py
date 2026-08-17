@@ -232,7 +232,18 @@ def test_everything_derived_from_the_ribbon_did_not_move(slug):
     # snapshot is a *historical* baseline that proved the folder-per-track split
     # moved no geometry, so re-running the tool to tidy one dead metadata key
     # would rewrite every coordinate in it and throw that away.
-    for k in ("name", "ground", "difficulty", "exposed", "closed",
+    #
+    # **`difficulty` came off this list for the same reason**, and it is worth
+    # saying why it does not belong on it. It is a label somebody typed, not
+    # anything the ribbon implies: retuning the pool's ratings green-to-red moved
+    # thirteen of them and moved no road at all, which failed thirteen tracks of
+    # a test whose entire claim is that the geometry held still. The two ways out
+    # of that were both worse than dropping the key - rewrite the baseline over a
+    # cosmetic edit, or widen `TOLERANCE` on thirteen tracks and lose what it
+    # guards. What difficulty needs guarding against is being outside 1-5
+    # (`_meta`) and the pool having no easy or no hard track
+    # (`test_pool_has_a_difficulty_spread`), and both of those already hold.
+    for k in ("name", "ground", "exposed", "closed",
               "cell", "level", "station", "checkpoints", "spawn", "sections",
               "gates", "pole_side", "gate_ceil"):
         if k not in old and k not in new:

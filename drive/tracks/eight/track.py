@@ -5,7 +5,7 @@ Short, and it crosses over itself.
 
 slug = "eight"
 name = "Figure Eight"
-difficulty = 2
+difficulty = 3
 medals = (16.6, 17.5, 18.4)
 ground = -1.2
 order = 80

@@ -9,7 +9,7 @@ difficulty = 5
 # Set by hand rather than cut by `tools/set_medals.py`, because one lap on the
 # board is not a top five to aim at. Gold at 48.0 against a 53.66 ideal, which is
 # 0.89 of it - the tight end of the 0.77-0.90 band every record on this site sits
-# in, and a real ask on the pool's only difficulty-5 track. Silver and bronze
+# in, and a real ask on one of the pool's three difficulty-5 tracks. Silver and bronze
 # follow the tool's own two 5% steps so the three stay three steps of one
 # standard. Re-cut once the board is deep enough.
 medals = (48.0, 50.4, 53.0)

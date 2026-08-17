@@ -75,7 +75,7 @@
       <div class="tcard-in">
         <div class="tcard-top">
           <h3>{{ t.name }}</h3>
-          <span class="diff" title="Difficulty {{ t.difficulty }}/5">
+          <span class="diff d{{ t.difficulty }}" title="Difficulty {{ t.difficulty }}/5">
             {% for i in range(5) %}<span class="pip {% if i < t.difficulty %}on{% endif %}"></span>{% endfor %}
           </span>
         </div>

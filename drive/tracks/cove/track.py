@@ -5,7 +5,7 @@ A coast road down to the beach and out along the pier. Long.
 
 slug = "cove"
 name = "Sandy Cove"
-difficulty = 5
+difficulty = 4
 medals = (57.7, 60.6, 63.7)
 ground = -1.2
 order = 100

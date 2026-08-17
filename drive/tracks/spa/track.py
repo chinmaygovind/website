@@ -7,7 +7,7 @@ from tracks.builder import FREE
 
 slug = "spa"
 name = "Spa-Francorchamps"
-difficulty = 4
+difficulty = 3
 medals = (63.5, 66.7, 70.1)
 ground = -1.2
 order = 130

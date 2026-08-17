@@ -87,6 +87,27 @@
   --gold: #e5b528;
   --silver: #a9b0bb;
   --bronze: #c2803f;
+  /* The difficulty ramp, green through to the site's own red. Five stops for a
+     five-point scale: fewer would make two levels share a colour, which is the
+     one thing a colour-coded rating must not do. The hues walk one way round
+     the wheel (133 - 71 - 50 - 28 - 352 degrees) so the ramp reads as an
+     ordering rather than five unrelated colours, and every one of them is
+     mixed for this page's near-white paper - they are the wrong colours over
+     the dark HUD, which is why nothing there uses them. --diff-5 *is* --red on
+     purpose: the hardest track is the accent the whole site is built on.
+
+     The 1-to-2 step is the one that needed picking rather than interpolating.
+     An even walk from green to red puts level 2 at a dark yellow-green that
+     reads as *green* at 7px, so a difficulty-1 card and a difficulty-2 card look
+     like the same rating with one more dot; --diff-2 is lifted to a bright lime
+     to buy that separation back. Judged at pip size against the real cards, not
+     as swatches - a hue that is obviously distinct in a 4x crop can be one
+     colour at 7px on paper. */
+  --diff-1: #2f9e44;
+  --diff-2: #a8c400;
+  --diff-3: #ecc400;
+  --diff-4: #ea6f00;
+  --diff-5: #c0182b;
   --hud: rgba(16, 18, 24, .74);
   --hud-line: rgba(255, 255, 255, .16);
 }
@@ -350,7 +371,19 @@ input[type=text], input[type=password], input[type=email], input:not([type]) {
 .tcard h3 { margin: 0; font-size: 1.25rem; }
 .diff { display: flex; gap: 2px; margin-left: auto; }
 .pip { width: 7px; height: 7px; border-radius: 50%; border: 1px solid var(--line); }
-.pip.on { background: var(--red); }
+/* All of a card's filled pips are the one colour - the level's - rather than the
+   ramp painted across the row. A row of five different colours is a legend; this
+   is a rating, and the useful thing at card size is that green and red are
+   telling you something before you have counted anything. The `d1`-`d5` class
+   comes from the track, so it is on the `.diff` wrapper rather than the pips:
+   one attribute per card instead of one per dot. `.pip.on` alone keeps the red
+   as the fallback, for a card rendered without its class. */
+.pip.on { background: var(--diff-5); }
+.diff.d1 .pip.on { background: var(--diff-1); }
+.diff.d2 .pip.on { background: var(--diff-2); }
+.diff.d3 .pip.on { background: var(--diff-3); }
+.diff.d4 .pip.on { background: var(--diff-4); }
+.diff.d5 .pip.on { background: var(--diff-5); }
 .tcard-foot {
   display: flex; align-items: center; gap: .5rem; font-family: var(--mono);
   font-size: .82rem; color: var(--ink-soft); border-top: 1px dashed #d5d2cb; padding-top: .45rem;

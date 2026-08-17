@@ -5,7 +5,7 @@ A sheer dive on boost pads, launched twice over a drowned city.
 
 slug = "bigred"
 name = "Big Red"
-difficulty = 4
+difficulty = 5
 medals = (60.0, 63.0, 66.2)
 ground = None
 order = 150

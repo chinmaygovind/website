@@ -36,14 +36,23 @@ question, you may well need none.
 
 ## The track pool
 
-Three of the pool are the long ones, all difficulty 5 and all roughly
-twice The Gauntlet: **Sandy Cove** (`cove`, a ground track - a coast road down
+**Difficulty is a label, not a measurement**, and it is not length: the pool's
+ratings were re-cut across all nineteen tracks in Aug 2026 to run 1 to 5 roughly
+in pool order, so the first three tracks are 1s and the hard ones are late.
+Nothing derives from the number - it is five pips on a card, coloured green
+through to red by `--diff-1`..`--diff-5` in `style.css` - so changing one is a
+one-line edit in its `track.py`. It is deliberately *not* in the
+`test_tracks_did_not_move` snapshot for that reason; see the note there.
+
+Three of the pool are the long ones, all roughly twice The Gauntlet: **Sandy
+Cove** (`cove`, difficulty 4, a ground track - a coast road down
 onto the beach and out along a pier over open water), **Cloudbreak** (`pillars`,
-threaded between rock spires above an overcast) and **Rainbow Road** (`rainbow`,
+difficulty 5, threaded between rock spires above an overcast) and **Rainbow
+Road** (`rainbow`, difficulty 4,
 half-pipes in deep space with almost no barriers). Cloudbreak, Rainbow Road
 and Big Red are all in `tracks.EXPOSED`.
 
-**Big Red** (`bigred`, difficulty 4, 3335 units - now the longest track in
+**Big Red** (`bigred`, difficulty 5, 3335 units - now the longest track in
 the pool) is the descent: about 220 units of near-monotone fall through a red
 sunset, over a city drowned a long way below it, with the one loop as the only
 climb. Four full-size jumps and one small one break the fall up. A pad-fed
@@ -61,7 +70,7 @@ arrives with no steering - everywhere else, including every closing hairpin,
 the edge is just the edge. It has six **boost pads** on it, and it was the only
 track in the pool with any until the Costco's two travelators.
 
-**Spa-Francorchamps** (`spa`, difficulty 4, 3167 units, ~71s - second only to
+**Spa-Francorchamps** (`spa`, difficulty 3, 3167 units, ~71s - second only to
 Big Red) is a compressed recreation of the real circuit, and it is the odd one
 out in the pool in four ways that all cost something to get right. Read
 `docs/tracks-and-geometry.md` before touching any of them.

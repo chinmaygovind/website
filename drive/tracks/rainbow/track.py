@@ -5,7 +5,7 @@ Half-pipes in deep space, and almost no barriers. Do not fall.
 
 slug = "rainbow"
 name = "Rainbow Road"
-difficulty = 5
+difficulty = 4
 medals = (50.0, 52.5, 55.2)
 ground = None
 order = 120

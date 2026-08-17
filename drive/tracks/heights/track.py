@@ -5,7 +5,7 @@ A climb made of hairpins, then a fast plunge back down.
 
 slug = "heights"
 name = "Hairpin Heights"
-difficulty = 4
+difficulty = 2
 medals = (19.5, 20.5, 21.6)
 ground = None
 order = 50
