@@ -148,7 +148,7 @@
         width: 100%;
         padding: 1.4rem 3vw;
       }
-      /* Was the bare `h1` selector, back when "hey!" was the heading. The <h1>
+      /* Was the bare `h1` selector, back when "hey!" was the heading. The h1
          is now the welcome line beside it (see the header markup for why), so
          both of these have to say their own weight and margin rather than
          inherit a browser default that just moved. */
@@ -1022,14 +1022,18 @@
   </head>
   <body>
     <header class="top">
-      <!-- **The <h1> is the welcome line, not "hey!", and the swap is only for
+      <!-- **The h1 is the welcome line, not "hey!", and the swap is only for
            search.** These render exactly as they did - the two rules in the
-           stylesheet were renamed with them - but a page's <h1> is the one
+           stylesheet were renamed with them - but a page's h1 is the one
            heading a search engine weighs most, and this page's used to be a
            greeting that contains neither Chinmay's name nor anything anybody
            searches. The name was one element below it the whole time. "hey!" is
-           still the big word on the left; it is simply a <p> now, which is what
-           a greeting is. -->
+           still the big word on the left; it is simply a p now, which is what a
+           greeting is.
+
+           Tag names are written bare here, without angle brackets, on purpose:
+           an audit tool that counts headings with a regex does not know a
+           comment from markup, and this page reported three h1s to one. -->
       <p class="hey">hey!</p>
       <h1 class="welcome">
         <span class="welcome-lead">welcome to</span>
