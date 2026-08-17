@@ -2531,6 +2531,68 @@ function signTexture(text) {
  * it is between the road and all of this - a grandstand you can hit is a
  * grandstand somebody will spend the lap parked inside.
  */
+/**
+ * National flags, as tilings.
+ *
+ * A grid of one-character cells per row, plus what each character means. Stored
+ * this way for three reasons: it is a *tiling*, so no two quads overlap and there
+ * is nothing for the depth buffer to toss a coin over; it needs no image, no
+ * canvas and no network, so it renders identically in the browser, in the headless
+ * preview shooter and under QuickJS; and it is legible in the source, which a
+ * construction rule expressed as arithmetic is not.
+ *
+ * Derived once from the real construction and pasted in - `tools/mkflags.py` is
+ * the script, kept because the next flag should not be drawn by hand either.
+ *
+ * The Union flag is the one with a way to be wrong that looks fine: St Patrick's
+ * red saltire is **counterchanged** against St Andrew's white one, so the white is
+ * broad above the red on the arm running to the top-left and below it on the arm
+ * to the top-right, and the whole flag has 2-fold rotational symmetry rather than
+ * mirror symmetry. Flip that and you have flown it upside down.
+ */
+const FLAGS = {
+  gb: {
+    cols: { B: 0x0d2f6e, W: 0xf4f4f2, R: 0xc3121f },
+    rows: [
+      'WWWWWWBBBBBBBBBWRRRRWBBBBBBBBBRRRRWW',
+      'RRWWWWWWBBBBBBBWRRRRWBBBBBBBRRRRWWWW',
+      'RRRRWWWWWWBBBBBWRRRRWBBBBBRRRRWWWWWW',
+      'BBRRRRWWWWWWBBBWRRRRWBBBRRRRWWWWWWBB',
+      'BBBBRRRRWWWWWWBWRRRRWBRRRRWWWWWWBBBB',
+      'BBBBBBRRRRWWWWWWRRRRWRRRWWWWWWBBBBBB',
+      'WWWWWWWWWWWWWWWWRRRRWWWWWWWWWWWWWWWW',
+      'RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR',
+      'RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR',
+      'RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR',
+      'RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR',
+      'WWWWWWWWWWWWWWWWRRRRWWWWWWWWWWWWWWWW',
+      'BBBBBBWWWWWWRRRWRRRRWWWWWWRRRRBBBBBB',
+      'BBBBWWWWWWRRRRBWRRRRWBWWWWWWRRRRBBBB',
+      'BBWWWWWWRRRRBBBWRRRRWBBBWWWWWWRRRRBB',
+      'WWWWWWRRRRBBBBBWRRRRWBBBBBWWWWWWRRRR',
+      'WWWWRRRRBBBBBBBWRRRRWBBBBBBBWWWWWWRR',
+      'WWRRRRBBBBBBBBBWRRRRWBBBBBBBBBWWWWWW',
+    ],
+  },
+  be: {
+    cols: { K: 0x1b1b1b, Y: 0xf2c200, R: 0xc3121f },
+    rows: [
+      'KKKKKKYYYYYYRRRRRR',
+      'KKKKKKYYYYYYRRRRRR',
+      'KKKKKKYYYYYYRRRRRR',
+      'KKKKKKYYYYYYRRRRRR',
+      'KKKKKKYYYYYYRRRRRR',
+      'KKKKKKYYYYYYRRRRRR',
+      'KKKKKKYYYYYYRRRRRR',
+      'KKKKKKYYYYYYRRRRRR',
+      'KKKKKKYYYYYYRRRRRR',
+      'KKKKKKYYYYYYRRRRRR',
+      'KKKKKKYYYYYYRRRRRR',
+      'KKKKKKYYYYYYRRRRRR',
+    ],
+  },
+};
+
 function addFurniture(solid, bright, signs, track, pal, terrain, cfg, drop) {
   const line = track.line;
   const n = line.length;
@@ -2878,9 +2940,89 @@ function addFurniture(solid, bright, signs, track, pal, terrain, cfg, drop) {
     }
   }
 
+  /**
+   * A run of national flags on poles down one side of the circuit.
+   *
+   * The one piece of trackside furniture that says *which country you are in*,
+   * which is why it exists: Spa and Silverstone are both a closed lap with
+   * terrain, grandstands, hoardings and a pit building, and from inside a corner
+   * the two were distinguishable only by their palette.
+   *
+   * **Geometry, not a texture, and that is deliberate.** The sponsor boards are
+   * the only textured thing in the game and the note above `boardTexture` is the
+   * reason: a board has to carry *letters*, and letters built out of boxes stop
+   * being letters at about forty units. A flag has no letters. Going through the
+   * canvas path would buy nothing and cost everything that pipeline costs -
+   * artwork arriving after the track is built, a shared promise to get right, and
+   * a headless preview browser that would shoot the picture before the image
+   * landed. `FLAGS` is a grid of cells and every cell is one quad.
+   *
+   * **No two quads overlap**, which is why the designs are stored as a tiling
+   * rather than as a field with a saltire laid over it. Coplanar quads in one mesh
+   * are a depth-buffer coin toss - the same thing that made the Costco's ceiling
+   * strobe - and a flag is exactly the case where you would reach for layers.
+   * Runs of one colour are merged along each row, so the Union flag is 122 quads
+   * rather than 648.
+   *
+   * The cloth has a shallow fold across it (`FOLD`), which costs nothing: every
+   * cell corner is placed by the same function of its horizontal fraction, so
+   * adjacent cells stay watertight and the flag stops reading as sheet metal.
+   */
+  function flagRun(opts) {
+    const design = FLAGS[opts.design];
+    if (!design) return;
+    const rows = design.rows, R = rows.length, C = rows[0].length;
+    const side = opts.side || 1;
+    const i0 = at(opts.at[0]), i1 = at(opts.at[1]);
+    const off = (opts.off != null ? opts.off : (cfg.armco || 26) + 8) * side;
+    const every = Math.max(2, Math.round((opts.every != null ? opts.every : 5)));
+    const poleH = opts.h != null ? opts.h : 9.5;
+    // Sized off the pole so one number changes both, and 1:2 or 2:3 comes from
+    // the design's own grid rather than from a second copy of its proportions.
+    const fh = poleH * 0.34, fw = fh * (C / R);
+    const FOLD = fh * 0.16;
+    for (let i = i0; i <= i1; i += every) {
+      const e = line[i];
+      const [x, z] = spot(i, off);
+      // Refuse to stand one on top of another part of the circuit, the same test
+      // the armco, the run-off and the grandstands all make.
+      if (terrain.toRoad(x, z) < Math.abs(off) - 3) continue;
+      const g = deck(i, off);
+      solid.box(x, g + poleH / 2, z, 0.22, poleH / 2, 0.22, shade(conc, -0.3));
+      // The flag flies along the road, from the top of the pole down.
+      const fx = e.lat[2], fz = -e.lat[0];          // along the road
+      const nx = e.lat[0], nz = e.lat[2];           // across it - the cloth's normal
+      const top = g + poleH - 0.3;
+      // `u` runs along the cloth from the pole, `w` down it.
+      const P = (u, w) => {
+        const t = u / fw;
+        const bulge = Math.sin(t * Math.PI * 1.6) * FOLD * (0.35 + 0.65 * t);
+        return [x + fx * u + nx * bulge, top - w, z + fz * u + nz * bulge];
+      };
+      for (let r = 0; r < R; r++) {
+        const w0 = (r * fh) / R, w1 = ((r + 1) * fh) / R;
+        let c = 0;
+        while (c < C) {
+          let k = c;
+          while (k + 1 < C && rows[r][k + 1] === rows[r][c]) k++;
+          const u0 = (c * fw) / C, u1 = ((k + 1) * fw) / C;
+          const col = design.cols[rows[r][c]];
+          if (col != null) {
+            // Both faces, because a flag is seen from both sides of a circuit and
+            // the world mesh is FrontSide. The fold means the two are not the same
+            // quad wound twice, so this is not merely a winding fix.
+            face(P(u0, w0), P(u1, w0), P(u1, w1), P(u0, w1), col);
+          }
+          c = k + 1;
+        }
+      }
+    }
+  }
+
   for (const s of (cfg.stands || [])) stand(s.at[0], s.at[1], s.side, s);
   if (cfg.pits) pits(cfg.pits.at[0], cfg.pits.at[1], cfg.pits.side);
   for (const s of (cfg.spans || [])) span(s.at, s);
+  for (const f of (cfg.flags || [])) flagRun(f);
   return keepOut;
 }
 

@@ -75,6 +75,23 @@ PALETTE = { "road": 0x3e444e, "kerb": 0xf5f2ee, "kerb2": 0xd23b32,
       "seat": 0xb8860b, "trim": 0x3f2311 },
   ],
   "pits": { "at": [0.004, 0.072], "side": 1 },
+  # Belgian tricolours, added when Silverstone joined the pool: the two are the
+  # only closed laps and they carry the same kit - terrain, grandstands, hoardings,
+  # a pit building - so from inside a corner the only thing telling them apart was
+  # the palette. Down the pit straight, and on the hillside at Raidillon where
+  # everybody actually stands. Mesh only, so nothing on this track's board moved.
+  "flags": [
+    # 29 and not 34, and only the render says why. These stands declare no `off`,
+    # so they take the default `armco + 5` = 31 - and a flag line at 34 stands
+    # *behind* the seating, where from the car it is a row of poles nobody can see.
+    # In front of the stand and just outside the armco at 26 is both visible and
+    # where a circuit really lines them up. Silverstone's read well at 33 by luck
+    # rather than judgement, because its stands are pushed out to 37.
+    { "at": [0.008, 0.064], "side": -1, "off": 29, "every": 4, "h": 11.0,
+      "design": 'be' },
+    { "at": [0.140, 0.170], "side": -1, "off": 40, "every": 5, "h": 10.0,
+      "design": 'be' },
+  ],
   "spans": [
     { "at": 0.0045, "lights": True, "text": 'DRIVE', "clear": 9.5 },
     { "at": 0.250, "deck": True, "clear": 10.5, "text": 'CGOVIND.COM' },

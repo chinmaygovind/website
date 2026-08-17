@@ -250,6 +250,37 @@ New entries, unsorted, until somebody files them. One line is enough.
   as single quads looked stencilled on. Six vertices as two trapezoids is the
   cheapest thing that reads as round, and it is worth the extra quads on a mark
   that is the signature of the track.
+- **A corner you can simply leave out.** Found on Silverstone by Chinmay, before a
+  single lap was driven: the arena and the Brooklands-Luffield loop each sat
+  entirely between two checkpoints, so the chord across them was a legal lap. Grass
+  tops out near half the road's top speed, so **a cut pays once the road distance
+  is more than about twice the chord** - the arena was 2.35x and Luffield 3.42x,
+  worth three or four seconds each. Two things fix it and they fix different
+  cases: a **checkpoint inside the loop** kills anything that spans it, and a
+  **barrier** kills a chord across one apex. A barrier alone was not enough here -
+  the big cuts go round the outside of a whole complex, not over an apex - and a
+  ribbon `rail` is not available on a ground track (`test_barriers_are_opt_in`), so
+  the barrier is collider geometry in `scenery.js` like the Costco's parapet.
+  *Not mechanical, and worth knowing why: the obvious check flags loops, walled
+  interiors and hairpins on seven existing tracks, because a chord in plan says
+  nothing about whether anything stands across it. `tools/cut_check.py` asks the
+  collider too, which is what makes the answer real.*
+- **The run-off so wide the corner stops being a shape.** Silverstone's first pass
+  had a 24-unit asphalt band each side of a 16-unit road, which paves the entire
+  inside of an 18-radius hairpin: the arena rendered as one grey plain with kerb
+  lines painted across it, with no visible track edge and every apex open. Judge a
+  run-off width against the *tightest* corner it has to sit beside, not the fastest.
+- **Trackside furniture sized off the wrong palette.** `stand`'s `off` defaults to
+  `armco + 5`, so a palette that moves its barrier in moves every grandstand in
+  with it. Silverstone's armco is 22 against Spa's 26, and eleven ten-tier stands at
+  the default put a wall of seating closer to the road than Spa's - Stowe's read as
+  a tunnel mouth across the end of the Hangar Straight. Set `off` explicitly when
+  the barrier is not where Spa's is.
+- **A door, a sign or an apron on the face pointing away from the road.** Anything
+  placed at `lat * (out * side)` has the road in the `-side` direction along `lat`,
+  so a feature authored at a fixed `-D/2` faces the road on one side of the circuit
+  and the empty infield on the other. Both of Silverstone's hangars came out as
+  blank grey walls. Same family as the mirrored-winding trap and just as silent.
 - **The floor is dead.** A ground track's plate is one flat quad in one colour,
   and however good the scenery standing on it is, half of every frame is that
   quad. Anything laid on it - street grid, light spill, puddles - is a handful of

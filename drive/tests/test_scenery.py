@@ -69,6 +69,14 @@ EXPECTED = {
     # snow in `tracks/mountjoy/scenery.js` is a collidable height field, which
     # is what makes running wide a scramble across a hillside instead of a fall.
     "mountjoy":  {"total":  17420, "road":  1970, "wall":   588, "off": 14744, "boost": 118},
+    # Recorded when the track was added, like Mount Joy's. Most of the `off` is the
+    # height field and the swept run-off, the same as Spa's - it is a smaller
+    # circuit with a narrower apron, hence 26210 against Spa's 38214. Of the
+    # `wall`, 268 triangles come from `tracks/silverstone/scenery.js`: 16 of the two
+    # hangars and **252 of the barriers on the inside of the arena and Luffield**,
+    # which are the only scenery in the pool that exists to stop a shortcut. If that
+    # number drops, the corners you could skip are skippable again.
+    "silverstone": {"total": 31228, "road": 1552, "wall":  3458, "off": 26218, "boost": 0},
 }
 
 COUNTER = """
