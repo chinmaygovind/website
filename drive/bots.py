@@ -65,14 +65,27 @@ DEFAULT_LEVEL = "medium"
 # The levels a room may actually pick. All four, and here is what each is worth,
 # measured rather than intended - because two of them do not hit their targets.
 #
-# Easy and medium are exact: they drive the relaxed line and land within ±0.14s
-# of bronze and silver on all sixteen tracks.
+# Easy and medium were exact - they drive the relaxed line and landed within
+# ±0.14s of bronze and silver on all sixteen tracks - and **that measurement is
+# stale, because the medals moved and the table did not.** `bots_pace.json` was
+# solved before `tools/set_medals.py` re-cut every track's medals from its real
+# board, which is what bronze and silver *are* to these two levels. Nothing
+# re-solved for the new ones. Measured Aug 2026 with `--report`: easy comes in
+# **+1.6s to +13.0s over bronze** and medium +0.8s to +10.8s over silver on the
+# sixteen tracks calibrated before that change, and is on target only on Tokyo
+# Drift and Shroom Street, which have been re-run since. A full
+# `tools/calibrate_bots.py` is the fix; the run is ~20 minutes.
+#
+# **Shroom Street is also the one place a slow level drives the recorded line**,
+# and that is a line rather than a pace: the relaxed line cannot cross its gorge
+# at any pace. See `line_for`.
 #
 # Hard and max are aimed at gold+`HARD_MIX`·(record-gold) and at the record, and
-# neither quite gets there, so on the four tracks whose recorded line still
-# cannot be driven they saturate at the same lap and `enforce_order` gives max
-# hard's settings. Only a *reachable* target produces an exactly-placed level,
-# which is why easy and medium are to the tenth and these two are not.
+# neither quite gets there, so on the five tracks whose recorded line still
+# cannot be driven (`bigred`, `heights`, `pillars`, `twist`, `tokyo`) they
+# saturate at the same lap and `enforce_order` gives max hard's settings. Only a
+# *reachable* target produces an exactly-placed level, which is why easy and
+# medium were to the tenth and these two are not.
 #
 # What they are worth, measured over the whole pool: **max averages 5.6% under
 # gold and beats it on fifteen of the sixteen; hard averages 2.7% under and
@@ -338,6 +351,14 @@ def line_for(slug, level, force=None):
     Slower, and it gets round, which is the only outcome that matters: a bot
     that spends a race falling off a jump it cannot make is worse to race
     against than one that is simply not as quick.
+
+    **The table wins over the profile, and that runs the other way too.** A slow
+    level asks for the relaxed line, and on Shroom Street it cannot be driven at
+    any pace - the gorge is crossed by hopping mushroom caps at 52-55 u/s and
+    the relaxed line carries ~50 through there, so easy and medium dropped into
+    the canyon at the third cap. The calibrator measures that and writes
+    `hotlap` for them, and this is what honours it. See `solve` in
+    `tools/calibrate_bots.py`.
     """
     want = force or setting(slug, level).get("line") or PROFILES[level]["line"]
     if want == "hotlap":

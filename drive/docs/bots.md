@@ -41,6 +41,11 @@ drives**, and only secondarily how hard it pushes.
 - **Hard and max** drive a lap **a person actually set**, pulled off the board by
   `tools/hotlap.py` and stored in the track's own folder as `hotlap.json`.
 
+Those are the defaults and not the last word: what a level actually drives on a
+track is whichever of the two the calibrator got round on, and that is recorded
+per track per level in `bots_pace.json`. **Shroom Street is the track where a
+slow level goes the other way** - see below.
+
 That split exists because of a measurement. Driven flat out on the relaxed line,
 the best the driver manages is a second or two *outside* gold on half the pool -
 while the records sit at 0.74 to 0.89 of `ideal`, ten and eleven seconds inside
@@ -325,10 +330,35 @@ who has learned the track.
 **One pace multiplier cannot deliver that across the pool** - the same value is a
 silver on one track and worse than bronze on another - so it is solved per track
 per level by `tools/calibrate_bots.py` and stored in `bots_pace.json`. Re-run it
-when the car is retuned, when a track's geometry moves, or when `hotlap.py`
-picks up a new record. Nothing detects a stale table, exactly like the track
-previews; what a stale one costs is a level being a second off the medal it is
-named for.
+when the car is retuned, when a track's geometry moves, when `hotlap.py` picks up
+a new record, **or when the medals are re-cut**, which is the one nobody thought
+of. Nothing detects a stale table, exactly like the track previews; what a stale
+one costs is a level being a second off the medal it is named for.
+
+### The table is stale right now, and it is the medals that did it
+
+Measured Aug 2026 with `--report` over the whole pool. Easy and medium are
+**+1.6s to +13.0s over bronze** and +0.8s to +10.8s over silver on the sixteen
+tracks that were calibrated before `tools/set_medals.py` re-cut the medals off
+real boards - worst on Rainbow Road (+12.95s) and Big Red (+12.77s), best on
+Spiral Ascent (+1.58s). The two tracks that are on target, to the hundredth, are
+the two that have been re-solved since: Tokyo Drift and Shroom Street.
+
+Nothing is broken and nothing crashes - every level gets round, and the ladder is
+in order everywhere - the levels are just all *slower* than the medals they are
+named for, because a bronze cut from what people actually drive is a harder lap
+than the derived one the table was solved against. It reads as "the bots are a
+bit easy", which is indistinguishable from a design choice, which is why it sat
+there. **The fix is one full `tools/calibrate_bots.py` (about 20 minutes) and
+nothing else**; the pace search will simply find higher numbers.
+
+Tokyo Drift is worth a line of its own, because a stale table is not the only
+thing that can go missing. **It shipped with no entry at all** - a hot lap on the
+day it landed, and the calibrator never run - so its quick levels used the
+fallback pace on the recorded line and **hard and max fell off, at 38% and 34%,
+every race.** A track with no entry is not a track with sensible defaults. Its
+recorded line turns out to be undrivable at any pace, so both levels are on the
+relaxed one there now.
 
 **Hard and max have different pace ceilings, and that is what keeps them
 different levels.** Both are aimed at times the driver cannot quite reach - max
@@ -355,6 +385,26 @@ target of 36.23, which is a car crawling home after falling off - so a result
 more than 5% out, or with a crash in it, sends the calibrator to the other line
 and the closer of the two wins. Improving the driver and re-running is what takes
 a fallback away again.
+
+**And it runs in both directions, which it did not until Shroom Street.** The
+gorge there is crossed by hopping three mushroom caps: hang time off a cap is
+fixed at ~1.4s by `BOUNCE_VEL`, so reach is purely the speed you leave with, and
+the gaps are sized for the speed the record carries - 52-55 u/s, with `vmin`
+floors of 54.5 and 55.4 on the run-ups. `laptime.py`'s relaxed line only carries
+**~50** through there. So easy and medium arrived at the third cap about a unit
+under its leading edge, dropped into the canyon, and DNF'd at 47% - thirteen
+respawns, *at every pace the search tried*, on a track where the other two levels
+were fine. **Neither of the two levers reaches it**: pace cannot, because more
+pace on a line that is already at its own speed there does nothing, and the jump
+floor cannot, because a floor is the *line's* speed at the lip and on this track
+the line is what is short. Sent up onto the recorded line instead, both get round
+clean and land on bronze and silver - so `solve` now tries whichever line the
+level did not ask for, rather than only ever demoting a quick one.
+
+The failure was also unusually quiet for something this total. `solve` returns
+`None` when a level never finishes, and `main` printed that as **"no target"** -
+the message for a track with no record to aim at - so a level that could not get
+round at all read as a level with nothing to do. It now says so.
 
 ## What a bot must never touch
 

@@ -95,16 +95,26 @@ def drive(slug, level, pace=None, tune=None, seed=1, line=None):
 def solve(slug, level, verbose=True):
     """Find the pace that puts this level on its target time, on a line it can drive.
 
-    Two attempts. First on the line the level asks for - the recorded fast lap
-    for the quick levels - and then, only if that could not be got round at any
-    pace, on the relaxed one.
+    Two attempts. First on the line the level asks for, and then, if that could
+    not be got round at any pace, on the other one.
 
-    **The fallback is a measurement and it is written down**, because a level
-    that cannot complete a track is far worse than one that is a second slow: a
-    bot that goes off at the same jump every lap spends the race respawning and
-    is no use to anybody racing it. Where the fallback fires, `bots_pace.json`
-    records `relaxed` and the room drives the safe line there until the driver
-    is good enough that a re-run takes it away again.
+    **Which line a level ends on is a measurement and it is written down**,
+    because a level that cannot complete a track is far worse than one that is a
+    second slow: a bot that goes off at the same jump every lap spends the race
+    respawning and is no use to anybody racing it. Whichever way it goes,
+    `bots_pace.json` records the line and the room drives that one until a
+    re-run says otherwise.
+
+    **It runs in both directions, and the second one is not hypothetical.** The
+    usual case is a quick level that cannot hold a record's line falling back to
+    the safe one. Shroom Street is the other: its gorge is crossed by hopping
+    three mushroom caps, the record does it at 52-55 u/s, and `laptime.py`'s
+    relaxed line only carries ~50 through there - so easy and medium arrived at
+    the third cap a unit low and dropped into the canyon, thirteen respawns and
+    a DNF at 47% *at every pace the search tried*. Pace could not fix it and
+    neither could a speed floor: the floor is the line's own speed at the lip,
+    and on that track the line is what is short. Sent up onto the recorded line
+    instead, both levels get round clean and land on bronze and silver.
     """
     target = bots.target_ms(slug, level)
     if not target:
@@ -118,10 +128,14 @@ def solve(slug, level, verbose=True):
     # driver cannot hold this line here, so the other one is tried and whichever
     # lands closer wins.
     poor = best is None or abs(best["err"]) > 0.05 or best["respawns"] > 1
-    if poor and want != "relaxed":
+    other = "relaxed" if want != "relaxed" else "hotlap"
+    # A track with no recorded lap has no other line to try; `line_for` would
+    # hand back the relaxed one and this would measure the same thing twice.
+    if poor and (other != "hotlap" or bots.hotlap(slug)):
         if verbose:
-            print("      that line is not working here; trying the safe one")
-        alt = _solve_on(slug, level, target, "relaxed", verbose)
+            print("      that line is not working here; trying the %s one"
+                  % ("safe" if other == "relaxed" else "recorded"))
+        alt = _solve_on(slug, level, target, other, verbose)
         if alt and (best is None or abs(alt["err"]) < abs(best["err"])):
             best = alt
     return best
@@ -342,13 +356,24 @@ def main(argv=None):
         for level in args.levels:
             best = solve(slug, level)
             if not best:
-                print("   %-7s no target" % level)
+                # Two different things, and they used to print the same word.
+                # A level with no target is a track with no record for max to
+                # aim at; a level with one it never finished is a bot that
+                # cannot get round here on either line, which is the only
+                # result in this tool that leaves a player watching a car fall
+                # off the same jump all race.
+                print("   %-7s %s" % (level, "no target" if not
+                                      bots.target_ms(slug, level) else
+                                      "could not get round on either line"))
                 continue
             solved[level] = best
-            fell = best["line"] != bots.PROFILES[level]["line"]
+            moved = best["line"] != bots.PROFILES[level]["line"]
             print("   %-7s pace %.3f -> %.2fs (%+.1f%%) on the %s line%s%s"
                   % (level, best["pace"], best["ms"] / 1000.0, 100 * best["err"],
-                     best["line"], "  <-- FELL BACK" if fell else "",
+                     best["line"],
+                     "" if not moved else
+                     "  <-- FELL BACK" if best["line"] == "relaxed" else
+                     "  <-- ON THE RECORDED LINE",
                      "  MISSED" if abs(best["err"]) > 0.02 else ""))
         # A Max that loses to a Medium is the most visible way this can be
         # wrong, and nothing above prevents it. See `enforce_order`.

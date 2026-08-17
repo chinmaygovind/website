@@ -197,6 +197,24 @@
    "pace": 0.9115
   }
  },
+ "shroom": {
+  "easy": {
+   "line": "hotlap",
+   "pace": 0.9045
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.9495
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.0197
+  },
+  "medium": {
+   "line": "hotlap",
+   "pace": 0.9495
+  }
+ },
  "skyline": {
   "easy": {
    "line": "relaxed",
@@ -267,6 +285,24 @@
   "medium": {
    "line": "relaxed",
    "pace": 0.8861
+  }
+ },
+ "tokyo": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.8839
+  },
+  "hard": {
+   "line": "relaxed",
+   "pace": 1.0384
+  },
+  "max": {
+   "line": "relaxed",
+   "pace": 1.0384
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 1.0384
   }
  },
  "twist": {

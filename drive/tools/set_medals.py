@@ -149,6 +149,16 @@ def main():
         print("\nno times, left deriving from the ribbon: %s" % ", ".join(missing))
     if not args.write:
         print("\ndry run. --write to edit the track files.")
+    else:
+        # **Moving the medals un-calibrates two of the four bot levels**, and
+        # nothing downstream notices. Easy and medium are *aimed at* bronze and
+        # silver, so `bots_pace.json` is solved against whatever these were on
+        # the day it ran - and it happened: this tool re-cut the pool in Aug
+        # 2026 and left easy up to 13s over a bronze it used to hit to the
+        # tenth, on every track at once, looking exactly like bots that are a
+        # bit easy. See `docs/bots.md`.
+        print("\nmedals moved: re-run tools/calibrate_bots.py, or easy and "
+              "medium stay aimed at the bronze and silver these replaced.")
 
 
 if __name__ == "__main__":

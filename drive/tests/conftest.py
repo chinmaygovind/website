@@ -149,12 +149,11 @@ def lap_splits(track, frames):
 
 # Waiting on a single lap. Drop the entry, then:
 #     venv/bin/python tools/hotlap.py <slug> --site https://drive.cgovind.com
-NO_HOTLAP_YET = {
-    "shroom",     # added Aug 2026; nobody has driven it, so there is no record
-                  # to cut a line off. Set a lap and then:
-                  #     venv/bin/python tools/hotlap.py shroom \
-                  #         --site http://localhost:5005
-}
+# Empty: every track in the pool has a lap on the board and a fast line cut from
+# it. Kept rather than deleted because it is the escape hatch a brand-new folder
+# needs on the commit that adds it - a track nobody has driven has no record to
+# cut a line off.
+NO_HOTLAP_YET = set()
 
 # Waiting on a board deep enough to cut a standard from - five or so distinct
 # players. Drop the entry, then, on the box:
