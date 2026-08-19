@@ -96,11 +96,18 @@ the track cards, `/account`, `/leaderboard`, the nav, or the in-game board panel
   click, because the room answers for everybody at once over `track_change`; that
   path and the join path pass `quiet: false` and get a toast instead, since nothing
   else on their screen would explain the pause.
-- **The switcher's cards are photographs, not diagrams.** `tools/shoot_tracks.py`
-  drives headless Chrome over every track with `?shot=1` (`S.shot` in game.js: HUD off,
-  car hidden, camera behind the start line) and writes `static/img/tracks/<slug>.png`;
-  the home page uses the same set. **Re-run it after changing a track's geometry
-  or sky** - a test asserts the files exist but nothing can notice that one is stale.
+- **The switcher's cards are photographs, not diagrams, and since Aug 2026 they
+  are hero shots rather than snapshots.** `tools/shoot_tracks.py` drives headless
+  chromium over every track with `?shot=1` (`S.shot` in game.js: HUD off, car
+  hidden, frame loop stoppable) and writes `static/img/tracks/<slug>.png`; the
+  home page and the share cards use the same set. What it takes is the
+  composition in `tools/_hero.py` - a stretch of the lap from up high with a
+  field of cars on it, framed per track. **It used to be the plain `?shot=1`
+  camera, parked behind the start line looking at an empty road**, which told you
+  which track it was and nothing else; nineteen of them side by side on the home
+  page read as nineteen photographs of a road. See `drive/CLAUDE.md` for how a
+  framing is chosen. **Re-run it after changing a track's geometry or sky** - a
+  test asserts the files exist but nothing can notice that one is stale.
   **It must run on ANGLE's software GL** (`--use-gl=angle --use-angle=swiftshader`),
   which is what `GL_FLAGS` is for: plain `--use-gl=swiftshader` is *rejected* by
   current Chrome rather than ignored, the GPU process dies, and Chrome still

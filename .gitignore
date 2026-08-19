@@ -42,6 +42,12 @@ drive/tools/views/
 # The finished clips (drive/media/video/*.mp4 and beats/) ARE committed.
 drive/media/video/frames/
 
+# Storefront cover art from `drive/tools/shoot_covers.py` - the same hero shot
+# every track already carries, at three portal sizes with the wordmark over it.
+# A deliverable for somewhere else rather than something this site serves, and
+# six files per track: `static/img/tracks/` is the committed set.
+drive/covers/
+
 # Contact sheets from the same script's `--probe`, used once to pick the start
 # time of each beat by eye. Those times are now constants in the script, so the
 # sheets are scouting output the same way drive/tools/views/ is.

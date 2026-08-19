@@ -242,8 +242,10 @@ than 15% or move a corner more than 8 degrees before refusing.
   QuickJS before it goes up), `racecheck.py` (the *room's* anti-cheat, which is
   a different question - see below), `models.py`, `app.py`, `static/js/` (`trackmesh.js`, `physics.js`,
   `course.js`, `render.js`, `sound.js`, `game.js`, `pending.js`, vendored
-  `three.module.js`), `tools/shoot_tracks.py` (the switcher's preview pictures,
-  and each track's share card via `tools/shoot_og_cards.py`),
+  `three.module.js`), `tools/_hero.py` (the cover composition every picture of a
+  track is), `tools/shoot_tracks.py` (each track's cover art, and its share card
+  via `tools/shoot_og_cards.py`), `tools/shoot_covers.py` (the same shot at
+  portal sizes, wordmarked),
   `tools/track_views.py` (a plan view and several from the road, for authoring),
   `tools/validate_track.py` (one track, every check, one report),
   `tools/snapshot_tracks.py` (proof that a refactor moved no geometry). The play
@@ -293,10 +295,29 @@ than 15% or move a corner more than 8 degrees before refusing.
   geometry, livery or HUD change. `?panel=`, `?touch=1`, `?shot=1`, `?view=`,
   `?draft=` and `?catchup=` exist so a screenshot can reach a state a click
   otherwise would. See `docs/testing.md`.
+- **Every picture of a track is one composition, and it lives in
+  `tools/_hero.py`.** A stretch of the lap from up high with a field of cars on
+  it: `shoot_tracks.py` writes it to `static/img/tracks/<slug>.png` for the home
+  page, the switcher and the share cards, and `shoot_covers.py` writes it at
+  portal sizes with the wordmark over the foot. **The framing lives in one place
+  on purpose** - it used to exist twice, and a cover and a card of the same track
+  could disagree about where you stand to photograph it.
+  - *Where* to stand is measured: `SCAN` walks the lap in windows and scores each
+    on roll, climb and bend, so a track whose corners move keeps its framing.
+    *Which way round* is not a thing a number knows, and every azimuth in
+    `FRAMES` was picked by eye off a contact sheet - `python tools/_hero.py
+    <slug>` prints one, `--sweep` looks along the lap instead. Five tracks needed
+    the window pinned by hand, because "where is this track interesting" and
+    "what is this track known for" are different questions: the scan will never
+    find Sandy Cove's water, and the Costco's roof beats its own storefront.
+  - **It needs Playwright**, and `shoot_tracks.py` now refuses rather than
+    falling back to the Chrome CLI: composing the scene is a page evaluation, so
+    a fallback would write the old empty-road framing under the right filename,
+    which is the one failure nothing downstream can detect.
 - **Re-run `tools/shoot_tracks.py` after changing a track's geometry or sky.** A
-  test asserts the preview files exist; nothing can notice that one is stale.
-  It now also re-makes that track's **share card** (`static/img/og/<slug>.png`,
-  1200x630), which is a layout over the preview and so goes stale with it -
+  test asserts the picture files exist; nothing can notice that one is stale.
+  It also re-makes that track's **share card** (`static/img/og/<slug>.png`,
+  1200x630), which is a layout over the cover and so goes stale with it -
   `tools/shoot_og_cards.py` is that step alone, for when the layout changed and
   the tracks did not. A card is what a pasted link to a track unfurls into, so a
   stale one is only ever seen in somebody else's feed.

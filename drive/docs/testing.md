@@ -248,7 +248,7 @@ For a **track**, that is now three commands and not a manual job:
 ```bash
 cd drive && venv/bin/python tools/track_views.py <slug>     # plan + 5 road views
 cd drive && venv/bin/python tools/validate_track.py <slug>  # geometry, medals, console
-cd drive && venv/bin/python tools/shoot_tracks.py <slug>    # the switcher preview
+cd drive && venv/bin/python tools/shoot_tracks.py <slug>    # its cover art + share card
 ```
 
 `track_views.py` writes to `tools/views/<slug>/` (gitignored) and is the one that
@@ -259,14 +259,17 @@ centreline, which is the point: on Costco the question is whether the lens clear
 15-unit ceiling and follows the car through a doorway 11.6 units later, and a
 camera written for the tool would answer that about itself.
 
-Both go through Playwright's chromium if `drive/venv` has it and fall back to a
-Chrome on PATH or in `/Applications`. **That fallback is the fix for authoring
-blind**: `shoot_tracks.py` used to look only on PATH, find nothing on a Mac, print
-one line and do nothing - so tracks were designed, shipped, and only then looked
-at. Note also that switching browser re-renders every preview with tiny
-antialiasing differences (measured: 1.68% of pixels, max channel delta 1 of 255),
-so previews coming back "modified" after a backend change means nothing - check
-them out again.
+`track_views.py` goes through Playwright's chromium if `drive/venv` has it and
+falls back to a Chrome on PATH or in `/Applications`. **That fallback is the fix
+for authoring blind**: these tools used to look only on PATH, find nothing on a
+Mac, print one line and do nothing - so tracks were designed, shipped, and only
+then looked at. **`shoot_tracks.py` no longer has it and refuses instead**, because
+its picture is composed by a page evaluation the CLI backend cannot run: falling
+back would write a plain snapshot of an empty road under the right filename, and
+nothing downstream can tell one picture of a track from another. Note also that
+switching browser re-renders every cover with tiny antialiasing differences
+(measured: 1.68% of pixels, max channel delta 1 of 255), so pictures coming back
+"modified" after a backend change means nothing - check them out again.
 
 A *room* needs one more step than a solo track does,
 because `/room/<code>` redirects anyone who is not already a player in it. The
