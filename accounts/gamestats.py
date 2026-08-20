@@ -79,6 +79,9 @@ DRIVE_TRACKS = {
     "costco": "Costco Wholesale",
     "bigred": "Big Red",
     "mountjoy": "Mount Joy",
+    "tokyo": "Tokyo Drift",
+    "shroom": "Shroom Street",
+    "silverstone": "Silverstone",
 }
 
 

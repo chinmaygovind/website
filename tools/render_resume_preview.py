@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Render page 1 of the resume PDF to the still that phones show instead of it.
+"""Render page 1 of the resume PDF to the still the resume modal shows.
 
-A PDF in an `<iframe>` is only reliable on a desktop browser. On a phone the
-built-in viewers render a fixed, non-scrollable snapshot of the top of the page
-and stop, so the resume modal showed about a quarter of the resume and no way to
-reach the rest. Below 760px the page swaps the iframe for this PNG, which every
-browser draws the same way, and tapping it opens the real PDF.
+This started as the phone-only fallback: a PDF in an `<iframe>` is only reliable
+on a desktop browser, and phone viewers render a fixed, non-scrollable snapshot
+of the top of the page and stop, so the modal showed about a quarter of the
+resume with no way to reach the rest. The iframe is now gone at every width
+(Aug 2026) and this PNG is what everybody sees, because the whole of page 1 at
+once beats a viewer showing its top quarter behind its own scrollbar. Tapping it
+opens the real PDF.
 
 Run this whenever site/assets/Chinmay_Govind_Resume.pdf changes:
 

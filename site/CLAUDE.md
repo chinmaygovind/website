@@ -83,26 +83,149 @@ below.
   own backdrop. `flex: 0 1 auto; min-height: 0` lets the pair give way on a
   short screen (landscape phone) instead of overflowing — they pillarbox
   against the backdrop, which still reads as one rectangle.
-- Two panes are live rather than static: the resume tile's fast facts patch in a
+- **The blue name in the `<h1>` is a `<button>`, and it opens `#modal-about`.**
+  It is the only opener on the page that is not a tile, which is why the click
+  handler binds `[data-modal]` rather than `.tile` — a tile needs no JS and
+  neither does this. It grows (`translateY(-4px) scale(1.04)`) on hover and on
+  `:focus-visible`, the same "this is clickable" language the tiles use.
+  **Turning the `<span>` into a `<button>` moved nothing**: the rule restates
+  `margin`/`padding`/`border`/`background`/`font` that the span got for free, and
+  the landing page is pixel-identical before and after at 1440x900 and 390x844
+  (shoot both, `ImageChops.difference(...).getbbox()` is `None`). Keep it that way.
+- **`openModal` closes whatever is already open before it opens.** Nothing could
+  reach two modals at once until the resume pane grew a link *into* the whales
+  modal; without the close, both boxes stack and only one `Escape` reaches the
+  one underneath.
+- Two panes are live rather than static: the about modal's fast facts patch in a
   computed age and the Duolingo streak, and the music tile fills recently-played
   and top-artists from the Spotify proxy, plus a concert carousel driven by
   `site/assets/music/concerts.json` (add a concert by appending to that JSON —
   no code change).
-- **The resume modal is two different things above and below 760px.** Wide, it is
-  facts on the left and the PDF in an iframe on the right. On a phone the PDF
-  comes *first* and the facts sit under it, because that is what the tile
-  promised — and the iframe is replaced by `site/assets/resume-preview.png`, a
-  flat render of page 1, because **a PDF in an iframe is a desktop-only trick**:
-  phone viewers draw a fixed, non-scrollable snapshot of the top of the page, so
-  the preview was about a quarter of the resume with no way to reach the rest.
-  Neither side pays for the other: the picture is a CSS `background-image` inside
-  the media query, which is never fetched when the query does not match, and the
-  iframe's `src` waits in `data-src` until a wide screen asks for it, since
-  `display: none` does not stop an iframe loading. **Re-render the picture
-  whenever the PDF changes** — `python3 tools/render_resume_preview.py` — and
-  `tests/test_resume_preview.py` fails if you forget, by comparing a stamped
-  sha256 of the PDF, because a stale preview does not look broken, it looks like
-  last year's resume.
+- **The resume modal's left pane is the work history, not the fast facts** (Aug
+  2026). The facts were a list of Clash Royale wins and a Bedwars star count
+  sitting beside a resume, which is not what somebody who opened `RESUME` came
+  for; they moved to `#modal-about` behind the name. Three `.exp-item`s, each a
+  logo, org, role, dates and one sentence, joined by a **dotted connector that is
+  a `::after` on every item but the last** — `border-left: 4px dotted` hung under
+  the mark, `bottom` reaching into the flex `gap` so it lands on the next logo.
+  It is keyed off `--exp-mark` and `--exp-gap`, so changing either size keeps the
+  line attached; a fourth job is one `<li>` and nothing else.
+- **All three orgs are clickable and none of them is styled as a link, which was
+  asked for in those words.** Whales is a `<button data-modal="modal-whale">`
+  (the same handler as every tile), Shopify and Susquehanna are `<a>`s to
+  `shopify.com` / `sig.com`, and `.exp-open` styles all three identically:
+  `color: inherit`, a 2px underline in `--faint` at rest, and on hover/focus the
+  underline goes to `--accent` while the title lifts 2px and the logo beside it
+  grows 8%. **Do not give these `--link`** — a blue underlined title was the
+  first attempt and was rejected. `.exp-inline` is the same treatment for a
+  phrase inside a sentence (SIG's "2026 Susquehanna Showdown", which opens the
+  poker modal) and differs in exactly one way: **no `display: inline-block` and
+  no `transform`**, because a multi-word phrase inside a paragraph has to be
+  allowed to wrap, and `transform` does nothing to an inline box anyway.
+- **The three logos are the brands' own marks and none of them needs a dark-mode
+  rule**, which is the whole reason these three files were chosen: the whale is
+  the existing tile icon, `assets/experience/shopify.svg` is the official
+  two-tone bag lifted out of the wordmark SVG (viewBox cropped to the bag, the
+  wordmark path dropped), and `assets/experience/sig.png` is Susquehanna's own
+  square favicon mark — white waves on their blue — rebuilt at 256px from the
+  high-res wordmark, because the shipped favicon is only 100px and the
+  `SUSQUEHANNA` wordmark is 3.5:1 and vanishes in a square slot. All three read
+  on white and on #101114 as they are. **Do not add them to the
+  `filter: invert(1)` rule** — that one is for the resume line art alone and
+  would wreck all three.
+- **The resume pane is `site/assets/resume-preview.png` on every screen, and
+  there is no iframe any more** (Aug 2026). It used to be a PDF in an `<iframe>`
+  wide and the flat render only below 760px, because a phone draws a fixed,
+  non-scrollable snapshot of the top of the page. The picture turned out to be
+  the better thing on a desktop too: **the whole of page 1 at once**, rather than
+  a viewer showing its top quarter behind a scrollbar and a toolbar. Deleting the
+  iframe took its `data-src` dance with it — that existed only because
+  `display: none` does not stop an iframe loading, and there is nothing left to
+  defer. The `<a class="pdf-shot">` is still the link to the real PDF.
+  **`.pdf-shot` is painted `#ffffff` on purpose**, a fifth deliberate literal
+  alongside the four listed under **Dark**. The image is `object-fit: contain`
+  inside a box whose shape is the pane's, so on a short screen (landscape phone
+  is the worst, 348x246 against a 612:792 page) it letterboxes — and on dark the
+  gap drew the panel as two bands inside the white frame, the same "two
+  rectangles" fault `.fit-frame` exists to fix elsewhere. A blurred blow-up is
+  wrong for a document, so the mat is simply paper-white and reads as the page.
+  **Re-render the picture whenever the PDF changes** —
+  `python3 tools/render_resume_preview.py` — and `tests/test_resume_preview.py`
+  fails if you forget, by comparing a stamped sha256 of the PDF, because a stale
+  preview does not look broken, it looks like last year's resume. That test now
+  guards the only thing anybody sees.
+- **The resume modal still reorders below 760px**: the preview comes *first* and
+  the work history sits under it, because that is what the tile promised.
+- **`#modal-about` is the fast facts plus a photo collage**, opened only by the
+  name (see above) and by nothing else — it has no tile, because it is who
+  Chinmay is rather than a thing he did. Its `--accent` is its own `--about`
+  token — a sky blue, `#3a97d4` light and `#7cc4f0` dark — and **not**
+  `--name-blue`. It was `--name-blue` at first, on the theory that the border
+  should match the word you clicked; the literal `blue` that makes is far too
+  loud for a 7px edge, so the two are deliberately different blues now. If you
+  re-pick it, keep it over 3:1 on the panel — `.pane-title` paints in `--accent`
+  and it is large text, not decoration.
+- **The collage is 20 `.polaroid` buttons absolutely positioned from `--x`/`--y`/
+  `--r`/`--z` written into each one's `style`.** Four columns by five rows of
+  anchor points, jittered, deliberately overlapping — the pile fills the pane
+  with **no scrolling**, which is the point of it. The jitter is allowed to go
+  negative so the pile spills past the top and side edges and `.pane-right`'s
+  `overflow: hidden` crops it; that bleed is intentional, not a fit bug.
+  **The size is capped against the container's height, not just its width**
+  (`width: min(24%, 19cqh)`, `container-type: size` on `.collage`), and that is
+  load-bearing: at 24% alone the bottom row is fine at 1440x900 and hangs 51px
+  out of the box at 760x1000 and 32px at 844x390, because a polaroid's height
+  comes from its width and five rows of them do not care how short the modal got.
+  Check a change by measuring, not by eye — every `.polaroid` rect against the
+  `.collage` rect at 1440x900, 1280x720, 1024x600, 844x390 and 390x844. The bare
+  `width: 24%` line above the `min()` is the fallback for a browser without
+  container query units, where an invalid `width` would otherwise shrink-to-fit
+  each polaroid to nothing.
+- **Clicking a polaroid zooms it with a FLIP, and the clone is what animates.**
+  The real polaroid stays in the pile (hidden with `visibility`, so its rect is
+  still measurable for the flight home) and a `.zoom-card` is built in
+  `#photo-zoom`, laid out at its final centred size, then transformed *back* onto
+  the thumbnail's rect and released. Three details make it work: the box must be
+  un-`hidden` **before** the final rect is measured or every offset reads 0; the
+  scale uses `source.offsetWidth` and not the rect width, because the thumbnail
+  is rotated and its bounding box is bigger than it is; and the start transform
+  carries a `rotateY(-18deg)` against the stage's `perspective`, which is the
+  entire reason it reads as 3D rather than as a slide.
+  **`Escape` closes the zoom before it closes the modal** — one handler, and
+  `closeZoom()` returning true is what stops it falling through, or the photo and
+  the whole modal would vanish on one press.
+- **The photos in `site/assets/about/` are 560x560 JPEGs named `photo-01..20`,
+  and they are Chinmay's own** (Aug 2026 — they were freely-licensed Super Mario
+  pictures for about a day). The originals live in
+  `~/GDrive/Z Malarkey/Website Photos`, with web-safe JPEG copies of each in its
+  `converted/` and anything dropped from the set in its `unused/`.
+  **`SOURCES.json` records which original each slot came from** and is rewritten
+  by the tool below, so the mapping is never guesswork.
+  **Slots are assigned by sorted filename**, which is worth knowing before you
+  add or remove an original: pulling one out shifts every slot after it, and
+  since each slot carries its own position and rotation in the pile, the whole
+  collage reshuffles. That is harmless — it is a scattered heap either way — but
+  it does mean "photo-04" is not a stable name for a particular picture.
+  Swapping one picture without disturbing the rest is a Save into that slot in
+  the cropper, not a re-run of `--auto`.
+- **`tools/crop_photos.py` is how a photo becomes one of those squares**, and it
+  exists because the polaroids are `aspect-ratio: 1/1` with `object-fit: cover`:
+  drop a portrait phone photo in unedited and the browser centre-crops it, which
+  on a picture of people is usually the wrong third. The tool serves a cropper on
+  :5055, reads whatever the folder holds — **including HEIC straight off an
+  iPhone, which needs `pillow-heif`** (deliberately not a site requirement;
+  nothing at runtime reads one) — and on Save writes
+  `site/assets/about/photo-NN.jpg` itself, so there is no download-and-move step
+  and no chance of a mis-named file. It only touches the slots you save.
+  **The server re-encodes what the canvas sends** rather than trusting
+  `toDataURL`'s quality, which is what keeps a saved crop the same weight as the
+  files already in the folder — and `--auto` and Save go through the same
+  `write_slot`, so a hand crop and a default crop cannot come out weighing
+  different amounts.
+  **`--auto` fills all twenty with the centred cover crop and exits**, which is
+  what the browser opens on and what `object-fit: cover` would have done anyway,
+  just done once at 560px instead of on every visitor's machine. That is the
+  usual path: run it, then open the cropper only for the few it framed badly.
 - **The modals are height-bound before they are width-bound, and only the two
   width breakpoints (900/760) used to know it.** Every screen gets the same
   `min(780px, 90dvh)` box, so a 1280x720 laptop has 130px less than a desktop at

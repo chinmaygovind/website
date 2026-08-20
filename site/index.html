@@ -69,6 +69,7 @@
         --drive: #3d8bfd;
         --music: #000000;
         --settings: #000000;
+        --about: #3a97d4;
         --accent: var(--charcoal);
         --link: #1a56ff;
         --per-orange: #e5601a;
@@ -87,6 +88,7 @@
         --penn-red: #990000;
         --penn-blue: #2f70f0;
         --fav-blue: #1a56ff;
+        --eagles-green: #008f42;
         --dedede-gold: #d4a017;
         --dedede-blue: #2a63c9;
         --star: #f5b301;
@@ -105,6 +107,7 @@
         --drive: #6ea8ff;
         --music: #e8e8e8;
         --settings: #e8e8e8;
+        --about: #7cc4f0;
         --link: #7aa2ff;
         --per-orange: #ff8a4a;
 
@@ -122,6 +125,7 @@
         --penn-red: #ff6b6b;
         --penn-blue: #7fa6ff;
         --fav-blue: #7aa2ff;
+        --eagles-green: #3ad07c;
         --dedede-gold: #e8bb43;
         --dedede-blue: #6f9dff;
         --star: #ffc93c;
@@ -144,7 +148,7 @@
                     border-color 0.25s ease;
       }
       @media (prefers-reduced-motion: reduce) {
-        html, body, .modal-box, .pane-right { transition: none; }
+        html, body, .modal-box, .pane-right, .name { transition: none; }
       }
       p { margin: 0; }
 
@@ -173,9 +177,19 @@
       .welcome-tail { margin-top: 0.5em; }
       .name {
         display: block;
+        margin: 0 auto;
+        padding: 0;
+        border: none;
+        background: none;
+        font: inherit;
         color: var(--name-blue);
         font-size: clamp(1.9rem, 6vw, 5.8rem);
         line-height: 1.04;
+        cursor: pointer;
+        transition: transform 0.18s ease;
+      }
+      .name:hover, .name:focus-visible {
+        transform: translateY(-4px) scale(1.04);
       }
       .contacts {
         justify-self: end;
@@ -310,6 +324,7 @@
         overflow: hidden;
       }
       .modal-resume { --accent: var(--charcoal); }
+      .modal-about { --accent: var(--about); }
       .modal-poker { --accent: var(--poker); }
       .modal-whale { --accent: var(--whale); }
       .modal-racing { --accent: var(--racing); }
@@ -394,6 +409,7 @@
       .penn-red { color: var(--penn-red); }
       .penn-blue { color: var(--penn-blue); }
       .fav-blue { color: var(--fav-blue); }
+      .eagles-green { color: var(--eagles-green); }
       .dedede-gold { color: var(--dedede-gold); }
       .dedede-blue { color: var(--dedede-blue); }
       .star { color: var(--star); }
@@ -401,13 +417,189 @@
         flex: 1;
         min-height: 0;
       }
-      .pdf-frame {
+      .pdf-shot {
+        display: block;
         width: 100%;
         height: 100%;
+        background: #ffffff;
       }
-      .pdf-shot { display: none; }
-      .facts-heading { display: none; }
+      .pdf-shot img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
       .modal-poker .pane-right { justify-content: center; }
+
+      .exp-heading {
+        margin: 0 0 1.2rem;
+        font-size: clamp(1.1rem, 1.9vw, 1.5rem);
+        font-weight: 700;
+      }
+      .exp {
+        --exp-mark: clamp(40px, 4.5vw, 58px);
+        --exp-gap: 1.5rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: var(--exp-gap);
+      }
+      .exp-item {
+        position: relative;
+        display: grid;
+        grid-template-columns: var(--exp-mark) 1fr;
+        column-gap: 1rem;
+        align-items: start;
+      }
+      .exp-item:not(:last-child)::after {
+        content: "";
+        position: absolute;
+        left: calc(var(--exp-mark) / 2 - 2px);
+        top: calc(var(--exp-mark) + 0.45rem);
+        bottom: calc(-1 * var(--exp-gap) + 0.1rem);
+        border-left: 4px dotted var(--accent);
+        opacity: 0.55;
+      }
+      .exp-mark {
+        width: var(--exp-mark);
+        height: var(--exp-mark);
+        display: grid;
+        place-items: center;
+      }
+      .exp-mark img {
+        max-width: 100%;
+        max-height: 100%;
+        border-radius: 10px;
+      }
+      .exp-body { min-width: 0; }
+      .exp-org {
+        margin: 0;
+        font-size: clamp(1.1rem, 1.9vw, 1.5rem);
+        font-weight: 700;
+        line-height: 1.2;
+      }
+      .exp-open, .exp-inline {
+        padding: 0;
+        border: none;
+        background: none;
+        font: inherit;
+        color: inherit;
+        cursor: pointer;
+        text-decoration: underline;
+        text-decoration-color: var(--faint);
+        text-decoration-thickness: 2px;
+        text-underline-offset: 3px;
+        transition: transform 0.16s ease, text-decoration-color 0.16s ease;
+      }
+      .exp-open { display: inline-block; }
+      .exp-open:hover, .exp-open:focus-visible {
+        text-decoration-color: var(--accent);
+        transform: translateY(-2px);
+      }
+      .exp-inline:hover, .exp-inline:focus-visible {
+        text-decoration-color: var(--accent);
+      }
+      .exp-item:hover .exp-mark img { transform: scale(1.08); }
+      .exp-mark img { transition: transform 0.16s ease; }
+      .exp-role {
+        font-size: clamp(1rem, 1.6vw, 1.3rem);
+        line-height: 1.25;
+      }
+      .exp-when {
+        margin-top: 0.1rem;
+        font-size: clamp(0.9rem, 1.4vw, 1.1rem);
+        color: var(--faint);
+      }
+      .exp-what {
+        margin-top: 0.4rem;
+        font-size: clamp(0.95rem, 1.5vw, 1.2rem);
+        line-height: 1.4;
+      }
+
+      .collage {
+        position: relative;
+        flex: 1;
+        min-height: 0;
+        container-type: size;
+      }
+      .polaroid {
+        position: absolute;
+        left: var(--x);
+        top: var(--y);
+        z-index: var(--z);
+        width: 24%;
+        width: min(24%, 19cqh);
+        padding: 5px 5px 16px;
+        border: none;
+        border-radius: 3px;
+        background: #fdfdfa;
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.32);
+        cursor: pointer;
+        transform: rotate(var(--r));
+        transition: transform 0.18s ease, box-shadow 0.18s ease;
+      }
+      .polaroid img {
+        display: block;
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        object-fit: cover;
+        background: #d8d8d8;
+      }
+      .polaroid:hover, .polaroid:focus-visible {
+        z-index: 30;
+        transform: rotate(var(--r)) scale(1.12);
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+      }
+      .polaroid.is-zoomed { visibility: hidden; }
+
+      .zoom {
+        position: fixed;
+        inset: 0;
+        z-index: 60;
+      }
+      .zoom[hidden] { display: none; }
+      .zoom-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.78);
+        opacity: 0;
+        transition: opacity 0.36s ease;
+      }
+      .zoom.is-open .zoom-backdrop { opacity: 1; }
+      .zoom-stage {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        perspective: 1400px;
+      }
+      .zoom-card {
+        position: relative;
+        width: min(78vw, 78vh, 620px);
+        padding: 12px 12px 40px;
+        border: none;
+        border-radius: 5px;
+        background: #fdfdfa;
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+        cursor: zoom-out;
+        transform-style: preserve-3d;
+        will-change: transform;
+      }
+      .zoom-card img {
+        display: block;
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        object-fit: cover;
+        background: #d8d8d8;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .polaroid, .zoom-backdrop, .exp-open, .exp-inline, .exp-mark img {
+          transition: none;
+        }
+      }
       .video-wrap {
         width: 100%;
         aspect-ratio: 16 / 9;
@@ -459,7 +651,6 @@
       .fit-frame .placeholder { position: relative; }
 
       .media-frame,
-      .pdf-frame,
       .pdf-shot,
       .video-wrap,
       .concert-stage {
@@ -1340,12 +1531,7 @@
           overflow: visible;
         }
         .pdf-wrap { flex: none; height: auto; }
-        .pdf-frame { display: none; }
-        .pdf-shot {
-          display: block;
-          aspect-ratio: 612 / 792;
-          background: url("assets/resume-preview.png") center / contain no-repeat;
-        }
+        .pdf-shot, .pdf-shot img { height: auto; }
         #modal-resume .pane-right { order: -1; border-top: none; }
         #modal-resume .pane-left {
           position: static;
@@ -1353,11 +1539,14 @@
         }
         #modal-resume .pane-left > .pane-title { display: none; }
         #modal-resume .title-mobile { display: block; margin-bottom: 0; }
-        .facts-heading {
-          display: block;
-          margin: 0 0 0.55rem;
-          font-size: clamp(1rem, 1.7vw, 1.4rem);
-          font-weight: 700;
+        .exp-heading { margin: 0.9rem 0 1rem; }
+        .collage {
+          flex: none;
+          height: min(132vw, 620px);
+        }
+        .polaroid {
+          width: 27%;
+          width: min(27%, 19cqh);
         }
         #modal-settings .pane-right { overflow: visible; }
         .set-list {
@@ -1434,7 +1623,7 @@
       <p class="hey">hey!</p>
       <h1 class="welcome">
         <span class="welcome-lead">welcome to</span>
-        <span class="name">chinmay govind's</span>
+        <button class="name" type="button" data-modal="modal-about" aria-haspopup="dialog">chinmay govind's</button>
         <span class="welcome-lead welcome-tail">website</span>
       </h1>
       <address class="contacts">
@@ -1603,13 +1792,68 @@
           <div class="pane pane-left">
             <img class="modal-icon" src="assets/icons/resume.gif" alt="" aria-hidden="true" />
             <h2 class="pane-title">resume</h2>
-            <h3 class="facts-heading">fast facts about me</h3>
+            <h3 class="exp-heading">where I've worked</h3>
+            <ol class="exp">
+              <li class="exp-item">
+                <span class="exp-mark"><img src="assets/icons/whale.png" alt="Penn Whales Research Group" /></span>
+                <div class="exp-body">
+                  <h4 class="exp-org"><button class="exp-open" type="button" data-modal="modal-whale">Penn Whales Research Group</button></h4>
+                  <p class="exp-role">Machine Learning Researcher</p>
+                  <p class="exp-when">May &ndash; Aug 2025</p>
+                  <p class="exp-what">Trained convolutional models on 50GB of ocean audio to pick whale calls out of the noise, cutting localization processing times from hours to seconds.</p>
+                </div>
+              </li>
+              <li class="exp-item">
+                <span class="exp-mark"><img src="assets/experience/shopify.svg" alt="Shopify" /></span>
+                <div class="exp-body">
+                  <h4 class="exp-org"><a class="exp-open" href="https://www.shopify.com/" target="_blank" rel="noopener">Shopify</a></h4>
+                  <p class="exp-role">Machine Learning Engineer Intern</p>
+                  <p class="exp-when">Jun &ndash; Aug 2026</p>
+                  <p class="exp-what">Built Shopify's first cross-platform search relevance metric, operating on ten thousand daily queries and identified gaps in catalog coverage.</p>
+                </div>
+              </li>
+              <li class="exp-item">
+                <span class="exp-mark"><img src="assets/experience/sig.png" alt="Susquehanna International Group" /></span>
+                <div class="exp-body">
+                  <h4 class="exp-org"><a class="exp-open" href="https://sig.com/" target="_blank" rel="noopener">Susquehanna</a></h4>
+                  <p class="exp-role">Quantitative Trading Intern</p>
+                  <p class="exp-when">Jun &ndash; Aug 2027</p>
+                  <p class="exp-what">Incoming quant trading intern, runner up of <button class="exp-inline" type="button" data-modal="modal-poker">2026 Susquehanna Showdown</button>.</p>
+                </div>
+              </li>
+            </ol>
+          </div>
+          <div class="pane pane-right">
+            <h2 class="pane-title title-mobile">resume</h2>
+            <p class="pane-caption">click <a class="here-link" href="assets/Chinmay_Govind_Resume.pdf" target="_blank" rel="noopener">here</a> to open my resume</p>
+            <div class="pdf-wrap">
+              <a
+                class="pdf-shot"
+                href="assets/Chinmay_Govind_Resume.pdf"
+                target="_blank"
+                rel="noopener"
+                aria-label="Open Chinmay Govind's resume as a PDF"
+              ><img src="assets/resume-preview.png" alt="The first page of Chinmay Govind's resume" /></a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="modal-about" hidden>
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-box modal-about" role="dialog" aria-modal="true" aria-label="About Chinmay Govind">
+        <button class="modal-close" data-close aria-label="Close">&times;</button>
+        <div class="modal-body">
+          <div class="pane pane-left">
+            <h2 class="pane-title">fast facts about me</h2>
             <dl class="facts">
               <div class="fact"><dt>name</dt><dd>Chinmay Govind</dd></div>
               <div class="fact"><dt>age</dt><dd><span id="fact-age">20 yr</span></dd></div>
               <div class="fact"><dt>school</dt><dd><span class="penn-red">university</span> of <span class="penn-blue">pennsylvania</span></dd></div>
               <div class="fact"><dt>hometown</dt><dd>mechanicsburg, PA</dd></div>
               <div class="fact"><dt>favorite color</dt><dd><span class="fav-blue">blue</span></dd></div>
+              <div class="fact"><dt>favorite team</dt><dd><span class="eagles-green">philadelphia eagles</span></dd></div>
               <div class="fact"><dt>typing speed</dt><dd>150 wpm</dd></div>
               <div class="fact"><dt>smash main</dt><dd><span class="dedede-gold">King</span> <span class="dedede-blue">Dedede</span></dd></div>
               <div class="fact" id="fact-steps-row" hidden><dt>steps today</dt><dd><span id="fact-steps"></span></dd></div>
@@ -1622,25 +1866,36 @@
             </dl>
           </div>
           <div class="pane pane-right">
-            <h2 class="pane-title title-mobile">resume</h2>
-            <p class="pane-caption">click <a class="here-link" href="assets/Chinmay_Govind_Resume.pdf" target="_blank" rel="noopener">here</a> to open my resume</p>
-            <div class="pdf-wrap">
-              <iframe
-                class="pdf-frame"
-                data-src="assets/Chinmay_Govind_Resume.pdf"
-                title="Chinmay Govind resume"
-              ></iframe>
-              <a
-                class="pdf-shot"
-                href="assets/Chinmay_Govind_Resume.pdf"
-                target="_blank"
-                rel="noopener"
-                aria-label="Open Chinmay Govind's resume as a PDF"
-              ></a>
+            <div class="collage">
+              <button class="polaroid" style="--x: 0.3%; --y: 0.3%; --r: 7.2deg; --z: 15" data-photo="assets/about/photo-01.jpg"><img src="assets/about/photo-01.jpg" alt="" loading="lazy" /></button>
+              <button class="polaroid" style="--x: 25.2%; --y: 1.6%; --r: -5.3deg; --z: 17" data-photo="assets/about/photo-02.jpg"><img src="assets/about/photo-02.jpg" alt="" loading="lazy" /></button>
+              <button class="polaroid" style="--x: 50.4%; --y: 0.5%; --r: -5.3deg; --z: 15" data-photo="assets/about/photo-03.jpg"><img src="assets/about/photo-03.jpg" alt="" loading="lazy" /></button>
+              <button class="polaroid" style="--x: 73.0%; --y: -1.5%; --r: 5.3deg; --z: 2" data-photo="assets/about/photo-04.jpg"><img src="assets/about/photo-04.jpg" alt="" loading="lazy" /></button>
+              <button class="polaroid" style="--x: 1.0%; --y: 19.0%; --r: -0.8deg; --z: 20" data-photo="assets/about/photo-05.jpg"><img src="assets/about/photo-05.jpg" alt="" loading="lazy" /></button>
+              <button class="polaroid" style="--x: 26.3%; --y: 20.0%; --r: 5.6deg; --z: 3" data-photo="assets/about/photo-06.jpg"><img src="assets/about/photo-06.jpg" alt="" loading="lazy" /></button>
+              <button class="polaroid" style="--x: 48.2%; --y: 18.1%; --r: -4.4deg; --z: 1" data-photo="assets/about/photo-07.jpg"><img src="assets/about/photo-07.jpg" alt="" loading="lazy" /></button>
+              <button class="polaroid" style="--x: 75.4%; --y: 18.7%; --r: 1.5deg; --z: 7" data-photo="assets/about/photo-08.jpg"><img src="assets/about/photo-08.jpg" alt="" loading="lazy" /></button>
+              <button class="polaroid" style="--x: 0.6%; --y: 39.6%; --r: 0deg; --z: 3" data-photo="assets/about/photo-09.jpg"><img src="assets/about/photo-09.jpg" alt="" loading="lazy" /></button>
+              <button class="polaroid" style="--x: 25.3%; --y: 38.0%; --r: 8.5deg; --z: 3" data-photo="assets/about/photo-10.jpg"><img src="assets/about/photo-10.jpg" alt="" loading="lazy" /></button>
+              <button class="polaroid" style="--x: 51.6%; --y: 38.2%; --r: -4.6deg; --z: 10" data-photo="assets/about/photo-11.jpg"><img src="assets/about/photo-11.jpg" alt="" loading="lazy" /></button>
+              <button class="polaroid" style="--x: 71.6%; --y: 39.3%; --r: -6.7deg; --z: 4" data-photo="assets/about/photo-12.jpg"><img src="assets/about/photo-12.jpg" alt="" loading="lazy" /></button>
+              <button class="polaroid" style="--x: 2.3%; --y: 57.5%; --r: 7.8deg; --z: 1" data-photo="assets/about/photo-13.jpg"><img src="assets/about/photo-13.jpg" alt="" loading="lazy" /></button>
+              <button class="polaroid" style="--x: 24.0%; --y: 59.9%; --r: -7.6deg; --z: 13" data-photo="assets/about/photo-14.jpg"><img src="assets/about/photo-14.jpg" alt="" loading="lazy" /></button>
+              <button class="polaroid" style="--x: 53.0%; --y: 57.5%; --r: -7.3deg; --z: 7" data-photo="assets/about/photo-15.jpg"><img src="assets/about/photo-15.jpg" alt="" loading="lazy" /></button>
+              <button class="polaroid" style="--x: 75.4%; --y: 57.0%; --r: -7.0deg; --z: 11" data-photo="assets/about/photo-16.jpg"><img src="assets/about/photo-16.jpg" alt="" loading="lazy" /></button>
+              <button class="polaroid" style="--x: -1.5%; --y: 76.1%; --r: 7.2deg; --z: 5" data-photo="assets/about/photo-17.jpg"><img src="assets/about/photo-17.jpg" alt="" loading="lazy" /></button>
+              <button class="polaroid" style="--x: 24.2%; --y: 74.7%; --r: -7.5deg; --z: 16" data-photo="assets/about/photo-18.jpg"><img src="assets/about/photo-18.jpg" alt="" loading="lazy" /></button>
+              <button class="polaroid" style="--x: 48.8%; --y: 76.8%; --r: -0.9deg; --z: 7" data-photo="assets/about/photo-19.jpg"><img src="assets/about/photo-19.jpg" alt="" loading="lazy" /></button>
+              <button class="polaroid" style="--x: 76.5%; --y: 77.7%; --r: -1.4deg; --z: 13" data-photo="assets/about/photo-20.jpg"><img src="assets/about/photo-20.jpg" alt="" loading="lazy" /></button>
             </div>
           </div>
         </div>
       </div>
+    </div>
+
+    <div class="zoom" id="photo-zoom" hidden>
+      <div class="zoom-backdrop" data-zoom-close></div>
+      <div class="zoom-stage" data-zoom-close></div>
     </div>
 
     <div class="modal" id="modal-poker" hidden>
@@ -1958,34 +2213,127 @@
         tile.addEventListener("mouseleave", function () { img.src = still; });
       });
 
-      document.querySelectorAll(".tile").forEach(function (tile) {
-        tile.addEventListener("click", function () {
-          var modal = document.getElementById(tile.dataset.modal);
-          if (!modal) return;
-          modal.hidden = false;
-          document.body.style.overflow = "hidden";
-          modal.querySelectorAll("video[data-autoplay]").forEach(function (v) {
-            var p = v.play();
-            if (p && p.catch) p.catch(function () {});
-          });
-        });
-      });
-
       function closeModal(modal) {
         modal.hidden = true;
         document.body.style.overflow = "";
         modal.querySelectorAll("video").forEach(function (v) { v.pause(); });
       }
+      function closeAllModals() {
+        document.querySelectorAll(".modal:not([hidden])").forEach(closeModal);
+      }
+      function openModal(id) {
+        var modal = document.getElementById(id);
+        if (!modal) return;
+        closeAllModals();
+        modal.hidden = false;
+        document.body.style.overflow = "hidden";
+        modal.querySelectorAll("video[data-autoplay]").forEach(function (v) {
+          var p = v.play();
+          if (p && p.catch) p.catch(function () {});
+        });
+      }
+      document.querySelectorAll("[data-modal]").forEach(function (opener) {
+        opener.addEventListener("click", function () {
+          openModal(opener.dataset.modal);
+        });
+      });
+
       document.querySelectorAll(".modal").forEach(function (modal) {
         modal.querySelectorAll("[data-close]").forEach(function (el) {
           el.addEventListener("click", function () { closeModal(modal); });
         });
       });
       document.addEventListener("keydown", function (e) {
-        if (e.key === "Escape") {
-          document.querySelectorAll(".modal:not([hidden])").forEach(closeModal);
-        }
+        if (e.key !== "Escape") return;
+        if (closeZoom()) return;
+        closeAllModals();
       });
+
+      var zoomBox = document.getElementById("photo-zoom");
+      var zoomStage = zoomBox && zoomBox.querySelector(".zoom-stage");
+      var zoomStill = window.matchMedia("(prefers-reduced-motion: reduce)");
+      var zoomCard = null;
+      var zoomSource = null;
+
+      function zoomFlip(from, to, srcWidth, rot) {
+        var dx = from.left + from.width / 2 - (to.left + to.width / 2);
+        var dy = from.top + from.height / 2 - (to.top + to.height / 2);
+        var s = to.width ? srcWidth / to.width : 1;
+        return "translate3d(" + dx + "px," + dy + "px,0) scale(" + s +
+               ") rotateY(-18deg) rotate(" + rot + "deg)";
+      }
+      function zoomAngle(el) {
+        return parseFloat(getComputedStyle(el).getPropertyValue("--r")) || 0;
+      }
+
+      function openZoom(source) {
+        if (!zoomBox || !zoomStage) return;
+        closeZoom(true);
+        var from = source.getBoundingClientRect();
+
+        var card = document.createElement("div");
+        card.className = "zoom-card";
+        var img = document.createElement("img");
+        img.src = source.dataset.photo;
+        img.alt = "";
+        card.appendChild(img);
+        card.addEventListener("click", function () { closeZoom(); });
+        zoomStage.appendChild(card);
+        zoomBox.hidden = false;
+        source.classList.add("is-zoomed");
+        zoomCard = card;
+        zoomSource = source;
+
+        if (!zoomStill.matches) {
+          card.style.transition = "none";
+          card.style.transform = zoomFlip(from, card.getBoundingClientRect(),
+                                          source.offsetWidth, zoomAngle(source));
+          card.getBoundingClientRect();
+          card.style.transition = "transform 520ms cubic-bezier(0.2, 0.85, 0.25, 1)";
+          card.style.transform = "none";
+        }
+        zoomBox.classList.add("is-open");
+      }
+
+      function closeZoom(instant) {
+        if (!zoomBox || zoomBox.hidden) return false;
+        var card = zoomCard;
+        var source = zoomSource;
+        zoomCard = null;
+        zoomSource = null;
+        zoomBox.classList.remove("is-open");
+
+        function done() {
+          if (card && card.parentNode) card.parentNode.removeChild(card);
+          if (source) source.classList.remove("is-zoomed");
+          if (!zoomCard) zoomBox.hidden = true;
+        }
+        if (instant || zoomStill.matches || !card || !source) {
+          done();
+          return true;
+        }
+        var to = card.getBoundingClientRect();
+        card.style.transition = "transform 400ms cubic-bezier(0.45, 0, 0.7, 0.25)";
+        card.style.transform = zoomFlip(source.getBoundingClientRect(), to,
+                                        source.offsetWidth, zoomAngle(source));
+        var fallback = setTimeout(done, 520);
+        card.addEventListener("transitionend", function () {
+          clearTimeout(fallback);
+          done();
+        }, { once: true });
+        return true;
+      }
+
+      document.querySelectorAll(".polaroid").forEach(function (p) {
+        p.addEventListener("click", function () { openZoom(p); });
+      });
+      if (zoomBox) {
+        zoomBox.querySelectorAll("[data-zoom-close]").forEach(function (el) {
+          el.addEventListener("click", function (e) {
+            if (e.target === el) closeZoom();
+          });
+        });
+      }
 
       function fitFrame(box, src) {
         box.classList.add("fit-frame");
@@ -2007,19 +2355,6 @@
           : media.getAttribute("src");
         fitFrame(frame, src || "");
       });
-
-      (function () {
-        var frame = document.querySelector(".pdf-frame[data-src]");
-        if (!frame) return;
-        var wide = window.matchMedia("(min-width: 761px)");
-        function load() {
-          if (wide.matches && !frame.getAttribute("src")) {
-            frame.setAttribute("src", frame.getAttribute("data-src"));
-          }
-        }
-        load();
-        if (wide.addEventListener) wide.addEventListener("change", load);
-      })();
 
       (function () {
         var el = document.getElementById("fact-age");
