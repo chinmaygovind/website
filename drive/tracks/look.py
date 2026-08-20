@@ -79,24 +79,199 @@ DEFAULT = {
 }
 
 
-def check(slug, pal):
+def check(slug, pal, where=None):
     """Raise if a palette is missing something, or has a key nothing reads.
+
+    `where` names the thing being checked in the message. It defaults to the
+    file a contributor would be editing, which is right for the pool and a lie
+    in the track maker - there is no folder and no file, and telling a player to
+    go and look at one is worse than saying nothing.
 
     The unknown-key half matters as much as the missing-key half. `glowStrenth`
     is not an error in JavaScript and not an error in Python; it is a palette that
     quietly ignores the thing you were trying to change, which is the failure mode
     a contributor is most likely to hit and least likely to diagnose.
     """
+    where = where or "tracks/%s/palette.py" % slug
     missing = [k for k in REQUIRED if k not in pal]
     if missing:
         raise ValueError(
-            "tracks/%s/palette.py is missing %s. Every track needs those - "
-            "without one, three.js draws that geometry black."
-            % (slug, ", ".join(missing)))
+            "%s is missing %s. Every track needs those - without one, three.js "
+            "draws that geometry black." % (where, ", ".join(missing)))
     unknown = [k for k in pal if k not in KNOWN]
     if unknown:
         raise ValueError(
-            "tracks/%s/palette.py has %s, which nothing reads. Check the "
-            "spelling against tracks/look.py:KNOWN."
-            % (slug, ", ".join(sorted(unknown))))
+            "%s has %s, which nothing reads. Check the spelling against "
+            "tracks/look.py:KNOWN." % (where, ", ".join(sorted(unknown))))
     return pal
+
+
+# ---------------------------------------------------------------- taste
+# `check` above refuses palettes that cannot work. Everything below is about
+# palettes that work and are wrong, which is a different kind of problem and gets
+# a different answer: it is said, not enforced.
+#
+# Every line here is already written down in `docs/track-defects.md`, and the
+# thresholds are the pool's own range as `tools/pool_stats.py` measures it - not
+# numbers invented for the editor. That is deliberate in both directions: a
+# player is being compared against nineteen tracks that work, and a threshold
+# nothing in the pool can reach is a threshold nobody will believe.
+#
+# Two levels, because they are not the same claim. A `warn` says this is very
+# likely wrong. A `note` says look at this - and notes are allowed to fire on a
+# pool palette, because a player who forks Tokyo Drift inherits Tokyo Drift's
+# actual trade-offs and is better off being told what they are.
+
+# Where the nineteen sit, so a message can say so rather than assert a number.
+POOL = {
+    "density": (0.0, 0.34),     # Sandy Cove's beach is 0.035
+    "fogFar": (780, 2100),
+    "stops": (6, 9),
+}
+
+
+def _rgb(c):
+    return ((c >> 16) & 255, (c >> 8) & 255, c & 255)
+
+
+def _value(c):
+    """Perceived lightness, 0..1.
+
+    These ints go to three.js unconverted, so they are treated as sRGB here -
+    which is the whole point of the `road has gone to mud` warning below.
+    """
+    r, g, b = _rgb(c)
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0
+
+
+def _sat(c):
+    r, g, b = _rgb(c)
+    hi, lo = max(r, g, b), min(r, g, b)
+    return 0.0 if hi == 0 else (hi - lo) / float(hi)
+
+
+def _warmth(c):
+    """How far toward red-over-blue, -1..1. The axis the mud warning is about."""
+    r, _, b = _rgb(c)
+    return (r - b) / 255.0
+
+
+def _hue(c):
+    r, g, b = [v / 255.0 for v in _rgb(c)]
+    hi, lo = max(r, g, b), min(r, g, b)
+    if hi == lo:
+        return 0.0
+    d = hi - lo
+    if hi == r:
+        h = ((g - b) / d) % 6
+    elif hi == g:
+        h = (b - r) / d + 2
+    else:
+        h = (r - g) / d + 4
+    return h / 6.0
+
+
+def _hue_gap(a, b):
+    """Distance round the wheel, 0..0.5."""
+    d = abs(_hue(a) - _hue(b))
+    return min(d, 1.0 - d)
+
+
+def advise(pal):
+    """Return [(level, key, text)] - the taste notes for a palette.
+
+    `key` is the palette field the message is about, so an editor can put the
+    message against the control that caused it instead of in a list at the
+    bottom. Nothing here raises and nothing here blocks.
+    """
+    out = []
+    sky = pal.get("sky")
+    sky = sky if isinstance(sky, dict) else {}       # `sky` may be a plain colour
+    light = sky.get("light") or {}
+    hemi = sky.get("hemi") or {}
+    road, ground = pal.get("road", 0), pal.get("ground", 0)
+
+    # -- the plan view -------------------------------------------------
+    if abs(_value(road) - _value(ground)) < 0.05:
+        out.append(("note", "ground",
+            "From above, the road and the ground are the same value, so the "
+            "minimap and the share card will read as one blob. The plan view is "
+            "lit flat and shadowless, so separate them by lightness - not by "
+            "hue, which does not survive it."))
+
+    # -- the bounce, the light, and the road ---------------------------
+    if _warmth(light.get("color", 0xffffff)) > 0.20 and _sat(road) < 0.15:
+        out.append(("warn", "road",
+            "This road will go to mud. A light's colour is converted from sRGB "
+            "and a vertex colour is not, so a warm key light multiplies a "
+            "neutral grey road down. Pick the road cooler than you want it, or "
+            "cool the light."))
+    # Saturation and strength alone are not the defect - The Gauntlet's lava
+    # world wants an orange bounce, because the thing bouncing *is* orange.
+    # What went wrong at Spa was a sodium orange over grey asphalt, so the test
+    # is the third term: a bounce far round the wheel from the ground it is
+    # supposedly coming off is a second key light wearing a tint's name.
+    hg = hemi.get("ground", 0x5a6172)
+    if _sat(hg) > 0.55 and (hemi.get("intensity") or 0.72) > 0.85 \
+            and _hue_gap(hg, ground) > 0.25:
+        out.append(("note", "hemi",
+            "This bounce is not the colour of the ground it is bouncing off, "
+            "and at this strength it is not a tint - it is a second key light "
+            "on every upward-facing face on the track, shoulders and hillside "
+            "included. Either bring it toward the ground colour or dim it until "
+            "it reads on the car's underside and nowhere else."))
+
+    # -- the dome ------------------------------------------------------
+    stops = sky.get("stops") or []
+    if not stops:
+        out.append(("note", "stops",
+            "No graded sky, so this track gets the plain two-tone dome. Every "
+            "palette in the pool that reads well has six stops or more."))
+    elif len(stops) < POOL["stops"][0]:
+        out.append(("note", "stops",
+            "Your sky is flat: %d stops where the pool runs %d to %d. The band "
+            "just above the horizon is where a sky stops looking like a gradient."
+            % (len(stops), POOL["stops"][0], POOL["stops"][1])))
+    gs, gf = sky.get("glowStrength"), sky.get("glowFocus")
+    if gs is not None and gs >= 0.85 and gf is not None and gf <= 4:
+        out.append(("note", "glowStrength",
+            "The glow may have eaten the dome: a strong glow with a tight focus "
+            "smears a long way from the sun. At 0.85 / 4 a midnight track came "
+            "out a bright pink dusk. Look at the top of the frame - the zenith "
+            "stop should still be reaching the camera."))
+
+    # -- distance ------------------------------------------------------
+    far = sky.get("fogFar")
+    if far is not None and not (POOL["fogFar"][0] <= far <= POOL["fogFar"][1]):
+        lo, hi = POOL["fogFar"]
+        out.append(("note", "fogFar",
+            ("You cannot see the next corner through this: fog closing at %d "
+             "where the pool runs %d to %d." % (far, lo, hi)) if far < lo else
+            ("Fog this far never reads: %d where the pool runs %d to %d. It is "
+             "doing nothing but costing you the horizon." % (far, lo, hi))))
+
+    # -- the scatter ---------------------------------------------------
+    d = pal.get("density")
+    if d is not None and d > POOL["density"][1]:
+        out.append(("warn", "density",
+            "This will be a junkyard. %.3g against a pool maximum of %.2f, and "
+            "Sandy Cove's whole beach is 0.035. Density carpets the entire "
+            "bounding box out to the horizon, and there is no building in the "
+            "scatter vocabulary - a city cannot be made this way."
+            % (d, POOL["density"][1])))
+
+    # -- and whether you can drive it ----------------------------------
+    # The road as actually lit, rather than as picked: the key light multiplies
+    # it and the sky half of the hemisphere adds to it. Judged against the
+    # darkest thing in the pool that is still drivable, which is Tokyo Drift.
+    lit = _value(road) * (light.get("intensity") or 1.65) \
+        + _value(hemi.get("sky", 0xffffff)) * (hemi.get("intensity") or 0.72) * 0.3
+    # 0.16 sits just under Spiral Climb at 0.182, which is the darkest track in
+    # the pool that is still drivable. A threshold a shipped track trips is a
+    # threshold nobody believes twice.
+    if lit < 0.16:
+        out.append(("warn", "road",
+            "Too dark to drive. Judge this by whether the *next corner* is "
+            "legible at speed, not by whether the still looks moody - a night "
+            "palette can be beautiful in a screenshot and unreadable in motion."))
+    return out

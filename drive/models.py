@@ -639,6 +639,115 @@ class DrivePlayer(db.Model):
         }
 
 
+class DriveUserTrack(db.Model):
+    """A track somebody built, as a row.
+
+    **A user track is not a second kind of track.** The row holds the authored
+    *document* - the moves, the palette, the scenery - and `tracks.moves.build`
+    replays it through the same `Builder` that builds Spa, so everything
+    downstream (medals, pole side, the checkpoint ceiling, the ideal lap, ghosts,
+    the anti-cheat) is the code that already exists. Nothing here is a parallel
+    implementation of a track; it is a different way of *storing* one.
+
+    No user Python and no user JavaScript is ever stored here to be run. `doc`
+    is data: a move list validated against `tracks.moves.SPEC`, a palette
+    validated against `tracks.look.KNOWN`, and - for a track whose author wrote
+    scenery in code - the *baked geometry* that code produced in a sandbox in
+    their browser, never the code itself. The code is kept for people to read
+    (see `source`), not for anything to execute.
+
+    One JSON column for the document rather than a column per field, for the
+    reason `drive_prefs` gives: the shape of a document will change, and a blob
+    changes with it while a column needs `models.ensure_columns` or a hand
+    migration. What *is* a column is only what a query needs to filter or sort
+    on without parsing every row.
+
+    Statuses, and the one rule that matters:
+
+    ``draft``   the author's, on an unlisted link. Not in the pool.
+    ``queued``  submitted. Still only reachable by its author and by Chinmay.
+    ``live``    approved. `tracks.get` resolves it, and everything works.
+    ``hidden``  was live, taken down. The row and its board are kept.
+
+    **What was approved is what is live.** A cosmetic edit saves onto a live
+    track; anything that changes the *collider* wipes the board and sends it back
+    to ``queued``, because every time on that board was driven against the old
+    one - the same rule `tests/test_scenery.py` states in its own failure
+    message. `geom_hash` is what makes that a fact rather than a guess.
+    """
+    __tablename__ = "drive_user_tracks"
+
+    id         = db.Column(db.Integer, primary_key=True)
+    # The slug is in the URL (`/solo/<slug>`), on every saved time and in every
+    # share link, so it is unique across user tracks *and* reserved against the
+    # pool - see `tracks.slug_is_available`. It can never change.
+    slug       = db.Column(db.String(60), unique=True, nullable=False, index=True)
+    # Null for the starting shapes shipped with the editor, which belong to
+    # nobody and cannot be edited or published by the player who forks one.
+    author_id  = db.Column(db.Integer, db.ForeignKey("users.id"), index=True)
+    status     = db.Column(db.String(10), default="draft", nullable=False,
+                           index=True)
+
+    # Denormalised out of the document because the gallery sorts and filters on
+    # them, and parsing every row's JSON to list a page would be silly.
+    name       = db.Column(db.String(60), nullable=False)
+    difficulty = db.Column(db.Integer, default=3, nullable=False)
+
+    doc_json   = db.Column(db.Text, nullable=False, default="{}")
+    # The scenery source, when its author wrote code rather than dropping
+    # placements. Stored to be *read* - published with the track when it goes
+    # live - and never executed anywhere. What executes is the baked geometry in
+    # `doc`, which the browser produced under sandbox and the server validated
+    # as numbers.
+    source     = db.Column(db.Text)
+
+    # A fingerprint of the built ribbon and its collider. See
+    # `tracks.moves.fingerprint`. Two rows with the same hash are the same road,
+    # so a board is only ever wiped when the road actually moved.
+    geom_hash  = db.Column(db.String(40), index=True)
+    # The slug this was forked from, pool track or user track. Kept forever: the
+    # card says "based on Spa-Francorchamps" for as long as the track exists.
+    forked_from = db.Column(db.String(60))
+    review_note = db.Column(db.Text)
+    # The layout from above, as an SVG path. Derived from the built ribbon and
+    # stored *here* rather than computed per card, because a gallery of sixty
+    # cards must not replay sixty documents to draw itself - and it is written
+    # in the one place the ribbon is already built, beside `geom_hash`, so it
+    # cannot drift from the road it is a picture of.
+    plan_path  = db.Column(db.Text)
+    # Everything you can *see*, which is a different question from the road. A
+    # swapped-out city does not invalidate a lap time, so the board survives -
+    # but what was approved was a particular city, so it still comes back to the
+    # queue. See `tracks.moves.look_fingerprint`.
+    look_hash  = db.Column(db.String(40))
+
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at   = db.Column(db.DateTime, default=datetime.utcnow)
+    queued_at    = db.Column(db.DateTime)
+    published_at = db.Column(db.DateTime)
+
+    author = db.relationship("User", backref=db.backref("drive_user_tracks",
+                                                        lazy="dynamic"))
+
+    @property
+    def doc(self):
+        """The document, or `{}` - never an exception.
+
+        A row whose JSON cannot be parsed is a row that fails to load, and the
+        pool's answer to that is `tracks.BROKEN`: leave it out, say so, do not
+        take anything else down with it.
+        """
+        try:
+            got = json.loads(self.doc_json or "{}")
+            return got if isinstance(got, dict) else {}
+        except Exception:
+            return {}
+
+    @property
+    def is_live(self):
+        return self.status == "live"
+
+
 # ---------------------------------------------------------------------------
 # The one migration
 # ---------------------------------------------------------------------------
@@ -663,6 +772,12 @@ _ADDED = {
     "drive_players": [
         ("is_bot", "BOOLEAN DEFAULT 0"),
         ("bot_level", "VARCHAR(10)"),
+    ],
+    # `create_all` makes a new table with every column, so this list is only for
+    # columns added to a table that already exists on the box.
+    "drive_user_tracks": [
+        ("plan_path", "TEXT"),
+        ("look_hash", "VARCHAR(40)"),
     ],
 }
 

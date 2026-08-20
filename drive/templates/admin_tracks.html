@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Tracks | admin{% endblock %}
+
+{% block head %}
+<style>
+  .wrap { max-width: 920px; margin: 0 auto; padding: 28px 20px 70px; }
+  h1 { font-family: var(--display); font-size: 34px; margin: 0 0 4px; }
+  .sub { color: var(--ink-soft); margin: 0 0 26px; }
+  h2 { font-family: var(--mono); font-size: 10px; letter-spacing: .16em;
+       text-transform: uppercase; color: var(--ink-soft);
+       margin: 28px 0 10px; }
+  .row { display: flex; align-items: center; gap: 12px; background: #fff;
+         border: 1px solid rgba(29,29,31,.14); border-radius: 7px;
+         padding: 11px 14px; margin-bottom: 7px; }
+  .row .who { flex: 1; min-width: 0; }
+  .row b { display: block; font-family: var(--display); font-size: 17px; }
+  .row small { display: block; color: var(--ink-soft); font-size: 12.5px;
+               margin-top: 2px; }
+  .pips { display: inline-flex; gap: 3px; vertical-align: 1px; }
+  .pips i { width: 6px; height: 6px; border-radius: 50%;
+            background: rgba(29,29,31,.18); }
+  .pips i.on { background: var(--d, var(--red)); }
+  form { display: inline; }
+  .btn { font-family: var(--mono); font-size: 11px; padding: 6px 10px;
+         border-radius: 4px; cursor: pointer; border: 1px solid rgba(29,29,31,.22);
+         background: #fff; color: var(--ink); text-decoration: none; }
+  .btn:hover { border-color: var(--ink); }
+  .btn.go { background: var(--red); border-color: var(--red); color: #fff; }
+  .btn.drive { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .empty { color: var(--ink-soft); font-size: 14px; }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="wrap">
+  <h1>Tracks</h1>
+  {# The review is a lap, not a form. The only question worth asking about
+     somebody's track is whether it is any good, and nothing on this page
+     answers it - so every row leads with Drive. #}
+  <p class="sub">Drive it, then decide. Everything here has already passed the
+    structural checks and its author has set a clean lap on it.</p>
+
+  <h2>Waiting for you ({{ queued|length }})</h2>
+  {% if not queued %}<p class="empty">Nothing in the queue.</p>{% endif %}
+  {% for r in queued %}
+  <div class="row">
+    <div class="who">
+      <b>{{ r.name }}</b>
+      <small>{{ r.author.display if r.author else 'nobody' }} &middot;
+        <span class="pips">{% for i in range(5) %}<i class="{{ 'on' if i < r.difficulty }}"></i>{% endfor %}</span>
+        {% if r.forked_from %}&middot; from {{ r.forked_from }}{% endif %}
+        &middot; /{{ r.slug }}</small>
+    </div>
+    <a class="btn drive" href="/solo/{{ r.slug }}">&#9654; Drive</a>
+    <form method="post" action="/admin/tracks/{{ r.slug }}/approve">
+      <button class="btn go" type="submit">Approve</button></form>
+    <form method="post" action="/admin/tracks/{{ r.slug }}/reject">
+      <button class="btn" type="submit">Send back</button></form>
+  </div>
+  {% endfor %}
+
+  <h2>Live ({{ live|length }})</h2>
+  {% if not live %}<p class="empty">Nothing published yet.</p>{% endif %}
+  {% for r in live %}
+  <div class="row">
+    <div class="who">
+      <b>{{ r.name }}</b>
+      <small>{{ r.author.display if r.author else 'nobody' }} &middot;
+        /{{ r.slug }}
+        {% if r.published_at %}&middot; since {{ r.published_at.strftime('%d %b %Y') }}{% endif %}</small>
+    </div>
+    <a class="btn drive" href="/solo/{{ r.slug }}">&#9654; Drive</a>
+    <form method="post" action="/admin/tracks/{{ r.slug }}/hide">
+      <button class="btn" type="submit">Hide</button></form>
+  </div>
+  {% endfor %}
+
+  <h2>Drafts and hidden ({{ other|length }})</h2>
+  {% if not other %}<p class="empty">None.</p>{% endif %}
+  {% for r in other %}
+  <div class="row">
+    <div class="who">
+      <b>{{ r.name }}</b>
+      <small>{{ r.status }} &middot;
+        {{ r.author.display if r.author else 'nobody' }} &middot; /{{ r.slug }}</small>
+    </div>
+    {% if r.status == 'hidden' %}
+    <form method="post" action="/admin/tracks/{{ r.slug }}/unhide">
+      <button class="btn go" type="submit">Unhide</button></form>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

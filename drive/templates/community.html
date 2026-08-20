@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Community tracks | Drive{% endblock %}
+
+{% block head %}
+<style>
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 30px 20px 80px; }
+  h1 { font-family: var(--display); font-size: clamp(30px, 5vw, 44px);
+       margin: 0 0 4px; letter-spacing: -.01em; }
+  .sub { color: var(--ink-soft); font-size: 17px; margin: 0 0 30px; }
+  h2 { font-family: var(--mono); font-size: 10px; letter-spacing: .16em;
+       text-transform: uppercase; color: var(--ink-soft); margin: 34px 0 12px; }
+  .grid { display: grid; gap: 14px;
+          grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); }
+  .card { display: block; background: #fff; border-radius: 8px; overflow: hidden;
+          border: 1px solid rgba(29,29,31,.15); text-decoration: none;
+          color: inherit; transition: transform .12s, box-shadow .12s,
+          border-color .12s; }
+  .card:hover { transform: translateY(-2px); border-color: var(--ink);
+                box-shadow: 0 10px 26px -16px rgba(29,29,31,.5); }
+  .card .body { padding: 12px 14px 14px; }
+  .card b { font-family: var(--display); font-size: 19px; display: block; }
+  .card .by { color: var(--ink-soft); font-size: 13px; margin-top: 2px; }
+  .card .meta { display: flex; gap: 10px; margin-top: 9px;
+                font-family: var(--mono); font-size: 10.5px;
+                letter-spacing: .06em; text-transform: uppercase;
+                color: var(--ink-soft); }
+  .pips { display: inline-flex; gap: 3px; }
+  .pips i { width: 6px; height: 6px; border-radius: 50%;
+            background: rgba(29,29,31,.18); }
+  .pips i.on { background: var(--red); }
+  .pb { color: #2f7a4f; }
+  .status { font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em;
+            text-transform: uppercase; padding: 2px 6px; border-radius: 3px;
+            border: 1px solid rgba(29,29,31,.28); color: var(--ink-soft); }
+  .empty { color: var(--ink-soft); }
+  .make { display: inline-block; margin-top: 6px; font-family: var(--display);
+          text-transform: uppercase; letter-spacing: .05em; font-weight: 700;
+          font-size: 15px; padding: 10px 18px; border-radius: 5px;
+          background: var(--red); color: #fff; text-decoration: none; }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="wrap">
+  <h1>Community tracks</h1>
+  <p class="sub">Built by people who play this. Every one has been driven from
+    the start line to the flag before it got here.
+    <br><a class="make" href="/make">Make one</a></p>
+
+  <h2>Published ({{ cards|length }})</h2>
+  {% if not cards %}
+  <p class="empty">Nothing yet. Yours could be the first.</p>
+  {% endif %}
+  <div class="grid">
+    {% for t in cards %}
+    <a class="card" href="/solo/{{ t.slug }}">
+      <div class="body">
+        <b>{{ t.name }}</b>
+        <div class="by">by {{ t.author }}{% if t.forked_from %} &middot; based on
+          {{ t.forked_from }}{% endif %}</div>
+        <div class="meta">
+          <span class="pips">{% for i in range(5) %}<i class="{{ 'on' if i < t.difficulty }}"></i>{% endfor %}</span>
+          <span>{{ t.units }}u</span>
+          {% if t.checkpoints %}<span>{{ t.checkpoints }} cp</span>{% endif %}
+          {% if t.pb_ms %}<span class="pb">yours</span>{% endif %}
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+
+  {% if mine %}
+  {# The author's own, at whatever status. A queued track is not published and
+     not lost - it is waiting, and saying so is the whole point of this list. #}
+  <h2>Yours, not published</h2>
+  <div class="grid">
+    {% for r in mine %}
+    <a class="card" href="/make">
+      <div class="body">
+        <b>{{ r.name }}</b>
+        <div class="by">
+          <span class="status">{{ 'in the queue' if r.status == 'queued'
+                                  else r.status }}</span>
+        </div>
+        {% if r.review_note %}<div class="by">{{ r.review_note }}</div>{% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

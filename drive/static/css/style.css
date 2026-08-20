@@ -537,6 +537,18 @@ body.playing { overflow: hidden; background: #9ed2f0; }
          pointer-events: none; }
 .hud-l > * { pointer-events: auto; }
 .hud-tl { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+/* The way out of a draft. Styled as a card so it sits in the same column as the
+   track name rather than looking bolted on, but it is a link and it reads as
+   one: this is the most-used control on the page for somebody who is testing a
+   corner they just built, so it gets a hover state and a pointer. */
+.draft-back { display: inline-flex; align-items: center; gap: 6px;
+              text-decoration: none; color: #fff; font-weight: 600;
+              font-size: 12.5px; letter-spacing: .02em; cursor: pointer;
+              padding: 7px 11px 7px 9px; pointer-events: auto;
+              transition: background .12s, border-color .12s; }
+.draft-back:hover, .draft-back:focus-visible {
+              background: rgba(232,69,60,.9); border-color: rgba(255,255,255,.4); }
+.draft-back svg { flex: none; }
 .hud-tr { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px));
           right: calc(14px + env(safe-area-inset-right, 0px));
           display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
@@ -1981,3 +1993,24 @@ body.garage-page .nav { flex: none; }
   width: .6rem; height: .6rem; border-radius: 50%; flex: none;
   background: #1f7a4d; box-shadow: 0 0 0 3px rgba(31, 122, 77, .22);
 }
+
+/* The Community shelf in the track switcher. Full width across the grid, so it
+   reads as a divider rather than as a card that failed to load. */
+.tshelf { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 10px;
+          font-family: var(--mono, monospace); font-size: 10px;
+          letter-spacing: .16em; text-transform: uppercase;
+          color: rgba(255,255,255,.55); margin: 14px 2px 2px;
+          padding-top: 12px; border-top: 1px solid rgba(255,255,255,.14); }
+.tshelf a { color: rgba(255,255,255,.8); }
+.tcard2-by { display: block; font-style: normal; font-weight: 400;
+             font-size: 11px; letter-spacing: .02em; text-transform: none;
+             opacity: .6; margin-top: 1px; }
+/* The plan view on a card that has no render. White, semi-transparent and
+   round-capped, so it reads as a drawing of the lap over the track's colours
+   rather than as a diagram sitting on top of them. */
+.tcard2-plan { position: absolute; inset: 8% 6%; width: 88%; height: 84%;
+               pointer-events: none; }
+.tcard2-plan path { fill: none; stroke: rgba(255,255,255,.86);
+                    stroke-width: 3.4; stroke-linecap: round;
+                    stroke-linejoin: round;
+                    filter: drop-shadow(0 1px 2px rgba(0,0,0,.45)); }

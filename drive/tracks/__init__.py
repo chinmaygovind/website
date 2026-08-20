@@ -153,6 +153,12 @@ def _meta(mod, folder):
         "closed": bool(getattr(mod, "closed", False)),
         "exposed": bool(getattr(mod, "exposed", False)),
         "wants_scenery": bool(getattr(mod, "scenery", False)),
+        # A placement list, if the folder declares one. Drawn by `placeAll` in
+        # `buildTrack`, which is the same interpreter a player's track goes
+        # through - so a pool track can use the library too, and a community
+        # track adopted into the pool by `tools/adopt_track.py` keeps its
+        # scenery without anything being rewritten as code.
+        "placed": getattr(mod, "placed", None),
         # Three medal times in seconds, fastest first, or None to derive them
         # from the ribbon. Cut from the board by `tools/set_medals.py` - see
         # `_medal_times` below for why a track that has been played gets to
@@ -279,6 +285,7 @@ def _one(e):
          # swaps the world in place, so it has to know to go and fetch the
          # scenery before it builds. See `/scenery/<slug>.js` in app.py.
          "scenery": e["wants_scenery"],
+         "placed": e.get("placed"),
          # The three times cut from the board, or None to derive them below.
          "medal_times": e["medal_times"],
          "cell": CELL, "level": LEVEL, "station": STATION}
@@ -306,13 +313,20 @@ def _one(e):
 
 
 def _palette_for(entry):
-    """A track's palette: its own `palette.py`, the legacy bag, or the default.
+    """A track's palette: one carried on the entry, its own `palette.py`, or the default.
+
+    The carried case is a track that has no folder to look in - a stored
+    document, whose palette travels with it. Checked first because a document
+    with a palette must not silently get the neutral default just because
+    `tracks/<slug>/palette.py` does not exist.
 
     The default is not a fallback for a mistake - `look.check` catches those. It
     is so that a folder with a `track.py` and nothing else renders correctly the
     first time it is driven, which is most of the difference between adding a
     track and learning what a palette is first.
     """
+    if entry.get("pal"):
+        return dict(entry["pal"])
     try:
         return importlib.import_module("tracks.%s.palette" % entry["slug"]).PALETTE
     except ModuleNotFoundError:
@@ -352,10 +366,22 @@ import laptime  # noqa: E402
 # query on purpose: medals read off the current board would move under the player
 # every time somebody set a record, and the card in the corner is a target rather
 # than a running commentary.
+def _time_it(t):
+    """The ideal lap and the three medals, onto a built track.
+
+    Factored out of the loop below because a **stored document** needs exactly
+    this too, and a second copy of the "declared times win, otherwise derive"
+    rule is a second place for a user track to get medals a pool track would
+    not. See `from_document`.
+    """
+    t["ideal"] = laptime.ideal_lap(t)
+    t["medals"] = (laptime.named_medals(t["medal_times"])
+                   if t["medal_times"] else laptime.medals(t["ideal"]))
+    return t
+
+
 for _t in TRACKS:
-    _t["ideal"] = laptime.ideal_lap(_t)
-    _t["medals"] = (laptime.named_medals(_t["medal_times"])
-                    if _t["medal_times"] else laptime.medals(_t["ideal"]))
+    _time_it(_t)
 
 
 def scenery_path(slug):
@@ -408,5 +434,176 @@ def summaries():
             for t in TRACKS]
 
 
+# ---------------------------------------------------------------------------
+# Tracks that are not folders
+# ---------------------------------------------------------------------------
+
+# How a slug that is not in the pool gets resolved, or `None`.
+#
+# **Nothing in `tracks/` may import the database**, and this hook is why. This
+# package is imported by `verify.py` in a process of its own, by `jsrt` inside
+# QuickJS's host, and by every test in the suite - none of which has an app
+# context, and one of which (a checkout with no `DATABASE_URL`) has no database
+# driver installed at all. So the app layer installs a resolver at start-up and
+# `tracks/` stays what it is: geometry, and no I/O.
+#
+# **The resolver must cache within a request.** `get` is called from twenty-odd
+# places in `app.py` for a single page - the payload, the record, the ghost, the
+# share card, the canonical link - and a database round trip and a ribbon
+# rebuild for each would be absurd. Building a document is a few milliseconds;
+# doing it thirty times is not.
+_resolver = None
+
+# Slugs a player may not take. The pool's own nineteen are added below, because
+# one flat namespace is what lets a user track live at `/solo/<slug>` and get
+# every share link, canonical tag and sitemap entry for free - and that only
+# works if a player cannot claim `spa`.
+RESERVED = {
+    "new", "edit", "make", "draft", "admin", "api", "static", "scenery",
+    "solo", "room", "race", "replay", "leaderboard", "account", "login",
+    "logout", "register", "privacy", "tracks", "track", "garage", "portal",
+}
+
+
+def set_resolver(fn):
+    """Install the thing that turns a slug into a live user track, or `None`.
+
+    Called once, from `app.py`, and only when there is a database to read.
+    """
+    global _resolver
+    _resolver = fn
+
+
+def slugify(name):
+    """A name a player typed, as a slug. `"Foggy Ridge!"` -> `"foggy-ridge"`.
+
+    The editor derives the slug from the name so nobody has to be told what a
+    slug is. Kept next to `slug_is_available` because the two have to agree
+    about what a legal slug looks like, and a candidate this produces has to be
+    one that passes.
+    """
+    out, prev_dash = [], True          # leading dash suppressed
+    for ch in (name or "").strip().lower():
+        if ch.isalnum():
+            out.append(ch)
+            prev_dash = False
+        elif not prev_dash:
+            out.append("-")
+            prev_dash = True
+    return "".join(out).strip("-")[:40].rstrip("-")
+
+
+def slug_is_available(slug):
+    """Whether a player may claim `slug`. Says why not, when they may not.
+
+    Returns `(True, None)` or `(False, reason)`. The reason is shown to the
+    person typing the name, so it says what to do rather than what went wrong.
+
+    Takes the slug **as it will be stored** and refuses anything it would have
+    had to change - no quiet normalising. A checker that lowercases its input
+    and answers about the lowercased version invites a caller to validate one
+    string and store another, which is how two tracks end up fighting over a
+    URL. Run the name through `slugify` first.
+    """
+    s = slug or ""
+    if s != s.strip().lower():
+        return False, "Use lower case, without spaces at either end."
+    if not s:
+        return False, "A track needs a name."
+    if len(s) < 3:
+        return False, "That is too short - three characters or more."
+    if len(s) > 40:
+        return False, "That is too long - forty characters or fewer."
+    if not all(c.isalnum() or c == "-" for c in s):
+        return False, "Letters, numbers and hyphens only."
+    if s.startswith("-") or s.endswith("-") or "--" in s:
+        return False, "Hyphens go between words, not at the ends."
+    if s in BY_SLUG:
+        return False, "%s is already a track here." % BY_SLUG[s]["name"]
+    if s in RESERVED:
+        return False, "That name is reserved."
+    return True, None
+
+
+def from_document(slug, doc, order=DEFAULT_ORDER, timed=True, spans=None):
+    """A stored document, assembled into the same dict a folder produces.
+
+    Deliberately routed through the very same `_one` and `_time_it` the pool
+    uses, rather than through a parallel assembler. Everything a track gets for
+    free - `pole_side`, `gate_ceil`, the ideal lap, the three medals, the
+    closure solve on a lap that has to meet itself - is got here by *calling the
+    same code*, so a user track cannot drift into being a slightly different
+    kind of object. The only thing that differs is where `build` comes from: a
+    folder has a function, and this has a document to replay.
+
+    Raises whatever the build raises. The caller decides whether a bad row is
+    fatal or merely absent, exactly as `_assemble` does for a bad folder.
+
+    **`timed=False` skips the lap-time model, and the editor needs it to.**
+    Replaying a document and building its ribbon costs about 4ms even for the
+    longest track in the pool; `laptime.ideal_lap` - a racing-line relaxation
+    and a speed profile over every station - costs about 550ms. Live editing
+    wants the road on every change and the lap time hardly ever, so it asks for
+    the road. Without the flag the editor would be a hundred times slower than
+    it needs to be, and it would be slow on the one eventlet worker that also
+    relays every live race pose at 30Hz.
+    """
+    from tracks import moves
+
+    entry = {
+        "slug": slug,
+        "name": doc.get("name") or slug,
+        "difficulty": int(doc.get("difficulty") or 3),
+        "ground": doc.get("ground"),
+        "order": order,
+        "width": float(doc.get("width", ROAD_W)),
+        "rails": bool(doc.get("rails")),
+        "origin": tuple(doc.get("origin") or (0.0, 0.0, 0.0, 0.0)),
+        "closed": bool(doc.get("closed")),
+        "exposed": bool(doc.get("exposed")),
+        # A user track never ships a `scenery.js`; what it has instead is baked
+        # geometry on the document, which needs no fetch and no bundle.
+        "wants_scenery": False,
+        # **`placed`, and not `scenery`.** `t["scenery"]` is already a boolean -
+        # does this track have a `scenery.js` next to it - so putting the
+        # placement list there would be read by `buildTrack` as `true.length`,
+        # which is `undefined`, which is falsy: the scenery would never be drawn
+        # and nothing would say so.
+        "placed": doc.get("scenery") or None,
+        # Always derived. `tools/set_medals.py` cuts from a board, and a user
+        # track's board is too small and too self-selected to cut from.
+        "medal_times": None,
+        "pal": doc.get("pal"),
+        "build": lambda b: moves.replay(doc, b, spans=spans),
+        "module": None,
+    }
+    t = _one(entry)
+    if timed:
+        _time_it(t)
+    else:
+        # Named rather than absent, so a caller that forgot cannot read a stale
+        # number: `None` fails loudly where a missing key might be shrugged off.
+        t["ideal"] = None
+        t["medals"] = None
+    # Marks it as somebody's rather than the pool's. Read by the play page (the
+    # by-line), the switcher (the Community shelf) and `/admin` - and by nothing
+    # that touches geometry, which is the point.
+    t["user"] = True
+    return t
+
+
 def get(slug):
-    return BY_SLUG.get(slug)
+    """The one place a slug becomes a track.
+
+    Called from twenty-odd places in `app.py` - `/solo`, `/api/track`,
+    `/api/run`, `/api/start`, `/api/ghost`, the room machinery, replays, share
+    cards, `robots.txt`, `sitemap.xml`, the switcher. Teaching *this* about
+    stored tracks is what makes a player's track work everywhere without any of
+    those learning a second way to be a track.
+    """
+    t = BY_SLUG.get(slug)
+    if t is not None:
+        return t
+    if _resolver is None:
+        return None
+    return _resolver(slug)

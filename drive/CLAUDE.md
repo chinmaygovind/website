@@ -29,6 +29,7 @@ rest of the repo; any one of them is 11-28KB.
 | `docs/hud-and-controls.md` | the in-game HUD, the settings/help sheets, the keys, touch controls, `sound.js`, the type |
 | `docs/pages-and-boards.md` | the home page, `/solo` and its track switcher, the track cards, `/account`, `/leaderboard` |
 | `docs/portal.md` | `portal.py`, `static/js/portal.js`, `/api/portal/auth`, the sitelock, `login.html`, who a player is inside a frame |
+| `docs/track-maker.md` | `/make`, `tracks/moves.py`, `tracks/starters.py`, `scenery_kit.js`, the scenery sandbox, the AI panel, saving and publishing a player's track, `tools/adopt_track.py` |
 | `docs/testing.md` | adding or removing a test, a surprising test failure, shipping a rendering change |
 
 If a change spans two of them, read two. If you are only reading code to answer a

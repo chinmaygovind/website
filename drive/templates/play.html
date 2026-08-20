@@ -29,8 +29,22 @@
   <div class="hud-tl">
     <div class="card">
       <div class="trackname" id="trackName">{{ track.name }}</div>
-      <div class="mode" id="modeLabel">{% if mode == 'room' %}Multiplayer - Free practice{% elif mode == 'replay' %}Race replay{% else %}Solo time trial{% endif %}</div>
+      <div class="mode" id="modeLabel">{% if mode == 'room' %}Multiplayer - Free practice{% elif mode == 'replay' %}Race replay{% elif draft_token %}Draft &mdash; nothing here is saved{% else %}Solo time trial{% endif %}</div>
     </div>
+    {# The way back out of a draft, and it is a button on the screen rather than
+       a line in the settings sheet. Driving a draft is a full page navigation,
+       so the editor and everything in it is gone; the person testing a corner
+       they just built goes back and forth constantly, and two menus down is the
+       wrong price for the most common thing they do. Points at the token, not
+       at history.back(), which would reload the starting shape and throw away
+       every change they made. #}
+    {% if draft_token %}
+    <a class="card draft-back" href="{{ url_for('make_edit', token=draft_token) }}">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none"
+           stroke="currentColor" stroke-width="2.1" stroke-linecap="round"
+           stroke-linejoin="round"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg>
+      Back to the editor</a>
+    {% endif %}
     <!-- Frame rate and round trip, off unless asked for.
          **Above the position card, not below it.** The position card appears the
          moment there are rivals on the road, so anything under it moves at the
@@ -100,6 +114,7 @@
            panel the *View Others* chip in settings opens - picking somebody to
            chase is a between-runs decision on the track you are already on, so it
            belongs on a button and not two menus down. -->
+      {% if not draft_token %}
       <button class="hbtn" id="btnBoard" title="Track leaderboard (L)">
         <svg viewBox="0 0 24 24">
           <path d="M3.5 20.5h17"/>
@@ -109,15 +124,21 @@
         </svg>
       </button>
       {% endif %}
+      {% endif %}
       <!-- Changing track is a thing you do from inside the game, not a page you
            go back out to. Signposted as a map rather than a list, because what
            you are choosing between is places. -->
+      {# Not on a draft. Switching track navigates away, and the draft has no
+         address the person can come back to - so this is a button that quietly
+         throws away the thing they are working on. #}
+      {% if not draft_token %}
       <button class="hbtn" id="btnTracks" title="Change track (P)">
         <svg viewBox="0 0 24 24">
           <path d="M9 4.4 3.6 6.6v13L9 17.4l6 2.2 5.4-2.2v-13L15 6.6z"/>
           <path d="M9 4.4v13M15 6.6v13"/>
         </svg>
       </button>
+      {% endif %}
       <button class="hbtn" id="btnHelp" title="Controls (H)">
         <svg viewBox="0 0 24 24">
           <path d="M8.3 8.6a3.9 3.9 0 1 1 4.7 3.8c-1 .2-1.7 1.1-1.7 2.3v.7"/>
@@ -164,7 +185,7 @@
     <div class="delta" id="delta"></div>
     <div class="timer" id="time">0:00.000</div>
     <div class="brow">
-      <div class="stat pb"><b id="pbTime">--:--.---</b><span>Personal best</span></div>
+      <div class="stat pb"><b id="pbTime">--:--.---</b><span>{% if draft_token %}Best this session{% else %}Personal best{% endif %}</span></div>
       <div class="stat cps"><b id="cpCount">0/0</b><span>Checkpoints</span></div>
       <div class="stat spd"><b id="speed">0</b><span>km/h</span></div>
     </div>
@@ -550,6 +571,10 @@
              it, and "Provisional pole" is the one word that cannot be shortened
              because it is what the choice *is*. #}
           <button class="opt" data-ghost="off">Off</button>
+          {# A draft is not on any board, so there is no stored lap of yours, no
+             record and nobody else to watch - every option here but Off would be
+             a control that silently does nothing. #}
+          {% if not draft_token %}
           <button class="opt" data-ghost="me">My Best</button>
           {% if mode == 'room' %}
           <button class="opt" data-ghost="pole">Provisional Pole</button>
@@ -557,6 +582,7 @@
           <button class="opt" data-ghost="wr">World Record</button>
           {% if mode != 'room' %}
           <button class="opt" data-ghost="others">View Others</button>
+          {% endif %}
           {% endif %}
         </div>
       </div>
@@ -675,7 +701,12 @@
         {% elif mode == 'replay' %}
         <a class="btn danger" id="btnQuit" href="/">Exit Replay</a>
         {% else %}
+        {% if draft_token %}
+        <a class="btn secondary" id="btnQuit"
+           href="{{ url_for('make_edit', token=draft_token) }}">Back to the editor</a>
+        {% else %}
         <a class="btn danger" id="btnQuit" href="/">Exit Solo</a>
+        {% endif %}
         {% endif %}
       </div>
     </div>
@@ -795,6 +826,13 @@
   window.DRIVE_TRACK = {{ track_json|safe }};
   window.DRIVE_CFG = {
     mode: "{{ mode }}",
+    {# An unpublished draft, being driven out of the editor. Solo mode in every
+       way that matters to the car, and **not** a track with a board: see
+       `countsForTheBoard`. Without this the game would queue the lap in
+       pending.js and submit it the moment its driver logged in, against a slug
+       that resolves to nothing. #}
+    draft: {{ 'true' if draft_token else 'false' }},
+    draftToken: {{ (draft_token or '')|tojson }},
     room: {% if room %}"{{ room.code }}"{% else %}null{% endif %},
     me: {{ me_json|safe }},
     {# Your colour, which is yours rather than the seat's - so the car you drive

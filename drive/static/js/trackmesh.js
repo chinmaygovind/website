@@ -17,6 +17,7 @@
 // that edge.
 
 import * as THREE from './vendor/three.module.js';
+import { placeAll } from './scenery_kit.js';
 
 // BOOST is a road you can drive on in every way ROAD is - the ground query, the
 // steering normal, the racing line all treat it identically. It is a separate
@@ -989,6 +990,31 @@ export function buildTrack(track, T) {
   // (because textured geometry is batched by word at the end of this function),
   // and the module-level primitives. `terrain` is here and is null for a flat
   // track - a height field is the one thing scenery cannot rebuild for itself.
+  // Four helpers every hand-written scenery.js defines for itself, identically,
+  // before using nothing else. They are on the context now because a sixth
+  // implementation was about to be written by a stranger in the track maker,
+  // and because each local copy is an independent chance to get `face`'s double
+  // winding wrong - the trap that made Spa's pit building an invisible shed with
+  // a roof floating in the sky, and both of Silverstone's hangars blank walls.
+  const sctx = sceneryContext(solid, track, pal, terrain, groundY, GRASS_DROP);
+  let sceneryProblems = [];
+  // A placement list, drawn by the engine. This is the declarative half of
+  // scenery and it runs *here*, in `buildTrack`, which is what makes it reach
+  // the editor's preview, the play page, the switcher and the QuickJS
+  // anti-cheat identically - the list rides the track dict exactly as the
+  // palette does, so there is no per-path copy of the interpreter to miss and
+  // no path where a player's barrier is absent from the collider.
+  const sctxFull = Object.assign({
+    solid, bright, soft, signs, col, track, pal, bbox, CELL, terrain,
+    groundY, minY, maxY, KIND, shade, hsl, mulberry, inside, plate, sheet,
+    solid_plate,
+  }, sctx);
+  if (track.placed && track.placed.length) {
+    // Problems are collected rather than thrown: a live track's placements were
+    // checked when it was approved, and a draft wants the road drawn with the
+    // rest of its scenery on it plus a message about the one that is wrong.
+    sceneryProblems = placeAll(sctxFull, track.placed);
+  }
   const sc = sceneryFor(track.slug);
   if (sc && sc.props) {
     sc.props({
@@ -996,6 +1022,7 @@ export function buildTrack(track, T) {
       groundY, minY, maxY,
       cfg: pal.building || pal.furniture || null,
       KIND, shade, hsl, mulberry, inside, plate, sheet, solid_plate,
+      ...sctx,
     });
   }
   if (groundY == null && pal.below) addWorldBelow(solid, soft, bright, track, pal, bbox, CELL, minY, maxY);
@@ -1058,7 +1085,12 @@ export function buildTrack(track, T) {
   gates.sort((a, b2) => gateKey(a) - gateKey(b2));
 
   return { group, collider: col, gates, line, s, total: s[s.length - 1],
-           killY, palette: pal, bbox, minY, maxY };
+           killY, palette: pal, bbox, minY, maxY, sceneryProblems,
+           // Handed out for the track maker's sandbox, which has to sample it:
+           // `ground()` is the helper every placement stands on, and a sandbox
+           // that answered it from a flat plate would put a player's building
+           // at a different height from the one the engine draws it at.
+           terrain };
 }
 
 // Hue/sat/lightness to packed RGB. Only Rainbow Road needs it, and it needs it
@@ -1072,7 +1104,10 @@ function hsl(h, s, l) {
   return (f(0) << 16) | (f(8) << 8) | f(4);
 }
 
-function shade(hex, amt) {
+// Exported so the track maker's sandbox can inject it by source rather than
+// carry a copy. The first copy written by hand had it as a multiplier instead
+// of an amount, which is a plausible-looking function that darkens everything.
+export function shade(hex, amt) {
   let r = (hex >> 16) & 255, g = (hex >> 8) & 255, b = hex & 255;
   if (amt >= 0) { r += (255 - r) * amt; g += (255 - g) * amt; b += (255 - b) * amt; }
   else { r *= 1 + amt; g *= 1 + amt; b *= 1 + amt; }
@@ -1080,6 +1115,51 @@ function shade(hex, amt) {
 }
 
 // A tiny deterministic PRNG so scenery is identical for everyone in a room.
+/**
+ * The spatial grammar of every building in this game, which is three words.
+ *
+ * `at` turns a fraction of the lap into a station index; `spot` turns a station
+ * and an offset to the road's right into a world x/z; `ground` is the height
+ * there; `face` draws a quad both windings. Read the five hand-written
+ * `scenery.js` files beside each other and they are the same file five times,
+ * every one opening by defining these and then spending three hundred lines
+ * using only them.
+ *
+ * Exported because the track maker's sandbox hands the identical four to
+ * untrusted code: a player writing scenery and the engine drawing a grandstand
+ * have to be using one API, or the examples in the spec are lies.
+ */
+export function sceneryContext(solid, track, pal, terrain, groundY, drop) {
+  const line = track.line, n = line.length;
+  const APRON = (pal.terrain && pal.terrain.apron != null)
+    ? pal.terrain.apron : 34;
+  const at = (f) => Math.max(0, Math.min(n - 1, Math.round(f * (n - 1))));
+  const spot = (i, o) => {
+    const e = line[Math.max(0, Math.min(n - 1, i | 0))];
+    return [e.p[0] + e.lat[0] * o, e.p[2] + e.lat[2] * o];
+  };
+  // Inside the apron this is the road's own height less the drop, and NOT
+  // `terrain.height` - the field returns whatever road is nearest, so beside a
+  // fold in the layout it flips from one leg to the other and anything standing
+  // on it jumps with it. A flat track is its plate; a void track has no ground
+  // at all, so it gets the road less the drop, which is at least attached to
+  // the thing the scenery is beside.
+  const ground = (i, o) => {
+    const e = line[Math.max(0, Math.min(n - 1, i | 0))];
+    if (!terrain) return groundY != null ? groundY : e.p[1] - drop;
+    return Math.abs(o) <= APRON ? e.p[1] - drop
+                                : terrain.height.apply(null, spot(i, o));
+  };
+  // Both windings, always. The world mesh is MeshLambertMaterial, which is
+  // FrontSide, so anything placed by a signed side is invisible from one of
+  // them - and an invisible wall is not an error in either language.
+  const face = (a, b, c, d, colr) => {
+    solid.quad(a, b, c, d, colr);
+    solid.quad(a, d, c, b, colr);
+  };
+  return { at, spot, ground, face, APRON, DROP: drop };
+}
+
 export function mulberry(seed) {
   return function () {
     seed |= 0; seed = seed + 0x6D2B79F5 | 0;

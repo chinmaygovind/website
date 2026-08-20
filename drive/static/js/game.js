@@ -931,7 +931,7 @@ function bindInput() {
     // The board, from the road, and solo only for the same reason the button is:
     // in a room the people whose times you would be reading are on the track
     // with you. Pressing it again closes it, like every other panel key.
-    if (e.code === 'KeyL' && CFG.mode !== 'room') {
+    if (e.code === 'KeyL' && CFG.mode !== 'room' && !CFG.draft) {
       if ($('boardOv').style.display === 'none') openBoard(); else toggleBoard(false);
     }
     // M is the one key that means two things, and it is the right two. Alone
@@ -1205,7 +1205,7 @@ function bindInput() {
   setFpsOn(S.showFps, { remember: false });
   setPingOn(S.showPing, { remember: false });
 
-  $('btnTracks').onclick = () => toggleTracks();
+  if ($('btnTracks')) $('btnTracks').onclick = () => toggleTracks();
   $('btnTracksClose').onclick = () => toggleTracks(false);
   // Solo only - in a room this slot is the room button, and everybody in there
   // is on the road with you rather than on a board.
@@ -1311,9 +1311,13 @@ const GHOST_LABEL = { off: 'Off', me: 'My Best', wr: 'World Record',
 // road with you and the board is a list of people who are not.
 const GHOST_CYCLE = ['off', 'me', 'wr'];
 const GHOST_CYCLE_ROOM = ['off', 'me', 'pole', 'wr'];
+// A draft has no board, so it has no stored lap of yours and no record. The key
+// still works; there is just one thing it can be.
+const GHOST_CYCLE_DRAFT = ['off'];
 
 function nextGhostMode() {
-  const cycle = CFG.mode === 'room' ? GHOST_CYCLE_ROOM : GHOST_CYCLE;
+  const cycle = CFG.draft ? GHOST_CYCLE_DRAFT
+    : CFG.mode === 'room' ? GHOST_CYCLE_ROOM : GHOST_CYCLE;
   const i = cycle.indexOf(S.ghostMode);
   return cycle[(i + 1) % cycle.length];
 }
@@ -1909,10 +1913,15 @@ async function openRaceReplay() {
 // ---------------------------------------------------------------------------
 
 function toggleTracks(force) {
+  // Never on a draft. Switching track navigates away, and a draft has no
+  // address to come back to - so this would quietly discard the thing being
+  // built. Here rather than at the key, so the one rule covers the key, the
+  // button and anything that reaches it next.
+  if (CFG.draft) return;
   const on = force != null ? force : $('tracksOv').style.display === 'none';
   if (on) closeOtherPanels('tracks');
   $('tracksOv').style.display = on ? '' : 'none';
-  $('btnTracks').classList.toggle('on', on);
+  if ($('btnTracks')) $('btnTracks').classList.toggle('on', on);
   syncPaused();
   if (on) {
     // Only the host picks in a room, and saying so beats a grid of cards that
@@ -1927,9 +1936,26 @@ function toggleTracks(force) {
 function renderTrackCards() {
   const grid = $('tGrid');
   if (!grid) return;
+  // A shelf heading before the first community card, and only if there is one.
+  // The pool is the game; this is what people have made in it. Mixed together,
+  // finding Spa would be a search.
+  let shelved = false;
   grid.innerHTML = (CFG.cards || []).map(c => `
+    ${c.shelf === 'community' && !shelved ? (shelved = true,
+      '<span class="tshelf">Made by people who play this' +
+      ' <a href="/tracks">see all</a></span>') : ''}
     <button class="tcard2" data-track="${esc(c.slug)}">
-      <span class="tcard2-img" style="background-image:url('${esc(c.image)}')">
+      <span class="tcard2-img"${c.image
+        ? ` style="background-image:url('${esc(c.image)}')"`
+        // No render taken yet, so the card wears the *plan* - the shape of the
+        // lap, drawn from the ribbon, over the track's own road and sky. It is
+        // arguably the better picture of the two: what tells one track from
+        // another is its shape, not a three-quarter view of some tarmac.
+        : ` style="background:linear-gradient(160deg,${esc(c.sky)} 0 42%,${
+            esc(c.tint)} 42% 100%)"`}>${c.image || !c.plan ? '' :
+        `<svg class="tcard2-plan" viewBox="0 0 200 96"
+              preserveAspectRatio="xMidYMid meet" aria-hidden="true"
+         ><path d="${esc(c.plan)}"/></svg>`}
         <span class="tcard2-live">Now</span>
         <!-- The one you have just clicked, while it loads. Same corner as "Now",
              because they are the same fact a moment apart. -->
@@ -1937,7 +1963,8 @@ function renderTrackCards() {
       </span>
       <span class="tcard2-body">
         <span class="tcard2-top">
-          <b>${esc(c.name)}</b>
+          <b>${esc(c.name)}${c.author
+            ? `<i class="tcard2-by">by ${esc(c.author)}</i>` : ''}</b>
           <span class="diff d${c.difficulty}">${[0, 1, 2, 3, 4].map(i =>
             `<span class="pip${i < c.difficulty ? ' on' : ''}"></span>`).join('')}</span>
         </span>
@@ -3061,9 +3088,14 @@ function renderMedalTable() {
   const wr = S.track.record_ms;
   // Your own best is not in here - it lives under the clock, bottom left of
   // it, where you look for it while you are driving.
+  // Except on a draft, where it is a row that can only ever be a dash: there is
+  // no board to hold a record on. The three medals stay - they are derived from
+  // the road itself and are the most useful thing an author can read here,
+  // because they say whether what they just built is paced like a real track.
   el.innerHTML =
-    `<div class="mrow"><span class="medal wr"></span><span>WR</span>` +
-    `<b>${wr != null ? fmt(wr) : '&mdash;'}</b></div>` +
+    (CFG.draft ? '' :
+      `<div class="mrow"><span class="medal wr"></span><span>WR</span>` +
+      `<b>${wr != null ? fmt(wr) : '&mdash;'}</b></div>`) +
     rows.map(([k, label]) =>
       `<div class="mrow"><span class="medal ${k}"></span><span>${label}</span>` +
       `<b>${fmt(m[k] * 1000)}</b></div>`).join('');
@@ -3135,6 +3167,9 @@ function drawMinimap() {
 // ---------------------------------------------------------------------------
 async function loadGhost(who) {
   S.ghost = null; S.ghostTimes = null;
+  // Nothing has ever driven a draft, so there is nothing to ask for. Asking
+  // anyway is a 404 in the console every time somebody tries their own track.
+  if (!countsForTheBoard()) return;
   // Which ghost this request is for. Click "world record" and then "my best"
   // before the first answer arrives and the slower reply would otherwise land
   // on top of the newer choice.
@@ -3462,6 +3497,11 @@ async function onFinish() {
       }
     } else {
       if (improved) { S.bestTime = run.time; localBest(run.time); }
+    // A draft lap goes nowhere near a board, but it is the one thing the submit
+    // gate wants: proof this exact road can be driven from the start line to the
+    // flag. Told to the server keyed on the geometry, not the slug, so driving
+    // it and then moving a corner does not count.
+    reportDraftLap(run.time);
       // A guest's lap is kept whole - replay and all - so that logging in later
       // puts it on the board rather than asking them to drive it again.
       if (d.guest && window.DrivePending) {
@@ -3522,7 +3562,26 @@ function medalFor(ms) {
   return null;
 }
 
+/**
+ * Tell the editor's gate that a draft lap finished.
+ *
+ * Fire and forget: the gate is re-read when the author opens the checks, so a
+ * lost request costs them one more lap rather than an error in the middle of
+ * driving.
+ */
+function reportDraftLap(ms) {
+  if (!CFG.draft || !CFG.draftToken || !(ms > 0)) return;
+  fetch('/api/make/drove', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ token: CFG.draftToken, ms }),
+  }).catch(() => {});
+}
+
 function localBest(ms) {
+  // Never for a draft. Every draft drives under the one reserved slug, so the
+  // key would be shared: set a 20s lap on one track, open a completely
+  // different one, and it opens claiming your best is 20s.
+  if (CFG.draft) return;
   try {
     const k = 'drive.pb.' + S.track.slug;
     const cur = parseInt(localStorage.getItem(k) || '0', 10);
@@ -3531,6 +3590,7 @@ function localBest(ms) {
 }
 
 function storedBest() {
+  if (CFG.draft) return null;              // see localBest
   try {
     const v = parseInt(localStorage.getItem('drive.pb.' + S.track.slug) || '0', 10);
     return v > 0 ? v : null;
@@ -4258,7 +4318,12 @@ function gapToLeader() {
  * about it.
  */
 function countsForTheBoard() {
-  return CFG.mode === 'solo';
+  // A draft out of the editor is solo in every way the car cares about and is
+  // not a track with a board - there is no row for it, and its slug (`draft`)
+  // is reserved so there never can be. Gating it here rather than at each call
+  // site is the point of this function existing: `/api/run`, `/api/start`, the
+  // pending-lap queue and the ghost all read it.
+  return CFG.mode === 'solo' && !CFG.draft;
 }
 
 function collidables() {

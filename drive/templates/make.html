@@ -1,0 +1,559 @@
+{% extends "base.html" %}
+{% block title %}Make a track | Drive{% endblock %}
+{% block bodyclass %}make{% endblock %}
+
+{% block head %}
+<style>/* The editor borrows the site's tokens rather than inventing any, so it reads
+   as part of Drive and follows a palette change here for free. */
+body.make { overflow: hidden; }body.make .make-wrap { position: fixed; inset: 0; display: grid;
+  grid-template-columns: 236px 1fr 248px; grid-template-rows: 1fr 92px;
+  background: var(--paper); color: var(--ink); font-family: var(--sans); }/* ---- start-from screen ---- */
+body.make .pick { position: fixed; inset: 0; overflow: auto; background: var(--paper);
+  display: flex; align-items: center; justify-content: center; padding: 40px 24px; }body.make .pick-inner { max-width: 900px; width: 100%; }body.make .pick h1 { font-family: var(--display); font-size: clamp(30px, 5vw, 46px);
+  margin: 0 0 6px; letter-spacing: -.01em; }body.make .pick p.sub { margin: 0 0 30px; color: var(--ink-soft); font-size: 17px; }body.make .shapes { display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }body.make .shape { display: block; text-align: left; background: #fff; cursor: pointer;
+  border: 1px solid rgba(29,29,31,.16); border-radius: 8px; padding: 0;
+  overflow: hidden; font: inherit; color: inherit; transition: transform .12s,
+  box-shadow .12s, border-color .12s; }body.make .shape:hover, body.make .shape:focus-visible { transform: translateY(-2px);
+  border-color: var(--ink); box-shadow: 0 8px 22px -14px rgba(29,29,31,.5); }body.make .shape svg { display: block; width: 100%; height: 96px; background: #f1efe9; }body.make .shape .body { padding: 12px 14px 14px; }body.make .shape b { display: block; font-family: var(--display); font-size: 18px; }body.make .shape small { display: block; color: var(--ink-soft); font-size: 13px;
+  line-height: 1.45; margin-top: 4px; }body.make .pips { display: inline-flex; gap: 3px; vertical-align: 1px; margin-left: 6px; }body.make .pips i { width: 6px; height: 6px; border-radius: 50%; background: rgba(29,29,31,.18); }body.make .pips i.on { background: var(--d); }body.make .tag { display: inline-block; font-family: var(--mono); font-size: 10px;
+  letter-spacing: .1em; text-transform: uppercase; padding: 2px 6px;
+  border: 1px solid rgba(29,29,31,.3); border-radius: 3px; margin-top: 8px;
+  color: var(--ink-soft); }/* ---- panes ---- */
+body.make .pane { background: #fff; overflow: auto; }body.make .pane.left { border-right: 1px solid rgba(29,29,31,.14); }body.make .pane.right { border-left: 1px solid rgba(29,29,31,.14); }body.make .pane h2 { font-family: var(--mono); font-size: 10px; letter-spacing: .15em;
+  text-transform: uppercase; color: var(--ink-soft); margin: 0;
+  padding: 12px 14px 8px; position: sticky; top: 0; background: #fff; }/* ---- moves list ---- */
+body.make #moves { list-style: none; margin: 0; padding: 0 0 8px; }body.make #moves li { display: flex; align-items: center; gap: 8px; padding: 5px 14px;
+  font-family: var(--mono); font-size: 12.5px; color: var(--ink-soft);
+  cursor: pointer; border: 0; border-left: 3px solid transparent; }body.make #moves li:hover { background: #f6f4ef; }body.make #moves li.sel { background: rgba(232,69,60,.09); color: var(--red);
+  border-left-color: var(--red-soft); }body.make #moves li.gate { color: #9a7b00; }body.make #moves li.sel.gate { color: var(--red); }body.make #moves li .n { margin-left: auto; opacity: .65; font-variant-numeric: tabular-nums; }body.make #moves li .grip { opacity: .35; cursor: grab; }body.make .state-note { padding: 3px 14px 3px 30px; font-family: var(--mono);
+  font-size: 10.5px; letter-spacing: .04em; color: rgba(29,29,31,.42); }/* ---- viewport ---- */
+body.make .view { position: relative; background: #cfd8e2; overflow: hidden; }/* The site stylesheet fixes the game canvas to the viewport, which is right for
+   the play page and wrong here - it covered both panes. Contained to the cell,
+   Scoped under `body.make`, which outranks the bare `#gl` the play page
+   needs, so no `!important` is involved. */
+body.make .view canvas#gl { position: absolute; inset: 0; display: block;
+  width: 100%; height: 100%; }body.make .hud { position: absolute; inset: auto auto 12px 12px; display: flex; gap: 6px;
+  align-items: flex-end; flex-wrap: wrap; font-family: var(--mono); font-size: 10.5px;
+  letter-spacing: .08em; text-transform: uppercase; pointer-events: none; }body.make .hud span { background: var(--hud); color: #fff; padding: 4px 8px;
+  border-radius: 3px; border: 1px solid var(--hud-line); }body.make .hud span.warn { background: rgba(192,24,43,.86); border-color: rgba(255,255,255,.3); }body.make .acts { position: absolute; inset: auto 12px 12px auto; display: flex; gap: 8px; }body.make .acts button { font-family: var(--display); text-transform: uppercase;
+  letter-spacing: .05em; font-weight: 700; font-size: 14px; padding: 8px 16px;
+  border-radius: 4px; border: 1px solid rgba(255,255,255,.25); cursor: pointer;
+  background: var(--hud); color: #fff; }body.make .acts button.go { background: var(--red); border-color: var(--red); }
+/* Quieter than Undo, which is quieter than Drive: nothing here is destructive
+   and the eye should land on the red one. */
+body.make .acts button.quiet { font-family: var(--mono); font-weight: 400;
+  font-size: 11px; letter-spacing: .08em; padding: 8px 11px;
+  background: rgba(20,20,24,.55); }body.make .acts button:disabled { opacity: .45; cursor: default; }body.make .spin { position: absolute; inset: 12px 12px auto auto; font-family: var(--mono);
+  font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
+  background: var(--hud); color: #fff; padding: 4px 8px; border-radius: 3px;
+  opacity: 0; transition: opacity .15s; }body.make .spin.on { opacity: 1; }body.make .err { position: absolute; inset: 12px 12px auto 12px; background: #fff;
+  border-left: 4px solid var(--red); border-radius: 0 5px 5px 0; padding: 10px 14px;
+  font-size: 14px; line-height: 1.5; display: none;
+  box-shadow: 0 10px 30px -18px rgba(0,0,0,.6); }body.make .err.on { display: block; }body.make .err b { display: block; font-family: var(--mono); font-size: 10px;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--red);
+  margin-bottom: 3px; }/* ---- add bar ---- */
+body.make .add { display: flex; flex-wrap: wrap; gap: 5px; padding: 10px 14px 14px;
+  border-top: 1px solid rgba(29,29,31,.1); }body.make .add button { font-family: var(--mono); font-size: 11px; padding: 5px 8px;
+  border-radius: 3px; border: 1px solid rgba(29,29,31,.22); background: #fff;
+  cursor: pointer; color: var(--ink); }body.make .add button:hover { border-color: var(--ink); background: #f6f4ef; }/* ---- inspector ---- */
+body.make .field { padding: 7px 14px; }body.make .field label { display: flex; justify-content: space-between;
+  font-family: var(--mono); font-size: 11px; color: var(--ink-soft);
+  margin-bottom: 4px; }body.make .field label b { color: var(--ink); font-variant-numeric: tabular-nums; }body.make .field input[type=range] { width: 100%; margin: 0; accent-color: var(--red-soft); }body.make .seg { display: flex; gap: 4px; padding: 4px 14px 8px; flex-wrap: wrap; }body.make .seg button { font-family: var(--mono); font-size: 10.5px; padding: 4px 8px;
+  border-radius: 3px; border: 1px solid rgba(29,29,31,.22); background: #fff;
+  cursor: pointer; color: var(--ink-soft); }body.make .seg button.on { background: var(--red); border-color: var(--red); color: #fff; }body.make .note { padding: 8px 14px; font-size: 12.5px; line-height: 1.5;
+  color: var(--ink-soft); }body.make .note.ok { color: #2f7a4f; }body.make .note.warn { color: #a35a00; }body.make .danger { padding: 8px 14px 14px; }body.make .danger button { width: 100%; font-family: var(--mono); font-size: 11px;
+  padding: 6px; border-radius: 3px; cursor: pointer; background: #fff;
+  border: 1px solid rgba(192,24,43,.4); color: var(--red); }/* ---- height strip ---- */
+body.make .strip { grid-column: 1 / -1; background: #f6f4ef;
+  border-top: 1px solid rgba(29,29,31,.14); padding: 8px 14px 6px; }body.make .strip svg { display: block; width: 100%; height: 52px; }body.make .strip .legend { display: flex; justify-content: space-between; margin-top: 3px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: rgba(29,29,31,.45); }
+/* ---- the preview is catching up ----
+   A drag changes the document faster than the server can answer it, and the
+   gap - one debounce plus one build - is long enough on a closed lap to read
+   as a control that does nothing. So two signals, neither of which moves the
+   layout: a bar across the top of the viewport, and the field being dragged
+   marked in the accent colour while its value is ahead of the road on screen. */
+/* Two layers, because the scene behind this is anything from a bright orange
+   sky to a black void: a dark rail the full width guarantees the moving red
+   highlight has something to read against either way. */
+body.make .view::after {
+  content: ''; position: absolute; inset: 0 0 auto 0; height: 3px; z-index: 4;
+  pointer-events: none; opacity: 0; transition: opacity .12s;
+  background-image: linear-gradient(90deg, transparent, var(--red), transparent),
+                    linear-gradient(rgba(12,12,14,.42), rgba(12,12,14,.42));
+  background-size: 38% 100%, 100% 100%;
+  background-repeat: no-repeat, no-repeat;
+  background-position: -38% 0, 0 0; }
+body.make.building .view::after {
+  opacity: 1; animation: make-bar 900ms linear infinite; }
+@keyframes make-bar {
+  from { background-position: -38% 0, 0 0; }
+  to   { background-position: 138% 0, 0 0; } }
+/* The chip carries the accent rather than the HUD's translucent grey, which
+   disappeared into a dark scene at exactly the moment it had something to say. */
+body.make.building .spin { opacity: 1; background: var(--red);
+  border-color: var(--red); }
+body.make .field.live { background: rgba(232,69,60,.07); border-radius: 4px; }
+body.make .field.live label b { color: var(--red); }
+body.make .field.live input[type=range] { accent-color: var(--red); }
+@media (prefers-reduced-motion: reduce) {
+  body.make .view::after { background: var(--red); background-size: 100% 100%; }
+  body.make.building .view::after { animation: none; }
+}
+/* ---- tabs ---- */
+body.make .tabs { display: flex; gap: 2px; padding: 8px 10px 0;
+  position: sticky; top: 0; background: #fff; z-index: 2;
+  border-bottom: 1px solid rgba(29,29,31,.12); }
+body.make .tab { flex: 1; font-family: var(--mono); font-size: 10px;
+  letter-spacing: .15em; text-transform: uppercase; padding: 7px 4px;
+  border: 0; border-bottom: 2px solid transparent; background: none;
+  color: var(--ink-soft); cursor: pointer; }
+body.make .tab.on { color: var(--red); border-bottom-color: var(--red); }
+body.make .tab:hover:not(.on) { color: var(--ink); }
+
+/* ---- the palette editor ---- */
+body.make .lgroup { padding: 10px 0 2px; }
+body.make .lgroup > h3 { font-family: var(--mono); font-size: 10px;
+  letter-spacing: .15em; text-transform: uppercase; color: var(--ink-soft);
+  margin: 0; padding: 4px 14px 6px; }
+/* Colours in a grid rather than one per row: fourteen of them stacked is a
+   scroll, and the whole point of a palette is seeing them beside each other. */
+body.make .swatches { display: grid; grid-template-columns: 1fr 1fr;
+  gap: 4px 8px; padding: 0 14px 6px; }
+body.make .sw { display: flex; align-items: center; gap: 7px;
+  font-family: var(--mono); font-size: 10.5px; color: var(--ink-soft);
+  cursor: pointer; }
+body.make .sw input[type=color] { flex: none; width: 26px; height: 20px;
+  padding: 0; border: 1px solid rgba(29,29,31,.28); border-radius: 3px;
+  background: none; cursor: pointer; }
+body.make .sw span { overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+body.make .sw.flag input[type=color] { border-color: var(--red);
+  box-shadow: 0 0 0 2px rgba(232,69,60,.22); }
+
+/* ---- advice ---- */
+body.make .advice { padding: 4px 14px 8px; display: flex; flex-direction: column;
+  gap: 6px; }
+body.make .adv { font-size: 12px; line-height: 1.45; padding: 7px 9px;
+  border-radius: 4px; border-left: 3px solid; }
+body.make .adv.warn { background: rgba(192,24,43,.06); border-color: var(--red);
+  color: #8a1420; }
+body.make .adv.note { background: rgba(29,29,31,.045);
+  border-color: rgba(29,29,31,.3); color: var(--ink-soft); }
+body.make .adv b { display: block; font-family: var(--mono); font-size: 9.5px;
+  letter-spacing: .12em; text-transform: uppercase; margin-bottom: 2px; }
+body.make .allclear { padding: 6px 14px 10px; font-size: 12px; color: #2f7a4f; }
+
+/* ---- borrow a look ---- */
+body.make .borrow { display: grid; grid-template-columns: repeat(5, 1fr);
+  gap: 4px; padding: 0 14px 8px; }
+body.make .borrow button { aspect-ratio: 1; padding: 0; cursor: pointer;
+  border: 1px solid rgba(29,29,31,.2); border-radius: 3px; overflow: hidden;
+  display: grid; grid-template-rows: 1fr 1fr; }
+body.make .borrow button:hover { border-color: var(--ink);
+  transform: translateY(-1px); }
+body.make .borrow button i { display: block; }
+
+/* ---- the sky gradient ---- */
+body.make .grad { height: 46px; border-radius: 4px; margin: 0 14px 6px;
+  border: 1px solid rgba(29,29,31,.2); }
+body.make .stops { padding: 0 14px 8px; display: flex; flex-direction: column;
+  gap: 3px; }
+body.make .stop { display: flex; align-items: center; gap: 6px; }
+body.make .stop input[type=color] { flex: none; width: 26px; height: 19px;
+  padding: 0; border: 1px solid rgba(29,29,31,.28); border-radius: 3px;
+  background: none; cursor: pointer; }
+body.make .stop input[type=range] { flex: 1; margin: 0;
+  accent-color: var(--red-soft); }
+body.make .stop button { flex: none; width: 20px; height: 19px; padding: 0;
+  font-size: 13px; line-height: 1; cursor: pointer; color: var(--ink-soft);
+  border: 1px solid rgba(29,29,31,.2); border-radius: 3px; background: #fff; }
+body.make .stop button:hover { border-color: var(--red); color: var(--red); }
+body.make .stopadd { margin: 0 14px 10px; width: calc(100% - 28px);
+  font-family: var(--mono); font-size: 10.5px; padding: 5px;
+  border: 1px dashed rgba(29,29,31,.3); border-radius: 3px; background: #fff;
+  cursor: pointer; color: var(--ink-soft); }
+body.make .stopadd:hover { border-color: var(--ink); color: var(--ink); }
+body.make .acts button.on { background: var(--red); border-color: var(--red);
+  color: #fff; }
+/* A key this palette does not carry. Drawn, because every key is exposed - but
+   drawn as absent, because six identical grey squares read as a grey palette
+   rather than as six keys this track does not use. */
+body.make .sw.unset input[type=color] { border-style: dashed; opacity: .5; }
+body.make .sw.unset span { opacity: .5; }
+body.make .field.unset label { opacity: .5; }
+body.make .field.unset label b::after { content: ' unset'; font-size: 9px;
+  letter-spacing: .1em; opacity: .7; }
+body.make .field.unset input[type=range] { opacity: .5; }
+/* ---- the code sheet ----
+   Full width and over the height strip, not a side pane and not a modal: code
+   needs the width, and the world it draws into has to stay on screen while you
+   type - the whole reason to write it here rather than in a file. */
+body.make .code { position: fixed; left: 0; right: 0; bottom: 0; height: 46vh;
+  min-height: 300px; z-index: 40; background: #14161b; color: #e8e6e1;
+  display: flex; flex-direction: column;
+  box-shadow: 0 -18px 40px -20px rgba(0,0,0,.7); }
+body.make .code[hidden] { display: none; }
+body.make .codebar { display: flex; align-items: center; gap: 8px;
+  padding: 7px 12px; border-bottom: 1px solid rgba(255,255,255,.1);
+  font-family: var(--mono); font-size: 11px; }
+body.make .codebar b { font-family: var(--mono); font-size: 10px;
+  letter-spacing: .15em; text-transform: uppercase; color: #9aa3b0; }
+body.make .cgrow { flex: 1; }
+body.make .cstat { color: #7f8794; }
+body.make .cstat.bad { color: #ff8a7a; }
+body.make .cstat.good { color: #7fd6a0; }
+body.make .codebar button { font-family: var(--mono); font-size: 10.5px;
+  padding: 5px 9px; border-radius: 3px; cursor: pointer; color: #e8e6e1;
+  background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.16); }
+body.make .codebar button:hover { background: rgba(255,255,255,.14); }
+body.make .codebar button.go { background: var(--red); border-color: var(--red);
+  color: #fff; }
+body.make .codebar button.on { background: #fff; color: #14161b;
+  border-color: #fff; }
+body.make .codebody { flex: 1; display: flex; min-height: 0; }
+body.make .codeedit { flex: 1; min-width: 0; display: flex; }
+body.make #codeText { flex: 1; resize: none; border: 0; outline: none;
+  background: #14161b; color: #e8e6e1; padding: 12px 14px;
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.6;
+  tab-size: 2; white-space: pre; overflow: auto; }
+body.make .codeerr { border-top: 1px solid rgba(255,138,122,.3);
+  background: rgba(192,24,43,.16); padding: 8px 12px 10px; max-height: 30%;
+  overflow: auto; }
+body.make .codeerr[hidden] { display: none; }
+body.make .cehead { display: flex; align-items: center; gap: 10px;
+  margin-bottom: 4px; }
+body.make .cehead b { font-family: var(--mono); font-size: 10px;
+  letter-spacing: .12em; text-transform: uppercase; color: #ff8a7a; }
+body.make #codeErrCopy { font-family: var(--mono); font-size: 10px;
+  padding: 3px 7px; border-radius: 3px; cursor: pointer; color: #e8e6e1;
+  background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18); }
+body.make #codeErrText { margin: 0; white-space: pre-wrap;
+  font-family: var(--mono); font-size: 12px; line-height: 1.55;
+  color: #ffd9d2; }
+
+/* ---- the chat ---- */
+body.make .chat { width: 380px; flex: none; display: flex;
+  flex-direction: column; min-height: 0;
+  border-left: 1px solid rgba(255,255,255,.1); }
+body.make .chat[hidden] { display: none; }
+body.make .chathead { display: flex; gap: 6px; padding: 8px 10px;
+  border-bottom: 1px solid rgba(255,255,255,.08); }
+body.make .chathead select { flex: 1; min-width: 0; font-family: var(--mono);
+  font-size: 10.5px; padding: 4px; border-radius: 3px; color: #e8e6e1;
+  background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.16); }
+body.make .chathead button { font-family: var(--mono); font-size: 10.5px;
+  padding: 4px 8px; border-radius: 3px; cursor: pointer; color: #e8e6e1;
+  background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.16); }
+body.make .keyrow { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,.08); }
+body.make .keyrow[hidden] { display: none; }
+body.make .keyrow input { width: 100%; font-family: var(--mono); font-size: 11px;
+  padding: 5px 7px; border-radius: 3px; color: #e8e6e1; margin-bottom: 5px;
+  background: rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.2); }
+body.make .keyrow button { font-family: var(--mono); font-size: 10.5px;
+  padding: 4px 10px; border-radius: 3px; cursor: pointer; color: #fff;
+  background: var(--red); border: 1px solid var(--red); }
+body.make .keynote { margin: 6px 0 0; font-size: 11px; line-height: 1.5;
+  color: #8d95a2; }
+body.make .msgs { flex: 1; overflow: auto; padding: 10px;
+  display: flex; flex-direction: column; gap: 8px; }
+body.make .msg { font-size: 12.5px; line-height: 1.55; padding: 8px 10px;
+  border-radius: 6px; white-space: pre-wrap; word-break: break-word; }
+body.make .msg.me { background: rgba(255,255,255,.09); align-self: flex-end;
+  max-width: 88%; }
+body.make .msg.ai { background: rgba(255,255,255,.045);
+  border: 1px solid rgba(255,255,255,.08); }
+body.make .msg.err { background: rgba(192,24,43,.2); color: #ffd9d2; }
+body.make .msg pre { margin: 6px 0 0; padding: 8px; border-radius: 4px;
+  background: rgba(0,0,0,.45); overflow: auto; font-family: var(--mono);
+  font-size: 11.5px; line-height: 1.5; }
+body.make .msg .use { margin-top: 6px; font-family: var(--mono); font-size: 10px;
+  padding: 4px 8px; border-radius: 3px; cursor: pointer; color: #fff;
+  background: var(--red); border: 1px solid var(--red); }
+body.make .composer { display: flex; gap: 6px; padding: 8px 10px;
+  border-top: 1px solid rgba(255,255,255,.08); }
+body.make .composer textarea { flex: 1; resize: none; font-family: var(--sans);
+  font-size: 12.5px; padding: 6px 8px; border-radius: 4px; color: #e8e6e1;
+  background: rgba(0,0,0,.35); border: 1px solid rgba(255,255,255,.2); }
+body.make .composer button { font-family: var(--display); font-size: 12px;
+  text-transform: uppercase; letter-spacing: .06em; font-weight: 700;
+  padding: 6px 12px; border-radius: 4px; cursor: pointer; color: #fff;
+  background: var(--red); border: 1px solid var(--red); }
+body.make .composer button:disabled { opacity: .5; cursor: default; }
+
+/* ---- the scenery tab ---- */
+body.make .sccount { padding: 8px 14px; font-size: 12.5px; line-height: 1.5;
+  color: var(--ink-soft); }
+body.make .scbtn { margin: 4px 14px 10px; width: calc(100% - 28px);
+  font-family: var(--display); font-size: 13px; text-transform: uppercase;
+  letter-spacing: .05em; font-weight: 700; padding: 8px; border-radius: 4px;
+  cursor: pointer; background: var(--ink); color: #fff; border: 1px solid var(--ink); }
+body.make .scbtn:hover { background: #000; }
+/* The pane widens for the chat, because 248px is a column of two-word lines. */
+body.make.aiwide .make-wrap { grid-template-columns: 236px 1fr 430px; }
+body.make #tabai { display: flex; flex-direction: column;
+  height: calc(100vh - 92px - 33px); }
+/* `hidden` is `display: none` from the UA stylesheet, which the rule above
+   outranks - so without this the chat renders under whichever tab is open.
+   Any tab that gets a `display` of its own needs the same line. */
+body.make #tabai[hidden] { display: none; }
+body.make #tabai .chat { width: auto; flex: 1; border-left: 0;
+  background: #14161b; color: #e8e6e1; min-height: 0; }
+body.make #tabai .chat[hidden] { display: none; }
+
+/* A layout the AI is proposing, and what it would change. Rendered before it is
+   applied, because a model asked to add a hairpin can quietly rewrite four
+   other corners on the way past and a document arriving whole gives no clue. */
+body.make .diff { margin-top: 7px; border-radius: 5px; overflow: hidden;
+  border: 1px solid rgba(255,255,255,.12); }
+body.make .diff .drow { display: flex; gap: 7px; padding: 3px 8px;
+  font-family: var(--mono); font-size: 11px; }
+body.make .diff .drow i { width: 9px; flex: none; font-style: normal;
+  opacity: .8; }
+body.make .diff .add { background: rgba(80,200,120,.14); color: #a6e9c0; }
+body.make .diff .del { background: rgba(232,69,60,.16); color: #ffb3aa; }
+body.make .diff .same { color: #7f8794; }
+body.make .diff .more { padding: 3px 8px; font-family: var(--mono);
+  font-size: 10px; color: #7f8794; }
+body.make .msg .apply { margin-top: 7px; font-family: var(--display);
+  font-size: 12px; text-transform: uppercase; letter-spacing: .05em;
+  font-weight: 700; padding: 6px 12px; border-radius: 4px; cursor: pointer;
+  color: #fff; background: var(--red); border: 1px solid var(--red); }
+body.make .msg .apply.done { background: #2f7a4f; border-color: #2f7a4f; }
+/* ---- the scenery library ---- */
+body.make .kit { display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+  padding: 0 14px 8px; }
+body.make .kit button { font-family: var(--mono); font-size: 10.5px;
+  padding: 6px 7px; border-radius: 3px; cursor: pointer; text-align: left;
+  border: 1px solid rgba(29,29,31,.2); background: #fff; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.make .kit button:hover { border-color: var(--ink); background: #f6f4ef; }
+/* The one model a lap time can feel is marked as such in the library, not
+   discovered after it has been placed. */
+body.make .kit button.solid { border-color: rgba(192,24,43,.45);
+  color: var(--red); }
+body.make .placed { list-style: none; margin: 0; padding: 0 0 6px; }
+body.make .placed li { display: flex; align-items: center; gap: 8px;
+  padding: 5px 14px; font-family: var(--mono); font-size: 11.5px;
+  cursor: pointer; border-left: 3px solid transparent; }
+body.make .placed li:hover { background: #f6f4ef; }
+body.make .placed li.sel { background: rgba(232,69,60,.09);
+  border-left-color: var(--red-soft); }
+body.make .placed li b { font-weight: 400; color: var(--ink); }
+body.make .placed li span { margin-left: auto; color: var(--ink-soft);
+  font-variant-numeric: tabular-nums; }
+body.make .placed li button { flex: none; width: 18px; height: 18px; padding: 0;
+  line-height: 1; font-size: 13px; cursor: pointer; color: var(--ink-soft);
+  border: 1px solid rgba(29,29,31,.18); border-radius: 3px; background: #fff; }
+body.make .placed li button:hover { border-color: var(--red); color: var(--red); }
+/* ---- publishing ---- */
+body.make .pub { position: fixed; inset: 0; z-index: 60; display: grid;
+  place-items: center; background: rgba(14,16,20,.55); padding: 24px; }
+body.make .pub[hidden] { display: none; }
+body.make .pubcard { position: relative; background: #fff; border-radius: 10px;
+  width: min(560px, 100%); max-height: 86vh; overflow: auto;
+  padding: 24px 26px 20px; box-shadow: 0 30px 70px -30px rgba(0,0,0,.7); }
+body.make .pubx { position: absolute; top: 12px; right: 14px; width: 26px;
+  height: 26px; border: 0; background: none; font-size: 22px; line-height: 1;
+  cursor: pointer; color: var(--ink-soft); }
+body.make .pubcard h2 { font-family: var(--display); font-size: 26px;
+  margin: 0 0 4px; padding: 0; position: static; background: none;
+  letter-spacing: -.01em; text-transform: none; color: var(--ink); }
+body.make .pubsub { margin: 0 0 18px; color: var(--ink-soft); font-size: 14px;
+  line-height: 1.5; }
+body.make .pubfields { display: grid; gap: 12px; margin-bottom: 18px; }
+body.make .pubfields label { font-family: var(--mono); font-size: 11px;
+  color: var(--ink-soft); display: grid; gap: 5px; }
+body.make .pubfields input[type=text] { font-family: var(--sans);
+  font-size: 15px; padding: 8px 10px; border-radius: 5px; color: var(--ink);
+  border: 1px solid rgba(29,29,31,.25); background: #fff; }
+body.make .pubfields .pips { display: flex; gap: 5px; }
+body.make .pubfields .pips button { width: 26px; height: 26px; padding: 0;
+  border-radius: 50%; cursor: pointer; border: 1px solid rgba(29,29,31,.22);
+  background: #fff; font-family: var(--mono); font-size: 11px; }
+body.make .pubfields .pips button.on { background: var(--red);
+  border-color: var(--red); color: #fff; }
+body.make .checks { list-style: none; margin: 0 0 4px; padding: 0; }
+body.make .checks li { display: flex; gap: 9px; padding: 6px 0;
+  font-size: 13.5px; line-height: 1.5; align-items: flex-start;
+  border-top: 1px solid rgba(29,29,31,.08); }
+body.make .checks li i { flex: none; width: 15px; font-style: normal;
+  font-weight: 700; text-align: center; }
+body.make .checks li.ok i { color: #2f7a4f; }
+body.make .checks li.no i { color: var(--red); }
+body.make .checks li.no { color: var(--ink); }
+body.make .checks li span { color: var(--ink-soft); }
+body.make .checks li b { font-weight: 400; color: var(--ink); }
+body.make .pubnotes { margin: 10px 0 0; display: flex; flex-direction: column;
+  gap: 6px; }
+body.make .pubacts { display: flex; align-items: center; gap: 9px;
+  margin-top: 18px; padding-top: 14px;
+  border-top: 1px solid rgba(29,29,31,.1); }
+body.make .pubmsg { flex: 1; font-size: 12.5px; color: var(--ink-soft); }
+body.make .pubmsg.bad { color: var(--red); }
+body.make .pubmsg.good { color: #2f7a4f; }
+body.make .pubacts button { font-family: var(--display); font-size: 14px;
+  text-transform: uppercase; letter-spacing: .05em; font-weight: 700;
+  padding: 9px 16px; border-radius: 5px; cursor: pointer;
+  border: 1px solid rgba(29,29,31,.25); background: #fff; color: var(--ink); }
+body.make .pubacts button.go { background: var(--red); border-color: var(--red);
+  color: #fff; }
+body.make .pubacts button:disabled { opacity: .45; cursor: default; }
+</style>
+{% endblock %}
+
+{% block body %}
+{% if not shape %}
+{# The start-from screen. Five real tracks, drawn from their own ribbons. #}
+<div class="pick"><div class="pick-inner">
+  <h1>Make a track</h1>
+  <p class="sub">Start from a shape and change it. Nothing here needs an account
+    — you can build it and drive it first.</p>
+  <div class="shapes" id="shapes"></div>
+</div></div>
+{% else %}
+<div class="make-wrap">
+  <div class="pane left">
+    <h2>Moves</h2>
+    <ul id="moves"></ul>
+    <div class="add" id="add"></div>
+  </div>
+
+  <div class="view">
+    <canvas id="gl"></canvas>
+    <div class="spin" id="spin">updating</div>
+    <div class="err" id="err"><b>That did not build</b><span id="errtext"></span></div>
+    <div class="hud" id="hud"></div>
+    <div class="acts">
+      <button type="button" id="ride" class="quiet"
+              title="Fly the camera round the lap from the driver's seat (V) - a palette is judged in motion, not in a still"
+              >Ride it</button>
+      <button type="button" id="frame" class="quiet"
+              title="See the whole track (F frames just the move you are on)"
+              >View all</button>
+      <button type="button" id="save" class="quiet"
+              title="Keep this track (⌘S)">Save</button>
+      <button type="button" id="undo" title="Undo (⌘Z)">Undo</button>
+      <button type="button" class="go" id="drive">&#9654; Drive</button>
+    </div>
+  </div>
+
+  <div class="pane right">
+    {# Two tabs and no third: the move you are on, and how the whole thing
+       looks. Not a modal, because a palette is judged against the road - you
+       want the same view behind both. #}
+    <div class="tabs">
+      <button type="button" class="tab on" data-tab="move">Move</button>
+      <button type="button" class="tab" data-tab="look">Look</button>
+      <button type="button" class="tab" data-tab="scenery">Scenery</button>
+      <button type="button" class="tab" data-tab="ai">AI</button>
+    </div>
+    <div id="tabmove">
+      <h2 id="insph">Nothing selected</h2>
+      <div id="insp"></div>
+    </div>
+    <div id="tablook" hidden><div id="look"></div></div>
+    <div id="tabscenery" hidden><div id="scenery"></div></div>
+    {# The chat is a tab and not a panel inside the code sheet, because it helps
+       with the *layout* as well as the scenery - and laying out a track is done
+       looking at the moves list and the world, neither of which is visible with
+       a sheet up. #}
+    <div id="tabai" hidden>
+    <div class="chat" id="chat">
+      <div class="chathead">
+        <select id="aiProvider" title="Whose model to ask"></select>
+        <select id="aiModel" title="Which model"></select>
+        <button type="button" id="aiKeyBtn" title="Your API key, kept in this browser only">Key</button>
+      </div>
+      <div class="keyrow" id="aiKeyRow" hidden>
+        <input type="password" id="aiKey" placeholder="Paste your API key"
+               autocomplete="off" spellcheck="false">
+        <button type="button" id="aiKeySave">Save</button>
+        <p class="keynote" id="aiKeyNote"></p>
+      </div>
+      <div class="msgs" id="aiMsgs"></div>
+      <form class="composer" id="aiForm">
+        <textarea id="aiInput" rows="2" placeholder="Put hangars along the back straight&#10;(&#8984;&#8629; to send)"></textarea>
+        <button type="submit" id="aiSend">Send</button>
+      </form>
+    </div>
+    </div>
+  </div>
+
+  <div class="code" id="codePane" hidden>
+    <div class="codebar">
+      <b>Scenery code</b>
+      <span class="cstat" id="codeStat">not run yet</span>
+      <span class="cgrow"></span>
+      <button type="button" id="codeSpec"
+              title="Puts the whole API, the rules and two worked examples on your clipboard. Paste it to your AI first - it has never seen this API.">Copy API for your AI</button>
+      <button type="button" id="codeAsk" class="go">Ask AI</button>
+      <button type="button" id="codeClose" title="Close (Esc)">&times;</button>
+    </div>
+    <div class="codebody">
+      <div class="codeedit">
+        <textarea id="codeText" spellcheck="false" autocapitalize="off"
+                  autocomplete="off" wrap="off"></textarea>
+      </div>
+    </div>
+    <div class="codeerr" id="codeErr" hidden>
+      <div class="cehead"><b id="codeErrKind">Error</b>
+        <button type="button" id="codeErrCopy">&#10697; copy for your AI</button></div>
+      <pre id="codeErrText"></pre>
+    </div>
+  </div>
+
+  {# The publish sheet. Every line in it is an existing check in
+     `tracks/checks.py` or `drive/tests/`, run per document instead of at import
+     - so this is the same bar the nineteen are held to, with its output written
+     for the person who caused it. #}
+  <div class="pub" id="pubPane" hidden>
+    <div class="pubcard">
+      <button type="button" class="pubx" id="pubClose" title="Close">&times;</button>
+      <h2 id="pubTitle">Publish</h2>
+      <p class="pubsub" id="pubSub"></p>
+      <div class="pubfields">
+        <label>Name<input type="text" id="pubName" maxlength="60"></label>
+        <label>How hard is it?
+          <span class="pips" id="pubPips"></span></label>
+      </div>
+      <ul class="checks" id="pubChecks"></ul>
+      <div class="pubnotes" id="pubNotes"></div>
+      <div class="pubacts">
+        <span class="pubmsg" id="pubMsg"></span>
+        <button type="button" id="pubSave">Save</button>
+        <button type="button" id="pubSubmit" class="go">Submit for review</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="strip">
+    <svg id="prof" viewBox="0 0 1000 52" preserveAspectRatio="none"
+         role="img" aria-label="Height of the road along the lap"></svg>
+    <div class="legend"><span>start</span>
+      <span id="proflabel">height along the lap &mdash; read only</span>
+      <span>flag</span></div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.DRIVE_TUNING = {{ tuning_json|safe }};
+  window.MAKE = {
+    shape: {{ (shape or '')|tojson }},
+    shapes: {{ shapes_json|safe }},
+    doc:    {{ doc_json|safe }},
+    track:  {{ track_json|safe }},
+    caps:   {{ caps_json|safe }},
+    looks:  {{ looks_json|safe }},
+    fallback: {{ default_pal_json|safe }},
+    vocab:  {{ vocab_json|safe }},
+    signedIn: {{ 'true' if user else 'false' }}
+  };
+</script>
+<script type="module" src="{{ url_for('static', filename='js/make.js') }}?v={{ asset_version }}"></script>
+{% endblock %}

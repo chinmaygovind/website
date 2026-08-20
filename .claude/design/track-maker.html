@@ -1,0 +1,794 @@
+<title>Drive Track Maker</title>
+<style>
+:root{
+  --paper:#e6eaee; --card:#f4f7f9; --sunk:#dbe2e9; --rule:#c4ccd6;
+  --ink:#171b21; --ink-2:#57606d; --ink-3:#8a939f;
+  --accent:#cf3a31; --accent-bg:#f7e2e0; --accent-ink:#fff;
+  --flag:#a97a12; --flag-bg:#f7eed6;
+  --go:#2f7355; --go-bg:#dfeee7;
+  --asphalt:#4d5769; --kerb:#f2ece4;
+  --sky-1:#c8dae7; --sky-2:#a9c9e6; --grass:#4ea363;
+  --shadow:0 1px 0 rgba(23,27,33,.05), 0 8px 28px -18px rgba(23,27,33,.35);
+  --display:"Avenir Next Condensed","HelveticaNeue-CondensedBold","Arial Narrow",ui-sans-serif,system-ui,sans-serif;
+  --body:Charter,"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#14171c; --card:#1b1f26; --sunk:#22272f; --rule:#2c323b;
+    --ink:#e5e9ee; --ink-2:#98a2af; --ink-3:#68717d;
+    --accent:#e8453c; --accent-bg:#33201f; --accent-ink:#fff;
+    --flag:#f2c94c; --flag-bg:#302819;
+    --go:#5cb37a; --go-bg:#1a2b22;
+    --asphalt:#3b4352; --kerb:#e8e2da;
+    --sky-1:#3a5878; --sky-2:#27415c; --grass:#357a48;
+    --shadow:0 1px 0 rgba(0,0,0,.3), 0 10px 30px -20px rgba(0,0,0,.9);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#14171c; --card:#1b1f26; --sunk:#22272f; --rule:#2c323b;
+  --ink:#e5e9ee; --ink-2:#98a2af; --ink-3:#68717d;
+  --accent:#e8453c; --accent-bg:#33201f; --accent-ink:#fff;
+  --flag:#f2c94c; --flag-bg:#302819;
+  --go:#5cb37a; --go-bg:#1a2b22;
+  --asphalt:#3b4352; --kerb:#e8e2da;
+  --sky-1:#3a5878; --sky-2:#27415c; --grass:#357a48;
+  --shadow:0 1px 0 rgba(0,0,0,.3), 0 10px 30px -20px rgba(0,0,0,.9);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:var(--body); font-size:17px; line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1080px; margin:0 auto; padding:0 24px 96px}
+.col{max-width:65ch}
+
+/* kerb stripe: a road's edge, used to mark a section's edge */
+.kerb{
+  width:5px; height:100%; min-height:26px; flex:0 0 5px; border-radius:1px;
+  background:repeating-linear-gradient(135deg,var(--accent) 0 6px,var(--kerb) 6px 12px);
+}
+
+header.top{padding:72px 0 44px; border-bottom:1px solid var(--rule)}
+.eyebrow{
+  font-family:var(--mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--ink-3); margin:0 0 20px;
+}
+h1{
+  font-family:var(--display); font-weight:700; letter-spacing:-.005em;
+  font-size:clamp(46px,8vw,84px); line-height:.94; margin:0 0 22px;
+  text-transform:uppercase; text-wrap:balance;
+}
+.lede{font-size:21px; line-height:1.5; color:var(--ink-2); margin:0; max-width:60ch}
+.lede strong{color:var(--ink); font-weight:600}
+
+section{padding:56px 0 0}
+.head{display:flex; align-items:stretch; gap:14px; margin:0 0 22px}
+h2{
+  font-family:var(--display); text-transform:uppercase; letter-spacing:.01em;
+  font-size:clamp(26px,3.4vw,36px); line-height:1; margin:0; font-weight:700;
+  align-self:center; text-wrap:balance;
+}
+h3{
+  font-family:var(--mono); font-size:12px; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--ink-2); margin:34px 0 12px; font-weight:600;
+}
+p{margin:0 0 16px}
+a{color:var(--accent)}
+code{font-family:var(--mono); font-size:.87em; background:var(--sunk); padding:.1em .34em; border-radius:3px}
+strong{font-weight:600}
+em{font-style:italic}
+ul,ol{margin:0 0 18px; padding-left:1.3em}
+li{margin:0 0 9px}
+li::marker{color:var(--ink-3)}
+hr{border:0; border-top:1px solid var(--rule); margin:44px 0}
+
+/* decided chip */
+.chip{
+  display:inline-flex; align-items:center; gap:7px; font-family:var(--mono);
+  font-size:10.5px; letter-spacing:.12em; text-transform:uppercase;
+  padding:4px 9px; border-radius:3px; background:var(--accent-bg); color:var(--accent);
+  border:1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  vertical-align:2px;
+}
+.chip.mine{background:var(--flag-bg); color:var(--flag); border-color:color-mix(in srgb, var(--flag) 34%, transparent)}
+.chip.ok{background:var(--go-bg); color:var(--go); border-color:color-mix(in srgb, var(--go) 30%, transparent)}
+
+/* settled grid */
+.settled{display:grid; grid-template-columns:repeat(auto-fit,minmax(238px,1fr)); gap:1px; background:var(--rule); border:1px solid var(--rule); border-radius:5px; overflow:hidden}
+.settled div{background:var(--card); padding:15px 17px}
+.settled dt{font-family:var(--mono); font-size:10.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3); margin:0 0 6px}
+.settled dd{margin:0; font-size:15.5px; line-height:1.42}
+
+/* panels that break the column */
+.panel{
+  background:var(--card); border:1px solid var(--rule); border-radius:6px;
+  box-shadow:var(--shadow); margin:26px 0 30px; overflow:hidden;
+}
+.panel-bar{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:9px 14px; border-bottom:1px solid var(--rule); background:var(--sunk);
+  font-family:var(--mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-2);
+}
+.panel-body{padding:18px}
+.cap{font-family:var(--mono); font-size:11.5px; line-height:1.5; color:var(--ink-3); margin:-16px 0 30px}
+
+/* the editor mock */
+.editor{display:grid; grid-template-columns:220px 1fr 232px; min-height:344px}
+@media (max-width:860px){.editor{grid-template-columns:1fr}}
+.moves{border-right:1px solid var(--rule); padding:12px 0; background:var(--card)}
+.moves-h,.insp-h{font-family:var(--mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase; color:var(--ink-3); padding:0 14px 9px}
+.mv{display:flex; align-items:center; gap:9px; padding:6px 14px; font-family:var(--mono); font-size:12.5px; color:var(--ink-2)}
+.mv .g{color:var(--ink-3); cursor:grab}
+.mv.sel{background:var(--accent-bg); color:var(--accent); box-shadow:inset 3px 0 0 var(--accent)}
+.mv.gate{color:var(--flag)}
+.mv .n{margin-left:auto; font-variant-numeric:tabular-nums; color:var(--ink-3)}
+.mv.sel .n{color:var(--accent)}
+.view{position:relative; background:linear-gradient(180deg,var(--sky-1),var(--sky-2)); overflow:hidden}
+.view svg{display:block; width:100%; height:100%}
+.hud{
+  position:absolute; left:12px; bottom:10px; display:flex; gap:8px; align-items:center;
+  font-family:var(--mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase;
+}
+.hud span{background:rgba(0,0,0,.42); color:#fff; padding:4px 8px; border-radius:3px; backdrop-filter:blur(3px)}
+.drive{
+  position:absolute; right:12px; bottom:10px; background:var(--accent); color:var(--accent-ink);
+  font-family:var(--display); text-transform:uppercase; letter-spacing:.06em; font-weight:700;
+  font-size:15px; padding:7px 16px; border-radius:4px; border:0;
+}
+.insp{border-left:1px solid var(--rule); padding:12px 0; background:var(--card)}
+.row{padding:5px 14px; font-family:var(--mono); font-size:11.5px; color:var(--ink-2)}
+.row .lbl{display:flex; justify-content:space-between; margin-bottom:5px}
+.row .lbl b{color:var(--ink); font-weight:600; font-variant-numeric:tabular-nums}
+.slider{height:3px; background:var(--sunk); border-radius:2px; position:relative}
+.slider i{position:absolute; top:-3.5px; width:10px; height:10px; border-radius:50%; background:var(--accent)}
+.seg{display:flex; gap:5px; padding:8px 14px 4px; flex-wrap:wrap}
+.seg b,.seg s{
+  font-family:var(--mono); font-size:10.5px; padding:4px 8px; border-radius:3px;
+  border:1px solid var(--rule); color:var(--ink-3); text-decoration:none; font-weight:400;
+}
+.seg b{background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:600}
+
+/* height strip */
+.strip{border-top:1px solid var(--rule); background:var(--sunk); padding:10px 14px 8px; grid-column:1/-1}
+.strip svg{display:block; width:100%; height:56px}
+.strip .lg{display:flex; justify-content:space-between; font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3); margin-top:4px}
+
+pre{
+  margin:0; font-family:var(--mono); font-size:12.5px; line-height:1.62;
+  overflow-x:auto; color:var(--ink-2); tab-size:2;
+}
+pre b{color:var(--ink); font-weight:600}
+pre i{color:var(--ink-3); font-style:normal}
+pre u{color:var(--accent); text-decoration:none}
+
+table{width:100%; border-collapse:collapse; font-size:14.5px}
+.tw{overflow-x:auto; margin:22px 0 28px; border:1px solid var(--rule); border-radius:5px}
+th,td{text-align:left; padding:9px 13px; border-bottom:1px solid var(--rule); vertical-align:top}
+th{font-family:var(--mono); font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3); background:var(--sunk); font-weight:600; white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td code{background:none; padding:0; color:var(--ink); font-weight:600}
+td.n{font-variant-numeric:tabular-nums; white-space:nowrap}
+
+/* checklist */
+.check{list-style:none; padding:0; margin:0}
+.check li{display:flex; gap:11px; align-items:baseline; margin:0 0 10px; font-size:15.5px}
+.check .m{font-family:var(--mono); font-size:13px; flex:0 0 auto; width:15px}
+.check .y .m{color:var(--go)} .check .w .m{color:var(--flag)}
+.check code{font-size:.82em}
+
+/* state machine */
+.flow{display:flex; flex-wrap:wrap; align-items:center; gap:9px; font-family:var(--mono); font-size:11.5px; letter-spacing:.06em; text-transform:uppercase}
+.flow b{padding:6px 11px; border:1px solid var(--rule); border-radius:3px; background:var(--card); font-weight:600; color:var(--ink)}
+.flow b.live{border-color:var(--go); color:var(--go)}
+.flow b.q{border-color:var(--flag); color:var(--flag)}
+.flow i{color:var(--ink-3); font-style:normal}
+
+/* build order */
+.phase{display:grid; grid-template-columns:44px 1fr; gap:0 18px; border-top:1px solid var(--rule); padding:18px 0}
+.phase:last-of-type{border-bottom:1px solid var(--rule)}
+.phase .num{font-family:var(--display); font-size:30px; line-height:1; color:var(--accent); font-weight:700}
+.phase h4{font-family:var(--display); text-transform:uppercase; font-size:19px; letter-spacing:.02em; margin:0 0 6px; font-weight:700}
+.phase p{margin:0 0 8px; font-size:15.5px; color:var(--ink-2)}
+.phase .out{font-family:var(--mono); font-size:11.5px; color:var(--ink-3)}
+.phase .out b{color:var(--go); font-weight:600}
+
+blockquote{
+  margin:24px 0 28px; padding:16px 20px; background:var(--flag-bg);
+  border-left:4px solid var(--flag); border-radius:0 5px 5px 0; font-size:16px;
+}
+blockquote p:last-child{margin:0}
+blockquote strong{color:var(--ink)}
+
+footer{margin-top:64px; padding-top:24px; border-top:1px solid var(--rule); font-family:var(--mono); font-size:11.5px; color:var(--ink-3); line-height:1.7}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
+</style>
+
+<div class="wrap">
+
+<header class="top">
+  <p class="eyebrow">Drive &middot; design &middot; 19 Aug 2026</p>
+  <h1>Drive Track<br>Maker</h1>
+  <p class="lede">A track becomes <strong>a list of moves, a palette, and scenery a player writes as data or as code</strong>, stored as a row and replayed through the real <code>Builder</code>. No player writes code, nothing new decides what a road is, and <strong>one function</strong> &mdash; <code>tracks.get()</code> &mdash; is what hands a player's track the boards, the ghosts, the rooms and the share cards it already gives Spa.</p>
+</header>
+
+<section>
+  <div class="head"><span class="kerb"></span><h2>Settled</h2></div>
+  <div class="col"><p>Sixteen decisions, from three rounds. Everything after this follows from them.</p></div>
+  <dl class="settled">
+    <div><dt>Editor</dt><dd>A list of moves you stack up, live 3D beside it</dd></div>
+    <div><dt>Elevation</dt><dd><code>rise</code> on the segment, in its inspector</dd></div>
+    <div><dt>Look</dt><dd>Full palette editor, every key, for everyone</dd></div>
+    <div><dt>First open</dt><dd>Pick a shape: Sprint, Circuit, Mountain, Stunt, Blank</dd></div>
+    <div><dt>Vocabulary</dt><dd>All of it &mdash; air, surfaces, toys, world</dd></div>
+    <div><dt>Counts for</dt><dd>Everything the pool gets, rooms and anti-cheat included</dd></div>
+    <div><dt>Storage</dt><dd>DB rows, plus a hand tool to adopt the great ones</dd></div>
+    <div><dt>Access</dt><dd>Anyone can build; log in to save</dd></div>
+    <div><dt>Publishing</dt><dd>Nothing public until you approve it</dd></div>
+    <div><dt>Submit gate</dt><dd>You must set a clean lap on it first</dd></div>
+    <div><dt>Editing live</dt><dd>Cosmetic free; a moved corner re-queues</dd></div>
+    <div><dt>Review</dt><dd>Just drive it</dd></div>
+    <div><dt>Difficulty</dt><dd>Author picks, you overrule</dd></div>
+    <div><dt>Forking</dt><dd>Fork anything live, always credited</dd></div>
+    <div><dt>Cover art</dt><dd>Auto-framed by SCAN, author can re-shoot</dd></div>
+    <div><dt>Placement</dt><dd>A Community shelf under the nineteen</dd></div>
+    <div><dt>Scenery</dt><dd>Placements <em>and</em> code, sandboxed and baked</dd></div>
+    <div><dt>Code mode</dt><dd>Everyone, behind a toggle</dd></div>
+    <div><dt>AI help</dt><dd>Copy the spec; bring your own key, any provider</dd></div>
+    <div><dt>Source</dt><dd>Public once you approve it</dd></div>
+  </dl>
+</section>
+
+<section>
+  <div class="head"><span class="kerb"></span><h2>The shape of it</h2></div>
+  <div class="col">
+    <p>A user track is <strong>one row</strong>: a name, an author, a JSON list of moves, a JSON palette, a status. Loading one means replaying its moves through <code>tracks/builder.py</code> &mdash; the same turtle that builds Spa &mdash; and handing the result to the same <code>_one()</code> that derives medals, pole side, gate ceiling and the ideal lap.</p>
+    <p>So a player's track is not a second kind of track. It is the same dict, assembled from a different document.</p>
+  </div>
+
+  <div class="panel">
+    <div class="panel-bar"><span>load path</span><span>one code path, two documents</span></div>
+    <div class="panel-body">
+<pre><i># the pool, today</i>
+tracks/spa/track.py   <i>&rarr;</i> build(b) <i>&rarr;</i> <b>Builder</b> <i>&rarr;</i> ribbon <i>&rarr;</i> _one() <i>&rarr;</i> track dict
+                            <i>&uarr;</i>
+<i># a player's track, new</i>
+drive_user_tracks row <i>&rarr;</i> <u>replay(moves)</u> ────┘
+
+<i>both end up in</i> <b>tracks.get(slug)</b> <i>&mdash; and that is called from 20+ places in
+app.py: /solo, /api/track, /api/run, /api/start, /api/ghost, rooms,
+replays, share cards, robots.txt, sitemap.xml, the switcher.</i></pre>
+    </div>
+  </div>
+  <p class="cap">Teach <code>tracks.get</code> to resolve a live user slug and every one of those routes works with no further change. That is the whole trick, and it is why this is a small feature rather than a second game.</p>
+
+  <div class="col">
+    <h3>What never crosses the wire</h3>
+    <p>No user Python, ever. <strong>User JavaScript runs in exactly one place: a sandbox in the editor, while the author is looking at it.</strong> It never runs on a path that matters. The three paths that made me say no at first &mdash; inlined into the play page, fetched by the switcher, bundled into the QuickJS anti-cheat &mdash; all consume <em>baked geometry</em>, not code. See <em>Scenery in code</em> below for how.</p>
+    <p>Everything else rides the same rails the palette does: <code>_track_payload</code> sends the track dict to the page and <code>jsrt</code> sends it to QuickJS, so data on the dict reaches the browser and the anti-cheat with no new plumbing.</p>
+  </div>
+</section>
+
+<section>
+  <div class="head"><span class="kerb"></span><h2>The moves document</h2></div>
+  <div class="col">
+    <blockquote><p><strong>A correction to what I told you first.</strong> I said <code>Builder.sections</code> already maps onto an editor, because of its <em>&ldquo;authored primitives, in order &mdash; for an editor&rdquo;</em> comment. It doesn't. <code>width()</code>, <code>rail()</code> and <code>bank()</code> append nothing; <code>crest()</code> records itself as an ordinary <code>straight</code>, so a jump and a hill are indistinguishable in it; and checkpoints live in <code>gates</code>, never in <code>sections</code>. It is a lossy positional index built for the closure solver. The editor needs its own complete schema, and <code>sections</code> stays exactly what it is.</p></blockquote>
+    <p>One deliberate difference from the turtle: <strong>every move carries its own width, edges and bank</strong> rather than inheriting sticky state. In a text file <code>b.width(13)</code> reads fine; in a list you can reorder, deleting one move silently rewidens nine others. The replayer converts declarative back to sticky by calling <code>b.width()</code> / <code>b.rail()</code> / <code>b.bank()</code> before each move when the value changes.</p>
+  </div>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Move</th><th>Fields</th><th>Builds</th><th>Group</th></tr></thead>
+      <tbody>
+        <tr><td><code>straight</code></td><td class="n">len, rise</td><td>eased hill, or flat</td><td>core</td></tr>
+        <tr><td><code>arc</code></td><td class="n">deg, rad, rise, bank</td><td>any corner, any radius</td><td>core</td></tr>
+        <tr><td><code>cp</code></td><td class="n">pre, post</td><td>checkpoint + its run-up</td><td>core</td></tr>
+        <tr><td><code>crest</code></td><td class="n">rise, len</td><td>un-eased crease: launches you</td><td>air</td></tr>
+        <tr><td><code>hump</code></td><td class="n">rise, len</td><td>up then straight back down</td><td>air</td></tr>
+        <tr><td><code>jump</code></td><td class="n">rise, gap, drop, kick, land</td><td>kicker + hole + landing</td><td>air</td></tr>
+        <tr><td><code>gap</code></td><td class="n">len, drop, bow</td><td>no road at all</td><td>air</td></tr>
+        <tr><td><code>loop</code></td><td class="n">rad, shift, dir</td><td>full vertical loop</td><td>surfaces</td></tr>
+        <tr><td><code>pipe</code> / <code>flat</code></td><td class="n">depth, floor, side</td><td>half-pipe walls, on / off</td><td>surfaces</td></tr>
+        <tr><td><code>boost</code></td><td class="n">len, rise, ease</td><td>a pad. Straights only</td><td>toys</td></tr>
+        <tr><td><code>bounce</code></td><td class="n">len, rise</td><td>a mushroom cap</td><td>toys</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="col">
+    <p>Carried on every move: <code>w</code> (width), <code>rail</code> (<code>''</code>, <code>'l'</code>, <code>'r'</code>, <code>'lr'</code>), and <code>free</code> for a closed lap's solver. Carried on the track: <code>name</code>, <code>difficulty</code>, <code>ground</code>, <code>closed</code>, <code>exposed</code>, <code>origin</code>, the palette, and the scenery list.</p>
+  </div>
+
+  <div class="panel">
+    <div class="panel-bar"><span>drive_user_tracks.moves</span><span>a fork of Chicane Park's opening</span></div>
+    <div class="panel-body">
+<pre>{
+  <b>"v"</b>: 1,
+  <b>"name"</b>: "Foggy Ridge",  <b>"difficulty"</b>: 3,
+  <b>"ground"</b>: -1.2,  <b>"closed"</b>: false,  <b>"width"</b>: 11.0,
+  <b>"moves"</b>: [
+    {"t": <u>"start"</u>,    "run": 44},
+    {"t": <u>"arc"</u>,      "deg": -42, "rad": 30},
+    {"t": <u>"arc"</u>,      "deg":  48, "rad": 26},
+    {"t": <u>"straight"</u>, "len": 18},
+    {"t": <u>"cp"</u>},
+    {"t": <u>"arc"</u>,      "deg": 150, "rad": 15},        <i>// hairpin</i>
+    {"t": <u>"straight"</u>, "len": 40},
+    {"t": <u>"cp"</u>},
+    {"t": <u>"hump"</u>,     "rise": 3.4, "len": 30, "w": 13.0},
+    {"t": <u>"jump"</u>,     "rise": 2.4, "gap": 20, "drop": 8, "land": 34,
+                    "rail": "lr"},
+    {"t": <u>"finish"</u>}
+  ],
+  <b>"pal"</b>: { "road": 5199209, "kerb": 15920356, ... },
+  <b>"scenery"</b>: [
+    {"o": <u>"stand"</u>, "at": [0.08, 0.14], "side": -1, "tiers": 7},
+    {"o": <u>"shed"</u>,  "at": [0.42, 0.50], "side":  1, "off": 40, "h": 12},
+    {"o": <u>"wall"</u>,  "at": [0.61, 0.67], "side":  1, "off": 9}  <i>// collidable</i>
+  ]
+}</pre>
+    </div>
+  </div>
+  <p class="cap">Colours are stored as the packed integers the palette contract already uses, so a row goes to the browser and to QuickJS with no conversion. <code>"v": 1</code> is there so a schema change five months from now can migrate rows rather than break them.</p>
+</section>
+
+<section>
+  <div class="head"><span class="kerb"></span><h2>The editor</h2></div>
+  <div class="col">
+    <p>One screen. Moves down the left, the world in the middle, the selected move's numbers on the right, the height of the whole lap along the bottom. No modes except <strong>Drive</strong> and the camera you take a cover shot with.</p>
+  </div>
+
+  <div class="panel">
+    <div class="panel-bar"><span>/make</span><span>Foggy Ridge &mdash; draft</span></div>
+    <div class="editor">
+      <div class="moves">
+        <p class="moves-h">Moves</p>
+        <div class="mv"><span class="g">&#8801;</span> start <span class="n">44</span></div>
+        <div class="mv"><span class="g">&#8801;</span> left <span class="n">42&deg; r30</span></div>
+        <div class="mv"><span class="g">&#8801;</span> right <span class="n">48&deg; r26</span></div>
+        <div class="mv gate"><span class="g">&#8801;</span> checkpoint <span class="n">1</span></div>
+        <div class="mv"><span class="g">&#8801;</span> hairpin <span class="n">150&deg; r15</span></div>
+        <div class="mv"><span class="g">&#8801;</span> straight <span class="n">40</span></div>
+        <div class="mv gate"><span class="g">&#8801;</span> checkpoint <span class="n">2</span></div>
+        <div class="mv sel"><span class="g">&#8801;</span> jump <span class="n">gap 20</span></div>
+        <div class="mv"><span class="g">&#8801;</span> straight <span class="n">34</span></div>
+        <div class="mv"><span class="g">&#8801;</span> finish</div>
+        <div class="seg"><b>+ turn</b><s>+ straight</s><s>+ hill</s><s>+ jump</s><s>+ loop</s><s>+ pad</s><s>&#9971; cp</s></div>
+      </div>
+
+      <div class="view">
+        <svg viewBox="0 0 520 344" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Preview of the track being edited, seen from above and behind">
+          <defs>
+            <linearGradient id="gnd" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="var(--grass)" stop-opacity=".55"/>
+              <stop offset="1" stop-color="var(--grass)" stop-opacity=".95"/>
+            </linearGradient>
+          </defs>
+          <rect x="0" y="150" width="520" height="194" fill="url(#gnd)"/>
+          <circle cx="404" cy="70" r="21" fill="#fff" opacity=".5"/>
+          <!-- kerb, road, centreline: the same path three times -->
+          <path d="M18 300 C 74 300 96 282 130 262 S 196 214 250 216 C 296 218 316 240 344 240"
+                fill="none" stroke="var(--accent)" stroke-width="31" stroke-linecap="round" opacity=".85"/>
+          <path d="M18 300 C 74 300 96 282 130 262 S 196 214 250 216 C 296 218 316 240 344 240"
+                fill="none" stroke="var(--asphalt)" stroke-width="26" stroke-linecap="round"/>
+          <path d="M18 300 C 74 300 96 282 130 262 S 196 214 250 216 C 296 218 316 240 344 240"
+                fill="none" stroke="var(--kerb)" stroke-width="1.6" stroke-dasharray="9 13" opacity=".6"/>
+          <!-- the gap, selected -->
+          <path d="M344 240 L 392 232" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-dasharray="5 5"/>
+          <!-- landing -->
+          <path d="M392 232 C 430 226 468 206 504 176"
+                fill="none" stroke="var(--accent)" stroke-width="27" stroke-linecap="round" opacity=".85"/>
+          <path d="M392 232 C 430 226 468 206 504 176"
+                fill="none" stroke="var(--asphalt)" stroke-width="22" stroke-linecap="round"/>
+          <!-- checkpoint gate -->
+          <path d="M243 200 L 257 232" stroke="var(--flag)" stroke-width="3.4" opacity=".95"/>
+          <!-- car -->
+          <path d="M126 258 l 11 5 -11 5 3 -5 z" fill="var(--kerb)" stroke="var(--ink)" stroke-width=".8"/>
+        </svg>
+        <div class="hud"><span>2840 units</span><span>~51s</span><span>6 cp</span></div>
+        <button class="drive" type="button">&#9654; Drive</button>
+      </div>
+
+      <div class="insp">
+        <p class="insp-h">Jump</p>
+        <div class="row"><div class="lbl">kicker rise <b>2.4</b></div><div class="slider"><i style="left:22%"></i></div></div>
+        <div class="row"><div class="lbl">gap <b>20</b></div><div class="slider"><i style="left:38%"></i></div></div>
+        <div class="row"><div class="lbl">drop <b>8.0</b></div><div class="slider"><i style="left:46%"></i></div></div>
+        <div class="row"><div class="lbl">landing <b>34</b></div><div class="slider"><i style="left:58%"></i></div></div>
+        <div class="row"><div class="lbl">width <b>13.0</b></div><div class="slider"><i style="left:52%"></i></div></div>
+        <div class="seg"><s>open edge</s><b>barrier both</b></div>
+        <div class="row" style="color:var(--go); margin-top:10px">&#10003; clears at 31.4 u/s</div>
+        <div class="row" style="color:var(--flag)">&#9888; lands 12u past level &mdash;<br>a shallower kicker flies further</div>
+      </div>
+
+      <div class="strip">
+        <svg viewBox="0 0 700 56" preserveAspectRatio="none" role="img" aria-label="Height of the road along the lap">
+          <line x1="0" y1="44" x2="700" y2="44" stroke="var(--rule)" stroke-width="1"/>
+          <polyline points="0,44 90,44 150,30 210,34 280,18 330,20 392,6 430,26 470,26 520,12 600,38 700,40"
+                    fill="none" stroke="var(--ink-2)" stroke-width="2"/>
+          <polyline points="392,6 430,26" fill="none" stroke="var(--accent)" stroke-width="3"/>
+          <circle cx="392" cy="6" r="3.4" fill="var(--accent)"/>
+        </svg>
+        <div class="lg"><span>start</span><span>height along the lap &mdash; read only</span><span>flag</span></div>
+      </div>
+    </div>
+  </div>
+  <p class="cap">Selecting a move flies the camera to it and highlights it in the world. The bottom strip is a display, never a control &mdash; but it is not decoration either: <code>track-defects.md</code> lists &ldquo;a profile that dives then climbs straight back up for no reason&rdquo; as a real defect, and it is invisible from a per-segment <code>rise</code> field.</p>
+
+  <div class="col">
+    <h3>Five shapes to start from <span class="chip">decided</span></h3>
+    <p>Sprint, Circuit, Mountain Climb, Stunt Park, Blank. Each is a short, real, drivable track with a matching palette &mdash; so the first thing anyone can do is press Drive, and every control on screen is already demonstrated by something in the list. I'd author these as ordinary rows and seed them, which means they are editable by you without a deploy.</p>
+    <p><strong>Circuit is the one to build first</strong> and the one to watch: it sets <code>closed = true</code>, so it pays <code>solver.close()</code> and can refuse. A player who drags a straight from 90 to 40 will break closure, and the editor has to say <em>&ldquo;this lap no longer meets itself, and I can stretch it 15% at most&rdquo;</em> rather than failing at save.</p>
+  </div>
+</section>
+
+<section>
+  <div class="head"><span class="kerb"></span><h2>The look, and the ceiling</h2></div>
+  <div class="col">
+    <p>You overrode my concern here, so: <strong>every palette key, exposed, for everyone.</strong> <code>look.check</code> already makes the two silent failures impossible &mdash; a missing required key can't ship, and a misspelled optional one is refused rather than ignored. What's left is taste, and taste gets warnings, not walls.</p>
+    <p>Two things make that work rather than just be permissive. First, <strong>nobody starts from a colour wheel</strong>: a new track arrives with a real palette from its starting shape, and a fork arrives with the palette of whatever it forked. Second, the preview is <strong>from the driver's seat, in motion</strong>, because your own log says a night palette can be beautiful in a still and unreadable at speed.</p>
+    <p>Every warning below is already written down in <code>docs/track-defects.md</code> or measurable by <code>tools/pool_stats.py</code>. The editor is just the first place they get said to the person who caused them.</p>
+  </div>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>What it says</th><th>Fires when</th><th>Because</th></tr></thead>
+      <tbody>
+        <tr><td>The plan view will read as one blob</td><td><code>road</code> and <code>ground</code> within a few points of <em>value</em></td><td>Lit and shadowless from above, two colours a few points apart are one colour</td></tr>
+        <tr><td>This road will go to mud</td><td>warm <code>light</code> over a neutral <code>road</code></td><td>Light colours convert sRGB&rarr;linear, vertex colours don't</td></tr>
+        <tr><td>The bounce is repainting your world</td><td><code>hemi.ground</code> saturated</td><td>It's the strongest number in any palette &mdash; a second key light, not a tint</td></tr>
+        <tr><td>The glow has eaten the dome</td><td>high <code>glowStrength</code>, low <code>glowFocus</code></td><td>0.85/4 turned a midnight track into pink dusk</td></tr>
+        <tr><td>This is a junkyard</td><td><code>density</code> outside 0&ndash;0.34</td><td>Sandy Cove's beach is 0.035; 0.10 was far too much</td></tr>
+        <tr><td>You can't see the next corner</td><td><code>fogFar</code> outside 780&ndash;2100</td><td>The pool's whole range, on 19 tracks</td></tr>
+        <tr><td>Your sky is flat</td><td>fewer than 6 <code>stops</code></td><td>Every good one has six to nine</td></tr>
+        <tr><td>Too dark to drive</td><td>luminance of road vs. sky under the key light</td><td>Judge by whether the next corner is legible, not by the screenshot</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="col">
+    <blockquote><p><strong>The honest answer to &ldquo;as beautiful as mine&rdquo;.</strong> With scenery as data (next section), a player can reach <strong>seventeen of your nineteen</strong>. Fourteen are a <code>track.py</code> and a <code>palette.py</code> and nothing else. Spa joins them, because its grandstands, pits, gantry, flags and hoardings are <em>already</em> a data block. Silverstone and Tokyo Drift join them too &mdash; hangars, a roof over the pits, city towers and two inside barriers are all placements, not shapes. What stays out is <strong>Costco</strong>, which puts solid geometry <em>over</em> the road, and <strong>Mount Joy</strong> and <strong>Shroom Street</strong>, which sculpt their own height fields. Those three are genuinely code &mdash; and with code mode a determined player can now reach a good deal of even those, which is the strongest argument for having it.</p></blockquote>
+    <p>Forking one of the three copies its moves and everything expressible, and drops <code>building</code>, <code>shore</code> and <code>rainbow*</code> with a line saying so. <code>terrain</code> and <code>furniture</code> both stay &mdash; both are data, both derived off the ribbon, both survive a layout change by construction.</p>
+  </div>
+</section>
+
+<section>
+  <div class="head"><span class="kerb"></span><h2>Scenery, without code</h2></div>
+  <div class="col">
+    <p>Read the five hand-written <code>scenery.js</code> files next to each other and they are the same file five times. Every one opens by defining the same four helpers, and then spends three hundred lines using only those:</p>
+    <ul>
+      <li><code>at(f)</code> &mdash; a fraction of the lap becomes a station index</li>
+      <li><code>spot(i, o)</code> &mdash; a world point <em>o</em> units to the road's right at station <em>i</em></li>
+      <li><code>ground(i, o)</code> &mdash; the height there, road-minus-drop inside the apron and the height field beyond it</li>
+      <li><code>face(a,b,c,d)</code> &mdash; a quad drawn <em>both</em> windings, because <code>MeshLambertMaterial</code> is <code>FrontSide</code> and a mirrored <code>side</code> reverses the winding</li>
+    </ul>
+    <p>So the entire spatial grammar of every building on this game is three words: <strong><code>at</code></strong>, <strong><code>side</code></strong>, <strong><code>off</code></strong>. Silverstone's load-bearing barrier &mdash; the only part of that file the stopwatch can see &mdash; is already written as <code>insideBarrier(0.122, 0.203)</code>. Spa's entire trackside is already a data block.</p>
+    <p>So: a player's scenery is <strong>a list of placements</strong>, and the interpreter is one engine-owned <code>props(ctx)</code> &mdash; a sixth implementation of the contract the five already share, driven by data instead of by hand.</p>
+  </div>
+
+  <div class="tw">
+    <table>
+      <thead><tr><th>Object</th><th>Placed by</th><th>What it is</th><th>Today</th></tr></thead>
+      <tbody>
+        <tr><td><code>stand</code></td><td class="n">at[2], side, off, tiers</td><td>Stepped seating under a flat roof</td><td>exists</td></tr>
+        <tr><td><code>pits</code></td><td class="n">at[2], side</td><td>A row of garages</td><td>exists</td></tr>
+        <tr><td><code>span</code></td><td class="n">at, h</td><td>A gantry over the road</td><td>exists</td></tr>
+        <tr><td><code>flags</code></td><td class="n">at[2], side, off, every, h</td><td>A run of flag poles, any design</td><td>exists</td></tr>
+        <tr><td><code>boards</code></td><td class="n">every, h</td><td>Hoardings along the barrier</td><td>exists</td></tr>
+        <tr><td><code>shed</code></td><td class="n">at[2], side, off, w, h</td><td>A plain building. Silverstone's hangars</td><td>generalise</td></tr>
+        <tr><td><code>tower</code></td><td class="n">at, side, off, w, h</td><td>A tall block. Tokyo's city</td><td>generalise</td></tr>
+        <tr><td><code>wall</code></td><td class="n">at[2], side, off, h</td><td><strong>Collidable.</strong> Silverstone's inside barrier, the Costco parapet</td><td>generalise</td></tr>
+        <tr><td><code>paint</code></td><td class="n">at[2], side, off, w, kind</td><td>Flat marks on the plate: runway, grid, spill, puddle</td><td>generalise</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="col">
+    <h3>Six defects stop being possible</h3>
+    <p>This is the part that makes the declarative path <em>better</em> than a hand-written file rather than merely safer. Each of these is a live entry in <code>docs/track-defects.md</code> currently looked for by eye, and each becomes structurally unreachable when the interpreter owns the helpers:</p>
+    <ul class="check">
+      <li class="y"><span class="m">&#10003;</span><span><strong>Hand-placed geometry that does not move when the road does.</strong> There is no way to write a world coordinate. Every placement is a fraction of the lap.</span></li>
+      <li class="y"><span class="m">&#10003;</span><span><strong>A quad wound the wrong way is invisible, and nothing says so.</strong> Users never write quads; <code>face()</code> draws both.</span></li>
+      <li class="y"><span class="m">&#10003;</span><span><strong>Geometry floating in the sky.</strong> Everything stands on <code>ground(i, o)</code>.</span></li>
+      <li class="y"><span class="m">&#10003;</span><span><strong>Scenery standing on nothing past the edge of the ground.</strong> The interpreter clamps to the plate and insets by the object's own footprint.</span></li>
+      <li class="y"><span class="m">&#10003;</span><span><strong>A <code>scenery.js</code> that throws can leave the suite green.</strong> Data does not throw, and <code>look.check</code>-style key validation refuses a typo rather than ignoring it.</span></li>
+      <li class="y"><span class="m">&#10003;</span><span><strong>The collider is missing on one path and nowhere else.</strong> One interpreter, reached identically by the page, the switcher and QuickJS. There is no per-path copy to miss.</span></li>
+    </ul>
+    <p>A seventh comes free: <code>stand</code> already refuses to build where another part of the lap is, using the same nearest-road test the armco and the run-off use. Every object in the list inherits that, so a player cannot lay a grandstand across a corner further round the lap &mdash; which is a thing that happened to La Source.</p>
+
+    <h3>The one that moves the stopwatch</h3>
+    <p><code>wall</code> is collider geometry (<code>KIND.WALL</code>), so it is the only object here a lap time can feel, and it is the one worth having: it is how Silverstone kills the cut across Luffield, and a ribbon <code>rail</code> is not available on a ground track. Three consequences, all of them already handled by decisions you have made:</p>
+    <ul>
+      <li>It reaches the anti-cheat automatically, because the placement list rides the track dict exactly as the palette does.</li>
+      <li><code>tools/cut_check.py</code> asks the collider, not the plan, so it sees a player's wall the same way it sees Silverstone's.</li>
+      <li>A wall laid <em>across</em> the road makes the track unfinishable &mdash; and the clean-lap gate you chose catches that empirically, before it can ever reach your queue.</li>
+    </ul>
+
+    <h3>What stays out of v1, and why</h3>
+    <p><strong>An interior with a roof over the road.</strong> Costco is one worked example, not a general rule: it sets <code>gate_ceil</code> to its full 14, needs the chase camera's 4.3-up and 11.6-behind cleared at every opening, and forced <code>SHELL_CEIL</code> and <code>DECK</code> to move together. That is a set of couplings to get right per track, and getting it wrong is a camera through a lintel rather than a warning.</p>
+    <p><strong>Sculpted height fields.</strong> Mount Joy's lower-envelope-of-cones and Shroom Street's excluded-station field are each a different rule, invented for one track. <code>pal.terrain</code> stays available; carving does not.</p>
+    <p><strong>Uploads of any kind.</strong> A hoarding takes 24 characters of plain text, filtered, painted by the fallback painter that already exists for a name not in <code>SPONSORS</code>. No image, no SVG, no logo &mdash; a board is a billboard on your domain, and the only safe version of that is type.</p>
+  </div>
+</section>
+
+<section>
+  <div class="head"><span class="kerb"></span><h2>Scenery in code</h2></div>
+  <div class="col">
+    <p>Nine objects cover most tracks. Code is for when they don't &mdash; and it is <strong>the same <code>ctx</code> the built-in objects are implemented against</strong>, so a player writing scenery and the engine drawing a grandstand are using one API.</p>
+    <p><strong>The rule that makes this safe is one sentence: code runs while you author, geometry ships.</strong> Untrusted JavaScript executes only in a sandbox in the editor. On submit, the geometry is baked to numbers and it is the numbers that go live &mdash; so the play page, the switcher and the QuickJS verifier never run a stranger's code.</p>
+  </div>
+
+  <div class="panel">
+    <div class="panel-bar"><span>authoring</span><span>&rarr; submit &rarr; production</span></div>
+    <div class="panel-body">
+<pre><i># in the editor, on every keystroke</i>
+your props(ctx) <i>&rarr;</i> <b>sandboxed iframe</b> <i>(opaque origin, no cookies,</i>
+                  <i>no same-origin fetch, no storage)</i>
+                  <i>&rarr;</i> <b>Worker</b> <i>+ three_stub.js &rarr;</i> postMessage
+                  <i>&rarr;</i> quads, colours, collider kinds <i>&rarr;</i> live 3D
+
+<i># on submit, once</i>
+baked buffer <i>&rarr;</i> <u>validated as numbers</u> <i>&rarr;</i> stored
+
+<i># forever after</i>
+play page      <i>&rarr;</i> baked buffer
+switcher       <i>&rarr;</i> baked buffer
+QuickJS verify <i>&rarr;</i> baked buffer      <i>&larr; no code, on any path</i></pre>
+    </div>
+  </div>
+  <p class="cap">The worker needs no three.js: <code>three_stub.js</code> already exists because the anti-cheat runs <code>trackmesh.js</code> headless, so the geometry code runs with the stub the verifier already uses. A timeout terminates the worker; a runaway loop costs the author a second and nobody else anything.</p>
+
+  <div class="col">
+    <h3>The one real vulnerability, and its fix</h3>
+    <p><code>KIND</code> in <code>trackmesh.js</code> is <code>{ROAD: 0, WALL: 1, OFFROAD: 2, BOOST: 3, BOUNCE: 4}</code>. A player's scenery may emit <strong><code>WALL</code> and <code>OFFROAD</code>, and nothing else</strong>, and that is not tidiness &mdash; it is the whole security boundary.</p>
+    <p>A user-emitted <code>BOOST</code> quad would be a boost pad baked into the track, and the verifier re-drives submitted laps <em>against that same collider</em> &mdash; so it would be a speed hack that comes with a certificate of authenticity. <code>BOUNCE</code> is the same trick with a trampoline. <code>ROAD</code> is worse in a quieter way: fake road the ground probe picks up, which is a floating surface the car drives on with no ribbon under it. Whitelist on the way in, at the validator, on numbers &mdash; never on trust in the code that produced them.</p>
+
+    <h3>Budgets, from the pool's own numbers</h3>
+    <p><code>test_scenery.py</code> pins every track's collider: the pool runs 534 to 13,188 triangles total, with wall counts from 100 (Chicane Park) to 2,020 (The Gauntlet). So:</p>
+    <ul>
+      <li><strong>Collider: 2,500 triangles.</strong> More than the busiest track in the pool.</li>
+      <li><strong>Mesh: 20,000 triangles.</strong> Tokyo Drift's city is the shape of thing this has to fit.</li>
+      <li><strong>Bake: 2 seconds, hard.</strong> Terminate and report; the author fixes it.</li>
+      <li><strong>Buffer: 150KB gzipped</strong>, quantised positions, written to <code>static/user-scenery/&lt;slug&gt;.bin</code> and served by nginx off disk under the <code>$static_expires</code> map that already exists. This is the number that protects the single eventlet worker relaying race poses at 30Hz &mdash; the same reason you moved <code>static/</code> to nginx and went from 1.90MB to 0.47MB on the wire.</li>
+    </ul>
+
+    <h3>What a baked buffer does to the lifecycle</h3>
+    <p><code>test_scenery.py</code> already states the rule in its own failure message: <em>&ldquo;the collider changed. Every time on this track's board was driven against the old one.&rdquo;</em> So the baked collider goes into the geometry hash, and the lifecycle follows without a new rule:</p>
+    <ul>
+      <li><strong>Collider changed</strong> &rarr; board and ghosts wiped, back to the queue. Same as moving a corner, for the same reason.</li>
+      <li><strong>Mesh only</strong> &rarr; board intact, but <em>still</em> re-queued. Not because lap times care &mdash; they don't &mdash; but because you approved a particular city, and a mesh-only edit could swap it for something you would not have approved.</li>
+    </ul>
+    <p>The trade to accept out loud: <strong>baked geometry does not follow a re-solved ribbon.</strong> That is fine here and only here, because a geometry edit already re-queues and re-bakes, and during authoring the code re-runs on every change. It would not be fine if live tracks were editable in place.</p>
+
+    <h3>One improvement this makes to your existing code</h3>
+    <p>Put <code>at</code>, <code>spot</code>, <code>ground</code> and <code>face</code> on <code>ctx</code> for the sandbox, and all five hand-written <code>scenery.js</code> files get to delete their copies. That removes five independent chances to get <code>face</code>'s double winding wrong &mdash; the trap that made Spa's pit building an invisible shed with a roof floating in the sky, and both of Silverstone's hangars blank grey walls.</p>
+  </div>
+</section>
+
+<section>
+  <div class="head"><span class="kerb"></span><h2>Bring your own AI</h2></div>
+  <div class="col">
+    <p>The failure mode without this is easy to picture: somebody pastes &ldquo;make me a city&rdquo; into a chat window and gets back code using <code>THREE.Mesh</code>, <code>document</code>, world coordinates and single-winding quads &mdash; none of which exist here. The model has never seen this API. So the deliverable is not a button, it is <strong>making the API legible to whatever model the player already has</strong>.</p>
+    <h3>Two things that cost almost nothing and do most of the work</h3>
+    <p><strong>Copy API for your AI.</strong> One button, ~3KB on the clipboard: the whole <code>ctx</code> surface, the five rules (derive from the ribbon, both windings, stand on <code>ground()</code>, <code>WALL</code>/<code>OFFROAD</code> only, the caps), and two worked examples. <strong>Generated from the source, not hand-written</strong>, for the same reason the palette contract is checked rather than documented &mdash; a spec that can drift from the code is a spec that will.</p>
+    <p><strong>Errors written to be pasted back.</strong> The sandbox already knows what went wrong and what the right call is; saying both turns the loop into paste error, get fix, run.</p>
+  </div>
+
+  <div class="panel">
+    <div class="panel-bar"><span>sandbox error</span><span>written for a model to read</span></div>
+    <div class="panel-body">
+<pre>&#9888; <b>ReferenceError: THREE is not defined</b>   scenery.js:14
+
+   This API has no THREE and no DOM. To stand a box:
+       solid.box(x, y, z, hx, hy, hz, colour)
+   Position it off the ribbon, never in world space:
+       const i = at(0.42), [x, z] = spot(i, side * 40);
+       const y = ground(i, side * 40);
+
+                                        [&#10697; copy error]</pre>
+    </div>
+  </div>
+
+  <div class="col">
+    <h3>The chat panel, and the three things that will bite</h3>
+    <p>A provider picker &mdash; Claude, ChatGPT, Gemini &mdash; with the key in <code>localStorage</code> and the request going straight from the browser to the provider. <strong>Your box never sees a prompt, a token or a bill.</strong> Worth saying in exactly those words, given that <code>/api/roll/gemini</code> was removed for being the opposite of this.</p>
+    <ol>
+      <li><strong>Anthropic needs an extra header.</strong> A browser-origin call is rejected unless it sends <code>anthropic-dangerous-direct-browser-access: true</code>; without it you get a 401 naming that header. The word is deliberate &mdash; it means &ldquo;anyone with devtools can read this key&rdquo; &mdash; and <strong>bring-your-own-key is the documented legitimate use</strong>, because the key belongs to the person whose browser it is.</li>
+      <li><strong><code>/make</code> needs its own CSP.</strong> Three API hosts in <code>connect-src</code>, on that page only. Every other page keeps the <code>frame-ancestors</code> sitelock exactly as it is.</li>
+      <li><strong>No temperature slider.</strong> On <code>claude-opus-5</code> and <code>claude-sonnet-5</code>, <code>temperature</code>, <code>top_p</code> and <code>top_k</code> are <em>rejected with a 400</em> &mdash; they are gone, not deprecated. Steer with the prompt. And on <code>claude-opus-5</code> thinking is on by default, with <code>max_tokens</code> capping thinking and reply <em>together</em>, so size it with headroom or the code comes back truncated.</li>
+    </ol>
+    <p>Default to <code>claude-opus-5</code>; offer <code>claude-sonnet-5</code> and <code>claude-haiku-4-5</code> as the cheaper picks. Send the model ID the player chose and nothing else clever &mdash; the panel is a thin pipe, and every provider-specific quirk you add to it is one you maintain.</p>
+
+    <h3>Source is public once you approve it</h3>
+    <p>A draft's code is the author's. Publishing publishes the code with it, and the publish screen says so. In an API with no documentation anywhere else, <strong>other people's working scenery is the documentation</strong> &mdash; and it makes a fork mean something, because you can read how the city you just forked was built.</p>
+  </div>
+</section>
+
+<section>
+  <div class="head"><span class="kerb"></span><h2>The gate</h2></div>
+  <div class="col">
+    <p>Structural checks block. Taste warns. And <strong>you cannot submit a track you have not driven from the start line to the flag</strong> &mdash; which is the best of the four options for a reason worth naming: it proves finishability by demonstration rather than by inference, and it pays for itself three times over.</p>
+    <p>That first lap becomes the track's <strong>first record</strong>, its <strong>first ghost</strong>, and the line <code>tools/hotlap.py</code> needs &mdash; so a brand-new user track has quick bots that drive properly instead of the relaxed line, and the failure mode your own notes flag (<code>test_every_track_has_a_usable_hot_lap</code> red on the commit that adds a track) never applies to user tracks at all.</p>
+  </div>
+
+  <div class="panel">
+    <div class="panel-bar"><span>submit &mdash; Foggy Ridge</span><span>ready</span></div>
+    <div class="panel-body">
+      <ul class="check">
+        <li class="y"><span class="m">&#10003;</span><span>No road laid over itself &mdash; <code>self_proximity</code></span></li>
+        <li class="y"><span class="m">&#10003;</span><span>Corner radii varied, none under 12</span></li>
+        <li class="y"><span class="m">&#10003;</span><span>Every gap clearable at the speed you arrive</span></li>
+        <li class="y"><span class="m">&#10003;</span><span>Hills eased, kickers not &mdash; no accidental launches</span></li>
+        <li class="y"><span class="m">&#10003;</span><span>Every checkpoint reachable, none creditable from above</span></li>
+        <li class="y"><span class="m">&#10003;</span><span>Pole not on the outside of turn one &mdash; <code>pole_side</code></span></li>
+        <li class="y"><span class="m">&#10003;</span><span>Barriers present if <code>ground</code> is None, or <code>exposed</code> declared</span></li>
+        <li class="y"><span class="m">&#10003;</span><span>Medals in order and attainable</span></li>
+        <li class="y"><span class="m">&#10003;</span><span>No corner you can simply leave out &mdash; <code>tools/cut_check.py</code></span></li>
+        <li class="y"><span class="m">&#10003;</span><span><strong>You drove it: 0:51.9</strong> &#129353;</span></li>
+        <li class="w"><span class="m">&#9888;</span><span>3 notes, none blocking: <code>fogFar</code> 180 &middot; 68u of straight before the first corner &middot; one pad, and nowhere fast to use it</span></li>
+      </ul>
+    </div>
+  </div>
+  <p class="cap">Every line is an existing check in <code>tracks/checks.py</code> or <code>drive/tests/</code>. None of it is new logic &mdash; it is the same suite, run per-row on demand instead of per-folder at import, with its output written for a person rather than a test runner.</p>
+</section>
+
+<section>
+  <div class="head"><span class="kerb"></span><h2>Lifecycle</h2></div>
+  <div class="col">
+    <p>Four states, and one rule that keeps a leaderboard meaning something: <strong>what you approved is what is live.</strong></p>
+  </div>
+  <div class="panel"><div class="panel-body">
+    <p class="flow"><b>draft</b><i>&mdash; submit &rarr;</i><b class="q">queued</b><i>&mdash; you drive it &rarr;</i><b class="live">live</b><i>&nbsp;&nbsp;&nbsp;&larr; hide/unhide &rarr;&nbsp;</i><b>hidden</b></p>
+    <div style="height:14px"></div>
+    <p style="margin:0; font-size:15.5px; color:var(--ink-2)">A <strong>cosmetic</strong> edit &mdash; palette, sky, name, cover, difficulty &mdash; saves straight onto a live track. The board is untouched, because none of it changes the road.<br><br>A <strong>geometry</strong> edit wipes the board and the ghosts, drops the track back to <span style="color:var(--flag)">queued</span>, and hides it until you approve it again.</p>
+  </div></div>
+  <div class="col">
+    <p>&ldquo;Did the geometry change&rdquo; needs to be a fact, not a guess: hash the built ribbon &mdash; stations, gates, spawn &mdash; and store it on the row. Comparing the hash rather than the moves means a no-op edit (drag a slider and drag it back) costs nobody their record, and a change that <em>looks</em> cosmetic but moves the road is caught anyway.</p>
+    <p>One consequence to accept deliberately: a live track's author can't fix a bad corner without losing the board. That is the correct trade &mdash; the alternative is somebody's record silently becoming a time on a different road &mdash; but the editor should say it in those words on the Edit button, with the lap count in it.</p>
+  </div>
+</section>
+
+<section>
+  <div class="head"><span class="kerb"></span><h2>Review, and the shelf</h2></div>
+  <div class="col">
+    <p>The queue is a list of names with one button each, and after driving, three more. Nothing else on the page &mdash; you said it, and it's right: the only judgement that has ever mattered here is whether it's good to drive.</p>
+    <p>The checks still run and are still stored on the row; they just aren't a thing you read. If a backlog ever makes you want the pictures and the pool deltas, they are one query away and can be a <code>?detail</code> view later. Not v1.</p>
+    <p><strong>Approval is also the ELO gate</strong>, and that is now load-bearing rather than incidental. Rooms on user tracks are rated, so an unmoderated gallery would let anyone build a twelve-second oval and farm rating on it. Because nothing is raceable until you have driven it yourself, that hole is closed by a decision you already made for a different reason.</p>
+    <h3>Where an approved track appears</h3>
+    <p>Home page and the in-game switcher keep the nineteen first, then a <strong>Community</strong> row with the author's handle on each card and a link to the full gallery. A user track is served from <code>/solo/&lt;slug&gt;</code> like every other track, so share cards, watch-a-lap links, canonical tags and the sitemap all work with no new routes.</p>
+    <p>That means <strong>one flat slug namespace</strong>, which needs the nineteen reserved at creation time, plus a small denylist. It is worth the reservation: the alternative &mdash; a <code>/t/&lt;slug&gt;</code> prefix &mdash; buys collision safety and costs a second set of every URL-shaped thing in <code>app.py</code>.</p>
+    <h3>Forking <span class="chip">decided</span></h3>
+    <p>Any live track, including all nineteen, gets a <strong>Make my own</strong> that copies moves and palette into a fresh draft. The row keeps <code>forked_from</code>, and the card reads <em>&ldquo;&#8627; based on Spa-Francorchamps&rdquo;</em> forever. This is the single strongest thing on this whole page for your stated priority: a player starting from Spa inherits nine hand-cut sky stops and a tuned bounce and edits from there, instead of starting from a colour picker and a green field.</p>
+  </div>
+</section>
+
+<section>
+  <div class="head"><span class="kerb"></span><h2>Plumbing worth deciding now</h2></div>
+  <div class="col">
+    <h3>The anti-cheat</h3>
+    <p><code>verify.py</code>'s <code>built(slug)</code> does <code>TRACKS.find(x =&gt; x.slug === slug)</code> against a global array that <code>jsrt</code> pushes as <strong>one JSON blob of the entire pool</strong> at startup. Do not add user tracks to that &mdash; it grows without bound and every verification pays for it.</p>
+    <p>There is already a precedent for the right shape, in the same file: <code>load_racing_line(slug)</code> pushes one track's line on demand, explicitly because doing all of them for something only one caller wants is waste. A <code>load_track(track)</code> that appends a single dict to <code>TRACKS</code> is the same move, and it is a handful of lines.</p>
+    <h3>Covers</h3>
+    <p>Auto-framed by porting <code>SCAN</code> from <code>tools/_hero.py</code> to run in the browser the editor is already rendering in, with the author able to orbit and re-shoot. No Playwright per submission &mdash; which matters more than it looks, because the process that would run it is the <em>single eventlet worker</em> that also relays every live race pose at 30Hz.</p>
+    <p>The uncomfortable bit: pool covers stay server-rendered, so there are now two implementations of one framing, and your own note says the framing lives in one place on purpose because a cover and a share card once disagreed about where you stand. I'd accept it and pin it &mdash; a test that runs <code>SCAN</code> both ways on the same fourteen tracks and asserts the same window. It is the cheapest thing that stops the two drifting.</p>
+    <h3>Guests</h3>
+    <p><code>/make</code> opens with no login and keeps one draft in <code>localStorage</code>; saving, sharing or submitting prompts a sign-in and attaches the draft to the account. In the CrazyGames build <code>/make</code>, the gallery and every Community shelf <strong>404</strong>, the same way <code>/login</code> already does &mdash; the portal forbids a game offering its own login, and authorship without identity is not a thing.</p>
+  </div>
+</section>
+
+<section>
+  <div class="head"><span class="kerb"></span><h2>My calls, stated</h2></div>
+  <div class="col">
+    <p>You didn't pick these, so I have. All of them are one-line changes if you disagree.</p>
+    <ul>
+      <li><strong>20 drafts per account, 3 in the queue at once.</strong> Enough to keep several ideas going; not enough to flood you.</li>
+      <li><strong>400 moves and 6000 units</strong> per track. Big Red, the longest in the pool, is 3335.</li>
+      <li><strong>Names:</strong> 32 characters, the nineteen reserved, a profanity filter on submit. The review gate catches the rest, and it is you.</li>
+      <li><strong>Difficulty</strong> is the author's claim, overridable on your queue screen. It stays a label &mdash; nothing derives from it, exactly as now.</li>
+      <li><strong>Medals</strong> are derived from the ribbon, always. <code>tools/set_medals.py</code> cuts from a board, and a user track's board is too small and too self-selected to cut from.</li>
+      <li><strong>Rate limit</strong> on submit and on save, since both build a ribbon and one of them runs the checks.</li>
+      <li><strong>User JavaScript runs in the sandbox and nowhere else.</strong> Interiors and terrain carving stay out of v1 as engine features, with reasons above &mdash; though code mode can now reach a good deal of both, which is rather the point of having it.</li>
+      <li><strong>Scenery caps:</strong> 60 placements in data mode; 2,500 collider and 20,000 mesh triangles either way; 150KB baked.</li>
+      <li><strong>No provider proxying, no hosted key, no exceptions.</strong> The chat panel is browser-to-provider or it does not ship.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="head"><span class="kerb"></span><h2>Build order</h2></div>
+  <div class="col"><p>Twelve phases, each one shippable and each one provable. The order is chosen so the riskiest thing is first and the UI is last.</p></div>
+
+  <div class="phase"><div class="num">1</div><div>
+    <h4>Replayer, schema, chokepoint</h4>
+    <p>The moves schema, <code>replay(doc) &rarr; Builder</code>, the <code>drive_user_tracks</code> table, and <code>tracks.get()</code> resolving a live row. No UI at all.</p>
+    <p class="out"><b>Proof:</b> express each of the <b>14 tracks with no scenery.js</b> as a moves document, replay it, and assert the ribbon is byte-identical to the folder's. <code>tools/snapshot_tracks.py</code> already exists to make exactly that comparison. If the schema can rebuild Sandy Cove and Big Red exactly, it can carry anything a player writes.</p>
+  </div></div>
+
+  <div class="phase"><div class="num">2</div><div>
+    <h4>Read-only <code>/make</code></h4>
+    <p>Render a moves document: the list, the 3D world, the height strip. Nothing is editable and the five starting shapes are seeded rows.</p>
+    <p class="out"><b>Proof:</b> the page draws all five, and Circuit closes.</p>
+  </div></div>
+
+  <div class="phase"><div class="num">3</div><div>
+    <h4>Editing</h4>
+    <p>Add, delete, reorder, and the inspector. Declarative width / edges / bank per move. Undo. Live rebuild on every change.</p>
+    <p class="out"><b>Proof:</b> a rebuild stays under one frame on a 400-move track, and reordering never silently rewidens a later move.</p>
+  </div></div>
+
+  <div class="phase"><div class="num">4</div><div>
+    <h4>Drive it</h4>
+    <p>The Drive button hands the built track to the existing <code>game.js</code> in solo mode. This is the moment the editor becomes fun, and it should arrive early.</p>
+    <p class="out"><b>Proof:</b> drive a draft that exists only in <code>localStorage</code>, with no account.</p>
+  </div></div>
+
+  <div class="phase"><div class="num">5</div><div>
+    <h4>The palette editor</h4>
+    <p>Every key, the driver's-seat preview, and the eight warnings. Fork-a-palette from any of the nineteen.</p>
+    <p class="out"><b>Proof:</b> each warning fires on a case taken from <code>track-defects.md</code>, and none of them fires on any of the nineteen.</p>
+  </div></div>
+
+  <div class="phase"><div class="num">6</div><div>
+    <h4>Scenery as data</h4>
+    <p>The placement schema, the engine-owned <code>props(ctx)</code> interpreter, and the nine objects. Placement UI is a list beside the moves list, with the same <code>at</code> / <code>side</code> / <code>off</code> inspector.</p>
+    <p class="out"><b>Proof:</b> express <b>Spa's furniture, Silverstone's hangars, runways and both inside barriers, and Tokyo's towers</b> as placement lists, and assert the collider triangle counts match the hand-written files. <code>test_scenery.py</code> already pins those counts.</p>
+  </div></div>
+
+  <div class="phase"><div class="num">7</div><div>
+    <h4>Scenery in code, sandboxed</h4>
+    <p>The sandboxed iframe and worker, the <code>ctx</code> surface, the bake, and the numbers validator with the <code>KIND</code> whitelist. The <code>ctx</code> helpers land on the five existing files in the same commit.</p>
+    <p class="out"><b>Proof:</b> a deliberately hostile <code>props</code> &mdash; one that reads <code>document.cookie</code>, one that fetches <code>/api/run</code>, one that emits <code>KIND.BOOST</code>, one that loops forever &mdash; and all four are contained, named, and reported to the author.</p>
+  </div></div>
+
+  <div class="phase"><div class="num">8</div><div>
+    <h4>Bring your own AI</h4>
+    <p>The generated spec on the clipboard, paste-back errors, and the provider-picker chat panel with the key in <code>localStorage</code>. <code>connect-src</code> for three hosts on <code>/make</code> only.</p>
+    <p class="out"><b>Proof:</b> the spec is generated from source and a test fails when <code>ctx</code> gains a name the spec does not mention. No request to any provider passes through the box.</p>
+  </div></div>
+
+  <div class="phase"><div class="num">9</div><div>
+    <h4>Accounts, save, checks, submit</h4>
+    <p>Sign-in attaches a draft. The check runner, the clean-lap requirement, the submit screen.</p>
+    <p class="out"><b>Proof:</b> a deliberately broken track cannot be submitted, and the reason names the check.</p>
+  </div></div>
+
+  <div class="phase"><div class="num">10</div><div>
+    <h4>Queue and approve</h4>
+    <p><code>/admin/queue</code>: names, one Drive button, approve / reject / note, difficulty override. The status machine and the ribbon hash.</p>
+    <p class="out"><b>Proof:</b> a geometry edit on a live track wipes its board and re-queues it; a palette edit does not.</p>
+  </div></div>
+
+  <div class="phase"><div class="num">11</div><div>
+    <h4>Gallery, shelf, covers, forking</h4>
+    <p><code>/tracks</code>, the Community row on the home page and in the switcher, in-browser <code>SCAN</code> covers with re-shoot, and Make my own.</p>
+    <p class="out"><b>Proof:</b> the SCAN parity test on fourteen tracks; a fork of Spa arrives with Spa's sky and without its grandstands, and says so.</p>
+  </div></div>
+
+  <div class="phase"><div class="num">12</div><div>
+    <h4>Rooms, verification, adoption</h4>
+    <p><code>jsrt.load_track()</code> for lazy QuickJS injection, rooms on user tracks, and <code>tools/adopt_track.py</code> to turn a row into a real <code>tracks/&lt;slug&gt;/</code> folder when one earns it.</p>
+    <p class="out"><b>Proof:</b> a top-3 lap on a user track is re-driven and accepted; an adopted folder passes the whole drive suite unchanged.</p>
+  </div></div>
+</section>
+
+<section>
+  <div class="head"><span class="kerb"></span><h2>Left open</h2></div>
+  <div class="col">
+    <p>Three I'd rather you decided than I assumed, none of them blocking phase 1.</p>
+    <ul>
+      <li><strong>Does a cover regenerate when a palette changes?</strong> The shot is of the old sky otherwise, and nothing can detect a stale one &mdash; the same failure mode as <code>shoot_tracks.py</code> on the pool.</li>
+      <li><strong>Do rooms on user tracks affect the same ELO as pool rooms?</strong> Approval gates it either way; separate ratings would be safer and one more number to explain.</li>
+      <li><strong>What happens to a live track when its author deletes their account?</strong> Other people's records are on it.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  Grounded in <code>drive/tracks/builder.py</code>, <code>tracks/__init__.py</code>, <code>tracks/look.py</code>, <code>tracks/checks.py</code>, <code>jsrt.py</code>, <code>verify.py</code> and <code>docs/track-defects.md</code>.<br>
+  Colours on this page are the game's own: kerb <code>#e8453c</code>, deco <code>#f2c94c</code>, ground <code>#4ea363</code>, asphalt <code>#4d5769</code>.
+</footer>
+
+</div>

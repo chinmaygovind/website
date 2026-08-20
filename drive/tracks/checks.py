@@ -35,6 +35,23 @@ GATE_CEIL_MAX = 14.0
 GATE_CEIL_MIN = 5.0
 GATE_CEIL_MARGIN = 4.0
 
+# What a corner has to be to be a corner.
+#
+# These were assertions in `tests/test_tracks.py` and nowhere else, which was
+# fine while every track was a file somebody wrote on purpose. The track maker
+# changes that: a document arrives from an editor - or from somebody's AI - and
+# the rules have to be sayable to the person who caused them rather than only to
+# a test runner. Same numbers, one home.
+MIN_RADIUS = 12.0          # under this nothing can drive the corner at all
+MIN_LOOP_RADIUS = 18.0     # under this only gravity holds the car over the top
+RADII_DISTINCT = 4         # how many different radii a real circuit uses
+RADII_SPREAD = 1.8         # widest over tightest: below this every corner is
+                           # the same corner, which is the complaint that
+                           # started the rewrite - the grid version could only
+                           # make one shape, a 90 on a four-unit radius.
+MIN_CHECKPOINTS = 2
+
+
 def self_proximity(track, clearance=None):
     """Places the road runs too close to another part of itself.
 

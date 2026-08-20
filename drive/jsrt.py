@@ -80,7 +80,13 @@ def bundle(extra=()):
     parts = [_strip_modules(_read(os.path.join(HERE, "three_stub.js")))]
     parts.append("const THREE = {%s};" % ",".join(_THREE_NAMES))
     parts.append("var globalThis = globalThis || this;")
-    for name in ("trackmesh.js", "physics.js", "course.js"):
+    # `scenery_kit.js` first, because trackmesh imports `placeAll` from it and
+    # `_strip_modules` deletes the import - so the name has to already be in
+    # scope. Leaving it out is silent in exactly the way a missing `scenery.js`
+    # is: the bundle still builds, still drives and still returns a time, having
+    # re-driven the lap on a track with the player's barriers absent from the
+    # collider. `tests/test_scenery_kit.py` counts triangles on both sides.
+    for name in ("scenery_kit.js", "trackmesh.js", "physics.js", "course.js"):
         parts.append(_strip_modules(_read(os.path.join(JS, name))))
     import sys
     if HERE not in sys.path:
