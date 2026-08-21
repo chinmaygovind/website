@@ -390,6 +390,77 @@ the second track that wants one as the thing that will find the bugs.
   exception and the reason the fourth font exists: it is a fan phrase, not a
   wordmark, so no artwork of it exists to draw.
 
+## A world built in `scenery.js` (Mount Joy, Monaco)
+
+Two tracks build their own ground instead of taking one from the engine, and the
+second one is worth reading before you write a third, because it hit three things
+Mount Joy did not.
+
+- **The reason to do it at all is road over road.** `pal.terrain` samples one
+  height per (x, z) from the *nearest* road, so it is single-valued by
+  construction. Mount Joy needs more than that because it stacks switchbacks a
+  hundred units over each other; Monaco needs it for a much smaller overlap that
+  looks survivable and is not - Beau Rivage climbs directly above the harbour
+  front with the two roads' *tarmac* overlapping in plan, 12 units of combined
+  width across a 9.3-unit gap. The field drew the upper road and its run-off as a
+  solid slab across the lower road. **No `apron` setting reaches that**, because
+  it is the road surfaces themselves that overlap, not their aprons. Check for it
+  before writing a palette: cluster the station pairs closer in plan than
+  `hw + hw + 2` and look at the height gaps.
+- **The rule is a lower envelope of upward cones**, one per station, at most
+  `y - drop` at every station and rising away from one. Taking the *minimum* is
+  what makes it arithmetically incapable of coming up through a road, whatever
+  the layout does, and that is the whole reason to use it rather than an
+  inverse-distance blend.
+- **The flank has to start past the road edge.** A cone rising from the station
+  *centre* at Mount Joy's gradient is back at road level a couple of units out
+  and above it at the kerb, so the first render of Monaco had the car in a trench
+  with its kerbs swallowed and pale scree closing over both sides. Hold the field
+  flat for `hw + a few` and then rise, and pick the gradient for the place: 0.62
+  is a mountainside, 0.10 is a town.
+- **Build it as a chamfer sweep, not as a query.** Two passes over the grid
+  taking `min(here, neighbour + flank * step)` is the same cone field in
+  O(cells) instead of cells x stations - and, the part that matters, it has **no
+  reach cutoff**. Monaco's first version stopped looking at 190 units and fell to
+  sea level past that, which drew a ring of sawtooth cliffs round the whole
+  track.
+- **A road excluded from the stamp ends up inside the hill, and that is how you
+  get a tunnel.** Monaco leaves its tunnel stations out of the envelope, so the
+  ground there is set by the roads above and the bore is cut back out of it
+  below. Include them and the envelope is pulled down to the tunnel floor and the
+  hill above it vanishes, leaving an open cutting. Same rule as Shroom Street
+  excluding its free-standing caps, for the opposite purpose.
+- **Every road edge needs carrying down to the field.** Where two roads are far
+  apart in height the `min` hands the gap to the lower one, so the upper road is
+  left with a drop off its edge. That is what a hillside city is, but it has to be
+  *built* - a stone wall from the road's underside down to the field - or the road
+  reads as floating, and the engine's own trestles show. On a track with no
+  ground `base` is a flat `p[1] - 16`, so **every** station gets a trestle;
+  burying them is the field's job and a shallow `drop` is what makes it possible.
+- **Water is easier to find by flooding than by geometry.** Point-in-polygon on
+  the ribbon is the obvious way to ask "inside the circuit" and it is wrong on any
+  track that crosses itself: the even-odd rule flips parity at the crossing, so
+  half of Monaco's harbour came out "outside" and the basin was never cut, silently.
+  Port Hercule is instead the low ground inside the circuit - seeded at the
+  centroid of the lowest quarter of the lap, and flooded through cells that are
+  clear of the road and have not climbed away from the seed, so the road corridor
+  and the rising land are what bound it. Ramp the carve in over ~30 units; one
+  cell at quay height beside one at the sea floor is a single vertical quad, and a
+  ring of those reads as grey shards rather than as a harbour wall.
+- **`toRoad` over a whole grid is the cost centre.** Monaco's field is 12,210
+  cells against 695 stations, which is 8.5M distance tests every time the track is
+  built - and the track is built for every page load *and* for every lap the
+  anti-cheat re-drives in QuickJS. Bucket the stations and query the neighbouring
+  buckets; every threshold this gets compared against is small, so a capped search
+  is exact for the answers that are actually used.
+- **A ground track's palette machinery is not available.** `pal.terrain` and
+  `pal.furniture` are both reached from inside `buildTrack`'s ground branch, and
+  `density`/`props` only apply to a ground track - so a groundless track gets no
+  grandstands, no armco, no hoardings and no scatter, and anything it wants from
+  that list it draws itself. For Monaco that is a feature twice over: the barrier
+  it wants is a ribbon `rail` on the kerb, and the scatter it does *not* want was
+  most of what made the first render read as a quarry.
+
 ## Interiors (`addBuilding`, Costco Wholesale only)
 
 The Costco is the pool's only interior: the only track where solid geometry

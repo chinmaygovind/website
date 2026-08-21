@@ -3,11 +3,12 @@
 **Live at `https://drive.cgovind.com`.** The fourth game, same shape as ERS/KoT:
 Flask + Flask-SocketIO, its own eventlet gunicorn `-w 1` on `127.0.0.1:5005`, its own
 venv (`drive/venv`) and `.env` (both gitignored, hand-made on the box), sharing TTR's
-`users` table for accounts. A PolyTrack-style low-poly driving game: nineteen
+`users` table for accounts. A PolyTrack-style low-poly driving game: twenty
 tracks, medal times, ghosts, and multiplayer rooms. Seventeen are point-to-point;
-**Spa-Francorchamps and Silverstone are the two closed circuits** and start and
-finish on the same line. **Costco Wholesale is the one that goes indoors**, and it is the only
-track with solid geometry over the road.
+**Spa-Francorchamps, Silverstone and Monaco are the three closed circuits** and
+start and finish on the same line. **Costco Wholesale and Monaco are the two
+that go under something** - the Costco's warehouse roof and Monaco's tunnel are
+the only solid geometry over the road anywhere in the pool.
 
 ## Read the one doc your change is about
 
@@ -38,7 +39,7 @@ question, you may well need none.
 ## The track pool
 
 **Difficulty is a label, not a measurement**, and it is not length: the pool's
-ratings were re-cut across all nineteen tracks in Aug 2026 to run 1 to 5 roughly
+ratings were re-cut across all twenty tracks in Aug 2026 to run 1 to 5 roughly
 in pool order, so the first three tracks are 1s and the hard ones are late.
 Nothing derives from the number - it is five pips on a card, coloured green
 through to red by `--diff-1`..`--diff-5` in `style.css` - so changing one is a
@@ -76,7 +77,7 @@ Big Red) is a compressed recreation of the real circuit, and it is the odd one
 out in the pool in four ways that all cost something to get right. Read
 `docs/tracks-and-geometry.md` before touching any of them.
 
-- **It is a closed lap** (Silverstone is the other). The ribbon is a ring: the last station lands
+- **It is a closed lap** (Silverstone and Monaco are the others). The ribbon is a ring: the last station lands
   back on station 0 and the finish gate *is* the start gate
   (`Builder.finish_at_start`). That works only because `course.js` refuses to
   credit the finish until every checkpoint is behind you, so the car crossing
@@ -91,7 +92,7 @@ out in the pool in four ways that all cost something to get right. Read
   and stops it being Spa. **This used to be `tools/close_spa.py`**, run by hand
   with its two answers pasted into the builder and a docstring warning that
   changing any *other* length silently invalidated them. That tool is gone.
-- **It is the only track with terrain.** Every other ground track sits on one
+- **It is the only track with `pal.terrain`.** Every other ground track sits on one
   flat collidable quad at `track.ground`; Spa falls 63 units, which would put
   that quad through the road as an opaque ceiling. `pal.terrain` swaps it for a
   height field sampled off the ribbon itself (`buildTerrain`), and the same
@@ -156,6 +157,46 @@ before touching it.
   crossed square on a straight, the openings are full height with no lintel, and
   the entrance header's underside is held at 9.5.
 
+**Monaco** (`monaco`, difficulty 5, 2436 units, ~58s) is the third closed
+circuit, and the only one in the pool with **no run-off anywhere**: a ribbon
+`rail` sits on the kerb for the whole lap, so 216 of the chords that would pay as
+a shortcut are all blocked and none is open. Read
+`docs/tracks-and-geometry.md` before touching it.
+
+- **It is the only track with no ground at all that is not floating in the void.**
+  `ground = None`, and the hillside, quays, harbour and city are built in
+  `tracks/monaco/scenery.js`. That is forced rather than chosen: **the circuit
+  crosses over itself** - Beau Rivage climbs directly above the harbour front,
+  the two roads' tarmac overlapping in plan with nine units of air between them -
+  and a `pal.terrain` height field is single-valued, so it drew the upper road as
+  a solid slab over the lower one. It is Mount Joy's pattern (a lower envelope of
+  upward cones, which arithmetically cannot come up through a road), built as a
+  chamfer sweep so it has no reach cutoff.
+- **`rails = True` is the point rather than a concession.** A floating track
+  carries barriers by default and `test_barriers_are_opt_in` *requires* them,
+  which is the opposite of the fight a ground track has - and walls on both kerbs
+  for a whole lap is exactly what Monaco is. It is the only circuit in the pool
+  where that is correct.
+- **The tunnel is found, not authored.** The stations the hill closes over are the
+  longest run with another part of the circuit above them, so the bore moves if
+  the ribbon is re-solved. Those stations are excluded from the height field -
+  include them and the envelope is pulled down to the tunnel floor and the hill
+  above it vanishes, leaving an open cutting.
+- **The harbour is a flood fill, and the obvious rule does not work here.**
+  Point-in-polygon on the ribbon fails because a self-crossing ribbon flips
+  even-odd parity, so half the port reads as outside. Port Hercule is instead the
+  low ground inside the circuit, seeded at the centroid of the lowest quarter of
+  the lap and bounded by the road corridor and by land rising out of it.
+- **Every road edge is carried down to the field on a retaining wall.** Two roads
+  nine units apart in height cannot both have ground snug under them, so the
+  lower one wins the gap and the upper is left with a drop - which is what a
+  hillside city is, but it has to be built or the road floats and the engine's
+  trestles (a flat 15.7 units under every station of a groundless track) hang in
+  the open air under it.
+- The geometry is off OSM relation 148194 and a DEM, the same method as
+  Silverstone; the docstring in `track.py` is the whole account, including the
+  three things it got wrong first.
+
 ## Adding a track
 
 **A track is one folder and nothing outside it needs editing.** Drop
@@ -196,7 +237,7 @@ pictures are what removes them.
 is the running list of failure modes, so the render step looks *for* known
 problems rather than at a picture; append to it whenever something new turns up,
 one line, no need to work out the rule. And `tools/pool_stats.py <slug>` profiles
-a track on 26 numbers against the other eighteen - the pool is a labelled set of
+a track on 26 numbers against the other nineteen - the pool is a labelled set of
 good tracks and this is the only thing that reads it back. It says *unlike the
 pool*, never *wrong*: Big Red's 223-unit drop flags every run and is the point of
 the track. What it catches is the mistake with no visual signature - a scatter

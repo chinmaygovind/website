@@ -287,3 +287,100 @@ New entries, unsorted, until somebody files them. One line is enough.
   quads and buys more than the same effort spent on the things standing up.
   Sit them ~0.12 above `groundY`, above both the engine's plate and any the
   scenery added under it.
+- **A circuit that crosses over itself cannot have `pal.terrain`, and the symptom
+  is a ceiling rather than a mound.** Monaco's Beau Rivage climbs directly over
+  its own harbour front - the two roads' *tarmac* overlapping in plan, 12 units of
+  combined width across a 9.3-unit gap, 9.2 units apart in height. The height
+  field is single-valued, so it drew the upper road's surface and run-off as a
+  solid slab across the lower road, which from the car is a wall you drive into at
+  speed. **No `apron` setting reaches it** - the note further up about `pal.terrain`
+  and road over road reads as being about helixes and rooftop decks, and this is
+  the cheaper case that looks survivable and is not: it is the road surfaces
+  themselves that overlap, not their aprons. Check for it before writing a
+  palette, not after rendering one: cluster the station pairs closer in plan than
+  `hw + hw + 2` and look at the height gaps. The fix is Mount Joy's pattern -
+  `ground = None`, the world built in `scenery.js` off a lower envelope - and on a
+  street circuit it is the better architecture anyway, because a floating track
+  *wants* rails and walls-on-the-kerb is what the place is.
+- **A checkpoint hosted inside a corner has to keep the corner's angle.** Splitting
+  an arc into two either side of a gate by holding the *radius* and shortening
+  both halves silently drops the angle the gate's own straight road now occupies.
+  Two such gates on Monaco cost 9 degrees of a closed lap's 360: the heading then
+  does not close, the position comes out a hundred units off, and the solver
+  refuses with a message about a straight it wants to lengthen by 85% - which
+  points at the wrong leg entirely. Split by holding the **angle** and letting the
+  radius take it.
+- **A surveyed circuit's tightest corner may not fit the engine.** Monaco's
+  hairpin is 16 m in real life, which at any scale that keeps the lap a sensible
+  length lands under the hard 12-unit radius floor. Scale is the lever worth
+  pulling first (Silverstone's 0.4586 units/m would have made this track 1531
+  units long and the hairpin radius 8); past that, open the one corner and say in
+  the docstring that it is the one thing on the track that was authored rather
+  than measured.
+- **A height field whose flank starts at the station centre buries the road.** A
+  cone rising at Mount Joy's 0.62 is back at road level 2.6 units out and 2.1
+  units *over* it at the kerb, so the car drives in a trench with its kerbs
+  swallowed and pale scree closing over both sides. Hold the field flat for
+  `hw + 4` and then rise, and pick the gradient for the place - 0.62 is a scree
+  slope, 0.10 is a town.
+- **A city one building deep reads as a street with desert behind it.** One rank
+  of blocks along the ribbon looks right from inside the canyon and wrong from
+  every spot with a sightline - the climb, a hairpin, across the water. Deal two
+  or three ranks at falling density and rising height; it is the same loop and it
+  is the difference between a street and a city.
+- **Window bands can repaint a whole city.** Unlit bands 1.24 units tall every
+  4.2 are a third of every facade, so at dark blue-grey they averaged Monaco's
+  cream and terracotta to concrete in every render, and going pale to fix that
+  turned the same buildings into multi-storey car parks. Thin, and *darker* than
+  the wall. They also have to protrude a hair - a band inset into a wall is
+  inside the building and invisible.
+- **A `scenery.js` helper deleted by an edit to a different part of the file.**
+  Rewriting Monaco's harbour removed the clamped grid read the ground loop used
+  one section further down, so `props` threw `ReferenceError` and the track built
+  with no city, no hillside and no collider. pytest did not move, for the reason
+  already noted above (mesh-only scenery has no collider triangles to pin). What
+  caught it was `test_closed_lap.py`, which builds the track in QuickJS - so on a
+  closed track that suite is the cheap check, and `tools/validate_track.py` is the
+  one everywhere else.
+- **`toRoad` over a whole height field is the cost centre nobody measures.**
+  12,210 cells against 695 stations is 8.5M distance tests, paid on every page
+  load *and* every lap the anti-cheat re-drives in QuickJS. Bucket the stations:
+  Monaco went to 1.27s a build, which is Spa's 1.35s rather than an outlier.
+- **An unlit colour renders at full value, so `bright` needs picking two or three
+  stops darker than `solid`.** The palette note says pick every base colour cooler
+  than it looks; this is the other axis and it caught two things on Monaco at
+  once. `bright` is `MeshBasicMaterial` and nothing multiplies it down, while the
+  same hex in `solid` is scaled by a key light well under 1 - so a mid sea-blue
+  chosen *darker than the track's own road* rendered as bright cyan plastic, and
+  the window bands that had already been darkened once were still reading as pale
+  belts on every facade. Judge anything unlit against the lit thing beside it in a
+  render, never against the swatch.
+- **Ramping a carve is wrong when the drop is short.** The advice further up - blend
+  a carve in over 40-odd units rather than switching it on at a threshold - is
+  about a seventy-unit cliff in open country. Monaco's harbour is a fifteen-unit
+  drop and is supposed to be masonry, and ramping it over 30 units gave five
+  visible terraces into the water, over 9 units still three: at a 7-unit grid every
+  cell in a ramp lands at its own depth, so a short ramp *is* a staircase. One
+  step, every wet cell at the same depth, draws the single near-vertical quad per
+  cell that reads as a quay wall.
+- **`node -e "require(scenery.js)"` proves it parses and nothing else.** The file
+  registers a function; none of the geometry runs until `buildTrack` calls it. A
+  refactor that split Monaco's one PRNG into four left two *call sites* still
+  passing the deleted `rnd`, which parses perfectly and throws the moment the
+  first building is placed - and the only symptom was `shoot_tracks.py` timing out
+  after 90s on `DriveShot.S.built`, which reads as a slow track rather than a
+  broken one. Run `pytest -k <slug>` after touching a scenery file, every time:
+  the closed-lap and verify suites build it in QuickJS and say what threw.
+- **"Road with something above it" defines a crossing, not a tunnel.** Monaco's
+  bore was derived as the longest run of stations with another part of the circuit
+  overhead, which sounds like a definition of a tunnel and picked the *harbour
+  front* - the one place the circuit passes over itself. The bore was built along
+  the quay, and its roof, set 10.5 units over that road, came up through Beau
+  Rivage nine units above it: from the car, tunnel geometry cutting across the
+  track just after turn one, a third of a lap from where the tunnel is supposed to
+  be. **Which stretch is in a tunnel is a fact about the place, not something the
+  ribbon implies** - author it as a fraction of the lap, the way Spa places its
+  grandstands, so it still survives a re-solve. And cap any roof against the
+  nearest road above it, so the same mistake cannot draw geometry through a road
+  again whatever the span is set to.
+

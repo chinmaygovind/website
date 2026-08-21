@@ -192,6 +192,25 @@ FRAMES = {
     # other corner does.
     "spiral": dict(at=0.38, azimuth=0.60, pitch=0.52, pad=0.55,
                    cars=9, air=0.10, liveryFrom=4),
+    # **The harbour, which the scan will never find either.** Monaco is scored
+    # on roll, climb and bend like everything else, so the scan picks the
+    # hairpin - which is a tight corner between towers and is a picture of any
+    # city, not of this one. The window is pinned on the harbour front, where the
+    # water and the moored fleet are on one side and Monte Carlo stacks up behind
+    # the road on the other, and narrowed because a sixth of a lap this dense is
+    # a thicket of buildings. No air: nothing here leaves the ground.
+    # 5.00 off the contact sheet: the only side with the road and its kerbs down
+    # one edge of the frame and the harbour along the other. 0.60 puts the water
+    # in a corner, 2.05 and 3.50 are mostly water with the road lost behind the
+    # front rank of buildings.
+    # **The pitch is the whole difference here, for the reason Cloudbreak's is.**
+    # Monaco is a canyon: at the pool's 0.34 the camera stands among the towers
+    # and the front rank simply blocks the shot - one terracotta slab filled two
+    # thirds of the frame and the harbour behind it was gone. From higher up you
+    # look down *into* the streets and across the water, which is the only angle
+    # where the road, the city and the port are all in one picture.
+    "monaco": dict(at=0.68, azimuth=5.00, pitch=0.62, span=0.10, pad=0.50,
+                   cars=12, air=0.0, liveryFrom=11),
     # **The water, which the scan will never find.** Sandy Cove is scored on
     # bend and climb like everything else, and its switchbacks inland beat the
     # coast road every time - so the window is pinned on the run along the
