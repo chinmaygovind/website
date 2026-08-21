@@ -20,7 +20,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from tracks import moves, solver
-from tracks.builder import Builder, FREE
+from tracks.builder import Builder
 from tuning import ROAD_W
 
 HERE = os.path.dirname(os.path.abspath(__file__))

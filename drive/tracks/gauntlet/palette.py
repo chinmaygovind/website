@@ -1,6 +1,5 @@
 """What The Gauntlet looks like."""
 
-import math
 
 PALETTE = { "road": 0x33363f, "kerb": 0xe8e4e2, "kerb2": 0xe8453c,
 "ground": 0x1b1920, "rail": 0xd8d2cf, "prop": 0x2a2830, "deco": 0xff6a2a,

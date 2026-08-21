@@ -10,7 +10,6 @@ which means `/api/run` rejects it - three facts in three files, held together by
 nothing but this test.
 """
 
-import json
 import os
 import re
 import sys
@@ -517,7 +516,6 @@ def test_a_draft_shows_the_medals_but_not_the_record():
     """The medals are derived from the road and are the most useful thing an
     author can read here. The record is a board row that can only be a dash."""
     src = _game_js()
-    i = src.index("function showMedals") if "function showMedals" in src else 0
     assert "CFG.draft ? '' :" in src, "the WR row is back on drafts"
     assert "GHOST_CYCLE_DRAFT" in src
 

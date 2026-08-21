@@ -508,7 +508,6 @@ def test_the_sitelock_names_every_crazygames_domain(plain_env):
     expression it cannot parse, so the header would read as though it covered
     them and www.crazygames.fr would get a blank frame.
     """
-    import portal
 
     for path in ("/", "/solo/sunrise", "/leaderboard"):
         resp = plain_env.app.test_client().get(path)

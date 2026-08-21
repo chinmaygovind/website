@@ -20,7 +20,6 @@ real RS256 JWT and asked to take it, and handed several near-misses and asked to
 refuse them.
 """
 
-import json
 import os
 import sys
 import tempfile

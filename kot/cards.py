@@ -341,7 +341,6 @@ def card_extra_view(state, pid, cid, key):
 # ---------------------------------------------------------------------------
 
 def adjust_incoming(state, target, n, attacker, rng):
-    m = state["mon"][target]
     if _mem(state, target).get("wings"):
         return 0
     if _has(state, target, "armor_plating") and n == 1:
@@ -526,7 +525,6 @@ def trigger(state, pid, hook, **ctx):
 
 
 def _h_turn_start(state, pid, ctx):
-    m = state["mon"][pid]
     mem = _mem(state, pid)
     mem["freeze"] = False
     mem["herd_used"] = False

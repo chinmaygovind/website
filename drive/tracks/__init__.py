@@ -64,9 +64,16 @@ import logging
 import os
 
 from tracks import look, solver
-from tracks.builder import (CELL, LEVEL, ROAD_W, STATION, Builder,
+
+# This package is a façade: most of what follows is re-exported rather than used
+# here, so that `tracks.GATE_CEIL_MAX` works and callers do not have to know
+# which submodule a constant lives in. `validate_track.py` and `test_tracks.py`
+# read them off this name. A linter told to strip unused imports would empty
+# both lines and break those callers, hence the `noqa` - the names are the
+# interface, and being unused *inside* this file is the normal case for one.
+from tracks.builder import (CELL, LEVEL, ROAD_W, STATION, Builder,     # noqa: F401
                             PROF_BLEND, PROF_SAMPLES, rise_at, surface_at)
-from tracks.checks import (CROSS_CLEAR, FIRST_TURN_DEG, GATE_CEIL_MARGIN,
+from tracks.checks import (CROSS_CLEAR, FIRST_TURN_DEG, GATE_CEIL_MARGIN,  # noqa: F401
                            GATE_CEIL_MAX, GATE_CEIL_MIN, crossings,
                            gate_ceiling, pole_side, self_proximity)
 

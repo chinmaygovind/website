@@ -17,7 +17,6 @@ when.
 leaderboard, or the anti-cheat's findings table.
 """
 
-import json
 import os
 import sys
 import tempfile
@@ -345,7 +344,7 @@ def test_a_bot_is_invisible_to_the_rating(env):
     property is inherited rather than written down anywhere in the rating code.
     """
     with env.app.app_context():
-        from models import User, DrivePlayer
+        from models import User
         g, human = _game(env)
         u = User(username="racer", email="r@example.com")
         env.db.session.add(u)

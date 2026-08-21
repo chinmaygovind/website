@@ -4,7 +4,6 @@ eventlet.monkey_patch()
 import os
 import re
 import sys
-import hashlib
 import math
 import json as json_mod
 import time
@@ -20,7 +19,7 @@ load_dotenv()
 
 from flask import (Flask, render_template, request, jsonify, Response,
                    redirect, url_for, session, send_from_directory, abort)
-from flask_socketio import SocketIO, join_room, leave_room, emit
+from flask_socketio import SocketIO, join_room, emit
 from sqlalchemy import func
 
 import models as models_mod

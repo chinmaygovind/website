@@ -1,6 +1,5 @@
 """What Chicane Park looks like."""
 
-import math
 
 PALETTE = { "road": 0x565d6b, "kerb": 0xffffff, "kerb2": 0x3d8bfd, "ground": 0x63b866,
 "sky": 0x9ed2f0, "fog": 0xb9dcee, "rail": 0xf0f0f0,

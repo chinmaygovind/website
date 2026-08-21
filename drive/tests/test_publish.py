@@ -307,7 +307,6 @@ def test_a_no_op_edit_costs_nobody_their_record(env):
     back = json.loads(json.dumps(doc))
     got = c.post("/api/make/save", json={"doc": back, "slug": slug}).get_json()
     assert got["geom_changed"] is True   # it moved, and moved back
-    row = _row(A, slug)
     # Approve once more and the hash is the original again, so a later save of
     # the same document is a no-op.
     _login(c, admin)

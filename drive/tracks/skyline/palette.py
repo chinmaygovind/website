@@ -1,6 +1,5 @@
 """What Skyline Sprint looks like."""
 
-import math
 
 PALETTE = { "road": 0x4d5464, "kerb": 0xf6f6f6, "kerb2": 0x56ccf2, "ground": 0x4a6b8a,
 "sky": 0x7fb6dd, "fog": 0x9ec9e6, "rail": 0xe9f4ff, "prop": 0x6e7f95, "deco": 0x56ccf2,

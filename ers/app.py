@@ -809,7 +809,6 @@ def _do_flip(game, state, pid):
 
 
 def _do_slap(game, state, pid, code):
-    reasons = gl.slap_reasons(state["pile"], state["rules"])
     now = time.time()
     events = gl.slap(state, pid, state["rules"])
     if not events:

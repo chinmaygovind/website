@@ -44,7 +44,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _shots import GL_FLAGS, serving
-from shoot_covers import COVERS, PAINTS, SCAN, SHOOT, _pick_window, _b64, _light_wheel
+from shoot_covers import COVERS, PAINTS, SCAN, _pick_window, _b64, _light_wheel
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DRIVE = os.path.dirname(HERE)

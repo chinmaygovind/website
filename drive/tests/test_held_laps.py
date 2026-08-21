@@ -64,7 +64,6 @@ def laps():
     Module scoped: each is a second of real simulation, and every test here
     wants the same two.
     """
-    import tuning as T
     from test_verify import drive, retuned
 
     rt = jsrt.Runtime()

@@ -46,7 +46,10 @@ line - and `solver.py` is what makes its ribbon meet itself.
 
 import math
 
-from tuning import CELL, LEVEL, ROAD_W
+# `CELL` and `LEVEL` are re-exports, not uses: nothing below touches them, but
+# `tracks/__init__.py` imports both *from here*, so a linter told to strip unused
+# imports would break every `import tracks` in the game. Leave them.
+from tuning import CELL, LEVEL, ROAD_W    # noqa: F401
 
 # Station spacing along the road. Small enough that a 20-unit-radius corner is
 # smooth (3.5 units of arc is a 10 degree step) and that the collision surface

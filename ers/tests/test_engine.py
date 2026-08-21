@@ -1,7 +1,7 @@
 """Rules coverage for the Egyptian Rat Screw engine."""
 
 import game_logic as gl
-from game_logic import flip, slap, slap_reasons, award_pile, resolve_pending, new_deal
+from game_logic import flip, slap, slap_reasons, resolve_pending, new_deal
 
 
 def C(rank, suit="♠"):

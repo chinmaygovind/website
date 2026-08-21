@@ -1,6 +1,5 @@
 """What Spa-Francorchamps looks like."""
 
-import math
 
 PALETTE = { "road": 0x3e444e, "kerb": 0xf5f2ee, "kerb2": 0xd23b32,
 "ground": 0x4a6b3f, "rail": 0xd8dde2,

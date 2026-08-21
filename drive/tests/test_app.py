@@ -27,7 +27,7 @@ def env():
     held in the queue and none of them would reach the board. That would make
     this a file about the queue, and it is a file about the board.
 
-    What the anti-cheat does to `/api/run` is tested in `test_run_checks.py`,
+    What the anti-cheat does to `/api/run` is tested in `test_held_laps.py`,
     against laps the physics actually drove.
     """
     fd, path = tempfile.mkstemp(suffix=".db")

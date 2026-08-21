@@ -484,7 +484,6 @@ def token_choice_decision(state, pid, shed_poison, shed_shrink):
 
 def _finish_resolve_after_hearts(state, pid):
     dice = state["dice"]
-    m = state["mon"][pid]
 
     # 4) Claws -> attack. Acid Attack adds damage even with no claws; Spiked
     #    Tail / Urbavore / Burrowing add on top when you actually attack.

@@ -5,7 +5,7 @@ you. Also read it before shipping a rendering change — there is no browser
 in CI.
 
 `scripts/tests.sh drive` - **889 tests, about 100s**, on one core. A third of
-that is the anti-cheat: `test_verify.py` and `test_run_checks.py` drive real laps
+that is the anti-cheat: `test_verify.py` and `test_held_laps.py` drive real laps
 through the real physics and then re-drive them, which is what it costs to have
 the one test worth having there - a lap somebody actually drove is accepted.
 
@@ -112,14 +112,14 @@ produced it, because a lap driven on an angle it did not record would be
 evidence of a lap nobody drove), and it is a **frame** loop rather than a step
 loop, so the tests can ask what 12fps or a stuttering frame does to the
 recording. It is only there to make laps for `test_verify.py` and
-`test_run_checks.py`, and it makes no claim about how mean a track is allowed to
+`test_held_laps.py`, and it makes no claim about how mean a track is allowed to
 be - which is why it did not bring `test_sim.py` back with it.
 
 `test_verify.py` is where the anti-cheat's numbers come from: it drives real laps
 and re-drives them, both for the case that matters (an honest lap is accepted,
 with the honest floor pinned well under the threshold) and for the cases it is
 for (2% more engine, more grip, a stolen replay, evidence that stops early).
-`test_run_checks.py` is the other half - what `/api/run` does with the verdict -
+`test_held_laps.py` is the other half - what `/api/run` does with the verdict -
 and it turns the re-simulation **on**, which is why `test_app.py`'s fixture turns
 it off and says so: `test_app.py`'s replays drive the track but were never driven
 by a car, so with the anti-cheat live none of them would reach the board.
