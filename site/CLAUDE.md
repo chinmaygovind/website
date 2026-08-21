@@ -244,22 +244,21 @@ below.
   two rows it reads as a list that continues, cut through the middle of one it
   reads as a broken page. Check a change with a screenshot at 1024x600 and at
   844x390, not just at a phone width — width alone will not reproduce any of this.
-- `site/wii/index.html` is the Wii menu (was `public/wii/index.html`, briefly at
-  root). Warning screen fades into a channel grid. The bottom-left gray slot is a
-  **Ticket to Ride channel** (`#channel-ttr`) whose click handler navigates to `/ttr`.
-  Its `../../images|audio|videos` paths assume it sits at root, so some break at `/wii/`.
-- **`site/warning.html` is gone** (deleted in `d0a282b`) but `site/wii/index.html`
-  still navigates to `warning.html`, so the Wii menu's "reset" path 404s into the
-  Mario game. The `warning.png`/`warning.wav` assets are still there, so restoring
-  the page (at `site/wii/warning.html`, since the link is relative) would fix it.
-- `site/channels/{mii,music,codebusters}/` - the Wii channel pages. They
-  reference shared assets with `../../images|audio|videos/…` (resolves to root).
-- `site/home/index.html` - the **projects landing page** (was the site's old `/`).
-  Its assets live in `site/home/{images,audio}/` and `Chinmay_Govind_Resume.pdf`.
-- `site/{projects,games}/` - standalone project/game pages (astro, ibec, quickcal,
-  robot-tour, bridge, flip, klotski), copied unchanged.
-- `site/{images,audio,videos}/` - shared media (Wii menu art + channel media).
-- `site/404.html`, `favicon.ico`, `robots.txt` at the root.
+- `site/404.html` is a small Mario platformer, served by the 404 handler and so
+  reachable only by a bad URL. Its four sounds are in `site/audio/`, which holds
+  nothing else; the paths are absolute (`/audio/...`) so the game works at any
+  URL it is served under.
+- `site/{robots.txt,sitemap.xml,favicon.ico,favicon.png}` at the root, and
+  `site/images/` which is now one file, the custom cursor.
+
+**Everything else that used to be here is gone** (Aug 2026): `home/` (the old
+projects landing page), `wii/` (the Wii-menu recreation), `channels/`, `games/`
+and `projects/`, plus `videos/` and most of `audio/` and `images/`, which only
+those pages used. Nothing linked to any of it - the landing page's tiles open
+modals or point off-site - so it was reachable only by typing the address. That
+took `site/` from 615MB to 140MB. It is in git history if a page is ever wanted
+back; the deleting commit is the one to read first, because the Mario game's
+audio had to be moved out of `home/` on the way.
 
 ## The settings panel
 
@@ -502,14 +501,14 @@ flash the way this page used to. `drive/` is already `block`, for its own reason
 
 ## Being found
 
-- **`site/sitemap.xml` lists the landing page and nothing else, on purpose.** It
-  briefly listed all twelve reachable pages; Chinmay does not want the unlinked
-  ones found, so they came out and `robots.txt` disallows them (`/home/`,
-  `/projects/`, `/games/`, `/channels/`, `/wii/`). They are **still on disk and
-  still answer** if you know the address — this is a decision about what search
-  engines are told, not a deletion. It is still hand-kept, so `tests/test_seo.py`
-  resolves every URL in it against the tree, fails on a rename, and fails if the
-  sitemap ever lists something robots.txt disallows.
+- **`site/sitemap.xml` lists the landing page and nothing else**, which is now
+  simply the truth rather than a policy: it briefly listed all twelve reachable
+  pages, those pages were unlinked, Chinmay did not want them found, and in Aug
+  2026 they were deleted outright instead of hidden. `robots.txt` disallows
+  nothing any more for the same reason - a 404 says it better than a rule about a
+  page that is not there. The sitemap is hand-kept, so `tests/test_seo.py`
+  resolves every URL in it against the tree, fails on a rename, and fails if it
+  ever lists something robots.txt disallows.
 - **The four games cannot be in that sitemap and do not need to be.** A sitemap
   may only list URLs on its own host, so a `drive.cgovind.com` entry would
   invalidate the file. They are found the better way: the landing page links to
@@ -542,34 +541,15 @@ flash the way this page used to. `drive/` is already `block`, for its own reason
   with robots.txt — **but its root is deliberately still crawlable**, because a
   crawler that cannot fetch the redirect cannot follow it either.
 
-## Unlinked pages (nothing on the site links to these)
-
-The landing page's tiles only open modals or point off-site (ttr/ers/kot subdomains,
-the resume PDF, YouTube, PennToday). **No internal HTML page is linked from `/` at
-all**, so every page below is reachable only by typing its URL:
-
-- **Orphaned outright:** `games/flip/` ("Flip - The Game"), `games/klotski/`
-  ("Klotski"), `wii/`, `channels/mii/`, and the local
-  `projects/ibec/` copy (7 leftover template pages: committees, contact, events,
-  membership, left-/right-/no-sidebar).
-- **Orphaned transitively:** `home/index.html` (the old projects page) has no
-  inbound links either, so the things only *it* links to are also unreachable:
-  `projects/astro/` (AstroGPT), `projects/quickcal/`, `projects/robot-tour/`,
-  `games/bridge/` (Penn Bridge sim, plus the `projects/bridge/` redirect stub),
-  `channels/music/` and `channels/codebusters/` (+ its `pattern.html`).
-- `site/404.html` (Mario game) is by design only reachable via a bad URL.
-- **Two stale links to fix if you re-link things:** `home/index.html:591`'s "Wii
-  Channel" tile points at `../`, which was the Wii menu when it lived at `/` but is
-  now the landing page — it should be `../wii/`. And the Wii menu itself only
-  navigates for the TTR slot; the mii/music/codebusters channel pages are not
-  wired to any channel tile.
 ## Conventions / gotchas
 
-- **Links are relative** and assume `site/`-as-root. When adding pages, keep paths
-  relative; the only absolute paths are a couple that already encode the page's
-  own location (e.g. astro's `/projects/astro/static/…`) and `site/404.html`'s
-  `/home/audio/…` (absolute so the 404 game works at any URL).
-- This site was lifted from `chinmaygovind.github.io/public`. The Wii menu briefly
-  sat at `/` but now lives at `/wii/`; `/` is a simple landing page and the older
-  projects page stayed at `/home/`. Dead Create-React-App refs (`%PUBLIC_URL%`,
-  `logo192.png`, `manifest.json`) were removed.
+- **Links are relative** and assume `site/`-as-root; keep new ones that way. The
+  only absolute paths left are `site/404.html`'s four `/audio/...` sounds, which
+  are absolute so the game works whatever URL served it.
+- **Nothing on `/` links to another page on this host.** Every tile opens a modal
+  or points off-site (the game subdomains, the resume PDF, YouTube, PennToday).
+  That was already true before the unlinked tree was deleted, and it is why
+  deleting it cost nothing.
+- This site was lifted from `chinmaygovind.github.io/public`. Dead
+  Create-React-App references (`%PUBLIC_URL%`, `logo192.png`, `manifest.json`)
+  were removed then; the rest of the inheritance went in Aug 2026.

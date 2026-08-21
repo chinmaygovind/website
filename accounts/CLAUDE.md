@@ -263,7 +263,7 @@ mounts outside `/accounts` and because a blueprint is what lets one
 
 ### Tests
 
-`scripts/tests.sh site` — 213 tests, about 15s, plus the `import app` check the
+`scripts/tests.sh site` — 245 tests, about 5s, plus the `import app` check the
 deploy used to be. `tests/test_no_drift.py` is the one to know about: five
 services each own a copy of `User` and now of `UserProfile`, which is this
 repo's convention and the right one for five things that deploy separately, but

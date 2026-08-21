@@ -3,17 +3,17 @@
 **Live at `https://drive.cgovind.com`.** The fourth game, same shape as ERS/KoT:
 Flask + Flask-SocketIO, its own eventlet gunicorn `-w 1` on `127.0.0.1:5005`, its own
 venv (`drive/venv`) and `.env` (both gitignored, hand-made on the box), sharing TTR's
-`users` table for accounts. A PolyTrack-style low-poly driving game: fifteen
-tracks, medal times, ghosts, and multiplayer rooms. Fourteen are point-to-point;
-**Spa-Francorchamps is the one closed circuit** and starts and finishes on the
-same line. **Costco Wholesale is the one that goes indoors**, and it is the only
+`users` table for accounts. A PolyTrack-style low-poly driving game: nineteen
+tracks, medal times, ghosts, and multiplayer rooms. Seventeen are point-to-point;
+**Spa-Francorchamps and Silverstone are the two closed circuits** and start and
+finish on the same line. **Costco Wholesale is the one that goes indoors**, and it is the only
 track with solid geometry over the road.
 
 ## Read the one doc your change is about
 
 **This file is the whole of what every Drive change needs. Everything else is in
 `drive/docs/`, and you should read exactly the ones your task touches — not all of
-them.** They come to ~175KB together, which is more context than the whole of the
+them.** They come to ~360KB together, which is more context than the whole of the
 rest of the repo; any one of them is 11-28KB.
 
 | doc | read it before touching |
@@ -76,7 +76,7 @@ Big Red) is a compressed recreation of the real circuit, and it is the odd one
 out in the pool in four ways that all cost something to get right. Read
 `docs/tracks-and-geometry.md` before touching any of them.
 
-- **It is the only closed lap.** The ribbon is a ring: the last station lands
+- **It is a closed lap** (Silverstone is the other). The ribbon is a ring: the last station lands
   back on station 0 and the finish gate *is* the start gate
   (`Builder.finish_at_start`). That works only because `course.js` refuses to
   credit the finish until every checkpoint is behind you, so the car crossing
@@ -196,7 +196,7 @@ pictures are what removes them.
 is the running list of failure modes, so the render step looks *for* known
 problems rather than at a picture; append to it whenever something new turns up,
 one line, no need to work out the rule. And `tools/pool_stats.py <slug>` profiles
-a track on 26 numbers against the other fifteen - the pool is a labelled set of
+a track on 26 numbers against the other eighteen - the pool is a labelled set of
 good tracks and this is the only thing that reads it back. It says *unlike the
 pool*, never *wrong*: Big Red's 223-unit drop flags every run and is the point of
 the track. What it catches is the mistake with no visual signature - a scatter
@@ -341,7 +341,7 @@ than 15% or move a corner more than 8 degrees before refusing.
   on the nav's paper untiled, while the app icons are painted over `--paper`
   because iOS mattes a transparent apple-touch-icon onto black and Android crops
   a maskable icon to a circle.
-- Tests: `scripts/tests.sh drive` - about 1000 tests in about a minute, **run
+- Tests: `scripts/tests.sh drive` - 1,841 tests in about two and a half minutes, **run
   serially on purpose** (see `docs/testing.md`). A third of that is the anti-cheat driving
   real laps and re-driving them, which is the price of the one test that
   matters: a lap somebody actually drove has to be accepted. Nothing in the

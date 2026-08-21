@@ -4,14 +4,14 @@ Read this before adding or removing a Drive test, or when a test surprises
 you. Also read it before shipping a rendering change — there is no browser
 in CI.
 
-`scripts/tests.sh drive` - **889 tests, about 100s**, on one core. A third of
+`scripts/tests.sh drive` - **1,841 tests, about 150s**, on one core. A third of
 that is the anti-cheat: `test_verify.py` and `test_held_laps.py` drive real laps
 through the real physics and then re-drive them, which is what it costs to have
 the one test worth having there - a lap somebody actually drove is accepted.
 
 **Drive runs serially on purpose, and the reason is a measurement.** It used to
 run `-n 4 --dist loadfile`, which was worth 5:40 -> 1:35 while `test_sim.py`
-drove all thirteen tracks (fourteen now). That file is gone; the suite was 66s serial
+drove all thirteen tracks (nineteen now). That file is gone; the suite was 66s serial
 against 42s on four workers when this was measured, so xdist bought 24s. Against that, **three of the
 last 34 CI drive jobs hung**: the run reaches 94-98% in 15-42 seconds and then
 sits with the controller and all four workers at 0.0% CPU, 739s / 901s / 246s,
@@ -43,9 +43,9 @@ Note what it cannot do: it measures a test that *finished*, so it catches a slee
 and not a hang.
 
 **Two of every three drive tests come from parametrisation, not from typing.** The
-count is about 400 functions - `test_tracks.py` is 23 functions x 14 tracks = 322
-tests in 4s. So the count is a bad proxy for either cost or duplication: deleting
-hand-written tests buys almost no time (`test_garage_js.py` is 141 tests in 1.3s),
+count is 894 functions - `test_tracks.py` is 30 functions x 19 tracks = 372
+tests in 10s. So the count is a bad proxy for either cost or duplication: deleting
+hand-written tests buys almost no time (`test_garage_js.py` is 141 tests in 3.6s),
 and the per-track multiplication is where the value is. When the suite feels big,
 **profile it** (`--durations=25`) rather than counting it.
 

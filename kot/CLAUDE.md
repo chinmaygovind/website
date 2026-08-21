@@ -9,7 +9,7 @@ table for accounts. Stats live in `kot_stats`, games in `kot_games` / `kot_playe
 - **Layout:** `kot/game_logic.py` (pure rules engine), `kot/cards.py` (all 66 power
   cards), `kot/bot.py` (the bot brain, also pure), `kot/app.py` (auth, lobby, socket
   game loop, bot orchestration, ELO), `kot/models.py`, `kot/templates/` + `kot/static/`.
-- **Tests:** `scripts/tests.sh kot` - 218 tests in about 11s. `test_engine.py` covers the
+- **Tests:** `scripts/tests.sh kot` - 221 tests in about 30s. `test_engine.py` covers the
   rules, `test_bot.py` covers the bot (liveness, legality, latency, strength). The
   three **strength** tests are gated off the default run - see the deploy section's
   note - so a plain `scripts/tests.sh kot` does *not* check that the bot is any good.

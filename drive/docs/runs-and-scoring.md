@@ -208,7 +208,7 @@ built thing would only have been a way to be told the wrong answer.)*
   is left is one window of the difference in *acceleration* - about 0.06 units
   for a 40% richer engine, not the 2.2 the original plan assumed. So the useful
   measurement is not the worst window but the middle one. Measured by driving all
-  fourteen tracks through the real physics and re-driving them
+  nineteen tracks through the real physics and re-driving them
   (`tests/test_verify.py`): an honest lap sits at **0.00055-0.00063 units** on
   every track, at every frame rate from 12 to 144, with hitches, with respawns,
   driven gently or hard - because the floor is the quantisation of an anchor and
