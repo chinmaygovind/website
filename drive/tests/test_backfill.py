@@ -10,29 +10,21 @@ the answer is known; and that running it twice does not credit anybody twice.
 
 import os
 import sys
-import tempfile
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from conftest import boot_app, close_app        # noqa: E402
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
 
 
 @pytest.fixture()
 def env():
     """A fresh app + database, same shape as test_app.py's."""
-    fd, path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    os.environ["DATABASE_URL"] = "sqlite:///" + path
-    for mod in ("app", "models", "backfill_race_activity"):
-        sys.modules.pop(mod, None)
-    import app as A
-    A.app.config["TESTING"] = True
-    with A.app.app_context():
-        A.db.drop_all()
-        A.db.create_all()
+    A, path = boot_app()
     yield A
-    os.unlink(path)
+    close_app(path)
 
 
 @pytest.fixture()

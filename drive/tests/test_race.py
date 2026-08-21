@@ -13,28 +13,20 @@ driven through a socket: what is under test is the bookkeeping, not the wire.
 
 import os
 import sys
-import tempfile
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from conftest import boot_app, close_app        # noqa: E402
+
 
 @pytest.fixture()
 def env():
-    fd, path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    os.environ["DATABASE_URL"] = "sqlite:///" + path
-    for mod in ("app", "models"):
-        sys.modules.pop(mod, None)
-    import app as A
-    A.app.config["TESTING"] = True
-    with A.app.app_context():
-        A.db.drop_all()
-        A.db.create_all()
+    A, path = boot_app()
     yield A
     A._rooms.clear()
-    os.unlink(path)
+    close_app(path)
 
 
 def _room(A, code="TEST", phase="racing"):

@@ -24,6 +24,10 @@ every time a track is added. That is the honest use of the marker - the guard is
 a sleep or a loop that grew *unnoticed*, and a test whose cost is the point is neither.
 """
 
+import os
+import sys
+import tempfile
+
 import pytest
 
 # Six times the slowest honest test (`test_a_real_lap_passes_the_anti_cheat[rainbow]`,
@@ -164,3 +168,86 @@ NO_HOTLAP_YET = {"silverstone"}
 # than deleted because it is the escape hatch a brand-new folder needs on the
 # commit that adds it - a track nobody has driven has no board to cut from.
 NO_CUT_MEDALS_YET = {"silverstone"}
+
+
+# ---------------------------------------------------------------------------
+# Booting the app under test
+# ---------------------------------------------------------------------------
+#
+# This replaced fifteen hand-maintained copies of the same fixture, one per test
+# file. They agreed on the hard part and disagreed on the list below, which is
+# the part that has to be right.
+
+# The modules re-imported for every test that boots the app.
+#
+# `app` and `models` are the obvious two: the fixture gives each test its own
+# SQLite file, so it needs its own `db` and its own Flask app on top of it.
+#
+# **`portal` is the one that was easy to miss, and was missed.** It does
+# `from models import ..., db` at module level, so it captures whichever `db`
+# object was live the first time it was imported. Only three of the fifteen
+# fixtures popped it, and they were the three that exercise portal
+# (`test_make`, `test_portal`, `test_publish`) - so the other twelve ran any
+# portal code path against a `db` bound to a SQLite file that had already been
+# deleted. It had been managed correctly, by hand, per file, and silently.
+# Popping it here is a fix, not just a tidy-up.
+#
+# **`botsim` is deliberately absent.** It holds `_rt`, a QuickJS runtime that
+# costs up to `BUILD_LIMIT_S` (30 seconds) to build, and it holds no `db`
+# reference at all - so keeping it across tests is both safe and most of why
+# `test_bots.py` is not unbearable. Tests that need its *worlds* cleared do that
+# in their own teardown with `botsim.drop()`, which is the narrow fix rather
+# than throwing the runtime away.
+#
+# **Anything split out of `app.py` belongs in this list.** A module left out
+# stays cached while `app` is re-imported fresh, holding the previous test's
+# `app`, `db` and module globals. That is order-dependent contamination: it
+# shows up as tests that pass alone and fail together, or worse, pass wrongly.
+# Popping a module that was never imported is a no-op, so there is no cost to
+# naming one here early.
+RELOADED = ("app", "models", "portal", "backfill_race_activity")
+
+
+def boot_app(verify=None, **environ):
+    """A fresh `app` and `db` on a throwaway SQLite file. Returns `(A, path)`.
+
+    `A` is the `app` *module*, not the Flask object - the suite reaches through
+    it for module globals (`A._rooms`, `A.ADMIN_NAMES`, `A._seat_bot`), which is
+    also why the import has to be genuinely fresh rather than a config poke.
+
+    `verify` sets `DRIVE_VERIFY` ("0" to switch the re-simulation off, "1" to
+    switch it on) and is read at import, so it cannot be changed afterwards.
+    Pass it here or not at all. Anything else in `environ` is set the same way,
+    with `None` meaning "remove this variable".
+
+    Pair every call with `close_app`.
+    """
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    os.environ["DATABASE_URL"] = "sqlite:///" + path
+    if verify is not None:
+        os.environ["DRIVE_VERIFY"] = verify
+    for key, value in environ.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+    for mod in RELOADED:
+        sys.modules.pop(mod, None)
+    import app as A
+    A.app.config["TESTING"] = True
+    with A.app.app_context():
+        A.db.drop_all()
+        A.db.create_all()
+    return A, path
+
+
+def close_app(path, verify=None):
+    """Undo `boot_app`: drop the `DRIVE_VERIFY` override, delete the database.
+
+    `verify` only has to be truthy-or-not here; it is passed as the same value
+    the boot used so the two calls read as a pair.
+    """
+    if verify is not None:
+        os.environ.pop("DRIVE_VERIFY", None)
+    os.unlink(path)

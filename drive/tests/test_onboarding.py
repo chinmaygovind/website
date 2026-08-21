@@ -32,11 +32,12 @@ for.
 import os
 import re
 import sys
-import tempfile
 
 import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
+
+from conftest import boot_app, close_app        # noqa: E402
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -45,20 +46,9 @@ DRIVE = os.path.dirname(HERE)
 
 @pytest.fixture()
 def env():
-    fd, path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    os.environ["DATABASE_URL"] = "sqlite:///" + path
-    os.environ["DRIVE_VERIFY"] = "0"
-    for mod in ("app", "models"):
-        sys.modules.pop(mod, None)
-    import app as A
-    A.app.config["TESTING"] = True
-    with A.app.app_context():
-        A.db.drop_all()
-        A.db.create_all()
+    A, path = boot_app(verify="0")
     yield A
-    os.environ.pop("DRIVE_VERIFY", None)
-    os.unlink(path)
+    close_app(path, verify="0")
 
 
 def _read(*parts):

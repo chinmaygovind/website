@@ -19,7 +19,6 @@ leaderboard, or the anti-cheat's findings table.
 
 import os
 import sys
-import tempfile
 
 import pytest
 
@@ -28,7 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import bots as bots_mod                                    # noqa: E402
 import botsim                                              # noqa: E402
 import tracks as tracks_mod                                # noqa: E402
-from conftest import NO_HOTLAP_YET                          # noqa: E402
+from conftest import boot_app, close_app, NO_HOTLAP_YET                          # noqa: E402
 
 needs_js = pytest.mark.skipif(not botsim.available(),
                               reason="quickjs is not installed")
@@ -40,16 +39,7 @@ DRIVEN = ["sunrise", "chicane"]
 
 @pytest.fixture()
 def env():
-    fd, path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    os.environ["DATABASE_URL"] = "sqlite:///" + path
-    for mod in ("app", "models"):
-        sys.modules.pop(mod, None)
-    import app as A
-    A.app.config["TESTING"] = True
-    with A.app.app_context():
-        A.db.drop_all()
-        A.db.create_all()
+    A, path = boot_app()
     yield A
     A._rooms.clear()
     # **The bot worlds live in a module global that outlives the fixture**, and
@@ -62,7 +52,7 @@ def env():
     # place for it rather than a guard in `botsim`.
     for code in botsim.live_codes():
         botsim.drop(code)
-    os.unlink(path)
+    close_app(path)
 
 
 def _game(A, track="sunrise", code="BOTS"):

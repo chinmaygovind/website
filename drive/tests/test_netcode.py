@@ -33,6 +33,8 @@ import sys
 import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
+
+from conftest import boot_app, close_app        # noqa: E402
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import jsrt
@@ -373,20 +375,10 @@ def test_with_no_snapshot_it_falls_back_to_what_it_did_before(board):
 
 @pytest.fixture()
 def env():
-    import tempfile
-    fd, path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    os.environ["DATABASE_URL"] = "sqlite:///" + path
-    for mod in ("app", "models"):
-        sys.modules.pop(mod, None)
-    import app as A
-    A.app.config["TESTING"] = True
-    with A.app.app_context():
-        A.db.drop_all()
-        A.db.create_all()
+    A, path = boot_app()
     yield A
     A._rooms.clear()
-    os.unlink(path)
+    close_app(path)
 
 
 def test_the_trip_in_is_reported_beside_the_wait_and_not_inside_it(env):

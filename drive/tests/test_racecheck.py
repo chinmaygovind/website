@@ -23,11 +23,12 @@ preamble for why a room is not the place for it.
 import os
 import re
 import sys
-import tempfile
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from conftest import boot_app, close_app        # noqa: E402
 
 import racecheck
 import runcheck
@@ -325,19 +326,10 @@ def test_the_flag_bits_match_the_js():
 
 @pytest.fixture()
 def env():
-    fd, path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    os.environ["DATABASE_URL"] = "sqlite:///" + path
-    for mod in ("app", "models"):
-        sys.modules.pop(mod, None)
-    import app as A
-    A.app.config["TESTING"] = True
-    with A.app.app_context():
-        A.db.drop_all()
-        A.db.create_all()
+    A, path = boot_app()
     yield A
     A._rooms.clear()
-    os.unlink(path)
+    close_app(path)
 
 
 def _pose(A, code, pid, sid="s1", **fields):

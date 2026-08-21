@@ -11,11 +11,12 @@ import importlib
 import json
 import os
 import sys
-import tempfile
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from conftest import boot_app, close_app        # noqa: E402
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
 
 import tracks as tracks_mod
@@ -244,20 +245,11 @@ def test_a_wall_changes_the_fingerprint_and_a_tower_does_not():
 @pytest.fixture
 def env():
     """A fresh app and database, the way the rest of the suite does it."""
-    fd, path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    os.environ["DATABASE_URL"] = "sqlite:///" + path
-    for mod in ("app", "models"):
-        sys.modules.pop(mod, None)
-    import app as A
+    A, path = boot_app()
     import models as M
     A.models = M
-    A.app.config["TESTING"] = True
-    with A.app.app_context():
-        A.db.drop_all()
-        A.db.create_all()
     yield A
-    os.unlink(path)
+    close_app(path)
 
 
 def test_a_row_round_trips_through_the_database(env):

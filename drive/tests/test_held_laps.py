@@ -16,11 +16,12 @@ has checked - with no read path anywhere having to remember to exclude one.
 import json as json_mod
 import os
 import sys
-import tempfile
 
 import pytest
 
 sys.path.insert(0, os.path.dirname(__file__))
+
+from conftest import boot_app, close_app        # noqa: E402
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import jsrt
@@ -39,22 +40,11 @@ def env():
     process, so that a check is a thing that happens at a known moment rather
     than a race with the test.
     """
-    fd, path = tempfile.mkstemp(suffix=".db")
-    os.close(fd)
-    os.environ["DATABASE_URL"] = "sqlite:///" + path
-    os.environ["DRIVE_VERIFY"] = "1"
-    for mod in ("app", "models"):
-        sys.modules.pop(mod, None)
-    import app as A
-    A.app.config["TESTING"] = True
+    A, path = boot_app(verify="1")
     A.spawned = []
     A._spawn_verifier = lambda *a: (A.spawned.append(a), True)[1]
-    with A.app.app_context():
-        A.db.drop_all()
-        A.db.create_all()
     yield A
-    os.environ.pop("DRIVE_VERIFY", None)
-    os.unlink(path)
+    close_app(path, verify="1")
 
 
 @pytest.fixture(scope="module")
