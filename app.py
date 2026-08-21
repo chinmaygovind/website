@@ -1,15 +1,22 @@
 """Personal website server.
 
-Serves the static site under ``site/`` (the Wii menu is the site root) and
-redirects ``/ttr`` to the Ticket to Ride service. Also hosts ``/accounts``, the
-one page on this domain that is not static: the shared profile for the four
-games, which lives in the ``accounts`` package and is registered at the bottom
-of this file.
+Serves the static site under ``site/`` (``site/index.html`` is the landing page)
+and redirects ``/ttr``, ``/ers`` and ``/kot`` to the game subdomains. Also hosts
+``/accounts`` and ``/admin``, the only things on this domain that are not static:
+the shared profile for the four games and Chinmay's console, both in the
+``accounts`` package and registered at the bottom of this file.
 
-The static tree was authored for GitHub Pages, which auto-serves ``foo/index.html``
-for a request to ``/foo/`` and redirects ``/foo`` -> ``/foo/``. Flask does neither
-out of the box, so ``serve()`` re-implements that directory-index behaviour; without
-it every ``/projects/...``, ``/games/...`` and ``/channels/...`` link would 404.
+``serve()`` re-implements GitHub Pages' directory-index behaviour - ``/foo/``
+serves ``site/foo/index.html``, and ``/foo`` 301-redirects to ``/foo/`` so
+relative links keep working - because the tree was authored for Pages and Flask
+does neither out of the box.
+
+**Nothing exercises that today.** August 2026 deleted the whole unlinked tree
+(``home/``, ``wii/``, ``channels/``, ``games/``, ``projects/``), so
+``site/index.html`` is now the only ``index.html`` on disk and every remaining
+path is a bare file. It is kept because it is ten lines and it is what makes the
+next page you add as ``site/foo/index.html`` simply work; delete it and that page
+404s until somebody puts it back.
 """
 
 import base64

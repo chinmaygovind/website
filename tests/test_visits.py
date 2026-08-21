@@ -57,10 +57,12 @@ def test_furniture_is_not(client, wipe):
 
 
 def test_the_resume_is_a_visit(client, wipe):
-    """Deliberately not filed with the assets: it is the one file on the site
-    whose downloads are worth counting."""
-    client.get("/home/Chinmay_Govind_Resume.pdf")
-    assert [r["path"] for r in rows(wipe)] == ["/home/Chinmay_Govind_Resume.pdf"]
+    """`.pdf` is deliberately absent from `ASSET_RE`: the resume is the one file
+    on the site whose downloads are worth counting. Note it *is* under
+    `/assets/`, which costs it nothing - the filter reads the extension, not the
+    directory."""
+    client.get("/assets/Chinmay_Govind_Resume.pdf")
+    assert [r["path"] for r in rows(wipe)] == ["/assets/Chinmay_Govind_Resume.pdf"]
 
 
 def test_a_404_is_still_a_visit(client, wipe):

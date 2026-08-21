@@ -240,14 +240,16 @@ def test_a_new_account_appears_with_the_one_thing_a_profile_hides(client, as_adm
 def test_visits_are_grouped_into_sessions(client, db, as_admin):
     as_admin("chinmay")
     start = datetime.utcnow() - timedelta(minutes=10)
-    visit(db, session_id="abc123", path="/wii/", at=start)
-    visit(db, session_id="abc123", path="/projects/", at=start + timedelta(seconds=30))
-    visit(db, session_id="abc123", path="/resume.pdf", at=start + timedelta(seconds=90))
+    visit(db, session_id="abc123", path="/accounts/chinmay", at=start)
+    visit(db, session_id="abc123", path="/", at=start + timedelta(seconds=30))
+    visit(db, session_id="abc123", path="/assets/Chinmay_Govind_Resume.pdf",
+          at=start + timedelta(seconds=90))
 
     page = body(client.get("/admin/sessions"))
     assert "abc123" in page, "the session is not listed"
-    # The landing page is the first request of the session, not the last.
-    assert "/wii/" in page
+    # "Landed on" is the session's *first* request and not its last. The entry
+    # has to be a path distinctive enough to find in the page, which "/" is not.
+    assert "/accounts/chinmay" in page
     assert "Chrome" in page, "the user agent was not read"
     assert "203.0.113.9" in page
 
@@ -353,7 +355,7 @@ def test_an_internal_referrer_is_not_a_source(client, db, as_admin):
     the column is read to find out who is *sending* people."""
     as_admin("chinmay")
     visit(db, session_id="from-inside", path="/a",
-          referrer="https://cgovind.com/wii/")
+          referrer="https://cgovind.com/")
     visit(db, session_id="from-outside", path="/b",
           referrer="https://news.ycombinator.com/item?id=1")
 
@@ -539,7 +541,7 @@ def test_an_unrecognised_agent_keeps_its_own_words():
 @pytest.mark.parametrize("url, expected", [
     ("https://news.ycombinator.com/item?id=1", "news.ycombinator.com"),
     ("https://www.google.com/search?q=x", "google.com"),
-    ("https://cgovind.com/wii/", None),
+    ("https://cgovind.com/", None),
     ("https://drive.cgovind.com/play", None),
     ("http://localhost:5002/", None),
     (None, None),

@@ -1,21 +1,29 @@
 # https://www.robotstxt.org/robotstxt.html
 #
-# The landing page is the site, as far as search is concerned. Everything below
-# is a page nothing links to - the tiles on `/` open modals or point at the game
-# subdomains - and Chinmay does not want them found. They still answer if you
-# know the address; this is about what is advertised, not what exists.
+# The landing page is the site, as far as search is concerned, and now as far as
+# the disk is concerned too. This file used to disallow five paths - /home/,
+# /projects/, /games/, /channels/ and /wii/ - which were pages nothing linked to
+# and Chinmay did not want found. They were deleted in August 2026 rather than
+# hidden, so there is nothing left to disallow: a 404 says it better than a rule
+# about a page that is not there.
 #
-# The games are on their own hosts (drive/ttr/ers/kot.cgovind.com), each with
-# its own robots.txt, and are discovered through the links on the landing page.
+# Nothing replaces them. An empty allow-all is correct here: `/` is the only
+# static page and `/404.html` is not addressable.
+#
+# The two non-static things are deliberately left crawlable-by-default, which is
+# not the same as unprotected. `/admin` needs no rule because it sends
+# `noindex, nofollow` in its own `<head>` and 404s at everyone who is not
+# Chinmay - a rule here would be the one file on the site that admits it exists.
+# `/accounts` sends no `noindex` and never has: the profiles and the directory
+# are meant to be public, and `/accounts/settings` needs a login and redirects
+# anyone without one. If that judgement ever changes, the fix is a `noindex` in
+# `accounts/templates/accounts/base.html`, not a Disallow here - a Disallow only
+# stops the fetch, and a page linked from elsewhere can still be indexed on the
+# strength of the link alone.
+#
+# The games are on their own hosts (drive/ttr/ers/kot.cgovind.com), each with its
+# own robots.txt, and are discovered through the links on the landing page.
 User-agent: *
-
-# The old projects landing page, and everything reachable only through it.
-Disallow: /home/
-Disallow: /projects/
-Disallow: /games/
-Disallow: /channels/
-
-# The Wii menu recreation.
-Disallow: /wii/
+Disallow:
 
 Sitemap: https://cgovind.com/sitemap.xml
