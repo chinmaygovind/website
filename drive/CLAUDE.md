@@ -241,7 +241,8 @@ than 15% or move a corner more than 8 degrees before refusing.
   validation), `verify.py` + `jsrt.py` + `three_stub.js` (the anti-cheat: a lap
   near the top of a board is re-driven through the game's own `Car.step` in
   QuickJS before it goes up), `racecheck.py` (the *room's* anti-cheat, which is
-  a different question - see below), `models.py`, `app.py`, `static/js/` (`trackmesh.js`, `physics.js`,
+  a different question - see below), `models.py`, `app.py`, `maker.py` (the
+  track maker and publishing, split out of `app.py`), `static/js/` (`trackmesh.js`, `physics.js`,
   `course.js`, `render.js`, `sound.js`, `game.js`, `pending.js`, vendored
   `three.module.js`), `tools/_hero.py` (the cover composition every picture of a
   track is), `tools/shoot_tracks.py` (each track's cover art, and its share card

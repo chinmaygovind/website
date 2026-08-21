@@ -347,7 +347,7 @@ def test_a_fork_is_credited_forever(env):
     c = A.app.test_client()
     _login(c, uid)
     tok = c.post("/api/make/fork/chicane").get_json()["token"]
-    doc = A._DRAFTS[tok][0]
+    doc = A.maker._DRAFTS[tok][0]
     assert doc["forked_from"] == "chicane"
     slug = c.post("/api/make/save", json={"doc": doc}).get_json()["slug"]
     assert _row(A, slug).forked_from \
@@ -578,7 +578,7 @@ def test_a_room_can_be_raced_on_a_community_track(env):
         assert t["name"] == "Room Test"
         # And the things a race reads off it.
         assert t["pole_side"] in (-1, 1)
-        assert A.checks.GATE_CEIL_MIN <= t["gate_ceil"] <= A.checks.GATE_CEIL_MAX
+        assert A.maker.checks.GATE_CEIL_MIN <= t["gate_ceil"] <= A.maker.checks.GATE_CEIL_MAX
         assert t["spawn"] and t["gates"] and t["checkpoints"] >= 1
 
     page = c.get("/room/USRT")
@@ -685,8 +685,8 @@ def test_the_queue_and_the_accounts_console_admit_the_same_people(
     tracks, with nothing anywhere saying why.
     """
     A = env
-    A.ADMIN_NAMES = frozenset(n.strip().lower() for n in configured.split(",")
-                              if n.strip())
+    A.maker.ADMIN_NAMES = frozenset(n.strip().lower()
+                                    for n in configured.split(",") if n.strip())
     uid = _user(A, username)
     c = A.app.test_client()
     _login(c, uid)

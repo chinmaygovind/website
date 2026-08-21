@@ -205,14 +205,15 @@ NO_CUT_MEDALS_YET = {"silverstone"}
 # shows up as tests that pass alone and fail together, or worse, pass wrongly.
 # Popping a module that was never imported is a no-op, so there is no cost to
 # naming one here early.
-RELOADED = ("app", "models", "portal", "backfill_race_activity")
+RELOADED = ("app", "maker", "models", "portal", "backfill_race_activity")
 
 
 def boot_app(verify=None, **environ):
     """A fresh `app` and `db` on a throwaway SQLite file. Returns `(A, path)`.
 
     `A` is the `app` *module*, not the Flask object - the suite reaches through
-    it for module globals (`A._rooms`, `A.ADMIN_NAMES`, `A._seat_bot`), which is
+    it for module globals (`A._rooms`, `A._seat_bot`, and `A.maker.ADMIN_NAMES`
+    for the half that now lives in `maker.py`), which is
     also why the import has to be genuinely fresh rather than a config poke.
 
     `verify` sets `DRIVE_VERIFY` ("0" to switch the re-simulation off, "1" to

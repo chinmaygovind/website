@@ -6,7 +6,7 @@ published one is a track in every sense the rest of this game means the word.
 **The whole feature is one line.**
 
 ```python
-tracks_mod.set_resolver(_resolve_user_track)          # app.py
+tracks_mod.set_resolver(_resolve_user_track)          # maker.py
 ```
 
 `tracks.get` is the single chokepoint `/solo`, `/api/track`, `/api/run`,
@@ -31,7 +31,7 @@ anywhere in here — only a different way of storing one.
 | the palette editor and its warnings | `tracks/look.py` — `check` raises, `advise` speaks |
 | the scenery library | `static/js/scenery_kit.js` |
 | the code sandbox | `static/js/scenery_{host,worker}.js` |
-| saving, the gate, the queue | `app.py` → "Keeping a track" |
+| saving, the gate, the queue | `maker.py` |
 | promoting one into the pool | `tools/adopt_track.py` |
 
 Tests: `test_moves.py`, `test_make.py`, `test_user_tracks.py`,
@@ -199,7 +199,7 @@ the provider. **This box never sees a prompt, a token or a bill.** Worth saying 
 exactly those words, because the previous version of "Drive talks to a model" was
 `/api/roll/gemini`, which forwarded anybody's body to Gemini with *this box's*
 key, unauthenticated and unmetered. `test_scenery_code.py` asserts no route and
-no key handling exists in `app.py`.
+no key handling exists in `app.py` or `maker.py`.
 
 Two halves, one assistant: the **layout** (generated from `moves.SPEC` +
 `moves.HELP` + `checks`, because no model can guess `{"t": "arc", "deg": -150}`)

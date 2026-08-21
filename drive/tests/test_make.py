@@ -216,10 +216,10 @@ def test_a_draft_is_driven_under_a_slug_no_player_can_ever_own():
     never resolve it, so every board API rejects a time against it.
     """
     import app as A
-    assert A.DRAFT_SLUG in tracks_mod.RESERVED
-    ok, _why = tracks_mod.slug_is_available(A.DRAFT_SLUG)
+    assert A.maker.DRAFT_SLUG in tracks_mod.RESERVED
+    ok, _why = tracks_mod.slug_is_available(A.maker.DRAFT_SLUG)
     assert not ok
-    assert tracks_mod.get(A.DRAFT_SLUG) is None
+    assert tracks_mod.get(A.maker.DRAFT_SLUG) is None
 
 
 def test_a_draft_lap_cannot_reach_the_board(c):
@@ -258,17 +258,17 @@ def test_countsfortheboard_reads_the_draft_flag():
 def test_the_draft_store_is_swept_and_capped(env):
     """It is a dict in memory, so it needs both a clock and a ceiling."""
     A = env
-    A._DRAFTS.clear()
+    A.maker._DRAFTS.clear()
     doc = starters.document("blank")
     with A.app.test_client() as c:
         first = c.post("/api/make/draft", json=doc).get_json()["token"]
-    A._DRAFTS[first] = (doc, 0.0)                  # pretend it aged out
-    A._sweep_drafts()
-    assert first not in A._DRAFTS
-    for i in range(A._DRAFT_MAX + 20):
-        A._DRAFTS["t%d" % i] = (doc, 9e9)
-    A._sweep_drafts()
-    assert len(A._DRAFTS) <= A._DRAFT_MAX
+    A.maker._DRAFTS[first] = (doc, 0.0)                  # pretend it aged out
+    A.maker._sweep_drafts()
+    assert first not in A.maker._DRAFTS
+    for i in range(A.maker._DRAFT_MAX + 20):
+        A.maker._DRAFTS["t%d" % i] = (doc, 9e9)
+    A.maker._sweep_drafts()
+    assert len(A.maker._DRAFTS) <= A.maker._DRAFT_MAX
 
 
 # ---------------------------------------------------------------- the editor's
@@ -759,7 +759,7 @@ def test_the_build_endpoint_returns_the_notes_beside_the_road(env):
 def test_the_vocabulary_handed_to_a_model_describes_every_move(env):
     """`_moves_spec` is generated from SPEC and HELP together, so a move gaining
     a field is a move whose description gains it too."""
-    v = env._moves_spec()
+    v = env.maker._moves_spec()
     assert {m["t"] for m in v["moves"]} == set(moves.SPEC)
     for m in v["moves"]:
         assert len(m["what"]) > 40, "no useful description of %s" % m["t"]
