@@ -11,6 +11,7 @@
 {% set icon_board %}<path d="M3.5 20.5h17"/><path d="M5.5 20.5v-7h4v7"/><path d="M9.5 20.5v-12h5v12"/><path d="M14.5 20.5v-5h4v5"/>{% endset %}
 {% set icon_person %}<circle cx="12" cy="8.4" r="3.6"/><path d="M5 19.6a7 7 0 0 1 14 0"/>{% endset %}
 {% set icon_garage %}<path d="M3.5 10.6 12 5.2l8.5 5.4"/><path d="M5.6 20.4v-9.1h12.8v9.1"/><path d="M8.4 20.4v-5.9h7.2v5.9"/><path d="M8.4 17.6h7.2"/>{% endset %}
+{% set icon_build %}<path d="M4 20.4h4.2L20 8.6l-4.2-4.2L4 16.2z"/><path d="M14.4 6l3.6 3.6"/>{% endset %}
 {% set icon_in %}<path d="M11 4.6H6.1A1.6 1.6 0 0 0 4.5 6.2v11.6A1.6 1.6 0 0 0 6.1 19.4H11"/><path d="M14.6 8.4 18.2 12l-3.6 3.6"/><path d="M18.2 12H8.8"/>{% endset %}
 <nav class="nav">
   <a class="brand" href="/"><img src="/static/img/icon.svg" alt="" class="brand-ico"/> Drive <small>· cgovind</small></a>
@@ -58,6 +59,22 @@
     <a href="/solo" class="{% if active_page == 'solo' %}active{% endif %}">{{ icn(icon_wheel) }}Solo</a>
     <a href="/lobbies" class="{% if active_page == 'lobbies' %}active{% endif %}">{{ icn(icon_people) }}Multiplayer</a>
     <a href="/leaderboard" class="{% if active_page == 'leaderboard' %}active{% endif %}">{{ icn(icon_board) }}Records</a>
+    {# **Desktop only, and deliberately.** On a phone this row is a grid with
+       `grid-auto-flow: column` and equal columns - it fits five destinations
+       across 320px and cannot wrap, because a column grid has nowhere to wrap
+       to. A sixth would squeeze every label, and the editor behind this link is
+       a fixed three-pane layout (236px + 1fr + 248px) that does not fit a phone
+       anyway, so a tab there would be an invitation to a page that does not
+       work. `.nav-build` is hidden in the phone block in style.css.
+
+       **And not in a portal at all**, because `/make` 404s there - the editor
+       does not exist in that build, since CrazyGames forbids a game offering its
+       own login and authorship without identity is not a thing. Same condition
+       as `_make_forbidden()`, so the tab and the route agree; a tab to a 404 is
+       the one thing worse than no tab. #}
+    {% if not portal %}
+      <a href="/make" class="nav-build {% if active_page == 'make' %}active{% endif %}">{{ icn(icon_build) }}Builder</a>
+    {% endif %}
     {% if current_user %}
       <a href="/account" class="{% if active_page == 'account' %}active{% endif %}">{{ icn(icon_person) }}Account</a>
       {# The slot Log out used to hold. Logging out is a thing you do once, at

@@ -244,6 +244,11 @@ a:hover { text-decoration: underline; }
     padding: .3rem .1rem .2rem;
   }
   .nav-right .icn { display: block; width: 21px; height: 21px; }
+  /* The Builder is not offered on a phone. This row fits five destinations
+     across 320px and cannot wrap, and the editor it leads to is a fixed
+     three-pane desktop layout - so the honest thing is not to advertise it
+     here rather than to hand a phone a tab to a page it cannot use. */
+  .nav-right a.nav-build { display: none; }
   /* Red is enough to say which tab you are on, and an underline under a
      two-line tab underlines the label rather than the tab. */
   .nav-right a.active { text-decoration: none; }

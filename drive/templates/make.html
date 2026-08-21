@@ -36,7 +36,22 @@ body.make .view canvas#gl { position: absolute; inset: 0; display: block;
   width: 100%; height: 100%; }body.make .hud { position: absolute; inset: auto auto 12px 12px; display: flex; gap: 6px;
   align-items: flex-end; flex-wrap: wrap; font-family: var(--mono); font-size: 10.5px;
   letter-spacing: .08em; text-transform: uppercase; pointer-events: none; }body.make .hud span { background: var(--hud); color: #fff; padding: 4px 8px;
-  border-radius: 3px; border: 1px solid var(--hud-line); }body.make .hud span.warn { background: rgba(192,24,43,.86); border-color: rgba(255,255,255,.3); }body.make .acts { position: absolute; inset: auto 12px 12px auto; display: flex; gap: 8px; }body.make .acts button { font-family: var(--display); text-transform: uppercase;
+  border-radius: 3px; border: 1px solid var(--hud-line); }body.make .hud span.warn { background: rgba(192,24,43,.86); border-color: rgba(255,255,255,.3); }/* The way out. `.spin` owns the top right of the view and `.acts` the bottom
+   right, so the exit takes the top left - away from Undo and Drive, because the
+   one control here that leaves the page should not sit next to the one that
+   throws work away. A link and not a button: it goes somewhere. */
+body.make .leave { position: absolute; inset: 12px auto auto 12px; z-index: 5;
+  display: inline-flex; align-items: center; gap: 6px; text-decoration: none;
+  font-family: var(--display); text-transform: uppercase; font-size: 12px;
+  letter-spacing: .06em; padding: 5px 10px; border-radius: 3px;
+  border: 1px solid var(--hud-line); background: var(--hud); color: #fff; }
+body.make .leave:hover { background: rgba(20,20,24,.78); }
+body.make .leave svg { width: 14px; height: 14px; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* On the start-from screen there is no view to overlay, so the same link sits
+   in the flow above the heading. */
+body.make .pick .leave { position: static; margin: 0 0 18px; }
+body.make .acts { position: absolute; inset: auto 12px 12px auto; display: flex; gap: 8px; }body.make .acts button { font-family: var(--display); text-transform: uppercase;
   letter-spacing: .05em; font-weight: 700; font-size: 14px; padding: 8px 16px;
   border-radius: 4px; border: 1px solid rgba(255,255,255,.25); cursor: pointer;
   background: var(--hud); color: #fff; }body.make .acts button.go { background: var(--red); border-color: var(--red); }
@@ -408,6 +423,7 @@ body.make .pubacts button:disabled { opacity: .45; cursor: default; }
 {% if not shape %}
 {# The start-from screen. Five real tracks, drawn from their own ribbons. #}
 <div class="pick"><div class="pick-inner">
+  <a class="leave" href="/"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.6 6 9 12l5.6 6"/></svg>Back to Drive</a>
   <h1>Make a track</h1>
   <p class="sub">Start from a shape and change it. Nothing here needs an account
     — you can build it and drive it first.</p>
@@ -423,6 +439,15 @@ body.make .pubacts button:disabled { opacity: .45; cursor: default; }
 
   <div class="view">
     <canvas id="gl"></canvas>
+    {# The way back to the menu. The editor is `position: fixed; inset: 0` with
+       `overflow: hidden` on the body, so there is no page chrome and no browser
+       chrome to leave by - before this the only exit was the back button, and
+       from `/make/<shape>` that lands on the shape picker rather than on Drive.
+       `_nav.html` is deliberately not included here, for the same reason the
+       play page does not include it: three panes and a live canvas have no room
+       for a site nav. #}
+    <a class="leave" href="/" title="Leave the builder and go back to Drive"
+       ><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.6 6 9 12l5.6 6"/></svg>Exit</a>
     <div class="spin" id="spin">updating</div>
     <div class="err" id="err"><b>That did not build</b><span id="errtext"></span></div>
     <div class="hud" id="hud"></div>
