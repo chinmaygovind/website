@@ -384,3 +384,10 @@ New entries, unsorted, until somebody files them. One line is enough.
   nearest road above it, so the same mistake cannot draw geometry through a road
   again whatever the span is set to.
 
+- **Two boxes of the same footprint overlapping in height z-fight exactly like one
+  box drawn twice.** Monaco's boats were a dark boot-topping and a white topside
+  at identical length and beam whose height ranges overlapped by half a unit, so
+  four exterior walls were coplanar over that band and the marina strobed at the
+  waterline as the camera moved - the same symptom as the double-drawn faces
+  `obox` was written to stop, from a different cause. Stack a two-tone solid, do
+  not overlap it: the second box starts where the first ends.

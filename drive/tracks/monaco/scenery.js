@@ -982,8 +982,20 @@
     const white = shade(0xf9f7f2, (rnd() - 0.5) * 0.04);
     // Dark boot-topping at the waterline, which is what puts a boat *in* the
     // water rather than on it.
-    obox(solid, x, y - 0.3, z, f, lat, len / 2, beam / 2, 0.8, 0x161f27);
-    obox(solid, x, y + hull / 2, z, f, lat, len / 2, beam / 2, hull / 2, white);
+    //
+    // **The topside stands on the boot-topping rather than through it, and that
+    // is the second flicker this marina had.** `obox`'s note above is about one
+    // box drawn twice; this is two boxes at the same length and beam overlapping
+    // in *height*, which shares all four exterior walls over the overlap and
+    // z-fights exactly the same way - a strobing band round every hull in the
+    // harbour, at the one height the eye is drawn to. Stacked, they meet at
+    // `BOOT` and no plane is shared.
+    const BOOT = 0.5;          // dark band standing above the waterline
+    const DRAFT = 1.1;         // and what it carries below it
+    obox(solid, x, y + (BOOT - DRAFT) / 2, z, f, lat, len / 2, beam / 2,
+         (BOOT + DRAFT) / 2, 0x161f27);
+    obox(solid, x, y + (BOOT + hull) / 2, z, f, lat, len / 2, beam / 2,
+         (hull - BOOT) / 2, white);
     // A dark window band down the hull, and a sheer line above it.
     // **0.03 is not a stand-off, it is a coin toss.** The run-off's own note puts
     // the floor near 0.15; anything applied to a face here uses that.
