@@ -1072,11 +1072,11 @@ def test_the_row_of_places_is_places_only_and_every_one_has_an_icon(env):
     a cell with somebody's username in it between Solo and Multiplayer, which on
     a desktop is exactly where the name has always sat and looks perfect.
 
-    And every link in it needs its icon, because the icon is what makes five
+    And every link in it needs its icon, because the icon is what makes six
     destinations fit across 320px. A link added without one is a bald column
     that is invisible until somebody opens the site on a phone."""
     c = env.app.test_client()
-    _login(c, _user(env, "quick"))          # the nav at its fullest: five places
+    _login(c, _user(env, "quick"))          # the nav at its fullest: six places
     nav = re.search(r'<nav class="nav">.*?</nav>',
                     c.get("/leaderboard").get_data(as_text=True), re.S)
     assert nav, "no nav on the page"
@@ -1085,7 +1085,7 @@ def test_the_row_of_places_is_places_only_and_every_one_has_an_icon(env):
 
     assert "nav-user" not in row.group(1), "your name is not one of the places"
     links = re.findall(r"<a [^>]*>(.*?)</a>", row.group(1), re.S)
-    assert len(links) == 5, "solo, multiplayer, records, account, garage"
+    assert len(links) == 6, "solo, multiplayer, records, builder, account, garage"
     for link in links:
         assert 'class="icn"' in link, "no icon on: " + link.strip()
 
