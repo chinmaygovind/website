@@ -51,7 +51,7 @@
         {% if r.forked_from %}&middot; from {{ r.forked_from }}{% endif %}
         &middot; /{{ r.slug }}</small>
     </div>
-    <a class="btn drive" href="/solo/{{ r.slug }}">&#9654; Drive</a>
+    <a class="btn drive" href="/admin/tracks/{{ r.slug }}/drive">&#9654; Drive</a>
     <form method="post" action="/admin/tracks/{{ r.slug }}/approve">
       <button class="btn go" type="submit">Approve</button></form>
     <form method="post" action="/admin/tracks/{{ r.slug }}/reject">
@@ -84,6 +84,7 @@
       <small>{{ r.status }} &middot;
         {{ r.author.display if r.author else 'nobody' }} &middot; /{{ r.slug }}</small>
     </div>
+    <a class="btn drive" href="/admin/tracks/{{ r.slug }}/drive">&#9654; Drive</a>
     {% if r.status == 'hidden' %}
     <form method="post" action="/admin/tracks/{{ r.slug }}/unhide">
       <button class="btn go" type="submit">Unhide</button></form>

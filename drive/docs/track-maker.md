@@ -281,6 +281,20 @@ because the only question worth asking about somebody's track is whether it is
 any good and nothing on a page answers that. It 404s for anybody who is not in
 `ADMIN_USERNAMES`, logged in or not, because a 403 would confirm it exists.
 
+**That Drive button is `/admin/tracks/<slug>/drive`, not `/solo/<slug>`, and the
+difference is the whole reason the route exists.** `_resolve_user_track` is
+live-only on purpose - a queued track resolving there would be an unlisted track
+with a real leaderboard, reachable by anybody who guessed the slug - so `/solo`
+bounced the reviewer to whatever they last drove, silently, which reads as a
+mis-click rather than an error. The fix is not to widen the resolver: the route
+stashes the row's document and hands it to `make_drive`, so a review lap runs
+under `DRAFT_SLUG` on the same `play.html`, `tracks.get` does not move, and
+`/api/run`, `/api/start`, rooms, the switcher and the sitemap still cannot see
+the track. It drops the document's address for the reason `api_make_fork` does:
+the way back out of a draft is the editor, and an editor holding somebody else's
+slug is one Save from overwriting their track. Hidden rows get the same button,
+since hiding one is not deleting it.
+
 ## Covers
 
 Every track has a picture from the moment it is saved: `tracks/plan.py` draws the

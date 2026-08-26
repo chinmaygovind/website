@@ -245,6 +245,58 @@ def test_the_queue_and_the_console_do_not_exist_for_anybody_else(env):
     assert c.get("/admin/tracks").status_code == 200
 
 
+def test_the_reviewer_can_drive_a_queued_track_and_nobody_else_can(env):
+    """The review is a lap, and this is the route that makes it one.
+
+    `/solo/<slug>` cannot serve a queued track and should not: the resolver is
+    live-only so an unlisted track never gets a real leaderboard. So the queue
+    has its own drive route, which borrows the draft path - the lap runs under
+    `DRAFT_SLUG` and cannot reach a board - and it is gated exactly like the
+    rest of the console, 404 rather than 403.
+    """
+    A = env
+    author, admin = _user(A, "ada"), _user(A, "chinmay")
+    c = A.app.test_client()
+    _login(c, author)
+    slug = _publish(A, c)
+
+    # Not the author's, not the public's - the console is Chinmay's alone.
+    assert c.get("/admin/tracks/%s/drive" % slug).status_code == 404
+    anon = A.app.test_client()
+    assert anon.get("/admin/tracks/%s/drive" % slug).status_code == 404
+
+    _login(c, admin)
+    r = c.get("/admin/tracks/%s/drive" % slug)
+    assert r.status_code == 302, "the queue's Drive button goes nowhere"
+    assert "/make/drive/" in r.headers["Location"]
+    page = c.get(r.headers["Location"])
+    assert page.status_code == 200
+    body = page.get_data(as_text=True)
+    assert "Foggy Ridge" in body
+    # A review lap is not a lap on a board: the play page is driving a draft.
+    assert "draft: true" in body
+    # And none of this widened the resolver.
+    with A.app.app_context():
+        assert tracks_mod.get(slug) is None
+
+    assert c.get("/admin/tracks/nosuchtrack/drive").status_code == 404
+
+
+def test_a_hidden_track_is_still_reviewable(env):
+    """Hiding one is not deleting it, and the way back is driving it again."""
+    A = env
+    author, admin = _user(A, "ada"), _user(A, "chinmay")
+    c = A.app.test_client()
+    _login(c, author)
+    slug = _publish(A, c)
+    _login(c, admin)
+    c.post("/admin/tracks/%s/approve" % slug)
+    c.post("/admin/tracks/%s/hide" % slug)
+    with A.app.app_context():
+        assert tracks_mod.get(slug) is None
+    assert c.get("/admin/tracks/%s/drive" % slug).status_code == 302
+
+
 def test_a_cosmetic_edit_keeps_the_board_and_a_moved_corner_does_not(env):
     """The rule that makes a leaderboard mean something, and the reason it is a
     hash of the built ribbon rather than a diff of the document: a no-op edit -

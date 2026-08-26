@@ -993,6 +993,40 @@ def admin_track_action(slug, action):
     return redirect(url_for("admin_tracks"))
 
 
+@app.route("/admin/tracks/<slug>/drive")
+def admin_track_drive(slug):
+    """Drive a track that is not live, which is the whole of the review.
+
+    The queue's Drive button used to point at `/solo/<slug>`, and that silently
+    did not work: `_resolve_user_track` is live-only *on purpose* - a queued
+    track resolving there would be an unlisted track with a real leaderboard,
+    reachable by anybody who guessed the slug - so `/solo` bounced the reviewer
+    to whatever they last drove, which reads as a mis-click rather than an
+    error. The rule is right; it just had nothing carved out for the one person
+    who has to drive the thing before approving it.
+
+    So this borrows the draft path rather than widening the resolver: stash the
+    row's document and hand it to `make_drive`, which drives it under
+    `DRAFT_SLUG` on the same `play.html`. Nothing about `tracks.get` moves, so
+    `/api/run`, `/api/start`, rooms, the switcher and the sitemap still cannot
+    see it, and the lap cannot land on a board - which is what you want from a
+    review lap anyway.
+
+    The document's address is dropped for the reason `api_make_fork` drops it:
+    the way back out of a draft is the editor, and an editor holding somebody
+    else's slug is one Save from overwriting their track.
+    """
+    user = get_current_user()
+    if not _is_admin(user) or _make_forbidden():
+        abort(404)
+    row = _user_track_row(slug)
+    if row is None:
+        abort(404)
+    doc = dict(row.doc)
+    doc.pop("slug", None)
+    doc["name"] = row.name
+    return redirect(url_for("make_drive", token=_stash_draft(doc)))
+
 @app.route("/api/make/look", methods=["POST"])
 def api_make_look():
     """Judge a palette. Structural failures block; taste is only ever said.
