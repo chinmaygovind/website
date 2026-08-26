@@ -137,6 +137,36 @@ observed result is already exact.
   `accounts/gamestats.py`'s `_gto` returns `elo: None` and a headline of hands
   and bb/100 instead.
 
+## The page, and what it does without asking the server
+
+- **Chips move before the round trip lands.** `applyChips` in `gto.js` does to
+  the local state what the engine is about to do to the real one - stack down,
+  chips in front, pot up - for the hero the instant they act and for each bot as
+  its paced event plays. The server's state overwrites all of it on arrival, so
+  a wrong guess lives for one paint and cannot accumulate. **Nothing in there
+  may decide anything**: it mirrors an action the server has already been sent,
+  it never invents one.
+- **A deal is rewound before it is played.** `/api/hand` answers with the table
+  *after* every bot up to the hero has acted, so pacing it out over the previous
+  hand's table showed a stale felt for as long as the bots took to think.
+  `dealt()` reconstructs the moment the cards landed - stack plus what that seat
+  has since put in, less its blind - and the events play forward from there. It
+  is derived from the answer rather than remembered because the answer is the
+  only thing that knows a bot rebought.
+- **A seat is rebuilt on every event, so an entrance animation must be earned.**
+  `shown`/`shownStack`/`shownCards` exist only to tell a redraw what actually
+  changed; without them every card on the table re-deals itself each time
+  anybody acts, which reads as a flicker.
+- **Every keyboard shortcut is a button.** The handler looks the button up by
+  `data-key` and clicks it, so a key can never fire an action the table is not
+  offering, and the badge on the button cannot drift from the binding. F fold,
+  C call (or check, when there is nothing to call), K check, B bet/raise, A and
+  1-4 the sizes, N or space to move on, R the review, Escape closes a panel.
+  The settings panel takes the keyboard while it is open; the review does not.
+- **The deck is drawn by `tools/make_cards.py`**, not downloaded - 52 faces and
+  a back at exactly the 240 x 336 the table draws them at. `static/cards/README.md`
+  says why the old one went. Do not hand-edit an SVG in there.
+
 ## The avatars are the one real hazard
 
 `gto/avatars/` holds photographs of five real, private people. **This repository

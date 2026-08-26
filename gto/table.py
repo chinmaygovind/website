@@ -10,11 +10,13 @@ back as a ``delay`` on each event for the browser to pace. A server that slept
 for Bell's nine-second tank would hold a worker for nine seconds, and there are
 three of them.
 
-**Stacks are not all one buy-in.** A real home game that has been running two
-hours has somebody stuck who has not rebought, three people near even, and one
-person who has been running hot since the first orbit. Sitting into a table of
-identical 200bb stacks is a different game - it is a solved-looking game - and
-it is not the one that keeps taking the money.
+**Everybody sits down with one buy-in.** The stacks used to start scattered -
+somebody stuck, somebody running hot - on the argument that a home game two
+hours old does not look like a lobby, and that a table of identical stacks is a
+solved-looking game. It also meant the first hand of a session was played at
+whatever depths the dice handed you, which is a confusing thing to open with.
+They diverge fast enough on their own from the second orbit, so the shape is
+now something the session produces rather than something it starts with.
 """
 
 import random
@@ -34,26 +36,6 @@ ORDER_FROM_BUTTON = {
     3: ["BTN", "SB", "BB"],
     2: ["BTN", "BB"],
 }
-
-#: How a home game's stacks are actually distributed, as
-#: ``(weight, low, high)`` in buy-ins. Somebody is always stuck and short,
-#: most people are near where they started, and one person is winning.
-STACK_SHAPE = [
-    (0.16, 0.15, 0.65),   # stuck, has not rebought yet
-    (0.44, 0.80, 1.40),   # about even
-    (0.25, 1.40, 2.20),   # up a bit
-    (0.15, 2.20, 3.00),   # running hot
-]
-
-
-def random_stack(rng, buyin):
-    r = rng.random()
-    acc = 0.0
-    for weight, lo, hi in STACK_SHAPE:
-        acc += weight
-        if r <= acc:
-            return int(round(buyin * rng.uniform(lo, hi)))
-    return buyin
 
 
 def position_names(n, button):
@@ -136,9 +118,7 @@ class Table:
         self.bots = {b.profile.name: b for b in chosen}
         self.names = [hero] + [b.profile.name for b in chosen]
 
-        self.stacks = {hero: buyin}
-        for b in chosen:
-            self.stacks[b.profile.name] = random_stack(self.rng, buyin)
+        self.stacks = {n: buyin for n in self.names}
 
         #: Every chip that has entered the game, per player. Profit is stack
         #: minus this, which is the only honest way to state it once people
@@ -193,11 +173,11 @@ class Table:
         for name, b in self.bots.items():
             b.hand_over()
             if self.stacks[name] <= 0:
-                # A friend who busts rebuys without being asked. The hero is
-                # asked, because that is a decision worth making on purpose.
-                top_up = random_stack(self.rng, self.buyin)
-                self.stacks[name] = top_up
-                self.bought_in[name] += top_up
+                # A friend who busts rebuys without being asked, for the one
+                # buy-in everybody sat down with. The hero is asked, because
+                # that is a decision worth making on purpose.
+                self.stacks[name] = self.buyin
+                self.bought_in[name] += self.buyin
 
         players = [(n, self.stacks[n]) for n in self.names if self.stacks[n] > 0]
         if len(players) < 2:

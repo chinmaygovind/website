@@ -6,6 +6,12 @@
  * markup, so adding a seventh player is a change to one array and not to this
  * file.
  *
+ * A seat's cards hang outside the felt - above it at the top of the table,
+ * below it at the bottom - and they are a fixed number of pixels while the
+ * ellipse is a percentage, so the felt is sized by the window's height as well
+ * as its width. Without that cap the top player's cards go under the bar on
+ * anything shorter than about 850px.
+ *
  * Dark on purpose. It is the only sensible ground for a felt table, and it is
  * the room this game is actually played in.
  */
@@ -71,10 +77,10 @@ body {
 
 .room {
   display: grid;
-  grid-template-columns: 1fr min(1040px, 94vw) 1fr;
-  padding: 22px 0 0;
+  grid-template-columns: 1fr min(1040px, 94vw, max(864px, calc((100dvh - 260px) * 16 / 9))) 1fr;
+  padding: 44px 0 0;
 }
-.felt-wrap { grid-column: 2; position: relative; aspect-ratio: 16 / 9.6; }
+.felt-wrap { grid-column: 2; position: relative; aspect-ratio: 16 / 9; }
 
 .felt {
   position: absolute; inset: 0;
@@ -113,7 +119,8 @@ body {
 
 .card {
   width: var(--cw, 62px); aspect-ratio: 240 / 336;
-  border-radius: 7px; background: #fbfaf6 center/cover no-repeat;
+  border-radius: calc(var(--cw, 62px) * .079);
+  background: #faf9f6 center/100% 100% no-repeat;
   box-shadow: 0 3px 10px rgba(0, 0, 0, .5);
   animation: deal .28s cubic-bezier(.2, .9, .3, 1) both;
 }
@@ -124,6 +131,7 @@ body {
   from { opacity: 0; transform: translateY(-14px) scale(.9) rotate(-4deg); }
   to   { opacity: 1; transform: none; }
 }
+.card.still { animation: none; }        /* already on the table; do not re-deal it */
 .muck { opacity: .34; filter: grayscale(.7); }
 
 /* --------------------------------------------------------------------- seats */
@@ -152,6 +160,7 @@ body {
 .seat .pos { font-size: 10px; color: var(--ink-faint); letter-spacing: .1em; text-transform: uppercase; }
 .seat .stack { font-size: 13px; color: var(--gold); font-variant-numeric: tabular-nums; }
 .seat .cards { display: flex; gap: 4px; justify-content: center; margin-bottom: 6px; min-height: 56px; align-items: flex-end; }
+.seat .cards.empty { min-height: 0; margin-bottom: 0; }   /* mucked: no gap to hang chips in */
 .seat .say {
   position: absolute; left: 50%; transform: translateX(-50%);
   bottom: -22px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
@@ -160,9 +169,26 @@ body {
 }
 .seat .bet {
   position: absolute; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 6px;
   font-size: 12px; color: var(--gold); font-variant-numeric: tabular-nums;
   background: rgba(0, 0, 0, .5); border: 1px solid rgba(216, 174, 94, .35);
-  border-radius: 999px; padding: 2px 9px;
+  border-radius: 999px; padding: 2px 9px 2px 6px;
+}
+.seat .bet::before {
+  content: ""; width: 11px; height: 11px; border-radius: 50%; flex: none;
+  background: radial-gradient(circle at 50% 32%, #f6e3b4, var(--gold) 58%, #9a7327);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .55), 0 1px 2px rgba(0, 0, 0, .6);
+}
+.seat .bet.fresh { animation: chips .24s cubic-bezier(.2, .9, .3, 1) both; }
+@keyframes chips {
+  from { opacity: 0; transform: translate(-50%, var(--from, -12px)) scale(.8); }
+  to   { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+.seat .stack.bump { animation: bump .34s ease-out both; }
+@keyframes bump {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.13); color: var(--ink); }
+  100% { transform: scale(1); }
 }
 .dot-btn {
   position: absolute; width: 22px; height: 22px; border-radius: 50%;
@@ -180,11 +206,13 @@ body {
 /* ------------------------------------------------------------------ actions */
 
 .controls {
-  grid-column: 2; margin: 18px 0 40px;
+  grid-column: 2; margin: 28px 0 40px;
   display: flex; flex-direction: column; gap: 12px;
 }
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.row[hidden] { display: none; }   /* a bare `hidden` loses to the rule above */
 button.act {
+  position: relative;
   flex: 1 1 0; min-width: 108px; padding: 15px 16px; border-radius: 12px; cursor: pointer;
   border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
   font-size: 15px; font-weight: 600; letter-spacing: .01em; transition: .14s;
@@ -198,6 +226,14 @@ button.act.go:hover:not(:disabled) { background: rgba(95, 191, 127, .13); border
 button.act.raise { border-color: rgba(216, 174, 94, .4); }
 button.act.raise:hover:not(:disabled) { background: rgba(216, 174, 94, .14); border-color: var(--gold); }
 button.act small { display: block; font-weight: 400; font-size: 12px; color: var(--ink-faint); }
+.key {
+  display: inline-block; min-width: 16px; padding: 0 4px; border-radius: 5px;
+  border: 1px solid var(--line); background: rgba(255, 255, 255, .03);
+  font: 700 10px/15px ui-sans-serif, system-ui; letter-spacing: .04em;
+  color: var(--ink-faint); text-align: center; vertical-align: middle;
+}
+button.act .key { position: absolute; top: 7px; right: 8px; }
+button.act:hover:not(:disabled) .key, .chip:hover .key { color: var(--ink-dim); }
 
 .sizer { display: flex; gap: 10px; align-items: center; flex: 1 1 100%; }
 .sizer input[type=range] { flex: 1; accent-color: var(--gold); }
@@ -316,4 +352,5 @@ button.act small { display: block; font-weight: 400; font-size: 12px; color: var
   .card.hero { --cw: 62px; }
   .card.small { --cw: 30px; }
   button.act { padding: 13px 10px; min-width: 84px; font-size: 14px; }
+  .key { display: none; }
 }

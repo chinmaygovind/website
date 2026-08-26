@@ -72,26 +72,23 @@ def test_the_button_moves_and_wraps():
 # -------------------------------------------------------------- stacks
 
 
-def test_stacks_are_not_all_one_buy_in():
-    """A home game that has been running two hours does not look like a lobby."""
-    rng = random.Random(4)
-    stacks = [T.random_stack(rng, 5000) for _ in range(400)]
-    assert min(stacks) < 5000 * 0.7
-    assert max(stacks) > 5000 * 2.0
-    assert 0.9 < (sum(stacks) / len(stacks)) / 5000 < 1.8
-
-
-def test_every_stack_is_inside_the_stated_range():
-    rng = random.Random(5)
-    for _ in range(500):
-        s = T.random_stack(rng, 5000)
-        assert 0 < s <= 5000 * 3.0
-
-
-def test_the_hero_starts_at_exactly_one_buy_in():
-    """The friends are wherever they are; the hero always sits in fresh."""
+def test_everybody_sits_down_with_exactly_one_buy_in():
+    """Nobody is stuck and nobody is running hot on the first hand."""
     for seed in range(6):
-        assert make(seed).stacks["hero"] == 5000
+        t = make(seed)
+        assert set(t.stacks.values()) == {5000}
+        assert t.stacks == t.bought_in
+
+
+def test_a_busted_friend_rebuys_for_one_buy_in():
+    t = make(1)
+    friend = [n for n in t.names if n != "hero"][0]
+    t.stacks[friend] = 0
+    before = t.bought_in[friend]
+    t.new_hand()
+    seat = t.hand.seats[t.seat_names.index(friend)]
+    assert seat.stack + seat.total == 5000          # in front of them, blind and all
+    assert t.bought_in[friend] == before + 5000
 
 
 # ---------------------------------------------------------- the nodes
