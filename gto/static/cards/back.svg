@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 336" width="240" height="336">
+  <defs>
+    <linearGradient id="f" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8f1d2c"/>
+      <stop offset="1" stop-color="#5c0f1c"/>
+    </linearGradient>
+    <pattern id="w" width="16" height="16" patternUnits="userSpaceOnUse"
+             patternTransform="rotate(45)">
+      <path d="M0 8h16M8 0v16" stroke="#ffffff" stroke-opacity=".13" stroke-width="1.6"/>
+      <circle cx="8" cy="8" r="2.1" fill="#ffffff" fill-opacity=".10"/>
+    </pattern>
+  </defs>
+  <rect width="240" height="336" rx="14" fill="#fdfdfb"/>
+  <rect x="6" y="6" width="228" height="324" rx="10" fill="url(#f)"/>
+  <rect x="6" y="6" width="228" height="324" rx="10" fill="url(#w)"/>
+  <rect x="18" y="18" width="204" height="300" rx="6" fill="none"
+        stroke="#ffffff" stroke-opacity=".28" stroke-width="2"/>
+  <circle cx="120" cy="168" r="40" fill="#fdfdfb" fill-opacity=".10"
+          stroke="#ffffff" stroke-opacity=".30" stroke-width="2"/>
+  <text x="120" y="182" text-anchor="middle" font-family="Georgia, serif"
+        font-size="34" fill="#ffffff" fill-opacity=".55">cg</text>
+</svg>

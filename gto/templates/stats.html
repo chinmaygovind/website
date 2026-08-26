@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Your numbers{% endblock %}
+{% block navstats %}on{% endblock %}
+{% block body %}
+<main class="page">
+  {% if not user %}
+    <h1 class="head">Nothing to show yet</h1>
+    <p class="sub">Stats follow your cgovind.com account.
+      <a href="{{ main_site }}/accounts/login">Sign in</a> and everything you play
+      from then on is kept.</p>
+  {% else %}
+    <h1 class="head">{{ summary.headline or "Nothing yet." }}</h1>
+    <p class="sub">Across {{ summary.hands }} hands.
+      The headline is EV-adjusted: every all-in counts for its equity rather than
+      its result, which strips out most of the luck and converges roughly three
+      times faster than what actually happened.</p>
+
+    <div class="grid">
+      <div class="stat">
+        <div class="k">Win rate</div>
+        <div class="v">{{ "%+.1f"|format(summary.bb100) if summary.bb100 is not none else "—" }}<span style="font-size:14px"> bb/100</span></div>
+        <div class="ci">{% if summary.bb100_ci %}95% interval ±{{ summary.bb100_ci }}{% else %}not enough hands{% endif %}</div>
+      </div>
+      <div class="stat">
+        <div class="k">Per hour</div>
+        <div class="v">{{ "$%+.2f"|format(summary.hourly) if summary.hourly is not none else "—" }}</div>
+        <div class="ci">{% if summary.hourly_ci %}give or take ${{ summary.hourly_ci }}{% endif %}</div>
+      </div>
+      <div class="stat">
+        <div class="k">Observed</div>
+        <div class="v">{{ "%+.1f"|format(summary.bb100_observed) if summary.bb100_observed is not none else "—" }}</div>
+        <div class="ci">what actually happened, luck included</div>
+      </div>
+      <div class="stat">
+        <div class="k">Bounties</div>
+        <div class="v">{{ "$%+.2f"|format(summary.bounty_total) }}</div>
+        <div class="ci">${{ "%.2f"|format(summary.bounty_hourly) }}/hour — counted apart from the poker</div>
+      </div>
+
+      <div class="stat">
+        <div class="k">VPIP / PFR</div>
+        <div class="v">{{ "%.0f"|format(summary.vpip) if summary.vpip is not none else "—" }}/{{ "%.0f"|format(summary.pfr) if summary.pfr is not none else "—" }}</div>
+        <div class="ci">hands played / hands raised</div>
+      </div>
+      <div class="stat">
+        <div class="k">Saw a flop</div>
+        <div class="v">{{ "%.0f"|format(summary.saw_flop) if summary.saw_flop is not none else "—" }}%</div>
+      </div>
+      <div class="stat">
+        <div class="k">To showdown</div>
+        <div class="v">{{ "%.0f"|format(summary.wtsd) if summary.wtsd is not none else "—" }}%</div>
+        <div class="ci">won {{ "%.0f"|format(summary.wsd) if summary.wsd is not none else "—" }}% of them</div>
+      </div>
+      <div class="stat">
+        <div class="k">Pots won</div>
+        <div class="v">{{ "%.0f"|format(summary.won) if summary.won is not none else "—" }}%</div>
+      </div>
+
+      <div class="stat">
+        <div class="k">Decisions marked</div>
+        <div class="v">{{ summary.decisions }}</div>
+        <div class="ci">{{ summary.errors }} errors, {{ summary.exploits }} exploits</div>
+      </div>
+      <div class="stat">
+        <div class="k">Given away</div>
+        <div class="v">{{ summary.error_bb }}<span style="font-size:14px"> bb</span></div>
+        <div class="ci">added up across every priced mistake</div>
+      </div>
+      <div class="stat">
+        <div class="k">Error rate</div>
+        <div class="v">{{ "%.0f"|format(summary.error_rate) if summary.error_rate is not none else "—" }}%</div>
+        <div class="ci">of the decisions that could be priced</div>
+      </div>
+
+      {% if summary.hands_for_10bb100 %}
+      <div class="stat wide">
+        <div class="k">How long before this number means anything</div>
+        <div class="v">{{ "{:,}".format(summary.hands_for_10bb100) }}<span style="font-size:14px"> hands</span></div>
+        <div class="ci">
+          That is what it would take to narrow the interval to ±10bb/100 — about
+          {{ "{:,}".format((summary.hands_for_10bb100 / 27)|round|int) }} hours at
+          a live table. Standard error falls with the square root of hands, so
+          halving the width costs four times as many. This is why nobody can tell
+          from one night whether they played well.
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if summary.by_opponent %}
+    <h2 class="head" style="margin-top:34px;font-size:16px">Where it is going</h2>
+    <p class="sub">Only spots with exactly one player left in. Three-way, a
+      mistake belongs to the situation rather than to any one of them, and
+      pinning it on whoever happened to bet would read like evidence without
+      being any.</p>
+    <div class="grid">
+      {% for name, row in summary.by_opponent.items() %}
+      <div class="stat">
+        <div class="k">{{ name }}</div>
+        <div class="v">{{ "%.1f"|format(row.lost_bb) }}<span style="font-size:14px"> bb</span></div>
+        <div class="ci">{{ row.errors }} errors in {{ row.decisions }} decisions against them</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% endif %}
+</main>
+{% endblock %}

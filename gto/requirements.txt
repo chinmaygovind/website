@@ -1,0 +1,11 @@
+Flask==3.1.2
+Flask-SQLAlchemy==3.1.1
+python-dotenv==1.0.0
+gunicorn==23.0.0
+
+# **No eventlet, no Flask-SocketIO, unlike ers/kot/drive.** Those three are
+# multiplayer and need a server that can push. This one is single player: every
+# state change is the answer to a request the browser just made, so it is plain
+# synchronous Flask behind sync gunicorn workers. That is a smaller surface, a
+# smaller install, and it is why `deploy/gto.service` runs `-w 3` sync rather
+# than an eventlet worker.

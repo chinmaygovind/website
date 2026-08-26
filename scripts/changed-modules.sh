@@ -65,9 +65,9 @@ paths="$(printf '%s\n' "$paths" | sed 's/.* -> //' | sed 's/^"//; s/"$//' | grep
 
 # --- map paths to modules ------------------------------------------------
 
-want_site=0 want_drive=0 want_ers=0 want_kot=0
+want_site=0 want_gto=0 want_drive=0 want_ers=0 want_kot=0
 
-all() { want_site=1; want_drive=1; want_ers=1; want_kot=1; }
+all() { want_site=1; want_gto=1; want_drive=1; want_ers=1; want_kot=1; }
 
 while IFS= read -r p; do
   [ -n "$p" ] || continue
@@ -87,6 +87,7 @@ while IFS= read -r p; do
     # about the garage would run Drive's 853 tests.
     *.md|.gitignore|deploy/*|.claude/*|.github/*) ;;
 
+    gto/*)   want_gto=1 ;;
     drive/*) want_drive=1 ;;
     ers/*)   want_ers=1 ;;
     kot/*)   want_kot=1 ;;
@@ -110,6 +111,7 @@ EOF
 # Canonical order: cheapest first.
 mods=""
 [ $want_site  = 1 ] && mods="$mods site"
+[ $want_gto   = 1 ] && mods="$mods gto"
 [ $want_drive = 1 ] && mods="$mods drive"
 [ $want_ers   = 1 ] && mods="$mods ers"
 [ $want_kot   = 1 ] && mods="$mods kot"

@@ -42,10 +42,17 @@ def test_a_profile_shows_the_person_and_all_four_games(client, make_user):
 
 
 def test_a_game_nobody_has_played_still_gets_its_tab(client, make_user):
-    """A tab that vanishes when it is empty is a tab you go looking for."""
+    """A tab that vanishes when it is empty is a tab you go looking for.
+
+    Counted against ``GAMES`` rather than against a number, so adding a fifth
+    service fails this only if it actually loses its tab.
+    """
+    from accounts.gamestats import GAMES
     make_user("newcomer")
     page = body(client.get("/accounts/newcomer"))
-    assert page.count('data-panel=') == 4
+    assert page.count('data-panel=') == len(GAMES)
+    for game in GAMES:
+        assert 'data-panel="%s"' % game["key"] in page
     assert "not played yet" in page
 
 
@@ -659,3 +666,94 @@ def test_the_flag_choice_names_the_flags(client, logged_in):
     assert "USA Flag" in page
     assert 'id="stateFlagLabel"' in page
     assert "Displayed Flag:" in page
+
+
+# --- the poker trainer, which is the one with no rating ---------------------
+
+def _gto_rows(db, uid, hands=200, won_cents=1500, bounty_cents=300):
+    """A played session, written the way `gamestats` reads it back.
+
+    These tables are created with raw SQL and so are not in the app's metadata,
+    which means the `db` fixture does not drop them between tests - while user
+    ids do restart. Clearing them here rather than trusting a fresh database is
+    what stops one test's two hundred hands turning up in the next one's twelve.
+    """
+    from sqlalchemy import text
+    db.session.execute(text(
+        "CREATE TABLE IF NOT EXISTS gto_sessions (id INTEGER PRIMARY KEY,"
+        " user_id INT, started_at TEXT, ended_at TEXT, hands INT,"
+        " bought_in INT, stack INT, bounty_cents INT)"))
+    db.session.execute(text(
+        "CREATE TABLE IF NOT EXISTS gto_hands (id INTEGER PRIMARY KEY,"
+        " session_id INT, user_id INT, played_at TEXT, result_cents INT,"
+        " bounty_cents INT, vpip INT, pfr INT, won INT)"))
+    db.session.execute(text(
+        "CREATE TABLE IF NOT EXISTS gto_decisions (id INTEGER PRIMARY KEY,"
+        " user_id INT, verdict TEXT)"))
+    for table in ("gto_sessions", "gto_hands", "gto_decisions"):
+        db.session.execute(text("DELETE FROM %s" % table))
+    db.session.execute(text(
+        "INSERT INTO gto_sessions (user_id, started_at, ended_at, hands,"
+        " bought_in, stack, bounty_cents) VALUES (:u, '2026-08-20T19:00:00',"
+        " '2026-08-20T22:30:00', :h, 5000, :s, :b)"),
+        {"u": uid, "h": hands, "s": 5000 + won_cents, "b": bounty_cents})
+    for i in range(hands):
+        db.session.execute(text(
+            "INSERT INTO gto_hands (session_id, user_id, played_at,"
+            " result_cents, bounty_cents, vpip, pfr, won)"
+            " VALUES (1, :u, '2026-08-20T20:00:00', :r, :b, :v, :p, :w)"),
+            {"u": uid, "r": won_cents // hands,
+             "b": bounty_cents // hands if i == 0 else 0,
+             "v": 1 if i % 4 else 0, "p": 1 if i % 5 == 0 else 0,
+             "w": 1 if i % 6 == 0 else 0})
+    db.session.execute(text(
+        "INSERT INTO gto_decisions (user_id, verdict) VALUES (:u, 'error')"),
+        {"u": uid})
+    db.session.execute(text(
+        "INSERT INTO gto_decisions (user_id, verdict) VALUES (:u, 'correct')"),
+        {"u": uid})
+    db.session.commit()
+
+
+def test_the_trainer_shows_a_win_rate_where_the_games_show_a_rating(client, make_user, db):
+    """There is nobody on the other side of it to be rated against, so an Elo
+    would be a number about nothing. It has to say what it does measure."""
+    uid = make_user("grinder")
+    _gto_rows(db, uid)
+    page = body(client.get("/accounts/grinder?game=gto"))
+    assert "bb/100" in page
+    assert "rating None" not in page and "None ·" not in page
+    assert "200 hands" in page
+
+
+def test_a_short_sample_refuses_to_state_a_win_rate(client, make_user, db):
+    """Under a hundred hands the number is noise with a sign on it."""
+    uid = make_user("newish")
+    _gto_rows(db, uid, hands=12)
+    page = body(client.get("/accounts/newish?game=gto"))
+    assert "too few hands to say" in page
+    assert "bb/100" not in page
+
+
+def test_a_session_reads_as_won_when_you_got_up_ahead(client, make_user, db):
+    uid = make_user("winner")
+    _gto_rows(db, uid, won_cents=2400)
+    page = body(client.get("/accounts/winner?game=gto"))
+    assert "$+24.00" in page
+
+
+def test_a_losing_session_is_not_dressed_up(client, make_user, db):
+    uid = make_user("loser")
+    _gto_rows(db, uid, won_cents=-1800)
+    page = body(client.get("/accounts/loser?game=gto"))
+    assert "$-18.00" in page
+
+
+def test_the_trainer_is_left_out_of_the_ratings_lookup(client, make_user, db):
+    """`ratings_for` feeds the directory's rating columns. A service with no
+    rating must not appear there with a fabricated one."""
+    from accounts.gamestats import ratings_for
+    uid = make_user("nobody-rated")
+    _gto_rows(db, uid)
+    got = ratings_for(db.session.connection(), [uid])
+    assert "gto" not in got[uid]

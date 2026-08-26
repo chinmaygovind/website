@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{% block title %}GTO Trainer{% endblock %}</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/gto.css') }}">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>&#9824;</text></svg>">
+</head>
+<body>
+<header class="bar">
+  <a class="brand" href="/"><span class="pip">&spades;</span> GTO</a>
+  <nav>
+    <a href="/stats" class="{% block navstats %}{% endblock %}">Stats</a>
+    <a href="{{ main_site }}">cgovind.com</a>
+  </nav>
+  <div class="who">
+    {% if user %}<span class="name">{{ user.username }}</span>
+    {% else %}<a class="signin" href="{{ main_site }}/accounts/login">Sign in</a>{% endif %}
+    <button id="gear" class="gear" title="Settings" aria-label="Settings">&#9881;</button>
+  </div>
+</header>
+{% block body %}{% endblock %}
+{% block scripts %}{% endblock %}
+<script>
+(function () {
+  var where = {{ (presence_where or 'table')|tojson }};
+  function ping() {
+    if (document.hidden || !{{ 'true' if user else 'false' }}) return;
+    try {
+      fetch('/api/presence', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ where: where }), keepalive: true,
+      }).catch(function () {});
+    } catch (e) {}
+  }
+  ping();
+  setInterval(ping, 60000);
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) ping();
+  });
+})();
+</script>
+</body>
+</html>

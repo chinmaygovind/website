@@ -45,12 +45,16 @@
   <a class="chip{{ ' empty' if not b.played }}" style="--accent: {{ b.accent }}"
      href="?game={{ b.key }}" data-tab="{{ b.key }}">
     <div class="chip-name">{{ b.name }}</div>
-    <div class="chip-elo">{{ b.elo if b.played else '—' }}</div>
+    {# The trainer has no rating - there is nobody on the other side of it to
+       be rated against - so its chip shows what it does count instead. #}
+    <div class="chip-elo">{{ (b.elo or b.played) if b.played else '—' }}</div>
     <div class="chip-sub">
-      {%- if b.played -%}
+      {%- if not b.played -%}
+        not played yet
+      {%- elif b.elo -%}
         {{ b.tier }} · {{ b.played }} played
       {%- else -%}
-        not played yet
+        hands played
       {%- endif -%}
     </div>
   </a>
@@ -74,10 +78,12 @@
          {% if b.key != active %}hidden{% endif %}>
   <h3>{{ b.name }}</h3>
   <div class="rating">
-    {%- if b.played -%}
+    {%- if not b.played -%}
+      nothing here yet — <a href="{{ b.url }}">play a game</a>
+    {%- elif b.elo -%}
       rating {{ b.elo }} · {{ b.tier }}
     {%- else -%}
-      nothing here yet — <a href="{{ b.url }}">play a game</a>
+      {{ b.headline }}
     {%- endif -%}
   </div>
 

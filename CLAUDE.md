@@ -1,12 +1,12 @@
 # CLAUDE.md
 
 Chinmay Govind's personal website: a **Flask** server that serves a static site
-and redirects to four games. `/` is the landing page. `/ttr`, `/ers`, `/kot` and
-`/drive` redirect to the game subdomains.
+and redirects to four games and a poker trainer. `/` is the landing page.
+`/ttr`, `/ers`, `/kot`, `/drive` and `/gto` redirect to the subdomains.
 
 ## Where the documentation is
 
-**This repo is five near-independent services, each documenting itself in its own
+**This repo is six near-independent services, each documenting itself in its own
 directory. Read the one for the thing you are changing; do not read the others.**
 
 | you are working on | read |
@@ -16,6 +16,7 @@ directory. Read the one for the thing you are changing; do not read the others.*
 | Egyptian Rat Screw | `ers/CLAUDE.md` |
 | King of Tokyo | `kot/CLAUDE.md` |
 | Drive | `drive/CLAUDE.md`, then **one** file from `drive/docs/` |
+| the GTO poker trainer | `gto/CLAUDE.md` |
 | `app.py`, deploy, CI, test selection | this file |
 
 `drive/docs/` is 360KB across thirteen files - more than the rest of the repo put
@@ -71,8 +72,8 @@ It has its own CI and is not tested from this repo.
   (`/lobbies`, `/login`, `/static/…`) and connect Socket.IO at root, so it only
   runs at a host's root. `/ttr` redirects. Change the target via `TTR_URL`, never
   by mounting TTR under a path.
-- **`visits.py` is one file copied verbatim into four places** - the repo root,
-  `ers/`, `kot/`, `drive/`. `accounts/` has no copy; it is a blueprint on the
+- **`visits.py` is one file copied verbatim into five places** - the repo root,
+  `ers/`, `kot/`, `drive/`, `gto/`. `accounts/` has no copy; it is a blueprint on the
   root app and uses that one. Nothing in it may be service-specific, and a
   drifted copy fails `tests/test_no_drift.py`. **Fix by copying, never by
   merging.** What it does is in `accounts/CLAUDE.md`.
@@ -86,8 +87,8 @@ It has its own CI and is not tested from this repo.
 ## Deploy
 
 Prod is one Ubuntu EC2 box at the Elastic IP `54.157.20.148`, serving
-`cgovind.com`/`www` and the four game subdomains over HTTPS through nginx +
-certbot (auto-renew). Route 53 hosts the zone. The website is the `website`
+`cgovind.com`/`www`, the four game subdomains and `gto.` over HTTPS through
+nginx + certbot (auto-renew). Route 53 hosts the zone. The website is the `website`
 systemd service (gunicorn on `127.0.0.1:5002`); each game is its own service.
 
 Push to `main` triggers `.github/workflows/deploy.yml`: pick the changed modules,
@@ -124,13 +125,13 @@ stale: `gh secret set EC2_HOST --body 54.157.20.148`.
 
 ## Tests: run only what changed
 
-The full suite is 2,325 tests in about three minutes (drive 1,841 in ~150s, kot
-221 in ~30s, site 245 in ~5s, ers 18 in ~1s), and nearly every change is to one
-service, so **never reach for the whole thing by hand**:
+The full suite is 2,727 tests in about four minutes (drive 1,841 in ~150s, kot
+221 in ~30s, gto 397 in ~47s, site 262 in ~45s, ers 18 in ~1s), and nearly every
+change is to one service, so **never reach for the whole thing by hand**:
 
 ```bash
 scripts/tests.sh              # only the modules the working tree touches
-scripts/tests.sh drive        # one module: site | drive | ers | kot
+scripts/tests.sh drive        # one module: site | gto | drive | ers | kot
 scripts/tests.sh --all        # everything
 scripts/tests.sh --list       # what would run, without running it
 scripts/tests.sh drive -- -k ghost -x     # after --, straight to pytest
@@ -140,8 +141,8 @@ scripts/tests.sh drive -- -k ghost -x     # after --, straight to pytest
   both the runner and CI call it, so a laptop and the Action cannot disagree. It
   maps *tests*, not deploys: `ttr/` maps to nothing here because TTR has its own
   CI, while the deploy does its own path matching on the box and does ship TTR.
-  `drive/`, `ers/`, `kot/` map to themselves; `app.py`/`site/` (and anything
-  unrecognised, deliberately) map to `site`. Docs, `deploy/` and `.claude/` map
+  `drive/`, `ers/`, `kot/`, `gto/` map to themselves; `app.py`/`site/` (and
+  anything unrecognised, deliberately) map to `site`. Docs, `deploy/` and `.claude/` map
   to nothing. **`scripts/` and `.github/workflows/` map to everything**, because
   a change to the selection is one you cannot trust the selection about.
 - **The `site` module runs two things**: `import app` (what the deploy used to
@@ -182,6 +183,15 @@ scripts/tests.sh drive -- -k ghost -x     # after --, straight to pytest
   deadlocked test never finishes and so has no duration. **`drive` is out of
   range now** (serial); `kot` is the one left exposed. The cheap mitigation there,
   still not applied, is `pytest-timeout` plus a step-level `timeout-minutes`.
+- **gto gates two suites the same way**, for the same reason and with the same
+  CI gap: `exhaustive` is the evaluator's proof over all 2,598,960 five-card
+  hands (~90s) and `calibration` measures each bot's actual VPIP and PFR against
+  the numbers on its profile (~100s). Both are what make the thing they cover
+  trustworthy, and both are longer than the rest of that suite. `gated_wanted`
+  in `tests.sh` is now the shared implementation, and it also catches
+  **untracked** files - without which a module whose first commit has not landed
+  would never run its own proofs. `gto` runs serially for the xdist reason
+  below: 47s against 14s is a 33s win, less than the ~63s expected stall.
 - **kot's bot self-play tests are gated, because they were 24s of its 31s.** The
   three `@pytest.mark.strength` tests are deselected by `kot/pytest.ini` and
   switched back on by `tests.sh` on `--all` or when `kot/bot.py`/`kot/cards.py`

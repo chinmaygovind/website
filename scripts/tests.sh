@@ -10,7 +10,7 @@
 #
 # Usage:
 #   scripts/tests.sh                  # only what changed (see changed-modules.sh)
-#   scripts/tests.sh drive            # a specific module (site, drive, ers, kot)
+#   scripts/tests.sh drive            # a specific module (site, gto, drive, ers, kot)
 #   scripts/tests.sh drive kot        # several
 #   scripts/tests.sh --all            # everything
 #   scripts/tests.sh --list           # print what would run, run nothing
@@ -21,7 +21,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
 
-ALL_MODULES="site drive ers kot"
+ALL_MODULES="site gto drive ers kot"
 
 modules=""
 pytest_args=""
@@ -147,6 +147,15 @@ parallel_for() {
   # See the note above - this is deliberate, not an oversight.
   [ "$m" = drive ] && return 0
 
+  # gto is the same trade with better numbers on the winning side and the same
+  # ones on the losing side: 47s serial against 14s on four workers, so xdist
+  # buys 33s here. The stall costs ~700s at ~9%, which is ~63s expected, and it
+  # ends as *cancelled* rather than failed. 33 < 63, so this runs serially too -
+  # on the same arithmetic as drive rather than on a different opinion. If the
+  # deadlock is ever fixed, this is the first line to revisit: the win here is
+  # 70% of the runtime, far more than drive ever had to gain.
+  [ "$m" = gto ] && return 0
+
   # Optional, like quickjs: without it the suite runs serially rather than
   # refusing to run.
   "$py" -c "import xdist" >/dev/null 2>&1 || return 0
@@ -172,13 +181,32 @@ parallel_for() {
 # to here, which is a change to `.github/workflows/` - and the token cannot push
 # workflow files, so it is not done.
 strength_wanted() {
+  gated_wanted kot/bot.py kot/cards.py
+}
+
+# gto gates two suites the same way and for the same reasons. `exhaustive` is
+# the evaluator's proof over all 2,598,960 five-card hands (~90s); `calibration`
+# deals thousands of hands and checks each bot's *measured* VPIP and PFR against
+# the numbers written on its profile (~100s). Each is the reason the thing it
+# covers can be trusted, and each is longer than the rest of the suite, so they
+# run when what they prove could actually have changed.
+#
+# **The same CI gap applies, and it is the same one line to close**: this reads
+# the working tree, and CI's checkout is clean, so there they run only on the
+# manual "every module" dispatch.
+gated_wanted() {
   [ "$run_all" = 1 ] && return 0
   # An explicit -m from the caller is the caller's business, not ours.
   case " $pytest_args " in *" -m "*) return 1 ;; esac
   for ref in HEAD --cached; do
-    if git -C "$ROOT" diff --name-only $ref -- kot/bot.py kot/cards.py 2>/dev/null \
+    if git -C "$ROOT" diff --name-only $ref -- "$@" 2>/dev/null \
          | grep -q .; then return 0; fi
   done
+  # A file git has never seen is not in any diff, so a module whose first
+  # commit has not happened yet would silently never run its gated proofs -
+  # which is the one time you most want them.
+  if git -C "$ROOT" ls-files --others --exclude-standard -- "$@" 2>/dev/null \
+       | grep -q .; then return 0; fi
   return 1
 }
 
@@ -199,6 +227,36 @@ run_module() {
     else
       # A skipped test reads as a pass, so say it. Silence here is the trap.
       echo "  (kot: bot strength tests left out - pass --all, or change bot.py/cards.py)"
+    fi
+  fi
+
+  if [ "$m" = gto ]; then
+    # Two gated suites rather than kot's one, so wiping `addopts` is not enough:
+    # leaving out only one of them needs `-m "not exhaustive"`, which has a
+    # space in it and cannot survive this script's unquoted word splitting.
+    # `PYTEST_ADDOPTS` is read and shlex-parsed by pytest itself, so the space
+    # is safe there, and it lands after `pytest.ini`'s `addopts` - where, as
+    # that file says, a later `-m` wins.
+    marks=""
+    gated_wanted gto/evaluator.py gto/cards.py || marks="not exhaustive"
+    gated_wanted gto/bots.py gto/profiles.py \
+      || marks="${marks:+$marks and }not calibration"
+
+    # A skipped test reads as a pass, so always say which proof did not run.
+    case "$marks" in
+      "") echo "  (gto: including the evaluator proof and the bot calibration)" ;;
+      "not exhaustive")
+        echo "  (gto: bot calibration running; evaluator proof left out - pass --all, or change evaluator.py/cards.py)" ;;
+      "not calibration")
+        echo "  (gto: evaluator proof running; bot calibration left out - pass --all, or change bots.py/profiles.py)" ;;
+      *)
+        echo "  (gto: evaluator proof and bot calibration left out - pass --all, or change evaluator.py/cards.py/bots.py/profiles.py)" ;;
+    esac
+
+    if [ -z "$marks" ]; then
+      export PYTEST_ADDOPTS="-m ''"
+    else
+      export PYTEST_ADDOPTS="-m \"$marks\""
     fi
   fi
 

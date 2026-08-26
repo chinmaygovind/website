@@ -1,0 +1,38 @@
+# The GTO poker trainer (gto.cgovind.com), served from website/gto.
+#
+# **Unlike the four games, this one is plain synchronous gunicorn.** TTR, ERS,
+# KoT and Drive keep game state and socket rooms in process, so each of them is
+# one eventlet worker and cannot be more. Nothing here is pushed to the browser:
+# a single player acts, the server answers, and the whole table lives in the
+# database rather than in a worker's memory - so any worker can serve any
+# request and there can be three of them.
+#
+# Three, and not more, because a hand review runs a Monte Carlo equity
+# calculation and is the slowest thing here at a few hundred milliseconds. The
+# box has two cores.
+#
+# It needs its own virtualenv at {{APP_DIR}}/gto/venv and its own .env at
+# {{APP_DIR}}/gto/.env - share TTR's SECRET_KEY and point DATABASE_URL at the
+# shared SQLite file, so one cgovind.com account sits down at all five services.
+#
+# GTO_AVATAR_DIR must point OUTSIDE the checkout. The five avatars are
+# photographs of real people and this repository is public, so they are
+# gitignored and live at /home/ubuntu/gto-avatars, copied there by hand. A
+# deploy's `git reset --hard` cannot touch them there, and a `git clean` -
+# which must never be run in the TTR clone anyway - cannot either.
+[Unit]
+Description=GTO poker trainer (from website subdir)
+After=network.target
+
+[Service]
+User={{USER}}
+WorkingDirectory={{APP_DIR}}/gto
+EnvironmentFile={{APP_DIR}}/gto/.env
+ExecStart={{APP_DIR}}/gto/venv/bin/gunicorn -w 3 --timeout 60 --bind 127.0.0.1:5006 app:app
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

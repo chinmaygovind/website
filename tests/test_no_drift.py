@@ -21,6 +21,17 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GAMES = ("ers", "kot", "drive", "ttr")
 
+#: Every service that carries a copy of `visits.py`, which is five of them.
+#:
+#: `gto` is deliberately not in `GAMES`: it has no registration, no login page
+#: of its own, no leaderboard and no `_player.html`, because it is one seat and
+#: five bots rather than a game people join. It signs you in with the cookie the
+#: rest of the site already set, so the checks above - reserved usernames, the
+#: profile mapping, the way back into a forgotten password - have nothing to
+#: check there. What it does share is the visit log, so that is what it is
+#: tested for.
+VISIT_SERVICES = GAMES + ("gto",)
+
 
 def checked_out(service):
     """Whether a service's code is actually here.
@@ -251,14 +262,14 @@ def test_drives_own_account_page_leads_on_to_the_shared_profile():
 # service-specific, which is why it takes its `db` as an argument and reads
 # `flask.session` for the rest.
 
-@pytest.mark.parametrize("game", GAMES)
+@pytest.mark.parametrize("game", VISIT_SERVICES)
 def test_every_service_carries_the_same_visits_module(game):
     assert source(game, "visits.py") == source("visits.py"), (
         "%s/visits.py has drifted from the root copy. It is meant to be the "
         "same file: copy the root one over it rather than merging by hand." % game)
 
 
-@pytest.mark.parametrize("game", GAMES)
+@pytest.mark.parametrize("game", VISIT_SERVICES)
 def test_every_service_logs_its_visits_under_its_own_name(game):
     """The one line each copy is *called* with, which is the only difference
     between them - and the string that decides what a profile says somebody is
@@ -268,7 +279,7 @@ def test_every_service_logs_its_visits_under_its_own_name(game):
         "%s/app.py does not start visit tracking as '%s'" % (game, game)
 
 
-@pytest.mark.parametrize("game", GAMES)
+@pytest.mark.parametrize("game", VISIT_SERVICES)
 def test_a_status_can_only_say_what_the_game_offers(game):
     """The status line is drawn on a public profile, so what a browser sends is
     a *key* and never words. Every game looks the key up in its own table and a

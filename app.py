@@ -61,6 +61,11 @@ KOT_URL = os.environ.get("KOT_URL", "https://kot.cgovind.com")
 # other three; point this at wherever it is reachable.
 DRIVE_URL = os.environ.get("DRIVE_URL", "https://drive.cgovind.com")
 
+# Where /gto redirects. The poker trainer, its own service (website/gto). Unlike
+# the four games it is plain synchronous gunicorn, since nothing about it is
+# pushed to the browser.
+GTO_URL = os.environ.get("GTO_URL", "https://gto.cgovind.com")
+
 # The roll game and its `/api/roll/gemini` proxy are **gone** (August 2026), and
 # the proxy is why. It forwarded the caller's JSON body verbatim to Gemini with
 # this box's API key attached, with no login, no rate limit and no origin check -
@@ -562,6 +567,13 @@ def kot():
 def drive():
     """Hand off to the Drive service."""
     return redirect(DRIVE_URL, code=302)
+
+
+@app.route("/gto")
+@app.route("/gto/")
+def gto():
+    """Hand off to the poker trainer."""
+    return redirect(GTO_URL, code=302)
 
 
 # **The fonts are the one thing here worth caching hard, and not caching them

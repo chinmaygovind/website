@@ -1,0 +1,7 @@
+# Test-only. Kept out of requirements.txt so the box never installs a test
+# runner it has no use for - the split ers/kot/drive make for the same reason.
+pytest==8.3.4
+
+# See the note in the root requirements-test.txt. Absent, scripts/tests.sh runs
+# this suite serially rather than refusing to run it.
+pytest-xdist>=3.5

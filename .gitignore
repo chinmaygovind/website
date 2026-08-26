@@ -52,3 +52,9 @@ drive/covers/
 # time of each beat by eye. Those times are now constants in the script, so the
 # sheets are scouting output the same way drive/tools/views/ is.
 drive/media/video/probe/
+
+# GTO trainer: the opponent avatars are photographs of real people and this
+# repo is public. They live outside the tree in prod (/home/ubuntu/gto-avatars,
+# the same reasoning as accounts' AVATAR_DIR) and are served only to a logged-in
+# owner, so a copy is never committed here either.
+gto/avatars/

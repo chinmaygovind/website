@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}GTO Trainer{% endblock %}
+{% block body %}
+<main class="room">
+  <div class="felt-wrap" id="felt-wrap">
+    <div class="felt"></div>
+    <div class="middle">
+      <div class="street" id="street"></div>
+      <div class="board" id="board"></div>
+      <div class="pot" id="pot">Pot <b>$0.00</b></div>
+    </div>
+    <div id="seats"></div>
+  </div>
+
+  <div class="controls">
+    <div class="row" id="sizer-row" hidden>
+      <div class="sizer">
+        <button class="chip" data-frac="0.33">⅓ pot</button>
+        <button class="chip" data-frac="0.5">½ pot</button>
+        <button class="chip" data-frac="0.75">¾ pot</button>
+        <button class="chip" data-frac="1">Pot</button>
+        <button class="chip" data-frac="99">All in</button>
+        <input type="range" id="size" min="0" max="100" value="40">
+        <span class="amount" id="size-label">$0.00</span>
+      </div>
+    </div>
+    <div class="row" id="actions"></div>
+  </div>
+</main>
+
+<aside class="drawer" id="review-drawer">
+  <header>
+    <h2>How that hand went</h2>
+    <button data-close="review-drawer" aria-label="Close">&times;</button>
+  </header>
+  <div class="scroll" id="review-body"></div>
+</aside>
+
+<aside class="drawer" id="settings-drawer">
+  <header>
+    <h2>Settings</h2>
+    <button data-close="settings-drawer" aria-label="Close">&times;</button>
+  </header>
+  <div class="scroll">
+    <div class="set">
+      <h3>Stakes</h3>
+      <div class="field"><label for="p-sb">Small blind (cents)</label><input type="number" id="p-sb" min="1"></div>
+      <div class="field"><label for="p-bb">Big blind (cents)</label><input type="number" id="p-bb" min="1"></div>
+      <div class="field"><label for="p-buyin">Buy-in (cents)</label><input type="number" id="p-buyin" min="100"></div>
+      <div class="field"><label for="p-seats">Players</label>
+        <select id="p-seats">
+          <option value="0">5 or 6, at random</option>
+          <option value="5">Always 5</option>
+          <option value="6">Always 6</option>
+        </select>
+      </div>
+      <p class="warnbox">Changing any of these starts a fresh table. The hands you
+        have already played are kept.</p>
+    </div>
+
+    <div class="set">
+      <h3>Side games</h3>
+      <div class="field"><label for="p-bounty">Bounty: 3 in a row pays $1 from everyone, 4 pays $2, 5+ pays $3</label>
+        <input type="checkbox" id="p-bounty"></div>
+      <p class="warnbox" id="bounty-note"></p>
+    </div>
+
+    <div class="set">
+      <h3>Table</h3>
+      <div class="field"><label for="p-review">Review after every hand</label><input type="checkbox" id="p-review"></div>
+      <div class="field"><label for="p-ranges">Show what each opponent's range was</label><input type="checkbox" id="p-ranges"></div>
+      <div class="field"><label for="p-rebuy">Rebuy automatically when I bust</label><input type="checkbox" id="p-rebuy"></div>
+      <div class="field"><label for="p-speed">How fast they act</label><input type="range" id="p-speed" min="0" max="200" step="10"></div>
+    </div>
+
+    <div class="set">
+      <h3>Who you are playing</h3>
+      <div id="who-list"></div>
+    </div>
+
+    <button class="primary" id="save-prefs">Save</button>
+  </div>
+</aside>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  window.GTO = {{ state | tojson }};
+  window.GTO_OWNER = {{ owner | tojson }};
+  window.GTO_OPPONENTS = {{ opponents | tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/gto.js') }}"></script>
+{% endblock %}

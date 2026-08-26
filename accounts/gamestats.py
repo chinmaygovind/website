@@ -1,5 +1,5 @@
-"""What each of the four games knows about you, read straight out of the shared
-database.
+"""What each of the five services knows about you, read straight out of the
+shared database.
 
 Deliberately raw SQL rather than four more sets of SQLAlchemy models. The games
 own their schemas and this page only ever reads them, so mapping
@@ -18,6 +18,13 @@ part of what a rating means, and a profile that showed the number without it
 would be the poorer for it. If a game retunes its tiers, this table has to
 follow - ``test_tiers_match_the_games`` reads the four ``models.py`` files and
 fails when they drift, so the copy cannot rot silently.
+
+**The trainer is the one with no rating, and it says so rather than borrowing
+one.** Elo measures you against other people; the poker trainer is one seat and
+five bots, and there is nobody on the other side of it to be rated against. So
+it fills the same slot with the thing it does measure - hands played and a win
+rate in big blinds per hundred - and `for_user` leaves its `elo` at `None`,
+which is what stops `tier()` inventing a name for a number that does not exist.
 
 Every game's block answers the same two questions - a headline (rating, tier,
 played, won) and a grid of that game's own figures - plus a short list of what
@@ -82,6 +89,7 @@ DRIVE_TRACKS = {
     "tokyo": "Tokyo Drift",
     "shroom": "Shroom Street",
     "silverstone": "Silverstone",
+    "monaco": "Monaco",
 }
 
 
@@ -108,6 +116,8 @@ GAMES = [
      "url": "https://kot.cgovind.com",   "accent": "#5c2678"},
     {"key": "drive", "name": "Drive",              "short": "Drive",
      "url": "https://drive.cgovind.com", "accent": "#c0182b"},
+    {"key": "gto",   "name": "GTO Trainer",        "short": "GTO",
+     "url": "https://gto.cgovind.com",   "accent": "#1f7a4d"},
 ]
 
 GAME_BY_KEY = {g["key"]: g for g in GAMES}
@@ -413,7 +423,64 @@ def _drive_recent(conn, uid, limit):
 # Public
 # ---------------------------------------------------------------------------
 
-_STATS = {"ttr": _ttr, "ers": _ers, "kot": _kot, "drive": _drive}
+def _gto(conn, uid):
+    """The poker trainer: hands, not games, and no rating.
+
+    A "win" here is a pot, and pots are won several times an hour, so the
+    played/won pair means something different from the other four - which is
+    why the headline is the win rate rather than a record. It is stated in big
+    blinds per hundred hands, the unit poker actually uses, and it is left out
+    entirely below a hundred hands because under that it is noise with a sign
+    on it.
+    """
+    if not _table_exists(conn, "gto_hands"):
+        return None
+    s = _row(conn, "SELECT COUNT(*) AS hands,"
+                   " COALESCE(SUM(result_cents), 0) AS won_cents,"
+                   " COALESCE(SUM(bounty_cents), 0) AS bounty_cents,"
+                   " COALESCE(SUM(vpip), 0) AS vpip,"
+                   " COALESCE(SUM(pfr), 0) AS pfr,"
+                   " COALESCE(SUM(won), 0) AS pots"
+                   " FROM gto_hands WHERE user_id = :u", u=uid)
+    if not s or not s["hands"]:
+        return None
+
+    hands = s["hands"]
+    sessions = (_row(conn, "SELECT COUNT(*) AS n FROM gto_sessions"
+                           " WHERE user_id = :u", u=uid) or {"n": 0})["n"]
+    mistakes = (_row(conn, "SELECT COUNT(*) AS n FROM gto_decisions"
+                           " WHERE user_id = :u AND verdict = 'error'", u=uid)
+                or {"n": 0})["n"] if _table_exists(conn, "gto_decisions") else 0
+    decisions = (_row(conn, "SELECT COUNT(*) AS n FROM gto_decisions"
+                            " WHERE user_id = :u", u=uid)
+                 or {"n": 0})["n"] if _table_exists(conn, "gto_decisions") else 0
+
+    # The blind is 25 cents in every session so far, and reading it per session
+    # to weight the rate properly is more machinery than the number deserves on
+    # a profile page - the trainer's own stats page is where that lives.
+    bb100 = 100.0 * (s["won_cents"] / 25.0) / hands
+    rate = "%+.1f bb/100" % bb100 if hands >= 100 else "too few hands to say"
+
+    return {
+        "elo": None,
+        "headline": "%s hand%s · %s" % ("{:,}".format(hands),
+                                        "" if hands == 1 else "s", rate),
+        "played": hands, "won": s["pots"],
+        "cells": [
+            ("Hands", "{:,}".format(hands)),
+            ("Sessions", sessions),
+            ("Pots won", "{:,}".format(s["pots"])),
+            ("VPIP", "%d%%" % _pct(s["vpip"], hands)),
+            ("PFR", "%d%%" % _pct(s["pfr"], hands)),
+            ("Win rate", rate),
+            ("Bounties", "$%.2f" % (s["bounty_cents"] / 100.0)),
+            ("Mistakes", "%s of %s" % ("{:,}".format(mistakes),
+                                       "{:,}".format(decisions))),
+        ],
+    }
+
+
+_STATS = {"ttr": _ttr, "ers": _ers, "kot": _kot, "drive": _drive, "gto": _gto}
 
 
 def for_user(conn, user_id, recent=8):
@@ -431,9 +498,41 @@ def for_user(conn, user_id, recent=8):
             data = {"elo": None, "played": 0, "won": 0, "cells": []}
         data = dict(game, **data)
         data["tier"] = tier(key, data["elo"]) if data["elo"] is not None else None
+        # A service with no rating supplies its own one-line headline instead.
+        # Without this the panel would read "rating None - None".
+        data.setdefault("headline", None)
         data["recent"] = recent_for(conn, key, user_id, recent) if recent else []
         blocks.append(data)
     return blocks
+
+
+def _gto_recent(conn, uid, limit):
+    """Sessions, not hands.
+
+    A hand is not a thing to list - there are thousands of them and one is
+    worth nothing on its own. A sit-down is the unit somebody remembers, and
+    what they remember about it is whether they got up ahead.
+    """
+    if not _table_exists(conn, "gto_sessions"):
+        return []
+    out = []
+    for r in _rows(conn, "SELECT started_at, ended_at, hands, bought_in, stack,"
+                         " bounty_cents FROM gto_sessions"
+                         " WHERE user_id = :u AND hands > 0"
+                         " ORDER BY started_at DESC LIMIT :n", u=uid, n=limit):
+        profit = (r["stack"] or 0) - (r["bought_in"] or 0)
+        out.append({
+            "when": _when(r["ended_at"] or r["started_at"]),
+            "what": "%s hand%s" % (r["hands"], "" if r["hands"] == 1 else "s"),
+            "kind": "session", "place": None, "of": None,
+            "detail": "$%+.2f" % (profit / 100.0), "medal": None,
+            "delta": None,
+            # There is nobody to beat here, so "won" means the only thing it
+            # can mean at a cash game: you got up with more than you sat down
+            # with.
+            "won": profit > 0,
+        })
+    return out
 
 
 def recent_for(conn, key, user_id, limit=8):
@@ -448,6 +547,8 @@ def recent_for(conn, key, user_id, limit=8):
                               lambda s: "%s VP" % s.get("vp") if s.get("vp") is not None else "")
     if key == "drive":
         return _drive_recent(conn, user_id, limit)
+    if key == "gto":
+        return _gto_recent(conn, user_id, limit)
     return []
 
 
