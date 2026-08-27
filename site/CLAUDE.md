@@ -521,6 +521,27 @@ flash the way this page used to. `drive/` is already `block`, for its own reason
   search: the `<h1>` is the heading weighed most, and this page's was a greeting
   containing neither Chinmay's name nor anything anybody types, while the name
   sat in the `<p>` one element below it.
+- **Every `.modal` carries `data-nosnippet`, and that is the whole point of it**
+  (2026-08-27). The `<meta name="description">` is a suggestion; Google writes
+  the snippet it likes, and the one it settled on for `cgovind.com` was half the
+  description plus *"I am a software lead for Penn Electric Racing"* - lifted out
+  of `#modal-racing`, which nobody sees until they click the tile. The eleven
+  modals are the only text on the page Chinmay is not choosing to put in a
+  snippet, so they are all fenced rather than just the racing one; fence one and
+  the next rewrite pulls from `#modal-whale` instead. It costs nothing else:
+  `data-nosnippet` hides text from the snippet only, the modals are still
+  crawled, indexed and ranked.
+- **The description names Chinmay, not the domain.** It was "Welcome to
+  cgovind.com!", which spent the first and most-read words of the snippet on a
+  string already printed directly above it as the title.
+- **`image` in the JSON-LD is the favicon guy, and it is aimed at the result
+  thumbnail.** Google was illustrating the result with `assets/icons/kot.png` -
+  the crowned green monster - because that heuristic picks a prominent `<img>`
+  off the page and the twenty tile icons are the prominent images here. `image`
+  on the `Person` plus the `og:image` that already pointed there are the two
+  signals available; **neither is binding**, Google may keep choosing a tile. The
+  only guarantee is `max-image-preview:none`, which removes the thumbnail
+  altogether rather than replacing it, so it is deliberately not set.
 - **`alternateName: "cgovind"` is in the JSON-LD** because the page never says
   that string as a name — only as the domain, the HackerOne handle and the email
   prefix — and "cgovind" is a query Chinmay expects to land here.
