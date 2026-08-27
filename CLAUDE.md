@@ -105,6 +105,16 @@ rather than passed in, so a box several commits behind still restarts everything
 those commits touched. A hand-triggered re-run of the same commit restarts
 everything, since there is nothing to compare.
 
+**The list of services is written out by hand, and `gto` was missing from it**
+from the day that service was set up until Aug 2026. The deploy reset the code
+on the box and then restarted `ers`, `kot` and `drive` only - so every gto
+deploy was green, changed the checkout, and left gunicorn serving the previous
+version. It is the quietest failure this workflow can have: the Action passes,
+the box is up to date, the site is not, and the only thing that catches it is
+loading the page and looking for what you shipped. **Verify a deploy by looking
+at the live page, never by looking at the Action.** A new service needs a
+`game <name>` line adding here, and nothing will tell you if you forget.
+
 **TTR deploys from this repo's submodule pointer.** The live TTR is not the
 `ttr/` submodule but its own clone at `/home/ubuntu/TicketToRide`; the deploy
 fetches and `reset --hard`s it to whatever commit `ttr/` names here. So shipping

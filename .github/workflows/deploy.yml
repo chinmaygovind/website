@@ -228,6 +228,11 @@ jobs:
             game ers
             game kot
             game drive
+            # gto was missing from this list from the day the service was set
+            # up, so every gto deploy since has reset the code on the box and
+            # left gunicorn serving the old one - a green deploy and an
+            # unchanged site. Nothing catches that but looking at the page.
+            game gto
 
             # Ticket to Ride, from this repo's submodule pointer.
             #
