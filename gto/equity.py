@@ -29,6 +29,7 @@ overvalues, and precisely the mistake this tool exists to catch.
 
 import itertools
 import random
+import statistics
 from math import comb
 
 from cards import DECK
@@ -267,3 +268,173 @@ def range_equity(hero, opponents, board=(), rng=None, iters=4000, dead=()):
     if not done:
         raise ValueError("could not draw a legal matchup from these ranges")
     return Equity([wins / done, 1 - wins / done], exact=False, samples=done)
+
+
+# --------------------------------------------------- one combination at a time
+
+#: Hand evaluations one ``combo_equities`` call may spend. Unlike everything
+#: above it, this one runs the board out **per combination in a range**, so the
+#: cost is runouts times combinations rather than runouts - and the flop's 1,081
+#: runouts against a loose bot's 343 combinations is 371,000 evaluations and a
+#: full second, inside a review a browser is waiting on.
+#:
+#: So the runouts are what gets cut, not the range: a range read to two thirds
+#: of its combinations is a different range, while a sampled runout is the same
+#: range measured less precisely, and ``ComboEquities.error`` says by how much.
+#: 45,000 is about an eighth of a second, which leaves the turn (46 runouts) and
+#: the river (1) exact and comfortable, and samples only the flop and preflop -
+#: the same split, for the same reason, as the table at the top of this file.
+COMBO_BUDGET = 45_000
+
+#: Preflop the same call is worth a third as much and costs the same, so it gets
+#: a third of the budget. There is no board to be ahead of, so the split it feeds
+#: is the coarse one - favourite, close, behind - and its boundaries sit at 60%
+#: and 40%, nowhere near tight enough to care about the extra precision. The
+#: expensive streets are the ones with a board on them, which is where the
+#: decisions are.
+PREFLOP_COMBO_BUDGET = 15_000
+
+#: Never fewer than this many runouts however wide the range is - and never
+#: more, because this floor overrides the budget and is therefore what sets the
+#: worst case. A 58% VPIP bot has 679 combinations preflop, and at 120 runouts
+#: that is 81,000 evaluations against a 15,000 budget: five times over, on the
+#: one opponent who turns up most often. Eighty keeps the widest range inside a
+#: tenth of a second and still tells a live draw from a dead hand, which is what
+#: the buckets in ``review.py`` need it for.
+MIN_COMBO_RUNOUTS = 80
+
+
+class ComboEquities(list):
+    """Hero's equity against each opponent holding, plus how it was arrived at."""
+
+    def __init__(self, values, exact, runouts, ahead, spread=0.0):
+        super().__init__(values)
+        self.exact = exact
+        self.runouts = runouts
+        #: ``True`` where the hero's hand is the better one **on the board as it
+        #: stands**, before any more cards. ``None`` per entry preflop.
+        self.ahead = ahead
+        #: Standard deviation across runouts of the hero's share against the
+        #: whole range. Zero when exact. See ``combined_error``.
+        self.spread = spread
+
+    @property
+    def error(self):
+        """One standard error on **one combination's** number, or 0.0 if exact.
+
+        Worst case p=0.5, as in :class:`Equity`. This is the right error for
+        "how well do I know my equity against exactly ace-king", and the wrong
+        one for the range as a whole - see ``combined_error``.
+        """
+        if self.exact:
+            return 0.0
+        return 0.5 / (self.runouts ** 0.5)
+
+    @property
+    def combined_error(self):
+        """One standard error on the **weighted average** over the whole range.
+
+        Not the per-combination error, and not that error divided by the number
+        of combinations either. Every combination is run against the same
+        runouts, so their errors are correlated and do not average away - but a
+        single runout scored against three hundred holdings is already an average
+        rather than a coin flip, so they do not simply add either. Both of the
+        arithmetic answers are wrong, in opposite directions and by a factor of
+        two: on a flop against a 23% range the per-combination error is 3.1% and
+        the truth, measured over twelve seeds, is 1.3%.
+
+        So it is measured rather than derived: ``spread`` is the standard
+        deviation across runouts of the hero's share against the whole range,
+        which is exactly the quantity whose mean is being reported.
+        """
+        if self.exact or self.runouts < 2:
+            return 0.0
+        return self.spread / (self.runouts ** 0.5)
+
+
+def combo_equities(hero, combos, board=(), rng=None, budget=COMBO_BUDGET):
+    """Hero's equity against **each** holding in ``combos``, one number each.
+
+    ``combos`` is ``[(card, card, weight), ...]`` as ``ranges.weighted_combos``
+    produces. The weights are carried through untouched; this answers only the
+    per-holding question, and what to do with the weights is the caller's.
+
+    **Every combination is run against the same runouts.** That is not a saving,
+    it is the point: the sizing rollout compares one bet size against another,
+    and the two comparisons share their sampling error almost exactly, so the
+    *difference* between them is far better determined than either number is.
+    Drawing fresh runouts per size would put noise on exactly the quantity being
+    read off the page. Where the street is short enough the runouts are simply
+    all of them and there is no error to share.
+
+    A runout that uses one of the opponent's own cards is skipped for that
+    opponent rather than replaced, for ``range_equity``'s reason: replacing it
+    reweights the board towards whatever the replacement prefers.
+    """
+    hero = list(hero)
+    board = list(board)
+    rng = rng or random.Random()
+    known = set(hero) | set(board)
+    deck = [c for c in DECK if c not in known]
+    need = 5 - len(board)
+
+    total = comb(len(deck), need) if need else 1
+    afford = max(MIN_COMBO_RUNOUTS, budget // max(1, len(combos)))
+    exact = need == 0 or total <= afford
+    if exact:
+        draws = list(itertools.combinations(deck, need))
+    else:
+        seen = set()
+        draws = []
+        while len(draws) < afford:
+            pick = tuple(sorted(rng.sample(deck, need)))
+            if pick in seen:
+                continue
+            seen.add(pick)
+            draws.append(pick)
+
+    hero_scores = [evaluate(hero + board + list(d)) for d in draws]
+    made = evaluate(hero + board) if len(board) >= 3 else None
+
+    # Per runout as well as per combination, because the standard error of the
+    # weighted average cannot be derived from the per-combination one - see
+    # ``ComboEquities.combined_error``.
+    per_runout = [0.0] * len(draws)
+    weight_seen = [0.0] * len(draws)
+
+    out, ahead = [], []
+    for a, b, w in combos:
+        won = 0.0
+        n = 0
+        for i, (d, mine) in enumerate(zip(draws, hero_scores)):
+            if a in d or b in d:
+                continue
+            theirs = evaluate([a, b] + board + list(d))
+            if theirs < mine:
+                share = 1.0
+            elif theirs == mine:
+                share = 0.5
+            else:
+                share = 0.0
+            won += share
+            per_runout[i] += w * share
+            weight_seen[i] += w
+            n += 1
+        out.append(won / n if n else 0.5)
+        ahead.append(None if made is None
+                     else made > evaluate([a, b] + board))
+
+    spread = 0.0
+    if not exact and len(draws) > 1:
+        shares = [p / s for p, s in zip(per_runout, weight_seen) if s > 0]
+        if len(shares) > 1:
+            spread = statistics.pstdev(shares)
+    return ComboEquities(out, exact, len(draws), ahead, spread)
+
+
+def combined(equities, combos):
+    """The weighted average - the single equity number those combos add up to."""
+    total = sum(w for _a, _b, w in combos)
+    if total <= 0:
+        return 0.0
+    return sum(e * w for e, (_a, _b, w) in zip(equities, combos)) / total

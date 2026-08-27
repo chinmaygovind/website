@@ -47,22 +47,43 @@ def _suit_counts(cards):
 # ------------------------------------------------------------ how strong now
 
 
-#: Every opponent holding scored against one board, sorted. Five bots reading
-#: the same flop share this, which is the whole reason a hand is milliseconds
-#: rather than tens of them.
+#: Every opponent holding scored against one board, twice over: sorted, for the
+#: rank lookup, and keyed by the pair, for the removal. Five bots reading the
+#: same flop share both, which is the whole reason a hand is milliseconds rather
+#: than tens of them.
+#:
+#: **The keyed copy is what makes a per-combination caller affordable.** Removing
+#: the holdings the reader blocks used to walk all 1,176 pairs to find the 89 of
+#: them that matter, and re-evaluate those - 354us a call, which is nothing for
+#: five bots a street and is thirty seconds when ``rollout.py`` asks it of every
+#: combination in a range. Looked up instead of rescanned it is about 9us.
+#:
+#: The limit is 64 rather than 512 because each entry is now two structures
+#: rather than one. Nothing here reads more than a handful of boards at a time -
+#: five bots and a review all look at the same one - so the smaller cache costs
+#: nothing and the dictionary is what would otherwise grow to tens of megabytes
+#: in a worker that never restarts.
 _BOARD_SCORES = {}
-_BOARD_CACHE_LIMIT = 512
+_BOARD_CACHE_LIMIT = 64
+
+
+def _pair_key(a, b):
+    """One integer for an unordered pair of cards, which are 0-51."""
+    return a * 52 + b if a < b else b * 52 + a
 
 
 def _board_scores(board):
+    """``(sorted scores, {pair key: score})`` for every holding on this board."""
     key = tuple(sorted(board))
     hit = _BOARD_SCORES.get(key)
     if hit is None:
         if len(_BOARD_SCORES) >= _BOARD_CACHE_LIMIT:
             _BOARD_SCORES.clear()
         rest = [c for c in DECK if c not in set(board)]
-        hit = sorted(evaluate([a, b] + list(board))
-                     for a, b in itertools.combinations(rest, 2))
+        by_pair = {}
+        for a, b in itertools.combinations(rest, 2):
+            by_pair[_pair_key(a, b)] = evaluate([a, b] + list(board))
+        hit = (sorted(by_pair.values()), by_pair)
         _BOARD_SCORES[key] = hit
     return hit
 
@@ -82,7 +103,7 @@ def showdown_strength(hole, board):
     answer as counting from scratch, which ``test_texture.py`` checks directly.
     """
     board = list(board)
-    scores = _board_scores(board)
+    scores, by_pair = _board_scores(board)
     mine = evaluate(list(hole) + board)
 
     below = bisect.bisect_left(scores, mine)
@@ -90,14 +111,17 @@ def showdown_strength(hole, board):
     total = len(scores)
 
     # Drop the combinations that are not available to an opponent, because this
-    # hand is holding one of the cards.
+    # hand is holding one of the cards. Those are enumerated directly - each hole
+    # card paired with every other live card - rather than found by filtering all
+    # 1,176 pairs, and their scores are read out of the cache rather than
+    # recomputed. Same answer, and `test_texture.py` counts it from scratch.
     known = set(board)
-    rest = [c for c in DECK if c not in known]
-    mine_set = set(hole)
-    for a, b in itertools.combinations(rest, 2):
-        if a not in mine_set and b not in mine_set:
-            continue
-        theirs = evaluate([a, b] + board)
+    h0, h1 = hole
+    blocked = [_pair_key(h0, c) for c in DECK if c not in known and c != h0]
+    blocked += [_pair_key(h1, c) for c in DECK
+                if c not in known and c != h1 and c != h0]
+    for pair in blocked:
+        theirs = by_pair[pair]
         total -= 1
         if theirs < mine:
             below -= 1
@@ -308,24 +332,56 @@ def read(hole, board):
     }
 
 
+#: Made hands that outrank a pairing, by ``evaluator`` category index. Below a
+#: straight, a hand is some arrangement of pairs and ``pair_read`` says which;
+#: at a straight and above, the category *is* the description and the pair
+#: underneath it is not worth a word - "a set" is the wrong thing to call kings
+#: full.
+_MADE_ABOVE_PAIRS = {
+    4: "a straight",
+    5: "a flush",
+    6: "a full house",
+    7: "four of a kind",
+    8: "a straight flush",
+}
+
+
 def describe_hand(hole, board):
-    """The phrase a review line uses: ``"top pair, weak kicker, flush draw"``."""
+    """The phrase a review line uses: ``"top pair, weak kicker, flush draw"``.
+
+    **A made hand is named before any draw it also happens to have.** This used
+    to be built from the pair, the suits and the outs alone, and a straight is
+    none of those: a wheel on A-2-4 came out as "a gutshot", and Broadway on
+    Q-J-T as "a backdoor flush draw". Both are true and both are the wrong
+    sentence - the hand was made, and a trainer that tells you you are drawing
+    when you are already there is worse than one that says nothing.
+    """
     r = read(hole, board)
     bits = []
-    if r["pair"] == "set":
+    made = _MADE_ABOVE_PAIRS.get(r["category"])
+    if made:
+        bits.append(made)
+    elif r["pair"] == "set":
         bits.append("a set")
     elif r["pair"]:
         bits.append(r["pair"] + (f", {r['kicker']} kicker" if r["kicker"] else ""))
-    if r["flush_draw"] == 3:
+
+    if not made and r["flush_draw"] == 3:
         bits.append("a flush")
-    elif len(board) < 5 and r["flush_draw"] == 2:
+    elif len(board) < 5 and r["flush_draw"] == 2 and r["category"] != 5:
+        # A real redraw is worth saying over a made straight; a backdoor one is
+        # not, and printing it next to "a straight" reads as a tool that has not
+        # noticed what you have.
         bits.append("a flush draw")
-    elif len(board) < 5 and r["flush_draw"] == 1:
+    elif not made and len(board) < 5 and r["flush_draw"] == 1:
         bits.append("a backdoor flush draw")
-    if r["straight_outs"] >= OESD_OUTS:
-        bits.append("an open-ended straight draw")
-    elif r["straight_outs"] >= GUTSHOT_OUTS:
-        bits.append("a gutshot")
+    # A draw to the hand you already have is not a draw. Straight outs are
+    # counted from the board and do not know the hand is already made.
+    if not made:
+        if r["straight_outs"] >= OESD_OUTS:
+            bits.append("an open-ended straight draw")
+        elif r["straight_outs"] >= GUTSHOT_OUTS:
+            bits.append("a gutshot")
 
     # Two overcards is worth saying when it is all you have: it is the
     # difference between a bluff with backdoors and a bluff with nothing, and it

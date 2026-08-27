@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Are these numbers right? &middot; GTO{% endblock %}
+{% block body %}
+<main class="page">
+  <h1>Are these numbers right?</h1>
+  <p class="lede">
+    Every test in this project checks its code against its own code. That catches
+    a thing that broke and cannot catch a thing that was wrong from the start.
+    These compare against work by other people: <b>eval7</b>, a separate hand
+    evaluator written in C, and the published solutions the preflop charts claim
+    to be transcribed from.
+  </p>
+
+  {% if not report %}
+  <div class="warnbox">No report has been generated. Run
+    <code>venv/bin/python tools/validate_report.py</code>.</div>
+  {% else %}
+  <p class="sub">
+    {{ report.summary.passed }} passed,
+    {{ report.summary.failed }} failed,
+    {{ report.summary.not_run }} not run &middot;
+    generated {{ report.generated }}{% if report.commit %} at {{ report.commit }}{% endif %}.
+  </p>
+
+  {% for c in report.checks %}
+  <details class="mark check {{ c.status|replace(' ', '-') }}">
+    <summary>
+      <span class="st">vs {{ c.against }}</span>
+      <span class="did">{{ c.name }}</span>
+      <span class="tag {{ 'correct' if c.status == 'pass' else ('error' if c.status == 'fail' else 'unpriced') }}">
+        {{ c.status }}</span>
+    </summary>
+    <div class="headline">{{ c.question }}</div>
+    <div class="line">
+      <div class="txt">{{ c.detail }}</div>
+      {% if c.rows %}
+      <table class="curve rowsy">
+        <thead><tr>
+          {% for k in c.rows[0].keys() %}<th class="{{ 'n' if k != 'spot' else '' }}">{{ k|replace('_', ' ') }}</th>{% endfor %}
+        </tr></thead>
+        <tbody>
+          {% for r in c.rows %}<tr>
+            {% for k, v in r.items() %}<td class="{{ 'n' if k != 'spot' else '' }}">{{ v }}</td>{% endfor %}
+          </tr>{% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </div>
+  </details>
+  {% endfor %}
+  {% endif %}
+
+  <h2>What is still not checked</h2>
+  <p class="lede">
+    The postflop numbers. <b>Nothing on this page tests them against a solver</b>,
+    because a postflop comparison needs a binary this repository does not ship.
+    That is why every postflop number in a review is labelled <span class="src model">model</span>
+    and not <span class="src solver">solver</span>: it is exact against these
+    five bots, whose strategies are known functions, and it is not a claim about
+    equilibrium. The bet-sizing curve stops at showdown on the street you are on,
+    so it understates a small bet that sets up a bigger one on the next card.
+  </p>
+  <p class="sub"><a href="/">Back to the table</a></p>
+</main>
+{% endblock %}

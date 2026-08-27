@@ -188,3 +188,38 @@ def test_read_never_raises_on_any_real_spot():
         r = T.read(deck[:2], deck[2:2 + n])
         assert 0.0 <= r["strength"] <= 1.0
         assert isinstance(T.describe_hand(deck[:2], deck[2:2 + n]), str)
+
+
+# ---------------------------------------------------- naming a made hand
+
+def _describe(hole, board):
+    from cards import parse_card
+    return T.describe_hand([parse_card(x) for x in hole.split()],
+                           [parse_card(x) for x in board.split()])
+
+
+def test_a_made_straight_is_a_straight_and_not_a_draw_to_one():
+    # The wheel on A-2-4 used to come out as "a gutshot" and Broadway on Q-J-T
+    # as "a backdoor flush draw": both true, both the wrong sentence, and both
+    # told the hero they were drawing to a hand they already had.
+    assert _describe("3s 5c", "Ac 2d 4d") == "a straight"
+    assert _describe("As Ks", "Qd Jc Ts") == "a straight"
+    assert _describe("Th 9h", "8c 7d 2s Jh") == "a straight"
+
+
+def test_a_hand_bigger_than_a_pair_is_named_by_what_it_is():
+    assert _describe("Ks Kd", "Kh 7c 7d") == "a full house"
+    assert _describe("Ac Ad", "Ah As 2c") == "four of a kind"
+    assert _describe("9h 8h", "7h 6h 5h") == "a straight flush"
+
+
+def test_a_real_redraw_is_still_worth_saying_over_a_made_straight():
+    # Nine outs to a flush on top of a straight is a different hand from a
+    # straight, and it is the difference between calling a raise and folding.
+    assert _describe("9h 8h", "7c 6h 5h") == "a straight, a flush draw"
+
+
+def test_a_draw_is_still_a_draw_when_nothing_is_made():
+    assert _describe("9h 8h", "7c 6d 2s") == "an open-ended straight draw"
+    assert _describe("Ah Kh", "Qh Jh 2c") == "a flush draw, a gutshot"
+    assert _describe("2c 7d", "Ah Kh Qh") == "no pair and no draw"

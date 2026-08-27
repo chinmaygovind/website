@@ -438,3 +438,59 @@ def test_folding_correctly_is_still_correct():
                                rng=random.Random(7), iters=4000)
     assert r.verdict == "correct"
     assert r.loss_bb is None
+
+
+def test_a_mixed_hand_is_described_against_a_different_action():
+    """"It calls 70% and calls 70%" is not a sentence about a mixed strategy.
+
+    `mixed` spans 20% to 75%, and the action the hero took is usually also the
+    chart's most frequent one inside that band - so comparing against "the most
+    frequent action" compared it against itself.
+    """
+    node, pos = ("vs_rfi", "CO"), "BTN"
+    chart = ranges.lookup(node, pos, seats=6, depth_bb=200.0)
+    seen = 0
+    for cls in ranges.CLASSES:
+        for action, name in (("call", "call"), ("raise", "3bet")):
+            freq = chart.freqs(cls).get(name, 0.0)
+            if not review.MIXED_FLOOR <= freq < review.CORRECT_FLOOR:
+                continue
+            d = decision(_combo_of(cls), position=pos, node=node,
+                         action=action, to_call=250, amount=900)
+            r = review.review_decision(d)
+            if r.verdict != "mixed":
+                continue
+            seen += 1
+            took, against = r.headline.split(" It ")[1].split(" and ")
+            assert took.split()[0] != against.split()[0], r.headline
+    assert seen, "no mixed verdict was produced to check"
+
+
+def test_a_chopped_pot_is_a_bucket_on_the_river_and_not_a_missing_combination():
+    """The counts printed have to add up to the total printed beside them.
+
+    A tie is the only way to score exactly half a pot with no cards to come, so
+    on a river every chop landed in a bucket that was named "" and dropped -
+    printing "1 you beat; 337 beat you" against a total of 339.
+    """
+    import re
+
+    import bots as bots_module
+    import profiles
+
+    bot = bots_module.Bot(profiles.FRIENDS[0], random.Random(2))
+    for hole, board in (("9s9d", "9h9c2s3d4h"), ("AhKd", "AcKcQsJsTs"),
+                        ("2c3d", "AsKsQsJsTs")):
+        opp = opponent(name=bot.profile.name, position="CO", action="raise",
+                       text=SANJAY)
+        d = decision(hole, street="river", node=None, board=parse(board),
+                     action="check", to_call=0, pot=400, amount=0,
+                     opponents_in=[opp])
+        r = review.review_decision(d, rng=random.Random(3), iters=200,
+                                   bots={bot.profile.name: bot})
+        line = next((x for x in r.lines
+                     if x.label == "Where that equity comes from"), None)
+        assert line is not None, f"no decomposition on {board}"
+        total = int(re.search(r"have (\d+) combinations", line.text).group(1))
+        counted = sum(int(n) for n in re.findall(r"(\d+)\u00d7", line.text))
+        assert counted == total, f"{counted} of {total}: {line.text}"

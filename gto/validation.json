@@ -1,0 +1,255 @@
+{
+ "generated": "2026-08-27 19:59 UTC",
+ "commit": "46ad114",
+ "summary": {
+  "passed": 6,
+  "failed": 0,
+  "not_run": 1,
+  "total": 7,
+  "eval7": true
+ },
+ "checks": [
+  {
+   "name": "Hand ranking",
+   "against": "eval7",
+   "question": "does evaluate() order two hands the way eval7 does?",
+   "status": "pass",
+   "samples": 20000,
+   "worst": 0,
+   "tolerance": 0,
+   "detail": "20,000 random pairs on a full board, every one ordered identically.",
+   "rows": []
+  },
+  {
+   "name": "The reference itself",
+   "against": "eval7's own sampler",
+   "question": "is the enumeration every row above is checked against right?",
+   "status": "pass",
+   "samples": 6,
+   "worst": 0.14603,
+   "tolerance": 0.33541019662496846,
+   "detail": "Worst gap 0.146 points against a 0.335-point sampling band at 200,000 draws.",
+   "rows": [
+    {
+     "spot": "As Ks vs Qh Jd on 7c 2d 9s",
+     "ours": 77.475,
+     "theirs": 77.34,
+     "diff": 0.135
+    },
+    {
+     "spot": "Ac Ad vs Kc Kd on 2h 7s Ts",
+     "ours": 91.616,
+     "theirs": 91.615,
+     "diff": 0.001
+    },
+    {
+     "spot": "Jh Th vs Ad Kc on 9h 8c 2h",
+     "ours": 69.697,
+     "theirs": 69.843,
+     "diff": -0.146
+    },
+    {
+     "spot": "7c 7d vs As Kh on Kd 4s 2c 9h",
+     "ours": 4.545,
+     "theirs": 4.613,
+     "diff": -0.068
+    },
+    {
+     "spot": "Qs Jc vs Ah Ts on Kd Qd 3h 8s",
+     "ours": 86.364,
+     "theirs": 86.272,
+     "diff": 0.092
+    },
+    {
+     "spot": "5h 5c vs Ac Qd on Kh 9s 4d 2c 7h",
+     "ours": 100.0,
+     "theirs": 100.0,
+     "diff": 0.0
+    }
+   ]
+  },
+  {
+   "name": "Hand versus hand",
+   "against": "eval7's evaluator, enumerated here",
+   "question": "is exact enumeration exact?",
+   "status": "pass",
+   "samples": 6,
+   "worst": 0.0,
+   "tolerance": 1.0000000000000001e-07,
+   "detail": "Every spot agrees to the last place a float has.",
+   "rows": [
+    {
+     "spot": "As Ks vs Qh Jd on 7c 2d 9s",
+     "ours": 77.4747,
+     "theirs": 77.4747,
+     "diff": 0.0
+    },
+    {
+     "spot": "Ac Ad vs Kc Kd on 2h 7s Ts",
+     "ours": 91.6162,
+     "theirs": 91.6162,
+     "diff": 0.0
+    },
+    {
+     "spot": "Jh Th vs Ad Kc on 9h 8c 2h",
+     "ours": 69.697,
+     "theirs": 69.697,
+     "diff": 0.0
+    },
+    {
+     "spot": "7c 7d vs As Kh on Kd 4s 2c 9h",
+     "ours": 4.5455,
+     "theirs": 4.5455,
+     "diff": 0.0
+    },
+    {
+     "spot": "Qs Jc vs Ah Ts on Kd Qd 3h 8s",
+     "ours": 86.3636,
+     "theirs": 86.3636,
+     "diff": 0.0
+    },
+    {
+     "spot": "5h 5c vs Ac Qd on Kh 9s 4d 2c 7h",
+     "ours": 100.0,
+     "theirs": 100.0,
+     "diff": 0.0
+    }
+   ]
+  },
+  {
+   "name": "Hand versus range",
+   "against": "eval7's evaluator, enumerated here",
+   "question": "does the sampler agree with an exact solve, inside its own error bar?",
+   "status": "pass",
+   "samples": 4,
+   "worst": 1.449524,
+   "tolerance": 3.0,
+   "detail": "Worst gap 1.45 standard errors, over 8,000 samples a spot.",
+   "rows": [
+    {
+     "spot": "As Ks vs QQ+,AKs,AQs on 7c 2d 9s",
+     "ours": 35.631,
+     "theirs": 35.536,
+     "diff": 0.095,
+     "sigma": 0.17
+    },
+    {
+     "spot": "Jh Th vs TT+,AJs+,KQs on 9h 8c 2h",
+     "ours": 56.212,
+     "theirs": 55.985,
+     "diff": 0.227,
+     "sigma": 0.41
+    },
+    {
+     "spot": "7c 7d vs 22+,A2s+,KTs+ on Kd 4s 2c 9h",
+     "ours": 45.131,
+     "theirs": 45.942,
+     "diff": -0.81,
+     "sigma": 1.45
+    },
+    {
+     "spot": "Qs Jc vs 88+,ATo+,KJo+ on Kd Qd 3h 8s",
+     "ours": 46.325,
+     "theirs": 46.333,
+     "diff": -0.008,
+     "sigma": 0.01
+    }
+   ]
+  },
+  {
+   "name": "Equity per holding",
+   "against": "eval7's evaluator, enumerated here",
+   "question": "is the per-holding pass right, one holding at a time and pooled?",
+   "status": "pass",
+   "samples": 4,
+   "worst": 0.0,
+   "tolerance": 1e-07,
+   "detail": "Exact on every street that enumerates, both per combination and pooled.",
+   "rows": [
+    {
+     "spot": "As Ks vs QQ+,AKs,AQs on 7c 2d 9s",
+     "combos": 18,
+     "ours": 35.5359,
+     "theirs": 35.5359,
+     "diff": 0.0
+    },
+    {
+     "spot": "Jh Th vs TT+,AJs+,KQs on 9h 8c 2h",
+     "combos": 39,
+     "ours": 55.9855,
+     "theirs": 55.9855,
+     "diff": 0.0
+    },
+    {
+     "spot": "7c 7d vs 22+,A2s+,KTs+ on Kd 4s 2c 9h",
+     "combos": 112,
+     "ours": 45.9416,
+     "theirs": 45.9416,
+     "diff": -0.0
+    },
+    {
+     "spot": "Qs Jc vs 88+,ATo+,KJo+ on Kd Qd 3h 8s",
+     "combos": 75,
+     "ours": 46.3333,
+     "theirs": 46.3333,
+     "diff": -0.0
+    }
+   ]
+  },
+  {
+   "name": "Opening ranges",
+   "against": "published 6-max 100bb solutions",
+   "question": "does a chart labelled `solver` open as often as the solve it names?",
+   "status": "pass",
+   "samples": 4,
+   "worst": 2.448718,
+   "tolerance": 3.0,
+   "detail": "Worst gap 2.4 points of opening frequency, against a 3-point band.",
+   "rows": [
+    {
+     "spot": "UTG",
+     "ours": 17.9,
+     "theirs": 15.5,
+     "diff": 2.4,
+     "equal_blind": 19.2,
+     "widened_by": 1.2
+    },
+    {
+     "spot": "HJ",
+     "ours": 21.6,
+     "theirs": 19.5,
+     "diff": 2.1,
+     "equal_blind": 23.1,
+     "widened_by": 1.5
+    },
+    {
+     "spot": "CO",
+     "ours": 26.1,
+     "theirs": 26.5,
+     "diff": -0.4,
+     "equal_blind": 30.0,
+     "widened_by": 3.9
+    },
+    {
+     "spot": "BTN",
+     "ours": 43.6,
+     "theirs": 44.0,
+     "diff": -0.4,
+     "equal_blind": 50.5,
+     "widened_by": 6.9
+    }
+   ]
+  },
+  {
+   "name": "Postflop strategy",
+   "against": "TexasSolver",
+   "question": "do the postflop numbers match a real solve?",
+   "status": "not run",
+   "samples": 0,
+   "worst": null,
+   "tolerance": null,
+   "detail": "No solver binary. Build TexasSolver and point TEXASSOLVER_BIN at its console_solver, or put that on the path. Until then nothing here is checked against a postflop solve, and `rollout.py`'s numbers are `model` - exact against these five bots, and not a claim about equilibrium.",
+   "rows": []
+  }
+ ]
+}

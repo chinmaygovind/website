@@ -238,20 +238,26 @@ run_module() {
     # is safe there, and it lands after `pytest.ini`'s `addopts` - where, as
     # that file says, a later `-m` wins.
     marks=""
-    gated_wanted gto/evaluator.py gto/cards.py || marks="not exhaustive"
+    left=""
+    gated_wanted gto/evaluator.py gto/cards.py \
+      || { marks="not exhaustive"; left="the evaluator proof"; }
     gated_wanted gto/bots.py gto/profiles.py \
-      || marks="${marks:+$marks and }not calibration"
+      || { marks="${marks:+$marks and }not calibration"
+           left="${left:+$left, }the bot calibration"; }
+    # The third gate is not about time - the whole validation suite is four
+    # seconds. It is the only suite here that needs `eval7`, which is a test-only
+    # dependency, and it is the only one that compares this code against anybody
+    # else's, so it runs whenever a file it could contradict has moved.
+    gated_wanted gto/equity.py gto/evaluator.py gto/ranges.py gto/validate.py \
+      || { marks="${marks:+$marks and }not validation"
+           left="${left:+$left, }the outside-reference checks"; }
 
     # A skipped test reads as a pass, so always say which proof did not run.
-    case "$marks" in
-      "") echo "  (gto: including the evaluator proof and the bot calibration)" ;;
-      "not exhaustive")
-        echo "  (gto: bot calibration running; evaluator proof left out - pass --all, or change evaluator.py/cards.py)" ;;
-      "not calibration")
-        echo "  (gto: evaluator proof running; bot calibration left out - pass --all, or change bots.py/profiles.py)" ;;
-      *)
-        echo "  (gto: evaluator proof and bot calibration left out - pass --all, or change evaluator.py/cards.py/bots.py/profiles.py)" ;;
-    esac
+    if [ -z "$left" ]; then
+      echo "  (gto: including the evaluator proof, the bot calibration and the outside-reference checks)"
+    else
+      echo "  (gto: $left left out - pass --all, or change the files they cover)"
+    fi
 
     if [ -z "$marks" ]; then
       export PYTEST_ADDOPTS="-m ''"

@@ -335,6 +335,12 @@ class Table:
                 "name": name,
                 "position": self.positions[i],
                 "action": action,
+                # What they have left behind the line. ``rollout.py`` needs it to
+                # know when a raise it is pricing is actually all-in, and it is
+                # cheaper to record it now than to reconstruct it from a settled
+                # hand later. Absent on decisions recorded before this existed,
+                # so every reader must default it.
+                "stack": h.seats[i].stack,
                 "range": bot.range_after(
                     node, self.positions[i], action,
                     seats=len(self.seat_names),

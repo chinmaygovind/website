@@ -19,6 +19,8 @@ deliberately refuses to do.
 | the rules of poker | `engine.py` |
 | how a hand is ranked | `evaluator.py`, `cards.py` |
 | equity, pot odds, EV | `equity.py` |
+| what a bet size is worth | `rollout.py` |
+| checking any of it against the outside world | `validate.py`, `/proof` |
 | preflop charts | `ranges.py` |
 | how a friend plays | `profiles.py`, then `bots.py` |
 | what a board means | `texture.py` |
@@ -57,7 +59,7 @@ arithmetic and the verdict `unpriced` rather than a score that came from
 nowhere. Somebody learning from this has to be able to tell "this is wrong" from
 "nobody knows", and the difference is in the label.
 
-## The five things that are not obvious
+## The seven things that are not obvious
 
 **The equal blinds change the game, and they are the reason published charts
 are wrong here.** At 0.25/0.25 the small blind has already matched the big
@@ -99,12 +101,80 @@ joining two clauses that agreed. `EXPLOIT_FLOOR` is the same 0.05bb in both
 directions. Against a hero that folds everything, 27% of folds come out
 `exploit` and 24% `error`, medians 0.49bb and 0.17bb passed up.
 
+**A bet size can now be priced, and the thing that makes that honest is that
+the bots are functions.** `review.py` used to refuse: "a bet cannot be priced
+without solving what happens after it". That is still true against equilibrium
+and `rollout.py` does not claim otherwise - but `Bot.postflop_action` decides by
+rolling `self.rng.random()` against known expressions, so **evaluating those
+expressions instead of rolling them gives the exact fold, call and raise
+frequency against any size**, hand by hand through the range the bot is on. Run
+over each candidate size that gives a curve, and - because calling is selective -
+the exact range left *after* a call, which is why a bigger bet shows worse
+equity when it gets there. Four things it does not see, all stated on the page:
+it stops at showdown on this street, so it understates a small bet that sets up
+a bigger one; it assumes the hero best-responds to a raise; it is **heads-up
+only**, because two opponents' calling ranges are not independent and there is
+no honest product to take; and it is against these five, not against
+equilibrium. `SIZING_FLOOR` is 0.25bb before the curve may call a size wrong,
+which is deliberately wider than the curve's own precision, because the
+one-street horizon biases it in a known direction. **Preflop is refused for a
+different reason**: `Bot.preflop_action` never reads a raise size, so the model
+cannot tell 2.5bb from 4bb and a curve there would be a flat line pretending to
+have an opinion.
+
+**The equity number is now shown taken apart, and the decomposition is the
+teaching.** Heads-up, `equity.combo_equities` gives the hero's equity against
+each of the opponent's combinations rather than one pooled sample, so the
+weighted average can be printed as the sum it is: how many combinations you are
+already ahead of and what you are worth against them, how many beat you that you
+can still outdraw, how many have you dead. That is exactly the count somebody can
+do at the table - 6 combinations to a pair, 4 to a suited hand, 12 to an offsuit
+one - which is what makes it worth the screen space. Its arithmetic is printed
+with `≈` rather than `=` **on purpose**: every term in it is rounded for
+reading and the equity above it is not, so a reader doing the sum lands half a
+point away and an equals sign would make the page look like it cannot add up.
+
 **The win rate is mostly noise and the page says so.** Every rate carries a 95%
 interval, and the interval is usually embarrassing - which is the point. It is a
 *t* interval, not a normal one, because the variance is estimated from the same
 few hands the mean is; using 1.96 anyway is 42% too narrow at ten hands. It is
 still optimistic, because hand results are a spike at minus one big blind with a
 long right tail. Below 25 hands `headline()` refuses to state a rate at all.
+
+## Checking this against somebody else's work
+
+`validate.py` and `/proof` exist because **every test in `tests/` checks this
+code against this code**, which catches a regression and cannot catch a mistake
+that was there from the first commit: a misread chart, an equity function that
+has always been half a percent out.
+
+- The reference is `eval7`, an independent C evaluator, and it is a **test-only
+  dependency** - production has no use for a second hand evaluator, so it is in
+  `requirements-test.txt` and the suite is gated on a `validation` marker for
+  that reason rather than for speed. The whole thing is four seconds.
+- **`eval7.py_hand_vs_range_exact` is broken in 0.1.11** - it returns 1.0 for
+  every input, AA against KK included - so it is not used. The exact reference
+  is an enumeration written in `validate.py` itself, scored by eval7's
+  evaluator, sharing no code with `equity.py`. That is stronger than borrowing
+  their solver would have been, and it is why there is a check called **"The
+  reference itself"**: a hand-written reference can be wrong, so it is measured
+  against eval7's own sampler. If that row ever fails, every row under it is
+  wrong in the same direction and all of them still say `pass`.
+- What it found: hand-versus-hand and per-holding equity agree with an
+  independent enumeration **to the last place a float has**, and the evaluator
+  orders every one of 20,000 random pairs the way eval7 does, ties included.
+  The opening charts are within 2.4 points of the frequencies the solutions they
+  claim to be are published at - UTG and HJ are the wide ones, CO and BTN are
+  within half a point.
+- **The postflop comparison is not written and the page says `not run`.** It
+  needs a solver binary this repository does not ship.
+  `test_the_postflop_comparison_reports_itself_as_not_run` is there so that the
+  day somebody makes that row green they have to come here and say so.
+- The page renders `validation.json`, regenerated by
+  `tools/validate_report.py`, because the checks need a dependency the box does
+  not have and four seconds is not a page load. A stale file cannot turn a
+  failing check green: `test_the_committed_report_matches_what_the_checks_say_now`
+  runs them live and compares.
 
 ## Money, and the two ways it used to be wrong
 
@@ -209,6 +279,16 @@ observed result is already exact.
   - `dataset.touched` is cleared when the spot changes. It used to persist for
     the life of the page, so one drag pinned *that fraction of min-to-stack* to
     every later decision, which is meaningless across spots.
+- **A line may carry a chart, and the line's own text always says the same
+  thing.** `Line.chart` is drawn by `chartHtml` - a sizing curve or a bucket
+  split - and every number in it is also in the sentence above it, so a chart
+  that fails to render cannot take the finding with it. The bucket boxes are
+  `flex: <combos> 1 96px`: sized by how many combinations are in each group, but
+  never below a width the label fits in, because a bucket holding 11 of 140
+  combinations otherwise collapsed to four wrapped lines of unreadable text. The
+  chart and the sentence drop an empty group **on the same rule**; kept apart,
+  an empty middle bucket vanished from the text and drew a box reading "0
+  combinations, 0%".
 - **Every keyboard shortcut is a button.** The handler looks the button up by
   `data-key` and clicks it, so a key can never fire an action the table is not
   offering, and the badge on the button cannot drift from the binding. F fold,
@@ -233,7 +313,7 @@ public internet.
 
 ## Tests
 
-`scripts/tests.sh gto` - 397 in about 47 seconds, plus two gated suites:
+`scripts/tests.sh gto` - 428 in about 38 seconds, plus three gated suites:
 
 - **`exhaustive`** is the evaluator's proof: all 2,598,960 five-card hands
   scored against an independent sort-and-group implementation *and* every
@@ -242,7 +322,11 @@ public internet.
   VPIP and PFR against the numbers written on its profile. A profile saying
   58/31 is a claim; this is the test of it. ~100s.
 
-Both run on `--all` or when the file they cover is dirty. **The runner prints a
+- **`validation`** is the one described above: `equity.py`, `evaluator.py` and
+  `ranges.py` against `eval7` and against published charts. Gated because it
+  needs a test-only dependency, not because it is slow.
+
+All three run on `--all` or when the file they cover is dirty. **The runner prints a
 line when they are left out**, because a skipped test reads as a pass. The same
 CI gap as kot's `strength` marker applies: the check reads the working tree, so
 in CI they run only on the manual "every module" dispatch.
@@ -258,6 +342,20 @@ switch back: the win here is 70% of the runtime.
 - **`solver.py` does not exist yet.** Background CFR over heads-up postflop
   subgames, which would replace `heuristic` on the equal-blind small blind and
   give the postflop marks something better than `model`.
+- **The review costs about 250ms a hand now and it is on the acting request.**
+  `/api/act` computes the marks in the same response that carries the events the
+  browser is about to pace out, so the model layer's cost is a delay before the
+  first bot moves: measured over 150 hands, a median of 90ms before this work and
+  257ms after, with a worst case of 848ms. It is under one bot's think time and
+  it is not free. The fix is a second endpoint - `/api/act` answering with the
+  events and `/api/review` computing the marks while they play - and the reason
+  it is not done yet is that `record_hand` writes the `GtoDecision` rows *from*
+  the marks, and the fold rush lets the hero deal the next hand before a second
+  request could land.
+- **`rollout.py` is heads-up and only when nobody has bet.** Facing a bet, the
+  raise sizes could be priced by the same machinery - `response` already handles
+  the branch - but the pot geometry is different and it is not written. That is
+  36% of postflop decisions covered; the other 64% still read `unpriced`.
 - **Postflop ranges are still the preflop range.** `Table.opponent_ranges`
   narrows by preflop action only, so a bot that check-raised the turn is read as
   being on the range it called with. `review.py` labels the limitation; it does

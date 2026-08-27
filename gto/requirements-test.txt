@@ -5,3 +5,9 @@ pytest==8.3.4
 # See the note in the root requirements-test.txt. Absent, scripts/tests.sh runs
 # this suite serially rather than refusing to run it.
 pytest-xdist>=3.5
+
+# Only `tests/test_validation.py` uses this, and only that file may: it is the
+# independent reference the whole `validation` suite is measured against. It is
+# not in `requirements.txt` because production has no use for a second hand
+# evaluator - see `validate.py` for what it is doing here.
+eval7>=0.1.11

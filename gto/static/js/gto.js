@@ -533,10 +533,59 @@ function markEl(m) {
       <div class="lab">${escapeHtml(l.label)}
         <span class="src ${l.confidence}" title="${escapeHtml(l.confidence_text)}">${l.confidence}</span></div>
       <div class="txt">${escapeHtml(l.text)}</div>
+      ${chartHtml(l.chart)}
       ${l.note ? `<details class="note"><summary>why</summary>${escapeHtml(l.note)}</details>` : ""}`;
     el.appendChild(d);
   });
   return el;
+}
+
+/** The picture beside a line. The line's own text always says the same thing. */
+function chartHtml(c) {
+  if (!c) return "";
+  if (c.kind === "sizes") return sizesHtml(c);
+  if (c.kind === "buckets") return bucketsHtml(c);
+  return "";
+}
+
+function sizesHtml(c) {
+  const rows = c.rows || [];
+  if (!rows.length) return "";
+  const evs = rows.map(r => r.ev_bb);
+  const top = Math.max(...evs), bottom = Math.min(0, ...evs);
+  const span = (top - bottom) || 1;
+  const best = evs.indexOf(top);
+  const zero = (0 - bottom) / span * 100;
+  const body = rows.map((r, i) => {
+    const lo = Math.min(r.ev_bb, 0), hi = Math.max(r.ev_bb, 0);
+    const left = (lo - bottom) / span * 100;
+    const width = Math.max(0.8, (hi - lo) / span * 100);
+    const cls = [i === best ? "best" : "", r.yours ? "yours" : ""].join(" ");
+    return `<tr class="${cls}">
+      <th>${r.check ? "check" : Math.round(r.fraction * 100) + "% pot"
+            + (r.all_in ? " (all in)" : "")}</th>
+      <td class="n">${r.check ? "" : r.bb.toFixed(1) + "bb"}</td>
+      <td class="n">${r.check ? "" : Math.round(r.fold_pct) + "%"}</td>
+      <td class="n">${r.check || r.equity_called == null ? "" : Math.round(r.equity_called) + "%"}</td>
+      <td class="bar"><i style="left:${left}%;width:${width}%"></i></td>
+      <td class="n ev">${r.ev_bb >= 0 ? "+" : ""}${r.ev_bb.toFixed(2)}</td>
+    </tr>`;
+  }).join("");
+  return `<table class="curve" style="--zero:${zero}%">
+    <thead><tr><th></th><th class="n">size</th><th class="n">folds</th>
+      <th class="n">eq&nbsp;if&nbsp;called</th><th></th><th class="n">EV&nbsp;bb</th></tr></thead>
+    <tbody>${body}</tbody></table>`;
+}
+
+function bucketsHtml(c) {
+  const rows = c.rows || [], labels = c.labels || [];
+  const total = rows.reduce((a, r) => a + r.combos, 0) || 1;
+  return `<div class="buckets">` + rows.map((r, i) => `
+    <div class="bk b${i}" style="flex:${Math.max(r.combos, total * 0.02)} 1 96px">
+      <b>${r.combos}</b>
+      <span>${Math.round(r.equity)}%</span>
+      <em>${escapeHtml(labels[i] || "")}</em>
+    </div>`).join("") + `</div>`;
 }
 
 function escapeHtml(s) {

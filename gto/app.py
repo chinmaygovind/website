@@ -256,6 +256,30 @@ def index():
         opponents=[b.profile.to_dict() for b in t.bots.values()])
 
 
+@app.route("/proof")
+def proof_page():
+    """Where the numbers were checked against somebody else's numbers.
+
+    Rendered from ``validation.json`` rather than run live: the checks need
+    ``eval7``, which is a test-only dependency this box does not install, and
+    the full run is four seconds. ``tools/validate_report.py`` regenerates the
+    file and ``tests/test_validation.py`` runs the same checks live, so the page
+    being stale cannot make a failing check look like a passing one - it can only
+    make a current one look old, which is what the date is for.
+    """
+    user = current_user()
+    report = None
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "validation.json")
+    try:
+        with open(path) as fh:
+            report = json.load(fh)
+    except (OSError, ValueError):
+        report = None
+    return render_template("proof.html", user=user, main_site=MAIN_SITE_URL,
+                           presence_where="stats", report=report)
+
+
 @app.route("/stats")
 def stats_page():
     user = current_user()
