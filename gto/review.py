@@ -60,6 +60,11 @@ MIXED_FLOOR = 0.20
 CORRECT_FLOOR = 0.75
 RARE_FLOOR = 0.02
 
+#: Big blinds an off-chart line has to be worth against this table before it is
+#: called an exploit rather than a rounding error. It reads in both directions:
+#: a call the chart folds, and a fold that passed one up.
+EXPLOIT_FLOOR = 0.05
+
 #: Chart action names, by node, for each thing the hero can do.
 _CHART_ACTION = {
     "rfi": {"raise": "raise", "bet": "raise", "check": "check", "fold": "fold"},
@@ -305,6 +310,12 @@ def _defence_line(d, bb):
 
 def _verdict(d, chart_bits, ev_bb, my_equity=None):
     """A word, a headline, and a number of big blinds where one is honest."""
+    # An exploit is a line the chart does not take that this table pays for.
+    # It comes in two directions and they are not the same event: you can take
+    # one, or you can be handed one and fold it.
+    took_one = ev_bb is not None and ev_bb > EXPLOIT_FLOOR and d.action in ("call", "check")
+    missed_one = ev_bb is not None and ev_bb > EXPLOIT_FLOOR and d.action == "fold"
+
     if chart_bits:
         mine, took, best, best_freq, chart = chart_bits
         if mine is None:
@@ -313,6 +324,24 @@ def _verdict(d, chart_bits, ev_bb, my_equity=None):
                     f"mark for it. See what it was worth against this table.",
                     None)
         if took >= CORRECT_FLOOR:
+            # **An exploit needs the chart to actually disagree, and that is
+            # why this sits inside the branch where the chart approved.** A
+            # fold the chart folds 100% of the time, in a pot the model prices
+            # as a call, is the equilibrium/table disagreement this file exists
+            # to surface: the chart is answering "against an equilibrium
+            # opener", and these five are not that. Checked any earlier it also
+            # swallowed folds the chart *calls* - JTo in the big blind, which
+            # equilibrium calls 100% of the time - and reported a plain error
+            # as a read, with a "but" joining two clauses that agreed.
+            if missed_one:
+                return ("exploit",
+                        f"Equilibrium {mine}s this {took * 100:.0f}% of the "
+                        f"time too - but against these ranges calling was "
+                        f"worth {ev_bb:+.2f}bb. The chart assumes the opener "
+                        f"is at equilibrium and these five are not, so this is "
+                        f"a read rather than a correction. It stops being true "
+                        f"against a tighter table.",
+                        ev_bb)
             return ("correct", f"Standard. Equilibrium {best}s this "
                                f"{best_freq * 100:.0f}% of the time.", None)
         if took >= MIXED_FLOOR:
@@ -326,9 +355,8 @@ def _verdict(d, chart_bits, ev_bb, my_equity=None):
         # told it is simply "wrong" would teach the wrong lesson - the right one
         # is that it is an exploit, that it depends on the read, and that it
         # stops working against Ronit.
-        exploit = ev_bb is not None and ev_bb > 0.05 and d.action in ("call", "check")
         if took >= RARE_FLOOR:
-            if exploit:
+            if took_one:
                 return ("exploit",
                         f"Equilibrium {mine}s this only {took * 100:.0f}% of the "
                         f"time - but against these ranges it is worth "
@@ -340,7 +368,7 @@ def _verdict(d, chart_bits, ev_bb, my_equity=None):
             return ("thin", f"Thin. Equilibrium {mine}s only "
                             f"{took * 100:.0f}% here and mostly {best}s.",
                     _loss(ev_bb, d))
-        if exploit:
+        if took_one:
             return ("exploit",
                     f"Equilibrium never {mine}s this - it {best}s "
                     f"{best_freq * 100:.0f}% of the time. Against these ranges "

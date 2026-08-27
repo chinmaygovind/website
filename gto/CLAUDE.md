@@ -57,7 +57,7 @@ arithmetic and the verdict `unpriced` rather than a score that came from
 nowhere. Somebody learning from this has to be able to tell "this is wrong" from
 "nobody knows", and the difference is in the label.
 
-## The four things that are not obvious
+## The five things that are not obvious
 
 **The equal blinds change the game, and they are the reason published charts
 are wrong here.** At 0.25/0.25 the small blind has already matched the big
@@ -85,6 +85,19 @@ a sixth verdict, `exploit`, for a line the chart folds and the model prices as
 positive. What it may **not** say is what that line would be worth against
 somebody else: nothing computed that, and at four to one a call is a profit
 against everybody.
+
+**`exploit` reads in both directions, and the order of the checks is what keeps
+it honest.** The disagreement is just as real when you *fold* a spot the chart
+folds and the model prices as a call - and that case used to come out
+`correct`, four lines above the model line saying the call was worth +0.58bb,
+the review contradicting itself inside one panel. So a fold is checked for it
+too. **The check sits inside the branch where the chart approved**, because an
+exploit requires the chart to actually disagree: run any earlier it also
+swallowed folds the chart *calls* - JTo in the big blind, which equilibrium
+calls 100% of the time - and reported a plain error as a read, with a "but"
+joining two clauses that agreed. `EXPLOIT_FLOOR` is the same 0.05bb in both
+directions. Against a hero that folds everything, 27% of folds come out
+`exploit` and 24% `error`, medians 0.49bb and 0.17bb passed up.
 
 **The win rate is mostly noise and the page says so.** Every rate carries a 95%
 interval, and the interval is usually embarrassing - which is the point. It is a
@@ -157,6 +170,45 @@ observed result is already exact.
   `shown`/`shownStack`/`shownCards` exist only to tell a redraw what actually
   changed; without them every card on the table re-deals itself each time
   anybody acts, which reads as a flicker.
+- **Once the hero folds, the rest of the hand is rushed.** The server plays the
+  whole hand out and answers with every event at once, and the browser used to
+  pace all of them at the bot's real think time - so a fold cost a median 10.4s
+  and up to 23.4s of watching a pot you are not in (Bell alone tanks for nine
+  seconds). `pace()` caps a paced action at `RUSH_MS` once the hero's seat is
+  folded, and `drawActions` puts a live **Next hand** button up for the whole
+  rush - built enabled rather than through `button`'s `busy`, since the request
+  it interrupts is still in flight. Taking it sets `skipRest` and `dealPending`,
+  which drain the remaining events at zero delay and deal without opening the
+  review drawer just to close it again. **The cap is a ceiling, never a floor**:
+  somebody who has already turned the speed slider below it must not find that
+  folding made the table slower.
+- **The review opens as one row per decision.** Every decision used to print its
+  whole ladder - hand, equilibrium, who is in, equity, pot odds, EV, sizing,
+  defence - whether or not it was interesting, so three folds in a row were
+  three walls of the same arithmetic. Each mark is a `<details>` whose summary
+  is what you would sort by: street, what you did, what it cost, the verdict.
+  The ladder is unchanged underneath. The provenance `note` on a line is a
+  second `<details>` inside that, because the notes are the point of this
+  trainer *and* are six sentences about stack depth on a hand that just folded.
+- **The bet slider carries chips, not a percentage, and that was a real bug.**
+  It used to be a 0-100 range mapped onto `[minimum raise, your whole stack]`,
+  which is not a poker size and cannot be made into one: with a 200bb stack the
+  100 notches were ~2bb apart, so **2.5bb was not a selectable open**, and the
+  hard-coded default of 35 opened for **72bb into a 4bb pot** - $18 at a 25-cent
+  blind. The slider is now `min`/`max`/`step` in cents (a quarter blind), the
+  pot-fraction chips land on the fraction they name, and `defaultRaiseTo` picks
+  the opening number: **2.5bb plus a blind per limper** unopened, **3x the
+  current level plus one more per cold caller** facing a raise, and **two thirds
+  of the pot** postflop. 2.5bb is not a taste: it is the size every opening
+  chart in `ranges.py` is transcribed at, so any other default marks the hero
+  against a chart for a raise they did not make.
+  - **The limper count excludes the small blind, and that is the equal blinds
+    again.** At 0.25/0.25 the SB has already matched the big blind, so
+    `committed >= bb` is true of it in a pot nobody has entered - which read as
+    one limper and opened every unopened pot to 3.5bb.
+  - `dataset.touched` is cleared when the spot changes. It used to persist for
+    the life of the page, so one drag pinned *that fraction of min-to-stack* to
+    every later decision, which is meaningless across spots.
 - **Every keyboard shortcut is a button.** The handler looks the button up by
   `data-key` and clicks it, so a key can never fire an action the table is not
   offering, and the badge on the button cannot drift from the binding. F fold,

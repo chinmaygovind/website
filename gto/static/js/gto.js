@@ -28,6 +28,12 @@ let state = window.GTO;
 let busy = false;
 let speed = 1;
 
+//: Pacing once the hero is out of the pot. See `gto/CLAUDE.md`.
+const RUSH_MS = 120;
+let rushing = false;
+let skipRest = false;
+let dealPending = false;
+
 //: What each seat is saying, and what it last had in front of it - both keyed
 //: by seat index, both only so a redraw can tell what changed and animate it.
 let says = new Map();
@@ -228,6 +234,15 @@ function drawActions() {
   const sizerRow = $("#sizer-row");
   sizerRow.hidden = true;
 
+  // Built enabled rather than through `button`'s `busy`: it has to work
+  // during the request that is still playing the hand out.
+  if (rushing) {
+    const b = button("Next hand", "act go", () => {}, "n");
+    b.disabled = false;
+    b.onclick = () => { skipRest = true; dealPending = true; b.disabled = true; };
+    row.appendChild(b);
+    return;
+  }
   if (state.needs_rebuy) {
     row.appendChild(button("Rebuy", "act go", async () => {
       await post("/api/rebuy", {});
@@ -273,19 +288,56 @@ function button(html, cls, fn, key) {
 
 let sizeRange = { min: 0, max: 0 };
 
+/** The bet this spot opens on, in chips.
+ *
+ *  A slider position is a fraction of `[minimum raise, your whole stack]`, which
+ *  is not a poker size and cannot be one - see `gto/CLAUDE.md`. */
+function defaultRaiseTo(raise) {
+  const bb = state.bb || 25;
+  const seats = state.seats || [];
+  const level = Math.max(0, ...seats.map(s => s.committed || 0));
+  let want;
+  if (state.street === "preflop") {
+    if (level <= bb) {
+      // Not `committed >= bb`: the blinds are equal, so the small blind has
+      // already matched without limping. See `gto/CLAUDE.md`.
+      const limpers = seats.filter(
+        s => !s.folded && !s.you && s.position !== "BB" && s.position !== "SB"
+          && (s.committed || 0) >= bb).length;
+      want = bb * 2.5 + bb * limpers;
+    } else {
+      const callers = seats.filter(
+        s => !s.folded && !s.you && (s.committed || 0) === level).length - 1;
+      want = level * (3 + Math.max(0, callers));
+    }
+  } else {
+    want = (state.pot || 0) * 0.66 + (currentCall() || 0);
+  }
+  return Math.max(raise.min, Math.min(raise.max, Math.round(want)));
+}
+
 function setupSizer(raise) {
   sizeRange = { min: raise.min, max: raise.max };
   const slider = $("#size");
-  slider.min = 0;
-  slider.max = 100;
-  if (!slider.dataset.touched) slider.value = 35;
+  const bb = state.bb || 25;
+  slider.min = raise.min;
+  slider.max = raise.max;
+  slider.step = Math.max(1, Math.round(bb / 4));
+
+  // A redraw inside one decision must not undo a drag; a new decision must not
+  // inherit the last one's slider fraction.
+  const spot = `${state.street}|${state.pot}|${raise.min}|${raise.max}`;
+  if (slider.dataset.spot !== spot) {
+    slider.dataset.spot = spot;
+    delete slider.dataset.touched;
+  }
+  if (!slider.dataset.touched) slider.value = defaultRaiseTo(raise);
   slider.oninput = () => { slider.dataset.touched = "1"; refreshSize(); };
   $$(".chip").forEach(c => c.onclick = () => {
     const frac = parseFloat(c.dataset.frac);
     const want = frac >= 99 ? sizeRange.max
       : (state.pot || 0) * frac + (currentCall() || 0);
-    const pct = 100 * (want - sizeRange.min) / Math.max(1, sizeRange.max - sizeRange.min);
-    slider.value = Math.max(0, Math.min(100, pct));
+    slider.value = clampSize(want);
     slider.dataset.touched = "1";
     refreshSize();
   });
@@ -297,9 +349,12 @@ function currentCall() {
   return c ? c.amount : 0;
 }
 
+function clampSize(chips) {
+  return Math.max(sizeRange.min, Math.min(sizeRange.max, Math.round(chips)));
+}
+
 function currentSize() {
-  const pct = parseFloat($("#size").value) / 100;
-  return Math.round(sizeRange.min + pct * (sizeRange.max - sizeRange.min));
+  return clampSize(parseFloat($("#size").value) || sizeRange.min);
 }
 
 function refreshSize() {
@@ -313,6 +368,7 @@ function refreshSize() {
 
 async function post(url, body, preface) {
   busy = true;
+  skipRest = false;
   pacedStreet = state.street || null;
   drawActions();
   try {
@@ -337,20 +393,32 @@ async function post(url, body, preface) {
     if (data.events) await playEvents(data.events, data.state);
     if (data.state) state = data.state;
     render();
-    if (data.review && data.review.length) showReview(data.review, data.adaptation);
+    // Next hand mid-rush: do not open the drawer just to close it again.
+    if (data.review && data.review.length && !dealPending) {
+      showReview(data.review, data.adaptation);
+    }
     return data;
   } catch (e) {
     toast("Lost the connection to the table.");
     return null;
   } finally {
     busy = false;
+    rushing = false;
     drawActions();
+    if (dealPending) {
+      dealPending = false;
+      skipRest = false;
+      deal();
+    }
   }
 }
 
 /** Play the opponents out one at a time. The authoritative state is applied
  *  afterwards; these bubbles are only the pacing. */
 async function playEvents(events, fresh) {
+  const hero = (state.seats || []).find(s => s.you);
+  rushing = !!(hero && hero.folded);
+  if (rushing) drawActions();
   for (const e of events) {
     if (e.kind === "hand_over") continue;
     if (e.street && pacedStreet && e.street !== pacedStreet) {
@@ -364,14 +432,23 @@ async function playEvents(events, fresh) {
     if (e.street) pacedStreet = e.street;
     state.to_act = e.seat;              // the gold ring is their think time
     drawSeats();
-    await sleep(Math.max(60, (e.delay || 0.6) * 1000 * speed));
+    await sleep(pace(e));
     applyChips(e.seat, e.action, e.amount);
     says.set(e.seat, phrase(e.action, e.amount));
     state.to_act = null;
     drawSeats();
     drawMiddle();
   }
-  await sleep(220 * speed);
+  await sleep(rushing || skipRest ? 60 : 220 * speed);
+  rushing = false;
+}
+
+/** How long to leave one bot's action on the felt. The rush is a cap, never a
+ *  floor. */
+function pace(e) {
+  const full = Math.max(60, (e.delay || 0.6) * 1000 * speed);
+  if (skipRest) return 0;
+  return rushing ? Math.min(RUSH_MS, full) : full;
 }
 
 async function deal() {
@@ -436,18 +513,19 @@ function showReview(marks, adaptation) {
   $("#review-drawer").classList.add("open");
 }
 
+/** One decision: a row you can scan, a body you can open. */
 function markEl(m) {
-  const el = document.createElement("div");
+  const el = document.createElement("details");
   el.className = "mark";
   const did = m.action + (m.amount ? " " + money(m.amount) : "");
   el.innerHTML = `
-    <div class="top">
-      <span class="st">${m.street}${m.position ? " · " + m.position : ""}</span>
-      <span class="did">You ${did}</span>
+    <summary>
+      <span class="st">${escapeHtml(m.street)}${m.position ? " · " + escapeHtml(m.position) : ""}</span>
+      <span class="did">You ${escapeHtml(did)}</span>
+      ${m.loss_bb ? `<span class="cost">−${m.loss_bb}bb</span>` : ""}
       <span class="tag ${m.verdict}">${m.verdict}</span>
-    </div>
-    <div class="headline">${escapeHtml(m.headline)}</div>
-    ${m.loss_bb ? `<div class="headline cost">That is about ${m.loss_bb}bb.</div>` : ""}`;
+    </summary>
+    <div class="headline">${escapeHtml(m.headline)}</div>`;
   (m.lines || []).forEach(l => {
     const d = document.createElement("div");
     d.className = "line";
@@ -455,7 +533,7 @@ function markEl(m) {
       <div class="lab">${escapeHtml(l.label)}
         <span class="src ${l.confidence}" title="${escapeHtml(l.confidence_text)}">${l.confidence}</span></div>
       <div class="txt">${escapeHtml(l.text)}</div>
-      ${l.note ? `<div class="note">${escapeHtml(l.note)}</div>` : ""}`;
+      ${l.note ? `<details class="note"><summary>why</summary>${escapeHtml(l.note)}</details>` : ""}`;
     el.appendChild(d);
   });
   return el;
@@ -552,10 +630,12 @@ function press(sel) {
   return false;
 }
 
+/** Arrow keys move the bet by a quarter pot, not by a slider percent. */
 function nudgeSize(by) {
   const slider = $("#size");
   if (!slider || $("#sizer-row").hidden) return;
-  slider.value = Math.max(0, Math.min(100, parseFloat(slider.value) + by));
+  const stepChips = Math.max(state.bb || 25, Math.round((state.pot || 0) * 0.25));
+  slider.value = clampSize(currentSize() + by * stepChips);
   slider.dataset.touched = "1";
   refreshSize();
 }
@@ -586,8 +666,8 @@ document.addEventListener("keydown", e => {
     return;
   }
   if (["1", "2", "3", "4", "a"].includes(key)) { press(`.chip[data-key='${key}']`); return; }
-  if (e.key === "ArrowUp") { e.preventDefault(); nudgeSize(5); }
-  if (e.key === "ArrowDown") { e.preventDefault(); nudgeSize(-5); }
+  if (e.key === "ArrowUp") { e.preventDefault(); nudgeSize(1); }
+  if (e.key === "ArrowDown") { e.preventDefault(); nudgeSize(-1); }
 });
 
 speed = (state.prefs && state.prefs.bot_speed) ?? 1;

@@ -399,3 +399,42 @@ def test_adaptation_notes_read_as_sentences():
     out = review.adaptation_notes(FakeTable())
     assert out[0].startswith("Sanjay ") and out[0].endswith(".")
     assert any("steaming" in n for n in out)
+
+
+def test_a_fold_the_chart_likes_but_this_table_pays_for_is_an_exploit():
+    """The same disagreement as the test above, pointing the other way.
+
+    96o at four to one is a call the chart never makes, and folding it is a
+    fold the chart makes every time - so the chart calls the fold correct while
+    the model, four lines below on the same panel, prices the call at most of a
+    big blind. The review used to print both and mark the hand ``correct``,
+    which is the review contradicting itself in one screen. The chart is still
+    right about equilibrium; it is not right about Sanjay.
+    """
+    r = review.review_decision(_bb_facing(25, 100, "9s6h", action="fold"),
+                               rng=random.Random(7), iters=4000)
+    assert r.verdict == "exploit"
+    assert r.loss_bb and r.loss_bb > review.EXPLOIT_FLOOR
+
+
+def test_a_fold_the_chart_also_hates_is_an_error_and_not_a_read():
+    """An exploit needs the chart to *disagree* with the table.
+
+    Equilibrium calls JTo in the big blind 100% of the time and so does the
+    model. Folding it is not a read about Sanjay, it is a mistake both sources
+    agree on, and calling it an exploit would dress up an error as insight -
+    with a "but" joining two clauses that say the same thing.
+    """
+    r = review.review_decision(_bb_facing(25, 100, "JsTh", action="fold"),
+                               rng=random.Random(7), iters=4000)
+    assert r.verdict == "error"
+    assert "but" not in r.headline
+
+
+def test_folding_correctly_is_still_correct():
+    """The exploit branch must not swallow every fold it sees. 72o folded to a
+    raise is the chart and the table agreeing, and it gets no tag at all."""
+    r = review.review_decision(_bb_facing(75, 100, "7h2c", action="fold"),
+                               rng=random.Random(7), iters=4000)
+    assert r.verdict == "correct"
+    assert r.loss_bb is None

@@ -265,9 +265,25 @@ button.act:hover:not(:disabled) .key, .chip:hover .key { color: var(--ink-dim); 
 .drawer .scroll { overflow-y: auto; padding: 16px 18px 40px; }
 
 .mark { border: 1px solid var(--line); border-radius: var(--r); padding: 13px 14px; margin-bottom: 12px; background: var(--panel-2); }
-.mark .top { display: flex; align-items: baseline; gap: 9px; margin-bottom: 7px; flex-wrap: wrap; }
+.mark > summary {
+  display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap;
+  cursor: pointer; list-style: none; margin: -13px -14px; padding: 13px 14px 13px 30px;
+  border-radius: var(--r); position: relative;
+}
+.mark[open] > summary { margin-bottom: 0; }
+.mark > summary::-webkit-details-marker { display: none; }
+.mark > summary::before {
+  content: ""; position: absolute; left: 14px; top: 50%;
+  width: 0; height: 0; border-left: 5px solid var(--ink-faint);
+  border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+  transform: translateY(-50%); transition: transform .13s ease;
+}
+.mark[open] > summary::before { transform: translateY(-50%) rotate(90deg); }
+.mark > summary:hover { background: rgba(255, 255, 255, .03); }
 .mark .st { font-size: 10px; text-transform: uppercase; letter-spacing: .14em; color: var(--ink-faint); }
 .mark .did { font-size: 14px; font-weight: 600; }
+.mark > summary .cost { font-size: 12.5px; font-weight: 600; color: var(--bad); }
+.mark > summary .tag { margin-left: auto; }
 .tag { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; padding: 2px 8px; border-radius: 999px; font-weight: 700; }
 .tag.correct { background: rgba(95, 191, 127, .16); color: var(--good); }
 .tag.mixed { background: rgba(216, 174, 94, .14); color: var(--gold); }
@@ -275,13 +291,18 @@ button.act:hover:not(:disabled) .key, .chip:hover .key { color: var(--ink-dim); 
 .tag.error { background: rgba(224, 104, 95, .16); color: var(--bad); }
 .tag.exploit { background: rgba(127, 168, 224, .16); color: var(--exploit); }
 .tag.unpriced { background: rgba(255, 255, 255, .07); color: var(--ink-faint); }
-.mark .headline { font-size: 13.5px; color: var(--ink); margin-bottom: 10px; }
-.mark .cost { color: var(--bad); font-weight: 600; }
+.mark .headline { font-size: 13.5px; color: var(--ink); margin: 12px 0 10px; }
 
 .line { border-top: 1px solid var(--line); padding: 9px 0 0; margin-top: 9px; }
 .line .lab { font-size: 10px; text-transform: uppercase; letter-spacing: .12em; color: var(--ink-faint); display: flex; gap: 8px; align-items: center; }
 .line .txt { font-size: 13px; color: var(--ink-dim); margin-top: 3px; }
 .line .note { font-size: 12px; color: var(--ink-faint); margin-top: 5px; font-style: italic; }
+.line .note > summary {
+  cursor: pointer; font-style: normal; letter-spacing: .1em; font-size: 9.5px;
+  text-transform: uppercase; color: var(--ink-faint); opacity: .7;
+}
+.line .note > summary:hover { opacity: 1; }
+.line .note[open] > summary { margin-bottom: 5px; }
 .src { font-size: 9px; letter-spacing: .08em; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line); text-transform: uppercase; }
 .src.solver { color: var(--good); border-color: rgba(95, 191, 127, .35); }
 .src.derived { color: var(--gold); border-color: rgba(216, 174, 94, .3); }
