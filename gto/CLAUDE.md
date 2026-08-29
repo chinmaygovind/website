@@ -294,6 +294,19 @@ they say "the CO". If it is ever revisited, the change is one line in
 `_players` - drop `name` and let the positions carry it - and nothing else in
 the file needs to know.
 
+**Three workers boot at once, and `create_all` is a check-then-CREATE.** On the
+first boot after a **new table** is added, all three look, all three see it
+missing, and all three issue the CREATE. One wins; the losers used to raise
+`table gto_coach already exists`, which killed the worker, halted the gunicorn
+master, and left only systemd's automatic restart to bring the service back. The
+deploy went green, the box had the right code, and gto was dead for seven seconds
+in between, which is the worst shape a failure takes here. It also fires only on
+that first boot, so restarting afterwards proves nothing and it reads as a fluke.
+`models.ensure_schema` expects the race instead: losing it means somebody else
+did the work, so it tries once more and finds everything already there. Anything
+that is not that race still raises. **Never call `db.create_all()` directly
+here.**
+
 **`gto_decisions.context_json` is the only hand-run migration this service has
 ever needed**, and `models.ensure_columns` is what runs it - in code, because a
 mapped column the live table lacks makes *every* query against `gto_decisions`

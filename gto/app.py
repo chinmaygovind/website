@@ -47,7 +47,7 @@ import table as table_module
 import visits
 from models import (
     DEFAULT_PREFS, GtoCoach, GtoDecision, GtoHand, GtoPrefs, GtoSession,
-    GtoTable, User, database_url, db, ensure_columns,
+    GtoTable, User, database_url, db, ensure_schema,
 )
 
 load_dotenv()
@@ -67,9 +67,10 @@ if os.environ.get("SESSION_COOKIE_SECURE", "").lower() in ("1", "true", "yes"):
 
 db.init_app(app)
 with app.app_context():
-    db.create_all()
-    # The one thing `create_all` cannot do - see `models.ensure_columns`.
-    ensure_columns(db, log=app.logger)
+    # Not a bare `create_all`: three workers boot at once and it is a
+    # check-then-CREATE. See `models.ensure_schema`, which also does the one
+    # thing `create_all` cannot.
+    ensure_schema(db, log=app.logger)
     visits.ensure_tables(db)
 visits.init_app(app, db, "gto")
 

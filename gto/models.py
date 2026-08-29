@@ -41,6 +41,7 @@ floats.
 from datetime import datetime
 import json
 import os
+import time
 
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import event
@@ -343,6 +344,41 @@ _ADDED = {
         ("context_json", "TEXT"),
     ],
 }
+
+
+def ensure_schema(app_db, log=None):
+    """Everything the database needs at boot, safe against three workers at once.
+
+    ``create_all`` is a check-then-CREATE with a gap in the middle, and three
+    sync workers import this module at the same instant. On the first boot after
+    a **new table** is added they all look, they all see it missing, and they all
+    issue the CREATE. One wins. The losers used to raise ``table gto_coach
+    already exists``, which killed the worker, which halted the gunicorn master,
+    and only systemd's automatic restart brought the service back - by which
+    point the table existed and the second boot was clean.
+
+    That is the worst shape a failure can take here: the deploy went green, the
+    box had the right code, and the service was dead for seven seconds in
+    between. It also only fires on the *first* boot after a schema change, so it
+    cannot be reproduced by restarting afterwards and looks like a fluke.
+
+    So the race is expected rather than guarded against: losing it means somebody
+    else did the work, and the second attempt finds everything already there and
+    does nothing. Anything that is *not* that race still raises.
+    """
+    from sqlalchemy.exc import OperationalError
+    for attempt in (1, 2):
+        try:
+            app_db.create_all()
+            break
+        except OperationalError as e:
+            if attempt == 2 or "already exists" not in str(e).lower():
+                raise
+            if log:
+                log.warning("another worker created a table first, retrying: %s",
+                            e.orig)
+            time.sleep(0.25)
+    ensure_columns(app_db, log=log)
 
 
 def ensure_columns(app_db, log=None):

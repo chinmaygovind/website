@@ -426,3 +426,50 @@ def test_the_gemini_call_is_made_the_way_google_expects(monkeypatch):
     assert usage["output_tokens"] == 1400          # 180 written + 1220 thought
     assert coach.cost_micros(usage) == 0
     assert ms >= 0
+
+
+# ---------------------------------------------------------------- boot safety
+
+
+def test_two_workers_creating_the_same_table_is_not_a_crash():
+    """The bug that took gto down for seven seconds on a green deploy.
+
+    ``create_all`` is a check-then-CREATE and three sync workers run it at the
+    same instant. On the first boot after a new table is added they all see it
+    missing and all issue the CREATE; the losers used to die on ``table
+    gto_coach already exists``, which halted the gunicorn master. Losing that
+    race means somebody else did the work, so it is expected rather than fatal.
+    """
+    import models
+    from sqlalchemy.exc import OperationalError
+
+    class Loser:
+        """Raises the race once, the way SQLite does, then succeeds."""
+        def __init__(self):
+            self.tries = 0
+
+        def create_all(self):
+            self.tries += 1
+            if self.tries == 1:
+                raise OperationalError(
+                    "CREATE TABLE gto_coach", {},
+                    Exception("table gto_coach already exists"))
+
+    db = Loser()
+    models.ensure_schema(db, log=None)
+    assert db.tries == 2, "it did not try again after losing the race"
+
+
+def test_a_real_database_error_at_boot_still_raises():
+    """Only the race is swallowed. A disk error must not boot a broken app."""
+    import models
+    import pytest as _pytest
+    from sqlalchemy.exc import OperationalError
+
+    class Broken:
+        def create_all(self):
+            raise OperationalError("CREATE TABLE x", {},
+                                   Exception("disk I/O error"))
+
+    with _pytest.raises(OperationalError):
+        models.ensure_schema(Broken(), log=None)
