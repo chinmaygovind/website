@@ -47,7 +47,7 @@ import table as table_module
 import visits
 from models import (
     DEFAULT_PREFS, GtoCoach, GtoDecision, GtoHand, GtoPrefs, GtoSession,
-    GtoTable, User, database_url, db, ensure_schema,
+    GtoFinding, GtoTable, User, database_url, db, ensure_schema,
 )
 
 load_dotenv()
@@ -243,8 +243,15 @@ def store(row, t):
     db.session.commit()
 
 
-def view(t, prefs, user, reveal=False):
-    """Everything the page needs to draw itself."""
+def view(t, prefs, user, reveal=False, row=None):
+    """Everything the page needs to draw itself, the session panel included.
+
+    ``row`` is the table's database row and is what the session panel is
+    computed from. It is threaded through every caller rather than stashed
+    anywhere: three workers and a background thread share this module, and a
+    module-level variable holding "the current request's row" is a race that
+    would show up as one player being shown another's numbers.
+    """
     state = t.state(reveal=reveal)
     owner = is_owner(user)
     for seat in state["seats"]:
@@ -263,6 +270,7 @@ def view(t, prefs, user, reveal=False):
     state["profit"] = t.profit()
     state["needs_rebuy"] = t.needs_rebuy()
     state["prefs"] = prefs
+    state["session"] = session_stats(user, row, t)
     return state
 
 
@@ -274,7 +282,7 @@ def index():
     user = current_user()
     row, t, prefs = load_table(user)
     return render_template(
-        "table.html", state=view(t, prefs, user), user=user,
+        "table.html", state=view(t, prefs, user, row=row), user=user,
         owner=is_owner(user), main_site=MAIN_SITE_URL, presence_where="table",
         coach=coach_view(user),
         opponents=[b.profile.to_dict() for b in t.bots.values()])
@@ -341,7 +349,7 @@ def healthz():
 def api_state():
     user = current_user()
     row, t, prefs = load_table(user)
-    return jsonify(view(t, prefs, user))
+    return jsonify(view(t, prefs, user, row=row))
 
 
 @app.route("/api/hand", methods=["POST"])
@@ -349,10 +357,10 @@ def api_hand():
     user = current_user()
     row, t, prefs = load_table(user)
     if t.needs_rebuy():
-        return jsonify({"error": "rebuy", "state": view(t, prefs, user)}), 409
+        return jsonify({"error": "rebuy", "state": view(t, prefs, user, row=row)}), 409
     events = t.new_hand()
     store(row, t)
-    return jsonify({"events": events, "state": view(t, prefs, user)})
+    return jsonify({"events": events, "state": view(t, prefs, user, row=row)})
 
 
 @app.route("/api/act", methods=["POST"])
@@ -380,7 +388,7 @@ def api_act():
     store(row, t)
     return jsonify({
         "events": events,
-        "state": view(t, prefs, user, reveal=finished),
+        "state": view(t, prefs, user, reveal=finished, row=row),
         "review": marks,
         "adaptation": review_module.adaptation_notes(t) if finished else [],
     })
@@ -394,7 +402,7 @@ def api_rebuy():
     amount = int(body.get("amount") or t.buyin)
     t.rebuy(max(t.bb * 10, min(t.buyin * 5, amount)))
     store(row, t)
-    return jsonify(view(t, prefs, user))
+    return jsonify(view(t, prefs, user, row=row))
 
 
 @app.route("/api/leave", methods=["POST"])
@@ -410,6 +418,30 @@ def api_leave():
         db.session.delete(row)
         db.session.commit()
     return jsonify({"ok": True})
+
+
+@app.route("/api/session/reset", methods=["POST"])
+def api_session_reset():
+    """Close this sit-down and start a fresh one at the full buy-in.
+
+    Deletes the *table*, not the record: the hands already played keep their old
+    ``session_id`` and stay in the lifetime numbers. What resets is the stack
+    everybody is sitting behind and the session the panel counts, which is what
+    "start again" means at a home game and is the only way to get back to even
+    money after a bad run without rebuying twice.
+    """
+    user = current_user()
+    row, t, prefs = load_table(user, create=False)
+    if row:
+        played = (db.session.get(GtoSession, row.session_id)
+                  if row.session_id else None)
+        if played and not played.ended_at:
+            played.ended_at = datetime.utcnow()
+            played.stack = t.stacks.get(t.hero, 0) if t else played.stack
+        db.session.delete(row)
+        db.session.commit()
+    row, t, prefs = load_table(user)
+    return jsonify(view(t, prefs, user, row=row))
 
 
 @app.route("/api/prefs", methods=["GET", "POST"])
@@ -532,7 +564,7 @@ def coach_usage(user):
     }
 
 
-def _coach_run(coach_id, ctx):
+def _coach_run(coach_id, contexts):
     """The call itself, off the request thread. Writes the row and the bill."""
     with app.app_context():
         row = db.session.get(GtoCoach, coach_id)
@@ -540,10 +572,12 @@ def _coach_run(coach_id, ctx):
             db.session.remove()
             return
         try:
-            text, usage, ms = coach_module.ask(ctx)
+            answer, usage, ms = coach_module.ask(contexts)
             row.status = "done"
-            row.text = text
+            row.text = answer["text"]
+            row.spots_json = json.dumps(answer.get("spots") or [])
             row.ms = ms
+            _store_findings(row, answer.get("findings") or [])
             row.input_tokens = usage["input_tokens"]
             row.output_tokens = usage["output_tokens"]
             row.cache_read_tokens = usage["cache_read_tokens"]
@@ -562,6 +596,70 @@ def _coach_run(coach_id, ctx):
             db.session.remove()
 
 
+def _store_findings(row, findings):
+    """Write what the coach noticed, once, replacing anything from a past try.
+
+    Replacing rather than appending: a decision that was asked again after a
+    failure, or after a model change, must not end up counted twice. The answer
+    is one row and its findings are part of it.
+    """
+    GtoFinding.query.filter_by(coach_id=row.id).delete()
+    d = db.session.get(GtoDecision, row.decision_id)
+    for f in findings:
+        db.session.add(GtoFinding(
+            coach_id=row.id, decision_id=row.decision_id, user_id=row.user_id,
+            tag=f["tag"], label=f["label"], severity=f["severity"],
+            street=d.street if d else None, model=row.model))
+
+
+def coach_leaks(user, tags=None):
+    """How often each tag has been seen for this account, ever.
+
+    The whole reason ``gto_findings`` exists. Returned with every answer so a
+    finding can say "the fourth time" instead of arriving as if it were new,
+    which is the difference between a note and a pattern.
+    """
+    q = db.session.query(GtoFinding.tag, db.func.count(GtoFinding.id)) \
+        .filter(GtoFinding.user_id == user.id)
+    if tags:
+        q = q.filter(GtoFinding.tag.in_(list(tags)))
+    return dict(q.group_by(GtoFinding.tag).all())
+
+
+def coach_body(user, row):
+    """One answer, its findings, and how often each has happened before."""
+    if not row:
+        return None
+    out = row.to_dict()
+    found = GtoFinding.query.filter_by(coach_id=row.id) \
+        .order_by(GtoFinding.id).all()
+    counts = coach_leaks(user, [f.tag for f in found]) if found else {}
+    out["findings"] = [dict(f.to_dict(), seen=counts.get(f.tag, 1))
+                       for f in found]
+    return out
+
+
+@app.route("/api/coach/leaks")
+def api_coach_leaks():
+    """Everything the coach has ever noticed, most frequent first.
+
+    Read-only and cheap: it is a count over one indexed column, and it is the
+    thing the whole table is for.
+    """
+    user = coach_user()
+    counts = coach_leaks(user)
+    rows = []
+    for tag, n in sorted(counts.items(), key=lambda kv: -kv[1]):
+        last = (GtoFinding.query.filter_by(user_id=user.id, tag=tag)
+                .order_by(GtoFinding.noticed_at.desc()).first())
+        rows.append({"tag": tag, "count": n,
+                     "label": last.label if last else None,
+                     "severity": last.severity if last else None,
+                     "last_seen": last.noticed_at.isoformat() if last else None})
+    return jsonify({"leaks": rows, "total": sum(counts.values()),
+                    "vocabulary": list(coach_module.LEAK_TAGS)})
+
+
 @app.route("/api/coach", methods=["GET", "POST"])
 def api_coach():
     """Ask for a second opinion on one decision, or poll for the one asked for.
@@ -571,31 +669,41 @@ def api_coach():
     """
     user = coach_user()
     if request.method == "GET":
-        want = request.args.get("decision", type=int)
+        want = request.args.get("hand", type=int)
     else:
-        want = (request.get_json(silent=True) or {}).get("decision")
+        want = (request.get_json(silent=True) or {}).get("hand")
         want = int(want) if want else None
     if not want:
-        return jsonify({"error": "which decision?"}), 400
+        return jsonify({"error": "which hand?"}), 400
 
-    d = GtoDecision.query.filter_by(id=want, user_id=user.id).first()
-    if not d:
+    # Every decision in the hand, in the order they were faced. One answer
+    # covers all of them, because they are not independent: a flop call only
+    # makes sense next to the preflop one that got there, and asking spot by
+    # spot billed the same preamble once per spot to produce answers that could
+    # not refer to one another.
+    spots = (GtoDecision.query
+             .filter_by(hand_id=want, user_id=user.id)
+             .order_by(GtoDecision.id).all())
+    if not spots:
         abort(404)
+    d = spots[0]
 
     row = GtoCoach.query.filter_by(decision_id=d.id).first()
 
     if request.method == "GET":
         # A poll reports whatever is there and never starts anything, which is
         # what makes a drawer left open unable to run up a bill.
-        return jsonify({"coach": row.to_dict() if row else None,
+        return jsonify({"coach": coach_body(user, row),
                         "usage": coach_usage(user)})
 
     if row and row.status == "done":
-        return jsonify({"coach": row.to_dict(), "usage": coach_usage(user)})
+        return jsonify({"coach": coach_body(user, row),
+                        "usage": coach_usage(user)})
     if row and row.status == "pending" and (
             datetime.utcnow() - (row.started_at or datetime.utcnow())
             < COACH_STALE):
-        return jsonify({"coach": row.to_dict(), "usage": coach_usage(user)})
+        return jsonify({"coach": coach_body(user, row),
+                        "usage": coach_usage(user)})
 
     # Anything else - an `error` row, or a `pending` one a dead worker left
     # behind - falls through and is run again. An answer that did not arrive is
@@ -607,11 +715,11 @@ def api_coach():
                                  "(or an ANTHROPIC_API_KEY) in gto/.env and "
                                  "restart the service."}), 503
 
-    ctx = d.context
-    if not ctx:
+    contexts = [x.context for x in spots if x.context]
+    if not contexts:
         return jsonify({"error": "This hand was played before the coach "
-                                 "existed, so the spot was never written "
-                                 "down in full."}), 409
+                                 "existed, so it was never written down in "
+                                 "full."}), 409
 
     # Two ceilings, and which one binds depends on who is answering. Money is
     # meaningless on a free tier and requests are what run out; on a paid one it
@@ -643,15 +751,17 @@ def api_coach():
     if row:
         row.started_at = datetime.utcnow()
         row.status, row.error = "pending", None
+        row.hand_id = want
     else:
-        row = GtoCoach(decision_id=d.id, user_id=user.id, status="pending",
-                       model=coach_module.model(),
+        row = GtoCoach(decision_id=d.id, hand_id=want, user_id=user.id,
+                       status="pending", model=coach_module.model(),
                        effort=coach_module.effort())
         db.session.add(row)
     db.session.commit()
 
-    threading.Thread(target=_coach_run, args=(row.id, ctx), daemon=True).start()
-    return jsonify({"coach": row.to_dict(), "usage": usage}), 202
+    threading.Thread(target=_coach_run, args=(row.id, contexts),
+                     name="coach", daemon=True).start()
+    return jsonify({"coach": coach_body(user, row), "usage": usage}), 202
 
 
 @app.route("/api/coach/usage")
@@ -719,9 +829,14 @@ def record_hand(user, row, t):
     # which is the right answer twice over: there is no row to hang the answer
     # on, and the coach is Chinmay's alone anyway.
     marks_out = []
-    for m, row_d in out:
+    for i, (m, row_d) in enumerate(out, 1):
         as_dict = m.to_dict()
         as_dict["decision_id"] = row_d.id
+        as_dict["hand_id"] = hand_row.id
+        # The number the coach judges this spot by. The drawer shows the marks
+        # in this order and the answer comes back keyed on it, so the two line
+        # up without either end having to guess.
+        as_dict["n"] = i
         marks_out.append(as_dict)
     return marks_out
 
@@ -731,6 +846,64 @@ def _sole_opponent(d):
     live = [o["name"] for o in getattr(d, "opponents_in", [])
             if o["action"] != "fold"]
     return live[0] if len(live) == 1 else None
+
+
+def _running_over(hands, marks):
+    """Fold a set of hands and their marks into one running total."""
+    running = stats_module.Running()
+    for h in hands:
+        result = h.result_cents or 0
+        running.add_hand(result,
+                         ev_cents=h.ev_cents if h.ev_cents is not None else result,
+                         bounty_cents=h.bounty_cents or 0,
+                         vpip=h.vpip, pfr=h.pfr, three_bet=h.three_bet,
+                         three_bet_chance=h.three_bet_chance,
+                         saw_flop=h.saw_flop, showdown=h.showdown,
+                         won_showdown=h.won_showdown, won=h.won)
+    for m in marks:
+        running.add_review(m, opponent=m.opponent)
+    running.error_bb = round(running.error_bb, 1)
+    out = running.summary()
+    out["headline"] = running.headline()
+    return out
+
+
+def session_stats(user, row, t=None):
+    """The sit-down you are in, rather than everything you have ever played.
+
+    Sits beside the table on every request, which is the point: a win rate you
+    have to leave the table to read is one you read after the session that would
+    have been changed by knowing it. It carries its own interval, and over a
+    session that interval is almost always wider than the number - which is the
+    honest thing for it to say and the reason `headline()` refuses a rate below
+    25 hands at all.
+    """
+    empty = stats_module.Running().summary()
+    empty["headline"] = ""
+    empty["profit"] = 0
+    empty["bought_in"] = 0
+    # Keyed on the *session*, not the account. Hands are recorded against a
+    # session whether or not anybody is signed in - `record_hand` writes a
+    # `user_id` of NULL and carries on - so gating this on a user showed a
+    # signed-out player an empty panel over a table they were in the middle of.
+    if not (row and row.session_id):
+        if t is not None:
+            empty["profit"] = t.profit()
+            empty["bought_in"] = t.bought_in.get(t.hero, 0)
+        return empty
+
+    hands = (GtoHand.query.filter_by(session_id=row.session_id)
+             .order_by(GtoHand.played_at).all())
+    ids = [h.id for h in hands]
+    marks = (GtoDecision.query.filter(GtoDecision.hand_id.in_(ids)).all()
+             if ids else [])
+    out = _running_over(hands, marks)
+    # Taken from the table rather than summed from the hands: it is the one
+    # number a rebuy changes, and `stacks - bought_in` is the only honest way to
+    # state it once anybody has topped up.
+    out["profit"] = t.profit() if t is not None else 0
+    out["bought_in"] = t.bought_in.get(t.hero, 0) if t is not None else 0
+    return out
 
 
 def lifetime_stats(user):

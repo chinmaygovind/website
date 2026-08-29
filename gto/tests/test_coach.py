@@ -125,7 +125,7 @@ def test_the_prompt_carries_none_of_this_repos_analysis():
                                   opponents=d.opponents,
                                   rng=random.Random(1), iters=200)
     ctx = coach.context(t, d)
-    text = coach.prompt(ctx)
+    text = coach.prompt([ctx])
 
     assert mark.headline not in text
     for line in mark.lines:
@@ -138,7 +138,7 @@ def test_the_prompt_carries_none_of_this_repos_analysis():
     for p in ctx["players"]:
         if p["style"]:
             p["style"]["blurb"] = ""
-    bare = coach.prompt(ctx).lower()
+    bare = coach.prompt([ctx]).lower()
     for word in ("equity", "pot odds", "solver", "derived", "heuristic",
                  "break-even", "minimum defence", "combinations"):
         assert word not in bare, word
@@ -147,35 +147,62 @@ def test_the_prompt_carries_none_of_this_repos_analysis():
 def test_the_prompt_says_when_the_blinds_are_equal():
     """The largest structural difference from any published chart."""
     t, d = a_decision(a_table(sb=25, bb=25))
-    assert "equal blinds" in coach.prompt(coach.context(t, d))
+    assert "equal blinds" in coach.prompt([coach.context(t, d)])
 
     t2, d2 = a_decision(a_table(sb=10, bb=25, seed=11))
-    assert "equal blinds" not in coach.prompt(coach.context(t2, d2))
+    assert "equal blinds" not in coach.prompt([coach.context(t2, d2)])
 
 
 def test_the_prompt_prices_the_bounty_or_leaves_it_out():
     t, d = a_decision(a_table(bounty_on=True))
-    assert "Bounty is on" in coach.prompt(coach.context(t, d))
+    assert "Bounty is on" in coach.prompt([coach.context(t, d)])
 
     t2, d2 = a_decision(a_table(bounty_on=False, seed=3))
-    assert "Bounty" not in coach.prompt(coach.context(t2, d2))
+    assert "Bounty" not in coach.prompt([coach.context(t2, d2)])
 
 
 def test_the_prompt_names_the_action_that_was_taken():
     t, d = a_decision()
     d.action, d.amount = "raise", 300
-    text = coach.prompt(coach.context(t, d))
+    text = coach.prompt([coach.context(t, d)])
     assert "You raise to $3.00" in text
 
     d.action, d.amount = None, 0
-    assert "What should you do here" in coach.prompt(coach.context(t, d))
+    assert "were still to act" in coach.prompt([coach.context(t, d)])
 
 
 def test_the_prompt_stays_small():
     """Every line of it is billed on every click."""
     t, d = a_decision()
-    text = coach.prompt(coach.context(t, d))
+    text = coach.prompt([coach.context(t, d)])
     assert len(text) < 2500, len(text)
+
+
+def test_a_spot_does_not_repeat_the_betting_the_last_one_narrated():
+    """Five spots each restating the hand from preflop is most of the prompt."""
+    t = a_table()
+    for _ in range(300):
+        t.new_hand()
+        for _ in range(12):
+            if not t.hand or t.hand.complete:
+                break
+            legal = {a["action"]: a for a in t.hand.legal_actions()}
+            if t.hand.to_act != t._seat_of_hero():
+                break
+            act = "check" if "check" in legal else "call"
+            t.hero_act({"action": act, "amount": legal[act].get("amount", 0)})
+        if len(t.decisions) >= 3:
+            break
+    else:
+        pytest.skip("no hand with three decisions in 300 deals")
+
+    ctxs = [coach.context(t, d) for d in t.decisions]
+    whole = coach.prompt(ctxs)
+    # The opening action appears once, under the spot that faced it, and is not
+    # repeated under every later spot in the same hand.
+    first_line = ctxs[-1]["actions"][0]
+    opener = coach._one_action(first_line)
+    assert whole.count(opener) <= 2, whole
 
 
 def test_the_system_prompt_asks_for_its_own_arithmetic():
@@ -303,9 +330,9 @@ def test_the_gemini_request_carries_the_prompt_and_a_ceiling(monkeypatch):
     no_keys(monkeypatch)
     monkeypatch.setenv("GEMINI_API_KEY", "x")
     t, d = a_decision()
-    body = coach._gemini_body(coach.context(t, d))
+    body = coach._gemini_body([coach.context(t, d)])
     assert body["system_instruction"]["parts"][0]["text"] == coach.SYSTEM
-    assert "You hold" in body["contents"][0]["parts"][0]["text"]
+    assert "You held" in body["contents"][0]["parts"][0]["text"]
     assert body["generationConfig"]["maxOutputTokens"] == coach.max_tokens()
     # Setting a thinking budget on 2.5 Pro is either a no-op or a way to get an
     # empty answer, so there must not be one.
@@ -314,13 +341,15 @@ def test_the_gemini_request_carries_the_prompt_and_a_ceiling(monkeypatch):
 
 def test_a_gemini_answer_is_read_with_its_thinking_counted():
     """`candidatesTokenCount` excludes thinking, which is most of the spend."""
-    text, usage = coach._gemini_read({
-        "candidates": [{"content": {"parts": [{"text": "Calling is fine."}]},
+    import json
+    answer, usage = coach._gemini_read({
+        "candidates": [{"content": {"parts": [{"text": json.dumps(
+            {"verdict": "Calling is fine.", "notes": [], "findings": []})}]},
                         "finishReason": "STOP"}],
         "usageMetadata": {"promptTokenCount": 812, "candidatesTokenCount": 200,
                           "thoughtsTokenCount": 1400},
     })
-    assert text == "Calling is fine."
+    assert answer["text"] == "Calling is fine."
     assert usage["input_tokens"] == 812
     assert usage["output_tokens"] == 1600, "thinking was not counted"
 
@@ -338,12 +367,14 @@ def test_gemini_spending_the_whole_ceiling_on_thinking_is_an_error():
 
 
 def test_a_truncated_gemini_answer_says_it_was_cut_off():
-    text, _ = coach._gemini_read({
-        "candidates": [{"content": {"parts": [{"text": "Calling is fine bec"}]},
-                        "finishReason": "MAX_TOKENS"}],
-        "usageMetadata": {"promptTokenCount": 1, "candidatesTokenCount": 1},
-    })
-    assert "cut off" in text
+    """Truncated JSON cannot be parsed, so it must not read as a bad reply."""
+    with pytest.raises(coach.CoachError) as e:
+        coach._gemini_read({
+            "candidates": [{"content": {"parts": [{"text": '{"verdict": "Calling is fi'}]},
+                            "finishReason": "MAX_TOKENS"}],
+            "usageMetadata": {"promptTokenCount": 1, "candidatesTokenCount": 1},
+        })
+    assert "cut off" in str(e.value)
 
 
 def test_a_blocked_gemini_prompt_says_so():
@@ -383,8 +414,14 @@ def test_the_gemini_call_is_made_the_way_google_expects(monkeypatch):
             seen["key"] = self.headers.get("x-goog-api-key")
             length = int(self.headers["Content-Length"])
             seen["body"] = json.loads(self.rfile.read(length))
+            body = json.dumps({"verdict": "Calling is fine.", "notes": [],
+                               "spots": [{"n": 1, "call": "right",
+                                          "why": "pot odds are there"}],
+                               "findings": [{"tag": "limp",
+                                             "label": "limps from early position",
+                                             "severity": "minor"}]})
             out = json.dumps({
-                "candidates": [{"content": {"parts": [{"text": "Calling is fine."}]},
+                "candidates": [{"content": {"parts": [{"text": body}]},
                                 "finishReason": "STOP"}],
                 "usageMetadata": {"promptTokenCount": 640,
                                   "candidatesTokenCount": 180,
@@ -411,7 +448,7 @@ def test_the_gemini_call_is_made_the_way_google_expects(monkeypatch):
 
         t, d = a_decision()
         d.action, d.amount = "call", d.to_call
-        text, usage, ms = coach.ask(coach.context(t, d))
+        answer, usage, ms = coach.ask([coach.context(t, d)])
     finally:
         server.shutdown()
 
@@ -419,9 +456,11 @@ def test_the_gemini_call_is_made_the_way_google_expects(monkeypatch):
     assert "key=" not in seen["path"], "the key went into the URL"
     assert "gemini-3.5-flash:generateContent" in seen["path"]
     assert seen["body"]["generationConfig"]["maxOutputTokens"] == 8000
-    assert "You hold" in seen["body"]["contents"][0]["parts"][0]["text"]
+    assert "You held" in seen["body"]["contents"][0]["parts"][0]["text"]
 
-    assert text == "Calling is fine."
+    assert answer["text"] == "Calling is fine."
+    assert [sp["n"] for sp in answer["spots"]] == [1]
+    assert [f["tag"] for f in answer["findings"]] == ["limp"]
     assert usage["input_tokens"] == 640
     assert usage["output_tokens"] == 1400          # 180 written + 1220 thought
     assert coach.cost_micros(usage) == 0
@@ -473,3 +512,140 @@ def test_a_real_database_error_at_boot_still_raises():
 
     with _pytest.raises(OperationalError):
         models.ensure_schema(Broken(), log=None)
+
+
+# ----------------------------------------------------------------- findings
+
+
+def test_only_tags_from_the_vocabulary_survive():
+    """The one thing that makes `gto_findings` countable six months on.
+
+    An invented tag is dropped rather than stored under its own name: it would
+    become a category of one that never grows, and it would make the tally look
+    fuller while answering less.
+    """
+    import json
+    a = coach.read_answer(json.dumps({
+        "verdict": "Folding was right.",
+        "notes": ["You need 33% and have about 32%."],
+        "findings": [
+            {"tag": "call_too_wide", "label": "calls suited gappers from early",
+             "severity": "moderate"},
+            {"tag": "opening-too-many-hands", "label": "invented", "severity": "major"},
+            {"tag": "other", "label": "", "severity": "minor"},
+        ],
+    }))
+    assert [f["tag"] for f in a["findings"]] == ["call_too_wide"]
+    assert a["text"].startswith("Folding was right.")
+    assert "- You need 33%" in a["text"]
+
+
+def test_a_stray_or_repeated_spot_number_is_dropped():
+    """`n` is what lines an entry up with the decision it judges.
+
+    A duplicate would overwrite a real verdict and a number the hand has no
+    room for would attach to nothing, so both are discarded at the parse rather
+    than stored and filtered by whoever reads them next.
+    """
+    import json
+    a = coach.read_answer(json.dumps({
+        "verdict": "v", "notes": [],
+        "spots": [{"n": 2, "call": "wrong", "why": "second"},
+                  {"n": 1, "call": "right", "why": "first"},
+                  {"n": 1, "call": "close", "why": "duplicate"},
+                  {"n": 3, "call": "maybe", "why": "not a verdict"},
+                  {"n": 4, "call": "right", "why": ""}],
+        "findings": []}))
+    assert [(sp["n"], sp["why"]) for sp in a["spots"]] == [
+        (1, "first"), (2, "second")], a["spots"]
+
+
+def test_a_hand_played_fine_produces_no_findings():
+    """Most hands. A panel that always accuses has stopped measuring."""
+    import json
+    a = coach.read_answer(json.dumps(
+        {"verdict": "That is a clear call.", "notes": ["Pot odds are 3 to 1."],
+         "findings": []}))
+    assert a["findings"] == []
+    assert a["text"]
+
+
+def test_a_findings_severity_is_never_invented():
+    import json
+    a = coach.read_answer(json.dumps({
+        "verdict": "v", "notes": [],
+        "findings": [{"tag": "limp", "label": "limps too often", "severity": "cataclysmic"}]}))
+    assert a["findings"][0]["severity"] == "minor"
+
+
+def test_at_most_three_findings_are_kept():
+    import json
+    many = [{"tag": "limp", "label": "l%d" % i, "severity": "minor"}
+            for i in range(9)]
+    a = coach.read_answer(json.dumps({"verdict": "v", "notes": [], "findings": many}))
+    assert len(a["findings"]) == 3
+
+
+def test_a_reply_that_is_not_json_is_an_error_not_a_blank_panel():
+    for bad in ("I think you should fold.", "", "[1, 2, 3]", "{oops"):
+        with pytest.raises(coach.CoachError):
+            coach.read_answer(bad)
+
+
+def test_the_request_pins_the_vocabulary_server_side(monkeypatch):
+    """Asking for a vocabulary in the prompt gets one *most* of the time, and
+    most of the time makes a tally quietly wrong rather than obviously broken."""
+    no_keys(monkeypatch)
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    t, d = a_decision()
+    cfg = coach._gemini_body([coach.context(t, d)])["generationConfig"]
+    assert cfg["responseMimeType"] == "application/json"
+    schema = cfg["responseSchema"]["properties"]["findings"]["items"]
+    assert schema["properties"]["tag"]["enum"] == list(coach.LEAK_TAGS)
+    assert schema["properties"]["severity"]["enum"] == list(coach.SEVERITIES)
+
+
+def test_the_vocabulary_is_slugs_and_has_an_escape_hatch():
+    assert "other" in coach.LEAK_TAGS, "nothing to say when the list has no name"
+    for tag in coach.LEAK_TAGS:
+        assert tag == tag.lower() and " " not in tag and "-" not in tag, tag
+    assert len(set(coach.LEAK_TAGS)) == len(coach.LEAK_TAGS)
+
+
+# ------------------------------------------------------------------ multiway
+
+
+def test_the_prompt_says_how_many_are_still_in():
+    """The single biggest input to every number in the answer.
+
+    The seat list already tags folded players, but that leaves the count to be
+    cross-referenced, and a hand read as heads-up when four are live is wrong in
+    every number rather than slightly off in one. `review.py` is multiway
+    throughout - `equity.range_equity` draws a holding per live opponent - so
+    the coach being told otherwise made the two disagree for no real reason.
+    """
+    t = a_table()
+    for _ in range(400):
+        t.new_hand()
+        if not t.decisions:
+            if t.hand and not t.hand.complete:
+                t.hero_act({"action": "fold"})
+            continue
+        d = t.decisions[-1]
+        live = [o for o in getattr(d, "opponents_in", []) if o["action"] != "fold"]
+        if len(live) < 2:
+            if t.hand and not t.hand.complete:
+                t.hero_act({"action": "fold"})
+            continue
+        text = coach.prompt([coach.context(t, d)])
+        assert "Still in: you and %d others" % len(live) in text, text
+        for o in live:
+            assert o["name"] in text
+        return
+    pytest.skip("no multiway spot in 400 deals")
+
+
+def test_the_system_prompt_makes_it_count_the_opponents_first():
+    lower = coach.SYSTEM.lower()
+    assert "count the opponents" in lower
+    assert "equity falls steeply with each extra opponent" in lower

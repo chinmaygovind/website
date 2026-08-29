@@ -6,8 +6,8 @@ sits down here too. This module maps only the identity columns of it and
 ``create_all`` uses CREATE TABLE IF NOT EXISTS, so nothing here can clobber the
 account other games depend on.
 
-Six tables of its own, and the split between the first two is the interesting
-one:
+Seven tables of its own, and the split between the first two is the
+interesting one:
 
 ``gto_tables``
     **The live table, as JSON.** Whose seat this is, everyone's stack, the
@@ -28,10 +28,12 @@ one:
     The gear menu, per account: stakes, buy-in, whether the bounty is on, and
     any tuning done to the opponents. Follows you between devices.
 
-``gto_coach``
+``gto_coach`` / ``gto_findings``
     One row per decision that has been sent to a model for a second opinion: the
     answer, and what it used. See ``coach.py`` for why it is a second opinion
-    rather than a summary, and why the usage is worth storing.
+    rather than a summary. ``gto_findings`` is the part of that answer worth
+    keeping past the reading of it - a tagged habit rather than a paragraph, so
+    that a hundred of them can be asked what keeps happening.
 
 Money is **integer cents** everywhere, as it is in the engine. A trainer that
 reports edges of a hundredth of a big blind cannot afford to hold them in
@@ -289,11 +291,26 @@ class GtoCoach(db.Model):
     __tablename__ = "gto_coach"
 
     id = db.Column(db.Integer, primary_key=True)
+    #: **The hand this is about.** One answer covers every decision in it, since
+    #: the spots are not independent - a flop call only makes sense next to the
+    #: preflop one that got there.
+    #:
+    #: ``decision_id`` came first, when an answer was about one spot, and it is
+    #: kept rather than migrated away: it still carries the unique index that
+    #: makes "one answer per hand" a database fact rather than a hope, and it
+    #: still points at something real - the *first* decision of the hand. The
+    #: rows written before this was hand-shaped have ``hand_id`` NULL and are
+    #: about that one decision only, which is why nothing here assumes it is set.
+    hand_id = db.Column(db.Integer, db.ForeignKey("gto_hands.id"), index=True,
+                        nullable=True)
     decision_id = db.Column(db.Integer, db.ForeignKey("gto_decisions.id"),
                             unique=True, index=True, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), index=True,
                         nullable=True)
     started_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    #: What it made of each numbered decision, kept whole so a hand can be
+    #: reopened and read the way it was shown.
+    spots_json = db.Column(db.Text, default="[]")
 
     status = db.Column(db.String(8), default="pending", index=True)
     text = db.Column(db.Text, nullable=True)
@@ -309,9 +326,15 @@ class GtoCoach(db.Model):
     cache_creation_tokens = db.Column(db.Integer, default=0)
     cost_micros = db.Column(db.Integer, default=0)
 
+    @property
+    def spots(self):
+        return json.loads(self.spots_json or "[]")
+
     def to_dict(self):
         return {
             "decision_id": self.decision_id,
+            "hand_id": self.hand_id,
+            "spots": self.spots,
             "status": self.status,
             "text": self.text,
             "error": self.error,
@@ -322,6 +345,50 @@ class GtoCoach(db.Model):
             "output_tokens": self.output_tokens or 0,
             "cost_micros": self.cost_micros or 0,
         }
+
+
+class GtoFinding(db.Model):
+    """One thing the coach noticed about how the player plays, kept to add up.
+
+    ``gto_decisions`` already records what happened in every hand and what the
+    review made of it, and it is the right place for that: it is arithmetic over
+    a spot. This table is the other kind of record - **a claim about a habit**,
+    made in words, that is only worth anything once there are a hundred of them
+    and you can ask which one keeps coming back.
+
+    That is why ``tag`` is drawn from ``coach.LEAK_TAGS`` and nothing else, and
+    why an unrecognised one is dropped rather than stored. A free-text tag makes
+    this table look full and answer nothing: the same leak arrives under three
+    spellings across three months and each is a category of one. ``label`` is
+    where the model's own wording lives, so the specific sentence is not lost.
+
+    One row per finding, several per answer, and no row at all when the hand was
+    played fine - which is most hands, and is the point. A table where every
+    hand produces a leak is measuring the model's willingness to fill a field.
+    """
+    __tablename__ = "gto_findings"
+
+    id = db.Column(db.Integer, primary_key=True)
+    coach_id = db.Column(db.Integer, db.ForeignKey("gto_coach.id"), index=True,
+                         nullable=False)
+    decision_id = db.Column(db.Integer, db.ForeignKey("gto_decisions.id"),
+                            index=True, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), index=True,
+                        nullable=True)
+    noticed_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    #: From ``coach.LEAK_TAGS``. The only column here that can be counted.
+    tag = db.Column(db.String(40), index=True, nullable=False)
+    label = db.Column(db.String(200))
+    severity = db.Column(db.String(10), index=True)
+    street = db.Column(db.String(8), index=True)
+    #: Which model said it, because a tally that spans a model change is two
+    #: tallies wearing one name and the difference should be visible.
+    model = db.Column(db.String(40))
+
+    def to_dict(self):
+        return {"tag": self.tag, "label": self.label,
+                "severity": self.severity, "street": self.street}
 
 
 # ---------------------------------------------------------------------------
@@ -342,6 +409,14 @@ class GtoCoach(db.Model):
 _ADDED = {
     "gto_decisions": [
         ("context_json", "TEXT"),
+    ],
+    # `gto_coach` was per-decision for one afternoon and is per-hand now. Six
+    # answers had already been written by then, so these are added rather than
+    # the table being rebuilt: an old row keeps `hand_id` NULL and reads as the
+    # single-spot answer it was.
+    "gto_coach": [
+        ("hand_id", "INTEGER"),
+        ("spots_json", "TEXT"),
     ],
 }
 

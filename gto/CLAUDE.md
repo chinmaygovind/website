@@ -179,9 +179,19 @@ has always been half a percent out.
 
 ## The coach, which is the one thing here that spends money
 
-`coach.py` sends **one decision** to a model and prints what comes back under
-the review, behind a button. It is Chinmay's alone and it is off until a key
-exists.
+`coach.py` sends **one whole hand** to a model and prints what comes back under
+the review, behind a button at the foot of the drawer. It is Chinmay's alone and
+it is off until a key exists.
+
+**One call per hand, not per spot.** The spots are not independent - a flop call
+only makes sense next to the preflop one that got there - and a button under each
+mark billed the same preamble once per spot to produce answers that could not
+refer to one another. The hand goes over once, each decision numbered, and the
+answer comes back with a verdict per number which the page puts back under that
+decision's own marking. `n` is what lines the two up; a duplicate or a number
+the hand has no room for is dropped at the parse rather than stored. A spot only
+narrates the betting *since the previous spot*, because five spots each
+restating the hand from preflop is most of the prompt on a street-by-street pot.
 
 **It runs on Gemini's free tier** - `gemini-3.5-flash`, one POST of JSON over
 `urllib`, no dependency. There is an Anthropic path behind the same seam
@@ -197,6 +207,19 @@ busiest, and both it and `gemini-3.7-flash` answer 503 "high demand" on the
 same request this model answers. A pin can go stale, but it goes stale
 *loudly* - Google's 404 names the model to move to, and `_ask_gemini` passes
 that message straight through to the panel rather than flattening it.
+
+**The tags are a fixed vocabulary and that is the whole of why `gto_findings`
+is worth having.** Every answer also returns the *habits* the hand shows, tagged
+from `coach.LEAK_TAGS` and nothing else, and Gemini is held to that list by the
+response schema rather than by being asked nicely - a vocabulary requested in a
+prompt is honoured most of the time, and most of the time makes a tally quietly
+wrong instead of obviously broken. A free-text tag would fill the table and
+answer nothing: the same leak arrives as `loose-preflop`, `too_wide_open` and
+`opening-too-many-hands` across three months and counts as three things, so the
+one question the table exists for could never be asked of it. An unrecognised
+tag is **dropped, not renamed**. Adding to the list is cheap; renaming orphans
+every row already counted under the old name. Most hands produce no findings at
+all, which is correct - a panel that always accuses has stopped measuring.
 
 **Model names here are not durable and nothing should keep a list of them.**
 The name this was first written against was retired between writing it and
@@ -313,6 +336,31 @@ mapped column the live table lacks makes *every* query against `gto_decisions`
 fail, so a forgotten ALTER would not be a coach that does not work, it would be
 the review and the stats page down. A hand played before that column existed
 cannot get one retroactively and the route says so.
+
+## The session panel, and what "reset" resets
+
+The left gutter of the table holds the numbers for the sit-down you are in:
+profit, hands, VPIP, PFR, 3-bet, saw-flop, WTSD, won-at-showdown, bb/100 and the
+error count out of the decisions you were marked on. It is **beside the table
+rather than on `/stats`** for one reason: a win rate you have to leave the table
+to read is one you read after the session it would have changed.
+
+It is keyed on the **session, not the account**. Hands are recorded against a
+session whether or not anybody is signed in - `record_hand` writes a NULL
+`user_id` and carries on - so gating the panel on a user showed a signed-out
+player an empty panel over a table they were in the middle of.
+
+`headline()` still refuses to state a rate below 25 hands, and the panel prints
+that refusal rather than filling the space with a number. Over one session the
+interval is almost always wider than the rate, which is the honest thing for it
+to say.
+
+**Reset deletes the table, not the record.** The `GtoSession` is closed with its
+final stack, the `GtoTable` row goes, and the next request sits you down again at
+the full buy-in with a fresh session. Every `GtoHand` already played keeps its
+old `session_id` and stays in the lifetime numbers - what restarts is the stack
+in front of you and the count beside it, which is what "start again" means at a
+home game. It is not owner-gated: it is a table action, and a guest has a table.
 
 ## Money, and the two ways it used to be wrong
 

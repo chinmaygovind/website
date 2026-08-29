@@ -258,6 +258,67 @@ def _players(t, d, seats):
 # ---------------------------------------------------------------- the prompt
 
 
+#: **The fixed vocabulary, and the reason `gto_findings` is worth having.**
+#: A free-text tag would make the table unreadable within a month: the same leak
+#: arrives as "loose-preflop", "too_wide_open" and "opening-too-many-hands" and
+#: counts as three unrelated things, so the one question the table exists to
+#: answer - *what do I keep doing* - could never be asked of it. The model is
+#: held to this list by the response schema, not by being asked nicely.
+#:
+#: Adding to it is cheap and renaming is not: a rename orphans every row already
+#: counted under the old name. Add, and leave the retired one in place.
+LEAK_TAGS = (
+    "open_too_wide", "open_too_tight", "limp",
+    "call_too_wide", "call_too_tight", "fold_too_much",
+    "three_bet_too_little", "three_bet_too_wide",
+    "bet_too_small", "bet_too_big", "miss_value_bet", "barrel_too_little",
+    "overvalue_one_pair", "bluff_catch_too_light", "chase_bad_odds",
+    "slowplay_too_much", "ignore_position", "ignore_opponent_read",
+    "ignore_bounty",
+    #: The escape hatch. Something real that the list has no name for yet - read
+    #: these occasionally, and when one keeps coming back give it a tag.
+    "other",
+)
+
+SEVERITIES = ("minor", "moderate", "major")
+
+#: What the answer must look like. Gemini enforces this server-side, which is
+#: what makes the tags trustworthy rather than hopeful.
+RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "verdict": {"type": "string"},
+        "notes": {"type": "array", "items": {"type": "string"}},
+        "spots": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "n": {"type": "integer"},
+                    "call": {"type": "string",
+                             "enum": ["right", "close", "wrong"]},
+                    "why": {"type": "string"},
+                },
+                "required": ["n", "call", "why"],
+            },
+        },
+        "findings": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "tag": {"type": "string", "enum": list(LEAK_TAGS)},
+                    "label": {"type": "string"},
+                    "severity": {"type": "string", "enum": list(SEVERITIES)},
+                },
+                "required": ["tag", "label", "severity"],
+            },
+        },
+    },
+    "required": ["verdict", "notes", "spots", "findings"],
+}
+
+
 SYSTEM = """You are a poker coach sitting behind one player in a small home \
 game, explaining the spot they just played.
 
@@ -278,6 +339,12 @@ instead of inventing a number.
 A play a solver folds can be right against someone playing 58% of hands - say \
 so when it is.
 
+**Count the opponents before anything else.** The number still in the hand is \
+given to you explicitly, and it changes every number you are about to produce: \
+equity falls steeply with each extra opponent, a hand that is ahead of one range \
+is often behind the best of four, and a bluff has to get through all of them \
+rather than one. Say how many you are reckoning against when it matters.
+
 Watch for two things this game does that most do not:
 - The blinds may be EQUAL. When they are, the small blind has already matched \
 the big blind, so folding it is strictly worse than checking, and an open faces \
@@ -286,33 +353,68 @@ more dead money than the usual charts assume.
 of taking the pot is well above the chips in it, and folding breaks a streak \
 exactly as surely as losing does. Price it in rather than mentioning it.
 
-Format: one sentence on whether the action was right, then at most four lines \
-each starting with "- ". Under 160 words. Plain text - no headings, no bold, no \
-markdown."""
+You are shown a whole hand and every decision the player was asked to make in \
+it, numbered. Judge each one.
+
+Answer as JSON with four fields:
+- "verdict": one sentence on the hand as a whole.
+- "spots": one entry per numbered decision, with "n" matching its number, "call" \
+of "right", "close" or "wrong", and "why" in at most 30 words. Every number \
+must appear exactly once. Judge each decision on what was known *at that point*, \
+not on how the hand turned out.
+- "notes": at most three short lines about the hand overall - the arithmetic \
+that matters most, or what ties the spots together. Plain text, no markdown.
+- "findings": the mistakes this hand shows about how THIS PLAYER plays, as \
+tagged objects. Each has a "tag" from the fixed list, a "label" of at most 12 \
+words saying what they did in their own terms, and a "severity".
+
+Rules for "findings", which are collected across months and counted:
+- **Return an empty list when the play was fine.** Most hands are fine. A \
+finding invented to fill the field is worse than no finding, because it will be \
+counted forever.
+- One finding per distinct mistake, at most three. Do not restate the verdict.
+- Tag the *habit*, not the hand. "call_too_wide" is a habit; "called with 84s" \
+is not.
+- Use "other" only when nothing on the list fits, and make the label specific."""
 
 
-def prompt(ctx):
-    """The situation as prose, kept short because every line of it is billed."""
-    bb = ctx["bb"] or 1
+def prompt(contexts):
+    """A whole hand, and every spot in it, as prose.
+
+    Takes the list of decisions from one hand, in the order they were faced.
+    One call covers the hand rather than one call per spot, because the spots
+    are not independent: the flop bet only makes sense next to the preflop call
+    that got there, and asking about each alone got the same preamble billed
+    three times to produce three answers that could not refer to one another.
+
+    The table, the blinds and the seats are described once, from the **last**
+    decision, which is the one that saw the most of the hand.
+    """
+    if isinstance(contexts, dict):
+        contexts = [contexts]
+    if not contexts:
+        raise CoachError("there is nothing to look at in this hand")
+    last = contexts[-1]
+    bb = last["bb"] or 1
     lines = []
 
-    blinds = "%s/%s" % (money(ctx["sb"]), money(ctx["bb"]))
-    equal = " (equal blinds)" if ctx["sb"] == ctx["bb"] else ""
+    blinds = "%s/%s" % (money(last["sb"]), money(last["bb"]))
+    equal = " (equal blinds)" if last["sb"] == last["bb"] else ""
     lines.append("%d-handed cash game, blinds %s%s, big blind %s."
-                 % (ctx["seats"], blinds, equal, money(bb)))
+                 % (last["seats"], blinds, equal, money(bb)))
 
-    if ctx["bounty_on"]:
+    if last["bounty_on"]:
         lines.append(
             "Bounty is on: winning 3 hands in a row pays $1 from every other "
             "player, 4 in a row pays $2, 5 or more pays $3. You are currently "
-            "on a streak of %d." % ctx["streak"])
+            "on a streak of %d." % last["streak"])
 
     lines.append("")
     lines.append("Seats, in the order they act preflop:")
-    seats = [{"position": ctx["position"], "name": ctx["hero"],
-              "stack": ctx["hero_stack"], "in_hand": True, "style": None,
-              "hero": True}] + list(ctx["players"])
-    for p in sorted(seats, key=lambda s: _seat_order(s["position"])):
+    seats = [{"position": last["position"], "name": last["hero"],
+              "stack": last["hero_stack"], "in_hand": True, "style": None,
+              "hero": True}] + list(last["players"])
+    for p in sorted(seats, key=lambda x: _seat_order(x["position"])):
         style = p.get("style")
         tail = ""
         if style:
@@ -325,35 +427,60 @@ def prompt(ctx):
                                      money(p["stack"]), tail)
         if p.get("hero"):
             out += "  <- you"
-        elif not p["in_hand"]:
-            out += "  [folded]"
         lines.append(out)
 
     lines.append("")
-    for street, text in _betting(ctx):
-        lines.append("%s: %s" % (street, text))
+    lines.append("You held %s." % contexts[0]["hole"])
+    lines.append("")
+    lines.append("You were asked to act %d time%s in this hand:"
+                 % (len(contexts), "" if len(contexts) == 1 else "s"))
+    seen = 0
+    for i, ctx in enumerate(contexts, 1):
+        lines.extend(_spot(ctx, i, since=seen))
+        seen = len(ctx["actions"] or [])
 
     lines.append("")
-    lines.append("You hold %s%s."
-                 % (ctx["hole"], " on %s" % ctx["board"] if ctx["board"] else ""))
-    lines.append("Pot is %s. It is %s to you."
-                 % (money(ctx["pot"]),
-                    money(ctx["to_call"]) if ctx["to_call"] else "checked"))
-    lines.append("You have %s behind and you are %s."
-                 % (money(ctx["stack"]),
-                    "last to act" if ctx["in_position"] else "out of position"))
-    lines.append("You may %s." % _legal(ctx))
-
-    took = ctx["action"]
-    if took:
-        did = _took(took, ctx["amount"])
-        lines.append("")
-        lines.append("You %s. Was that right, and why?" % did)
-    else:
-        lines.append("")
-        lines.append("What should you do here, and why?")
-
+    lines.append("Judge each numbered decision on what was known at that point.")
     return "\n".join(lines)
+
+
+def _spot(ctx, n, since=0):
+    """One decision: where the hand was, who was left, and what was done.
+
+    ``since`` is how many actions the previous spot already narrated, and only
+    what happened after that is printed. Repeating the whole betting under every
+    spot read well and billed the preflop line five times in a five-spot hand,
+    which on a street-by-street pot is most of the prompt.
+    """
+    out = ["", "%d. %s%s, you are %s."
+           % (n, ctx["street"],
+              " on %s" % ctx["board"] if ctx["board"] else "",
+              ctx["position"] or "?")]
+
+    still_in = [p["name"] for p in ctx["players"] if p["in_hand"]]
+    # Said in words as well as marked per seat. How many people are still in is
+    # the single biggest input to every number in the answer - equity collapses
+    # with each extra opponent and a bluff has to get through all of them - and
+    # leaving it to be counted off a seat list got hands read as heads-up.
+    if still_in:
+        out.append("   Still in: you and %d other%s (%s)."
+                   % (len(still_in), "" if len(still_in) == 1 else "s",
+                      ", ".join(still_in)))
+
+    for street, text in _betting(ctx, since=since):
+        out.append("   %s: %s" % (street, text))
+
+    out.append("   Pot %s, %s, you have %s behind, you are %s."
+               % (money(ctx["pot"]),
+                  "%s to call" % money(ctx["to_call"]) if ctx["to_call"]
+                  else "checked to you",
+                  money(ctx["stack"]),
+                  "last to act" if ctx["in_position"] else "out of position"))
+    out.append("   You may %s." % _legal(ctx))
+    took = ctx["action"]
+    out.append("   You %s." % (_took(took, ctx["amount"]) if took
+                               else "were still to act"))
+    return out
 
 
 #: Preflop acting order, which is how a player reads a table and is not the
@@ -377,12 +504,16 @@ def _took(action, amount):
     return "%s to %s" % (action, money(amount))
 
 
-def _betting(ctx):
-    """The action so far, one line per street, in the order it happened."""
+def _betting(ctx, since=0):
+    """The action, one line per street, in the order it happened.
+
+    From ``since`` onwards, so a spot narrates what has happened since the last
+    one rather than repeating the hand from the top.
+    """
     out, current, buf = [], None, []
     board = (ctx["board"] or "").split()
     seen = {"preflop": 0, "flop": 3, "turn": 4, "river": 5}
-    for a in ctx["actions"]:
+    for a in (ctx["actions"] or [])[since:]:
         if a.get("street") != current:
             if buf:
                 out.append((_street_label(current, board, seen), ", ".join(buf)))
@@ -390,7 +521,7 @@ def _betting(ctx):
         buf.append(_one_action(a))
     if buf:
         out.append((_street_label(current, board, seen), ", ".join(buf)))
-    if not out:
+    if not out and not since:
         out.append((_street_label(ctx["street"], board, seen), "checked to you"))
     return out
 
@@ -437,17 +568,17 @@ class CoachError(Exception):
 def ask(ctx):
     """One question, one answer, and what it cost.
 
-    Returns ``(text, usage, ms)``. ``usage`` is plain integers rather than
-    anything belonging to a response object, because the caller runs on a thread
-    and writes it to the database - and because the two providers agree on
-    nothing else.
+    Returns ``(answer, usage, ms)``, where ``answer`` is ``{"text", "findings"}``.
+    Both halves are plain data rather than anything belonging to a response
+    object, because the caller runs on a thread and writes it to the database -
+    and because the two providers agree on nothing else.
     """
     which = provider()
     if which is None:
         raise CoachError("there is no API key on this box")
     started = time.time()
-    text, usage = (_ask_gemini(ctx) if which == GEMINI else _ask_anthropic(ctx))
-    return text, usage, int((time.time() - started) * 1000)
+    answer, usage = (_ask_gemini(ctx) if which == GEMINI else _ask_anthropic(ctx))
+    return answer, usage, int((time.time() - started) * 1000)
 
 
 # ------------------------------------------------------------------ anthropic
@@ -490,8 +621,14 @@ def _ask_anthropic(ctx):
     if not text:
         raise CoachError("the answer came back empty")
     if r.stop_reason == "max_tokens":
-        text += "\n\n- (cut off at the token ceiling - raise GTO_COACH_MAX_TOKENS)"
-    return text, usage
+        raise CoachError("cut off at the token ceiling before it finished - "
+                         "raise GTO_COACH_MAX_TOKENS")
+    # No structured-output parameter here, deliberately. Gemini enforces the
+    # schema server-side and is the path that runs; this one asks for the same
+    # JSON in the system prompt and `read_answer` is lenient about how it
+    # arrives. Pinning an exact structured-output shape that nothing on this box
+    # can execute would be a guess dressed as a guarantee.
+    return read_answer(text), usage
 
 
 # --------------------------------------------------------------------- gemini
@@ -514,6 +651,12 @@ def _gemini_body(ctx):
         "generationConfig": {
             "maxOutputTokens": max_tokens(),
             "temperature": 0.3,
+            # Enforced server-side, which is the only reason a tag can be
+            # counted six months later: asking for a vocabulary in the system
+            # prompt gets one most of the time, and "most of the time" makes a
+            # tally quietly wrong rather than obviously broken.
+            "responseMimeType": "application/json",
+            "responseSchema": RESPONSE_SCHEMA,
         },
     }
 
@@ -607,8 +750,81 @@ def _gemini_read(payload):
         raise CoachError("the answer came back empty%s"
                          % (" (%s)" % finish if finish else ""))
     if finish == "MAX_TOKENS":
-        text += "\n\n- (cut off at the token ceiling - raise GTO_COACH_MAX_TOKENS)"
-    return text, usage
+        # The JSON is truncated and will not parse, so say that rather than
+        # letting `read_answer` report it as a malformed reply.
+        raise CoachError("cut off at the token ceiling before it finished - "
+                         "raise GTO_COACH_MAX_TOKENS")
+    return read_answer(text), usage
+
+
+def read_answer(text):
+    """The model's JSON, turned into what the panel and the database want.
+
+    Lenient on the way in and strict on the way out. The schema is enforced
+    server-side on Gemini, but the Anthropic path has no such guarantee and a
+    model that wraps its JSON in a code fence is a normal thing to happen - so
+    the fence comes off here rather than becoming a parse error a user sees.
+
+    **A finding with an unknown tag is dropped, not renamed.** Its label is
+    still a sentence somebody might act on, but the tag is the only part that
+    can be counted, and an invented one silently becomes a category of one that
+    never grows.
+    """
+    import json
+
+    body = text.strip()
+    if body.startswith("```"):
+        body = body.split("\n", 1)[-1]
+        body = body.rsplit("```", 1)[0]
+    try:
+        d = json.loads(body)
+    except ValueError:
+        raise CoachError("the answer was not the JSON that was asked for")
+    if not isinstance(d, dict):
+        raise CoachError("the answer was not the JSON that was asked for")
+
+    verdict = str(d.get("verdict") or "").strip()
+    notes = [str(n).strip() for n in (d.get("notes") or []) if str(n).strip()]
+    if not verdict and not notes:
+        raise CoachError("the answer came back empty")
+
+    spots, numbered = [], set()
+    for sp in (d.get("spots") or []):
+        if not isinstance(sp, dict):
+            continue
+        try:
+            n = int(sp.get("n"))
+        except (TypeError, ValueError):
+            continue
+        call = str(sp.get("call") or "").strip()
+        why = str(sp.get("why") or "").strip()
+        # One entry per decision, and no inventing a sixth spot in a five-spot
+        # hand: the number is what lines an entry up with the decision it is
+        # about, so a duplicate or a stray one has nothing to attach to.
+        if n in numbered or call not in ("right", "close", "wrong") or not why:
+            continue
+        numbered.add(n)
+        spots.append({"n": n, "call": call, "why": why[:300]})
+    spots.sort(key=lambda x: x["n"])
+
+    findings = []
+    for f in (d.get("findings") or [])[:3]:
+        if not isinstance(f, dict):
+            continue
+        tag = str(f.get("tag") or "").strip()
+        label = str(f.get("label") or "").strip()
+        if tag not in LEAK_TAGS or not label:
+            continue
+        severity = str(f.get("severity") or "").strip()
+        findings.append({
+            "tag": tag,
+            "label": label[:160],
+            "severity": severity if severity in SEVERITIES else "minor",
+        })
+
+    lines = [verdict] if verdict else []
+    lines += ["- " + n for n in notes]
+    return {"text": "\n".join(lines), "spots": spots, "findings": findings}
 
 
 def cost_micros(usage, model_id=None):

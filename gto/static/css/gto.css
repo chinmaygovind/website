@@ -82,6 +82,35 @@ body {
 }
 .felt-wrap { grid-column: 2; position: relative; aspect-ratio: 16 / 9; }
 
+/* The session panel fills the left gutter, which the ellipse was never using.
+ * It is there rather than on /stats because a win rate you have to leave the
+ * table to read is one you read after the session it would have changed. */
+.session {
+  grid-column: 1; grid-row: 1; align-self: start;
+  justify-self: end; width: min(230px, 92%); margin-right: 18px;
+  border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--panel); padding: 12px 14px 13px;
+}
+.session .shead { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.session h2 {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .16em;
+  color: var(--ink-faint); margin: 0; font-weight: 600;
+}
+.session .shead button {
+  margin-left: auto; background: none; border: 1px solid var(--line);
+  color: var(--ink-faint); font: inherit; font-size: 10.5px;
+  padding: 3px 9px; border-radius: 999px; cursor: pointer; transition: .14s;
+}
+.session .shead button:hover { color: var(--bad); border-color: var(--bad); }
+.session .big { font-size: 21px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.session .big.up { color: var(--good); }
+.session .big.down { color: var(--bad); }
+.session .cap { font-size: 10px; color: var(--ink-faint); letter-spacing: .1em; text-transform: uppercase; }
+.session .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px 10px; margin-top: 12px; }
+.session .st .v { font-size: 14px; font-variant-numeric: tabular-nums; color: var(--ink); }
+.session .st .k { font-size: 9.5px; color: var(--ink-faint); letter-spacing: .1em; text-transform: uppercase; }
+.session .note { font-size: 11px; color: var(--ink-faint); margin-top: 11px; line-height: 1.35; }
+
 .felt {
   position: absolute; inset: 0;
   border-radius: 50% / 50%;
@@ -396,6 +425,11 @@ button.act:hover:not(:disabled) .key, .chip:hover .key { color: var(--ink-dim); 
 @media (max-width: 760px) {
   .room { grid-template-columns: 1fr; padding-top: 12px; }
   .felt-wrap, .controls { grid-column: 1; margin-inline: 10px; }
+  /* Narrow: the panel goes above the felt rather than beside it, full width. */
+  .session {
+    grid-row: auto; justify-self: stretch; width: auto;
+    margin: 0 10px 12px; order: -1;
+  }
   .felt-wrap { aspect-ratio: 1 / 1.15; }
   .seat { width: 118px; }
   .seat .nm { font-size: 11px; }
@@ -461,3 +495,43 @@ button.act:hover:not(:disabled) .key, .chip:hover .key { color: var(--ink-dim); 
 .curve.rowsy tbody td:first-child { color: var(--ink-dim); white-space: nowrap; }
 .page a { color: var(--gold); text-decoration: none; border-bottom: 1px solid rgba(216, 174, 94, .3); }
 .page a:hover { border-bottom-color: var(--gold); }
+
+/* The habits the coach says a hand shows. Counted across months, which is why
+ * a repeat wears its tally: the ninth time is a different fact from the first. */
+.coach .leaks { margin-top: 11px; }
+.coach .leaks ul { margin: 0; padding: 0; list-style: none; }
+.coach .lk {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  font-size: 12.5px; color: var(--ink-dim); padding: 4px 0;
+  border-left: 2px solid var(--line); padding-left: 9px; margin-bottom: 4px;
+}
+.coach .lk.moderate { border-left-color: rgba(224, 169, 68, .5); }
+.coach .lk.major { border-left-color: rgba(224, 104, 95, .55); }
+.coach .lk .tg {
+  font-size: 9px; text-transform: uppercase; letter-spacing: .1em;
+  color: var(--ink-faint); border: 1px solid var(--line);
+  border-radius: 4px; padding: 1px 6px; flex: none;
+}
+.coach .lk .lb { flex: 1 1 auto; }
+.coach .lk .ct { font-size: 11px; font-weight: 700; color: var(--warn); flex: none; }
+
+/* One numbered decision's verdict, sitting under that decision's own marking
+ * rather than in a list at the foot that has to be read back against the panel.
+ * Grey like the rest of the coach: unchecked numbers, wherever they appear. */
+.spotv {
+  display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap;
+  margin-top: 9px; padding: 7px 9px; border-radius: 8px;
+  background: rgba(255, 255, 255, .025); border-left: 2px solid var(--line);
+  font-size: 12.5px; color: var(--ink-dim);
+}
+.spotv .who {
+  font-size: 9px; text-transform: uppercase; letter-spacing: .11em;
+  color: var(--ink-faint); flex: none;
+}
+.spotv b { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.spotv.right { border-left-color: rgba(95, 191, 127, .5); }
+.spotv.right b { color: var(--good); }
+.spotv.close { border-left-color: rgba(216, 174, 94, .5); }
+.spotv.close b { color: var(--gold); }
+.spotv.wrong { border-left-color: rgba(224, 104, 95, .55); }
+.spotv.wrong b { color: var(--bad); }

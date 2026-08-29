@@ -2,6 +2,14 @@
 {% block title %}GTO Trainer{% endblock %}
 {% block body %}
 <main class="room">
+  <aside class="session" id="session">
+    <div class="shead">
+      <h2>This session</h2>
+      <button type="button" id="reset-session" title="New session, fresh stacks">Reset</button>
+    </div>
+    <div id="session-body"></div>
+  </aside>
+
   <div class="felt-wrap" id="felt-wrap">
     <div class="felt"></div>
     <div class="middle">

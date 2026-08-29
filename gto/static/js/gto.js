@@ -510,6 +510,15 @@ function showReview(marks, adaptation) {
     p.textContent = text;
     body.appendChild(p);
   });
+
+  // One block at the foot of the drawer for the whole hand, rather than a
+  // button under each spot. The spots are not independent - a flop call only
+  // makes sense next to the preflop one that got there - and asking about each
+  // separately paid for the same preamble once per spot to get answers that
+  // could not refer to one another.
+  const handId = (marks.find(m => m.hand_id) || {}).hand_id;
+  if (window.GTO_COACH && handId) body.appendChild(coachEl(handId, body));
+
   $("#review-drawer").classList.add("open");
 }
 
@@ -537,8 +546,65 @@ function markEl(m) {
       ${l.note ? `<details class="note"><summary>why</summary>${escapeHtml(l.note)}</details>` : ""}`;
     el.appendChild(d);
   });
-  if (window.GTO_COACH && m.decision_id) el.appendChild(coachEl(m.decision_id));
+  if (window.GTO_COACH && m.n) {
+    const slot = document.createElement("div");
+    slot.className = "spotv";
+    slot.dataset.n = m.n;
+    slot.hidden = true;
+    el.appendChild(slot);
+  }
   return el;
+}
+
+/* --------------------------------------------------------------- session
+ *
+ * The numbers for the sit-down you are in, beside the table rather than on
+ * /stats, because a win rate you have to leave the table to read is one you
+ * read after the session it would have changed.
+ *
+ * The interval is shown next to the rate and is usually wider than it, which is
+ * the honest thing for it to say over a few dozen hands. Below the threshold
+ * the server refuses a rate outright and sends a sentence instead - the panel
+ * prints that sentence rather than inventing a number to fill the space.
+ */
+
+function drawSession() {
+  const s = state.session;
+  if (!s) return;
+  const body = $("#session-body");
+  const profit = s.profit || 0;
+  const dir = profit > 0 ? "up" : profit < 0 ? "down" : "";
+  const cell = (k, v) => `<div class="st"><div class="v">${v}</div><div class="k">${k}</div></div>`;
+  const pct = v => (v === null || v === undefined ? "&mdash;" : v + "%");
+
+  body.innerHTML = `
+    <div class="big ${dir}">${profit >= 0 ? "+" : "\u2212"}${money(Math.abs(profit))}</div>
+    <div class="cap">${s.hands} hand${s.hands === 1 ? "" : "s"}</div>
+    <div class="grid">
+      ${cell("VPIP", pct(s.vpip))}
+      ${cell("PFR", pct(s.pfr))}
+      ${cell("3-bet", pct(s.three_bet))}
+      ${cell("Saw flop", pct(s.saw_flop))}
+      ${cell("WTSD", pct(s.wtsd))}
+      ${cell("Won SD", pct(s.wsd))}
+      ${cell("bb/100", s.bb100 === null || s.bb100 === undefined ? "&mdash;"
+              : `${s.bb100 > 0 ? "+" : ""}${s.bb100}`)}
+      ${cell("Errors", s.decisions ? `${s.errors}/${s.decisions}` : "&mdash;")}
+    </div>
+    ${s.bounty_total ? `<div class="note">Bounty ${money(Math.round(s.bounty_total * 100))}</div>` : ""}
+    ${s.headline ? `<div class="note">${escapeHtml(s.headline)}</div>` : ""}`;
+}
+
+async function resetSession() {
+  if (!confirm("Start a new session? Stacks go back to the buy-in. "
+             + "The hands you have played are kept.")) return;
+  const res = await fetch("/api/session/reset", { method: "POST" });
+  if (!res.ok) { toast("Could not start a new session."); return; }
+  state = await res.json();
+  says.clear(); shown.clear(); shownStack.clear(); shownCards.clear();
+  $("#review-drawer").classList.remove("open");
+  render();
+  toast("New session. Stacks reset.");
 }
 
 /* ----------------------------------------------------------------- coach
@@ -559,7 +625,7 @@ const COACH_GIVE_UP_MS = 150000;
 const COACH_NAME = () => (window.GTO_COACH && window.GTO_COACH.name) || "Claude";
 const ASK_LABEL = () => `Ask ${COACH_NAME()} about this spot`;
 
-function coachEl(decisionId) {
+function coachEl(handId, reviewBody) {
   const box = document.createElement("div");
   box.className = "coach";
   box.innerHTML = `
@@ -567,13 +633,12 @@ function coachEl(decisionId) {
     <div class="answer" hidden></div>
     <div class="bill" hidden></div>`;
   // No prefetch. The drawer only ever renders the hand that just finished, so
-  // there is never a stored answer to find, and a GET per mark per hand would
-  // buy nothing.
-  $(".ask", box).addEventListener("click", () => runCoach(box, decisionId));
+  // there is never a stored answer to find, and a GET would buy nothing.
+  $(".ask", box).addEventListener("click", () => runCoach(box, handId, reviewBody));
   return box;
 }
 
-async function runCoach(box, decisionId) {
+async function runCoach(box, handId, reviewBody) {
   const ask = $(".ask", box);
   ask.disabled = true;
   ask.textContent = "Thinking…";
@@ -582,7 +647,7 @@ async function runCoach(box, decisionId) {
     const res = await fetch("/api/coach", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision: decisionId }),
+      body: JSON.stringify({ hand: handId }),
     });
     data = await res.json();
     if (!res.ok) {
@@ -595,7 +660,7 @@ async function runCoach(box, decisionId) {
     return;
   }
 
-  paintCoach(box, data);
+  paintCoach(box, data, reviewBody);
   if (data.coach && data.coach.status !== "pending") return;
 
   const until = Date.now() + COACH_GIVE_UP_MS;
@@ -603,17 +668,17 @@ async function runCoach(box, decisionId) {
     await sleep(COACH_POLL_MS);
     let d;
     try {
-      const res = await fetch(`/api/coach?decision=${decisionId}`);
+      const res = await fetch(`/api/coach?hand=${handId}`);
       d = await res.json();
     } catch (e) { continue; }
     if (!d.coach) continue;
-    paintCoach(box, d);
+    paintCoach(box, d, reviewBody);
     if (d.coach.status !== "pending") return;
   }
   coachFailed(box, "Gave up waiting. Ask again to retry.");
 }
 
-function paintCoach(box, data) {
+function paintCoach(box, data, reviewBody) {
   const c = data.coach;
   const ask = $(".ask", box);
   const answer = $(".answer", box);
@@ -632,7 +697,8 @@ function paintCoach(box, data) {
 
   ask.hidden = true;
   answer.hidden = false;
-  answer.innerHTML = coachHtml(c.text);
+  answer.innerHTML = coachHtml(c.text) + findingsHtml(c.findings);
+  paintSpots(reviewBody, c.spots);
   paintBill(box, c, data.usage);
 }
 
@@ -660,6 +726,46 @@ function coachHtml(text) {
   });
   if (bullets.length) out.push(`<ul>${bullets.join("")}</ul>`);
   return out.join("");
+}
+
+/** Each numbered decision's verdict, put back beside the decision it is about.
+ *
+ * The answer arrives as one object for the hand and is taken apart here, so a
+ * spot's line sits under that spot's own marking rather than in a list at the
+ * bottom that has to be read against the panel above it. `n` is what lines the
+ * two up; a spot with no entry simply stays hidden.
+ */
+function paintSpots(reviewBody, spots) {
+  if (!reviewBody || !spots) return;
+  spots.forEach(sp => {
+    const slot = $(`.spotv[data-n="${sp.n}"]`, reviewBody);
+    if (!slot) return;
+    slot.hidden = false;
+    slot.className = "spotv " + (sp.call || "");
+    slot.innerHTML = `<span class="who">${escapeHtml(COACH_NAME())}</span>
+      <b>${escapeHtml(sp.call || "")}</b>
+      <span>${escapeHtml(sp.why || "")}</span>`;
+  });
+}
+
+/** The habits it says this hand shows, with how often each has come up before.
+ *
+ * The count is the whole point of storing these. A leak read once is a note; the
+ * same leak on its ninth hand is the thing to go and work on, and only the tally
+ * can tell those apart. No findings is the common case and prints nothing -
+ * most hands are played fine, and a panel that always accuses is one that has
+ * stopped measuring.
+ */
+function findingsHtml(findings) {
+  if (!findings || !findings.length) return "";
+  const rows = findings.map(f => `
+    <li class="lk ${escapeHtml(f.severity || "minor")}">
+      <span class="tg">${escapeHtml((f.tag || "").replace(/_/g, " "))}</span>
+      <span class="lb">${escapeHtml(f.label || "")}</span>
+      ${f.seen > 1 ? `<span class="ct">${f.seen}\u00d7</span>` : ""}
+    </li>`).join("");
+  return `<div class="leaks"><div class="who">Habits this hand shows</div>
+    <ul>${rows}</ul></div>`;
 }
 
 /** What that answer used, and what the day has used.
@@ -827,11 +933,13 @@ function render() {
   drawSeats();
   drawMiddle();
   drawActions();
+  drawSession();
 }
 
 $("#gear").onclick = () => { fillSettings(); $("#settings-drawer").classList.add("open"); };
 $$("[data-close]").forEach(b => b.onclick = () => $("#" + b.dataset.close).classList.remove("open"));
 $("#save-prefs").onclick = savePrefs;
+$("#reset-session").onclick = resetSession;
 $("#p-bounty").onchange = bountyNote;
 $("#p-bb").oninput = bountyNote;
 /** Every shortcut is a button: the key finds it by `data-key` and clicks it, so
