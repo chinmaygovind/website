@@ -196,9 +196,9 @@ already has**.
 
 The key lives in `localStorage` and the request goes from the browser straight to
 the provider. **This box never sees a prompt, a token or a bill.** Worth saying in
-exactly those words, because the previous version of "Drive talks to a model" was
-`/api/roll/gemini`, which forwarded anybody's body to Gemini with *this box's*
-key, unauthenticated and unmetered. `test_scenery_code.py` asserts no route and
+exactly those words, because the tempting shortcut is a proxy here that "just
+adds the key" - an open model endpoint on this box's account, holding a sync
+worker for the length of every call. `test_scenery_code.py` asserts no route and
 no key handling exists in `app.py` or `maker.py`.
 
 Two halves, one assistant: the **layout** (generated from `moves.SPEC` +

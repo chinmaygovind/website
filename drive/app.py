@@ -453,12 +453,11 @@ def _sitelock(resp):
 #
 # **The key belongs to the person whose browser it is and never touches this
 # box.** That is the whole design and it is worth saying in exactly these words,
-# because the previous version of "Drive talks to a model" was
-# `/api/roll/gemini` - which forwarded any caller's body to Gemini with *this
-# box's* key, unauthenticated and unmetered. It was a free Gemini endpoint for
-# the internet on Chinmay's bill, and at a 30s timeout against two sync workers
-# it was two requests from taking the site down. It is gone. This is the
-# opposite shape: no server involvement, no server key, no server bill.
+# because the tempting version of it is a small proxy here that "just adds the
+# key" - and that is a model endpoint on this box's account, open to whoever
+# finds it, holding a sync worker for the length of every call. There is no
+# route here that takes a key and there must never be one:
+# `test_the_key_never_reaches_this_server` is the guard.
 AI_HOSTS = (
     "https://api.anthropic.com",
     "https://api.openai.com",

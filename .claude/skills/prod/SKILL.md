@@ -36,7 +36,7 @@ missing locally.
 
 ## What runs there
 
-Five Flask apps behind nginx + certbot, each its own systemd service and port:
+Six Flask apps behind nginx + certbot, each its own systemd service and port:
 
 | Service        | Port | Directory                    | Serves                |
 |----------------|------|------------------------------|-----------------------|
@@ -45,10 +45,16 @@ Five Flask apps behind nginx + certbot, each its own systemd service and port:
 | `ers`          | 5003 | `/home/ubuntu/website/ers`   | `ers.cgovind.com`     |
 | `kot`          | 5004 | `/home/ubuntu/website/kot`   | `kot.cgovind.com`     |
 | `drive`        | 5005 | `/home/ubuntu/website/drive` | `drive.cgovind.com`   |
+| `gto`          | 5006 | `/home/ubuntu/website/gto`   | `gto.cgovind.com`     |
 
-The games run `-w 1` eventlet gunicorn on purpose: socket rooms and in-flight
-game state live in-process, so **a restart drops every live game**. Never restart
-a game service casually - check for live games first (see below).
+The four games run `-w 1` eventlet gunicorn on purpose: socket rooms and
+in-flight game state live in-process, so **a restart drops every live game**.
+Never restart a game service casually - check for live games first (see below).
+
+**`gto` is the exception and restarting it is safe.** It is plain synchronous
+gunicorn (`-w 3`), it pushes nothing, and the table you are sitting at is stored
+in the database rather than in a worker - which is exactly so that three workers
+and a deploy cannot end a session mid-hand.
 
 **The TTR gotcha:** the live Ticket to Ride is NOT this repo's `ttr/` submodule.
 It is a separate clone at `/home/ubuntu/TicketToRide`, and its instance directory
@@ -62,10 +68,11 @@ All four apps share **one SQLite file**:
 /home/ubuntu/TicketToRide/instance/tickettoride.db
 ```
 
-`users` is the shared account table. Each game keeps its own tables alongside it:
+`users` is the shared account table. Each app keeps its own tables alongside it:
 `ttr_*` (well, TTR still uses `users.elo` in prod), `ers_stats` / `ers_games` /
-`ers_players` / `ers_slaps`, `kot_stats` / `kot_games` / `kot_players`, and
-`drive_stats` / `drive_times` / `drive_games` / `drive_players`.
+`ers_players` / `ers_slaps`, `kot_stats` / `kot_games` / `kot_players`,
+`drive_stats` / `drive_times` / `drive_games` / `drive_players`, and `gto_tables`
+/ `gto_sessions` / `gto_hands` / `gto_decisions` / `gto_prefs` / `gto_coach`.
 
 Drive's live races are deliberately NOT in the database - they are in-process
 state, so `drive_games` only ever holds finished ones. `drive_times` is the

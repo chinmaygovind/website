@@ -370,6 +370,18 @@ class Table:
             streak=self.streaks.streak[self.hero],
             in_position=self._in_position(idx),
             opponents_in=self.opponent_ranges(),
+            # The engine's own record of the spot, taken now because it cannot
+            # be reconstructed later: by the time a hand is written down its
+            # action log covers the whole hand and every stack is the settled
+            # one. Raw facts only - who is where, what they have, what has
+            # happened - and deliberately nothing this repo concluded about it,
+            # because `coach.py` is the one reader and its whole value is that
+            # it works the hand out without seeing `review.py`'s answer.
+            actions_before=[dict(a) for a in h.actions],
+            seats_at=[{"name": s.name, "position": self.positions.get(i),
+                       "stack": s.stack, "committed": s.committed,
+                       "in_hand": bool(s.contending)}
+                      for i, s in enumerate(h.seats)],
             action=None,
             amount=None,
         ))

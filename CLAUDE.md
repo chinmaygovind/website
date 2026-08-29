@@ -43,12 +43,12 @@ It has its own CI and is not tested from this repo.
 - `app.py` proxies the APIs the landing page calls, so no keys reach the client:
   `/api/duolingo-streak` and `/api/spotify/{login,callback,recent,top-artists}`
   (OAuth refresh token in the box `.env`).
-- **There was a third proxy, `/api/roll/gemini`, and it and its game are gone**
-  (Aug 2026). It forwarded the caller's body to Gemini with this box's key,
-  unauthenticated and unmetered - a free Gemini endpoint for the internet on
-  Chinmay's bill, and at a 30s timeout against `-w 2` *sync* workers, two
-  requests from taking the site down. **`GEMINI_API_KEY` is still in the box
-  `.env` and the key still needs revoking at Google.** Nothing reads it.
+- **This server proxies no model API, and should not.** Those two are here
+  because Duolingo and Spotify need a key kept off the client. A model endpoint
+  behind `-w 2` *sync* workers is a different thing: unmetered spending on this
+  box's account, and a 30s call two requests from holding every worker. `gto`
+  does talk to a model - see `gto/CLAUDE.md`, where it is one service, one
+  account, its own key and its own ceilings.
 - **`/accounts` and `/admin` are the only non-static things here.** Both live in
   `accounts/` and are attached by `accounts.init_app(app)` at the foot of
   `app.py`, **only when `DATABASE_URL` is set**, so a checkout that just wants to
@@ -135,8 +135,8 @@ stale: `gh secret set EC2_HOST --body 54.157.20.148`.
 
 ## Tests: run only what changed
 
-The full suite is 2,727 tests in about four minutes (drive 1,841 in ~150s, kot
-221 in ~30s, gto 397 in ~47s, site 262 in ~45s, ers 18 in ~1s), and nearly every
+The full suite is about 2,850 tests in four minutes (drive 1,875 in ~130s, kot
+221 in ~30s, gto 468 in ~22s, site 266 in ~5s, ers 18 in ~1s), and nearly every
 change is to one service, so **never reach for the whole thing by hand**:
 
 ```bash

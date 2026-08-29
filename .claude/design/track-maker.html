@@ -594,7 +594,7 @@ QuickJS verify <i>&rarr;</i> baked buffer      <i>&larr; no code, on any path</i
 
   <div class="col">
     <h3>The chat panel, and the three things that will bite</h3>
-    <p>A provider picker &mdash; Claude, ChatGPT, Gemini &mdash; with the key in <code>localStorage</code> and the request going straight from the browser to the provider. <strong>Your box never sees a prompt, a token or a bill.</strong> Worth saying in exactly those words, given that <code>/api/roll/gemini</code> was removed for being the opposite of this.</p>
+    <p>A provider picker &mdash; Claude, ChatGPT, Gemini &mdash; with the key in <code>localStorage</code> and the request going straight from the browser to the provider. <strong>Your box never sees a prompt, a token or a bill.</strong> Worth saying in exactly those words, since the tempting shortcut is a proxy that "just adds the key" &mdash; an open model endpoint on your account.</p>
     <ol>
       <li><strong>Anthropic needs an extra header.</strong> A browser-origin call is rejected unless it sends <code>anthropic-dangerous-direct-browser-access: true</code>; without it you get a 401 naming that header. The word is deliberate &mdash; it means &ldquo;anyone with devtools can read this key&rdquo; &mdash; and <strong>bring-your-own-key is the documented legitimate use</strong>, because the key belongs to the person whose browser it is.</li>
       <li><strong><code>/make</code> needs its own CSP.</strong> Three API hosts in <code>connect-src</code>, on that page only. Every other page keeps the <code>frame-ancestors</code> sitelock exactly as it is.</li>

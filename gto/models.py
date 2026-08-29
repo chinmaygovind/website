@@ -6,7 +6,7 @@ sits down here too. This module maps only the identity columns of it and
 ``create_all`` uses CREATE TABLE IF NOT EXISTS, so nothing here can clobber the
 account other games depend on.
 
-Five tables of its own, and the split between the first two is the interesting
+Six tables of its own, and the split between the first two is the interesting
 one:
 
 ``gto_tables``
@@ -27,6 +27,11 @@ one:
 ``gto_prefs``
     The gear menu, per account: stakes, buy-in, whether the bounty is on, and
     any tuning done to the opponents. Follows you between devices.
+
+``gto_coach``
+    One row per decision that has been sent to a model for a second opinion: the
+    answer, and what it used. See ``coach.py`` for why it is a second opinion
+    rather than a summary, and why the usage is worth storing.
 
 Money is **integer cents** everywhere, as it is in the engine. A trainer that
 reports edges of a hundredth of a big blind cannot afford to hold them in
@@ -221,9 +226,22 @@ class GtoDecision(db.Model):
     #: reopened months later and read exactly as it was shown at the time.
     lines_json = db.Column(db.Text, default="[]")
 
+    #: The spot as the engine saw it, with none of the above in it: the seats,
+    #: the stacks, the betting. Written for ``coach.py``, which must be able to
+    #: read a decision months later without reading anything this repo
+    #: concluded about it. It is the *only* column here that is not an input to
+    #: the marking, and it is a column rather than a table because it is one
+    #: blob per decision that is read exactly when that decision is - see
+    #: ``ensure_columns``, which is what puts it on the live database.
+    context_json = db.Column(db.Text, nullable=True)
+
     @property
     def lines(self):
         return json.loads(self.lines_json or "[]")
+
+    @property
+    def context(self):
+        return json.loads(self.context_json or "null")
 
 
 class GtoPrefs(db.Model):
@@ -244,6 +262,120 @@ class GtoPrefs(db.Model):
     @settings.setter
     def settings(self, value):
         self.settings_json = json.dumps(value)
+
+
+class GtoCoach(db.Model):
+    """One decision explained by Claude, and the bill for it.
+
+    One row per decision, ever: the answer to "why was that hand like that" does
+    not change, so a second click reads this row rather than paying for the same
+    paragraph twice. That cache is also the cheapest of the guards on a route
+    that spends money - the others being the owner check and the two daily
+    ceilings in ``coach``.
+
+    **Cost is in micro-dollars**, not the integer cents money uses everywhere
+    else here. An answer costs a few hundredths of a dollar; in cents most of
+    them would round to zero and so would a day of them, which is the one thing
+    a spend meter may not do.
+
+    ``status`` exists because the call is made on a background thread - three
+    sync workers and a request that blocks for half a minute is a third of the
+    server gone - so the row is written ``pending``, the browser polls, and the
+    thread fills the rest in. A worker restarted mid-call leaves a ``pending``
+    row that nothing will ever finish, which is what ``started_at`` is for: the
+    route treats an old one as abandoned and runs it again.
+    """
+    __tablename__ = "gto_coach"
+
+    id = db.Column(db.Integer, primary_key=True)
+    decision_id = db.Column(db.Integer, db.ForeignKey("gto_decisions.id"),
+                            unique=True, index=True, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), index=True,
+                        nullable=True)
+    started_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    status = db.Column(db.String(8), default="pending", index=True)
+    text = db.Column(db.Text, nullable=True)
+    error = db.Column(db.Text, nullable=True)
+
+    model = db.Column(db.String(40))
+    effort = db.Column(db.String(8))
+    ms = db.Column(db.Integer, default=0)
+
+    input_tokens = db.Column(db.Integer, default=0)
+    output_tokens = db.Column(db.Integer, default=0)
+    cache_read_tokens = db.Column(db.Integer, default=0)
+    cache_creation_tokens = db.Column(db.Integer, default=0)
+    cost_micros = db.Column(db.Integer, default=0)
+
+    def to_dict(self):
+        return {
+            "decision_id": self.decision_id,
+            "status": self.status,
+            "text": self.text,
+            "error": self.error,
+            "model": self.model,
+            "effort": self.effort,
+            "ms": self.ms or 0,
+            "input_tokens": self.input_tokens or 0,
+            "output_tokens": self.output_tokens or 0,
+            "cost_micros": self.cost_micros or 0,
+        }
+
+
+# ---------------------------------------------------------------------------
+# The one migration
+# ---------------------------------------------------------------------------
+
+# Everything else new here has arrived as a whole **table**, because
+# ``create_all`` is CREATE TABLE IF NOT EXISTS and brings one into being on the
+# live database by itself - ``gto_coach`` above needs nothing doing to it.
+#
+# ``gto_decisions.context_json`` could not be a table without splitting one
+# decision across two of them for no gain. So it is a column, and this is what
+# adds it. In code rather than by hand over SSH for one reason: a mapped column
+# that the live table does not have makes **every** query against
+# ``gto_decisions`` fail, so a deploy where somebody forgot the ALTER is not a
+# feature that does not work, it is the stats page and the review both down.
+# Same arrangement, and the same reasoning, as ``drive/models.py``.
+_ADDED = {
+    "gto_decisions": [
+        ("context_json", "TEXT"),
+    ],
+}
+
+
+def ensure_columns(app_db, log=None):
+    """Add any mapped column the live table does not have yet.
+
+    Loud on failure and does not raise: the next query fails anyway and says so
+    far more precisely than a boot-time traceback with no context would.
+    """
+    from sqlalchemy import inspect, text
+    try:
+        insp = inspect(app_db.engine)
+        tables = set(insp.get_table_names())
+    except Exception as e:                                # pragma: no cover
+        if log:
+            log.warning("could not inspect the database for columns: %s", e)
+        return
+    for table, cols in _ADDED.items():
+        if table not in tables:
+            continue                                      # create_all made it
+        have = {c["name"] for c in insp.get_columns(table)}
+        for name, decl in cols:
+            if name in have:
+                continue
+            try:
+                with app_db.engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE %s ADD COLUMN %s %s"
+                                      % (table, name, decl)))
+                if log:
+                    log.warning("added %s.%s to the live database", table, name)
+            except Exception as e:                        # pragma: no cover
+                if log:
+                    log.error("could not add %s.%s (%s) - queries against %s "
+                              "will fail until it exists", table, name, e, table)
 
 
 DEFAULT_PREFS = {

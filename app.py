@@ -66,19 +66,12 @@ DRIVE_URL = os.environ.get("DRIVE_URL", "https://drive.cgovind.com")
 # pushed to the browser.
 GTO_URL = os.environ.get("GTO_URL", "https://gto.cgovind.com")
 
-# The roll game and its `/api/roll/gemini` proxy are **gone** (August 2026), and
-# the proxy is why. It forwarded the caller's JSON body verbatim to Gemini with
-# this box's API key attached, with no login, no rate limit and no origin check -
-# so it was a free Gemini endpoint for the internet, billed here, with the caller
-# in full control of the prompt. It was also two requests away from taking the
-# site down: `website` runs `gunicorn -w 2` *sync* workers and that call blocked
-# for up to thirty seconds.
-#
-# Nothing linked to the game - it was reachable only by typing its URL - so the
-# whole thing went rather than being put behind a login. If it ever comes back it
-# needs a session, a per-account budget, and a pinned request shape rather than a
-# pass-through. **Remove `GEMINI_API_KEY` from the box's .env and revoke the key**;
-# deleting the route stops the spending, revoking it stops a leaked key mattering.
+# **This server proxies no model API.** The two proxies below exist because
+# Duolingo and Spotify need a key kept off the client; a model endpoint behind
+# `-w 2` sync workers is a different thing entirely - unmetered spending on this
+# box's account, and a 30s call two requests from holding every worker. If one
+# is ever wanted here it needs a session, a per-account budget and a pinned
+# request shape, never a pass-through of the caller's body.
 
 app = Flask(__name__)
 

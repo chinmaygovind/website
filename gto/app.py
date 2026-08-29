@@ -28,7 +28,9 @@ tendencies are the interesting part and they are not private; the people are.
 import json
 import os
 import random
+import threading
 import uuid
+from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
 from flask import (
@@ -37,14 +39,15 @@ from flask import (
 )
 
 import bots
+import coach as coach_module
 import profiles
 import review as review_module
 import stats as stats_module
 import table as table_module
 import visits
 from models import (
-    DEFAULT_PREFS, GtoDecision, GtoHand, GtoPrefs, GtoSession, GtoTable, User,
-    database_url, db,
+    DEFAULT_PREFS, GtoCoach, GtoDecision, GtoHand, GtoPrefs, GtoSession,
+    GtoTable, User, database_url, db, ensure_columns,
 )
 
 load_dotenv()
@@ -65,6 +68,8 @@ if os.environ.get("SESSION_COOKIE_SECURE", "").lower() in ("1", "true", "yes"):
 db.init_app(app)
 with app.app_context():
     db.create_all()
+    # The one thing `create_all` cannot do - see `models.ensure_columns`.
+    ensure_columns(db, log=app.logger)
     visits.ensure_tables(db)
 visits.init_app(app, db, "gto")
 
@@ -82,6 +87,23 @@ OWNERS = {n.strip().lower() for n in
 
 
 # --------------------------------------------------------------- identity
+
+
+def coach_view(user):
+    """What the page needs to know about the coach before anybody clicks.
+
+    ``None`` when there is nothing to offer, so the button is not rendered at
+    all rather than rendered and then refused - and so a page served to anybody
+    but Chinmay carries no sign the endpoint exists.
+    """
+    if not (is_owner(user) and coach_module.enabled()):
+        return None
+    which = coach_module.provider()
+    return {
+        "provider": which,
+        "model": coach_module.model(),
+        "name": "Gemini" if which == coach_module.GEMINI else "Claude",
+    }
 
 
 def current_user():
@@ -253,6 +275,7 @@ def index():
     return render_template(
         "table.html", state=view(t, prefs, user), user=user,
         owner=is_owner(user), main_site=MAIN_SITE_URL, presence_where="table",
+        coach=coach_view(user),
         opponents=[b.profile.to_dict() for b in t.bots.values()])
 
 
@@ -442,6 +465,199 @@ def api_presence():
     return jsonify({"ok": True})
 
 
+# ---------------------------------------------------------------- the coach
+#
+# Everything below calls an outside service on an account of Chinmay's, which
+# makes it unlike every other route here. Four things stand in front of it:
+#
+#   1. `is_owner` or a 404. Not a 403; a 403 confirms it is here.
+#   2. One row per decision, ever. A second click on the same hand is free.
+#   3. Two rolling 24-hour ceilings, checked before the call rather than after.
+#   4. The call runs on a **thread**, not in the request. Three sync workers and
+#      a route that blocks for half a minute is a third of the trainer gone
+#      while it thinks - the same reason the bots' pauses are paced out by the
+#      browser rather than slept through on the server.
+
+
+#: A `pending` row older than this was abandoned by a worker that went away
+#: mid-call, and nothing will ever finish it. Asking again is allowed to start
+#: over rather than watching a row that is never going to move.
+COACH_STALE = timedelta(seconds=180)
+
+
+def coach_user():
+    user = current_user()
+    if not is_owner(user):
+        abort(404)
+    return user
+
+
+def coach_spend(user, since=None):
+    q = GtoCoach.query.filter(GtoCoach.user_id == user.id)
+    if since:
+        q = q.filter(GtoCoach.started_at >= since)
+    rows = q.all()
+    return {
+        "answers": len(rows),
+        "micros": sum(r.cost_micros or 0 for r in rows),
+        "input_tokens": sum(r.input_tokens or 0 for r in rows),
+        "output_tokens": sum(r.output_tokens or 0 for r in rows),
+    }
+
+
+def coach_usage(user):
+    """What this has used, for the footer of the panel.
+
+    The window is a rolling twenty-four hours rather than a calendar day, which
+    is both simpler and the honest thing to cap on: a calendar day would want a
+    timezone, and the box keeps UTC while Chinmay does not.
+
+    ``free`` is what tells the page which of the two ceilings is the real one.
+    On a paid provider the money binds and the call count never will; on the
+    free tier it is exactly the other way round, and showing "$0.00 of $1.00" to
+    somebody whose actual limit is requests per day would be a meter that
+    reassures instead of informing.
+    """
+    day = coach_spend(user, since=datetime.utcnow() - timedelta(hours=24))
+    life = coach_spend(user)
+    return {
+        "day": day, "life": life,
+        "cap_micros": coach_module.daily_cap_micros(),
+        "cap_calls": coach_module.daily_cap_calls(),
+        "free": coach_module.is_free(),
+        "provider": coach_module.provider(),
+        "model": coach_module.model(),
+        "effort": coach_module.effort(),
+    }
+
+
+def _coach_run(coach_id, ctx):
+    """The call itself, off the request thread. Writes the row and the bill."""
+    with app.app_context():
+        row = db.session.get(GtoCoach, coach_id)
+        if not row:
+            db.session.remove()
+            return
+        try:
+            text, usage, ms = coach_module.ask(ctx)
+            row.status = "done"
+            row.text = text
+            row.ms = ms
+            row.input_tokens = usage["input_tokens"]
+            row.output_tokens = usage["output_tokens"]
+            row.cache_read_tokens = usage["cache_read_tokens"]
+            row.cache_creation_tokens = usage["cache_creation_tokens"]
+            row.cost_micros = coach_module.cost_micros(usage, row.model)
+        except coach_module.CoachError as e:
+            row.status, row.error = "error", str(e)
+        except Exception as e:                              # pragma: no cover
+            app.logger.exception("coach failed")
+            row.status, row.error = "error", "%s: %s" % (type(e).__name__, e)
+        try:
+            db.session.commit()
+        except Exception:                                   # pragma: no cover
+            db.session.rollback()
+        finally:
+            db.session.remove()
+
+
+@app.route("/api/coach", methods=["GET", "POST"])
+def api_coach():
+    """Ask for a second opinion on one decision, or poll for the one asked for.
+
+    ``GET`` never starts anything, so the browser's polling cannot run up a
+    bill however long it is left open.
+    """
+    user = coach_user()
+    if request.method == "GET":
+        want = request.args.get("decision", type=int)
+    else:
+        want = (request.get_json(silent=True) or {}).get("decision")
+        want = int(want) if want else None
+    if not want:
+        return jsonify({"error": "which decision?"}), 400
+
+    d = GtoDecision.query.filter_by(id=want, user_id=user.id).first()
+    if not d:
+        abort(404)
+
+    row = GtoCoach.query.filter_by(decision_id=d.id).first()
+
+    if request.method == "GET":
+        # A poll reports whatever is there and never starts anything, which is
+        # what makes a drawer left open unable to run up a bill.
+        return jsonify({"coach": row.to_dict() if row else None,
+                        "usage": coach_usage(user)})
+
+    if row and row.status == "done":
+        return jsonify({"coach": row.to_dict(), "usage": coach_usage(user)})
+    if row and row.status == "pending" and (
+            datetime.utcnow() - (row.started_at or datetime.utcnow())
+            < COACH_STALE):
+        return jsonify({"coach": row.to_dict(), "usage": coach_usage(user)})
+
+    # Anything else - an `error` row, or a `pending` one a dead worker left
+    # behind - falls through and is run again. An answer that did not arrive is
+    # not an answer, and returning the same failure to every click would leave
+    # the button permanently broken with no way back.
+
+    if not coach_module.enabled():
+        return jsonify({"error": "No API key on this box - put a GEMINI_API_KEY "
+                                 "(or an ANTHROPIC_API_KEY) in gto/.env and "
+                                 "restart the service."}), 503
+
+    ctx = d.context
+    if not ctx:
+        return jsonify({"error": "This hand was played before the coach "
+                                 "existed, so the spot was never written "
+                                 "down in full."}), 409
+
+    # Two ceilings, and which one binds depends on who is answering. Money is
+    # meaningless on a free tier and requests are what run out; on a paid one it
+    # is the other way round. Both are checked, because the wrong one being
+    # slack is not a reason for there to be no ceiling at all.
+    usage = coach_usage(user)
+    if usage["day"]["micros"] >= usage["cap_micros"]:
+        return jsonify({
+            "error": "You are at the daily ceiling of $%.2f. Raise "
+                     "GTO_COACH_DAILY_USD or wait it out."
+                     % (usage["cap_micros"] / 1_000_000.0),
+            "usage": usage}), 429
+    if usage["day"]["answers"] >= usage["cap_calls"]:
+        return jsonify({
+            "error": "That is %d answers in a day, which is the ceiling. Raise "
+                     "GTO_COACH_DAILY_CALLS or wait it out."
+                     % usage["cap_calls"],
+            "usage": usage}), 429
+
+    # One at a time. Not for the money - the ceiling does that - but because a
+    # second thread is a second worker's worth of the process held on a call
+    # that is not the trainer.
+    live = GtoCoach.query.filter(
+        GtoCoach.user_id == user.id, GtoCoach.status == "pending",
+        GtoCoach.started_at >= datetime.utcnow() - COACH_STALE).first()
+    if live and live.decision_id != d.id:
+        return jsonify({"error": "Still thinking about the last one."}), 429
+
+    if row:
+        row.started_at = datetime.utcnow()
+        row.status, row.error = "pending", None
+    else:
+        row = GtoCoach(decision_id=d.id, user_id=user.id, status="pending",
+                       model=coach_module.model(),
+                       effort=coach_module.effort())
+        db.session.add(row)
+    db.session.commit()
+
+    threading.Thread(target=_coach_run, args=(row.id, ctx), daemon=True).start()
+    return jsonify({"coach": row.to_dict(), "usage": usage}), 202
+
+
+@app.route("/api/coach/usage")
+def api_coach_usage():
+    return jsonify(coach_usage(coach_user()))
+
+
 # --------------------------------------------------------- the record
 
 
@@ -476,9 +692,10 @@ def record_hand(user, row, t):
     db.session.add(hand_row)
     db.session.flush()
 
+    out = []
     for m in marks:
         d = m.decision
-        db.session.add(GtoDecision(
+        row_d = GtoDecision(
             hand_id=hand_row.id, user_id=user.id if user else None,
             street=d.street, position=d.position,
             hole=" ".join(str(c) for c in d.hole),
@@ -490,9 +707,22 @@ def record_hand(user, row, t):
             action=d.action, amount=d.amount or 0,
             verdict=m.verdict, loss_bb=m.loss_bb, headline=m.headline,
             lines_json=json.dumps([x.to_dict() for x in m.lines]),
-        ))
+            context_json=json.dumps(coach_module.context(t, d)),
+        )
+        db.session.add(row_d)
+        out.append((m, row_d))
     db.session.commit()
-    return [m.to_dict() for m in marks]
+
+    # The id goes back to the page so that "ask Claude" on a mark can name the
+    # decision it is about. A hand played without an account never gets one,
+    # which is the right answer twice over: there is no row to hang the answer
+    # on, and the coach is Chinmay's alone anyway.
+    marks_out = []
+    for m, row_d in out:
+        as_dict = m.to_dict()
+        as_dict["decision_id"] = row_d.id
+        marks_out.append(as_dict)
+    return marks_out
 
 
 def _sole_opponent(d):

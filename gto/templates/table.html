@@ -87,6 +87,7 @@
 <script>
   window.GTO = {{ state | tojson }};
   window.GTO_OWNER = {{ owner | tojson }};
+  window.GTO_COACH = {{ coach | tojson }};
   window.GTO_OPPONENTS = {{ opponents | tojson }};
 </script>
 <script src="{{ url_for('static', filename='js/gto.js') }}"></script>

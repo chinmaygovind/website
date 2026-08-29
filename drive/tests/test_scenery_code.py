@@ -123,10 +123,10 @@ def test_no_provider_sends_a_temperature():
 def test_the_key_never_reaches_this_server():
     """The whole design, and the reason to say it in the code as well as the UI.
 
-    The last time Drive talked to a model it was `/api/roll/gemini`, which
-    forwarded any caller's body to Gemini with *this box's* key, unauthenticated
-    and unmetered. There is no route here that takes a key, and there must never
-    be one.
+    The tempting shortcut is a small proxy here that "just adds the key", which
+    is an open model endpoint on this box's account holding a worker for the
+    length of every call. There is no route here that takes a key, and there
+    must never be one.
     """
     import app as A
     routes = [str(r) for r in A.app.url_map.iter_rules()]

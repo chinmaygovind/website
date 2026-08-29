@@ -537,7 +537,170 @@ function markEl(m) {
       ${l.note ? `<details class="note"><summary>why</summary>${escapeHtml(l.note)}</details>` : ""}`;
     el.appendChild(d);
   });
+  if (window.GTO_COACH && m.decision_id) el.appendChild(coachEl(m.decision_id));
   return el;
+}
+
+/* ----------------------------------------------------------------- coach
+ *
+ * A second opinion on one decision, worked out from the situation alone - the
+ * server sends Claude none of the analysis above it. So it goes *below* every
+ * labelled line and wears its own colour: nothing in here is `solver`,
+ * `derived` or `model`, and the panel says whose numbers these are rather than
+ * letting an unchecked one sit beside a checked one and look like a peer.
+ *
+ * Polling is a GET, and the GET never starts a call. Leaving the drawer open
+ * cannot run up a bill.
+ */
+
+const COACH_POLL_MS = 1500;
+const COACH_GIVE_UP_MS = 150000;
+
+const COACH_NAME = () => (window.GTO_COACH && window.GTO_COACH.name) || "Claude";
+const ASK_LABEL = () => `Ask ${COACH_NAME()} about this spot`;
+
+function coachEl(decisionId) {
+  const box = document.createElement("div");
+  box.className = "coach";
+  box.innerHTML = `
+    <button class="ask" type="button">${escapeHtml(ASK_LABEL())}</button>
+    <div class="answer" hidden></div>
+    <div class="bill" hidden></div>`;
+  // No prefetch. The drawer only ever renders the hand that just finished, so
+  // there is never a stored answer to find, and a GET per mark per hand would
+  // buy nothing.
+  $(".ask", box).addEventListener("click", () => runCoach(box, decisionId));
+  return box;
+}
+
+async function runCoach(box, decisionId) {
+  const ask = $(".ask", box);
+  ask.disabled = true;
+  ask.textContent = "Thinking…";
+  let data;
+  try {
+    const res = await fetch("/api/coach", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: decisionId }),
+    });
+    data = await res.json();
+    if (!res.ok) {
+      coachFailed(box, data.error || "Something went wrong.");
+      if (data.usage) paintBill(box, null, data.usage);
+      return;
+    }
+  } catch (e) {
+    coachFailed(box, "Could not reach the server.");
+    return;
+  }
+
+  paintCoach(box, data);
+  if (data.coach && data.coach.status !== "pending") return;
+
+  const until = Date.now() + COACH_GIVE_UP_MS;
+  while (Date.now() < until) {
+    await sleep(COACH_POLL_MS);
+    let d;
+    try {
+      const res = await fetch(`/api/coach?decision=${decisionId}`);
+      d = await res.json();
+    } catch (e) { continue; }
+    if (!d.coach) continue;
+    paintCoach(box, d);
+    if (d.coach.status !== "pending") return;
+  }
+  coachFailed(box, "Gave up waiting. Ask again to retry.");
+}
+
+function paintCoach(box, data) {
+  const c = data.coach;
+  const ask = $(".ask", box);
+  const answer = $(".answer", box);
+  if (!c) return;
+
+  if (c.status === "pending") {
+    ask.disabled = true;
+    ask.textContent = "Thinking…";
+    return;
+  }
+  if (c.status === "error") {
+    coachFailed(box, c.error || "That did not come back.");
+    paintBill(box, c, data.usage);
+    return;
+  }
+
+  ask.hidden = true;
+  answer.hidden = false;
+  answer.innerHTML = coachHtml(c.text);
+  paintBill(box, c, data.usage);
+}
+
+function coachFailed(box, message) {
+  const ask = $(".ask", box);
+  ask.disabled = false;
+  ask.textContent = ASK_LABEL();
+  const answer = $(".answer", box);
+  answer.hidden = false;
+  answer.innerHTML = `<p class="failed">${escapeHtml(message)}</p>`;
+}
+
+/** The answer is asked for as plain text: a verdict, then lines starting "- ". */
+function coachHtml(text) {
+  const lines = String(text || "").split("\n").map(l => l.trim()).filter(Boolean);
+  const bullets = [];
+  const out = [`<div class="who">${escapeHtml(COACH_NAME())}, working the hand
+    out on its own — these numbers are unchecked</div>`];
+  lines.forEach(l => {
+    if (l.startsWith("- ")) bullets.push(`<li>${escapeHtml(l.slice(2))}</li>`);
+    else {
+      if (bullets.length) { out.push(`<ul>${bullets.join("")}</ul>`); bullets.length = 0; }
+      out.push(`<p>${escapeHtml(l)}</p>`);
+    }
+  });
+  if (bullets.length) out.push(`<ul>${bullets.join("")}</ul>`);
+  return out.join("");
+}
+
+/** What that answer used, and what the day has used.
+ *
+ * Which ceiling is shown depends on who answered. On a paid provider money is
+ * what runs out; on a free tier it is requests per day, and showing "$0.00 of
+ * $1.00" to somebody whose real limit is the request count would be a meter
+ * that reassures instead of informing. Tokens are shown either way, because
+ * they are what the answer actually consumed under both.
+ */
+function paintBill(box, c, usage) {
+  const bill = $(".bill", box);
+  const free = usage ? usage.free : false;
+  const bits = [];
+  if (c && c.status === "done") {
+    bits.push(`${c.input_tokens.toLocaleString()} in / ` +
+              `${c.output_tokens.toLocaleString()} out`);
+    if (!free) bits.push(dollars(c.cost_micros));
+    if (c.ms) bits.push(`${(c.ms / 1000).toFixed(1)}s`);
+    if (c.model) bits.push(c.model + (c.effort && c.effort !== "-" ? " · " + c.effort : ""));
+  }
+  if (usage) {
+    const d = usage.day, l = usage.life;
+    if (free) {
+      bits.push(`today ${d.answers} of ${usage.cap_calls} answers, ` +
+                `${(d.input_tokens + d.output_tokens).toLocaleString()} tokens`);
+      bits.push("free tier");
+    } else {
+      bits.push(`today ${dollars(d.micros)} of ${dollars(usage.cap_micros)}`);
+    }
+    bits.push(`all time ${l.answers} answer${l.answers === 1 ? "" : "s"}` +
+              (free ? "" : `, ${dollars(l.micros)}`));
+  }
+  bill.hidden = !bits.length;
+  bill.textContent = bits.join(" · ");
+}
+
+/** Micro-dollars. Cents would round most single answers to nothing. */
+function dollars(micros) {
+  const d = (micros || 0) / 1e6;
+  return "$" + (d < 0.01 && d > 0 ? d.toFixed(4) : d.toFixed(2));
 }
 
 /** The picture beside a line. The line's own text always says the same thing. */

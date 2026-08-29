@@ -316,6 +316,36 @@ button.act:hover:not(:disabled) .key, .chip:hover .key { color: var(--ink-dim); 
 .legend .lrow { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 12px; color: var(--ink-dim); }
 .legend .lrow .src { flex: none; min-width: 74px; text-align: center; }
 
+/* -------------------------------------------------------------------- coach
+ *
+ * Deliberately not in any of the five `.src` colours. Every one of those means
+ * "here is where this number came from", and the whole trainer turns on nothing
+ * ever being labelled better than it is. This is the one block on the page
+ * whose numbers were checked against nothing, so it is grey, it sits under
+ * every labelled line, and it says so in words at the top.
+ */
+
+.coach { border-top: 1px dashed var(--line); margin-top: 12px; padding-top: 11px; }
+.coach .ask {
+  background: none; border: 1px solid var(--line); color: var(--ink-dim);
+  font: inherit; font-size: 12px; padding: 6px 12px; border-radius: 999px;
+  cursor: pointer; transition: color .13s ease, border-color .13s ease;
+}
+.coach .ask:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-faint); }
+.coach .ask:disabled { opacity: .55; cursor: default; }
+.coach .who {
+  font-size: 9.5px; text-transform: uppercase; letter-spacing: .11em;
+  color: var(--ink-faint); margin-bottom: 7px;
+}
+.coach .answer p { font-size: 13px; color: var(--ink-dim); margin: 0 0 7px; }
+.coach .answer ul { margin: 0; padding-left: 17px; }
+.coach .answer li { font-size: 13px; color: var(--ink-dim); margin-bottom: 5px; }
+.coach .answer .failed { color: var(--warn); }
+.coach .bill {
+  font-size: 10.5px; color: var(--ink-faint); margin-top: 9px;
+  letter-spacing: .02em;
+}
+
 /* ----------------------------------------------------------------- settings */
 
 .set { margin-bottom: 20px; }

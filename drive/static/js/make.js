@@ -131,9 +131,9 @@ const RAILS = [['', 'open'], ['l', 'left'], ['r', 'right'], ['lr', 'both']];
  *
  * The key goes in localStorage and the request goes from the browser straight to
  * the provider. **This box never sees a prompt, a token or a bill**, and that is
- * worth saying in those words: the last time Drive talked to a model it was
- * `/api/roll/gemini`, which forwarded anyone's body to Gemini with the server's
- * own key, unauthenticated and unmetered. This is the opposite shape.
+ * worth saying in those words, because the tempting shortcut is a proxy on the
+ * server that "just adds the key" - which is an open model endpoint on somebody
+ * else's account. There is no such route and there must never be one.
  */
 const PROVIDERS = {
   claude: {

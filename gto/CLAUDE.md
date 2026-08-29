@@ -9,10 +9,10 @@ lobby: opening the page sits you down.
 
 ## Read this much and no more
 
-Fifteen files, 5,800 lines, and they are a stack rather than a web - each layer
-knows only the one below it. **Find your layer and read that file's docstring
-before its code**; every one of them opens with what it is for and what it
-deliberately refuses to do.
+Seventeen files, 7,400 lines, and they are a stack rather than a web - each
+layer knows only the one below it. **Find your layer and read that file's
+docstring before its code**; every one of them opens with what it is for and
+what it deliberately refuses to do.
 
 | you are changing | read |
 |---|---|
@@ -27,6 +27,7 @@ deliberately refuses to do.
 | the streak side game | `bounty.py` |
 | a session, seats, stacks | `table.py` |
 | **the marking** | `review.py` |
+| **the second opinion** | `coach.py` |
 | win rate, hourly, intervals | `stats.py` |
 | routes, database, the page | `app.py`, `models.py`, `templates/`, `static/` |
 
@@ -175,6 +176,130 @@ has always been half a percent out.
   not have and four seconds is not a page load. A stale file cannot turn a
   failing check green: `test_the_committed_report_matches_what_the_checks_say_now`
   runs them live and compares.
+
+## The coach, which is the one thing here that spends money
+
+`coach.py` sends **one decision** to a model and prints what comes back under
+the review, behind a button. It is Chinmay's alone and it is off until a key
+exists.
+
+**It runs on Gemini's free tier** - `gemini-3.5-flash`, one POST of JSON over
+`urllib`, no dependency. There is an Anthropic path behind the same seam
+(`provider()` picks whichever key is set, Anthropic winning if both are); it
+needs `pip install anthropic`, which the box does not do.
+
+**Flash, not Pro, and not an alias - both of those were tried against the real
+API and both fail.** The free tier has *no* Pro quota: every Pro model, and the
+`gemini-pro-latest` alias, returns 429 before reading the prompt. And
+`gemini-flash-latest` is worse than a pin rather than better, which is the
+counter-intuitive half: the aliases track whatever is newest, newest is
+busiest, and both it and `gemini-3.7-flash` answer 503 "high demand" on the
+same request this model answers. A pin can go stale, but it goes stale
+*loudly* - Google's 404 names the model to move to, and `_ask_gemini` passes
+that message straight through to the panel rather than flattening it.
+
+**Model names here are not durable and nothing should keep a list of them.**
+The name this was first written against was retired between writing it and
+running it. That is why `is_free` is a `gemini-` prefix test and not a set: a
+stale entry in a set does not fail, it quietly prices a free answer at Opus
+rates. `PRICES` holds only the models that actually cost something.
+
+**It is given none of this repo's analysis, and that is the whole design.**
+`review.py` has already computed the equity, the pot odds, the range and the
+verdict for that spot, and none of it goes in the prompt - what is sent is the
+situation only: cards, seats, stacks, blinds, the bounty rules, every action so
+far with its size, and each opponent's tendencies. Claude does its own
+arithmetic from there.
+
+The trade is worth stating both ways round, because it is the opposite of the
+choice every other file here makes:
+
+- What it buys is a **second opinion**. Where the two agree, that is two
+  independent readings. Where they disagree, one of them is wrong, and those are
+  the spots worth an evening.
+- What it costs is **verification**. `validate.py` checks `equity.py` against an
+  independent enumeration to the last place a float has. Nothing checks this. An
+  equity a model worked out in its head is a sixth kind of number - unchecked -
+  and it may **never** be given one of the five labels. **This weighs more on a
+  free model than it would on a frontier one**: 2.5 Pro is good and it is still
+  doing the sums in its head. Read the disagreements, not the digits. It renders below every
+  labelled line, in grey, with a header saying whose numbers they are. If the
+  panel ever grows a `solver` or `model` tag, the thing this trainer is for is
+  gone. `test_the_prompt_carries_none_of_this_repos_analysis` is the guard on
+  the input half of that, because the leak would be silent - the panel would
+  fill with plausible prose either way.
+
+**The four guards, and none of them is optional.** This is the only route in the
+repo that spends on an outside account, so: an `is_owner` check that **404s**
+rather than 403s, because a 403 confirms there is an endpoint here that spends;
+one `gto_coach` row per decision ever, so a second click calls nothing; two
+daily ceilings checked *before* the call, not after; and a `GET` that never
+starts one, so a drawer left open cannot spend. All four are tested in
+`tests/test_coach_api.py`, which is the only thing here that boots the app - a
+guard that has never been run is a guess.
+
+**The call runs on a thread and the browser polls.** Three sync workers, and a
+route that blocks half a minute is a third of the trainer gone while it thinks -
+the same reason the bots' pauses are paced out by the browser rather than slept
+through on the server. The row is written `pending`, the thread fills it in. A
+worker restarted mid-call leaves a `pending` row nothing will finish, which is
+what `started_at` and `COACH_STALE` are for.
+
+**Two ceilings, because the scarce thing depends on who answers.** On a paid
+provider money runs out and requests never will; on the free tier it is exactly
+the other way round. Both are checked, and `usage.free` tells the page which one
+to show - "$0.00 of $1.00" to somebody whose real limit is requests per day is a
+meter that reassures instead of informing. `GTO_COACH_DAILY_USD` (1.00) and
+`GTO_COACH_DAILY_CALLS` (100).
+
+**Cost is in micro-dollars**, not the integer cents money uses everywhere else
+here: a paid answer is a few hundredths of a dollar and cents would round most
+of them - and a quiet day of them - to zero, which is the one thing a spend
+meter may not do. A Gemini answer prices to zero **because this is the free
+tier, not because Google is free**; a key on a billed Cloud project costs real
+money per token and would be reported here as costing nothing.
+
+`max_tokens` is only a runaway stop on Anthropic, where `effort` is what moves
+the bill. **On Gemini it is load-bearing**, and the real numbers say why: a
+typical answer here is **123 tokens written against 1,990 spent thinking**.
+Flash always thinks, cannot be told not to, and its thinking counts against
+`maxOutputTokens` - so a ceiling sized for the visible answer is spent entirely
+before a word is written and the response comes back `MAX_TOKENS` with an
+*empty* text part. A 200, with usage, and nothing to show. Hence 8000. `_gemini_read` reads for that case by name, because letting it
+through prints a blank panel and looks like the button is broken. It is also why
+`thoughtsTokenCount` is added to the output count: it is not in
+`candidatesTokenCount`, and leaving it out under-reports every answer by most of
+what it used.
+
+**It needs `GEMINI_API_KEY` in `gto/.env`, added by hand.** The deploy does not
+touch that file. Without any key the button does not render at all - so a page
+served to anybody else carries no sign the endpoint exists - and the route says
+it is unconfigured rather than half-working. The other knobs, all optional:
+`GTO_COACH_PROVIDER` (forces one when both keys are present),
+`GTO_COACH_MODEL`, `GTO_COACH_EFFORT` (Anthropic only; `medium`, and `low` is
+roughly half the spend), `GTO_COACH_MAX_TOKENS` (8000 on Gemini, 3000 on
+Anthropic), `GTO_COACH_DAILY_USD`, `GTO_COACH_DAILY_CALLS`,
+`GTO_COACH_TIMEOUT` (120).
+
+**Nothing caches the prompt, on purpose.** The system prompt is well under the
+shortest prefix any model will cache, so a breakpoint on it would report zero
+reads forever and look broken. `cost_micros` prices the cache fields anyway,
+because both providers report them and a longer prompt may one day earn them.
+
+**The prompt names Chinmay's actual friends**, alongside their tendencies and
+the blurb describing each of them, and on a free tier that is content the
+provider may train on. That is a decision taken with the trade in front of it,
+not an oversight: the answers are far more use when they say "Sanjay" than when
+they say "the CO". If it is ever revisited, the change is one line in
+`_players` - drop `name` and let the positions carry it - and nothing else in
+the file needs to know.
+
+**`gto_decisions.context_json` is the only hand-run migration this service has
+ever needed**, and `models.ensure_columns` is what runs it - in code, because a
+mapped column the live table lacks makes *every* query against `gto_decisions`
+fail, so a forgotten ALTER would not be a coach that does not work, it would be
+the review and the stats page down. A hand played before that column existed
+cannot get one retroactively and the route says so.
 
 ## Money, and the two ways it used to be wrong
 

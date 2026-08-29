@@ -9,3 +9,14 @@ gunicorn==23.0.0
 # synchronous Flask behind sync gunicorn workers. That is a smaller surface, a
 # smaller install, and it is why `deploy/gto.service` runs `-w 3` sync rather
 # than an eventlet worker.
+
+# **The coach needs nothing installed.** `coach.py` calls Gemini's free tier
+# with one POST of JSON over `urllib`, the same way the deleted roll game did,
+# because a dependency for one HTTP request would be the largest thing in this
+# install. It reads `GEMINI_API_KEY` from `.env`.
+#
+# The Anthropic path is the other half of the same seam and is *not* installed:
+# `import anthropic` happens inside `coach._ask_anthropic`, so it costs nothing
+# until somebody puts an `ANTHROPIC_API_KEY` on the box, and at that point it is
+# one `pip install anthropic` away. Uncomment if you ever do.
+# anthropic>=1.0.0
