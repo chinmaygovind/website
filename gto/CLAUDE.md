@@ -339,11 +339,27 @@ cannot get one retroactively and the route says so.
 
 ## The session panel, and what "reset" resets
 
-The left gutter of the table holds the numbers for the sit-down you are in:
-profit, hands, VPIP, PFR, 3-bet, saw-flop, WTSD, won-at-showdown, bb/100 and the
-error count out of the decisions you were marked on. It is **beside the table
-rather than on `/stats`** for one reason: a win rate you have to leave the table
-to read is one you read after the session it would have changed.
+A **fixed sidebar down the left edge** holds the numbers for the sit-down you
+are in: profit, hands, VPIP, PFR, 3-bet, saw-flop, WTSD, won-at-showdown, bb/100
+and the error count out of the decisions you were marked on. It is **beside the
+table rather than on `/stats`** for one reason: a win rate you have to leave the
+table to read is one you read after the session it would have changed.
+
+It used to be a bordered card floating in the left gutter, which read as a block
+dropped on the page rather than part of it. It is now a column of the room:
+`.room` is `var(--side) 1fr` and the felt centres in the second track, so the
+sidebar is the layout rather than a thing sitting in front of it. It is
+**`position: fixed`, not `sticky`**, for a layout reason and not a scrolling one:
+a sticky grid item is still sized into its row, so a sidebar a whole viewport
+tall made row 1 a viewport tall and pushed the action buttons off the bottom of
+the screen. Fixed takes it out of track sizing entirely.
+
+**`stats._pct` returns a raw float and the panel is the only place that shows
+one.** `/stats` formats every percentage with `%.0f`; the sidebar was printing
+`v + "%"`, so seven hands played gave `85.71428571428571%` and the number ran out
+through the side of the panel. `drawSession`'s `pct` rounds to the hundredth. The
+rounding is in the page rather than in `stats.py` because the interval and the
+rate are read at full precision by everything else that uses that summary.
 
 It is keyed on the **session, not the account**. Hands are recorded against a
 session whether or not anybody is signed in - `record_hand` writes a NULL
@@ -354,6 +370,29 @@ player an empty panel over a table they were in the middle of.
 that refusal rather than filling the space with a number. Over one session the
 interval is almost always wider than the rate, which is the honest thing for it
 to say.
+
+## What the felt itself says
+
+**The dealer, small blind and big blind are markers on the seat, not text in
+it.** Every seat prints its position (`UTG`, `HJ`, `CO`) in 10px grey under the
+name, and for the three that decide the betting that was not enough to find at a
+glance - the button was a small cream dot and the blinds were nothing but that
+grey word. `drawSeats` now hangs a coloured disc off the plate: cream `D`, blue
+`SB`, gold `BB`. It hangs off the side **facing the middle of the table** - a
+seat past halfway across wears it on its left - so it never sits between the seat
+and the edge of the window. The `D` is keyed on `state.button` rather than on the
+`BTN` position, because the button is what the engine actually moves.
+
+**The bounty streak is a counter that fills, because that is the shape of the
+thing it is counting.** It was a gold pill reading "2 in a row", which appeared
+from two and said nothing about what it was two of. It is now three black cells
+numbered 1 2 3 that light one per win, and from the third they carry the money -
+`$1`, `$2`, `$3`, which is `bounty.LADDER` and tops out exactly as the ladder
+does. It shows from the first win and only when `bounty_on`, so a table with the
+side game switched off carries no sign of it. `bountyPay` in `gto.js` is the only
+copy of that ladder outside `bounty.py`; it is three numbers and it is the
+seat's, not the review's - every number the review prices still comes from
+`bounty.streak_value` on the server.
 
 **Reset deletes the table, not the record.** The `GtoSession` is closed with its
 final stack, the `GtoTable` row goes, and the next request sits you down again at

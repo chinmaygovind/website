@@ -75,6 +75,19 @@ function initials(name) {
   return name.split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase();
 }
 
+/** Dollars from each opponent for reaching this streak - `bounty.LADDER`. */
+const bountyPay = n => (n >= 5 ? 3 : n >= 4 ? 2 : n >= 3 ? 1 : 0);
+
+/** Three cells that light one per win, and the money once it is paying. */
+function bountyCounter(streak) {
+  if (!state.bounty_on || streak < 1) return "";
+  const due = bountyPay(streak);
+  const cells = [1, 2, 3]
+    .map(n => `<i class="${streak >= n ? "on" : ""}">${n}</i>`).join("");
+  return `<div class="streak${due ? " paying" : ""}" title="${streak} in a row">`
+    + cells + (due ? `<b>$${due}</b>` : "") + "</div>";
+}
+
 function drawSeats() {
   const wrap = $("#seats");
   wrap.innerHTML = "";
@@ -115,8 +128,9 @@ function drawSeats() {
       <div class="who-row">
         <div class="avatar"${s.avatar ? ` style="background-image:url('${s.avatar}')"` : ""}>${s.avatar ? "" : initials(s.name)}</div>
         <div>
-          <div class="nm">${s.name}${streak >= 2 ? `<span class="streak">${streak} in a row</span>` : ""}</div>
+          <div class="nm">${s.name}</div>
           <div class="pos">${s.position || ""}${s.all_in ? " · all in" : ""}</div>
+          ${bountyCounter(streak)}
         </div>
       </div>
       <div class="stack${shownStack.has(i) && shownStack.get(i) !== s.stack ? " bump" : ""}">${money(s.stack)}</div>
@@ -145,13 +159,15 @@ function drawSeats() {
       }
       el.appendChild(say);
     }
-    if (state.button === i) {
+    const mark = state.button === i ? ["D", "btn"]
+      : s.position === "SB" ? ["SB", "sb"]
+      : s.position === "BB" ? ["BB", "bb"] : null;
+    if (mark) {
       const b = document.createElement("div");
-      b.className = "dot-btn";
-      b.textContent = "D";
-      b.style.right = "-6px";
-      b.style.top = "50%";
-      el.appendChild(b);
+      b.className = "dot-btn " + mark[1];
+      b.textContent = mark[0];
+      b.style[x > 50 ? "left" : "right"] = "-14px";
+      plate.appendChild(b);
     }
     wrap.appendChild(el);
   });
@@ -575,7 +591,8 @@ function drawSession() {
   const profit = s.profit || 0;
   const dir = profit > 0 ? "up" : profit < 0 ? "down" : "";
   const cell = (k, v) => `<div class="st"><div class="v">${v}</div><div class="k">${k}</div></div>`;
-  const pct = v => (v === null || v === undefined ? "&mdash;" : v + "%");
+  const pct = v => (v === null || v === undefined
+    ? "&mdash;" : (Math.round(v * 100) / 100) + "%");
 
   body.innerHTML = `
     <div class="big ${dir}">${profit >= 0 ? "+" : "\u2212"}${money(Math.abs(profit))}</div>

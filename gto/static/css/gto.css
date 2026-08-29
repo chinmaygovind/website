@@ -34,6 +34,7 @@
   --exploit: #7fa8e0;
   --shadow: 0 10px 30px rgba(0, 0, 0, .45);
   --r: 14px;
+  --bar: 55px;          /* the sticky header, which the sidebar hangs from */
   color-scheme: dark;
 }
 
@@ -76,22 +77,27 @@ body {
 /* ------------------------------------------------------------------- table */
 
 .room {
+  --side: 250px;
+  --felt: min(1040px, calc(100% - 28px), max(864px, calc((100dvh - 260px) * 16 / 9)));
   display: grid;
-  grid-template-columns: 1fr min(1040px, 94vw, max(864px, calc((100dvh - 260px) * 16 / 9))) 1fr;
-  padding: 44px 0 0;
+  grid-template-columns: var(--side) 1fr;
 }
-.felt-wrap { grid-column: 2; position: relative; aspect-ratio: 16 / 9; }
+.felt-wrap {
+  grid-column: 2; justify-self: center; width: var(--felt);
+  margin-top: 44px; position: relative; aspect-ratio: 16 / 9;
+}
 
-/* The session panel fills the left gutter, which the ellipse was never using.
- * It is there rather than on /stats because a win rate you have to leave the
- * table to read is one you read after the session it would have changed. */
+/* A column of the room, not a card floating in it: it runs the height of the
+ * window against the left edge and the felt centres in what is left. */
 .session {
-  grid-column: 1; grid-row: 1; align-self: start;
-  justify-self: end; width: min(230px, 92%); margin-right: 18px;
-  border: 1px solid var(--line); border-radius: var(--r);
-  background: var(--panel); padding: 12px 14px 13px;
+  position: fixed; left: 0; top: var(--bar); z-index: 30;
+  width: var(--side); height: calc(100dvh - var(--bar));
+  display: flex; flex-direction: column; overflow-y: auto;
+  border-right: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--panel-2) 0, var(--panel) 200px);
+  padding: 18px 18px 22px;
 }
-.session .shead { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.session .shead { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
 .session h2 {
   font-size: 10px; text-transform: uppercase; letter-spacing: .16em;
   color: var(--ink-faint); margin: 0; font-weight: 600;
@@ -102,14 +108,22 @@ body {
   padding: 3px 9px; border-radius: 999px; cursor: pointer; transition: .14s;
 }
 .session .shead button:hover { color: var(--bad); border-color: var(--bad); }
-.session .big { font-size: 21px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.session .big { font-size: 26px; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .session .big.up { color: var(--good); }
 .session .big.down { color: var(--bad); }
-.session .cap { font-size: 10px; color: var(--ink-faint); letter-spacing: .1em; text-transform: uppercase; }
-.session .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px 10px; margin-top: 12px; }
-.session .st .v { font-size: 14px; font-variant-numeric: tabular-nums; color: var(--ink); }
+.session .cap { font-size: 10px; color: var(--ink-faint); letter-spacing: .1em; text-transform: uppercase; margin-top: 2px; }
+.session .grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 13px 12px;
+  margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line);
+}
+.session .st { min-width: 0; }
+.session .st .v { font-size: 15px; font-variant-numeric: tabular-nums; color: var(--ink); }
 .session .st .k { font-size: 9.5px; color: var(--ink-faint); letter-spacing: .1em; text-transform: uppercase; }
-.session .note { font-size: 11px; color: var(--ink-faint); margin-top: 11px; line-height: 1.35; }
+.session .note {
+  font-size: 11px; color: var(--ink-faint); line-height: 1.4;
+  margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line);
+}
+.session .note + .note { margin-top: 7px; padding-top: 0; border-top: 0; }
 
 .felt {
   position: absolute; inset: 0;
@@ -170,6 +184,7 @@ body {
   width: 168px; text-align: center; z-index: 8;
 }
 .seat .plate {
+  position: relative;
   background: linear-gradient(180deg, rgba(24, 27, 32, .96), rgba(16, 18, 22, .96));
   border: 1px solid var(--line); border-radius: 12px;
   padding: 7px 10px 8px; box-shadow: var(--shadow);
@@ -219,23 +234,57 @@ body {
   35%  { transform: scale(1.13); color: var(--ink); }
   100% { transform: scale(1); }
 }
+/* The three markers that say whose deal it is and who is in for what. They
+ * hang off the side of the plate facing the middle of the table, so a seat on
+ * the right of the felt wears its marker on its left. */
 .dot-btn {
-  position: absolute; width: 22px; height: 22px; border-radius: 50%;
-  background: #f4f1e8; color: #1a1a1a; font: 700 11px/22px ui-sans-serif, system-ui;
-  text-align: center; box-shadow: 0 2px 6px rgba(0, 0, 0, .5);
+  position: absolute; top: 50%; transform: translateY(-50%);
+  min-width: 27px; height: 27px; padding: 0 5px; border-radius: 999px;
+  display: grid; place-items: center; z-index: 9;
+  font: 800 11px/1 ui-sans-serif, system-ui; letter-spacing: .01em;
+  box-shadow: 0 3px 9px rgba(0, 0, 0, .65), inset 0 -2px 5px rgba(0, 0, 0, .22);
 }
+.dot-btn.btn {
+  background: linear-gradient(180deg, #fffdf5, #d9d1bd);
+  border: 1px solid #fffef9; color: #17150f;
+}
+.dot-btn.sb {
+  background: linear-gradient(180deg, #8dbcff, #2f6fd0);
+  border: 1px solid #b9d6ff; color: #051429;
+}
+.dot-btn.bb {
+  background: linear-gradient(180deg, #ffdd93, #dd9c22);
+  border: 1px solid #ffeec2; color: #221600;
+}
+
+/* The bounty ladder as a counter on the seat: three cells that light one at a
+ * time, and from the third one on it is paying. */
 .streak {
-  display: inline-block; font-size: 10px; letter-spacing: .08em;
-  color: #17110a; background: var(--gold); border-radius: 999px;
-  padding: 1px 7px; margin-left: 6px; font-weight: 700;
+  display: inline-flex; align-items: center; gap: 3px;
+  margin-top: 4px; padding: 2px 3px; border-radius: 6px;
+  background: #050608; border: 1px solid #000;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 1px 3px rgba(0, 0, 0, .7);
 }
+.streak i {
+  width: 13px; height: 15px; border-radius: 3px; flex: none;
+  display: grid; place-items: center; font-style: normal;
+  font: 700 9px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #4a4640; background: #101216;
+}
+.streak i.on { color: #17110a; background: var(--gold); }
+.streak b {
+  font-size: 9.5px; font-weight: 700; letter-spacing: .04em;
+  color: var(--gold); padding: 0 3px 0 2px;
+}
+.streak.paying { border-color: rgba(216, 174, 94, .55); }
+.streak.paying i.on { box-shadow: 0 0 7px rgba(216, 174, 94, .6); }
 .tiltbar { height: 2px; border-radius: 2px; background: var(--line); margin-top: 6px; overflow: hidden; }
 .tiltbar i { display: block; height: 100%; background: var(--bad); width: 0; transition: width .4s; }
 
 /* ------------------------------------------------------------------ actions */
 
 .controls {
-  grid-column: 2; margin: 28px 0 40px;
+  grid-column: 2; justify-self: center; width: var(--felt); margin: 28px 0 40px;
   display: flex; flex-direction: column; gap: 12px;
 }
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
@@ -427,9 +476,13 @@ button.act:hover:not(:disabled) .key, .chip:hover .key { color: var(--ink-dim); 
   .felt-wrap, .controls { grid-column: 1; margin-inline: 10px; }
   /* Narrow: the panel goes above the felt rather than beside it, full width. */
   .session {
-    grid-row: auto; justify-self: stretch; width: auto;
-    margin: 0 10px 12px; order: -1;
+    position: static; width: auto; height: auto;
+    grid-column: 1; grid-row: auto; justify-self: stretch; margin: 0 10px 12px; order: -1;
+    border: 1px solid var(--line); border-radius: var(--r);
+    background: var(--panel); padding: 12px 14px 13px;
   }
+  .felt-wrap, .controls { justify-self: stretch; width: auto; }
+  .felt-wrap { margin-top: 0; }
   .felt-wrap { aspect-ratio: 1 / 1.15; }
   .seat { width: 118px; }
   .seat .nm { font-size: 11px; }
