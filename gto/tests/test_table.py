@@ -253,6 +253,60 @@ def test_state_can_reveal_at_showdown():
     assert all(x["hole"] for x in t.state(reveal=True)["seats"])
 
 
+def test_a_finished_hand_says_who_took_the_money():
+    t = make(17)
+    t.new_hand()
+    play_out(t, "call")
+    r = t.state(reveal=True)["result"]
+    assert r["winners"], "somebody has to have won it"
+    assert sum(w["amount"] for w in r["winners"]) == sum(
+        a for a in t.hand.payouts.values() if a > 0)
+    assert all(w["name"] in t.names for w in r["winners"])
+
+
+def test_a_hand_in_progress_has_no_result():
+    t = make(18)
+    t.new_hand()
+    assert t.state()["result"] is None
+    assert T.Table("hero", [], seats=1).state()["result"] is None
+
+
+def test_the_hands_are_named_only_when_the_cards_are_shown():
+    """A reload re-hides every hole card, and must not name a hand with it."""
+    for seed in range(30):
+        t = make(seed)
+        t.new_hand()
+        play_out(t, "call")
+        shown = t.state(reveal=True)["result"]
+        if not shown["shown"]:
+            continue
+        assert shown["hands"], "a showdown names the hands it showed"
+        assert all(w["hand"] for w in shown["winners"])
+        hidden = t.state()["result"]
+        assert hidden["shown"] is True
+        assert hidden["hands"] == {}
+        assert all(w["hand"] is None for w in hidden["winners"])
+        assert [w["name"] for w in hidden["winners"]] == \
+            [w["name"] for w in shown["winners"]]
+        return
+    pytest.fail("no showdown in thirty hands")
+
+
+def test_a_pot_nobody_contested_still_names_a_winner():
+    for seed in range(40):
+        t = make(seed)
+        t.new_hand()
+        play_out(t, "fold")
+        r = t.state(reveal=True)["result"]
+        if r["shown"]:
+            continue
+        assert len(r["winners"]) == 1
+        assert r["winners"][0]["hand"] is None
+        assert r["hands"] == {}
+        return
+    pytest.fail("no uncontested pot in forty hands")
+
+
 def test_state_is_json_shaped():
     import json
     t = make(18)

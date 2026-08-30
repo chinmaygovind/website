@@ -95,12 +95,17 @@ function drawSeats() {
   const heroIndex = seats.findIndex(s => s.you);
   const n = seats.length;
 
+  const result = state.complete ? state.result : null;
+  const took = {};
+  ((result && result.winners) || []).forEach(w => { took[w.name] = w.amount; });
+
   seats.forEach((s, i) => {
     const slot = (i - (heroIndex < 0 ? 0 : heroIndex) + n) % n;
     const { x, y } = place(slot, n);
     const el = document.createElement("div");
     el.className = "seat" + (s.folded ? " folded" : "") +
-      (state.to_act === i && !state.complete ? " acting" : "");
+      (state.to_act === i && !state.complete ? " acting" : "") +
+      (s.name in took ? " won" : "");
     el.style.left = x + "%";
     el.style.top = y + "%";
     el.dataset.seat = i;
@@ -124,12 +129,14 @@ function drawSeats() {
     const plate = document.createElement("div");
     plate.className = "plate";
     const streak = (state.streaks || {})[s.name] || 0;
+    const made = (result && result.hands || {})[s.name];
     plate.innerHTML = `
       <div class="who-row">
         <div class="avatar"${s.avatar ? ` style="background-image:url('${s.avatar}')"` : ""}>${s.avatar ? "" : initials(s.name)}</div>
         <div>
           <div class="nm">${s.name}</div>
           <div class="pos">${s.position || ""}${s.all_in ? " · all in" : ""}</div>
+          ${made ? `<div class="made">${escapeHtml(made)}</div>` : ""}
           ${bountyCounter(streak)}
         </div>
       </div>
@@ -144,6 +151,13 @@ function drawSeats() {
       bet.style.top = y > 55 ? "-16px" : "calc(100% + 6px)";
       bet.style.setProperty("--from", y > 55 ? "12px" : "-12px");
       el.appendChild(bet);
+    }
+    if (s.name in took) {
+      const w = document.createElement("div");
+      w.className = "took";
+      w.textContent = "+" + money(took[s.name]);
+      w.style.top = y > 55 ? "-16px" : "calc(100% + 6px)";
+      el.appendChild(w);
     }
     shown.set(i, s.committed);
     shownStack.set(i, s.stack);
@@ -173,11 +187,26 @@ function drawSeats() {
   });
 }
 
+/** Who took it, said the way somebody at the table would say it. */
+function resultLine(r) {
+  const w = r.winners;
+  if (w.length === 1) {
+    return `<b>${escapeHtml(w[0].name)}</b> wins ${money(w[0].amount)}`
+      + (w[0].hand ? ` with ${escapeHtml(w[0].hand)}` : "");
+  }
+  return "Split &middot; " + w
+    .map(x => `<b>${escapeHtml(x.name)}</b> ${money(x.amount)}`).join(" &middot; ");
+}
+
 function drawMiddle() {
   const board = $("#board");
   board.innerHTML = "";
   (state.board || []).forEach(c => board.appendChild(cardEl(c)));
-  $("#pot").innerHTML = `Pot <b>${money(state.pot || 0)}</b>`;
+  const pot = $("#pot");
+  const r = state.complete && state.result && state.result.winners.length
+    ? state.result : null;
+  pot.classList.toggle("result", !!r);
+  pot.innerHTML = r ? resultLine(r) : `Pot <b>${money(state.pot || 0)}</b>`;
   $("#street").textContent = state.complete ? "" : (state.street || "");
 }
 

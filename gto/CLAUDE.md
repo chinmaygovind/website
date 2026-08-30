@@ -346,13 +346,25 @@ table rather than on `/stats`** for one reason: a win rate you have to leave the
 table to read is one you read after the session it would have changed.
 
 It used to be a bordered card floating in the left gutter, which read as a block
-dropped on the page rather than part of it. It is now a column of the room:
-`.room` is `var(--side) 1fr` and the felt centres in the second track, so the
-sidebar is the layout rather than a thing sitting in front of it. It is
+dropped on the page rather than part of it. It is now a column of the room, so
+the sidebar is the layout rather than a thing sitting in front of it. It is
 **`position: fixed`, not `sticky`**, for a layout reason and not a scrolling one:
 a sticky grid item is still sized into its row, so a sidebar a whole viewport
 tall made row 1 a viewport tall and pushed the action buttons off the bottom of
 the screen. Fixed takes it out of track sizing entirely.
+
+**The felt centres in the window, not in what is left of it.** Giving the room
+`var(--side) 1fr` put the felt in the middle of the space to the right of the
+sidebar, which is visibly off centre on a wide screen. It is now
+`minmax(calc(var(--side) + 16px), 1fr) var(--felt) 1fr` with a `--felt` that
+prefers `100vw - 2 * var(--side)`, so both gutters are the same and the fixed
+sidebar overlays the left one. **That trade is capped at 900px of felt**: paying
+for symmetry with the sidebar's width twice shrinks the table twice as fast, and
+under about 900px the seat plates - which are a fixed pixel size - start
+colliding with each other and with the board. Below that width the left gutter
+clamps to the sidebar and the felt goes back to filling what is left, off centre
+but legible. Measured: dead centre from 1366px up, drifting to 94px off at
+1180px, and no horizontal overflow at any width.
 
 **`stats._pct` returns a raw float and the panel is the only place that shows
 one.** `/stats` formats every percentage with `%.0f`; the sidebar was printing
@@ -393,6 +405,24 @@ side game switched off carries no sign of it. `bountyPay` in `gto.js` is the onl
 copy of that ladder outside `bounty.py`; it is three numbers and it is the
 seat's, not the review's - every number the review prices still comes from
 `bounty.streak_value` on the server.
+
+**The table now says who won it.** It said nothing at all: the pot line went to
+"Pot $0.00" and the stacks quietly changed. `Table._result` returns the winners
+straight out of `Hand.payouts`, the winning plate lights gold with the money it
+took where its chips were, and at a showdown every player still in gets their
+hand named under their name. One winner reads "Coach wins $1.90 with a pair of
+sixes"; a chopped pot reads "Split - The Rock $70.07 - Coach $67.78". The
+amounts are the gross pot each seat took, which is how it is said at a table,
+not the profit on the hand.
+
+**The hands are named only when the cards are being shown.** `Hand.to_dict`
+serializes `payouts` but not `scores`, so the naming has to be recomputed from
+the seats and the board - and `state(reveal=False)`, which is what a plain page
+load gets, re-hides every hole card. Recomputing regardless would print "two
+pair, queens and fives" beside a face-down hand. So `_result` takes `reveal` and
+names nothing without it: reload after a showdown and the winner and the money
+survive, the hands do not. `len(h.contenders) > 1` is the showdown test, the
+same one `_hand_summary` uses.
 
 **Reset deletes the table, not the record.** The `GtoSession` is closed with its
 final stack, the `GtoTable` row goes, and the next request sits you down again at

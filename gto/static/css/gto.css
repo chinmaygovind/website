@@ -77,10 +77,17 @@ body {
 /* ------------------------------------------------------------------- table */
 
 .room {
-  --side: 250px;
-  --felt: min(1040px, calc(100% - 28px), max(864px, calc((100dvh - 260px) * 16 / 9)));
+  --side: 236px;
+  /* Centred in the window while the felt can stay 900px - below that the seat
+   * plates, which are a fixed size, start colliding with each other, so the
+   * left gutter clamps to the sidebar and the felt goes back to filling what
+   * is left of the window rather than shrinking to keep both gutters equal. */
+  --felt: min(1040px,
+              max(900px, calc(100vw - 2 * var(--side) - 40px)),
+              calc(100vw - var(--side) - 56px),
+              max(864px, calc((100dvh - 260px) * 16 / 9)));
   display: grid;
-  grid-template-columns: var(--side) 1fr;
+  grid-template-columns: minmax(calc(var(--side) + 16px), 1fr) var(--felt) 1fr;
 }
 .felt-wrap {
   grid-column: 2; justify-self: center; width: var(--felt);
@@ -278,6 +285,31 @@ body {
 }
 .streak.paying { border-color: rgba(216, 174, 94, .55); }
 .streak.paying i.on { box-shadow: 0 0 7px rgba(216, 174, 94, .6); }
+/* The end of a hand, which the table used to say nothing about at all: the
+ * winning plate lights, the money it took sits where its chips were, and at a
+ * showdown every hand still in is named. */
+.seat.won .plate { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold), 0 0 26px rgba(216, 174, 94, .3), var(--shadow); }
+.seat.won .avatar { border-color: var(--gold); }
+.seat .made {
+  font-size: 10px; color: var(--ink-dim); letter-spacing: .02em;
+  text-align: left; line-height: 1.25; margin-top: 1px;
+}
+.seat.won .made { color: var(--gold); }
+.seat .took {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+  color: #17110a; background: var(--gold); border-radius: 999px;
+  padding: 2px 10px; white-space: nowrap;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .55);
+  animation: chips .3s cubic-bezier(.2, .9, .3, 1) both;
+}
+.pot.result {
+  border-color: rgba(216, 174, 94, .45);
+  background: rgba(0, 0, 0, .55);
+  max-width: 100%; text-align: center; line-height: 1.35;
+}
+.pot.result b { color: var(--gold); font-weight: 700; }
+
 .tiltbar { height: 2px; border-radius: 2px; background: var(--line); margin-top: 6px; overflow: hidden; }
 .tiltbar i { display: block; height: 100%; background: var(--bad); width: 0; transition: width .4s; }
 

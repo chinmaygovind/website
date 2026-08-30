@@ -26,6 +26,7 @@ import ranges
 from cards import card_str, cards_str
 import equity as eq
 from engine import BOARD_SIZE, PREFLOP, Hand
+from evaluator import category_name, describe, evaluate
 
 #: Seat names by distance from the button. Five-handed drops UTG, which is the
 #: same reduction ``ranges.POSITIONS`` makes and for the same reason.
@@ -529,6 +530,31 @@ class Table:
 
     # ------------------------------------------------------------ output
 
+    def _result(self, h, reveal):
+        """Who took the money, and at a showdown what they took it with.
+
+        ``contenders`` is the same test ``_hand_summary`` uses for a showdown:
+        more than one player was still in when the betting stopped. The hands
+        are named only when the cards are being shown, so a reload after the
+        hand - which hides every hole card again - cannot print a hand nobody
+        can see.
+        """
+        if not (h and h.complete and h.payouts):
+            return None
+        shown = len(h.contenders) > 1
+        scores = ({s.name: evaluate(list(s.hole) + list(h.board))
+                   for s in h.contenders} if shown and reveal else {})
+        return {
+            "shown": shown,
+            "winners": [
+                {"name": n, "amount": a,
+                 "hand": describe(scores[n]) if n in scores else None}
+                for n, a in sorted(h.payouts.items(), key=lambda kv: -kv[1])
+                if a > 0
+            ],
+            "hands": {n: category_name(v) for n, v in scores.items()},
+        }
+
     def state(self, reveal=False):
         h = self.hand
         hero_seat = self._seat_of_hero()
@@ -540,6 +566,7 @@ class Table:
             "pot": h.pot if h else 0,
             "to_act": h.to_act if h else None,
             "complete": h.complete if h else True,
+            "result": self._result(h, reveal),
             "streaks": dict(self.streaks.streak),
             "seats": [
                 {
