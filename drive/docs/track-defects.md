@@ -391,3 +391,78 @@ New entries, unsorted, until somebody files them. One line is enough.
   waterline as the camera moved - the same symptom as the double-drawn faces
   `obox` was written to stop, from a different cause. Stack a two-tone solid, do
   not overlap it: the second box starts where the first ends.
+
+- **An unlit colour is lifted on the way out, and by much more than "two or three
+  stops".** The Monaco note above says pick `bright` darker than `solid`; this is
+  the measurement. A vertex colour is handed to three.js as *linear* and converted
+  to sRGB when the frame is written, and that conversion is steepest at the dark
+  end: `0x20` renders as `0x62`. Rickety Rails' cave roof was `shade(rock,
+  -0.30)`, which is 0x201d22 in the file and measured **#605c62** on screen - it
+  read as an overcast sky over an open pit rather than as rock over your head, and
+  nothing in the palette was at fault. Near-black in an unlit buffer means `0x05`,
+  not `0x20`. Sample the render (`PIL.Image.getpixel`) rather than trusting the
+  swatch; it is one tool call and it is the only way to see this.
+- **Vertical trackside timber picked at the colour it should be renders as a
+  silhouette.** The other half of the same problem, in the lit buffer. A key light
+  pointing down gives a vertical face almost nothing, so a portal frame at a
+  believable timber brown (0x33261a) came out as a black cut-out against the
+  ceiling. Judge anything standing up by what a *vertical* face does with the key
+  light, not by the swatch - it wants picking two or three stops lighter than the
+  thing it is made of.
+- **Furniture placed every N stations fans out on a tight corner.** Portal frames
+  every nine stations are square to the drift down a straight and a hundred degrees
+  apart round a 16-radius hairpin, which from the car is a row of gantries at wild
+  angles across the corner you are trying to read. Gate repeated trackside geometry
+  on `station.curv` - real props are set square to the drift for the same reason.
+- **A track with a roof over all of it has no plan view.** `plan.png` looks straight
+  down and sees the roof, so the layout check the plan exists for is gone. What is
+  left is still usable and worth knowing about before you conclude the render is
+  broken: the *corridor silhouette* is the shape of the layout, and a leg that left
+  the building, a bulging hairpin and a stretch shorter than it read in the code all
+  show in it. The dark disc in the middle of such a plan is the sky dome's nadir
+  seen through the missing ground plate, not geometry.
+- **A loop is a shortcut, and one fix is not enough.** `Builder.loop` slides its
+  exit sideways so the descent does not land on the climb - and that offset is a
+  chord you can simply drive: on Rickety Rails `tools/cut_check.py` found 31
+  units of chord skipping 161 units of road, worth 100. A rail down the side it
+  slides to closes every version of it *on the ground*, and none through the air:
+  a car that falls off the climb lands past the exit and carries on with a legal
+  lap. **Use the barrier and a checkpoint on the exit**, because they fail in
+  different directions - the pair took the track from 384 open chords to 24.
+- **A track whose floor is close enough to be lit does not read as a drop.** The
+  first ravine here put the floor 26 units under the trestle, which is inside the
+  key light, so it came out as a lit brown yard with rubble in it - and the
+  rubble, which was there to give the floor depth, was the thing that made it
+  read as a yard. Deepen it until the bottom is past what the light reaches, take
+  the scatter *off* it, and colour it by depth rather than by position: what
+  makes a void read is having no visible bottom, not having a dark one.
+- **The engine's trestle legs are a flat `p[1] - 16`.** So on a groundless track
+  with a floor deeper than sixteen units they stop short and hang in the air -
+  the "geometry floating" defect, drawn by the engine rather than by your
+  `scenery.js`. Either keep the drop under 16 or draw your own bents, and cap
+  their length so a leg over a gap does not chase a floor that has fallen away.
+- **`hemi.ground` is the only thing lighting a downward face.** The key light
+  points down and there are no shadow maps, so on any track with geometry you
+  look at from underneath - a loop, a raised deck, a trestle - a dark bounce
+  makes all of it pure black. The note above about a saturated bounce repainting
+  the world is about the *other* failure; the fix for this one is to lift and
+  **desaturate**, so it lands on undersides and changes nothing else.
+- **`lat` rotates with the surface, so anything placed off the ribbon lands
+  inside a loop.** Every `scenery.js` in the pool offsets things sideways with
+  `p + lat * o`, which is correct everywhere the road is roughly level and
+  meaningless where it is not: on a loop `lat` goes vertical and then inverted,
+  so "46 units to the right, standing on the floor" is authored perfectly and
+  drawn *through the middle of the loop*. On Rickety Rails that put three rock
+  pillars across it as floor-to-roof slabs, drew trestle legs diagonally through
+  it, and stood two collidable lamp posts in the air inside it. **Nothing about
+  it is visible in the numbers** - the offsets are all right, the frame they are
+  measured in moved - and the same trap is waiting for any track that puts a loop
+  or a corkscrew under a `scenery.js`. Gate on the station's own normal
+  (`n[1] > 0.85` passes every banked corner in the pool and fails a whole loop).
+- **Deep is not the same as void, and the colour ramp decides which you get.**
+  Wanting the Gold Mine's "nothing under the track", the floor here went 26 -> 40
+  units down and still read as a ravine: a real bottom, visibly there, just
+  further away. What fixed it was not the depth but **how fast the floor goes
+  black below the road** - 46 units of ramp to 16. A shallow ramp over a deep
+  floor is a distant bottom; a short ramp is no bottom at all. Keep the geometry
+  either way, or you see the sky dome through the hole where the floor was.

@@ -250,6 +250,23 @@ FRAMES = {
     # scan has no idea they are there.
     "shroom": dict(at=0.26, azimuth=0.60, pitch=0.38, pad=0.42, span=0.10,
                    cars=10, air=0.12, liveryFrom=6),
+    # **Inside the crystal vault, from the cavern floor.** Costco's problem
+    # doubled: this track has a roof over the *whole* lap, so there is no
+    # establishing height at all - from 0.34 and 0.52 all eight sides of the
+    # contact sheet are the same lumpy purple mass against an orange sky, which
+    # is the outside of the cave with the track sealed inside it.
+    #
+    # So the camera has to be *in* the corridor, and that is what the numbers
+    # are: `span` 0.055 makes the window small, `pad` 0.30 pulls the camera in
+    # to about a third of the distance that would frame it, and `pitch` 0.10 is
+    # nearly level with the deck. Together they put the lens under the roof.
+    # 2.05 also works and 0.60 and 5.00 are both a wall - the two that work are
+    # the two looking along the vault rather than into its side.
+    #
+    # `air` is 0 for the Costco's reason: a car hanging in the air indoors reads
+    # as a bug rather than as a jump, and there is nothing to have jumped off.
+    "railway": dict(at=0.615, azimuth=3.50, pitch=0.10, pad=0.30, span=0.055,
+                    cars=10, air=0.0, liveryFrom=3),
 }
 
 

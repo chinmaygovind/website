@@ -77,6 +77,19 @@ EXPECTED = {
     # which are the only scenery in the pool that exists to stop a shortcut. If that
     # number drops, the corners you could skip are skippable again.
     "silverstone": {"total": 31228, "road": 1552, "wall":  3458, "off": 26218, "boost": 0},
+    # Recorded when the track was added. **Worth having for a reason the others
+    # are not**: Rickety Rails' cave - the floor, the roof, the trestle bents,
+    # the crystals - is mesh only, and `docs/track-defects.md` says a scenery
+    # file with no collider triangles can throw on line one and leave this suite
+    # green. What is counted here is the timbering: every portal-frame upright
+    # and every lamp post is `KIND.WALL`, because the track is `exposed` and
+    # those posts are the only thing at the edge of it. If this number falls, the
+    # posts have stopped being solid and the track has quietly become a respawn
+    # every time you run a metre wide.
+    # 1448 -> 1432 when the `flat()` gate landed: two lamp posts were being
+    # stood on loop stations, where `lat` has rotated with the surface, so their
+    # collidable uprights were sticking out into the middle of the loop.
+    "railway":   {"total":   4318, "road":  2856, "wall":  1432, "off":     0, "boost": 30},
 }
 
 COUNTER = """

@@ -3,12 +3,13 @@
 **Live at `https://drive.cgovind.com`.** The fourth game, same shape as ERS/KoT:
 Flask + Flask-SocketIO, its own eventlet gunicorn `-w 1` on `127.0.0.1:5005`, its own
 venv (`drive/venv`) and `.env` (both gitignored, hand-made on the box), sharing TTR's
-`users` table for accounts. A PolyTrack-style low-poly driving game: twenty
-tracks, medal times, ghosts, and multiplayer rooms. Seventeen are point-to-point;
+`users` table for accounts. A PolyTrack-style low-poly driving game: twenty-one
+tracks, medal times, ghosts, and multiplayer rooms. Eighteen are point-to-point;
 **Spa-Francorchamps, Silverstone and Monaco are the three closed circuits** and
-start and finish on the same line. **Costco Wholesale and Monaco are the two
-that go under something** - the Costco's warehouse roof and Monaco's tunnel are
-the only solid geometry over the road anywhere in the pool.
+start and finish on the same line. **Costco Wholesale, Monaco and Railway
+Raceway are the three that go under something** - the Costco's warehouse roof,
+Monaco's tunnel and Rickety Rails' cave roof are the only solid geometry over
+the road anywhere in the pool, and the last of those is over *all* of it.
 
 ## Read the one doc your change is about
 
@@ -196,6 +197,74 @@ a shortcut are all blocked and none is open. Read
 - The geometry is off OSM relation 148194 and a DEM, the same method as
   Silverstone; the docstring in `track.py` is the whole account, including the
   three things it got wrong first.
+
+**Rickety Rails** (`railway`, difficulty 5, 3006 units, ~70s ideal - the
+longest lap in the pool) is the mine, and it is the pool's first track with a
+roof over the whole lap. The road is a mine-cart trestle over a ravine:
+`ground = None`, with the bents drawn in `scenery.js` because the engine's own
+legs are a flat `p[1] - 16` and the floor is forty units down. Read
+`docs/tracks-and-geometry.md` before touching it.
+
+- **It is `exposed`, and the barrier is the timbering.** The first version was
+  `rails = True` - the pool default for a floating track - which walled 96% of
+  the lap and was boring to drive for the reason Cloudbreak's note gives: the
+  rail answers the only question a corner asks, and here it also hides the drop
+  that is the whole subject. Instead every portal-frame upright and lamp post is
+  `KIND.WALL` collider geometry at `hw + 1.7`, so a wide moment hits timber and
+  the racing line never touches one. It **has** to be scenery rather than a rail:
+  `test_barriers_are_opt_in` counts walled *stations*, so railing the posts would
+  cost the track its flag. Same pattern as the Costco's racking and Silverstone's
+  anti-cut barriers, and it is pinned in `test_scenery.py` - if that `wall` count
+  falls, the posts have stopped being solid.
+- **The loop needed both shortcut fixes, and they fail differently.** `loop`
+  slides its exit sideways so the descent misses the climb, and that is a chord
+  you can drive: `tools/cut_check.py` found a 31-unit line skipping 161 units of
+  road. A rail down the inside closes every version of it on the ground and none
+  through the air - a car that falls off the climb still lands past the exit - so
+  there is *also* a checkpoint on the loop's exit, which kills any span at any
+  height. 384 open chords to 24.
+
+- **The cave is two height fields and they are the same trick twice.** The floor
+  is Mount Joy's lower envelope of upward cones (at most `y - DROP` at every
+  station, so it cannot come up through the trestle for any layout); the roof is
+  an **upper** envelope of downward cones, at least `y + head` over every
+  station, so it cannot come down through the road either. Where the two cross,
+  the cave is sealed - **the cavern wall is not geometry, it is the meeting
+  line**, about 30 units out in the drifts and 36 in the vault. Both are chamfer
+  sweeps, so they cost O(cells) and have no reach cutoff.
+- **The gap stations are in the roof field and not the floor one**, and that is
+  the whole of the winze: excluded from the floor, so the ground under the jump
+  falls away into a pit; included in the roof, so there is headroom over the
+  flight. Including them in the floor is Shroom Street's mistake with the sign
+  flipped.
+- **How much headroom the roof keeps is authored as fractions of the lap**, the
+  way Spa places its grandstands and for Monaco's tunnel's reason: which stretch
+  is a tight timbered drift and which is an open cavern is a fact about the
+  place, not something the ribbon implies. It is also what tells the two kinds of
+  place apart at speed, since the timbering only goes in where the roof is low.
+- **None of it is in the collider**, because the track is 96% walled and the only
+  way off is over the winze - which is a pit with no way out, so falling in
+  should be a respawn. The cost is that `test_scenery.py` pins collider triangles
+  and this file adds none, so a throw in it leaves the suite green:
+  `tools/validate_track.py` is what actually checks it ran.
+- **Two things about it fail silently and both already have.** Anything placed
+  off the ribbon has to be checked against where the cave *closes*, not against
+  how far away it looks - the daylight shaft at 52 units out was built five units
+  below the road inside solid rock and simply never appeared. And an unlit colour
+  is lifted linear→sRGB on the way out, hard, at the dark end: the roof at
+  `0x201d22` measured `#605c62` on screen and read as an overcast sky. Both are
+  in `docs/track-defects.md`.
+- **It has no plan view**, since `plan.png` looks down and sees the roof. The
+  corridor silhouette is what layout mistakes show in instead.
+- Its cover needs a hand-picked `FRAMES` entry in `tools/_hero.py` for Costco's
+  reason, doubled: from any establishing height every side of this track is roof.
+  The camera has to be *inside* the corridor, which is what `span` 0.055 and
+  `pad` 0.30 are for.
+- **`hemi.ground` is load bearing here in a way it is nowhere else.** The key
+  light points down and there are no shadow maps, so it is the only thing lighting
+  a downward face - and this track has a loop, a trestle deck and a hundred bents
+  whose undersides you look at from the ravine. At the first pass's 0x241c18 all
+  of them were pure black and the loop read as a hole.
 
 ## Adding a track
 
