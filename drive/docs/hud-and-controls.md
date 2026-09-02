@@ -153,6 +153,69 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   - **Sound, music, FPS and ping stay local**, and that is a judgement rather
     than an oversight: muting a game is about the room you are sitting in, not
     about you. Adding one is a line in each allow-list.
+- **A car nobody is driving goes quiet, and the curve is the design.** The
+  engine is a loop, so a stationary car hummed for as long as the tab was open:
+  park on the line, go and read something in the next window, and it was still
+  humming an hour later. The moment `isDriving` in `sound.js` reads false -
+  no throttle, no movement above a crawl, not in the air - the engine starts
+  going away, and any of the three brings it back inside two frames (`WAKE_TC`),
+  because a fade-in is a key press being answered late. **Rivals get the same
+  rule from the same function**, since a room where nobody has pressed anything
+  is seven of these, not one.
+  - **It is an exponential decay, which is a straight line in dB.**
+    `setTargetAtTime` loses 8.7dB per time constant whatever it started at, and
+    hearing is logarithmic, so constant dB per second is what a fade has to be
+    to sound like one steady movement rather than an event. The alternative
+    everybody tries first, a straight line in *amplitude*, is the one that
+    audibly does not work: -6dB at its own halfway point and -20dB at nine
+    tenths, so it holds near full level and then falls off a cliff. At
+    `IDLE_TC` = 2 the engine is -6dB by a second and a half, half gone by three
+    seconds and inaudible around nine.
+  - **There is no hold in front of it, because the head of the curve is one.**
+    It used to wait five seconds at full volume and then drop in under three -
+    the same total time arranged the worst way round, where nothing happens and
+    then something obviously happens. Stopping for half a second costs 2dB and
+    comes straight back, so a wall, a spin or the top of a hairpin never needed
+    protecting by a timer.
+  - **And it darkens as it goes, rather than only getting smaller.** Distance
+    eats high frequencies first and an engine coming off the load loses its top
+    end for real, so the lowpass closes to `IDLE_HZ` on the way down and the
+    load whine - the highest thing in the car - is given half the time constant
+    and leaves first. What is left at the end is the bottom of the engine going
+    away. Gain on its own reads as somebody turning a knob.
+- **The other half is a hidden tab, and the idle fade cannot reach it.** Every
+  gain in `sound.js` is moved by `engine`, `draft` and `rivals`, all three of
+  which are called from the frame loop - and rAF stops in a background tab while
+  the audio clock does not, so alt-tabbing at full speed froze every one of them
+  exactly where the last frame left it and the car you were no longer driving
+  roared on behind whatever you had gone to look at. `visibilitychange` calls
+  `Sound.sleep`, which fades them from the audio clock **at `SLEEP_TC`, quicker than a
+  resting car** - the two are not the same event, and a couple of seconds of a
+  race somebody walked out of is enough - and `Sound.wake` puts
+  the rival bus back while the next frame restores the rest - to what the car is
+  doing *now*, rather than to what it was doing when you left. It is
+  deliberately **not** `blur`: another window on top of this one is still a
+  game being played and still worth hearing. **`sleep` does not touch the sfx
+  bus**, which belongs to the mute switch; two things writing one gain is how a
+  mute ends up stuck on.
+- **A replay sounds like the lap it is playing.** Nothing steps a car during a
+  replay, so watching used to be silent about the thing on the screen and loud
+  about the thing that was not - your own parked car held whatever note it had
+  when you pressed Watch. Both halves are the same fact, and the replay itself
+  is what knows: a ghost frame carries the pose *and* the flag byte the lap was
+  recorded with (`Run._recordGhost`), the same byte the live cars put on the
+  wire. So `updateWatch` drives the engine off the speed it already measures
+  for the camera and off `f[7]`: braking is off the power, `DRIFT` is tyre
+  noise, `AIR` lifts it. **Through your own engine rather than a rival voice**,
+  because the camera is riding that car and a panner would put it somewhere out
+  in the world. There is no throttle recorded and none is needed - not braking
+  and not crawling is on the power, the rule the live cars already use - and a
+  seven-wide lap from before the flag byte reads every state false, which is a
+  car that is driving, which is what it was. The subject only: the rest of a
+  race replay's field is still silent, and the live room stays silent too
+  (`rivals(null)`), because a camera on somebody else's lap is not where any of
+  that is happening. `tests/test_watch_sound.py` drives the real `updateWatch`
+  through QuickJS for the mapping.
 - **Sound and Music are two switches because they are two buses.** `Sound.sfx`
   carries the car and the world, `Music`'s own bus sits beside it under the
   master, and `mute` is the sfx gain rather than the master's - so muting the

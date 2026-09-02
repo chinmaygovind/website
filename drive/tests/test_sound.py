@@ -26,6 +26,17 @@ pytestmark = pytest.mark.skipif(not jsrt.HAVE_QUICKJS,
 
 SOUND_JS = os.path.join(os.path.dirname(__file__), "..", "static", "js", "sound.js")
 
+def _const(name):
+    """Read out of the file rather than written down twice, so the curve and the
+    tests that measure it cannot drift apart."""
+    return float(re.search(r"const %s = ([\d.]+)" % name, open(SOUND_JS).read()).group(1))
+
+
+IDLE_TC = _const("IDLE_TC")
+WAKE_TC = _const("WAKE_TC")
+SLEEP_TC = _const("SLEEP_TC")
+IDLE_HZ = _const("IDLE_HZ")
+
 # A Web Audio just real enough for the graph to be built and inspected. Every
 # node records where it was connected and every param records the last value it
 # was asked for, which between them is the whole of what this file does.
@@ -33,7 +44,11 @@ STUB = """
 var LOG = {made: [], stopped: 0, disconnected: 0};
 
 function Param(v) { this.value = v === undefined ? 0 : v; }
-Param.prototype.setTargetAtTime = function (v) { this.value = v; return this; };
+// The third argument is the whole of the fade, so it is recorded beside the
+// value: "goes to zero" and "goes to zero over two seconds" are different sounds.
+Param.prototype.setTargetAtTime = function (v, t, tc) {
+  this.value = v; this.tc = tc; return this;
+};
 Param.prototype.setValueAtTime = function (v) { this.value = v; return this; };
 Param.prototype.exponentialRampToValueAtTime = function (v) { this.value = v; return this; };
 Param.prototype.linearRampToValueAtTime = function (v) { this.value = v; return this; };
@@ -366,3 +381,119 @@ def test_music_is_off_until_it_is_asked_for(ctx):
     # and the sound is the other way round.
     assert ctx.eval("snd.enabled") is True
     assert _n(ctx, "snd.sfx.gain.value") > 0
+
+
+# --- a car nobody is driving ------------------------------------------------
+#
+# The stub applies a target instantly, so what is checkable here is the pair of
+# numbers every one of these calls is: what the gain is heading for, and how
+# long it is taking to get there. That is the whole of the design - the fade is
+# an exponential decay, which is a straight line in dB and so the one curve that
+# sounds like one steady movement, and it is the time constant that says how
+# steady. A test that only looked at the target would pass on a cut.
+
+def _run(ctx, speed=0, throttle=0, air="false"):
+    ctx.eval("snd.engine(%f, %f, 0, %s);" % (speed, throttle, air))
+    return _n(ctx, "snd.engGain.gain.value")
+
+
+def test_a_parked_car_starts_going_quiet_at_once(ctx):
+    """No hold in front of it. It used to sit at full volume for five seconds
+    and then drop in under three, which is the same time arranged the worst way
+    round: nothing happens, and then something obviously happens."""
+    assert _run(ctx, speed=0.5, throttle=1) > 0
+    assert _run(ctx) == 0, "still heading for a level while parked"
+    assert _n(ctx, "snd.engGain.gain.tc") == IDLE_TC
+    # And the whine with it, or the engine goes quiet and leaves a tone behind.
+    assert _n(ctx, "snd.whineGain.gain.value") == 0
+
+
+def test_the_fade_is_slow_and_the_way_back_is_not(ctx):
+    """A fade-in is a key press being answered late, so there isn't one."""
+    _run(ctx)
+    assert _n(ctx, "snd.engGain.gain.tc") == IDLE_TC
+    assert _run(ctx, throttle=1) > 0
+    assert _n(ctx, "snd.engGain.gain.tc") == WAKE_TC
+    assert WAKE_TC < 0.09 < IDLE_TC, "the fade has to be the slowest of the three"
+    # A second frame on the power is an ordinary frame again, not a wake.
+    _run(ctx, throttle=1)
+    assert _n(ctx, "snd.engGain.gain.tc") > WAKE_TC
+
+
+def test_it_darkens_as_it_goes(ctx):
+    """Distance eats high frequencies first and an engine off the load loses
+    its top end for real, so the lowpass closes on the way down - and the whine,
+    which is the highest thing in the car, is given half the time and leaves
+    first. Gain on its own reads as somebody turning a knob."""
+    _run(ctx, speed=1, throttle=1)
+    bright = _n(ctx, "snd.engFilter.frequency.value")
+    _run(ctx)
+    assert _n(ctx, "snd.engFilter.frequency.value") == IDLE_HZ < bright
+    assert _n(ctx, "snd.engFilter.frequency.tc") == IDLE_TC
+    assert _n(ctx, "snd.whineGain.gain.tc") < _n(ctx, "snd.engGain.gain.tc")
+
+
+def test_the_three_things_that_count_as_driving(ctx):
+    """Throttle, movement above a crawl, or air - and nothing else, because
+    nothing else is a car making a noise for a reason."""
+    _run(ctx)
+    assert _run(ctx, throttle=1) > 0, "a foot on the throttle"
+    _run(ctx)
+    assert _run(ctx, speed=0.5) > 0, "rolling"
+    _run(ctx)
+    assert _run(ctx, air="true") > 0, "in the air"
+    # A car that drag has left rolling at a unit a second is parked, and the
+    # fade has to happen for it or it never happens at all.
+    assert _run(ctx, speed=0.005) == 0
+
+
+def test_a_car_that_keeps_moving_never_fades(ctx):
+    for _ in range(60):
+        assert _run(ctx, speed=0.5) > 0
+        assert _n(ctx, "snd.engGain.gain.tc") != IDLE_TC
+
+
+def test_a_parked_rival_goes_the_same_way(ctx):
+    """A room where nobody has pressed anything is seven of these."""
+    ctx.eval("snd.rivals([rival('a', 0, -10, {speedFrac: 0.5, throttle: true})]);")
+    assert _n(ctx, "snd.voices.get('a').engGain.gain.value") > 0
+    ctx.eval("snd.rivals([rival('a', 0, -10, {speedFrac: 0})]);")
+    assert _n(ctx, "snd.voices.get('a').engGain.gain.value") == 0
+    assert _n(ctx, "snd.voices.get('a').engGain.gain.tc") == IDLE_TC
+    assert _n(ctx, "snd.voices.get('a').engFilter.frequency.value") == IDLE_HZ
+    # Off the line and it is a car again, at once.
+    ctx.eval("snd.rivals([rival('a', 0, -10, {speedFrac: 0.4, throttle: true})]);")
+    assert _n(ctx, "snd.voices.get('a').engGain.gain.value") > 0
+    assert _n(ctx, "snd.voices.get('a').engGain.gain.tc") == WAKE_TC
+
+
+def test_a_hidden_tab_takes_the_sound_with_it(ctx):
+    """rAF stops in a hidden tab and the audio clock does not, so every gain
+    the frame loop drives holds its last value until the tab comes back. The
+    idle fade cannot cover this - it is driven from the same loop."""
+    _run(ctx, speed=1, throttle=1)
+    ctx.eval("snd.draft(1, 1); snd.rivals([rival('a', 0, -10)]);")
+    assert _n(ctx, "snd.engGain.gain.value") > 0
+    ctx.eval("snd.sleep();")
+    for part in ("engGain", "whineGain", "tyreGain", "windGain", "draftGain", "rivalBus"):
+        assert _n(ctx, "snd.%s.gain.value" % part) == 0, part
+        assert _n(ctx, "snd.%s.gain.tc" % part) == SLEEP_TC, part
+    # Quicker than a resting car, which is still on the screen and should
+    # settle gently; this is somebody who has gone.
+    assert SLEEP_TC < IDLE_TC
+    # Not the mute's gain, which belongs to the switch in settings.
+    assert _n(ctx, "snd.sfx.gain.value") > 0
+    # Back, and the field with it; the rest is written by the next frame.
+    ctx.eval("snd.wake();")
+    assert _n(ctx, "snd.rivalBus.gain.value") > 0
+    assert _run(ctx, speed=1, throttle=1) > 0
+
+
+def test_sleeping_before_the_first_gesture_is_a_no_op():
+    """Alt-tabbing away from a page nobody has clicked on must not be the thing
+    that builds an AudioContext."""
+    c = jsrt.quickjs.Context()
+    c.eval(STUB)
+    c.eval(re.sub(r"^export\s+", "", open(SOUND_JS).read(), flags=re.M))
+    c.eval("var snd = new Sound(); snd.sleep(); snd.wake();")
+    assert _n(c, "LOG.made.length") == 0

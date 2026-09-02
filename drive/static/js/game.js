@@ -973,6 +973,16 @@ function bindInput() {
       el.classList.remove('down', 'drifting'));
   });
 
+  // A hidden tab stops getting frames and goes on getting audio, which is a
+  // car that is heard and not driven: the engine's gains are written from the
+  // frame loop, so with no frames they hold whatever the last one set for as
+  // long as the tab is open. `visibilitychange` is the only event that means
+  // *the frames have stopped* - `blur` is another window on top of this one,
+  // where the game is still running and still worth hearing.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) S.sound.sleep(); else S.sound.wake();
+  });
+
   // The tab going away is the most common way a run ends, and the one that used to
   // be worth nothing.
   //
@@ -1869,7 +1879,14 @@ function updateWatch(dt) {
   for (let i = 0; i < w.cars.length; i++) {
     const c = w.cars[i];
     const f = c.g.at(w.t);
-    if (!f) { c.view.group.visible = false; continue; }
+    if (!f) {
+      c.view.group.visible = false;
+      // A car whose lap is shorter than the replay stops existing partway
+      // through, and the one you are watching has to stop being audible with
+      // it - nothing else in here would ever move its engine again.
+      if (i === w.at) S.sound.engine(0, 0, 0, false);
+      continue;
+    }
     const p = new THREE.Vector3(f[0], f[1], f[2]);
     const q = new THREE.Quaternion(f[3], f[4], f[5], f[6]).normalize();
     c.view.update(p, q, lampsOf(f[7]));
@@ -1882,6 +1899,21 @@ function updateWatch(dt) {
       s.pos.copy(p);
       s.fwd.set(0, 0, -1).applyQuaternion(q);
       s.up.set(0, 1, 0).applyQuaternion(q);
+      // And it sounds like the car it is, off the same two things: the speed
+      // just measured, and the flag byte the lap was recorded with. **Through
+      // your own engine rather than a rival's voice**, because the camera is
+      // riding this car - a panner would put it somewhere out in the world,
+      // and the one place it is not is somewhere else. There is no throttle
+      // recorded and there does not need to be one: not braking and not
+      // crawling is on the power, which is the rule the live cars already use.
+      // A lap recorded before the flag byte existed is seven wide, so `f[7]`
+      // is undefined and every state in it reads false - which is a car that
+      // is driving, and that is the right answer for a lap that was.
+      const fl = f[7] | 0;
+      S.sound.engine(Math.min(1, s.speed / T.MAX_SPEED),
+                     !(fl & FLAG.BRAKE) && s.speed > 3 ? 1 : 0,
+                     (fl & FLAG.DRIFT) ? 0.6 : 0,
+                     !!(fl & FLAG.AIR));
     }
     c.prev = p.clone();
   }

@@ -1105,18 +1105,27 @@ def test_a_room_lap_is_reported_even_though_it_is_not_a_record():
 
 
 def test_holding_the_page_open_does_not_bank_a_running_lap():
-    """`visibilitychange` and `blur` are deliberately not listeners: both fire on an
+    """Only `pagehide` may bank a run. `visibilitychange` and `blur` both fire on an
     ordinary alt-tab mid-lap, which people come back from - and a banked run that
-    then finishes is banked again by `/api/run`. Only `pagehide` means the document
-    is really going, and a back/forward-cache restore is caught by `pageshow`."""
+    then finishes is banked again by `/api/run`. `pagehide` means the document is
+    really going, and a back/forward-cache restore is caught by `pageshow`.
+
+    This used to forbid a `visibilitychange` listener outright, which was the rule
+    and the only use of the event in the same sentence. It has a second, unrelated
+    use now: a hidden tab stops getting frames and goes on getting audio, so it is
+    what tells the sound to fade (`Sound.sleep`). So the check is what it always
+    meant - **neither handler reports a run** - rather than which events exist.
+    """
     src = _game_src()
-    # Not "visibilitychange" absent from the file - it is *named* in the comment above
-    # `pagehide` saying why it is not used, and asserting on the mention would fail on
-    # the explanation rather than on the behaviour.
-    assert not re.search(r"addEventListener\(\s*'visibilitychange'", src), \
-        "visibilitychange banks runs that may still be running"
     assert re.search(r"addEventListener\('pageshow'", src), \
         "nothing catches a page restored from cache with a banked run"
-    # `blur` exists, but only to drop held keys - it must not report.
-    blur = re.search(r"addEventListener\('blur', \(\) => \{(.*?)\n  \}\);", src, re.S)
-    assert blur and "reportActivity" not in blur.group(1)
+    # Whatever these two are for, they are not for banking a lap that is still
+    # being driven. Bodies, not mentions: `visibilitychange` is also *named* in the
+    # comment above `pagehide` explaining why the run is not reported there.
+    for ev in ("visibilitychange", "blur"):
+        for h in re.finditer(r"addEventListener\(\s*'%s', \(\) => \{(.*?)\n  \}\);"
+                             % ev, src, re.S):
+            assert "reportActivity" not in h.group(1), \
+                "%s banks runs that may still be running" % ev
+    # And the one that does report is still the one that means the page is going.
+    assert re.search(r"addEventListener\('pagehide', \(\) => reportActivity", src)

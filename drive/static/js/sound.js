@@ -22,6 +22,50 @@
 // Nothing is created until the first user gesture, so no browser ever warns about
 // autoplay.
 
+// A car nobody is driving goes quiet.
+//
+// The engine is a loop, and a loop under a stationary car is a drone that lasts
+// as long as the tab does: park on the line, go and read something in another
+// window, and the hum is still there an hour later. So the moment the car stops
+// doing anything the engine starts going away, and any of throttle, movement or
+// air brings it back inside two frames - a fade-in is a key press being
+// answered late, so the way back is not a fade at all.
+//
+// **The curve is the whole of the design, and it is a straight line in dB.**
+// `setTargetAtTime` decays exponentially in amplitude, which is 8.7dB per time
+// constant however loud it started - and since hearing is logarithmic, constant
+// dB per second is what a fade has to be to sound like one steady movement.
+// (The obvious alternative, a straight line in amplitude, is the one thing that
+// audibly does not work: it is only -6dB at its own halfway point and -20dB at
+// nine tenths, so it holds near full level and then falls off a cliff at the
+// end.) At IDLE_TC = 2 that is -6dB by a second and a half, half gone by three
+// seconds, and inaudible around nine.
+//
+// **There is no hold before it starts, because the head of the curve is one.**
+// Stopping for half a second - a wall, a spin, the top of a hairpin - costs
+// 2dB and comes straight back, so the grace period a hold used to provide is
+// already in the shape. It used to sit at full volume for five seconds and then
+// drop in under three, which is the same total time arranged the worst way
+// round: nothing happens, and then something obviously happens.
+//
+// **And it darkens as it goes, rather than only getting smaller.** Distance
+// eats high frequencies first, and an engine coming off the load loses its
+// top end for real - so the lowpass closes to IDLE_HZ on the way down and the
+// load whine, which is the highest thing in the car, is given half the time
+// constant and leaves first. What is left at the end is the bottom of the
+// engine going away, which is what a car settling actually sounds like; gain
+// on its own reads as somebody turning a knob.
+const IDLE_TC = 2.0;      // the fade: -8.7dB a second constant, gone by about 9s
+const WAKE_TC = 0.02;     // and back inside a couple of frames
+const IDLE_SPEED = 0.02;  // of top speed: one unit a second, which is parked
+const IDLE_HZ = 260;      // where the lowpass ends up: the bottom of the engine
+const SLEEP_TC = 0.35;    // a hidden tab is not a resting car - see `sleep`
+
+/** Throttle, movement above a crawl, or air. Anything else is a parked car. */
+function isDriving(throttle, speedFrac, air) {
+  return !!throttle || speedFrac > IDLE_SPEED || !!air;
+}
+
 export class Sound {
   constructor() {
     this.ctx = null;
@@ -32,6 +76,7 @@ export class Sound {
     this.musicOn = false;
     this.ready = false;
     this.voices = new Map();     // pid -> RivalVoice, while they are audible
+    this.engQuiet = false;       // faded last frame, so the way back is quick
   }
 
   start() {
@@ -128,7 +173,7 @@ export class Sound {
     // your own car without touching eight voices. It sits under the sfx bus,
     // so muting still mutes the whole field.
     this.rivalBus = ctx.createGain();
-    this.rivalBus.gain.value = 0.9;
+    this.rivalBus.gain.value = RIVAL_BUS;
     this.rivalBus.connect(this.sfx);
 
     // --- music -----------------------------------------------------------
@@ -142,6 +187,48 @@ export class Sound {
   }
 
   resume() { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); }
+
+  /**
+   * The tab went away, and took the frame loop with it.
+   *
+   * Every gain in here is moved by `engine`, `draft` and `rivals`, all three
+   * of which are called from the frame loop - and rAF stops in a hidden tab
+   * while the audio clock carries on. So an alt-tab at full speed used to
+   * leave all of them frozen exactly where the last frame put them, and the
+   * car you are no longer driving roared on behind whatever you had gone to
+   * look at. The idle fade cannot cover this: it is driven from the same loop.
+   *
+   * Faded rather than muted, and the sfx bus is deliberately left alone - that
+   * gain belongs to the mute switch, and two things writing one gain is how a
+   * mute ends up stuck on.
+   *
+   * **Quicker than the idle fade** (SLEEP_TC against IDLE_TC), because the two
+   * are not the same event. A resting car is still on the screen and settling
+   * gently is what it should do; a hidden tab is somebody who has gone, and a
+   * couple of seconds of the race they walked out of is enough.
+   */
+  sleep() {
+    if (!this.ready) return;
+    const t = this.ctx.currentTime;
+    for (const p of [this.engGain.gain, this.whineGain.gain, this.tyreGain.gain,
+                     this.windGain.gain, this.draftGain.gain, this.rivalBus.gain]) {
+      p.setTargetAtTime(0, t, SLEEP_TC);
+    }
+    // So the first frame back opens up quickly rather than crossfading from
+    // whatever was left of the fade.
+    this.engQuiet = true;
+  }
+
+  /**
+   * Frames again. Only the rival bus is put back by hand; everything else is
+   * written every frame by the calls that faded, so the first frame restores
+   * it - and restores it to what the car is doing *now* rather than to what it
+   * was doing when the tab went away.
+   */
+  wake() {
+    if (!this.ready) return;
+    this.rivalBus.gain.setTargetAtTime(RIVAL_BUS, this.ctx.currentTime, 0.05);
+  }
 
   mute(m) {
     this.enabled = !m;
@@ -179,12 +266,22 @@ export class Sound {
     if (!this.ready) return;
     const t = this.ctx.currentTime;
     const set = (p, v, tc = 0.06) => p.setTargetAtTime(v, t, tc);
+    // Stopped, nobody's foot down, wheels on the ground: the one state that is
+    // making a noise for nothing, and so the one state that stops making it.
+    const on = isDriving(throttle, speedFrac, airborne);
+    const gTc = on ? (this.engQuiet ? WAKE_TC : 0.09) : IDLE_TC;
+    this.engQuiet = !on;
     const rpm = 58 + speedFrac * 210 + (throttle ? 22 : 0);
     for (const o of this.osc) set(o.frequency, rpm, 0.05);
-    set(this.engFilter.frequency, 620 + speedFrac * 2400 + (throttle ? 500 : 0), 0.08);
-    set(this.engGain.gain, airborne ? 0.11 : 0.2 + throttle * 0.13, 0.09);
+    set(this.engFilter.frequency,
+        on ? 620 + speedFrac * 2400 + (throttle ? 500 : 0) : IDLE_HZ, on ? 0.08 : IDLE_TC);
+    set(this.engGain.gain, on ? (airborne ? 0.11 : 0.2 + throttle * 0.13) : 0, gTc);
     set(this.whine.frequency, rpm * 3.02, 0.05);
-    set(this.whineGain.gain, (throttle ? 0.045 : 0.012) * (0.4 + speedFrac), 0.1);
+    // Half the time constant, so the top of the car is gone while the bottom
+    // of it is still going.
+    set(this.whineGain.gain,
+        on ? (throttle ? 0.045 : 0.012) * (0.4 + speedFrac) : 0,
+        on ? 0.1 : IDLE_TC * 0.5);
     set(this.tyreGain.gain, airborne ? 0 : Math.min(0.3, slip * 0.34), 0.05);
     set(this.tyreFilter.frequency, 1300 + slip * 1400, 0.08);
     set(this.windGain.gain, Math.min(0.16, speedFrac * speedFrac * 0.2), 0.12);
@@ -610,6 +707,7 @@ class Music {
 // airborne, boosting), so none of this needed anything new on the wire except
 // how full the tow is.
 
+const RIVAL_BUS = 0.9;        // the whole field against your own car
 const MAX_RIVAL_VOICES = 7;   // a full grid minus you; the rest are too far to hear
 const RIVAL_REF = 9;          // units: about two car lengths, where a rival is loudest
 const RIVAL_ROLLOFF = 1.1;
@@ -674,6 +772,7 @@ class RivalVoice {
 
     this.boosting = false;
     this.placed = false;
+    this.quiet = false;
   }
 
   update(r, t) {
@@ -681,10 +780,16 @@ class RivalVoice {
     this._moveTo(r, t);
 
     const sf = Math.min(1, r.speedFrac || 0);
+    // The same rule as your own car, for the same reason: a parked rival is a
+    // drone that happens to have a position. A room where nobody has pressed
+    // anything is seven of them.
+    const on = isDriving(r.throttle, sf, r.air);
+    const gTc = on ? (this.quiet ? WAKE_TC : 0.09) : IDLE_TC;
+    this.quiet = !on;
     const rpm = 58 + sf * 210 + (r.throttle ? 22 : 0);
     for (const o of this.osc) set(o.frequency, rpm, 0.05);
-    set(this.engFilter.frequency, 620 + sf * 2400, 0.08);
-    set(this.engGain.gain, r.air ? 0.1 : 0.17 + (r.throttle ? 0.09 : 0), 0.09);
+    set(this.engFilter.frequency, on ? 620 + sf * 2400 : IDLE_HZ, on ? 0.08 : IDLE_TC);
+    set(this.engGain.gain, on ? (r.air ? 0.1 : 0.17 + (r.throttle ? 0.09 : 0)) : 0, gTc);
     set(this.tyreGain.gain, r.drift && !r.air ? 0.2 : 0, 0.06);
 
     // The same band as your own tow, a little hotter because the panner is about
