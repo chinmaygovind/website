@@ -112,6 +112,22 @@ DEFAULT = dict(at=None, azimuth=2.05, pitch=0.38, pad=0.52, fov=50, span=0.16,
 # what the other seven were losing, because that is the part that is expensive
 # to work out twice.
 FRAMES = {
+    # **The animal, because that is what the track is for.** The scan lands on
+    # the falls' ledge, and from an establishing height the ledge is the top of
+    # a cliff - a flat brown slab with jungle behind it, and the water is on the
+    # far side of the rock, facing away. `at` is pinned to the canyon crossing
+    # instead: the one place in the pool where the road is not a road.
+    #
+    # **Along the back, not across it**, with `span` cut to the length of the
+    # crossing so the window is the animal and nothing else. From the side it is
+    # a blue shape at the edge of the frame and reads as a bridge; from 0.60 the
+    # head is in the near corner but the back is cut off behind it; centred on
+    # the head at 0.82 the foreground jungle is in the way. This is the one that
+    # says what the track is in a thumbnail: a field of cars racing up something
+    # alive, with the canyon walls either side of it.
+    "dino": dict(at=0.79, azimuth=2.05, pitch=0.30, pad=0.26, span=0.08,
+                 cars=8, air=0.0, liveryFrom=4),
+
     # --- The three the storefront covers were cut from first -----------------
     # The loop, the hairpin under it, and the ribbon running out to the stars.
     # `at` is pinned because the scan would also accept the half-pipes either

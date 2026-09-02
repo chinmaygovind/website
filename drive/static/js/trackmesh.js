@@ -105,7 +105,12 @@ export function palette(track) {
 // after the road and the scatter, which is where anything standing on the ground
 // belongs. More phases can be added when something needs one; a track declaring a
 // hook name nothing calls is caught by `test_scenery.py` rather than doing nothing.
-const SCENERY_HOOKS = ['props'];
+//
+// `movers` is the second, and it is a different *kind* of thing: everything
+// `props` builds is baked into one static mesh and one baked collider, and a
+// mover is by definition neither. See `Movers` below for why it returns numbers
+// rather than meshes, and why its clock is an integer.
+const SCENERY_HOOKS = ['props', 'movers'];
 
 function sceneryFor(slug) {
   const all = (typeof globalThis !== 'undefined' && globalThis.DRIVE_SCENERY) || {};
@@ -296,6 +301,120 @@ function closestOnTri(px, py, pz, V, o, out) {
   const denom = 1 / (va + vb + vc);
   const v = vb * denom, w = vc * denom;
   return put(ax + abx * v + acx * w, ay + aby * v + acy * w, az + abz * v + acz * w);
+}
+
+// ---------------------------------------------------------------------------
+// Movers: the one thing in the world that is not baked
+// ---------------------------------------------------------------------------
+
+/**
+ * Solid obstacles that move, and the only ones in the game.
+ *
+ * Everything else about a track is baked once: the mesh is one buffer and the
+ * collider is a triangle soup in a spatial hash, both built at load and never
+ * touched again. That is what makes the anti-cheat possible - `verify.py`
+ * rebuilds the identical world inside QuickJS and re-drives a submitted lap
+ * through the real `Car.step`. A moving obstacle threatens exactly that, and the
+ * whole design of this class is about not breaking it.
+ *
+ * **The clock is the physics step index, not a wall clock.** A mover driven off
+ * `performance.now()` would be at a slightly different place in the browser than
+ * in the re-drive, and a contact is binary: one missed touch moves the car by
+ * metres, where an honest lap re-drives to within 0.0006 units. So a pose is a
+ * pure function of one integer, and that integer is the same on both sides by
+ * construction - the browser's is `run.inputs.length`, the number of inputs
+ * recorded, and the verifier's is `i * STEPS_PER_FRAME + k`, the index into that
+ * same array. They are two names for one number. `Car.tick` carries it, and both
+ * callers write it rather than letting it free-run, so a dropped or repeated
+ * step cannot quietly desynchronise the two.
+ *
+ * A second, unearned benefit: every mover is at phase zero when the lap starts,
+ * so the track is learnable rather than a dice roll, and two players on the same
+ * lap see the same herd in the same place.
+ *
+ * **A mover is numbers, not a mesh.** The track's `movers` hook returns plain
+ * objects - two endpoints, a period, a half-extent, and a list of boxes in the
+ * mover's own frame - and this file turns those into both the visual group and
+ * the collision box. QuickJS gets the same objects and simply never builds the
+ * meshes, so there is no path where the browser's obstacle and the verifier's
+ * are described by two different pieces of code.
+ *
+ * **Movers are walls and never ground.** They answer `walls()` and nothing else,
+ * so `Collider.ground`, the racing line, `laptime.py` and every medal time are
+ * untouched by them. You can be shoved by one; you cannot drive on one.
+ */
+export class Movers {
+  constructor(list) {
+    this.list = list || [];
+  }
+
+  /**
+   * Where mover `m` is at step `k`, as {x, y, z, yaw}.
+   *
+   * A there-and-back walk along a segment, eased at both ends so the thing turns
+   * round rather than reversing instantly. Integer in, so bit-identical in both
+   * runtimes: the only arithmetic on `k` is a remainder.
+   */
+  static pose(m, k) {
+    const p = m.period;
+    let u = ((k + m.phase) % p + p) % p / p;      // 0..1 round the cycle
+    const back = u >= 0.5;
+    let t = back ? 2 - u * 2 : u * 2;             // 0..1 out, then 0..1 home
+    t = t * t * (3 - 2 * t);                      // ease, so the ends are a turn
+    const x = m.ax + (m.bx - m.ax) * t;
+    const z = m.az + (m.bz - m.az) * t;
+    let dx = m.bx - m.ax, dz = m.bz - m.az;
+    if (back) { dx = -dx; dz = -dz; }
+    return { x: x, y: m.y, z: z, yaw: Math.atan2(dx, dz) };
+  }
+
+  /**
+   * Put every mover's group where step `k` says it is. Visual only, and the
+   * *same* `pose` the collision uses - so what you see and what you hit cannot
+   * come apart, which is the failure a separate animation path would have.
+   */
+  place(k) {
+    for (const m of this.list) {
+      if (!m.obj) continue;
+      const p = Movers.pose(m, k);
+      m.obj.position.set(p.x, p.y, p.z);
+      m.obj.rotation.y = p.yaw;
+    }
+  }
+
+  /**
+   * Sphere against every mover's box, in the same shape `Collider.walls` reports
+   * in - `cb(nx, ny, nz, depth)` - so `Car._resolveWalls` accumulates a contact
+   * with a dinosaur exactly as it does one with a barrier, and there is no
+   * second response path to get wrong.
+   */
+  walls(k, x, y, z, r, cb) {
+    for (const m of this.list) {
+      const p = Movers.pose(m, k);
+      // Into the box's frame: yaw only, because a mover walks on the ground.
+      const c = Math.cos(-p.yaw), s = Math.sin(-p.yaw);
+      const dx = x - p.x, dy = y - p.y, dz = z - p.z;
+      const lx = dx * c - dz * s, lz = dx * s + dz * c;
+      // Closest point on the box to the sphere centre, in that frame.
+      const qx = Math.max(-m.hx, Math.min(m.hx, lx));
+      const qy = Math.max(-m.hy, Math.min(m.hy, dy));
+      const qz = Math.max(-m.hz, Math.min(m.hz, lz));
+      let ox = lx - qx, oy = dy - qy, oz = lz - qz;
+      let d = Math.hypot(ox, oy, oz);
+      if (d > r) continue;
+      if (d < 1e-6) {
+        // Dead centre: push out along the shallowest axis, which is the only
+        // direction that is not arbitrary.
+        const ex = m.hx - Math.abs(lx), ey = m.hy - Math.abs(dy), ez = m.hz - Math.abs(lz);
+        if (ex <= ey && ex <= ez) { ox = lx < 0 ? -1 : 1; oy = 0; oz = 0; d = 0; }
+        else if (ey <= ez) { ox = 0; oy = dy < 0 ? -1 : 1; oz = 0; d = 0; }
+        else { ox = 0; oy = 0; oz = lz < 0 ? -1 : 1; d = 0; }
+      } else { ox /= d; oy /= d; oz /= d; }
+      // Back out to the world, yaw only again.
+      const cc = Math.cos(p.yaw), ss = Math.sin(p.yaw);
+      cb(ox * cc - oz * ss, oy, ox * ss + oz * cc, r - d);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -713,9 +832,18 @@ export function buildTrack(track, T) {
       // corkscrew - or high on the wall of a pipe.
       col.addQuad(p0, p1, q1, q0,
                   a.bp ? KIND.BOOST : a.bn ? KIND.BOUNCE : KIND.ROAD);
-      roadBuf.quad(p0, p1, q1, q0, roadColor(i, (u0 + u1) / 2));
+      if (!a.skin) roadBuf.quad(p0, p1, q1, q0, roadColor(i, (u0 + u1) / 2));
     }
     if (a.bp) padStrip(i);
+    // **`skin`: the collider quad above and nothing else.** The stations are
+    // flagged by `Builder.skin` to say that this stretch of road is the back of
+    // something the scenery builds, so the engine draws no surface, no slab, no
+    // flank and no kerb here - the scenery draws all of it, and its crown is
+    // built through these same station points, so what you see and what the car
+    // stands on are one surface. The collider quad stays because it is the one
+    // guarantee that does not depend on a track's own file being right: the
+    // centre of the road is solid whatever the scenery does or fails to do.
+    if (a.skin) continue;
     note(aL); note(aR);
 
     // Underside: the slab, so the track reads as solid edge-on and from below.
@@ -1027,6 +1155,42 @@ export function buildTrack(track, T) {
   }
   if (groundY == null && pal.below) addWorldBelow(solid, soft, bright, track, pal, bbox, CELL, minY, maxY);
 
+  // The movers. Built from the same context and after `props`, so a track can
+  // put a herd where its own scenery decided the open ground is.
+  //
+  // Each one gets its own mesh and its own group, which is the whole reason
+  // they are not in `solid`: a group can be moved and a baked buffer cannot.
+  // The mesh building is skipped where there is no material to build - QuickJS
+  // has inert graphics shells, so this costs nothing there and needs no guard,
+  // but a mover with no `parts` is still a legal obstacle.
+  let movers = new Movers([]);
+  if (sc && sc.movers) {
+    const list = sc.movers(Object.assign(
+      { cfg: pal.building || pal.furniture || null }, sctxFull)) || [];
+    for (const m of list) {
+      m.phase = m.phase || 0;
+      m.period = Math.max(2, Math.round(m.period || 240));
+      const buf = new MeshBuf();
+      for (const b of (m.parts || [])) {
+        buf.box(b[0], b[1], b[2], b[3], b[4], b[5], b[6]);
+      }
+      if (buf.pos.length) {
+        const g = new THREE.Group();
+        g.add(buf.toMesh(new THREE.MeshLambertMaterial({
+          vertexColors: true, flatShading: true })));
+        m.obj = g;
+        group.add(g);
+      }
+    }
+    movers = new Movers(list);
+    // Put them where step zero says they are, here and not only in the frame
+    // loop. Everything that builds a track without running one - the switcher's
+    // preview, the plan view, the cover shooter, the track maker - draws
+    // whatever the group's transform happens to be, and an unplaced group is at
+    // the world origin. Which is where the whole herd was.
+    movers.place(0);
+  }
+
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   const matBright = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
   group.add(solid.toMesh(mat));
@@ -1084,7 +1248,7 @@ export function buildTrack(track, T) {
   const gateKey = (g) => g.kind === 'start' ? -1 : g.kind === 'finish' ? 1e6 : g.gi;
   gates.sort((a, b2) => gateKey(a) - gateKey(b2));
 
-  return { group, collider: col, gates, line, s, total: s[s.length - 1],
+  return { group, collider: col, movers, gates, line, s, total: s[s.length - 1],
            killY, palette: pal, bbox, minY, maxY, sceneryProblems,
            // Handed out for the track maker's sandbox, which has to sample it:
            // `ground()` is the helper every placement stands on, and a sandbox

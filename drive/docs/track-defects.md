@@ -466,3 +466,53 @@ New entries, unsorted, until somebody files them. One line is enough.
   black below the road** - 46 units of ramp to 16. A shallow ramp over a deep
   floor is a distant bottom; a short ramp is no bottom at all. Keep the geometry
   either way, or you see the sky dome through the hole where the floor was.
+- **A height field's gradient is not a taste, it is whether the world is flat.**
+  The floor under Dino Park is Mount Joy's lower envelope of upward cones, and
+  the gradients it started at (0.42 near the road, 1.15 past it) put the horizon
+  356 units up at the edge of the drawn floor in every direction: a V-shaped
+  trench with the road in the bottom of it and a brown wall all round. A jungle
+  floor is *flat*. The gradient is subtractive-safe and therefore tempting to
+  turn up; relief has to come from noise **added** and gated to zero within a
+  fixed distance of every station, which is the only form of it that cannot
+  reach a road.
+- **A carve wide enough to be a canyon is wide enough to strangle itself.** The
+  same file fades a carve's depth out near any road it is not meant to undercut,
+  which is correct - and the ramp (nothing within 24 units, full at 56) is wider
+  than the banks of the creek the track *jumps*, so the creek came out at 4% of
+  its depth. Invisible, no error. The ramp has to be about a road width, and the
+  crossings themselves have to be exempt over a window measured in stations, not
+  a couple either side of the gap.
+- **A canyon wider than it is deep reads as an embankment.** From a camera four
+  units over the road you look *across* a bowl and *into* a slot: at 58 deep and
+  116 across, the far rim sat just under eye level and the whole crossing read as
+  a raised causeway through jungle. Depth against *half* width is the number that
+  decides it, not depth.
+- **Anything at the road's edge hides everything below the road beyond it.** Two
+  shoulders on the animal here, 3.5 units proud of the surface at ten units out,
+  were enough to occlude the entire canyon either side - the sight line from the
+  driver over the top of them is nearly horizontal. On a track whose whole point
+  is a drop beside the road, scenery at the kerb has to stay under about a metre
+  or it is a parapet.
+- **A prop whose top is flush with the road is a mat lying in it.** The
+  creature's head sat with its crown at road level so you could drive over the
+  skull; from every frame of the descent it read as a blue rectangle painted on
+  the tarmac. Anything on the road's own line is either clearly *above* it or
+  clearly below and to one side.
+- **Scenery density is a triangle budget before it is a look.** An understory
+  drawn everywhere the floor is drawn came to about a million triangles and the
+  cover shooter timed out taking a screenshot of it. Plant thickly where you can
+  see into the scene and thin with distance: past a couple of hundred units the
+  canopy is a silhouette, and nothing out there is worth a frond.
+- **A limb built from a few stretched boxes is a staircase.** `bx`-style helpers
+  orient in *yaw* only, so a neck climbing forward and up as five long boxes is a
+  flight of steps in the sky - which is exactly what two landmark sauropods were
+  until they were rebuilt as twenty small unstretched ones along the same path.
+- **A moving obstacle that shares a hue with the scatter is read late.** The herd
+  here was brown, on a track whose road is brown and whose boulders are tan, and
+  at speed it was indistinguishable from a rock until it moved. An obstacle you
+  are meant to drive around needs a colour nothing else in the palette is using.
+- **A mover that is never placed is at the world origin.** `Movers.place(k)` runs
+  in the frame loop, and everything that builds a track *without* running one -
+  the switcher preview, the plan view, the cover shooter, the track maker - drew
+  the whole herd stacked at (0,0,0) instead. Place them once at build time as
+  well as per frame.

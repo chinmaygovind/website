@@ -461,6 +461,84 @@ Mount Joy did not.
   it wants is a ribbon `rail` on the kerb, and the scatter it does *not* want was
   most of what made the first render read as a quarry.
 
+## Movers, and road that is not a road (Dino Park)
+
+Two features that only Dino Park uses, and both exist because "there is a
+dinosaur on the track" is two different problems.
+
+### `movers`: solid obstacles that move
+
+**The clock is the physics step index, and everything else follows from that.**
+Every other thing on a track is baked once - the mesh is one buffer, the collider
+a triangle soup in a spatial hash - and that is exactly what makes `verify.py`
+possible: it rebuilds the identical world in QuickJS and re-drives a submitted
+lap through the real `Car.step`. An obstacle that moves threatens that, and a
+contact is *binary*: one missed touch moves the car by metres, where an honest
+lap re-drives to within 0.0006 units.
+
+So `Movers.pose(m, k)` is a pure function of one integer, and the two runtimes
+get the same integer by construction:
+
+- the browser writes `car.tick = run.stepIndex()`, which is `inputs.length`
+  before the push - the index of the step whose input is about to be recorded;
+- the verifier writes `car.tick = i * STEPS_PER_FRAME + k`, the index into that
+  same array.
+
+Both *write* it rather than letting a counter free-run, so a dropped or repeated
+step cannot desynchronise them. `Car.step` copies it to `this._tick` and
+increments, before the respawn early-return, so a step spent waiting still moves
+the world. Bots share one clock per room (`botworld.js`'s `_k`); their laps never
+reach a board, so they only need it to advance.
+
+A second, unearned property: every mover is at phase zero when a lap starts, so
+the track is learnable rather than a dice roll and two players on the same lap
+see the same herd in the same place.
+
+**A mover is numbers, not a mesh.** The `movers` hook returns plain objects - two
+endpoints, a period, a phase, a half-extent, and a list of boxes in the mover's
+own frame - and `buildTrack` makes both the visual `THREE.Group` and the
+collision box from them. QuickJS gets the same objects and builds the meshes into
+inert shells, so there is no path where the browser's obstacle and the verifier's
+are described by two different pieces of code. `Movers.place(k)` writes the
+group's transform using the *same* `pose`, so what you see and what you hit
+cannot come apart - and it is called once at build time as well as per frame,
+because the switcher preview, the plan view and the cover shooter never run a
+frame loop and drew the whole herd at the world origin until it was.
+
+**Movers are walls and never ground.** `Collider.walls` filters on `KIND.WALL`
+and movers answer only `walls()`, so `Collider.ground`, the racing line,
+`laptime.py` and every medal time are untouched. You can be shoved by one; you
+cannot drive on one. Put them where the road is *wider* than the rest of the
+track - Dino Park widens the herd's floor for exactly this - so a mover is a gap
+to read rather than a wall to wait behind.
+
+### `skin`: stations with no road drawn on them
+
+`Builder.skin(True)` flags stations the way `boost` and `bounce` do, and it is
+the smallest of the three because it changes nothing about the simulation.
+`trackmesh.js` draws **no** surface, kerb, slab or flank for a flagged station -
+only the `KIND.ROAD` collider quad - and the track's `scenery.js` builds the
+surface instead, through those same station points.
+
+It exists because "the road goes over a dinosaur" and "the dinosaur's back *is*
+the road" look identical on paper and are completely different to drive: the
+first is a bridge with decoration under it, and you can tell, because the kerb
+keeps running.
+
+Two rules for the scenery that takes over:
+
+- **Build the crown through the station points.** Dino Park's cross-section is
+  flat for the road's own half-width and only rolls away outside it, so the
+  drawn surface and the engine's undrawn collider quad are one surface rather
+  than a curve and a plane that disagree by a unit near the edges.
+- **Collide the shallow part of what you add**, as `KIND.ROAD`. That is what
+  makes the back wider than the road it replaced; past it the flank is steep
+  enough that the car slides off, which is the point.
+
+The collider quad the engine keeps is deliberate: it is the one guarantee that
+does not depend on a track's own file being right. Whatever the scenery does or
+fails to do, the centre of the road is solid.
+
 ## Interiors (`addBuilding`, Costco Wholesale only)
 
 The Costco is the pool's only interior: the only track where solid geometry

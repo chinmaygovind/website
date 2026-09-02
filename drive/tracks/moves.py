@@ -183,6 +183,7 @@ class Recorder:
         self._w = float(width)
         self._rail = "lr" if rails else ""
         self._bank = 0.0
+        self._skin = False
 
     # -- state, folded into the moves that follow it ----------------------
     def width(self, w):
@@ -195,6 +196,10 @@ class Recorder:
 
     def bank(self, degrees):
         self._bank = float(degrees)
+        return self
+
+    def skin(self, on=True):
+        self._skin = bool(on)
         return self
 
     # -- the recording itself ---------------------------------------------
@@ -229,6 +234,10 @@ class Recorder:
             m["rail"] = self._rail
             if self._bank:
                 m["bank_state"] = _num(self._bank)
+            # Like `bank_state`: stamped only when it is on, so an ordinary
+            # track's document is unchanged by this existing at all.
+            if self._skin:
+                m["skin"] = True
         self.moves.append(m)
         return self
 
@@ -344,6 +353,7 @@ def replay(doc, b, spans=None):
     cur_w = _num(doc.get("width", ROAD_W))
     cur_rail = "lr" if doc.get("rails") else ""
     cur_bank = 0.0
+    cur_skin = False
 
     for i, raw in enumerate(doc.get("moves", ())):
         m = dict(raw)
@@ -355,6 +365,7 @@ def replay(doc, b, spans=None):
         w = m.pop("w", None)
         rail = m.pop("rail", None)
         bank_state = m.pop("bank_state", 0.0)
+        skin_state = bool(m.pop("skin", False))
 
         if t in LAYS_ROAD:
             # Width first: `rail` does not touch it and a barrier is drawn at
@@ -368,6 +379,9 @@ def replay(doc, b, spans=None):
             if _num(bank_state) != cur_bank:
                 b.bank(float(bank_state))
                 cur_bank = _num(bank_state)
+            if skin_state != cur_skin:
+                b.skin(skin_state)
+                cur_skin = skin_state
 
         args = {}
         for k, default in SPEC[t].items():

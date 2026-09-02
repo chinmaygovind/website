@@ -235,6 +235,7 @@ class Builder:
         self._pad = False
         # Same again for a mushroom cap. See `bounce`.
         self._cap = False
+        self._skin = False       # this road is the back of something; see `skin`
 
     # -- internals ---------------------------------------------------------
     def _pf(self):
@@ -281,6 +282,9 @@ class Builder:
             e["kick"] = 1
         if curv:
             e["curv"] = round(curv, 5)
+        # This stretch of road is not a road; see `skin` below.
+        if self._skin and not air:
+            e["skin"] = 1
         if (self.wl if wl is None else wl) and not air:
             e["wl"] = 1
         if (self.wr if wr is None else wr) and not air:
@@ -338,6 +342,29 @@ class Builder:
     def width(self, w):
         """Set the road width from here on."""
         self.hw = w / 2.0
+        return self
+
+    def skin(self, on=True):
+        """Stop drawing tarmac from here on: this road is the back of something.
+
+        The same shape of thing as `boost` and `bounce` - a property of the
+        *surface* rather than an object standing on it - and it is the smallest
+        of the three, because it changes nothing about the simulation at all.
+        The stations still carry the same road quads, the same `KIND.ROAD`
+        collider and the same racing line; `trackmesh.js` simply draws them in
+        `pal.skin` and lays no kerb, so what you drive along is hide rather than
+        dirt with a creature under it.
+
+        It exists because "the road goes over a dinosaur" and "the dinosaur's
+        back *is* the road" look identical on paper and are completely different
+        to drive: the first is a bridge with decoration beneath it, and you can
+        tell, because the kerb keeps running.
+
+        The scenery that builds the animal is expected to find its own extent by
+        looking for these stations, which is why this is a flag on the ribbon and
+        not a colour in a palette - it is the one statement that both halves read.
+        """
+        self._skin = bool(on)
         return self
 
     def rail(self, which):

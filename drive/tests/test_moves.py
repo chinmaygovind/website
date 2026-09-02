@@ -234,7 +234,7 @@ def test_every_authored_call_a_track_uses_is_in_the_schema():
     for slug in SLUGS:
         src = open(os.path.join(TRACKS_DIR, slug, "track.py")).read()
         used.update(re.findall(r"\bb\.([a-z_]+)\(", src))
-    state = {"width", "rail", "bank"}      # folded into the moves that follow
+    state = {"width", "rail", "bank", "skin"}   # folded into the moves that follow
     missing = used - set(moves.SPEC) - state
     assert not missing, ("the pool uses %s, which no move expresses"
                          % ", ".join(sorted(missing)))

@@ -226,7 +226,14 @@ function walk(slug, A, IN, RESP, GATES) {
     car.steer = a[11];
     const g = GATES[RESP[i]];
     car.setRespawn(g[0], g[1]);
-    for (let k = 0; k < S; k++) car.step(dt, FIELDS[IN[i * S + k]]);
+    // `i * S + k` is the index of this step in the input stream, which is the
+    // same number the browser took from `Run.stepIndex()` - and it is what poses
+    // every mover on the track. Written each step rather than seeded once,
+    // because a window that respawns must still land on the same phase.
+    for (let k = 0; k < S; k++) {
+      car.tick = i * S + k;
+      car.step(dt, FIELDS[IN[i * S + k]]);
+    }
     err.push(Math.hypot(car.pos.x - nx[1], car.pos.y - nx[2], car.pos.z - nx[3]));
     spd.push(car.vel.length());
   }

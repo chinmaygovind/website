@@ -3,7 +3,7 @@
 **Live at `https://drive.cgovind.com`.** The fourth game, same shape as ERS/KoT:
 Flask + Flask-SocketIO, its own eventlet gunicorn `-w 1` on `127.0.0.1:5005`, its own
 venv (`drive/venv`) and `.env` (both gitignored, hand-made on the box), sharing TTR's
-`users` table for accounts. A PolyTrack-style low-poly driving game: twenty-one
+`users` table for accounts. A PolyTrack-style low-poly driving game: twenty-two
 tracks, medal times, ghosts, and multiplayer rooms. Eighteen are point-to-point;
 **Spa-Francorchamps, Silverstone and Monaco are the three closed circuits** and
 start and finish on the same line. **Costco Wholesale, Monaco and Railway
@@ -197,6 +197,36 @@ a shortcut are all blocked and none is open. Read
 - The geometry is off OSM relation 148194 and a DEM, the same method as
   Silverstone; the docstring in `track.py` is the whole account, including the
   three things it got wrong first.
+
+**Dino Park** (`dino`, difficulty 4, 2797 units, ~59s ideal) is the jungle, and
+it is the only track in the pool with anything on it that **moves**. Read
+`docs/tracks-and-geometry.md` before touching it.
+
+- **It has the pool's only moving obstacles, and their clock is an integer.** A
+  herd of eight hadrosaurs walks across the road - three on the opening flicks,
+  five on the wide floor before the canyon - and they are solid: `Movers` in
+  `trackmesh.js` poses each one as a pure function of the **physics step index**,
+  which the browser takes from `Run.stepIndex()` and `verify.py` names `i * S +
+  k`. Two names for one number, so a re-driven lap meets the herd in exactly the
+  same place; a wall-clock mover would drift, and a missed contact is binary.
+  They are `walls()` only, never ground, so the racing line, `laptime.py` and
+  every medal are untouched by them.
+- **The canyon crossing has no road on it.** The stations are flagged by
+  `Builder.skin`, which makes `trackmesh.js` draw no surface, no kerb and no slab
+  - only the collider quad - and `scenery.js` builds a sauropod's back *through*
+  those same station points, with the upper flank added to the collider as
+  `KIND.ROAD`. So the drivable surface is three times the width of the road it
+  replaced, it is what you can see, and running wide is a slide down a shoulder.
+  No barriers, for the same reason.
+- **The three set pieces are found, not told.** The falls hang on the lap's
+  highest stations, the herd walks the widest, the animal is the `skin` run and
+  the creek is under the ribbon's own `air`. There is no pair of fractions in two
+  languages to drift apart, and `track.py` states the rule the layout has to keep.
+- **`ground = None` with the world in `scenery.js`**, Mount Joy's pattern for
+  Monaco's reason: a `pal.terrain` field is single-valued and would fill the
+  gorge in under the animal. The floor is a lower envelope of upward cones as a
+  chamfer sweep, collided as `KIND.OFFROAD` within 120 units - which is why the
+  track is `exposed` with rails in one place only.
 
 **Rickety Rails** (`railway`, difficulty 5, 3006 units, ~70s ideal - the
 longest lap in the pool) is the mine, and it is the pool's first track with a

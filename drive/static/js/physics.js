@@ -55,6 +55,9 @@ export class Car {
     this.bumpSlip = 0;         // seconds of let-go tyres left after a hit
     this.lastBump = null;      // {x,y,z,mag} for sparks, consumed by the renderer
     this.respawnIn = 0;
+    // The world's clock; see `step`. Written by the caller each step.
+    this.tick = 0;
+    this._tick = 0;
     this.frozen = false;       // held on the grid during a countdown
     this.wheelSpin = 0;
     this.towed = false;        // in another car's hole right now
@@ -136,6 +139,15 @@ export class Car {
    */
   step(dt, input) {
     const T = this.T;
+
+    // **The world's clock, and it is an integer.** Movers are posed off this and
+    // nothing else - see `Movers` in trackmesh.js. Advanced here, at the very
+    // top, so a step spent waiting out a respawn still moves the world; and
+    // *written* by both callers rather than left to free-run, because the browser
+    // and the anti-cheat have to agree on it exactly and each knows the true
+    // index from its own copy of the input stream.
+    this._tick = this.tick;
+    this.tick = this._tick + 1;
 
     if (this.respawnIn > 0) {
       this.respawnIn -= dt;
@@ -401,11 +413,20 @@ export class Car {
     let ax = 0, ay = 0, az = 0, deepest = 0, hits = 0;
     for (const o of offs) {
       _v1.copy(this.pos).addScaledVector(this.fwd, o);
-      this.world.collider.walls(_v1.x, _v1.y, _v1.z, R, (nx, ny, nz, depth) => {
+      const hit = (nx, ny, nz, depth) => {
         ax += nx * depth; ay += ny * depth; az += nz * depth;
         if (depth > deepest) deepest = depth;
         hits++;
-      });
+      };
+      this.world.collider.walls(_v1.x, _v1.y, _v1.z, R, hit);
+      // Anything that moves, reported in the same shape as a barrier and
+      // accumulated into the same single response - so being shoved by a
+      // dinosaur and being shoved by a rail are one code path, and there is no
+      // second one to get wrong. `tick` is this step's index, so the pose the
+      // car is tested against is the pose the verifier will test against too.
+      if (this.world.movers) {
+        this.world.movers.walls(this._tick, _v1.x, _v1.y, _v1.z, R, hit);
+      }
     }
     if (hits) {
       const len = Math.hypot(ax, ay, az);

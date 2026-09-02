@@ -227,6 +227,10 @@ class BotWorld {
       this._k++;
       const others = contact ? this._others : null;
       for (const b of this.bots) {
+        // One clock for the whole room, so every bot sees the herd where every
+        // human sees it. A bot's lap never reaches the leaderboard, so this does
+        // not have to match a recording - only to advance once per step.
+        b.car.tick = this._k;
         b.car.step(h, b.input);
         if (others) b.car.resolveCars(others, h);
         // Always called, with `null` included: that is what bleeds a charge away

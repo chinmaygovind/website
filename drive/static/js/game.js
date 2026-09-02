@@ -2627,6 +2627,12 @@ function frame(now) {
       // Before the step, not after: an anchor is the state a step *starts*
       // from, so that the server can seed a car from it and run the same eight
       // steps. See Run.noteStep.
+      // The world's clock, taken from the recording rather than counted here -
+      // the number the verifier will use for this same step. Outside a run
+      // nothing is being recorded and the car's own counter simply keeps going,
+      // so the herd walks on the grid and after the flag as well as during.
+      const ti = S.run.stepIndex();
+      if (ti !== null) S.car.tick = ti;
       S.run.noteStep(S.car, inp, now);
       S.car.step(h, inp);
       if (rivals) S.car.resolveCars(rivals, h);
@@ -2640,6 +2646,11 @@ function frame(now) {
       S.car.catchup(gap, h);
     });
   }
+
+  // Where the movers are this frame. Posed off the same integer the physics
+  // used, so the dinosaur you can see and the dinosaur you can hit are the same
+  // one - a separate animation clock is how those two come apart.
+  if (S.built.movers) S.built.movers.place(S.car ? S.car.tick : 0);
 
   // run bookkeeping
   const events = S.run.update(S.car, now);

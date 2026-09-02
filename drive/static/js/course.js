@@ -289,6 +289,22 @@ export class Run {
     this.inputs.push(inputByte(input));
   }
 
+  /**
+   * The index the step about to run will have in the recorded input stream, or
+   * null while nothing is being recorded.
+   *
+   * This is the number the anti-cheat calls `i * STEPS_PER_FRAME + k`, and it is
+   * what poses every mover on the track - see `Movers` in trackmesh.js. It is
+   * published here rather than counted separately by the game loop precisely so
+   * that there is one definition of it: `inputs.length` before the push *is* the
+   * index of the step whose input is about to be pushed.
+   */
+  stepIndex() {
+    if (this.state !== 'running') return null;
+    if (this.inputs.length >= MAX_INPUT_STEPS) return null;
+    return this.inputs.length;
+  }
+
   /** The evidence, as `/api/run` sends it, or null if there is none. */
   verifyPayload() {
     if (!this.inputs.length || !this.anchors.length) return null;
