@@ -209,7 +209,22 @@ FRAMES = {
     # thirds of the frame and the harbour behind it was gone. From higher up you
     # look down *into* the streets and across the water, which is the only angle
     # where the road, the city and the port are all in one picture.
-    "monaco": dict(at=0.68, azimuth=5.00, pitch=0.62, span=0.10, pad=0.50,
+    #
+    # **Down, in, and moved off the harbour, because the field had disappeared.**
+    # The azimuth above is right; the height, the distance and the window were
+    # not. At 0.62/0.50 the road recedes to a point and the twelve cars on it are
+    # a few pixels each, so the cover of a *racing* track had no visible racing
+    # in it at all. 0.52 and 0.38 is as low and as close as this angle goes
+    # before the note above bites and the front rank starts blocking the shot.
+    #
+    # **And `at` moves from the harbour front to 0.38.** Sweeping the lap at the
+    # new height, the port windows all have the same problem in a milder form -
+    # the road is far enough away that the pack is small - while 0.38 puts a
+    # six-car train on a sweeping ess with the kerbs, the palms and the towers
+    # around it. It loses the water, which is the trade, and it is the right one
+    # for a card this size: at thumbnail scale the cars are the only thing that
+    # reads as racing, and the harbour is a texture either way.
+    "monaco": dict(at=0.38, azimuth=5.00, pitch=0.52, span=0.09, pad=0.38,
                    cars=12, air=0.0, liveryFrom=11),
     # **The water, which the scan will never find.** Sandy Cove is scored on
     # bend and climb like everything else, and its switchbacks inland beat the
@@ -265,7 +280,16 @@ FRAMES = {
     #
     # `air` is 0 for the Costco's reason: a car hanging in the air indoors reads
     # as a bug rather than as a jump, and there is nothing to have jumped off.
-    "railway": dict(at=0.615, azimuth=3.50, pitch=0.10, pad=0.30, span=0.055,
+    #
+    # **`at` is 0.50 rather than the vault**, and the sweep is what found it. The
+    # obvious window is the crystal vault at 0.615, and it is worse: from inside
+    # the room the loop is a dark slab filling half the frame, because you are
+    # too close to see it as a ring. Half a lap earlier you are looking *across*
+    # the vault at it - the trestle S-curves through the middle with the field
+    # strung along it, the loop stands up behind as a ring, and the crystals,
+    # bents and lamps are all in the same shot. 2.05 loses the loop and 0.60 is
+    # flat; 5.00 is the timbered drift, which is busy and much darker.
+    "railway": dict(at=0.50, azimuth=3.50, pitch=0.16, pad=0.34, span=0.07,
                     cars=10, air=0.0, liveryFrom=3),
 }
 
