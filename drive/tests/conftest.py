@@ -159,7 +159,10 @@ def lap_splits(track, frames):
 # it. Kept rather than deleted because it is the escape hatch a brand-new folder
 # needs on the commit that adds it - a track nobody has driven has no record to
 # cut a line off.
-NO_HOTLAP_YET = {"silverstone", "monaco"}
+# Empty, and kept rather than deleted: it is the escape hatch the *next* brand
+# new folder needs on the commit that adds it, since a track nobody has driven
+# has no record to cut a line off. Every track in the pool has one now.
+NO_HOTLAP_YET = set()
 
 # Waiting on a board deep enough to cut a standard from - five or so distinct
 # players. Drop the entry, then, on the box:
