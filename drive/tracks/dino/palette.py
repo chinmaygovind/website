@@ -51,9 +51,14 @@ PALETTE = {
     # gorge. Any `below` at all suppresses it; `void` is the one that then draws
     # nothing.
     "below": {"kind": "void"},
-    # Dense, because a jungle is. Read by this track's own scenery rather than
-    # by `addScenery`, for the reason in `prop` above.
-    "density": 0.22,
+    # Dense, because a jungle is - and now the second-densest in the pool behind
+    # Mushroom Grove's 0.34, which is the number that says how far this can go.
+    # 0.22 was a jungle you could count the trees in: it stands one about every
+    # 25 units, and once the canopy went up over the road the gaps between the
+    # crowns were the thing left saying "parkland" - green hillside showing
+    # through a colonnade in the middle distance. A ceiling needs the trees
+    # closer together, not only taller.
+    "density": 0.30,
     "props": {"palm": 0.56, "conifer": 0.20, "rock": 0.16, "deadtree": 0.08},
     # This track's own numbers, arriving in `scenery.js` as `ctx.cfg`. They are
     # here rather than in `track.py` because every one of them is a fact about

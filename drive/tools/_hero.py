@@ -118,15 +118,32 @@ FRAMES = {
     # far side of the rock, facing away. `at` is pinned to the canyon crossing
     # instead: the one place in the pool where the road is not a road.
     #
-    # **Along the back, not across it**, with `span` cut to the length of the
-    # crossing so the window is the animal and nothing else. From the side it is
-    # a blue shape at the edge of the frame and reads as a bridge; from 0.60 the
-    # head is in the near corner but the back is cut off behind it; centred on
-    # the head at 0.82 the foreground jungle is in the way. This is the one that
-    # says what the track is in a thumbnail: a field of cars racing up something
-    # alive, with the canyon walls either side of it.
-    "dino": dict(at=0.79, azimuth=2.05, pitch=0.30, pad=0.26, span=0.08,
-                 cars=8, air=0.0, liveryFrom=4),
+    # **The animal you drive over cannot have its own head in the picture**, and
+    # that is a fact about the track rather than about this framing. The road
+    # *is* its neck, so the head is at the foot of that neck, six units off the
+    # jungle floor, and the crop this used to take - `pad=0.26` on the middle of
+    # the back - is about sixty-four units wide where the animal is. The only
+    # ground within that of the spine is the canyon. Four attempts at pinning
+    # `at` on the head, at every azimuth, came back as foreground canopy.
+    #
+    # So the head in this shot is a **landmark sauropod**, which `scenery.js`
+    # now stands on the far bank at the foot of the neck for exactly this
+    # reason: it is the only head on the track that is above the leaves. The
+    # frame moved to suit it - back off the canopy at `pitch=0.42` so the camera
+    # is over the roof rather than in it, `pad=0.52` so the creature is whole,
+    # and `at=0.81` so the road under it still has the field on it. 5.60 rather
+    # than 5.00 or 5.40 puts the neck across the frame instead of end-on, and
+    # keeps the animal's own back in the bottom corner.
+    #
+    # What this loses is the canyon walls either side of the crossing, which the
+    # old crop had and which said "this is a bridge over something". What it
+    # buys is a dinosaur.
+    #
+    # Sixteen cars at nearly twice the default `packStep`, because the creature
+    # stands over the road and eats the middle of the field: at the pool's 0.022
+    # the packs sat behind it and two cars were visible in the whole picture.
+    "dino": dict(at=0.81, azimuth=5.60, pitch=0.42, pad=0.52, span=0.14,
+                 cars=16, packStep=0.045, air=0.0, liveryFrom=4),
 
     # --- The three the storefront covers were cut from first -----------------
     # The loop, the hairpin under it, and the ribbon running out to the stars.

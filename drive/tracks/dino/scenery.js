@@ -554,6 +554,29 @@
       }
     }
 
+    // --- where the head stands ----------------------------------------------
+    // Worked out here rather than in the animal block below, because the pass
+    // that plants the jungle runs first and has to know: an animal with its head
+    // down on the bank has trodden its own clearing, and without one the trees
+    // grow through it. `HEAD_SPOT` is the one place this position exists - the
+    // animal reads it back rather than recomputing it, so the glade and the head
+    // cannot drift apart.
+    //
+    // **The clearing is also a hole in the canopy**, and that is the half that
+    // matters to a picture. The head is only six units off the floor while the
+    // crowns are twenty-five, so there is no camera height that both sees it and
+    // is above the leaves: from under the canopy the near trunks fill the frame
+    // and from over it you are looking at the roof. A gap in the roof is the
+    // only thing that gives the shot somewhere to look through, and it is why
+    // this is 34 units rather than the 12 the head itself occupies.
+    const HEAD_CLEAR = 34.0;
+    const HEAD_SPOT = (() => {
+      const hi = clamp(BRACH[1] + 9, 0, n - 1);
+      const pA = spot(hi, 22), pB = spot(hi, -22);
+      const sd = floorAt(pA[0], pA[1]) >= floorAt(pB[0], pB[1]) ? 1 : -1;
+      return { i: hi, side: sd, p: spot(hi, sd * 21.0) };
+    })();
+
     // --- what grows on it --------------------------------------------------
     // The engine's own scatter stops at `if (!onGround) continue` - there is
     // nothing to stand a tree on in the void - so a floating track plants its
@@ -591,7 +614,28 @@
         if ((hi - lo) / CELLM > 0.75) continue;
         const px = gx0 + x * CELLM + (rnd() - 0.5) * CELLM * 0.7;
         const pz = gz0 + z * CELLM + (rnd() - 0.5) * CELLM * 0.7;
+        if (Math.hypot(px - HEAD_SPOT.p[0], pz - HEAD_SPOT.p[1]) < HEAD_CLEAR) continue;
         const by = floorAt(px, pz) - 0.4;
+        // How far a crown may spread from this trunk. A canopy over the road is
+        // the point, so the foliage is *meant* to overhang - what it may not do
+        // is meet in the middle, because this track is photographed from up high
+        // for the switcher and the share card and the cover of a fully roofed
+        // road is a picture of leaves. So a crown may reach three units short of
+        // the centre line and no further, which leaves a slot about six wide
+        // down a thirteen-wide road: from the seat that is a green tunnel with a
+        // strip of sky in it, which is what a road cut through jungle actually
+        // looks like, and from above it is still a road. Out past about 35 units
+        // nothing clamps and the crowns close over each other properly.
+        //
+        // **This clamp is the whole difficulty and it took two passes to get
+        // right.** The trees that fill the frame are the ones nearest the road,
+        // so a clamp that is too tight bites hardest exactly where the canopy
+        // has to read: at the `ds - 13` it started at, a 30-unit trunk carried a
+        // 10-unit crown and the jungle was the field of bare poles this file has
+        // been warned about since its first version. At `ds - 7` the tips landed
+        // on the near kerb, which is a lined avenue rather than a canopy - the
+        // road still had its own full-width strip of sky over it.
+        const reach = Math.max(6.5, ds[a] - 3);
         const kind = pick(rnd());
         if (kind === 'rock') {
           // A boulder, not a crate. Three overlapping boxes at three angles is
@@ -608,18 +652,25 @@
           continue;
         }
         if (kind === 'deadtree') {
-          const h = 7 + rnd() * 8;
-          solid.box(px, by + h / 2, pz, 0.44, h / 2, 0.44, shade(trunk, -0.2));
+          // A snag, and its job changed when the canopy went up: at 7 to 15 it
+          // was a stick in the undergrowth, and the only thing a bare trunk is
+          // good for is standing *through* the leaves. So it is tall enough to
+          // break the ceiling and thick enough to read against it.
+          const h = 16 + rnd() * 14;
+          solid.box(px, by + h / 2, pz, 0.56, h / 2, 0.56, shade(trunk, -0.2));
           continue;
         }
         if (kind === 'conifer') {
           // The tall dark tree ferns of the reference: a bare stem and three
-          // whorls, which is all that reads at this scale.
-          const h = 10 + rnd() * 13;
-          solid.box(px, by + h * 0.5, pz, 0.44, h * 0.5, 0.44, trunk);
-          cone(px, by + h * 0.50, pz, 4.4 + rnd() * 1.2, 6.5, leaf2);
-          cone(px, by + h * 0.72, pz, 3.4 + rnd() * 1.0, 5.5, leaf);
-          cone(px, by + h * 0.90, pz, 2.2 + rnd() * 0.8, 4.0, leaf2);
+          // whorls, which is all that reads at this scale. The whorls sit at
+          // fractions of `h`, so they follow the trunk up on their own; only
+          // their spread and depth are absolute and had to be scaled by hand.
+          const h = 20 + rnd() * 15;
+          solid.box(px, by + h * 0.5, pz, 0.52, h * 0.5, 0.52, trunk);
+          const cr = Math.min(1.0, reach / 6.5);
+          cone(px, by + h * 0.50, pz, (5.6 + rnd() * 1.5) * cr, 8.5, leaf2);
+          cone(px, by + h * 0.72, pz, (4.3 + rnd() * 1.3) * cr, 7.0, leaf);
+          cone(px, by + h * 0.90, pz, (2.8 + rnd() * 1.0) * cr, 5.0, leaf2);
           continue;
         }
         // A palm: a lean, and a splay of long drooping fronds. **The fronds are
@@ -627,28 +678,54 @@
         // the whole jungle read as a field of bare poles - a frond has to be
         // most of the silhouette, which at this scale means about as long as
         // the trunk is tall and wide enough to survive being seen edge-on.
-        const h = 11 + rnd() * 10;
-        const lean = (rnd() - 0.5) * 0.3, la = rnd() * Math.PI * 2;
+        //
+        // **A canopy is a layer, not a spread of heights.** At the 11-to-21 this
+        // started at, every crown was inside the arc the camera looks through
+        // and the jungle read as scrub the car sees over the top of - a hedge
+        // with a road in it. What makes a canopy is a *ceiling*: crowns at
+        // roughly one height, well above the sight line, with the trunks holding
+        // it up and only the odd emergent standing clear. So the height band is
+        // deliberately narrow, and the variation that used to be in `h` is in
+        // `emergent` instead, where it reads as one tree above the roof rather
+        // than as a hillside of assorted shrubs.
+        const emergent = rnd() < 0.15;
+        const h = (23 + rnd() * 7) * (emergent ? 1.35 : 1.0);
+        // Thicker with height, or a forty-unit trunk is a wire. And the lean is
+        // smaller than it was for the same reason `bx` limbs are: the trunk's
+        // boxes are axis-aligned, so the lean is a staircase, and the taller the
+        // trunk the more steps there are to notice - hence the fourth segment.
+        const tw = 0.34 + h * 0.013;
+        const lean = (rnd() - 0.5) * 0.18, la = rnd() * Math.PI * 2;
         const tx = px + Math.cos(la) * lean * h, tz = pz + Math.sin(la) * lean * h;
-        const seg = 3;
+        const seg = 4;
         for (let sg = 0; sg < seg; sg++) {
           const u0 = sg / seg, u1 = (sg + 1) / seg;
           solid.box(px + (tx - px) * (u0 + u1) * 0.5, by + h * (u0 + u1) * 0.5,
                     pz + (tz - pz) * (u0 + u1) * 0.5,
-                    0.46 - u0 * 0.14, h * (u1 - u0) * 0.5, 0.46 - u0 * 0.14,
+                    tw * (1 - u0 * 0.3), h * (u1 - u0) * 0.5, tw * (1 - u0 * 0.3),
                     shade(trunk, (rnd() - 0.5) * 0.12));
         }
-        const NF = 6 + ((rnd() * 3) | 0);
+        // **Crowns wide enough to touch their neighbours**, which is the other
+        // half of a ceiling and the half that took a second pass. The grid is 12
+        // units and the thinned density stands a tree about every 25, so a crown
+        // has to be about 35 across before the gaps between them close and the
+        // eye stops reading sky through a colonnade. More blades too: a wider
+        // splay off the same seven fronds is a starfish, and it is the count
+        // that fills a crown rather than the length.
+        const NF = 8 + ((rnd() * 4) | 0);
         const spin = rnd() * Math.PI * 2;
         for (let f = 0; f < NF; f++) {
           const a2 = spin + (f / NF) * Math.PI * 2 + (rnd() - 0.5) * 0.35;
-          const rl = 7.5 + rnd() * 4.0;
+          const rl = Math.min(14.0 + rnd() * 7.0, reach);
           const cx = tx + Math.cos(a2) * rl * 0.55, cz = tz + Math.sin(a2) * rl * 0.55;
           const ex = tx + Math.cos(a2) * rl, ez = tz + Math.sin(a2) * rl;
           // Two panels with a knee in the middle, so the frond droops instead of
           // sticking out flat - which is what tells a palm from an umbrella.
-          const cy = by + h + 0.6, ey = by + h - 2.6 - rnd() * 2.4;
-          const w0 = 0.35, w1 = 1.55, w2 = 0.55;
+          // The droop and the blade's width both scale off the frond's own
+          // length - a twenty-unit frond held at the old 1.55 half-width is a
+          // ribbon, and one that falls the old 2.6 is dead flat.
+          const cy = by + h + 0.9, ey = by + h - rl * 0.30 - rnd() * 3.0;
+          const w0 = 0.38, w1 = rl * 0.15, w2 = rl * 0.05;
           const ox = -Math.sin(a2), oz = Math.cos(a2);
           const kf = f % 2 ? leaf : leaf2;
           face([tx - ox * w0, by + h, tz - oz * w0], [tx + ox * w0, by + h, tz + oz * w0],
@@ -1002,11 +1079,9 @@
       // standing through the tarmac. An animal at the bottom of its own neck has
       // its head turned anyway, so it sits on the bank and watches you leave.
       {
-        const hi2 = clamp(B1 + 9, 0, n - 1);
+        const hi2 = HEAD_SPOT.i;
         const he = line[hi2];
-        const pA = spot(hi2, 22), pB = spot(hi2, -22);
-        const sd = floorAt(pA[0], pA[1]) >= floorAt(pB[0], pB[1]) ? 1 : -1;
-        const q = spot(hi2, sd * 21.0);
+        const q = HEAD_SPOT.p;
         const gy = floorAt(q[0], q[1]);
         const hc = [q[0], Math.min(gy + 6.2, he.p[1] - 1.6), q[1]];
         const na = axisOf(B1);
@@ -1111,12 +1186,23 @@
       // Somewhere out there worth standing: walk outward from a station until the
       // ground is flat, dry, well clear of the road and still inside the drawn
       // floor. Returns null rather than guessing if there is no such place.
-      const clearing = (i, sign) => {
-        for (let o = 150; o <= 300; o += 14) {
+      //
+      // **`near` is what the far bank's seat uses.** The two in the jungle want
+      // to be far - they are scenery, and a landmark you could reach is not one.
+      // The third is in a photograph, and the crop is sixty-four units wide, so
+      // it has to stand about thirty-six off the road or it is not in the shot.
+      // That does put it where you can see it from the car, which the two far
+      // ones deliberately are not: the trade is deliberate, and the place it
+      // lands - the bank at the foot of the neck, where the big one already has
+      // its head down - is the one spot on the track where a second animal
+      // standing there is the scene rather than an intrusion into it.
+      const clearing = (i, sign, near) => {
+        const o0 = near ? 30 : 150, dsMin = near ? 28 : 110;
+        for (let o = o0; o <= 300; o += 14) {
           const q2 = spot(i, sign * o);
           const c = cellOf(q2[0], q2[1]);
           const k = idx(c[0], c[1]);
-          if (ds[k] > DRAW_REACH - 40 || ds[k] < 110) continue;
+          if (ds[k] > DRAW_REACH - 40 || ds[k] < dsMin) continue;
           if (WET[k] > 0.08) continue;
           const h0 = F[k], h1 = F[idx(c[0] + 3, c[1])], h2 = F[idx(c[0], c[1] + 3)];
           if (Math.abs(h1 - h0) > 9 || Math.abs(h2 - h0) > 9) continue;
@@ -1124,13 +1210,49 @@
         }
         return null;
       };
-      const seats = [[Math.round(n * 0.10), OUT], [Math.round(n * 0.62), -OUT]];
+      // Two out in the empty jungle, and **one standing over the crossing**,
+      // which is the one that is here for the picture. Every shot of this track
+      // - the switcher card, the share card, the portal cover - is the animal's
+      // back with a field of cars on it, and the animal's own head cannot be in
+      // that shot: the road *is* its neck, so the head is at the foot of it, six
+      // units off the floor, on a bank the canopy closes over. A landmark is the
+      // only head on this track that stands above the leaves, so one of them
+      // watches the crossing from the far side and gets into every picture the
+      // game takes of the place.
+      //
+      // **The third one stands on the far bank, and where it stands is measured
+      // off the frame rather than off the map.** Every picture this game takes
+      // of Dino Park is the crossing at `pad=0.26`, which at `fov=50` is about
+      // sixty-four units wide where the animal is: a landmark at the 150-to-300
+      // the other two use cannot be in it at any azimuth, and the first three
+      // attempts at this put one at 90, 150 and 200 units out and photographed
+      // none of them. So this seat is pinned just past the end of the neck, on
+      // the same side as the head's own glade and a little outside it - close
+      // enough to be in the crop, on ground that is already cleared, and with
+      // its head fifty units up where nothing grows.
+      //
+      // Two fallbacks behind it because the far bank is not guaranteed flat:
+      // the other side, then a little further along the run-out.
+      const seats = [[[Math.round(n * 0.10), OUT, false]],
+                     [[Math.round(n * 0.62), -OUT, false]],
+                     [[BRACH[1] + 12, HEAD_SPOT.side, true],
+                      [BRACH[1] + 12, -HEAD_SPOT.side, true],
+                      [BRACH[1] + 34, HEAD_SPOT.side, true]]];
+      // Yaw and scale per seat, because the third one is doing a different job:
+      // the two in the jungle are silhouettes and can be the smaller build, and
+      // the one over the crossing is a hundred and fifty units past the subject
+      // of every photograph of this track, so it gets the full size or it is a
+      // speck. Facing roughly across the valley and not at the camera - three of
+      // them pointing the same way reads as a display rather than as a place.
+      const POSE = [[-1.1, 1.25], [2.4, 1.05], [3.6, 1.35]];
       for (let k = 0; k < seats.length; k++) {
-        const q2 = clearing(seats[k][0], seats[k][1]);
+        let q2 = null;
+        for (const [si2, sg, near] of seats[k]) {
+          q2 = clearing(clamp(si2, 0, n - 1), sg, near);
+          if (q2) break;
+        }
         if (!q2) continue;
-        // Facing roughly across the valley, and not at the camera: two of them
-        // pointing the same way reads as a display rather than as a place.
-        sauropod(q2[0], q2[1], (k ? 2.4 : -1.1), 1.25 - k * 0.2);
+        sauropod(q2[0], q2[1], POSE[k][0], POSE[k][1]);
       }
     }
 

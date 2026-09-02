@@ -516,3 +516,29 @@ New entries, unsorted, until somebody files them. One line is enough.
   the switcher preview, the plan view, the cover shooter, the track maker - drew
   the whole herd stacked at (0,0,0) instead. Place them once at build time as
   well as per frame.
+- **Taller trees alone do not make a canopy - they make a colonnade.** Raising
+  Dino Park's trunks from 11-21 to 23-30 and leaving the crowns at their old size
+  turned the jungle into a field of bare poles with tufts on, which is the same
+  failure the short version had for the opposite reason. A canopy is three things
+  together: crowns at roughly *one* height (variety belongs in a few emergents,
+  not in the band), crowns wide enough to touch - about 35 across when the
+  scatter stands a tree every 25 units - and the density to close what is left.
+  Change one of the three and it reads worse than before.
+- **A clamp that keeps foliage off the road bites hardest where the look lives.**
+  The trees that fill a road view are the ones nearest the road, so cutting a
+  crown back by its distance from the centre line strips exactly the trees the
+  canopy is made of. The clamp still has to exist - a fully roofed road makes a
+  cover that is a picture of leaves - but it wants to let the foliage reach to
+  within a few units of the centre line, not stop it at the kerb.
+- **A tight cover crop has a width in world units, and scenery has to be inside
+  it.** Dino Park's cover was `pad=0.26`, which at `fov=50` and 69 units out is
+  about sixty-four units wide where the subject is. Three attempts to get a
+  landmark into it placed one at 90, 150 and 200 units off the road and
+  photographed none of them; every placement change rendered a byte-identical
+  picture, which reads as "the edit did nothing" rather than "the object is off
+  frame". Work out the crop's width first, then decide where the thing stands.
+- **The hero camera can be inside a canopy.** Once Dino Park's trees went to
+  25-40 units the cover camera at `pitch=0.30` sat in the leaf layer, and every
+  framing except the one that looks across the gorge came back as a crown
+  filling the lens. A track with a closed canopy needs `pitch` and `pad` large
+  enough to put the camera over the roof - about 0.42 and 200 units out here.
