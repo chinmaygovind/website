@@ -6,223 +6,269 @@
 <title>1-D Dynamical Systems</title>
 <meta name="description" content="An interactive toy for exploring one-dimensional dynamical systems: phase lines, fixed points, cobweb diagrams and bifurcations.">
 <meta name="robots" content="noindex">
+<link rel="preload" href="../fonts/xkcd-script.woff2" as="font" type="font/woff2" crossorigin>
 <style>
+@font-face {
+  font-family: "xkcd Script";
+  src: url("../fonts/xkcd-script.woff2") format("woff2"),
+       url("../fonts/xkcd-script.woff") format("woff");
+  font-display: block;
+}
 :root{
-  --bg:#f6f7fb; --panel:#ffffff; --panel2:#fbfbfe; --border:#e3e6ee; --text:#1a1d24; --muted:#6b7280;
-  --accent:#3b82f6; --accent2:#a855f7; --stable:#10b981; --unstable:#ef4444; --semi:#f59e0b;
-  --shadow: 0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06);
+  color-scheme: light;
+  --bg:#ffffff; --fg:#000000; --panel:#ffffff;
+  --hair: rgba(0,0,0,0.12); --wash: rgba(0,0,0,0.02); --wash-2: rgba(0,0,0,0.06);
+  --faint: rgba(0,0,0,0.4);
+  --math:#1f7a4d; --unstable:#c0182b; --semi:#b8860b;
+  --accent: var(--math);
 }
 @media (prefers-color-scheme: dark){
-  :root{ --bg:#0e1015; --panel:#171a21; --panel2:#1c202a; --border:#2a2f3a; --text:#e7e9ee; --muted:#9aa2b1; }
+  :root{
+    color-scheme: dark;
+    --bg:#101114; --fg:#ececec; --panel:#191b20;
+    --hair: rgba(255,255,255,0.16); --wash: rgba(255,255,255,0.03); --wash-2: rgba(255,255,255,0.08);
+    --faint: rgba(255,255,255,0.42);
+    --math:#52d68a; --unstable:#ff6b7a; --semi:#e8c04a;
+  }
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
 body{
-  background:var(--bg); color:var(--text);
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  background:var(--bg); color:var(--fg);
+  font-family:"xkcd Script","Comic Sans MS",cursive;
   line-height:1.5;
 }
 html{-webkit-text-size-adjust:100%}
 body{overflow-x:hidden}
-.wrap{max-width:980px;margin:0 auto;padding:28px 16px 80px}
-a.back{color:var(--muted);text-decoration:none;font-size:.9rem}
+.wrap{max-width:900px;margin:0 auto;padding:2rem 1.1rem 4rem}
+a.back{color:var(--faint);text-decoration:none;font-size:1rem}
 a.back:hover{color:var(--accent)}
 h1{
-  font-size:clamp(1.6rem,4vw,2.2rem); margin:14px 0 4px;
-  background:linear-gradient(90deg,var(--accent),var(--accent2));
-  -webkit-background-clip:text;background-clip:text;color:transparent;
+  margin:0.9rem 0 0.3rem; font-weight:bold; line-height:1.05;
+  font-size:clamp(2rem,5vw,3.1rem); color:var(--accent);
 }
-.sub{color:var(--muted);margin:0 0 22px;max-width:64ch}
-.tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+.sub{color:var(--faint);margin:0 0 1.6rem;max-width:60ch;font-size:clamp(1rem,1.8vw,1.25rem)}
+
+.tabs{display:flex;flex-wrap:wrap;gap:0.6rem;margin-bottom:1.3rem}
 .tab{
-  cursor:pointer;border:1px solid var(--border);background:var(--panel);color:var(--text);
-  padding:9px 16px;border-radius:999px;font-size:.92rem;font-weight:600;
+  cursor:pointer;border:2px solid var(--hair);background:var(--panel);color:var(--fg);
+  padding:0.55rem 1.15rem;border-radius:999px;font:inherit;font-size:1.05rem;
 }
-.tab.active{background:var(--accent);border-color:var(--accent);color:#fff}
-@media (max-width:480px){
-  .tab{font-size:.85rem;padding:8px 13px}
-  .tab .tab-formula{display:none}
-}
+.tab.active{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb, var(--accent) 14%, var(--panel));}
+.tab-formula{color:var(--faint);font-size:0.85rem}
+@media (max-width:480px){ .tab-formula{display:none} }
+
 .panel{
-  background:var(--panel);border:1px solid var(--border);border-radius:14px;
-  box-shadow:var(--shadow);padding:18px 18px 20px;margin-bottom:18px;
+  background:var(--panel);border:1px solid var(--hair);border-radius:14px;
+  padding:1.3rem 1.3rem 1.5rem;margin-bottom:1.2rem;
 }
-.panel h2{margin:0 0 2px;font-size:1.05rem}
+.ctrlrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:0.9rem 1.3rem;margin-bottom:0.9rem}
+.field label{display:flex;justify-content:space-between;gap:0.5rem;font-size:0.9rem;color:var(--faint);margin-bottom:0.4rem}
+.field label span{color:var(--fg);font-weight:600}
+.hidden{display:none !important}
+
+.select{
+  width:100%;padding:0.55rem 1rem;border-radius:999px;border:2px solid var(--accent);
+  background:var(--wash);color:var(--accent);font:inherit;font-size:1.02rem;cursor:pointer;
+}
+.select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.textinput{
+  width:100%;padding:0.5rem 0.7rem;border-radius:8px;border:2px solid var(--hair);
+  background:var(--wash);color:var(--fg);font:inherit;font-size:1rem;
+}
+.textinput:focus-visible{outline:none;border-color:var(--accent)}
+
+input[type=range].slider{
+  width:100%;height:28px;margin:0;background:none;
+  -webkit-appearance:none;appearance:none;cursor:pointer;
+}
+.slider:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+.slider::-webkit-slider-runnable-track{height:8px;border-radius:999px;border:2px solid var(--accent);background:var(--wash)}
+.slider::-moz-range-track{height:8px;border-radius:999px;border:2px solid var(--accent);background:var(--wash)}
+.slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:22px;height:22px;margin-top:-8px;border-radius:50%;background:var(--accent)}
+.slider::-moz-range-thumb{width:22px;height:22px;border:none;border-radius:50%;background:var(--accent)}
+
 .formula{
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--accent);
-  font-size:.95rem;margin:2px 0 14px;
+  font-size:1.02rem;margin:0.2rem 0 1rem;
 }
-.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px 20px;margin-bottom:6px}
-.ctrl label{display:flex;justify-content:space-between;font-size:.85rem;color:var(--muted);margin-bottom:5px}
-.ctrl output{color:var(--text);font-weight:600}
-.ctrl input[type=range]{width:100%;accent-color:var(--accent)}
-.ctrl select, .ctrl input[type=text], .ctrl input[type=number]{
-  width:100%;padding:7px 9px;border-radius:8px;border:1px solid var(--border);
-  background:var(--panel2);color:var(--text);font-size:16px;
-}
-input[type=range]{height:28px}
-.row2{display:flex;gap:10px}
-.row2 input{width:100%}
-.hint{font-size:.78rem;color:var(--muted);margin-top:10px}
-.hidden{display:none !important}
-canvas{width:100%;display:block;border-radius:10px;background:var(--panel2);cursor:crosshair;touch-action:pan-y}
-.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:.78rem;color:var(--muted);margin-top:10px}
-.legend span{display:inline-flex;align-items:center;gap:6px}
+canvas{width:100%;display:block;border-radius:10px;background:var(--wash-2);cursor:crosshair;touch-action:pan-y;margin:0.5rem 0}
+#cont-phase{height:300px}
+#cont-traj{height:180px}
+#disc-cobweb{height:300px}
+#disc-stair{height:300px}
+#disc-bifurc{height:240px}
+.legend{display:flex;gap:1.1rem;flex-wrap:wrap;font-size:0.85rem;color:var(--faint);margin-top:0.3rem}
+.legend span{display:inline-flex;align-items:center;gap:0.4rem}
 .dot{width:10px;height:10px;border-radius:50%;display:inline-block}
-.dot.stable{background:var(--stable)}
-.dot.unstable{background:#fff;border:2px solid var(--unstable)}
-.dot.semi{background:linear-gradient(90deg,var(--semi) 50%, #fff 50%);border:2px solid var(--semi)}
-.btnrow{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}
-button.action{
-  cursor:pointer;border:1px solid var(--border);background:var(--panel2);color:var(--text);
-  padding:8px 14px;border-radius:8px;font-size:.85rem;font-weight:600;
+.dot.stable{background:var(--math)}
+.dot.unstable{background:var(--panel);border:2px solid var(--unstable)}
+.dot.semi{background:linear-gradient(90deg,var(--semi) 50%, var(--panel) 50%);border:2px solid var(--semi)}
+
+.hint{font-size:0.85rem;color:var(--faint);margin:0.5rem 0 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1.2rem}
+@media (max-width:680px){.grid2{grid-template-columns:1fr}}
+
+.btnrow{display:flex;flex-wrap:wrap;gap:0.6rem;margin-top:1rem}
+.pillbtn{
+  cursor:pointer;border:2px solid var(--accent);background:none;color:var(--accent);
+  padding:0.55rem 1.3rem;border-radius:999px;font:inherit;font-size:1rem;
+  transition:background 0.15s ease, transform 0.15s ease;
 }
-button.action.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-button.action:hover{border-color:var(--accent)}
-.check{display:flex;align-items:center;gap:7px;font-size:.85rem;color:var(--muted);padding:8px 4px}
-.check input{accent-color:var(--accent)}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-@media (max-width:720px){.grid2{grid-template-columns:1fr}}
+.pillbtn:hover{background:color-mix(in srgb, var(--accent) 14%, transparent)}
+.pillbtn:active{transform:scale(0.97)}
+
+.switchrow{display:flex;align-items:center;gap:0.7rem;margin-bottom:1rem;font-size:0.98rem}
+.switch{
+  flex-shrink:0;position:relative;width:52px;height:28px;padding:0;
+  border:2px solid var(--accent);border-radius:999px;background:var(--wash);cursor:pointer;
+}
+.switch::after{
+  content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;
+  border-radius:50%;background:var(--accent);transition:transform 0.2s ease;
+}
+.switch[aria-checked="true"]{background:color-mix(in srgb, var(--accent) 22%, transparent)}
+.switch[aria-checked="true"]::after{transform:translateX(24px)}
+.switch:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+
 details{
-  background:var(--panel);border:1px solid var(--border);border-radius:14px;
-  padding:14px 18px;box-shadow:var(--shadow);
+  background:var(--panel);border:1px solid var(--hair);border-radius:14px;
+  padding:1rem 1.3rem;
 }
-summary{cursor:pointer;font-weight:600}
-details ul{margin:10px 0 2px;padding-left:20px;color:var(--muted);font-size:.9rem}
-details li{margin-bottom:7px}
-footer{margin-top:26px;color:var(--muted);font-size:.8rem;text-align:center}
+summary{cursor:pointer;font-weight:bold;color:var(--accent);font-size:1.05rem}
+details ul{margin:0.7rem 0 0.2rem;padding-left:1.2rem;color:var(--faint);font-size:0.95rem}
+details li{margin-bottom:0.5rem}
+footer{margin-top:1.6rem;color:var(--faint);font-size:0.85rem;text-align:center}
 </style>
 </head>
 <body>
 <div class="wrap">
   <a class="back" href="/">&larr; cgovind.com</a>
   <h1>1-D Dynamical Systems</h1>
-  <p class="sub">A phase line, a cobweb diagram, and a bifurcation plot for the simplest kind of dynamical system there is: one number, changing over time. Drag the sliders and click the plots.</p>
+  <p class="sub">A phase line, a cobweb diagram, and a bifurcation plot for the simplest kind of dynamical system there is: one number, changing over time. Pick a function, drag a slider, click a plot.</p>
 
   <div class="tabs">
-    <button class="tab active" data-mode="cont">Continuous flow <span class="tab-formula">&nbsp;dx/dt&nbsp;=&nbsp;f(x)</span></button>
-    <button class="tab" data-mode="disc">Discrete map <span class="tab-formula">&nbsp;xₙ₊₁&nbsp;=&nbsp;f(xₙ)</span></button>
+    <button class="tab active" data-mode="cont">Continuous flow <span class="tab-formula">dx/dt = f(x)</span></button>
+    <button class="tab" data-mode="disc">Discrete map <span class="tab-formula">xₙ₊₁ = f(xₙ)</span></button>
   </div>
 
   <div id="mode-cont">
     <div class="panel">
-      <h2 id="cont-title">Pitchfork bifurcation</h2>
-      <div class="formula" id="cont-formula">dx/dt = r·x − x³</div>
-      <div class="controls">
-        <div class="ctrl">
-          <label>Family <select id="cont-family">
+      <div class="ctrlrow">
+        <div class="field" style="grid-column:1/-1">
+          <label>Function</label>
+          <select id="cont-family" class="select">
             <option value="pitchfork">Pitchfork: r·x − x³</option>
             <option value="logistic">Logistic growth: r·x·(1−x/K)</option>
+            <option value="transcritical">Transcritical: r·x − x²</option>
+            <option value="saddle">Saddle-node: r + x²</option>
+            <option value="linear">Linear growth/decay: r·x</option>
+            <option value="sinusoidal">Sinusoidal: sin(x) − r</option>
             <option value="custom">Custom f(x)</option>
-          </select></label>
+          </select>
         </div>
-        <div class="ctrl">
-          <label>r <output id="cont-r-out">-0.50</output></label>
-          <input type="range" id="cont-r" min="-2" max="2" step="0.01" value="-0.5">
+        <div class="field">
+          <label>r <span id="cont-r-out">-0.50</span></label>
+          <input type="range" id="cont-r" class="slider" min="-2" max="2" step="0.01" value="-0.5">
         </div>
-        <div class="ctrl" id="cont-k-ctrl">
-          <label>K (capacity) <output id="cont-k-out">1.00</output></label>
-          <input type="range" id="cont-k" min="0.2" max="3" step="0.01" value="1">
+        <div class="field" id="cont-k-ctrl">
+          <label>K <span id="cont-k-out">1.00</span></label>
+          <input type="range" id="cont-k" class="slider" min="0.2" max="3" step="0.01" value="1">
         </div>
       </div>
-      <div class="controls hidden" id="cont-custom-ctrl">
-        <div class="ctrl" style="grid-column:1/-1">
+      <div class="ctrlrow hidden" id="cont-custom-ctrl">
+        <div class="field" style="grid-column:1/-1">
           <label>f(x) in terms of x and r</label>
-          <input type="text" id="cont-expr" value="r*x - x*x*x">
+          <input type="text" id="cont-expr" class="textinput" value="r*x - x*x*x">
         </div>
-        <div class="ctrl">
+        <div class="field">
           <label>x min</label>
-          <input type="number" id="cont-xmin" value="-3" step="0.1">
+          <input type="number" id="cont-xmin" class="textinput" value="-3" step="0.1">
         </div>
-        <div class="ctrl">
+        <div class="field">
           <label>x max</label>
-          <input type="number" id="cont-xmax" value="3" step="0.1">
+          <input type="number" id="cont-xmax" class="textinput" value="3" step="0.1">
         </div>
       </div>
-      <canvas id="cont-phase" height="320"></canvas>
+      <p class="formula" id="cont-formula">dx/dt = r·x − x³</p>
+      <canvas id="cont-phase" height="300"></canvas>
       <div class="legend">
-        <span><span class="dot stable"></span>stable fixed point</span>
-        <span><span class="dot unstable"></span>unstable fixed point</span>
+        <span><span class="dot stable"></span>stable</span>
+        <span><span class="dot unstable"></span>unstable</span>
         <span><span class="dot semi"></span>semi-stable</span>
-        <span>arrows show the direction x is being pushed</span>
+        <span>arrows show which way x is pushed</span>
       </div>
-      <div class="hint">Click anywhere on the line or the graph to drop a new trajectory there.</div>
-    </div>
-
-    <div class="panel">
-      <h2>x(t)</h2>
-      <div class="controls">
-        <div class="ctrl">
-          <label>Speed <output id="cont-speed-out">1.0×</output></label>
-          <input type="range" id="cont-speed" min="0.25" max="3" step="0.05" value="1">
-        </div>
-      </div>
-      <canvas id="cont-traj" height="220"></canvas>
+      <canvas id="cont-traj" height="180"></canvas>
       <div class="btnrow">
-        <button class="action primary" id="cont-play">Pause</button>
-        <button class="action" id="cont-reset">Restart</button>
-        <button class="action" id="cont-clear">Clear trajectories</button>
+        <button class="pillbtn" id="cont-play">Pause</button>
+        <button class="pillbtn" id="cont-reset">Reset</button>
       </div>
+      <p class="hint">Click the diagram to drop a new trajectory there.</p>
     </div>
   </div>
 
   <div id="mode-disc" class="hidden">
     <div class="panel">
-      <h2 id="disc-title">Logistic map</h2>
-      <div class="formula" id="disc-formula">xₙ₊₁ = r·xₙ·(1−xₙ)</div>
-      <div class="controls">
-        <div class="ctrl">
-          <label>Family <select id="disc-family">
+      <div class="ctrlrow">
+        <div class="field" style="grid-column:1/-1">
+          <label>Function</label>
+          <select id="disc-family" class="select">
             <option value="logistic">Logistic: r·x·(1−x)</option>
             <option value="tent">Tent map</option>
             <option value="sine">Sine map: r·sin(πx)</option>
+            <option value="quadratic">Quadratic: x² + r</option>
+            <option value="cubic">Cubic: r·x·(1−x²)</option>
             <option value="custom">Custom f(x)</option>
-          </select></label>
+          </select>
         </div>
-        <div class="ctrl">
-          <label>r <output id="disc-r-out">3.200</output></label>
-          <input type="range" id="disc-r" min="0" max="4" step="0.001" value="3.2">
+        <div class="field">
+          <label>r <span id="disc-r-out">3.200</span></label>
+          <input type="range" id="disc-r" class="slider" min="0" max="4" step="0.001" value="3.2">
         </div>
-        <div class="ctrl">
-          <label>x&#8320; (starting point) <output id="disc-x0-out">0.20</output></label>
-          <input type="range" id="disc-x0" min="0" max="1" step="0.001" value="0.2">
+        <div class="field">
+          <label>x&#8320; <span id="disc-x0-out">0.20</span></label>
+          <input type="range" id="disc-x0" class="slider" min="0" max="1" step="0.001" value="0.2">
         </div>
-        <div class="ctrl">
-          <label>Iterations <output id="disc-n-out">60</output></label>
-          <input type="range" id="disc-n" min="4" max="150" step="1" value="60">
+        <div class="field">
+          <label>Steps <span id="disc-n-out">60</span></label>
+          <input type="range" id="disc-n" class="slider" min="4" max="150" step="1" value="60">
         </div>
       </div>
-      <div class="controls hidden" id="disc-custom-ctrl">
-        <div class="ctrl" style="grid-column:1/-1">
+      <div class="ctrlrow hidden" id="disc-custom-ctrl">
+        <div class="field" style="grid-column:1/-1">
           <label>f(x) in terms of x and r</label>
-          <input type="text" id="disc-expr" value="r*x*(1-x)">
+          <input type="text" id="disc-expr" class="textinput" value="r*x*(1-x)">
         </div>
-        <div class="ctrl">
+        <div class="field">
           <label>x min</label>
-          <input type="number" id="disc-xmin" value="0" step="0.1">
+          <input type="number" id="disc-xmin" class="textinput" value="0" step="0.1">
         </div>
-        <div class="ctrl">
+        <div class="field">
           <label>x max</label>
-          <input type="number" id="disc-xmax" value="1" step="0.1">
+          <input type="number" id="disc-xmax" class="textinput" value="1" step="0.1">
         </div>
       </div>
-      <div class="check"><input type="checkbox" id="disc-animate"> animate the cobweb spinning out step by step</div>
+      <p class="formula" id="disc-formula">xₙ₊₁ = r·xₙ·(1−xₙ)</p>
+      <div class="switchrow">
+        <button class="switch" id="disc-animate" role="switch" aria-checked="false"></button>
+        <span>Animate the cobweb step by step</span>
+      </div>
       <div class="grid2">
         <div>
-          <canvas id="disc-cobweb" height="320"></canvas>
-          <div class="hint">Click inside the plot to change x&#8320;.</div>
+          <canvas id="disc-cobweb" height="300"></canvas>
+          <p class="hint">Click inside the plot to change x&#8320;.</p>
         </div>
         <div>
-          <canvas id="disc-stair" height="320"></canvas>
-          <div class="hint">xₙ against the step number n.</div>
+          <canvas id="disc-stair" height="300"></canvas>
+          <p class="hint">xₙ against the step number n.</p>
         </div>
       </div>
     </div>
 
     <div class="panel">
-      <h2>Bifurcation diagram</h2>
-      <p class="hint" style="margin-top:-4px">Long-run values of xₙ for every r at once — click to jump r there. Notice the doubling cascade into chaos, and the clear windows of order inside it.</p>
-      <canvas id="disc-bifurc" height="260"></canvas>
+      <p class="hint" style="margin-bottom:0.7rem">Every long-run value of xₙ for every r at once — click to jump there. Watch the doubling cascade into chaos, and the windows of order inside it.</p>
+      <canvas id="disc-bifurc" height="240"></canvas>
     </div>
   </div>
 
@@ -230,11 +276,11 @@ footer{margin-top:26px;color:var(--muted);font-size:.8rem;text-align:center}
     <summary>What to look for</summary>
     <ul>
       <li><b>Fixed points</b> are where f(x) = 0 — the flow neither pushes left nor right. A filled dot pulls nearby points in (stable); an open dot pushes them away (unstable).</li>
-      <li>Set the pitchfork's <b>r</b> from negative to positive and watch one stable fixed point at x = 0 turn unstable while two new stable ones appear at &plusmn;&radic;r — a supercritical pitchfork bifurcation, live.</li>
-      <li>In the logistic map, small r settles to a single fixed point; past r &asymp; 3 it splits into a 2-cycle, then 4, then 8 &mdash; period doubling, right there in the cobweb spiral.</li>
-      <li>Past r &asymp; 3.57 the map is chaotic: two starting points a hair apart end up nowhere near each other after a few dozen steps. Try nudging x&#8320; slightly there.</li>
-      <li>The bifurcation diagram is the whole story in one picture: every r on the x-axis, every long-run value of x stacked above it. The bright bands inside the chaos (try r &asymp; 3.83) are periodic windows.</li>
-      <li>The tent and sine maps are chaotic by an entirely different mechanism (a fold, not a smooth stretch) and get there by different routes &mdash; worth comparing their own bifurcation diagrams.</li>
+      <li>The <b>pitchfork</b> and <b>transcritical</b> functions both bifurcate at r = 0, but differently: the pitchfork turns one stable point at x = 0 into an unstable one and grows two new stable points at &plusmn;&radic;r, while the transcritical just swaps stability between the two fixed points it always has.</li>
+      <li>The <b>saddle-node</b> function has two fixed points that collide and vanish as r crosses 0 from below — the cleanest example of points appearing or disappearing rather than trading stability.</li>
+      <li>In the <b>logistic map</b>, small r settles to one point; past r &asymp; 3 it splits into a 2-cycle, then 4, then 8 &mdash; period doubling, visible right in the cobweb.</li>
+      <li>The <b>quadratic</b> and <b>cubic</b> maps reach chaos the same way but by different mechanisms — worth comparing their bifurcation diagrams side by side with the logistic map's.</li>
+      <li>The bifurcation diagram is the whole story in one picture: every r on the x-axis, every long-run value of x stacked above it. The bright bands inside the chaos are periodic windows.</li>
     </ul>
   </details>
 
@@ -270,8 +316,7 @@ function cssVar(name){
 function mapper(xmin,xmax,ymin,ymax,left,right,top,bottom){
   const X=x=>left+(x-xmin)/(xmax-xmin)*(right-left);
   const Y=y=>bottom-(y-ymin)/(ymax-ymin)*(bottom-top);
-  const invX=px=>xmin+(px-left)/(right-left)*(xmax-xmin);
-  return {X,Y,invX,left,right,top,bottom};
+  return {X,Y,left,right,top,bottom};
 }
 
 function niceTicks(min,max,count){
@@ -336,24 +381,49 @@ function rk4Series(f,x0,T,dt){
 const CONT_FAMILIES={
   pitchfork:{
     formula:"dx/dt = r·x − x³",
-    params:["r"],
-    r:{min:-2,max:2,step:0.01,def:-0.5,label:"r"},
+    r:{min:-2,max:2,step:0.01,def:-0.5},
     hasK:false,
     f:(x,p)=>p.r*x-x*x*x,
     domain:()=>[-2.4,2.4]
   },
   logistic:{
     formula:"dx/dt = r·x·(1 − x/K)",
-    params:["r","K"],
-    r:{min:-2,max:3,step:0.01,def:1,label:"r"},
+    r:{min:-2,max:3,step:0.01,def:1},
     hasK:true,
     f:(x,p)=>p.r*x*(1-x/p.K),
     domain:p=>[-0.4*p.K-0.2,1.6*p.K+0.2]
   },
+  transcritical:{
+    formula:"dx/dt = r·x − x²",
+    r:{min:-2,max:2,step:0.01,def:1},
+    hasK:false,
+    f:(x,p)=>p.r*x-x*x,
+    domain:()=>[-3,3]
+  },
+  saddle:{
+    formula:"dx/dt = r + x²",
+    r:{min:-3,max:3,step:0.01,def:-1},
+    hasK:false,
+    f:(x,p)=>p.r+x*x,
+    domain:()=>[-3,3]
+  },
+  linear:{
+    formula:"dx/dt = r·x",
+    r:{min:-2,max:2,step:0.01,def:-0.5},
+    hasK:false,
+    f:(x,p)=>p.r*x,
+    domain:()=>[-3,3]
+  },
+  sinusoidal:{
+    formula:"dx/dt = sin(x) − r",
+    r:{min:-1,max:1,step:0.01,def:0.3},
+    hasK:false,
+    f:(x,p)=>Math.sin(x)-p.r,
+    domain:()=>[-2*Math.PI,2*Math.PI]
+  },
   custom:{
     formula:"dx/dt = f(x)",
-    params:["r"],
-    r:{min:-3,max:3,step:0.01,def:1,label:"r"},
+    r:{min:-3,max:3,step:0.01,def:1},
     hasK:false,
     f:null,
     domain:null
@@ -363,27 +433,37 @@ const CONT_FAMILIES={
 const DISC_FAMILIES={
   logistic:{
     formula:"xₙ₊₁ = r·xₙ·(1−xₙ)",
-    domain:[0,1], r:{min:0,max:4,step:0.001,def:3.2},
+    domain:[0,1], r:{min:0,max:4,step:0.001,def:3.2}, x0:0.2,
     f:(x,r)=>r*x*(1-x)
   },
   tent:{
     formula:"xₙ₊₁ = r·xₙ (x<½),  r·(1−xₙ) (x≥½)",
-    domain:[0,1], r:{min:0,max:2,step:0.001,def:1.8},
+    domain:[0,1], r:{min:0,max:2,step:0.001,def:1.8}, x0:0.2,
     f:(x,r)=>x<0.5?r*x:r*(1-x)
   },
   sine:{
     formula:"xₙ₊₁ = r·sin(π·xₙ)",
-    domain:[0,1], r:{min:0,max:1,step:0.001,def:0.9},
+    domain:[0,1], r:{min:0,max:1,step:0.001,def:0.9}, x0:0.3,
     f:(x,r)=>r*Math.sin(Math.PI*x)
+  },
+  quadratic:{
+    formula:"xₙ₊₁ = xₙ² + r",
+    domain:[-2,2], r:{min:-2,max:0.25,step:0.001,def:-1}, x0:0.1,
+    f:(x,r)=>x*x+r
+  },
+  cubic:{
+    formula:"xₙ₊₁ = r·xₙ·(1−xₙ²)",
+    domain:[-1,1], r:{min:0,max:3,step:0.001,def:2.3}, x0:0.1,
+    f:(x,r)=>r*x*(1-x*x)
   },
   custom:{
     formula:"xₙ₊₁ = f(xₙ)",
-    domain:[0,1], r:{min:-2,max:2,step:0.01,def:1},
+    domain:[0,1], r:{min:-2,max:2,step:0.01,def:1}, x0:0.2,
     f:null
   }
 };
 
-const TRAJ_COLORS=["#3b82f6","#f97316","#10b981","#a855f7","#ef4444","#06b6d4"];
+const TRAJ_COLORS=["#3b82f6","#f97316","#a855f7","#0ea5a5","#e02f6f","#8a6d3b"];
 
 let mode="cont";
 document.querySelectorAll(".tab").forEach(tab=>{
@@ -399,7 +479,7 @@ document.querySelectorAll(".tab").forEach(tab=>{
 const cont={
   family:"pitchfork", r:-0.5, K:1,
   expr:"r*x - x*x*x", xmin:-3, xmax:3,
-  trajectories:[], playing:true, simTime:0, T:14, dt:0.02, speed:1,
+  trajectories:[], playing:true, simTime:0, T:14, dt:0.02,
   lastFrame:null
 };
 
@@ -469,18 +549,18 @@ function drawContPhase(){
   const pad=(ymax-ymin)*0.12||1;
   ymin-=pad; ymax+=pad;
 
-  const PAD_L=46, PAD_R=16, TOP=12, GRAPH_H=200, GAP=20, LINE_H=44, BOTTOM=30;
+  const PAD_L=46, PAD_R=16, TOP=12, GRAPH_H=190, GAP=20, LINE_H=44, BOTTOM=30;
   const graphTop=TOP, graphBottom=TOP+GRAPH_H;
   const lineY=graphBottom+GAP+LINE_H/2;
   const left=PAD_L, right=w-PAD_R;
 
   const m=mapper(xmin,xmax,ymin,ymax,left,right,graphTop,graphBottom);
 
-  ctx.strokeStyle=cssVar("--border");
+  ctx.strokeStyle=cssVar("--hair");
   ctx.lineWidth=1;
   ctx.beginPath(); ctx.moveTo(left,m.Y(0)); ctx.lineTo(right,m.Y(0)); ctx.stroke();
 
-  ctx.fillStyle=cssVar("--muted");
+  ctx.fillStyle=cssVar("--faint");
   ctx.font="11px -apple-system,sans-serif";
   ctx.textAlign="right"; ctx.textBaseline="middle";
   for(const ty of niceTicks(ymin,ymax,4)){
@@ -489,7 +569,7 @@ function drawContPhase(){
   ctx.textAlign="center"; ctx.textBaseline="top";
   for(const tx of niceTicks(xmin,xmax,6)){
     ctx.fillText(tx.toFixed(Math.abs(tx)<1?2:1),m.X(tx),lineY+LINE_H/2+8);
-    ctx.strokeStyle=cssVar("--border");
+    ctx.strokeStyle=cssVar("--hair");
     ctx.beginPath(); ctx.moveTo(m.X(tx),graphBottom); ctx.lineTo(m.X(tx),graphBottom+4); ctx.stroke();
   }
 
@@ -500,18 +580,18 @@ function drawContPhase(){
     const px=m.X(x), py=m.Y(clamp(v,ymin,ymax));
     if(i===0||!isFinite(samples[i-1])) ctx.moveTo(px,py); else ctx.lineTo(px,py);
   }
-  ctx.strokeStyle=cssVar("--accent");
+  ctx.strokeStyle=cssVar("--math");
   ctx.lineWidth=2.5;
   ctx.stroke();
 
   const fixed=findFixedPoints(f,xmin,xmax);
 
-  ctx.strokeStyle=cssVar("--muted");
+  ctx.strokeStyle=cssVar("--faint");
   ctx.lineWidth=2;
   ctx.beginPath(); ctx.moveTo(left,lineY); ctx.lineTo(right,lineY); ctx.stroke();
 
   const bounds=[xmin,...fixed.map(p=>p.x),xmax].sort((a,b)=>a-b);
-  ctx.fillStyle=cssVar("--accent2");
+  ctx.fillStyle=cssVar("--math");
   for(let i=0;i<bounds.length-1;i++){
     const a=bounds[i], b=bounds[i+1];
     if(b-a<1e-6) continue;
@@ -534,8 +614,8 @@ function drawContPhase(){
   for(const p of fixed){
     const px=m.X(p.x);
     ctx.beginPath(); ctx.arc(px,lineY,7,0,Math.PI*2);
-    if(p.kind==="stable"){ ctx.fillStyle=cssVar("--stable"); ctx.fill(); }
-    else if(p.kind==="unstable"){ ctx.fillStyle=cssVar("--panel2"); ctx.fill(); ctx.lineWidth=2.5; ctx.strokeStyle=cssVar("--unstable"); ctx.stroke(); }
+    if(p.kind==="stable"){ ctx.fillStyle=cssVar("--math"); ctx.fill(); }
+    else if(p.kind==="unstable"){ ctx.fillStyle=cssVar("--panel"); ctx.fill(); ctx.lineWidth=2.5; ctx.strokeStyle=cssVar("--unstable"); ctx.stroke(); }
     else { ctx.fillStyle=cssVar("--semi"); ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle=cssVar("--semi"); ctx.stroke(); }
   }
 
@@ -562,8 +642,8 @@ function drawContTraj(){
   const left=PAD_L, right=w-PAD_R, top=TOP, bottom=h-BOTTOM;
   const m=mapper(0,cont.T,xmin,xmax,left,right,top,bottom);
 
-  ctx.strokeStyle=cssVar("--border"); ctx.lineWidth=1;
-  ctx.fillStyle=cssVar("--muted"); ctx.font="11px -apple-system,sans-serif";
+  ctx.strokeStyle=cssVar("--hair"); ctx.lineWidth=1;
+  ctx.fillStyle=cssVar("--faint"); ctx.font="11px -apple-system,sans-serif";
   ctx.textAlign="right"; ctx.textBaseline="middle";
   for(const ty of niceTicks(xmin,xmax,4)){
     ctx.beginPath(); ctx.moveTo(left,m.Y(ty)); ctx.lineTo(right,m.Y(ty)); ctx.stroke();
@@ -576,7 +656,7 @@ function drawContTraj(){
 
   const f=contF();
   for(const p of findFixedPoints(f,xmin,xmax)){
-    ctx.strokeStyle=cssVar("--border"); ctx.setLineDash([4,4]);
+    ctx.strokeStyle=cssVar("--hair"); ctx.setLineDash([4,4]);
     ctx.beginPath(); ctx.moveTo(left,m.Y(p.x)); ctx.lineTo(right,m.Y(p.x)); ctx.stroke();
     ctx.setLineDash([]);
   }
@@ -615,13 +695,10 @@ function bindRange(id,outId,fmt,onChange){
 
 bindRange("cont-r","cont-r-out",v=>v.toFixed(2),v=>{ cont.r=v; recomputeContTrajectories(); });
 bindRange("cont-k","cont-k-out",v=>v.toFixed(2),v=>{ cont.K=v; recomputeContTrajectories(); });
-bindRange("cont-speed","cont-speed-out",v=>v.toFixed(2)+"×",v=>{ cont.speed=v; });
 
 document.getElementById("cont-family").addEventListener("change",e=>{
   cont.family=e.target.value;
   const fam=CONT_FAMILIES[cont.family];
-  document.getElementById("cont-title").textContent=
-    cont.family==="pitchfork"?"Pitchfork bifurcation":cont.family==="logistic"?"Logistic growth":"Custom";
   document.getElementById("cont-formula").textContent=fam.formula;
   document.getElementById("cont-k-ctrl").classList.toggle("hidden",!fam.hasK);
   document.getElementById("cont-custom-ctrl").classList.toggle("hidden",cont.family!=="custom");
@@ -642,16 +719,15 @@ document.getElementById("cont-play").addEventListener("click",e=>{
   cont.playing=!cont.playing;
   e.target.textContent=cont.playing?"Pause":"Play";
 });
-document.getElementById("cont-reset").addEventListener("click",()=>{ cont.simTime=0; });
-document.getElementById("cont-clear").addEventListener("click",()=>{ contResetAll(); });
+document.getElementById("cont-reset").addEventListener("click",()=>{ contResetAll(); });
 
 contResetAll();
 
 const disc={
   family:"logistic", r:3.2, x0:0.2, n:60, expr:"r*x*(1-x)", xmin:0, xmax:1,
-  animate:false, reveal:60, lastTick:0
+  animate:false, reveal:60
 };
-let bifurcCache=null, bifurcFamily=null, bifurcExpr=null;
+let bifurcCache=null, bifurcFamily=null;
 
 function discF(){
   if(disc.family==="custom"){
@@ -693,7 +769,7 @@ function drawCobweb(){
   const left=PAD, top=PAD, right=left+size, bottom=top+size;
   const m=mapper(dmin,dmax,dmin,dmax,left,right,top,bottom);
 
-  ctx.strokeStyle=cssVar("--border"); ctx.lineWidth=1;
+  ctx.strokeStyle=cssVar("--hair"); ctx.lineWidth=1;
   ctx.strokeRect(left,top,size,size);
 
   ctx.setLineDash([4,4]);
@@ -707,16 +783,13 @@ function drawCobweb(){
     const px=m.X(x), py=m.Y(v);
     if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
   }
-  ctx.strokeStyle=cssVar("--accent"); ctx.lineWidth=2.2; ctx.stroke();
+  ctx.strokeStyle=cssVar("--math"); ctx.lineWidth=2.2; ctx.stroke();
 
   const seq=discSequence();
   const reveal=disc.animate?clamp(disc.reveal,0,disc.n):disc.n;
+  ctx.strokeStyle=cssVar("--unstable");
   ctx.lineWidth=1.6;
   for(let i=0;i<reveal;i++){
-    const t=i/Math.max(1,disc.n-1);
-    const col1=[59,130,246], col2=[168,85,247];
-    const cc=col1.map((c,idx)=>Math.round(lerp(c,col2[idx],t)));
-    ctx.strokeStyle=`rgb(${cc[0]},${cc[1]},${cc[2]})`;
     const x0=clamp(seq[i],dmin,dmax), x1=clamp(seq[i+1],dmin,dmax);
     ctx.beginPath();
     ctx.moveTo(m.X(x0),m.Y(x0));
@@ -726,7 +799,7 @@ function drawCobweb(){
   }
 
   ctx.beginPath(); ctx.arc(m.X(seq[0]),m.Y(seq[0]),4.5,0,Math.PI*2);
-  ctx.fillStyle=cssVar("--accent2"); ctx.fill();
+  ctx.fillStyle=cssVar("--semi"); ctx.fill();
 
   canvas._map={dmin,dmax,left,right,top,bottom,size};
 }
@@ -743,8 +816,8 @@ function drawStair(){
   const reveal=disc.animate?clamp(disc.reveal,0,disc.n):disc.n;
   const m=mapper(0,disc.n,dmin,dmax,left,right,top,bottom);
 
-  ctx.strokeStyle=cssVar("--border"); ctx.lineWidth=1;
-  ctx.fillStyle=cssVar("--muted"); ctx.font="11px -apple-system,sans-serif";
+  ctx.strokeStyle=cssVar("--hair"); ctx.lineWidth=1;
+  ctx.fillStyle=cssVar("--faint"); ctx.font="11px -apple-system,sans-serif";
   ctx.textAlign="right"; ctx.textBaseline="middle";
   for(const ty of niceTicks(dmin,dmax,4)){
     ctx.beginPath(); ctx.moveTo(left,m.Y(ty)); ctx.lineTo(right,m.Y(ty)); ctx.stroke();
@@ -760,12 +833,12 @@ function drawStair(){
     const px=m.X(i), py=m.Y(clamp(seq[i],dmin,dmax));
     if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
   }
-  ctx.strokeStyle=cssVar("--accent"); ctx.lineWidth=2; ctx.stroke();
+  ctx.strokeStyle=cssVar("--math"); ctx.lineWidth=2; ctx.stroke();
 
   for(let i=0;i<=reveal;i++){
     const px=m.X(i), py=m.Y(clamp(seq[i],dmin,dmax));
     ctx.beginPath(); ctx.arc(px,py,2.6,0,Math.PI*2);
-    ctx.fillStyle=cssVar("--accent2"); ctx.fill();
+    ctx.fillStyle=cssVar("--semi"); ctx.fill();
   }
 }
 
@@ -790,12 +863,13 @@ function computeBifurcation(){
   const off=document.createElement("canvas");
   off.width=W; off.height=H;
   const octx=off.getContext("2d");
-  octx.fillStyle=cssVar("--panel2"); octx.fillRect(0,0,W,H);
+  octx.fillStyle=cssVar("--wash-2"); octx.fillRect(0,0,W,H);
   const rSamples=520, warmup=200, capture=140;
-  octx.fillStyle=cssVar("--accent");
+  const margin=(dmax-dmin)*0.02;
+  octx.fillStyle=cssVar("--math");
   for(let i=0;i<rSamples;i++){
     const r=lerp(rmin,rmax,i/(rSamples-1));
-    let x=0.5;
+    let x=(dmin+dmax)/2;
     let ok=true;
     for(let k=0;k<warmup;k++){ x=f(x,r); if(!isFinite(x)){ok=false;break;} }
     if(!ok) continue;
@@ -804,7 +878,7 @@ function computeBifurcation(){
     for(let k=0;k<capture;k++){
       x=f(x,r);
       if(!isFinite(x)) break;
-      if(x<dmin-0.05||x>dmax+0.05) continue;
+      if(x<dmin-margin||x>dmax+margin) continue;
       const py=H-((x-dmin)/(dmax-dmin))*H;
       octx.fillRect(px,py,1.1,1.1);
     }
@@ -827,10 +901,10 @@ function drawBifurcation(){
   const PAD_L=44, PAD_R=14, TOP=10, BOTTOM=24;
   const left=PAD_L, right=w-PAD_R, top=TOP, bottom=h-BOTTOM;
   ctx.drawImage(bifurcCache.canvas,left,top,right-left,bottom-top);
-  ctx.strokeStyle=cssVar("--border"); ctx.strokeRect(left,top,right-left,bottom-top);
+  ctx.strokeStyle=cssVar("--hair"); ctx.strokeRect(left,top,right-left,bottom-top);
 
   const {rmin,rmax,dmin,dmax}=bifurcCache;
-  ctx.fillStyle=cssVar("--muted"); ctx.font="11px -apple-system,sans-serif";
+  ctx.fillStyle=cssVar("--faint"); ctx.font="11px -apple-system,sans-serif";
   ctx.textAlign="center"; ctx.textBaseline="top";
   for(const tr of niceTicks(rmin,rmax,6)){
     const px=left+(tr-rmin)/(rmax-rmin)*(right-left);
@@ -843,7 +917,7 @@ function drawBifurcation(){
   }
 
   const rx=left+(disc.r-rmin)/(rmax-rmin)*(right-left);
-  ctx.strokeStyle=cssVar("--accent2"); ctx.lineWidth=1.6;
+  ctx.strokeStyle=cssVar("--unstable"); ctx.lineWidth=1.6;
   ctx.beginPath(); ctx.moveTo(rx,top); ctx.lineTo(rx,bottom); ctx.stroke();
 
   canvas._map={rmin,rmax,left,right};
@@ -875,16 +949,15 @@ bindRange("disc-r","disc-r-out",v=>v.toFixed(3),v=>{ disc.r=v; disc.reveal=0; })
 bindRange("disc-x0","disc-x0-out",v=>v.toFixed(2),v=>{ disc.x0=v; disc.reveal=0; });
 bindRange("disc-n","disc-n-out",v=>v.toFixed(0),v=>{ disc.n=Math.round(v); disc.reveal=Math.min(disc.reveal,disc.n); });
 
-document.getElementById("disc-animate").addEventListener("change",e=>{
-  disc.animate=e.target.checked;
+document.getElementById("disc-animate").addEventListener("click",e=>{
+  disc.animate=e.currentTarget.getAttribute("aria-checked")!=="true";
+  e.currentTarget.setAttribute("aria-checked",String(disc.animate));
   disc.reveal=0;
 });
 
 document.getElementById("disc-family").addEventListener("change",e=>{
   disc.family=e.target.value;
   const fam=DISC_FAMILIES[disc.family];
-  document.getElementById("disc-title").textContent=
-    {logistic:"Logistic map",tent:"Tent map",sine:"Sine map",custom:"Custom"}[disc.family];
   document.getElementById("disc-formula").textContent=fam.formula;
   document.getElementById("disc-custom-ctrl").classList.toggle("hidden",disc.family!=="custom");
   if(disc.family!=="custom"){
@@ -894,6 +967,9 @@ document.getElementById("disc-family").addEventListener("change",e=>{
     document.getElementById("disc-r-out").textContent=disc.r.toFixed(3);
     const x0c=document.getElementById("disc-x0");
     x0c.min=fam.domain[0]; x0c.max=fam.domain[1];
+    disc.x0=fam.x0;
+    x0c.value=fam.x0;
+    document.getElementById("disc-x0-out").textContent=fam.x0.toFixed(2);
   }
   disc.reveal=0;
 });
@@ -909,7 +985,7 @@ function tick(now){
 
   if(mode==="cont"){
     if(cont.playing){
-      cont.simTime+=dt*cont.speed*(cont.T/6);
+      cont.simTime+=dt*(cont.T/6);
       if(cont.simTime>cont.T) cont.simTime=0;
     }
     drawContPhase();
