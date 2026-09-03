@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>1-D Dynamical Systems</title>
+<meta name="description" content="An interactive toy for exploring one-dimensional dynamical systems: phase lines, fixed points, cobweb diagrams and bifurcations.">
+<meta name="robots" content="noindex">
+<style>
+:root{
+  --bg:#f6f7fb; --panel:#ffffff; --panel2:#fbfbfe; --border:#e3e6ee; --text:#1a1d24; --muted:#6b7280;
+  --accent:#3b82f6; --accent2:#a855f7; --stable:#10b981; --unstable:#ef4444; --semi:#f59e0b;
+  --shadow: 0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06);
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0e1015; --panel:#171a21; --panel2:#1c202a; --border:#2a2f3a; --text:#e7e9ee; --muted:#9aa2b1; }
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  line-height:1.5;
+}
+html{-webkit-text-size-adjust:100%}
+body{overflow-x:hidden}
+.wrap{max-width:980px;margin:0 auto;padding:28px 16px 80px}
+a.back{color:var(--muted);text-decoration:none;font-size:.9rem}
+a.back:hover{color:var(--accent)}
+h1{
+  font-size:clamp(1.6rem,4vw,2.2rem); margin:14px 0 4px;
+  background:linear-gradient(90deg,var(--accent),var(--accent2));
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.sub{color:var(--muted);margin:0 0 22px;max-width:64ch}
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+.tab{
+  cursor:pointer;border:1px solid var(--border);background:var(--panel);color:var(--text);
+  padding:9px 16px;border-radius:999px;font-size:.92rem;font-weight:600;
+}
+.tab.active{background:var(--accent);border-color:var(--accent);color:#fff}
+@media (max-width:480px){
+  .tab{font-size:.85rem;padding:8px 13px}
+  .tab .tab-formula{display:none}
+}
+.panel{
+  background:var(--panel);border:1px solid var(--border);border-radius:14px;
+  box-shadow:var(--shadow);padding:18px 18px 20px;margin-bottom:18px;
+}
+.panel h2{margin:0 0 2px;font-size:1.05rem}
+.formula{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--accent);
+  font-size:.95rem;margin:2px 0 14px;
+}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px 20px;margin-bottom:6px}
+.ctrl label{display:flex;justify-content:space-between;font-size:.85rem;color:var(--muted);margin-bottom:5px}
+.ctrl output{color:var(--text);font-weight:600}
+.ctrl input[type=range]{width:100%;accent-color:var(--accent)}
+.ctrl select, .ctrl input[type=text], .ctrl input[type=number]{
+  width:100%;padding:7px 9px;border-radius:8px;border:1px solid var(--border);
+  background:var(--panel2);color:var(--text);font-size:16px;
+}
+input[type=range]{height:28px}
+.row2{display:flex;gap:10px}
+.row2 input{width:100%}
+.hint{font-size:.78rem;color:var(--muted);margin-top:10px}
+.hidden{display:none !important}
+canvas{width:100%;display:block;border-radius:10px;background:var(--panel2);cursor:crosshair;touch-action:pan-y}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:.78rem;color:var(--muted);margin-top:10px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+.dot.stable{background:var(--stable)}
+.dot.unstable{background:#fff;border:2px solid var(--unstable)}
+.dot.semi{background:linear-gradient(90deg,var(--semi) 50%, #fff 50%);border:2px solid var(--semi)}
+.btnrow{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}
+button.action{
+  cursor:pointer;border:1px solid var(--border);background:var(--panel2);color:var(--text);
+  padding:8px 14px;border-radius:8px;font-size:.85rem;font-weight:600;
+}
+button.action.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.action:hover{border-color:var(--accent)}
+.check{display:flex;align-items:center;gap:7px;font-size:.85rem;color:var(--muted);padding:8px 4px}
+.check input{accent-color:var(--accent)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:720px){.grid2{grid-template-columns:1fr}}
+details{
+  background:var(--panel);border:1px solid var(--border);border-radius:14px;
+  padding:14px 18px;box-shadow:var(--shadow);
+}
+summary{cursor:pointer;font-weight:600}
+details ul{margin:10px 0 2px;padding-left:20px;color:var(--muted);font-size:.9rem}
+details li{margin-bottom:7px}
+footer{margin-top:26px;color:var(--muted);font-size:.8rem;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="/">&larr; cgovind.com</a>
+  <h1>1-D Dynamical Systems</h1>
+  <p class="sub">A phase line, a cobweb diagram, and a bifurcation plot for the simplest kind of dynamical system there is: one number, changing over time. Drag the sliders and click the plots.</p>
+
+  <div class="tabs">
+    <button class="tab active" data-mode="cont">Continuous flow <span class="tab-formula">&nbsp;dx/dt&nbsp;=&nbsp;f(x)</span></button>
+    <button class="tab" data-mode="disc">Discrete map <span class="tab-formula">&nbsp;xₙ₊₁&nbsp;=&nbsp;f(xₙ)</span></button>
+  </div>
+
+  <div id="mode-cont">
+    <div class="panel">
+      <h2 id="cont-title">Pitchfork bifurcation</h2>
+      <div class="formula" id="cont-formula">dx/dt = r·x − x³</div>
+      <div class="controls">
+        <div class="ctrl">
+          <label>Family <select id="cont-family">
+            <option value="pitchfork">Pitchfork: r·x − x³</option>
+            <option value="logistic">Logistic growth: r·x·(1−x/K)</option>
+            <option value="custom">Custom f(x)</option>
+          </select></label>
+        </div>
+        <div class="ctrl">
+          <label>r <output id="cont-r-out">-0.50</output></label>
+          <input type="range" id="cont-r" min="-2" max="2" step="0.01" value="-0.5">
+        </div>
+        <div class="ctrl" id="cont-k-ctrl">
+          <label>K (capacity) <output id="cont-k-out">1.00</output></label>
+          <input type="range" id="cont-k" min="0.2" max="3" step="0.01" value="1">
+        </div>
+      </div>
+      <div class="controls hidden" id="cont-custom-ctrl">
+        <div class="ctrl" style="grid-column:1/-1">
+          <label>f(x) in terms of x and r</label>
+          <input type="text" id="cont-expr" value="r*x - x*x*x">
+        </div>
+        <div class="ctrl">
+          <label>x min</label>
+          <input type="number" id="cont-xmin" value="-3" step="0.1">
+        </div>
+        <div class="ctrl">
+          <label>x max</label>
+          <input type="number" id="cont-xmax" value="3" step="0.1">
+        </div>
+      </div>
+      <canvas id="cont-phase" height="320"></canvas>
+      <div class="legend">
+        <span><span class="dot stable"></span>stable fixed point</span>
+        <span><span class="dot unstable"></span>unstable fixed point</span>
+        <span><span class="dot semi"></span>semi-stable</span>
+        <span>arrows show the direction x is being pushed</span>
+      </div>
+      <div class="hint">Click anywhere on the line or the graph to drop a new trajectory there.</div>
+    </div>
+
+    <div class="panel">
+      <h2>x(t)</h2>
+      <div class="controls">
+        <div class="ctrl">
+          <label>Speed <output id="cont-speed-out">1.0×</output></label>
+          <input type="range" id="cont-speed" min="0.25" max="3" step="0.05" value="1">
+        </div>
+      </div>
+      <canvas id="cont-traj" height="220"></canvas>
+      <div class="btnrow">
+        <button class="action primary" id="cont-play">Pause</button>
+        <button class="action" id="cont-reset">Restart</button>
+        <button class="action" id="cont-clear">Clear trajectories</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="mode-disc" class="hidden">
+    <div class="panel">
+      <h2 id="disc-title">Logistic map</h2>
+      <div class="formula" id="disc-formula">xₙ₊₁ = r·xₙ·(1−xₙ)</div>
+      <div class="controls">
+        <div class="ctrl">
+          <label>Family <select id="disc-family">
+            <option value="logistic">Logistic: r·x·(1−x)</option>
+            <option value="tent">Tent map</option>
+            <option value="sine">Sine map: r·sin(πx)</option>
+            <option value="custom">Custom f(x)</option>
+          </select></label>
+        </div>
+        <div class="ctrl">
+          <label>r <output id="disc-r-out">3.200</output></label>
+          <input type="range" id="disc-r" min="0" max="4" step="0.001" value="3.2">
+        </div>
+        <div class="ctrl">
+          <label>x&#8320; (starting point) <output id="disc-x0-out">0.20</output></label>
+          <input type="range" id="disc-x0" min="0" max="1" step="0.001" value="0.2">
+        </div>
+        <div class="ctrl">
+          <label>Iterations <output id="disc-n-out">60</output></label>
+          <input type="range" id="disc-n" min="4" max="150" step="1" value="60">
+        </div>
+      </div>
+      <div class="controls hidden" id="disc-custom-ctrl">
+        <div class="ctrl" style="grid-column:1/-1">
+          <label>f(x) in terms of x and r</label>
+          <input type="text" id="disc-expr" value="r*x*(1-x)">
+        </div>
+        <div class="ctrl">
+          <label>x min</label>
+          <input type="number" id="disc-xmin" value="0" step="0.1">
+        </div>
+        <div class="ctrl">
+          <label>x max</label>
+          <input type="number" id="disc-xmax" value="1" step="0.1">
+        </div>
+      </div>
+      <div class="check"><input type="checkbox" id="disc-animate"> animate the cobweb spinning out step by step</div>
+      <div class="grid2">
+        <div>
+          <canvas id="disc-cobweb" height="320"></canvas>
+          <div class="hint">Click inside the plot to change x&#8320;.</div>
+        </div>
+        <div>
+          <canvas id="disc-stair" height="320"></canvas>
+          <div class="hint">xₙ against the step number n.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Bifurcation diagram</h2>
+      <p class="hint" style="margin-top:-4px">Long-run values of xₙ for every r at once — click to jump r there. Notice the doubling cascade into chaos, and the clear windows of order inside it.</p>
+      <canvas id="disc-bifurc" height="260"></canvas>
+    </div>
+  </div>
+
+  <details>
+    <summary>What to look for</summary>
+    <ul>
+      <li><b>Fixed points</b> are where f(x) = 0 — the flow neither pushes left nor right. A filled dot pulls nearby points in (stable); an open dot pushes them away (unstable).</li>
+      <li>Set the pitchfork's <b>r</b> from negative to positive and watch one stable fixed point at x = 0 turn unstable while two new stable ones appear at &plusmn;&radic;r — a supercritical pitchfork bifurcation, live.</li>
+      <li>In the logistic map, small r settles to a single fixed point; past r &asymp; 3 it splits into a 2-cycle, then 4, then 8 &mdash; period doubling, right there in the cobweb spiral.</li>
+      <li>Past r &asymp; 3.57 the map is chaotic: two starting points a hair apart end up nowhere near each other after a few dozen steps. Try nudging x&#8320; slightly there.</li>
+      <li>The bifurcation diagram is the whole story in one picture: every r on the x-axis, every long-run value of x stacked above it. The bright bands inside the chaos (try r &asymp; 3.83) are periodic windows.</li>
+      <li>The tent and sine maps are chaotic by an entirely different mechanism (a fold, not a smooth stretch) and get there by different routes &mdash; worth comparing their own bifurcation diagrams.</li>
+    </ul>
+  </details>
+
+  <footer>A small interactive toy for exploring one-dimensional dynamical systems.</footer>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const lerp=(a,b,t)=>a+(b-a)*t;
+
+const canvasState=new WeakMap();
+function ensureSize(canvas){
+  const dpr=window.devicePixelRatio||1;
+  const rect=canvas.getBoundingClientRect();
+  const w=Math.max(1,Math.round(rect.width)), h=Math.max(1,Math.round(rect.height));
+  const st=canvasState.get(canvas);
+  if(!st||st.w!==w||st.h!==h||st.dpr!==dpr){
+    canvas.width=w*dpr; canvas.height=h*dpr;
+    const ctx=canvas.getContext("2d");
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    canvasState.set(canvas,{w,h,dpr});
+  }
+  return {w,h};
+}
+
+function cssVar(name){
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function mapper(xmin,xmax,ymin,ymax,left,right,top,bottom){
+  const X=x=>left+(x-xmin)/(xmax-xmin)*(right-left);
+  const Y=y=>bottom-(y-ymin)/(ymax-ymin)*(bottom-top);
+  const invX=px=>xmin+(px-left)/(right-left)*(xmax-xmin);
+  return {X,Y,invX,left,right,top,bottom};
+}
+
+function niceTicks(min,max,count){
+  const span=max-min;
+  if(span<=0) return [min];
+  const raw=span/count;
+  const mag=Math.pow(10,Math.floor(Math.log10(raw)));
+  const norm=raw/mag;
+  let step;
+  if(norm<1.5) step=1*mag; else if(norm<3) step=2*mag; else if(norm<7) step=5*mag; else step=10*mag;
+  const start=Math.ceil(min/step)*step;
+  const ticks=[];
+  for(let v=start;v<=max+1e-9;v+=step) ticks.push(Math.round(v/step)*step);
+  return ticks;
+}
+
+function findFixedPoints(f,xmin,xmax){
+  const n=2500, step=(xmax-xmin)/n;
+  const roots=[];
+  let px=xmin, pv=f(xmin);
+  for(let i=1;i<=n;i++){
+    const x=xmin+i*step, v=f(x);
+    if(isFinite(pv)&&isFinite(v)){
+      if(pv===0) roots.push(px);
+      else if((pv<0&&v>0)||(pv>0&&v<0)){
+        let a=px,b=x,fa=pv;
+        for(let k=0;k<40;k++){
+          const m=(a+b)/2, fm=f(m);
+          if((fa<0&&fm<0)||(fa>0&&fm>0)){a=m;fa=fm;} else b=m;
+        }
+        roots.push((a+b)/2);
+      }
+    }
+    px=x; pv=v;
+  }
+  const merged=[];
+  for(const r of roots){
+    if(!merged.length||Math.abs(r-merged[merged.length-1])>(xmax-xmin)*1e-3) merged.push(r);
+  }
+  return merged.map(x=>{
+    const h=1e-4*(xmax-xmin || 1);
+    const d=(f(x+h)-f(x-h))/(2*h);
+    const kind=d<-1e-6?"stable":d>1e-6?"unstable":"semi";
+    return {x,d,kind};
+  });
+}
+
+function rk4Series(f,x0,T,dt){
+  const n=Math.ceil(T/dt);
+  const xs=new Float64Array(n+1), ts=new Float64Array(n+1);
+  xs[0]=x0;
+  let x=x0;
+  for(let i=0;i<n;i++){
+    const k1=f(x), k2=f(x+dt/2*k1), k3=f(x+dt/2*k2), k4=f(x+dt*k3);
+    x=x+dt/6*(k1+2*k2+2*k3+k4);
+    if(!isFinite(x)||Math.abs(x)>1e5) x=x>0?1e5:-1e5;
+    xs[i+1]=x; ts[i+1]=(i+1)*dt;
+  }
+  return {xs,ts};
+}
+
+const CONT_FAMILIES={
+  pitchfork:{
+    formula:"dx/dt = r·x − x³",
+    params:["r"],
+    r:{min:-2,max:2,step:0.01,def:-0.5,label:"r"},
+    hasK:false,
+    f:(x,p)=>p.r*x-x*x*x,
+    domain:()=>[-2.4,2.4]
+  },
+  logistic:{
+    formula:"dx/dt = r·x·(1 − x/K)",
+    params:["r","K"],
+    r:{min:-2,max:3,step:0.01,def:1,label:"r"},
+    hasK:true,
+    f:(x,p)=>p.r*x*(1-x/p.K),
+    domain:p=>[-0.4*p.K-0.2,1.6*p.K+0.2]
+  },
+  custom:{
+    formula:"dx/dt = f(x)",
+    params:["r"],
+    r:{min:-3,max:3,step:0.01,def:1,label:"r"},
+    hasK:false,
+    f:null,
+    domain:null
+  }
+};
+
+const DISC_FAMILIES={
+  logistic:{
+    formula:"xₙ₊₁ = r·xₙ·(1−xₙ)",
+    domain:[0,1], r:{min:0,max:4,step:0.001,def:3.2},
+    f:(x,r)=>r*x*(1-x)
+  },
+  tent:{
+    formula:"xₙ₊₁ = r·xₙ (x<½),  r·(1−xₙ) (x≥½)",
+    domain:[0,1], r:{min:0,max:2,step:0.001,def:1.8},
+    f:(x,r)=>x<0.5?r*x:r*(1-x)
+  },
+  sine:{
+    formula:"xₙ₊₁ = r·sin(π·xₙ)",
+    domain:[0,1], r:{min:0,max:1,step:0.001,def:0.9},
+    f:(x,r)=>r*Math.sin(Math.PI*x)
+  },
+  custom:{
+    formula:"xₙ₊₁ = f(xₙ)",
+    domain:[0,1], r:{min:-2,max:2,step:0.01,def:1},
+    f:null
+  }
+};
+
+const TRAJ_COLORS=["#3b82f6","#f97316","#10b981","#a855f7","#ef4444","#06b6d4"];
+
+let mode="cont";
+document.querySelectorAll(".tab").forEach(tab=>{
+  tab.addEventListener("click",()=>{
+    document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+    tab.classList.add("active");
+    mode=tab.dataset.mode;
+    document.getElementById("mode-cont").classList.toggle("hidden",mode!=="cont");
+    document.getElementById("mode-disc").classList.toggle("hidden",mode!=="disc");
+  });
+});
+
+const cont={
+  family:"pitchfork", r:-0.5, K:1,
+  expr:"r*x - x*x*x", xmin:-3, xmax:3,
+  trajectories:[], playing:true, simTime:0, T:14, dt:0.02, speed:1,
+  lastFrame:null
+};
+
+function contDomain(){
+  const fam=CONT_FAMILIES[cont.family];
+  if(cont.family==="custom") return [cont.xmin,cont.xmax];
+  return fam.domain({r:cont.r,K:cont.K});
+}
+function contF(){
+  if(cont.family==="custom"){
+    let fn;
+    try{ fn=new Function("x","r","with(Math){ return ("+cont.expr+"); }"); }
+    catch(e){ return ()=>NaN; }
+    return x=>{
+      try{ const v=fn(x,cont.r); return typeof v==="number"&&isFinite(v)?v:NaN; }
+      catch(e){ return NaN; }
+    };
+  }
+  const fam=CONT_FAMILIES[cont.family];
+  return x=>fam.f(x,{r:cont.r,K:cont.K});
+}
+
+function defaultTrajectories(){
+  const [xmin,xmax]=contDomain();
+  const pts=[xmin+(xmax-xmin)*0.15, xmin+(xmax-xmin)*0.5, xmin+(xmax-xmin)*0.85];
+  return pts.map((x0,i)=>({x0,color:TRAJ_COLORS[i%TRAJ_COLORS.length]}));
+}
+
+function recomputeContTrajectories(){
+  const f=contF();
+  cont.trajectories.forEach(t=>{ t.series=rk4Series(f,t.x0,cont.T,cont.dt); });
+}
+
+function contResetAll(){
+  cont.trajectories=defaultTrajectories();
+  recomputeContTrajectories();
+  cont.simTime=0;
+}
+
+function addTrajectory(x0){
+  if(cont.trajectories.length>=6) cont.trajectories.shift();
+  const color=TRAJ_COLORS[cont.trajectories.length%TRAJ_COLORS.length];
+  const t={x0,color};
+  t.series=rk4Series(contF(),x0,cont.T,cont.dt);
+  cont.trajectories.push(t);
+}
+
+function drawContPhase(){
+  const canvas=document.getElementById("cont-phase");
+  const {w,h}=ensureSize(canvas);
+  const ctx=canvas.getContext("2d");
+  ctx.clearRect(0,0,w,h);
+  const [xmin,xmax]=contDomain();
+  const f=contF();
+
+  const N=240;
+  let ymin=Infinity, ymax=-Infinity;
+  const samples=new Array(N+1);
+  for(let i=0;i<=N;i++){
+    const x=lerp(xmin,xmax,i/N);
+    const v=f(x);
+    samples[i]=v;
+    if(isFinite(v)){ ymin=Math.min(ymin,v); ymax=Math.max(ymax,v); }
+  }
+  if(!isFinite(ymin)||!isFinite(ymax)){ ymin=-1; ymax=1; }
+  ymin=Math.min(ymin,0); ymax=Math.max(ymax,0);
+  const pad=(ymax-ymin)*0.12||1;
+  ymin-=pad; ymax+=pad;
+
+  const PAD_L=46, PAD_R=16, TOP=12, GRAPH_H=200, GAP=20, LINE_H=44, BOTTOM=30;
+  const graphTop=TOP, graphBottom=TOP+GRAPH_H;
+  const lineY=graphBottom+GAP+LINE_H/2;
+  const left=PAD_L, right=w-PAD_R;
+
+  const m=mapper(xmin,xmax,ymin,ymax,left,right,graphTop,graphBottom);
+
+  ctx.strokeStyle=cssVar("--border");
+  ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(left,m.Y(0)); ctx.lineTo(right,m.Y(0)); ctx.stroke();
+
+  ctx.fillStyle=cssVar("--muted");
+  ctx.font="11px -apple-system,sans-serif";
+  ctx.textAlign="right"; ctx.textBaseline="middle";
+  for(const ty of niceTicks(ymin,ymax,4)){
+    ctx.fillText(ty.toFixed(Math.abs(ty)<1?2:1),left-8,m.Y(ty));
+  }
+  ctx.textAlign="center"; ctx.textBaseline="top";
+  for(const tx of niceTicks(xmin,xmax,6)){
+    ctx.fillText(tx.toFixed(Math.abs(tx)<1?2:1),m.X(tx),lineY+LINE_H/2+8);
+    ctx.strokeStyle=cssVar("--border");
+    ctx.beginPath(); ctx.moveTo(m.X(tx),graphBottom); ctx.lineTo(m.X(tx),graphBottom+4); ctx.stroke();
+  }
+
+  ctx.beginPath();
+  for(let i=0;i<=N;i++){
+    const x=lerp(xmin,xmax,i/N), v=samples[i];
+    if(!isFinite(v)) continue;
+    const px=m.X(x), py=m.Y(clamp(v,ymin,ymax));
+    if(i===0||!isFinite(samples[i-1])) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  }
+  ctx.strokeStyle=cssVar("--accent");
+  ctx.lineWidth=2.5;
+  ctx.stroke();
+
+  const fixed=findFixedPoints(f,xmin,xmax);
+
+  ctx.strokeStyle=cssVar("--muted");
+  ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(left,lineY); ctx.lineTo(right,lineY); ctx.stroke();
+
+  const bounds=[xmin,...fixed.map(p=>p.x),xmax].sort((a,b)=>a-b);
+  ctx.fillStyle=cssVar("--accent2");
+  for(let i=0;i<bounds.length-1;i++){
+    const a=bounds[i], b=bounds[i+1];
+    if(b-a<1e-6) continue;
+    const mid=(a+b)/2;
+    const sign=f(mid)>=0?1:-1;
+    const pxA=m.X(a), pxB=m.X(b);
+    const segLen=pxB-pxA;
+    const count=Math.max(1,Math.floor(segLen/34));
+    for(let k=0;k<count;k++){
+      const cx=pxA+segLen*(k+0.5)/count;
+      const dir=sign;
+      ctx.beginPath();
+      ctx.moveTo(cx-6*dir,lineY-5);
+      ctx.lineTo(cx+6*dir,lineY);
+      ctx.lineTo(cx-6*dir,lineY+5);
+      ctx.fill();
+    }
+  }
+
+  for(const p of fixed){
+    const px=m.X(p.x);
+    ctx.beginPath(); ctx.arc(px,lineY,7,0,Math.PI*2);
+    if(p.kind==="stable"){ ctx.fillStyle=cssVar("--stable"); ctx.fill(); }
+    else if(p.kind==="unstable"){ ctx.fillStyle=cssVar("--panel2"); ctx.fill(); ctx.lineWidth=2.5; ctx.strokeStyle=cssVar("--unstable"); ctx.stroke(); }
+    else { ctx.fillStyle=cssVar("--semi"); ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle=cssVar("--semi"); ctx.stroke(); }
+  }
+
+  for(const t of cont.trajectories){
+    const idx=clamp(Math.floor((cont.simTime/cont.T)*(t.series.xs.length-1)),0,t.series.xs.length-1);
+    const xv=t.series.xs[idx];
+    if(xv<xmin-0.001||xv>xmax+0.001) continue;
+    const px=m.X(clamp(xv,xmin,xmax));
+    ctx.beginPath(); ctx.arc(px,lineY,5.5,0,Math.PI*2);
+    ctx.fillStyle=t.color; ctx.fill();
+    ctx.lineWidth=1.5; ctx.strokeStyle=cssVar("--panel"); ctx.stroke();
+  }
+
+  canvas._map={xmin,xmax,left,right};
+}
+
+function drawContTraj(){
+  const canvas=document.getElementById("cont-traj");
+  const {w,h}=ensureSize(canvas);
+  const ctx=canvas.getContext("2d");
+  ctx.clearRect(0,0,w,h);
+  const [xmin,xmax]=contDomain();
+  const PAD_L=46, PAD_R=16, TOP=12, BOTTOM=26;
+  const left=PAD_L, right=w-PAD_R, top=TOP, bottom=h-BOTTOM;
+  const m=mapper(0,cont.T,xmin,xmax,left,right,top,bottom);
+
+  ctx.strokeStyle=cssVar("--border"); ctx.lineWidth=1;
+  ctx.fillStyle=cssVar("--muted"); ctx.font="11px -apple-system,sans-serif";
+  ctx.textAlign="right"; ctx.textBaseline="middle";
+  for(const ty of niceTicks(xmin,xmax,4)){
+    ctx.beginPath(); ctx.moveTo(left,m.Y(ty)); ctx.lineTo(right,m.Y(ty)); ctx.stroke();
+    ctx.fillText(ty.toFixed(Math.abs(ty)<1?2:1),left-8,m.Y(ty));
+  }
+  ctx.textAlign="center"; ctx.textBaseline="top";
+  for(const tx of niceTicks(0,cont.T,5)){
+    ctx.fillText(tx.toFixed(0),m.X(tx),bottom+8);
+  }
+
+  const f=contF();
+  for(const p of findFixedPoints(f,xmin,xmax)){
+    ctx.strokeStyle=cssVar("--border"); ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(left,m.Y(p.x)); ctx.lineTo(right,m.Y(p.x)); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  const progress=cont.simTime/cont.T;
+  for(const t of cont.trajectories){
+    const upto=clamp(Math.floor(progress*(t.series.xs.length-1)),0,t.series.xs.length-1);
+    ctx.beginPath();
+    for(let i=0;i<=upto;i++){
+      const px=m.X(t.series.ts[i]), py=m.Y(clamp(t.series.xs[i],xmin,xmax));
+      if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    }
+    ctx.strokeStyle=t.color; ctx.lineWidth=2.2; ctx.stroke();
+    const px=m.X(t.series.ts[upto]), py=m.Y(clamp(t.series.xs[upto],xmin,xmax));
+    ctx.beginPath(); ctx.arc(px,py,4,0,Math.PI*2); ctx.fillStyle=t.color; ctx.fill();
+  }
+}
+
+document.getElementById("cont-phase").addEventListener("click",e=>{
+  const canvas=e.currentTarget;
+  const rect=canvas.getBoundingClientRect();
+  const mp=canvas._map;
+  if(!mp) return;
+  const px=e.clientX-rect.left;
+  const x0=clamp(mp.xmin+(px-mp.left)/(mp.right-mp.left)*(mp.xmax-mp.xmin),mp.xmin,mp.xmax);
+  addTrajectory(x0);
+});
+
+function bindRange(id,outId,fmt,onChange){
+  const el=document.getElementById(id), out=document.getElementById(outId);
+  el.addEventListener("input",()=>{
+    if(out) out.textContent=fmt(parseFloat(el.value));
+    onChange(parseFloat(el.value));
+  });
+}
+
+bindRange("cont-r","cont-r-out",v=>v.toFixed(2),v=>{ cont.r=v; recomputeContTrajectories(); });
+bindRange("cont-k","cont-k-out",v=>v.toFixed(2),v=>{ cont.K=v; recomputeContTrajectories(); });
+bindRange("cont-speed","cont-speed-out",v=>v.toFixed(2)+"×",v=>{ cont.speed=v; });
+
+document.getElementById("cont-family").addEventListener("change",e=>{
+  cont.family=e.target.value;
+  const fam=CONT_FAMILIES[cont.family];
+  document.getElementById("cont-title").textContent=
+    cont.family==="pitchfork"?"Pitchfork bifurcation":cont.family==="logistic"?"Logistic growth":"Custom";
+  document.getElementById("cont-formula").textContent=fam.formula;
+  document.getElementById("cont-k-ctrl").classList.toggle("hidden",!fam.hasK);
+  document.getElementById("cont-custom-ctrl").classList.toggle("hidden",cont.family!=="custom");
+  if(cont.family!=="custom"){
+    const rc=document.getElementById("cont-r");
+    rc.min=fam.r.min; rc.max=fam.r.max; rc.step=fam.r.step; rc.value=fam.r.def;
+    cont.r=fam.r.def;
+    document.getElementById("cont-r-out").textContent=cont.r.toFixed(2);
+  }
+  contResetAll();
+});
+
+document.getElementById("cont-expr").addEventListener("input",e=>{ cont.expr=e.target.value; recomputeContTrajectories(); });
+document.getElementById("cont-xmin").addEventListener("input",e=>{ cont.xmin=parseFloat(e.target.value)||0; contResetAll(); });
+document.getElementById("cont-xmax").addEventListener("input",e=>{ cont.xmax=parseFloat(e.target.value)||1; contResetAll(); });
+
+document.getElementById("cont-play").addEventListener("click",e=>{
+  cont.playing=!cont.playing;
+  e.target.textContent=cont.playing?"Pause":"Play";
+});
+document.getElementById("cont-reset").addEventListener("click",()=>{ cont.simTime=0; });
+document.getElementById("cont-clear").addEventListener("click",()=>{ contResetAll(); });
+
+contResetAll();
+
+const disc={
+  family:"logistic", r:3.2, x0:0.2, n:60, expr:"r*x*(1-x)", xmin:0, xmax:1,
+  animate:false, reveal:60, lastTick:0
+};
+let bifurcCache=null, bifurcFamily=null, bifurcExpr=null;
+
+function discF(){
+  if(disc.family==="custom"){
+    let fn;
+    try{ fn=new Function("x","r","with(Math){ return ("+disc.expr+"); }"); }
+    catch(e){ return ()=>NaN; }
+    return x=>{
+      try{ const v=fn(x,disc.r); return typeof v==="number"&&isFinite(v)?v:NaN; }
+      catch(e){ return NaN; }
+    };
+  }
+  const fam=DISC_FAMILIES[disc.family];
+  return x=>fam.f(x,disc.r);
+}
+function discDomain(){
+  if(disc.family==="custom") return [disc.xmin,disc.xmax];
+  return DISC_FAMILIES[disc.family].domain;
+}
+function discSequence(){
+  const f=discF(), [dmin,dmax]=discDomain();
+  const seq=[clamp(disc.x0,dmin,dmax)];
+  for(let i=0;i<disc.n;i++){
+    let x=f(seq[seq.length-1]);
+    if(!isFinite(x)) x=dmax;
+    seq.push(x);
+  }
+  return seq;
+}
+
+function drawCobweb(){
+  const canvas=document.getElementById("disc-cobweb");
+  const {w,h}=ensureSize(canvas);
+  const ctx=canvas.getContext("2d");
+  ctx.clearRect(0,0,w,h);
+  const [dmin,dmax]=discDomain();
+  const f=discF();
+  const PAD=34;
+  const size=Math.min(w,h)-2*PAD;
+  const left=PAD, top=PAD, right=left+size, bottom=top+size;
+  const m=mapper(dmin,dmax,dmin,dmax,left,right,top,bottom);
+
+  ctx.strokeStyle=cssVar("--border"); ctx.lineWidth=1;
+  ctx.strokeRect(left,top,size,size);
+
+  ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.moveTo(m.X(dmin),m.Y(dmin)); ctx.lineTo(m.X(dmax),m.Y(dmax)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.beginPath();
+  const N=200;
+  for(let i=0;i<=N;i++){
+    const x=lerp(dmin,dmax,i/N), v=clamp(f(x),dmin,dmax);
+    const px=m.X(x), py=m.Y(v);
+    if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  }
+  ctx.strokeStyle=cssVar("--accent"); ctx.lineWidth=2.2; ctx.stroke();
+
+  const seq=discSequence();
+  const reveal=disc.animate?clamp(disc.reveal,0,disc.n):disc.n;
+  ctx.lineWidth=1.6;
+  for(let i=0;i<reveal;i++){
+    const t=i/Math.max(1,disc.n-1);
+    const col1=[59,130,246], col2=[168,85,247];
+    const cc=col1.map((c,idx)=>Math.round(lerp(c,col2[idx],t)));
+    ctx.strokeStyle=`rgb(${cc[0]},${cc[1]},${cc[2]})`;
+    const x0=clamp(seq[i],dmin,dmax), x1=clamp(seq[i+1],dmin,dmax);
+    ctx.beginPath();
+    ctx.moveTo(m.X(x0),m.Y(x0));
+    ctx.lineTo(m.X(x0),m.Y(x1));
+    ctx.lineTo(m.X(x1),m.Y(x1));
+    ctx.stroke();
+  }
+
+  ctx.beginPath(); ctx.arc(m.X(seq[0]),m.Y(seq[0]),4.5,0,Math.PI*2);
+  ctx.fillStyle=cssVar("--accent2"); ctx.fill();
+
+  canvas._map={dmin,dmax,left,right,top,bottom,size};
+}
+
+function drawStair(){
+  const canvas=document.getElementById("disc-stair");
+  const {w,h}=ensureSize(canvas);
+  const ctx=canvas.getContext("2d");
+  ctx.clearRect(0,0,w,h);
+  const [dmin,dmax]=discDomain();
+  const PAD_L=40, PAD_R=14, TOP=14, BOTTOM=26;
+  const left=PAD_L, right=w-PAD_R, top=TOP, bottom=h-BOTTOM;
+  const seq=discSequence();
+  const reveal=disc.animate?clamp(disc.reveal,0,disc.n):disc.n;
+  const m=mapper(0,disc.n,dmin,dmax,left,right,top,bottom);
+
+  ctx.strokeStyle=cssVar("--border"); ctx.lineWidth=1;
+  ctx.fillStyle=cssVar("--muted"); ctx.font="11px -apple-system,sans-serif";
+  ctx.textAlign="right"; ctx.textBaseline="middle";
+  for(const ty of niceTicks(dmin,dmax,4)){
+    ctx.beginPath(); ctx.moveTo(left,m.Y(ty)); ctx.lineTo(right,m.Y(ty)); ctx.stroke();
+    ctx.fillText(ty.toFixed(2),left-8,m.Y(ty));
+  }
+  ctx.textAlign="center"; ctx.textBaseline="top";
+  for(const tx of niceTicks(0,disc.n,5)){
+    ctx.fillText(tx.toFixed(0),m.X(tx),bottom+8);
+  }
+
+  ctx.beginPath();
+  for(let i=0;i<=reveal;i++){
+    const px=m.X(i), py=m.Y(clamp(seq[i],dmin,dmax));
+    if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  }
+  ctx.strokeStyle=cssVar("--accent"); ctx.lineWidth=2; ctx.stroke();
+
+  for(let i=0;i<=reveal;i++){
+    const px=m.X(i), py=m.Y(clamp(seq[i],dmin,dmax));
+    ctx.beginPath(); ctx.arc(px,py,2.6,0,Math.PI*2);
+    ctx.fillStyle=cssVar("--accent2"); ctx.fill();
+  }
+}
+
+function computeBifurcation(){
+  const [dmin,dmax]=discDomain();
+  let rmin,rmax,f;
+  if(disc.family==="custom"){
+    const fam=DISC_FAMILIES.custom;
+    rmin=fam.r.min; rmax=fam.r.max;
+    let fn;
+    try{ fn=new Function("x","r","with(Math){ return ("+disc.expr+"); }"); }
+    catch(e){ fn=null; }
+    f=fn?((x,r)=>{
+      try{ const v=fn(x,r); return typeof v==="number"&&isFinite(v)?v:NaN; }
+      catch(e){ return NaN; }
+    }):(x=>x);
+  } else {
+    const fam=DISC_FAMILIES[disc.family];
+    rmin=fam.r.min; rmax=fam.r.max; f=fam.f;
+  }
+  const W=1100,H=380;
+  const off=document.createElement("canvas");
+  off.width=W; off.height=H;
+  const octx=off.getContext("2d");
+  octx.fillStyle=cssVar("--panel2"); octx.fillRect(0,0,W,H);
+  const rSamples=520, warmup=200, capture=140;
+  octx.fillStyle=cssVar("--accent");
+  for(let i=0;i<rSamples;i++){
+    const r=lerp(rmin,rmax,i/(rSamples-1));
+    let x=0.5;
+    let ok=true;
+    for(let k=0;k<warmup;k++){ x=f(x,r); if(!isFinite(x)){ok=false;break;} }
+    if(!ok) continue;
+    const px=lerp(0,W,i/(rSamples-1));
+    octx.globalAlpha=0.16;
+    for(let k=0;k<capture;k++){
+      x=f(x,r);
+      if(!isFinite(x)) break;
+      if(x<dmin-0.05||x>dmax+0.05) continue;
+      const py=H-((x-dmin)/(dmax-dmin))*H;
+      octx.fillRect(px,py,1.1,1.1);
+    }
+    octx.globalAlpha=1;
+  }
+  bifurcCache={canvas:off,rmin,rmax,dmin,dmax,W,H};
+}
+
+function drawBifurcation(){
+  const canvas=document.getElementById("disc-bifurc");
+  const {w,h}=ensureSize(canvas);
+  const ctx=canvas.getContext("2d");
+  ctx.clearRect(0,0,w,h);
+  const key=disc.family+(disc.family==="custom"?"|"+disc.expr:"");
+  if(bifurcFamily!==key){
+    computeBifurcation();
+    bifurcFamily=key;
+  }
+  if(!bifurcCache) return;
+  const PAD_L=44, PAD_R=14, TOP=10, BOTTOM=24;
+  const left=PAD_L, right=w-PAD_R, top=TOP, bottom=h-BOTTOM;
+  ctx.drawImage(bifurcCache.canvas,left,top,right-left,bottom-top);
+  ctx.strokeStyle=cssVar("--border"); ctx.strokeRect(left,top,right-left,bottom-top);
+
+  const {rmin,rmax,dmin,dmax}=bifurcCache;
+  ctx.fillStyle=cssVar("--muted"); ctx.font="11px -apple-system,sans-serif";
+  ctx.textAlign="center"; ctx.textBaseline="top";
+  for(const tr of niceTicks(rmin,rmax,6)){
+    const px=left+(tr-rmin)/(rmax-rmin)*(right-left);
+    ctx.fillText(tr.toFixed(2),px,bottom+6);
+  }
+  ctx.textAlign="right"; ctx.textBaseline="middle";
+  for(const ty of niceTicks(dmin,dmax,3)){
+    const py=bottom-(ty-dmin)/(dmax-dmin)*(bottom-top);
+    ctx.fillText(ty.toFixed(2),left-6,py);
+  }
+
+  const rx=left+(disc.r-rmin)/(rmax-rmin)*(right-left);
+  ctx.strokeStyle=cssVar("--accent2"); ctx.lineWidth=1.6;
+  ctx.beginPath(); ctx.moveTo(rx,top); ctx.lineTo(rx,bottom); ctx.stroke();
+
+  canvas._map={rmin,rmax,left,right};
+}
+
+document.getElementById("disc-cobweb").addEventListener("click",e=>{
+  const canvas=e.currentTarget, rect=canvas.getBoundingClientRect();
+  const mp=canvas._map; if(!mp) return;
+  const px=e.clientX-rect.left;
+  const x0=clamp(mp.dmin+(px-mp.left)/mp.size*(mp.dmax-mp.dmin),mp.dmin,mp.dmax);
+  disc.x0=x0;
+  document.getElementById("disc-x0").value=x0;
+  document.getElementById("disc-x0-out").textContent=x0.toFixed(2);
+  disc.reveal=0;
+});
+
+document.getElementById("disc-bifurc").addEventListener("click",e=>{
+  const canvas=e.currentTarget, rect=canvas.getBoundingClientRect();
+  const mp=canvas._map; if(!mp) return;
+  const px=e.clientX-rect.left;
+  const r=clamp(mp.rmin+(px-mp.left)/(mp.right-mp.left)*(mp.rmax-mp.rmin),mp.rmin,mp.rmax);
+  disc.r=r;
+  document.getElementById("disc-r").value=r;
+  document.getElementById("disc-r-out").textContent=r.toFixed(3);
+  disc.reveal=0;
+});
+
+bindRange("disc-r","disc-r-out",v=>v.toFixed(3),v=>{ disc.r=v; disc.reveal=0; });
+bindRange("disc-x0","disc-x0-out",v=>v.toFixed(2),v=>{ disc.x0=v; disc.reveal=0; });
+bindRange("disc-n","disc-n-out",v=>v.toFixed(0),v=>{ disc.n=Math.round(v); disc.reveal=Math.min(disc.reveal,disc.n); });
+
+document.getElementById("disc-animate").addEventListener("change",e=>{
+  disc.animate=e.target.checked;
+  disc.reveal=0;
+});
+
+document.getElementById("disc-family").addEventListener("change",e=>{
+  disc.family=e.target.value;
+  const fam=DISC_FAMILIES[disc.family];
+  document.getElementById("disc-title").textContent=
+    {logistic:"Logistic map",tent:"Tent map",sine:"Sine map",custom:"Custom"}[disc.family];
+  document.getElementById("disc-formula").textContent=fam.formula;
+  document.getElementById("disc-custom-ctrl").classList.toggle("hidden",disc.family!=="custom");
+  if(disc.family!=="custom"){
+    const rc=document.getElementById("disc-r");
+    rc.min=fam.r.min; rc.max=fam.r.max; rc.step=fam.r.step; rc.value=fam.r.def;
+    disc.r=fam.r.def;
+    document.getElementById("disc-r-out").textContent=disc.r.toFixed(3);
+    const x0c=document.getElementById("disc-x0");
+    x0c.min=fam.domain[0]; x0c.max=fam.domain[1];
+  }
+  disc.reveal=0;
+});
+
+document.getElementById("disc-expr").addEventListener("input",e=>{ disc.expr=e.target.value; disc.reveal=0; });
+document.getElementById("disc-xmin").addEventListener("input",e=>{ disc.xmin=parseFloat(e.target.value)||0; disc.reveal=0; });
+document.getElementById("disc-xmax").addEventListener("input",e=>{ disc.xmax=parseFloat(e.target.value)||1; disc.reveal=0; });
+
+function tick(now){
+  if(cont.lastFrame===null) cont.lastFrame=now;
+  const dt=(now-cont.lastFrame)/1000;
+  cont.lastFrame=now;
+
+  if(mode==="cont"){
+    if(cont.playing){
+      cont.simTime+=dt*cont.speed*(cont.T/6);
+      if(cont.simTime>cont.T) cont.simTime=0;
+    }
+    drawContPhase();
+    drawContTraj();
+  } else {
+    if(disc.animate){
+      disc.tickAcc=(disc.tickAcc||0)+dt;
+      if(disc.tickAcc>0.22){
+        disc.tickAcc=0;
+        disc.reveal=(disc.reveal+1);
+        if(disc.reveal>disc.n) disc.reveal=0;
+      }
+    } else {
+      disc.reveal=disc.n;
+    }
+    drawCobweb();
+    drawStair();
+    drawBifurcation();
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+})();
+</script>
+</body>
+</html>
