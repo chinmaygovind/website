@@ -260,6 +260,90 @@ took `site/` from 615MB to 140MB. It is in git history if a page is ever wanted
 back; the deleting commit is the one to read first, because the Mario game's
 audio had to be moved out of `home/` on the way.
 
+## `/cobweb`
+
+A cobweb-diagram visualiser: pick a one-dimensional map, drop an x&#8320;, and
+watch the orbit stair-step between the curve and the diagonal. It replaced
+`site/dynamical-1d/`, a four-tab toy (continuous phase lines, cobwebs,
+staircases, bifurcations) that lived for two days in Sep 2026; the rewrite kept
+one idea and threw the rest away. **It is `noindex`, in no sitemap, and nothing
+links to it** - it is a page you send someone the URL for. `/dynamical-1d/` is a
+404 now and that is fine: nothing ever linked there either.
+
+**It is the second `index.html` under `site/`, so it is the first thing that has
+ever exercised `app.py`'s directory-index branch** - the one the root
+`CLAUDE.md` describes as kept-but-unused. `/cobweb/` serves the file and
+`/cobweb` redirects to it, both verified by hand rather than by a test.
+
+- **The expression parser is hand-written and there is no `eval` on the page.**
+  The old page compiled user input with `new Function(... with(Math) ...)`,
+  which cannot answer the one question this page needs to ask: *which letters in
+  this expression are free parameters?* A tokeniser plus recursive descent gives
+  that for nothing, so any letter that is not `x` becomes its own slider, and it
+  is what makes the error messages point at a character rather than saying
+  `SyntaxError`.
+- **Implicit multiplication is accepted and then written back explicitly.**
+  `r x(1-x)` parses and the editor becomes `r*x*(1 - x)`, so you can always see
+  how your text was split - `rx` visibly becoming `r*x` is the rule teaching
+  itself. **The rewrite happens on blur and on Enter, never while you type**:
+  live rewriting moves the caret out from under the person using it, and `2x`
+  becoming `2*x` mid-word is the exact moment that hurts. The graph still
+  updates on every keystroke; only the text waits.
+- Function names win over letters, but only when followed by `(`: `sin(x)` is
+  the function, `s*i*n` is what `sin` alone would have to be. `e`, `pi` and
+  `tau` are constants and never become sliders.
+- **The plot box is square inside whatever shape the canvas is**, because y=x
+  has to be at 45&deg; for a cobweb to be readable at all. `plotBox` takes
+  `min(width, height)` of the padded area and centres it, so the canvas can be
+  capped (`max-width: min(100%, 62vh)`, which is what keeps the transport row
+  above the fold on a 900px-tall screen) without the diagonal lying.
+- **`findRoots` scans on a grid offset by `1/pi`, and that is not decoration.**
+  On a plain `i/N` grid the logistic's x\* = 0.6875 landed *exactly* on a sample
+  at r = 3.2, its own default r - so the bracket was degenerate and the
+  headline "watch it binary-search" animation finished in one frame. A
+  half-step offset only moved the exact hit to the first midpoint. An
+  irrational offset makes an exact landing a coincidence rather than a
+  consequence of both numbers being dyadic. A root genuinely on the window edge
+  (the logistic's x\* = 0) is still found, by an explicit endpoint check, and
+  reports honestly that there was nothing to bisect.
+- **Every bisected root is residual-checked** (`|f(x) - x|` small) before it is
+  reported, which is what stops a pole being read as a fixed point: `1/x` changes
+  sign across zero without having a root there, and bisection alone cannot tell
+  the difference.
+- **The doubling map dies at n = 54 and that is real.** `mod(2*x, 1)` shifts the
+  binary expansion left one place per step, so a double runs out of mantissa and
+  every orbit reaches exactly 0. The page says "settles on a fixed point at
+  x* = 0", which is true of the arithmetic it just did and false of the map.
+  It is kept because it is the honest thing binary floating point does to the
+  canonical chaotic map, and because 54 steps is plenty to watch first.
+- Cycle detection compares the orbit's tail against itself at lags 1-16 with a
+  tolerance of `1e-6` of the window, so it reports "period 4" for something
+  merely very close to a 4-cycle. That is the useful reading at this scale;
+  it is not a proof.
+- **The preset list is flat and ordered simplest-formula-first**, cosine,
+  square root, logistic, then on to `mod(2*x, 1)`. It was grouped under "the
+  classics" and "gentle ones" for about an hour; the headings were noise over
+  nine items and the ordering says the same thing without them. **Index 0 is
+  therefore the landing state**, so cosine is what a first visit sees - a
+  spiral converging on the Dottie number, which is the clearest picture of what
+  a cobweb *is*. Reordering the array moves the default; that is the only thing
+  the order controls.
+- **The orbit is drawn in two passes, not one.** Everything older than the last
+  `TRAIL` (22) segments goes down as a single faint 1.1px path - the ghost of
+  the transient - and the tail is stroked segment by segment with width and
+  alpha ramping on `k*k` up to the head. One uniform pass could not show both
+  where the orbit has been and where it is now, which is the whole job. Paused
+  with the full orbit revealed, the same code brightens the *attractor* and
+  ghosts the approach, because the last 22 segments are the cycle.
+- **The x&#8320; diamond is labelled START, and the label flips to the diamond's
+  left within 58px of the right edge** so it never runs off the plot. It is
+  drawn after the clip is restored, with a `strokeText` halo in the panel
+  colour, so it stays readable over gridlines and the curve.
+- **A click sets x&#8320;, a drag pans, and the diamond on the axis scrubs.**
+  Grabbing the diamond pauses playback and reveals the whole orbit at once, so
+  sweeping x&#8320; shows basins flipping; a plain click restarts the animation
+  from n = 0 instead. Those two behaviours are deliberate opposites.
+
 ## The settings panel
 
 The settings tile used to open a placeholder. It is now a device settings screen
