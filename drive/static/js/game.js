@@ -2630,7 +2630,12 @@ async function loadSaves() {
     }
     S.saves = S.savesAll[key] || [];
   }
-  if (S.saves.length) S.saveActive = 0;
+  // **Nothing is selected on arrival**, however many states the track has.
+  // Loading a track is the start of a session and the first thing anybody does
+  // is drive it, so R has to be the restart it has always been until a slot is
+  // deliberately picked. Arriving already in practice mode means a lap that
+  // silently does not count - the one failure this whole feature is shaped to
+  // avoid - and it would happen on the press nobody thinks about.
   renderSaves();
 }
 

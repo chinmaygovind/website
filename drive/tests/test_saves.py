@@ -260,3 +260,30 @@ def test_two_drafts_do_not_share_a_stamp():
     b["line"] = [dict(e) for e in a["line"]]
     b["line"][5]["p"] = [b["line"][5]["p"][0] + 30] + list(b["line"][5]["p"][1:])
     assert tracks_mod.stamp(a) != tracks_mod.stamp(b)
+
+
+# ---------------------------------------------------------------------------
+# What is selected when you arrive
+# ---------------------------------------------------------------------------
+
+def test_loading_a_track_selects_no_save_state():
+    """**Arriving is not practising.**
+
+    `loadSaves` used to make slot 0 active as soon as it found any, so opening a
+    track you had drilled last week put you straight into practice mode: `R`
+    restored instead of restarting, and the first lap you drove silently did not
+    count. That is the exact failure the tainted-run flag exists to prevent, and
+    it would have happened on the one press nobody thinks about.
+
+    Read off the source because the alternative is a browser, and there is none
+    in CI. It is a narrow test of one assignment, which is all the bug was.
+    """
+    import os
+    import re
+    src = open(os.path.join(os.path.dirname(__file__), "..",
+                            "static", "js", "game.js")).read()
+    at = src.index("async function loadSaves() {")
+    body = src[at:re.compile(r"^\}$", re.M).search(src, at).end()]
+    assert "S.saveActive = -1;" in body, "arriving has to clear the selection"
+    assert not re.search(r"S\.saveActive\s*=\s*[0-9]", body), \
+        "nothing may pre-select a slot on arrival"
