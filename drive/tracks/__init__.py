@@ -190,8 +190,9 @@ def _cache_load(key):
     try:
         with open(os.path.join(_CACHE_DIR, key), "rb") as f:
             return pickle.load(f)
-    except (OSError, pickle.UnpicklingError, EOFError, AttributeError,
-            ValueError):
+    # Any failure at all is a miss; see `_cache_store` on why this is not a
+    # list of the exceptions that seemed likely.
+    except Exception:
         return None
 
 
@@ -210,8 +211,17 @@ def _cache_store(key, t):
     try:
         os.makedirs(_CACHE_DIR, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=_CACHE_DIR, suffix=".tmp")
+        # **`os.close` then plain `open`, never `os.fdopen`.** `app.py` calls
+        # `eventlet.monkey_patch()` before importing this, which replaces
+        # `os.fdopen` with one that returns eventlet's `GreenPipe` - and on
+        # Python 3.14 that blows up in `_pyio.open` with
+        # `'GreenFileIO' object has no attribute '_isatty_open_only'`. Builtin
+        # `open` is not patched. This took drive down on the box and not in any
+        # test, because a test only reaches this line on a cold cache and the
+        # cache was warm everywhere it ran.
+        os.close(fd)
         try:
-            with os.fdopen(fd, "wb") as f:
+            with open(tmp, "wb") as f:
                 pickle.dump(t, f, pickle.HIGHEST_PROTOCOL)
             os.replace(tmp, os.path.join(_CACHE_DIR, key))
         except BaseException:
@@ -220,7 +230,12 @@ def _cache_store(key, t):
             except OSError:
                 pass
             raise
-    except (OSError, pickle.PicklingError):
+    # **Every exception, not a list of the ones worth expecting.** This is a
+    # cache: the worst a failure here may cost is the four seconds it saves.
+    # Naming `OSError` and `pickle.PicklingError` was not wrong so much as
+    # beside the point - what actually arrived was an `AttributeError` from
+    # inside eventlet, and it crash-looped the service on import.
+    except Exception:
         pass
 
 
