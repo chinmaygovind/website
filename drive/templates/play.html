@@ -387,6 +387,28 @@
      above line up under the same thumb. -->
 <div id="touch">
   <div class="tpad left">
+    {% if mode != 'room' %}
+    {# **The left thumb, not the right.** A phone has no C and no J, so without
+       these two the feature does not exist there at all - and drilling one
+       corner is exactly what somebody on a phone wants, since they are not
+       going to drive Big Red end to end with their thumbs.
+
+       They are over here because the right pad is the one you are *using*: the
+       pedals are held, and the flag and the arrow above them are the two you
+       reach for having just fallen off. Making a save state is a deliberate,
+       unhurried press, and it belongs on the hand that is only steering. It
+       also puts them back where they were before these two arrived, which
+       matters more than the symmetry does - the flag and the arrow are muscle
+       memory and had shuffled left to make room. #}
+    <div class="utils">
+      <div class="tbtn small" id="tSaveNew" title="Create a save state">
+        <svg viewBox="0 0 24 24"><path d="M7 3.5h7.5V20L10.75 17 7 20z"/><path d="M17.5 5.5v6M14.5 8.5h6"/></svg>
+      </div>
+      <div class="tbtn small" id="tSaves" title="Manage save states">
+        <svg viewBox="0 0 24 24"><path d="M9 6.5h11M9 12h11M9 17.5h11"/><path d="M4.5 6.5h.01M4.5 12h.01M4.5 17.5h.01"/></svg>
+      </div>
+    </div>
+    {% endif %}
     <div class="steerpad">
       <div class="tbtn" id="tLeft" title="Steer left - double-tap and hold to drift">
         <svg viewBox="0 0 24 24"><path d="M15 4.5 8 12l7 7.5"/></svg>
@@ -404,18 +426,6 @@
       <div class="tbtn small" id="tRestart" title="Restart the run">
         <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 3.5V9h-5.5"/></svg>
       </div>
-      {% if mode != 'room' %}
-      {# A phone has no C and no M, so without these two the feature simply does
-         not exist there - and drilling one corner is exactly what somebody on a
-         phone wants, because they are not going to drive Big Red end to end
-         with their thumbs. #}
-      <div class="tbtn small" id="tSaveNew" title="Create a save state">
-        <svg viewBox="0 0 24 24"><path d="M7 3.5h7.5V20L10.75 17 7 20z"/><path d="M17.5 5.5v6M14.5 8.5h6"/></svg>
-      </div>
-      <div class="tbtn small" id="tSaves" title="Manage save states">
-        <svg viewBox="0 0 24 24"><path d="M9 6.5h11M9 12h11M9 17.5h11"/><path d="M4.5 6.5h.01M4.5 12h.01M4.5 17.5h.01"/></svg>
-      </div>
-      {% endif %}
     </div>
     <div class="pedals">
       <div class="tbtn" id="tBrake" title="Brake">
@@ -910,8 +920,8 @@
       <tr><td>Restart the run</td><td>The arrow, above the pedals</td></tr>
       <tr><td>Back to last checkpoint</td><td>The flag, above the pedals</td></tr>
       {% if mode != 'room' %}
-      <tr><td>Create Save State</td><td>The bookmark, above the pedals</td></tr>
-      <tr><td>Manage Save States</td><td>The list, above the pedals</td></tr>
+      <tr><td>Create Save State</td><td>The bookmark, above the steering</td></tr>
+      <tr><td>Manage Save States</td><td>The list, above the steering</td></tr>
       {% endif %}
     </table>
   </div>

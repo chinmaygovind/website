@@ -2782,8 +2782,13 @@ function renderSaves() {
       <b>${fmt(s.run.time)}</b>
       <input class="saves-name" value="${esc(slotName(s) || s.label || '')}"
              placeholder="${esc(s.label || '')}" maxlength="40">
+      <button class="saves-edit" title="Rename" aria-label="Rename">
+        <svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14.5 5.5l4 4"/></svg>
+      </button>
       ${here && saveIsStale(s) ? '<span class="saves-stale">track has changed</span>'
-                               : (here ? '<button class="saves-use">Use</button>' : '')}
+                               : (here ? `<button class="saves-pick" role="radio"
+             aria-checked="${i === S.saveActive}"
+             title="${i === S.saveActive ? 'Stop using this state' : 'Use this state'}"></button>` : '')}
       <button class="saves-x" title="Delete">&times;</button>
     </div>`;
 
@@ -2832,8 +2837,22 @@ function wireSaves() {
     if (!row) return;
     const i = +row.dataset.i;
     const mine = row.dataset.key === savesKey();
-    if (e.target.closest('.saves-use')) {
-      if (mine && restoreState(i)) toggleSaves(false);
+    // The name is plain text until you say otherwise: the pencil is what turns
+    // it into a field, and it selects what is there so a rename is one gesture
+    // rather than a tap followed by a hunt for the end of the word.
+    if (e.target.closest('.saves-edit')) {
+      const input = row.querySelector('.saves-name');
+      if (input) { input.focus(); input.select(); }
+      return;
+    }
+    // A radio you can turn off. Picking one is what R will go back to; picking
+    // the one already lit is the panel's way of saying Shift+R, so the two ways
+    // out of practice mode are the same gesture in the two places you might
+    // look for it - and nothing is deleted either way.
+    if (e.target.closest('.saves-pick')) {
+      if (!mine) return;
+      if (i === S.saveActive) { deactivateSave(); return; }
+      if (restoreState(i)) toggleSaves(false);
       return;
     }
     if (!e.target.closest('.saves-x')) return;

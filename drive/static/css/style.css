@@ -1478,7 +1478,9 @@ body.watching #touch, body.watching #startHint { display: none; }
 .saves-row.empty { opacity: .45; }
 .saves-row.empty b { font-family: var(--mono); }
 .saves-free { font-size: .82rem; font-style: italic; }
-.saves-row.on { background: rgba(29, 29, 31, .07); }
+/* The selected row, and it earns a stronger mark than the ring alone: this is
+   the slot R goes back to, which is the one fact the panel exists to show. */
+.saves-row.on { background: rgba(29, 29, 31, .09); box-shadow: inset 2px 0 0 var(--ink); }
 /* Greyed and unusable, but still there to be read and deleted. A state whose
    track has been re-authored under it would put the car inside whatever is
    there now; one that simply vanished would look like the game lost it. */
@@ -1489,21 +1491,69 @@ body.watching #touch, body.watching #startHint { display: none; }
   border: 1px solid var(--line); border-radius: 4px;
 }
 .saves-row b { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.saves-name {
+/* **Plain text until you edit it.** It is an `<input>` all the way through - so
+   there is one value, one change event and no contenteditable - but it is drawn
+   as the label it is for all but the few seconds anybody spends renaming. The
+   box it used to wear was the widest thing in the row and made nine slots read
+   as a form to fill in rather than as a list of places on the track. */
+/* `.saves-row` on the front is doing real work: the global field style is
+   `input:not([type])`, which is 0,1,1 and beats a bare `.saves-name` at 0,1,0 -
+   so the 2px box and the white fill came back and the name looked like a form
+   again. Two classes is 0,2,0 and wins honestly, which beats `!important`. */
+.saves-row .saves-name {
   flex: 1; min-width: 0; font: inherit; font-size: .88rem; color: var(--ink);
-  background: none; border: 1px solid transparent; border-radius: 4px;
-  padding: .15rem .35rem;
+  background: none; border: 0; border-bottom: 1px solid transparent;
+  border-radius: 0; padding: .1rem 0; width: auto; text-overflow: ellipsis;
 }
-.saves-name:hover { border-color: rgba(29, 29, 31, .2); }
-.saves-name:focus { border-color: var(--line); outline: none; }
+.saves-row .saves-name::placeholder { color: var(--ink-soft); }
+/* Only once it is actually being edited, and then unmistakably - an underline
+   rather than a box, so the row does not change height when it appears. */
+.saves-row .saves-name:focus { border-bottom-color: var(--line); outline: none; }
+/* The pencil is what opens it, so it says the text is editable and the text
+   itself does not have to. Faint until the row is under the cursor, because
+   nine of them lit at once is nine buttons competing with the times. */
+.saves-edit {
+  flex: 0 0 auto; display: grid; place-items: center; width: 24px; height: 24px;
+  padding: 0; background: none; border: 0; border-radius: 5px; cursor: pointer;
+  color: var(--ink-soft); opacity: .5;
+}
+.saves-edit svg {
+  width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.saves-row:hover .saves-edit, .saves-edit:focus-visible { opacity: 1; }
+.saves-edit:hover { color: var(--ink); background: rgba(29, 29, 31, .08); }
+/* A touch screen has no hover, so the pencil would never come up out of the
+   faint state and would read as decoration. */
+body.touch .saves-edit { opacity: .85; }
 .saves-stale { font-size: .78rem; color: var(--ink-soft); }
-.saves-use, .saves-x {
-  font: inherit; font-size: .82rem; cursor: pointer; background: none;
-  border: 1px solid var(--line); border-radius: 5px; padding: .12rem .5rem;
-  color: var(--ink);
+/* A radio you can turn off. Ring when the slot is idle, filled when it is the
+   one R goes back to - which is a state the row has to carry anyway, so it may
+   as well be the control. The old `Use` button was the widest thing in the row
+   after the name box, and it said "Use" nine times down a list where at most
+   one of them is ever in use. */
+.saves-pick {
+  flex: 0 0 auto; width: 18px; height: 18px; padding: 0; cursor: pointer;
+  background: none; border: 2px solid var(--ink-soft); border-radius: 50%;
+  display: grid; place-items: center;
 }
-.saves-use:hover { background: var(--ink); color: var(--paper); }
-.saves-x { border-color: transparent; font-size: 1.1rem; line-height: 1; color: var(--ink-soft); }
+.saves-pick:hover { border-color: var(--ink); }
+.saves-pick::after {
+  content: ''; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--ink); transform: scale(0); transition: transform .12s ease;
+}
+.saves-row.on .saves-pick { border-color: var(--ink); }
+.saves-row.on .saves-pick::after { transform: scale(1); }
+/* Lines the ring up with the empty rows' dash column, so the nine read as one
+   column rather than as filled rows with something extra bolted on. */
+.saves-row.empty::after {
+  content: ''; flex: 0 0 auto; width: 18px; height: 18px;
+}
+.saves-x {
+  font: inherit; cursor: pointer; background: none; border: 1px solid transparent;
+  border-radius: 5px; padding: .12rem .5rem;
+  font-size: 1.1rem; line-height: 1; color: var(--ink-soft);
+}
 .saves-x:hover { color: var(--red); }
 .saves-foot { display: flex; justify-content: space-between; gap: .5rem; margin-top: 1rem; }
 /* Dead rather than gone - see `renderSaves`. */
@@ -1520,9 +1570,12 @@ body.watching #touch, body.watching #startHint { display: none; }
   .saves-body { max-height: 62vh; gap: .5rem; }
   .saves-row { gap: .4rem; padding: .1rem .25rem; height: 32px; }
   .saves-row b { font-size: .82rem; }
-  .saves-name { font-size: .8rem; padding: .08rem .3rem; }
+  .saves-row .saves-name { font-size: .8rem; padding: .05rem 0; }
+  .saves-edit { width: 20px; height: 20px; }
   .saves-n { font-size: .7rem; min-width: 1.3em; height: 1.3em; }
-  .saves-use, .saves-x { font-size: .76rem; padding: .06rem .4rem; }
+  .saves-x { font-size: .95rem; padding: .06rem .35rem; }
+  .saves-pick { width: 15px; height: 15px; border-width: 2px; }
+  .saves-row.empty::after { width: 15px; height: 15px; }
   .saves-track { font-size: .88rem; }
 }
 
