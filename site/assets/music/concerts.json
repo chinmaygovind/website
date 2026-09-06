@@ -1,5 +1,28 @@
 [
   {
+    "artist": "Ye",
+    "date": "September 3, 2026",
+    "photos": [
+      "assets/music/ye/ye-01.jpg",
+      "assets/music/ye/ye-02.jpg",
+      "assets/music/ye/ye-03.jpg"
+    ],
+    "videos": [
+      {
+        "src": "assets/music/ye/ye-clip-01.mp4",
+        "poster": "assets/music/ye/ye-clip-01.jpg"
+      },
+      {
+        "src": "assets/music/ye/ye-clip-02.mp4",
+        "poster": "assets/music/ye/ye-clip-02.jpg"
+      },
+      {
+        "src": "assets/music/ye/ye-clip-03.mp4",
+        "poster": "assets/music/ye/ye-clip-03.jpg"
+      }
+    ]
+  },
+  {
     "artist": "Travis Scott",
     "date": "January 14, 2024",
     "photos": [
@@ -56,6 +79,21 @@
       {
         "src": "assets/music/kendrick-sza/kendrick-sza-clip-02.mp4",
         "poster": "assets/music/kendrick-sza/kendrick-sza-clip-02.jpg"
+      }
+    ]
+  },
+  {
+    "artist": "J. Cole",
+    "date": "August 2, 2026",
+    "photos": [
+      "assets/music/j-cole/j-cole-01.jpg",
+      "assets/music/j-cole/j-cole-02.jpg",
+      "assets/music/j-cole/j-cole-03.jpg"
+    ],
+    "videos": [
+      {
+        "src": "assets/music/j-cole/j-cole-clip-01.mp4",
+        "poster": "assets/music/j-cole/j-cole-clip-01.jpg"
       }
     ]
   },

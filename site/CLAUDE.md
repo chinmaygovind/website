@@ -99,8 +99,24 @@ below.
 - Two panes are live rather than static: the about modal's fast facts patch in a
   computed age and the Duolingo streak, and the music tile fills recently-played
   and top-artists from the Spotify proxy, plus a concert carousel driven by
-  `site/assets/music/concerts.json` (add a concert by appending to that JSON —
-  no code change).
+  `site/assets/music/concerts.json` (a concert is one object in that JSON —
+  no code change; **its position in the array is its position in the carousel**,
+  so inserting one shifts the rest along, which is how the order is chosen).
+- **The concert media is a fixed recipe, and every folder in
+  `site/assets/music/<artist-slug>/` already follows it** — match it or a new
+  concert looks unlike the nine beside it. Photos are `<slug>-NN.jpg`, cropped to
+  4:3 or 3:4 and no more than 2000 on the long edge (never *upscaled* to it — a
+  640x480 point-and-shoot frame stays 640x480, which the `.fit-frame` handles).
+  Clips are `<slug>-clip-NN.mp4`, h264 `-crf 23` scaled to 1080 on the short
+  edge (a phone's portrait video becomes 608x1080), aac 160k, `+faststart`, and
+  **trimmed to 15-20 seconds** — a 65-second upload is both the wrong shape for
+  a thumbnail strip and several times the weight of everything else in `site/`.
+  Each clip needs a `<slug>-clip-NN.jpg` poster at 540 wide, because a `<video>`
+  is `preload="none"` and without a poster its thumbnail is an empty box.
+  **The originals live in `~/GDrive/Z Malarkey/Concert Photos/<artist date>/`**
+  beside the About collage's folder, and iPhone stills there are HEIC, which
+  needs `pillow-heif` (see `tools/crop_photos.py`) — `ffmpeg` decodes only the
+  first 512x512 tile of one and will quietly hand you a corner of the picture.
 - **The resume modal's left pane is the work history, not the fast facts** (Aug
   2026). The facts were a list of Clash Royale wins and a Bedwars star count
   sitting beside a resume, which is not what somebody who opened `RESUME` came
