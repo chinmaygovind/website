@@ -58,3 +58,11 @@ drive/media/video/probe/
 # the same reasoning as accounts' AVATAR_DIR) and are served only to a logged-in
 # owner, so a copy is never committed here either.
 gto/avatars/
+
+# The scratch track folder `tests/test_track_folders.py` writes. It only exists
+# while that suite is running - the fixture removes it in a `finally` - and it
+# is *deliberately* broken, because the file's whole subject is that a bad
+# folder is contained rather than fatal. So a `git add -A` during a local run
+# commits a track designed to fail `test_every_track_folder_loads`, which is
+# precisely what it then does, in CI, blocking the deploy.
+drive/tracks/zzscratch/
