@@ -1221,6 +1221,17 @@ function bindInput() {
   // than holds like the pedals are.
   tb('tCheck', () => backToCheckpoint(), () => {});
   tb('tRestart', () => restartRun(), () => {});
+  // **Through `tb`, and that is the whole fix.** These two were wired with
+  // `onclick`, which needs a synthetic click - and the pedals' own `touchstart`
+  // handlers call `preventDefault()`, which is exactly what suppresses those.
+  // So with a thumb already down on the throttle, tapping either of these did
+  // nothing at all, which is the only way anybody would ever use them: you
+  // cannot save where you are without being somewhere, and being somewhere
+  // means holding the accelerator. Bound on `touchstart` like every other
+  // button on this pad, it fires on the finger going down and does not care how
+  // many other fingers are already on the glass.
+  tb('tSaveNew', () => saveState(), () => {});
+  tb('tSaves', () => toggleSaves(), () => {});
   // `?touch=1` forces the touch HUD on a desktop browser, which is the only way
   // to look at the phone layout without a phone.
   // Preview-picture mode: no HUD, no car, no controls - just the track.
@@ -2892,18 +2903,14 @@ function wireSaves() {
   // panel somebody deliberately opened and there is nothing behind it to get
   // back to.
   $('btnSavesIntroOk').onclick = () => { $('savesIntro').style.display = 'none'; };
-  // Four doors into two actions: a key and a button for each, on desktop and on
-  // touch. They go through the same two functions rather than repeating the
-  // rules, which is what stops the phone growing its own idea of when a save is
-  // allowed.
-  for (const id of ['btnSaveNew', 'tSaveNew']) {
-    const el = $(id);
-    if (el) el.onclick = () => saveState();
-  }
-  for (const id of ['btnSaves', 'tSaves']) {
-    const el = $(id);
-    if (el) el.onclick = () => toggleSaves();
-  }
+  // The desktop pair only. Their touch twins are bound in `bindInput` alongside
+  // the other thumb buttons, on `touchstart` rather than on click - see the note
+  // there. All four still land on these same two functions, so the phone cannot
+  // grow its own idea of when a save is allowed.
+  const btnNew = $('btnSaveNew');
+  if (btnNew) btnNew.onclick = () => saveState();
+  const btnList = $('btnSaves');
+  if (btnList) btnList.onclick = () => toggleSaves();
   $('btnSavesClear').onclick = () => {
     S.saves = [];
     S.saveActive = -1;

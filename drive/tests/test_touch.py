@@ -80,6 +80,11 @@ function setGhostCar() {} function setMusic() {} function storedFlag() {}
 // The two readouts. They are switches wired here beside Sound and Music, so
 // they land in this slice for the same reason those two do.
 function setFpsOn() {} function setPingOn() {}
+// The save-state pair, counted rather than stubbed away, because whether a tap
+// reaches them is the whole of `test_saving_works_with_a_thumb_on_the_throttle`.
+var SAVED = 0, OPENED = 0;
+function saveState() { SAVED++; }
+function toggleSaves() { OPENED++; }
 """
 
 # A thumb: every press and release advances the clock by a millisecond, so the
@@ -312,3 +317,55 @@ def test_the_two_gestures_do_not_interfere():
       release('tLeft');
       [drifting_(), held()].join('|');
     """) == "true|drift,up"
+
+
+# ---------------------------------------------------------------------------
+# The save-state buttons, with a thumb already on the throttle
+# ---------------------------------------------------------------------------
+
+def test_the_save_buttons_are_bound_on_touch_and_not_on_click():
+    """**They were `onclick`, and on a phone that meant they did nothing.**
+
+    Every other button on these pads binds `touchstart` and calls
+    `preventDefault()` - which is exactly what suppresses the synthetic click
+    that `onclick` is waiting for. So with a thumb held on the throttle, tapping
+    Create Save State or Manage Save States registered nothing at all, which is
+    the only way anybody would ever use them: you cannot save where you are
+    without being somewhere, and being somewhere means holding the accelerator.
+
+    Asserted on the *binding* rather than only on the effect, because the effect
+    can be reached by either wiring in a stub that fakes a click - and it is the
+    wiring that was wrong.
+    """
+    # Joined into a string, like `held()` above: an array comes back from
+    # QuickJS as an opaque object rather than as a list.
+    got = run("['tSaveNew', 'tSaves'].map(i =>"
+              " i + ':' + (($(i).h.touchstart || []).length ? 'touch' : 'NONE')).join(' ')")
+    assert got == "tSaveNew:touch tSaves:touch"
+
+
+def test_saving_works_with_a_thumb_on_the_throttle():
+    """The reported bug, as a sequence: hold the pedal, tap the button twice,
+    open the panel, never letting go."""
+    got = run("""
+      press('tGas');
+      press('tSaveNew'); release('tSaveNew');
+      press('tSaveNew'); release('tSaveNew');
+      press('tSaves');   release('tSaves');
+      SAVED + ',' + OPENED + ',' + held()
+    """)
+    # The third field is the throttle, still held. Without it this proves
+    # nothing: a tap with no other finger down worked even before the fix.
+    assert got == "2,1,up"
+
+
+def test_tapping_a_save_button_does_not_disturb_the_pedals():
+    """A second finger must not let go of the first. `tb` adds and removes only
+    its own button's state, but these two pass an empty `off`, so a mistake here
+    would look like the throttle cutting out when you save."""
+    got = run("""
+      press('tGas'); press('tBrake');
+      press('tSaveNew'); release('tSaveNew');
+      held()
+    """)
+    assert got == "down,up"
