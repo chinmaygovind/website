@@ -33,7 +33,19 @@ def _input_bindings():
     start = src.index("const input = {")
     body = src.index("function bindInput() {", start)
     end = re.compile(r"^\}$", re.M).search(src, body).end()
-    return src[start:end]
+    # Plus the one thing the bindings call that is a rule rather than a stub.
+    # `restartOrRestore` is what decides whether the restart button goes back to
+    # a save state or to the line, and it lives further down the file because
+    # the R key shares it - so stubbing it here would leave the interesting half
+    # of that button untested. Lifted whole, the same way test_panels.py lifts
+    # the panel toggles: every function in game.js closes in column 0.
+    return src[start:end] + "\n" + _fn(src, "restartOrRestore")
+
+
+def _fn(src, name):
+    """One top-level `function name(...)`, to its column-0 closing brace."""
+    at = src.index("function %s(" % name)
+    return src[at:re.compile(r"^\}$", re.M).search(src, at).end()]
 
 
 # Enough DOM to hold listeners and classes, and nothing else. `$` hands back a
@@ -66,11 +78,12 @@ var document = {
   body: { classList: { add: function () {} } },
 };
 var S = { sound: { start: function () {}, resume: function () {} }, touch: false,
-          view: { setVisible: function () {} }, car: {}, showGhost: true };
+          view: { setVisible: function () {} }, car: {}, showGhost: true,
+          saveActive: -1 };
 var CFG = { mode: 'solo' };
 // Everything bindInput reaches for that is not the input handling itself. If a
 // new one appears, the slice throws rather than silently testing nothing.
-function backToCheckpoint() {} function restartRun() {} function toggleMenu() {}
+function backToCheckpoint() {} function toggleMenu() {}
 function toggleHelp() {} function setSound() {} function showSide() {}
 function resetToStart() {} function chooseGhost() {} function setGhostMode() {}
 function toggleTracks() {} function toggleBoard() {} function openBoard() {}
@@ -85,6 +98,12 @@ function setFpsOn() {} function setPingOn() {}
 var SAVED = 0, OPENED = 0;
 function saveState() { SAVED++; }
 function toggleSaves() { OPENED++; }
+// The restart button's two jobs, recorded rather than performed.
+var ACTS = [];
+function restartRun() { ACTS.push('start'); }
+function restoreState() { ACTS.push('restore'); }
+function deactivateSave() { ACTS.push('off'); }
+function savesEnabled() { return S.saveActive >= 0; }
 """
 
 # A thumb: every press and release advances the clock by a millisecond, so the
@@ -105,6 +124,10 @@ function wait(ms) { NOW += ms; }
 // DOUBLE_TAP retunes the tests instead of silently invalidating them.
 function quick() { wait(Math.max(1, Math.round(DOUBLE_TAP * 0.4))); }
 function slow() { wait(DOUBLE_TAP * 4 + 100); }
+// The restart button has a window of its own, and it is much longer than the
+// steering one - expressed against the constant so retuning it retunes these.
+function quickTap() { wait(Math.round(RESTART_DOUBLE_TAP * 0.4)); }
+function slowTap() { wait(RESTART_DOUBLE_TAP * 2); }
 function held() { var a = []; touchKeys.forEach(k => a.push(k)); return a.sort().join(','); }
 function drifting_() { return touchKeys.has('drift'); }
 function lit(id) { return $(id).classList.contains('drifting'); }
@@ -369,3 +392,53 @@ def test_tapping_a_save_button_does_not_disturb_the_pedals():
       held()
     """)
     assert got == "down,up"
+
+
+# ---------------------------------------------------------------------------
+# The restart button, once practice states exist
+# ---------------------------------------------------------------------------
+
+def _restart(script):
+    return run("ACTS = []; " + script + " ACTS.join(',')")
+
+
+def test_the_restart_button_still_restarts_with_no_save_state():
+    """Nothing about practice mode may change the button for somebody who has
+    never used it. Two taps is then simply two restarts."""
+    assert _restart("S.saveActive = -1; press('tRestart'); release('tRestart');") == "start"
+    assert _restart("S.saveActive = -1;"
+                    " press('tRestart'); release('tRestart');"
+                    " press('tRestart'); release('tRestart');") == "start,start"
+
+
+def test_a_tap_goes_back_to_the_save_state():
+    """**The gap this closes.** The touch button called `restartRun` straight
+    out, so with a save state active it sent you to the line when you wanted the
+    corner - on the one device where opening the panel instead is most
+    expensive, and where not driving the lap again is the entire point."""
+    assert _restart("S.saveActive = 0; press('tRestart'); release('tRestart');") == "restore"
+
+
+def test_two_quick_taps_turn_practice_off():
+    """What Shift+R does, for a device with no Shift.
+
+    The first tap still restores - deferring it to find out whether a second is
+    coming would put a third of a second of lag on the most-pressed button in
+    the game - so the sequence is restore then off, and where you end up is the
+    start line."""
+    got = _restart("S.saveActive = 0;"
+                   " press('tRestart'); release('tRestart');"
+                   " quickTap();"
+                   " press('tRestart'); release('tRestart');")
+    assert got == "restore,off"
+
+
+def test_two_slow_taps_are_two_restores_and_not_a_deactivate():
+    """Coming back to the same corner twice is the single most common thing
+    anybody does with this feature, so it must not be mistaken for asking to
+    leave practice mode."""
+    got = _restart("S.saveActive = 0;"
+                   " press('tRestart'); release('tRestart');"
+                   " slowTap();"
+                   " press('tRestart'); release('tRestart');")
+    assert got == "restore,restore"

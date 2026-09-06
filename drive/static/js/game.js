@@ -268,6 +268,12 @@ const keys = new Set();          // keyboard
 // nobody asked for. A gap this short is not something your thumb does by
 // accident while driving; it only happens when you mean it.
 const DOUBLE_TAP = 50;           // ms from letting go to the second tap
+// Two deliberate taps on the restart button, which is a far slower gesture
+// than the one above: `DOUBLE_TAP` catches a thumb re-grabbing a steering
+// arrow mid-corner, and this is somebody deciding to press a button twice.
+// Beside it rather than with `ARM_MS`, because it is an input constant and
+// because the touch tests lift this slice of the file to run the bindings.
+const RESTART_DOUBLE_TAP = 320;
 //
 // The second way in is **drag the throttle downwards**, which is the one gesture
 // the pedal thumb can afford after all. The objection to putting anything on
@@ -1006,16 +1012,7 @@ function bindInput() {
     // a corner - and Shift+R is the full restart, which you want twice an hour.
     // Giving the common action the bare key is worth the split; giving practice
     // its own sixth key and leaving R alone would have been the wrong way round.
-    if (e.code === 'KeyR') {
-      if (S.saveActive >= 0 && savesEnabled()) {
-        // Shift **deactivates** rather than merely restarting. The slot stays in
-        // the panel - you spent the session placing it - but nothing is active
-        // any more, so R goes straight back to being the restart it has always
-        // been. That is the whole way out of practice mode, and it is one key.
-        if (e.shiftKey) deactivateSave();
-        else restoreState(S.saveActive);
-      } else restartRun();
-    }
+    if (e.code === 'KeyR') restartOrRestore(e.shiftKey);
     // C saves; the digits pick. A digit is `code` rather than `key` so that it
     // still works on a layout where the unshifted character is not a number.
     if (e.code === 'KeyC') { e.preventDefault(); saveState(); }
@@ -1220,7 +1217,29 @@ function bindInput() {
   // These two fire on press and do nothing on release, so they are taps rather
   // than holds like the pedals are.
   tb('tCheck', () => backToCheckpoint(), () => {});
-  tb('tRestart', () => restartRun(), () => {});
+  // **A tap goes back to the save state; two quick taps go to the start.** The
+  // same two things R and Shift+R do, because a phone has no Shift - and
+  // without it the restart button was the one control that ignored practice
+  // mode entirely, sending you to the line when you wanted the corner.
+  //
+  // The first tap of a double still restores, and that is deliberate: deferring
+  // it by a third of a second to find out whether a second tap is coming would
+  // put lag on the most-pressed button in the game to serve the rarer of its
+  // two jobs. The second tap simply overrides where the first one put you.
+  //
+  // Its own window rather than `DOUBLE_TAP`, which is 50ms - that is a thumb
+  // re-grabbing a steering arrow mid-corner, not somebody deciding to press a
+  // button twice.
+  // `-Infinity` and not 0: `performance.now()` starts at 0 too, so a zero
+  // sentinel makes the very first tap look like the second half of a double
+  // tap and quietly turns practice off instead of going back to the corner.
+  let lastRestartTap = -Infinity;
+  tb('tRestart', () => {
+    const now = performance.now();
+    const quick = now - lastRestartTap < RESTART_DOUBLE_TAP;
+    lastRestartTap = now;
+    restartOrRestore(quick);
+  }, () => {});
   // **Through `tb`, and that is the whole fix.** These two were wired with
   // `onclick`, which needs a synthetic click - and the pedals' own `touchstart`
   // handlers call `preventDefault()`, which is exactly what suppresses those.
@@ -2707,6 +2726,29 @@ function restoreState(i) {
   toast('Slot ' + (i + 1) + '  ' + fmt(s.run.time) +
         (slotName(s) ? '  ' + slotName(s) : ''));
   return true;
+}
+
+/**
+ * What R does, and what the restart button on a phone does. One rule, because
+ * they are one control wearing two shapes.
+ *
+ * With a slot active this goes back to it; `deactivate` turns practice off and
+ * lines up at the start instead. Without a slot it is the plain restart it has
+ * always been, and `deactivate` means nothing - two taps of a button that
+ * restarts is just two restarts.
+ *
+ * **The phone had none of this.** The touch button called `restartRun` straight
+ * out, so a save state could only be reached by opening the panel - on the one
+ * device where the panel is the most expensive thing to open, and where the
+ * whole point of the feature is not driving the lap again.
+ */
+function restartOrRestore(deactivate) {
+  if (S.saveActive >= 0 && savesEnabled()) {
+    if (deactivate) deactivateSave();
+    else restoreState(S.saveActive);
+    return;
+  }
+  restartRun();
 }
 
 /**
