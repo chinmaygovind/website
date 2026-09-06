@@ -1,0 +1,12 @@
+# Run once, in one process, before any test process starts. Blank lines and
+# # comments ignored; everything else is executed by the module's interpreter
+# with the module directory as the working directory.
+#
+# Building the track pool is the expensive part of importing `tracks`, and it is
+# cached on disk (tracks/__pycache__/pool). The cache makes the *second* process
+# cheap - but the runner starts N processes at once, so on a cold cache all N
+# build the whole pool simultaneously and none of them benefits. On a 2-core CI
+# runner that is most of why the parallel suite was no faster than the serial
+# one. Doing it here costs one build, once, and every test process then starts
+# warm.
+import tracks

@@ -1,0 +1,59 @@
+# Roughly what each test file costs, in milliseconds, most expensive first.
+#
+# **A hint for packing, not a measurement, and being out of date only costs
+# balance.** `scripts/parallel_pytest.py` packs files into one bundle per
+# process and starts the heaviest first; with no idea what anything costs it
+# packs round robin, and whichever bundle happens to collect the two slowest
+# files sets the wall clock.
+#
+# It is committed because the runner's own table (`.pytest-file-times`) is
+# gitignored and machine specific, so **CI never has one** - which is how the
+# first parallel version of this ran drive in 148s on a two core runner, no
+# better than the serial suite it replaced.
+#
+# Measured one file at a time on an idle 8-core laptop, so each figure includes
+# about 1.3s of interpreter and import start-up. Regenerate with:
+#   for f in drive/tests/test_*.py; do ... done   (see docs/testing.md)
+29388 test_verify.py
+29388 test_netcode.py
+27198 test_publish.py
+22149 test_racecheck.py
+22149 test_app.py
+19693 test_tracks.py
+19693 test_held_laps.py
+19290 test_share.py
+19290 test_closed_lap.py
+18529 test_scenery.py
+18529 test_bounce.py
+17739 test_race.py
+11977 test_saves.py
+11977 test_bots.py
+11815 test_portal.py
+8063 test_tracks_did_not_move.py
+8063 test_make.py
+7690 test_scenery_kit.py
+7690 test_catchup.py
+6055 test_onboarding.py
+5098 test_save_state_js.py
+5098 test_boost.py
+3941 test_start_line.py
+3941 test_garage.py
+3748 test_sound.py
+3748 test_embedding.py
+3568 test_rules_js.py
+3568 test_backfill.py
+3284 test_scenery_code.py
+3284 test_bump.py
+3214 test_user_tracks.py
+3214 test_moves.py
+1553 test_track_folders.py
+1180 test_runcheck.py
+1180 test_boards.py
+749 test_slipstream.py
+749 test_closing.py
+590 test_panels.py
+589 test_touch.py
+589 test_garage_js.py
+580 test_watch_sound.py
+580 test_no_js_name_clashes.py
+446 test_pending.py
