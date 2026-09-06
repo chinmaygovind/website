@@ -52,7 +52,13 @@ EXPECTED = {
     "sunrise":   {"total":    598, "road":   496, "wall":   100, "off":     2, "boost":  0},
     "chicane":   {"total":    534, "road":   432, "wall":   100, "off":     2, "boost":  0},
     "skyline":   {"total":   1620, "road":   500, "wall":  1120, "off":     0, "boost":  0},
-    "twist":     {"total":   1876, "road":   592, "wall":  1284, "off":     0, "boost":  0},
+    # 1876 -> 1852 when the opening straight went back to 56 units. It had been
+    # 70 since `7bff299`, a one-line edit that rode in with the Costco and moved
+    # every station, gate and loop 14 units downstream - so the nine laps on the
+    # board from before it played back off the road, the record among them. The
+    # revert puts those nine back on the geometry they were driven on and leaves
+    # the four set since to be re-driven.
+    "twist":     {"total":   1852, "road":   584, "wall":  1268, "off":     0, "boost":  0},
     "heights":   {"total":   1680, "road":   520, "wall":  1160, "off":     0, "boost":  0},
     "jumpcity":  {"total":   1638, "road":   506, "wall":  1132, "off":     0, "boost":  0},
     "spiral":    {"total":   1890, "road":   590, "wall":  1300, "off":     0, "boost":  0},

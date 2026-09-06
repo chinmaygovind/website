@@ -14,7 +14,7 @@ rails = True
 
 def build(b):
     """Two full loops, each stepping out to one side. Carry speed in."""
-    b.start(run=70)
+    b.start(run=56)
     b.loop(radius=20.0, dir="l")
     b.straight(30)
     b.cp()
