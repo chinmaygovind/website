@@ -2,7 +2,7 @@
    three.js bundle is not refetched every session. It deliberately never
    intercepts pages, POSTs or socket.io traffic, so live racing and time
    submission always go straight to the network. */
-const CACHE = "drive-v7";
+const CACHE = "drive-v8";
 const ASSETS = [
   "/static/css/style.css",
   "/static/js/game.js",
@@ -15,6 +15,8 @@ const ASSETS = [
   "/static/js/course.js",
   "/static/js/render.js",
   "/static/js/sound.js",
+  "/static/js/music.js",
+  "/static/js/menumusic.js",
   "/static/js/vendor/three.module.js",
   "/static/fonts/titillium-400.woff2",
   "/static/fonts/titillium-600.woff2",
@@ -41,6 +43,12 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(req.url);
   if (url.origin !== location.origin) return;
   if (!url.pathname.startsWith("/static/")) return;   // only static assets
+  // **Never the music.** An <audio> element fetches with `Range`, and the reply
+  // is a 206 with a slice of the file - putting one of those in the Cache API
+  // throws, and a cached slice that did land would be served back as if it were
+  // the whole song. They are also megabytes each, against a 1.3MB bundle this
+  // cache exists to keep. The browser's own HTTP cache handles them properly.
+  if (url.pathname.startsWith("/static/audio/")) return;
   // Network-first: always try fresh (so updates ship), fall back to cache offline.
   e.respondWith(
     fetch(req).then((res) => {

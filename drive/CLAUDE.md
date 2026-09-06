@@ -28,7 +28,7 @@ rest of the repo; any one of them is 11-28KB.
 | `docs/bots.md` | `bot.js`, `botworld.js`, `botsim.py`, `bots.py`, the hot laps in each track folder, adding a bot to a room |
 | `docs/garage.md` | `garage.py`, `garage.js`, `CarView`, the car model, liveries, decals |
 | `docs/badges.md` | adding, changing or recolouring a badge |
-| `docs/hud-and-controls.md` | the in-game HUD, the settings/help sheets, the keys, touch controls, `sound.js`, the type |
+| `docs/hud-and-controls.md` | the in-game HUD, the settings/help sheets, the keys, touch controls, `sound.js`, `music.js`, `menumusic.js`, the music and its now-playing card, the type |
 | `docs/pages-and-boards.md` | the home page, `/solo` and its track switcher, the track cards, `/account`, `/leaderboard` |
 | `docs/portal.md` | `portal.py`, `static/js/portal.js`, `/api/portal/auth`, the sitelock, `login.html`, who a player is inside a frame |
 | `docs/track-maker.md` | `/make`, `tracks/moves.py`, `tracks/starters.py`, `scenery_kit.js`, the scenery sandbox, the AI panel, saving and publishing a player's track, `tools/adopt_track.py` |
@@ -497,6 +497,36 @@ than 15% or move a corner more than 8 degrees before refusing.
   built track pool is cached under `tracks/__pycache__/pool`, keyed on the
   content of the folders and of the code that builds them, which is most of why
   `import tracks` is 0.04s instead of 4s.
+
+## The music is not in the repo
+
+**`drive/static/audio/` is gitignored except for `music.json`.** The manifest -
+which track plays what, who made it, the YouTube link and the loop points - is
+version controlled; the recordings are not, and are put on the box by hand.
+
+They are other people's work, this repo is public and so is the site, so
+committing them would publish them twice over. The manifest carries the credit
+instead, and the now-playing card in-game is the credit being shown.
+
+- **A slug with no file on disk plays nothing and is not an error.** That is
+  deliberate and it is what makes a fresh clone run, and CI pass, with no audio
+  at all. Figure Eight has no entry either way.
+- Adding a song is a line in `music.json` and a file beside it - no code
+  change. `in`/`out` are seconds and optional; `fade` is the crossfade and
+  defaults to the manifest's. Spa, Silverstone and Monaco deliberately share
+  one `file`, which is what stops driving between them restarting it.
+- Getting them onto the box is **`python tools/sync_music.py`**, which rsyncs
+  them and then checks the manifest against what actually landed.
+  **The deploy does `git reset --hard`, which leaves untracked files alone** -
+  the same reason TTR's `instance/tickettoride.db` and `.env` survive it. And
+  the same warning applies: never `git clean` there.
+- **Nothing at runtime tells you a file is missing.** The game just plays no
+  music on that track, which looks exactly like the music being switched off -
+  nothing logs, nothing 500s, the Action is green. That is what the verify half
+  of `sync_music.py` is for, and why it is not just an `rsync` one-liner:
+  `--check` reports what the manifest wants against what the box has, naming
+  the slugs that would go quiet, and is worth running after any deploy that
+  touched the music. If a track went silent, run it before reading any code.
 
 ## Deploy
 

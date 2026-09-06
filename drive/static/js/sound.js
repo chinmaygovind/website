@@ -1,4 +1,9 @@
-// All audio is synthesised in the browser - there are no sound files to ship.
+// All audio *except the music* is synthesised in the browser.
+//
+// The music is the one exception and it is a recent one: it used to be four
+// synthesised bars under every track alike, and it is now a song per track,
+// streamed from `/static/audio/` and looped by crossfade. That lives in its own
+// file - see `music.js` - and arrives here only as a bus and two calls.
 //
 // The engine is two detuned sawtooths through a lowpass whose pitch tracks wheel
 // speed, plus a separate whine that only comes up under load, which is what makes
@@ -13,7 +18,8 @@
 //
 // **There are two buses under the master and that is what makes two switches
 // possible.** Everything the car and the world make goes through `sfx`; the
-// music goes through its own, beside it rather than under it. Muting is the
+// music goes through its own (owned by `MusicPlayer`), beside it rather than
+// under it. Muting is the
 // sfx bus's gain and not the master's, so turning the sound off leaves the
 // music playing and turning the music off leaves the car audible - which is
 // the only reading of two separate switches that is not a lie about one of
@@ -21,6 +27,8 @@
 //
 // Nothing is created until the first user gesture, so no browser ever warns about
 // autoplay.
+
+import { MusicPlayer, loadManifest, entryFor } from './music.js';
 
 // A car nobody is driving goes quiet.
 //
@@ -74,6 +82,12 @@ export class Sound {
     // sounds like and music over the top of it is a preference, so it is one
     // you turn on rather than one you turn off.
     this.musicOn = false;
+    // Which track's song, and the manifest it is looked up in. Both are held
+    // here rather than in the graph because both are set before the first user
+    // gesture has built a context - `start` applies whatever it finds.
+    this.musicSlug = null;
+    this.manifest = null;
+    this.onsong = null;
     this.ready = false;
     this.voices = new Map();     // pid -> RivalVoice, while they are audible
     this.engQuiet = false;       // faded last frame, so the way back is quick
@@ -178,9 +192,17 @@ export class Sound {
 
     // --- music -----------------------------------------------------------
     // Beside the sfx bus rather than under it, so the two switches are two
-    // switches. Built even when it is switched off: it is a handful of nodes
-    // and it costs nothing until a note is scheduled through it.
-    this.music = new Music(ctx, this.master);
+    // switches. Built even when it is switched off: it is three nodes and two
+    // `<audio>` elements that have not been given a `src`.
+    this.music = new MusicPlayer(ctx, this.master, {
+      onsong: (e) => { if (this.onsong) this.onsong(e); },
+    });
+    // The manifest is fetched once and may land after the context is built, so
+    // the song is applied whenever both are ready rather than in either order.
+    loadManifest().then((m) => {
+      this.manifest = m;
+      this._applySong();
+    });
     this.music.enable(this.musicOn);
 
     this.ready = true;
@@ -248,14 +270,40 @@ export class Sound {
   }
 
   /**
+   * Which track we are on, and so which song plays.
+   *
+   * Called on entering a track and again every time the switcher swaps worlds
+   * without a navigation - the play page changes track underneath itself, so
+   * this cannot be a page-load decision.
+   */
+  setSong(slug) {
+    this.musicSlug = slug;
+    this._applySong();
+  }
+
+  /** Both halves present? Then hand the song over. Either order is fine. */
+  _applySong() {
+    if (!this.music || !this.manifest) return;
+    this.music.setSong(entryFor(this.manifest, this.musicSlug));
+  }
+
+  /**
+   * What is playing, for the now-playing card. Null when there is no context
+   * yet, no manifest yet, or no song for this track - all three of which are
+   * "show nothing" rather than anything to report.
+   */
+  currentSong() {
+    return (this.music && this.music.entry) || null;
+  }
+
+  /**
    * Wind the music on, from the frame loop.
    *
-   * Web Audio's clock is the only one accurate enough to place a note on, so
-   * the loop is scheduled a little way ahead of it rather than played by a
-   * timer - and the thing already running at 60Hz is the frame loop, so that
-   * is what turns the handle. It is called *before* the early returns for a
-   * replay and a preview shot, since music is the one thing that should not
-   * stop because you are watching somebody else's lap.
+   * All this turns now is the crossfade: `MusicPlayer.tick` watches the active
+   * deck's clock for the loop point. The thing already running at 60Hz is the
+   * frame loop, so that is what turns the handle. It is called *before* the
+   * early returns for a replay and a preview shot, since music is the one
+   * thing that should not stop because you are watching somebody else's lap.
    */
   musicTick() {
     if (this.music) this.music.tick();
@@ -493,200 +541,6 @@ export class Sound {
   record() {
     [784, 988, 1175, 1568].forEach((f, i) =>
       this._blip({ freq: f, type: 'square', dur: 0.3, gain: 0.2, delay: i * 0.09 }));
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Music
-// ---------------------------------------------------------------------------
-//
-// Synthesised like everything else here, for the same reason: a loop long
-// enough not to wear out is a megabyte of audio and this is a few hundred
-// bytes of arithmetic, on a page that already ships no sound files at all.
-//
-// **The clock is the audio context's, not the browser's.** A note placed by a
-// `setTimeout` lands wherever the main thread happens to be, which on a frame
-// that is building a track mesh is tens of milliseconds late and audibly so.
-// So the pattern is *scheduled ahead* against `ctx.currentTime` - `tick` looks
-// `LOOK` seconds into the future and books everything due before then, and
-// being called irregularly (or a couple of frames late) changes nothing about
-// where the notes actually fall. That is also why it needs no timer of its
-// own: the frame loop is already running, and one `while` there is the whole
-// scheduler.
-//
-// The loop is four bars of i - VI - III - VII in A minor, which is the
-// progression every driving game has been built on since about 1985, under a
-// rolling sixteenth-note arpeggio. It is mixed deliberately low: this plays
-// under an engine, and music you notice while braking for a corner is music
-// you turn off.
-
-const M_BPM = 124;
-const M_STEP = 60 / M_BPM / 4;      // one sixteenth
-const M_LOOK = 0.25;                // schedule this far ahead of the clock
-const M_BARS = 4;
-const M_LEVEL = 0.34;
-
-// Semitones above the key note, four bars of one chord each. Four notes per
-// chord so the arpeggio has a shape rather than a triad it keeps landing on.
-//
-// **Voiced to sit still, which means inverted rather than stacked from each
-// root.** Written the obvious way - every chord climbing from its own root -
-// the four bars start higher and higher and the figure ratchets up an octave
-// and a half across the loop instead of going round. So F is played as A-C-F
-// and G as G-B-D over the same handful of notes, and the whole thing stays
-// inside one octave and a half however long you drive.
-const M_CHORDS = [
-  [0, 3, 7, 10],       // Am7:  A  C  E  G
-  [-4, 0, 3, 8],       // F:    F  A  C  F
-  [3, 7, 10, 15],      // C:    C  E  G  C
-  [-2, 2, 5, 10],      // G:    G  B  D  G
-];
-// One bar of sixteenths as indices into the bar's chord, where 4 and up is the
-// same note an octave higher - so the figure climbs and falls across two
-// octaves out of four numbers.
-const M_ARP = [0, 2, 3, 2, 4, 2, 3, 5, 0, 2, 3, 5, 4, 3, 2, 1];
-// Where the bass falls. Syncopated rather than on every beat, which is what
-// stops the whole thing sitting square on top of the kick.
-const M_BASS = [0, 3, 6, 8, 11, 14];
-
-/** Hz of a note this many semitones above A1. */
-function mhz(semi) { return 55 * Math.pow(2, semi / 12); }
-
-class Music {
-  constructor(ctx, out) {
-    this.ctx = ctx;
-    this.bus = ctx.createGain();
-    this.bus.gain.value = 0;
-    this.bus.connect(out);
-    // The arpeggio and the bass share one lowpass, so the whole loop sits
-    // behind the engine rather than beside it.
-    this.tone = ctx.createBiquadFilter();
-    this.tone.type = 'lowpass';
-    this.tone.frequency.value = 2600;
-    this.tone.Q.value = 0.7;
-    this.tone.connect(this.bus);
-    // One buffer for every hat there will ever be. They come four to the bar
-    // for as long as the game is open, and filling a fresh one each time is
-    // the only part of this loop that would cost anything.
-    this.hiss = whiteNoise(ctx, 0.2);
-    this.on = false;
-    this.step = 0;      // which sixteenth of the loop comes next
-    this.next = 0;      // and when it is due, on the context clock
-  }
-
-  enable(on) {
-    if (on === this.on) return;
-    this.on = on;
-    const t = this.ctx.currentTime;
-    // Faded rather than switched: a bus cut to zero mid-note is a click.
-    this.bus.gain.setTargetAtTime(on ? M_LEVEL : 0, t, on ? 0.25 : 0.12);
-    // Picked up from the top of a bar rather than from wherever the loop had
-    // got to, so turning it back on is a phrase starting and not a fragment.
-    if (on) { this.step = 0; this.next = t + 0.08; }
-  }
-
-  tick() {
-    if (!this.on) return;
-    const t = this.ctx.currentTime;
-    // A tab left in the background stops getting frames, so the clock can be
-    // a long way past the next note when one arrives again. Skipping forward
-    // beats playing a minute of backlog at once.
-    if (this.next < t - M_LOOK) { this.next = t; this.step = 0; }
-    while (this.next < t + M_LOOK) {
-      this._step(this.step, this.next);
-      this.step = (this.step + 1) % (M_BARS * 16);
-      this.next += M_STEP;
-    }
-  }
-
-  _step(i, t) {
-    const beat = i % 16;
-    const chord = M_CHORDS[Math.floor(i / 16) % M_BARS];
-
-    // Four on the floor, with the backbeat a little softer.
-    if (beat % 4 === 0) this._kick(t, beat === 0 ? 1 : 0.82);
-    if (beat % 2 === 1) this._hat(t, beat % 8 === 5 ? 0.05 : 0.03);
-
-    if (M_BASS.includes(beat)) {
-      this._bass(t, mhz(chord[0] + 12));
-    }
-
-    const n = M_ARP[beat];
-    // Accented on the beat and lighter off it, which is most of what makes a
-    // string of even sixteenths sound played rather than clocked.
-    this._pluck(t, mhz(chord[n % 4] + 12 * Math.floor(n / 4) + 36),
-                beat % 4 === 0 ? 0.1 : 0.062);
-  }
-
-  _kick(t, gain) {
-    const ctx = this.ctx;
-    const o = ctx.createOscillator();
-    o.type = 'sine';
-    o.frequency.setValueAtTime(132, t);
-    o.frequency.exponentialRampToValueAtTime(44, t + 0.1);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.5 * gain, t + 0.008);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
-    o.connect(g).connect(this.bus);
-    o.start(t);
-    o.stop(t + 0.26);
-  }
-
-  _hat(t, gain) {
-    const ctx = this.ctx;
-    const s = ctx.createBufferSource();
-    s.buffer = this.hiss;
-    const f = ctx.createBiquadFilter();
-    f.type = 'highpass';
-    f.frequency.value = 7200;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(gain, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.045);
-    s.connect(f).connect(g).connect(this.bus);
-    s.start(t);
-    s.stop(t + 0.08);
-  }
-
-  _bass(t, freq) {
-    const ctx = this.ctx;
-    const o = ctx.createOscillator();
-    o.type = 'sawtooth';
-    o.frequency.setValueAtTime(freq, t);
-    const f = ctx.createBiquadFilter();
-    f.type = 'lowpass';
-    // The filter opens and shuts on every note, which is the whole of what
-    // makes a sawtooth sound plucked rather than held.
-    f.frequency.setValueAtTime(1400, t);
-    f.frequency.exponentialRampToValueAtTime(320, t + 0.18);
-    f.Q.value = 3;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.24, t + 0.012);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
-    o.connect(f).connect(g).connect(this.bus);
-    o.start(t);
-    o.stop(t + 0.24);
-  }
-
-  _pluck(t, freq, gain) {
-    const ctx = this.ctx;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(gain, t + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
-    g.connect(this.tone);
-    // Two oscillators a few cents apart, which is the cheapest way to make one
-    // note sound like an instrument rather than a test tone.
-    for (const detune of [-6, 6]) {
-      const o = ctx.createOscillator();
-      o.type = 'triangle';
-      o.frequency.setValueAtTime(freq, t);
-      o.detune.value = detune;
-      o.connect(g);
-      o.start(t);
-      o.stop(t + 0.2);
-    }
   }
 }
 

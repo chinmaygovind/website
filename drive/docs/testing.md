@@ -297,9 +297,15 @@ its own panner and the panner through the bus under the effects bus (so muting
 still mutes the field), and the listener's forward and up coming off the
 camera's own quaternion - including rolled upside down, which is a loop. It
 also pins the two switches being two - muting leaves the music's gain alone and
-vice versa - and the music scheduler: nothing booked twice, nothing booked at
-all when it is off, and a tab that was in the background for ten minutes
-picking up rather than firing ten minutes of notes at once.
+vice versa - and, since the music became a file per track, the song: that it
+follows the track through `setSong`, that a track with no entry is silence
+rather than the last track's song carrying on over it, that the three circuits
+sharing one file do not restart it, that the loop point is a crossfade with
+both decks briefly audible rather than a cut, and that the hand-written `in`
+and `out` are honoured on the first time round as well as the rest. The fake
+`<audio>` readies **both** decks, because both are cued up front - readying
+only the playing one models a browser that does not preload, which is the thing
+that bug was.
 
 There is no browser in CI, so **check rendering by hand** before shipping a
 geometry change.

@@ -838,6 +838,57 @@ body.touch .mapbtns { display: none; }
 }
 #toast.show { opacity: 1; }
 
+/* --- now playing ---------------------------------------------------------
+   The song credit, on the right, under the top-right HUD column rather than in
+   it: that column is live readouts you glance at mid-corner, and this is a
+   thing you read once and then ignore. It slides in from the right and leaves
+   the same way, so it reads as arriving rather than appearing.
+
+   `pointer-events` follows the visible state. A card faded to zero that still
+   swallowed clicks would be an invisible link sitting over the track for as
+   long as the page is open, which is the kind of bug nobody thinks to look for.
+
+   The right offset clears `env(safe-area-inset-right)` for the same reason the
+   HUD does - on a notched phone held sideways, the inset is the camera. */
+.now-playing {
+  position: absolute;
+  top: calc(96px + env(safe-area-inset-top, 0px));
+  right: calc(14px + env(safe-area-inset-right, 0px));
+  display: flex; align-items: center; gap: .6rem;
+  max-width: min(280px, 60vw);
+  padding: .5rem .85rem .5rem .7rem;
+  background: var(--hud); border: 1px solid var(--hud-line);
+  border-radius: 999px; color: #fff; text-decoration: none;
+  opacity: 0; transform: translateX(14px);
+  transition: opacity .28s ease, transform .28s ease;
+  pointer-events: none;
+}
+.now-playing.show { opacity: 1; transform: none; pointer-events: auto; }
+.now-playing:hover { border-color: rgba(255, 255, 255, .5); }
+/* Nothing to open, so nothing that looks openable. */
+.now-playing[aria-disabled] { pointer-events: none; }
+
+.np-icn { width: 18px; height: 18px; flex: 0 0 auto; fill: none;
+          stroke: currentColor; stroke-width: 1.8;
+          stroke-linecap: round; stroke-linejoin: round; opacity: .9; }
+/* `min-width: 0` so the two lines below may actually ellipsis - a flex item
+   defaults to `auto`, which refuses to shrink below its content and pushes the
+   card wider than its own max instead of truncating. */
+.np-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.np-title, .np-artist { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.np-title { font-size: .88rem; font-weight: 600; }
+.np-artist { font-size: .76rem; opacity: .72; }
+
+/* Thumbs own the top-right of a phone even less than they own the corners, and
+   the card is the least urgent thing on the screen - so it gets out of the way
+   of the readouts rather than the other way round. */
+body.touch .now-playing { top: calc(76px + env(safe-area-inset-top, 0px));
+                          max-width: min(210px, 52vw); padding: .4rem .7rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .now-playing { transition: opacity .28s ease; transform: none; }
+}
+
 .countdown {
   position: absolute; top: 34%; left: 50%; transform: translate(-50%, -50%);
   font-family: var(--display); font-size: 8rem; font-weight: 900; color: #fff;

@@ -1,0 +1,152 @@
+{
+  "_comment": "What plays where. The audio files themselves are NOT in git - see drive/CLAUDE.md. A slug with no file on disk plays nothing and is not an error.",
+  "fade": 1.2,
+  "level": 0.5,
+  "tracks": {
+    "menu": {
+      "file": "menu.mp3",
+      "artist": "Qumu",
+      "title": "File Select",
+      "url": "https://www.youtube.com/watch?v=kvE9Wrv2mt0"
+    },
+    "sunrise": {
+      "file": "sunrise.mp3",
+      "artist": "MagicX",
+      "title": "Can You Feel the Sunshine",
+      "url": "https://www.youtube.com/watch?v=m7e4ZQyX0ec"
+    },
+    "chicane": {
+      "file": "chicane.mp3",
+      "artist": "Qumu",
+      "title": "Slider",
+      "url": "https://www.youtube.com/watch?v=iYm6pknZLiQ"
+    },
+    "skyline": {
+      "file": "skyline.mp3",
+      "artist": "Mesmonium",
+      "title": "Sky Chase Zone",
+      "url": "https://www.youtube.com/watch?v=ewDwizVpU9M"
+    },
+    "twist": {
+      "file": "twist.mp3",
+      "artist": "Legend of Zelda",
+      "title": "Gerudo Valley",
+      "url": "https://www.youtube.com/watch?v=8cuv2fXQ9_M"
+    },
+    "heights": {
+      "file": "heights.mp3",
+      "artist": "Pilotwings",
+      "title": "Light Plane",
+      "url": "https://www.youtube.com/watch?v=6hSDtsYGvFk",
+      "in": 0,
+      "out": 123.0
+    },
+    "jumpcity": {
+      "file": "jumpcity.mp3",
+      "artist": "Duck Life",
+      "title": "Jumping Theme",
+      "url": null
+    },
+    "spiral": {
+      "file": "spiral.mp3",
+      "artist": "Qumu",
+      "title": "Buoy Base Galaxy",
+      "url": "https://www.youtube.com/watch?v=Rv3SOWZjT3A"
+    },
+    "gauntlet": {
+      "file": "gauntlet.mp3",
+      "artist": "Aacro X",
+      "title": "In The Final",
+      "url": "https://www.youtube.com/watch?v=faA3IMDbb5I"
+    },
+    "cove": {
+      "file": "cove.mp3",
+      "artist": "Gabe27",
+      "title": "Sunshine Seaside",
+      "url": "https://www.youtube.com/watch?v=9F4qNC1ocWQ"
+    },
+    "pillars": {
+      "file": "pillars.mp3",
+      "artist": "SMW",
+      "title": "Athletic Theme",
+      "url": "https://www.youtube.com/watch?v=yLz7Kp9KqnM"
+    },
+    "rainbow": {
+      "file": "rainbow.mp3",
+      "artist": "Panman10",
+      "title": "Wii Rainbow Road",
+      "url": "https://www.youtube.com/watch?v=7UHCfeeKZz4",
+      "fade": 2.5
+    },
+    "spa": {
+      "file": "f1.mp3",
+      "artist": "Hans Zimmer",
+      "title": "F1",
+      "url": "https://www.youtube.com/watch?v=YhX_Woa3kVA&list=RDYhX_Woa3kVA",
+      "in": 11.0,
+      "out": 179.0,
+      "fade": 2.0
+    },
+    "silverstone": {
+      "file": "f1.mp3",
+      "artist": "Hans Zimmer",
+      "title": "F1",
+      "url": "https://www.youtube.com/watch?v=YhX_Woa3kVA&list=RDYhX_Woa3kVA",
+      "in": 11.0,
+      "out": 179.0,
+      "fade": 2.0
+    },
+    "monaco": {
+      "file": "f1.mp3",
+      "artist": "Hans Zimmer",
+      "title": "F1",
+      "url": "https://www.youtube.com/watch?v=YhX_Woa3kVA&list=RDYhX_Woa3kVA",
+      "in": 11.0,
+      "out": 179.0,
+      "fade": 2.0
+    },
+    "costco": {
+      "file": "costco.mp3",
+      "artist": "MKWii",
+      "title": "Coconut Mall",
+      "url": "https://www.youtube.com/watch?v=cscuCIzItZQ"
+    },
+    "bigred": {
+      "file": "bigred.mp3",
+      "artist": "Qumu",
+      "title": "Big Blue",
+      "url": "https://www.youtube.com/watch?v=gOqIPvqn1YU"
+    },
+    "mountjoy": {
+      "file": "mountjoy.mp3",
+      "artist": "Panman10",
+      "title": "DK Summit",
+      "url": "https://www.youtube.com/watch?v=wxWOBeGVP18",
+      "fade": 2.5
+    },
+    "tokyo": {
+      "file": "tokyo.mp3",
+      "artist": "Teriyaki Boyz - Tokyo Drift",
+      "title": "Tokyo",
+      "url": "https://www.youtube.com/watch?v=pS5d77DQHOI"
+    },
+    "shroom": {
+      "file": "shroom.mp3",
+      "artist": "MKWii",
+      "title": "Mushroom Gorge",
+      "url": "https://www.youtube.com/watch?v=Jfss1FEOL6M"
+    },
+    "railway": {
+      "file": "railway.mp3",
+      "artist": "MKWii",
+      "title": "Wario's Gold Mine",
+      "url": "https://www.youtube.com/watch?v=7M6hdm0ltY4"
+    },
+    "dino": {
+      "file": "dino.mp3",
+      "artist": "MKWii",
+      "title": "DK Mountain",
+      "url": "https://www.youtube.com/watch?v=O4b4AteSR2g"
+    }
+  }
+}

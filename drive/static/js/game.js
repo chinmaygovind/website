@@ -471,6 +471,13 @@ function loadTrack(track, opts = {}) {
   for (const r of S.remotes.values()) dropRemote(r);
   S.remotes.clear();
 
+  // The song follows the track, here rather than at page load: the switcher
+  // swaps worlds without a navigation, so this is the only place that sees
+  // both arriving and switching. Announced only if the music is actually on -
+  // a card naming a song nobody can hear is a card about nothing.
+  S.sound.setSong(track.slug);
+  if (S.sound.musicOn) showNowPlaying();
+
   S.built = buildTrack(track, T);
   S.renderer.setTrack(S.built);
   S.course = new Course(S.built);
@@ -1333,6 +1340,10 @@ function bindInput() {
   // is outside the slice - so naming it binds a reference that does not resolve,
   // while calling it from an arrow is only ever reached by a real click.
   if ($('btnShare')) $('btnShare').onclick = () => shareLap();
+  // The manifest is fetched once and can land after `loadTrack` has already
+  // run, so the card is also driven from the song actually changing - which is
+  // what covers a cold load and the three circuits sharing one file.
+  S.sound.onsong = () => { if (S.sound.musicOn) showNowPlaying(); };
   $('btnSound').onclick = () => setSound(!S.sound.enabled);
   $('btnMusic').onclick = () => {
     setMusic(!S.sound.musicOn);
@@ -1649,6 +1660,51 @@ function setMusic(on, opts = {}) {
   $('btnMusicState').textContent = on ? 'On' : 'Off';
   $('btnMusic').classList.toggle('on', on);
   $('btnMusic').setAttribute('aria-pressed', on ? 'true' : 'false');
+  // On announces the song; off takes the card with it rather than leaving a
+  // panel naming music that has stopped.
+  if (on) showNowPlaying(); else hideNowPlaying();
+}
+
+// ---------------------------------------------------------------------------
+// Now playing
+// ---------------------------------------------------------------------------
+//
+// A card on the right naming the song and who made it, which is a credit
+// before it is a feature: this music is other people's work, linked back to the
+// video it came from. So the whole card is an anchor, it opens in a new tab
+// (leaving mid-lap would be a strange thing for a credit to do), and it says
+// the artist and title exactly as the manifest does.
+//
+// It shows on entering a track with the music already on, and on turning the
+// music on - the two moments the answer to "what is this?" changes - then goes
+// away on its own. It never shows with the music off.
+
+const NOW_PLAYING_MS = 6500;
+let nowPlayingTimer = null;
+
+function showNowPlaying() {
+  const el = $('nowPlaying');
+  if (!el) return;
+  const song = S.sound.currentSong();
+  // No song for this track (Figure Eight, a draft, a user-made track), or the
+  // manifest has not landed yet. In the second case `onsong` calls us back.
+  if (!song) { hideNowPlaying(); return; }
+  $('npTitle').textContent = song.title || '';
+  $('npArtist').textContent = song.artist || '';
+  $('npArtist').style.display = song.artist ? '' : 'none';
+  // A song with no link is still a credit; it just is not a link.
+  if (song.url) { el.href = song.url; el.removeAttribute('aria-disabled'); }
+  else { el.removeAttribute('href'); el.setAttribute('aria-disabled', 'true'); }
+  el.classList.add('show');
+  clearTimeout(nowPlayingTimer);
+  nowPlayingTimer = setTimeout(hideNowPlaying, NOW_PLAYING_MS);
+}
+
+function hideNowPlaying() {
+  const el = $('nowPlaying');
+  if (!el) return;
+  clearTimeout(nowPlayingTimer);
+  el.classList.remove('show');
 }
 
 // ---------------------------------------------------------------------------

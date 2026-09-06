@@ -25,6 +25,22 @@ pytestmark = pytest.mark.skipif(not jsrt.HAVE_QUICKJS,
                                 reason="needs the optional quickjs package")
 
 SOUND_JS = os.path.join(os.path.dirname(__file__), "..", "static", "js", "sound.js")
+MUSIC_JS = os.path.join(os.path.dirname(__file__), "..", "static", "js", "music.js")
+MUSIC_JSON = os.path.join(os.path.dirname(__file__), "..", "static", "audio", "music.json")
+
+
+def _src():
+    """`sound.js` and the `music.js` it imports, flattened into one script.
+
+    QuickJS is given a plain script rather than a module, so the `export`s come
+    off and the one `import` is satisfied by pasting the imported file above it.
+    Order matters only for the `const`s - the classes are hoisted either way.
+    """
+    music = re.sub(r"^export\s+", "", open(MUSIC_JS).read(), flags=re.M)
+    music = re.sub(r"^export \{.*?\};?$", "", music, flags=re.M)
+    sound = re.sub(r"^export\s+", "", open(SOUND_JS).read(), flags=re.M)
+    sound = re.sub(r"^import .*?;$", "", sound, flags=re.M)
+    return music + "\n" + sound
 
 def _const(name):
     """Read out of the file rather than written down twice, so the curve and the
@@ -41,7 +57,7 @@ IDLE_HZ = _const("IDLE_HZ")
 # node records where it was connected and every param records the last value it
 # was asked for, which between them is the whole of what this file does.
 STUB = """
-var LOG = {made: [], stopped: 0, disconnected: 0};
+var LOG = {made: [], stopped: 0, disconnected: 0, audio: [], timers: []};
 
 function Param(v) { this.value = v === undefined ? 0 : v; }
 // The third argument is the whole of the fade, so it is recorded beside the
@@ -52,6 +68,11 @@ Param.prototype.setTargetAtTime = function (v, t, tc) {
 Param.prototype.setValueAtTime = function (v) { this.value = v; return this; };
 Param.prototype.exponentialRampToValueAtTime = function (v) { this.value = v; return this; };
 Param.prototype.linearRampToValueAtTime = function (v) { this.value = v; return this; };
+// A crossfade cancels whatever the last one booked before it ramps, so that a
+// seam arriving mid-fade does not fight the fade already running. Nothing is
+// actually scheduled here, so there is nothing to drop - but it is called, and
+// a Param that cannot be cancelled is not one.
+Param.prototype.cancelScheduledValues = function () { return this; };
 
 function Node(kind) {
   this.kind = kind;
@@ -98,6 +119,57 @@ AudioContext.prototype.createBuffer = function (ch, len) {
   const data = new Float64Array(len);
   return {getChannelData: function () { return data; }};
 };
+AudioContext.prototype.createMediaElementSource = function (el) {
+  const n = new Node('mediasrc'); n.el = el; return n;
+};
+
+// An <audio> element, real enough to be cued, played and asked where it is.
+// `src` is a property *and* an attribute because `music.js` reads it through
+// `getAttribute` - it wants what was set, not the absolute URL a browser
+// resolves it to, and the two differ in a browser but would not here.
+function Audio() {
+  this.preload = ''; this.crossOrigin = null; this.loop = false;
+  this._src = null; this.currentTime = 0; this.duration = 0;
+  this.readyState = 0; this.paused = true; this.plays = 0;
+  this._on = {};
+  LOG.made.push('audio');
+  LOG.audio.push(this);
+}
+Object.defineProperty(Audio.prototype, 'src', {
+  get: function () { return this._src; },
+  // Setting src is what a browser treats as a fresh load: no metadata yet.
+  set: function (v) { this._src = v; this.readyState = 0; this.currentTime = 0; },
+});
+Audio.prototype.getAttribute = function (k) { return k === 'src' ? this._src : null; };
+Audio.prototype.play = function () { this.paused = false; this.plays++; return null; };
+Audio.prototype.pause = function () { this.paused = true; };
+Audio.prototype.addEventListener = function (k, fn) { (this._on[k] = this._on[k] || []).push(fn); };
+Audio.prototype.removeEventListener = function (k, fn) {
+  const a = this._on[k] || []; const i = a.indexOf(fn); if (i >= 0) a.splice(i, 1);
+};
+/** Metadata arrived - which is what makes a seek stick. */
+Audio.prototype.ready = function (dur) {
+  this.readyState = 4; this.duration = dur;
+  (this._on.loadedmetadata || []).slice().forEach(function (f) { f(); });
+};
+
+// Timers are recorded rather than run: every one of them here is the tail of a
+// fade, and a test that wants the tail runs it by hand.
+function setTimeout(fn, ms) { LOG.timers.push({fn: fn, ms: ms}); return LOG.timers.length; }
+function clearTimeout() {}
+function runTimers() {
+  const t = LOG.timers; LOG.timers = [];
+  t.forEach(function (x) { x.fn(); });
+}
+
+// `loadManifest` is called from `start()` and must not throw. It never
+// resolves: the tests set `snd.manifest` by hand, because a manifest arriving
+// after the context is exactly the case worth being explicit about.
+function Pending() {}
+Pending.prototype.then = function () { return this; };
+Pending.prototype.catch = function () { return this; };
+function fetch() { return new Pending(); }
+
 var window = {AudioContext: AudioContext};
 
 // A camera looking down -Z from the origin, which is the identity rotation.
@@ -118,8 +190,7 @@ function rival(id, x, z, opts) {
 def ctx():
     c = jsrt.quickjs.Context()
     c.eval(STUB)
-    src = re.sub(r"^export\s+", "", open(SOUND_JS).read(), flags=re.M)
-    c.eval(src)
+    c.eval(_src())
     c.eval("var snd = new Sound(); snd.start();")
     return c
 
@@ -135,7 +206,7 @@ def test_a_car_in_the_list_gets_a_voice_and_keeps_it():
     oscillators thirty times a second, which is both a click and a leak."""
     c = jsrt.quickjs.Context()
     c.eval(STUB)
-    c.eval(re.sub(r"^export\s+", "", open(SOUND_JS).read(), flags=re.M))
+    c.eval(_src())
     c.eval("var snd = new Sound(); snd.start();")
     c.eval("snd.rivals([rival('a', 0, -10)]);")
     made = _n(c, "LOG.made.length")
@@ -271,7 +342,7 @@ def test_nothing_is_touched_before_the_first_gesture():
     autoplay - so every one of these has to be a no-op until then."""
     c = jsrt.quickjs.Context()
     c.eval(STUB)
-    c.eval(re.sub(r"^export\s+", "", open(SOUND_JS).read(), flags=re.M))
+    c.eval(_src())
     c.eval("var snd = new Sound();")
     c.eval("snd.listener(camera()); snd.rivals([rival('a', 0, -10)]); snd.engine(1, 1, 0, false);")
     assert _n(c, "LOG.made.length") == 0
@@ -304,7 +375,7 @@ def test_a_muted_driver_who_wants_music_still_gets_a_context():
     sound was the only switch and is not now."""
     c = jsrt.quickjs.Context()
     c.eval(STUB)
-    c.eval(re.sub(r"^export\s+", "", open(SOUND_JS).read(), flags=re.M))
+    c.eval(_src())
     c.eval("var snd = new Sound(); snd.mute(true); snd.setMusic(true); snd.start();")
     assert c.eval("!!snd.ctx") and c.eval("!!snd.music")
     assert _n(c, "snd.sfx.gain.value") == 0
@@ -319,62 +390,181 @@ def test_the_music_switch_survives_being_set_before_there_is_a_context():
     first gesture has built anything for it to be applied to."""
     c = jsrt.quickjs.Context()
     c.eval(STUB)
-    c.eval(re.sub(r"^export\s+", "", open(SOUND_JS).read(), flags=re.M))
+    c.eval(_src())
     c.eval("var snd = new Sound(); snd.setMusic(true); snd.start();")
     assert _n(c, "snd.music.bus.gain.value") > 0
     c.eval("snd.setMusic(false);")
     assert _n(c, "snd.music.bus.gain.value") == 0
 
 
-# --- the loop ---------------------------------------------------------------
+# --- the song ---------------------------------------------------------------
+#
+# The music is a file now rather than an arpeggio, so what is worth testing has
+# moved with it: not where a note lands, but that the right song is picked, that
+# the loop point is a crossfade rather than a cut, and that a track with no song
+# is silence rather than the last track's song carrying on over it.
 
-def test_the_music_books_notes_ahead_of_the_clock_and_only_once(ctx):
-    """Scheduled against the audio clock rather than played by a timer, so
-    being called irregularly cannot move where a note lands."""
-    ctx.eval("snd.ctx.currentTime = 0; snd.setMusic(true);")
-    ctx.eval("LOG.made = []; snd.musicTick();")
-    booked = _n(ctx, "LOG.made.length")
-    assert booked > 0
-    # Called again on the same clock, nothing is due: a frame is not a note.
-    ctx.eval("snd.musicTick();")
-    assert _n(ctx, "LOG.made.length") == booked
-    # The clock moves, so more of the loop comes into range.
-    ctx.eval("snd.ctx.currentTime = 1; snd.musicTick();")
-    assert _n(ctx, "LOG.made.length") > booked
+# A manifest small enough to read, with the two shapes that differ: a song with
+# hand-written loop points and one that just plays the file.
+FAKE = """
+snd.manifest = {fade: 1.2, tracks: {
+  costco: {file: 'costco.mp3', artist: 'MKWii', title: 'Coconut Mall',
+           url: 'https://example.invalid/1'},
+  rainbow: {file: 'rainbow.mp3', artist: 'Panman14', title: 'Rainbow Road',
+            url: 'https://example.invalid/2', in: 20, out: 330, fade: 2.5},
+  spa: {file: 'f1.mp3', artist: 'Hans Zimmer', title: 'F1'},
+  monaco: {file: 'f1.mp3', artist: 'Hans Zimmer', title: 'F1'}
+}};
+"""
 
 
-def test_the_music_off_schedules_nothing(ctx):
-    ctx.eval("snd.ctx.currentTime = 0; LOG.made = [];")   # off is the default
+def _cued(ctx, deck=None):
+    """The deck that is actually playing, as a plain dict."""
+    d = "snd.music.decks[%s]" % ("snd.music.active" if deck is None else deck)
+    return {
+        "src": ctx.eval("%s.el.getAttribute('src')" % d),
+        "at": _n(ctx, "%s.el.currentTime" % d),
+        "paused": ctx.eval("%s.el.paused" % d),
+        "gain": _n(ctx, "%s.gain.gain.value" % d),
+    }
+
+
+def _ready(ctx, dur):
+    """Metadata arrives on both decks, because both are cued up front - see
+    `_cue`. Readying only the playing one models a browser that does not
+    preload, which is the thing that bug was."""
+    ctx.eval("snd.music.decks.forEach(function (d) { d.el.ready(%f); });" % dur)
+
+
+def test_both_decks_are_cued_before_either_is_needed(ctx):
+    """The idle deck is what the crossfade brings in. Handed its `src` at that
+    moment it has no metadata, so its seek to `in` is deferred while `play()`
+    has already started it at 0:00 - and every song with an `in` came round the
+    first time at the top of the file."""
+    ctx.eval(FAKE + "snd.setMusic(true); snd.setSong('rainbow');")
+    assert ctx.eval("snd.music.decks[0].el.getAttribute('src')") == "/static/audio/rainbow.mp3"
+    assert ctx.eval("snd.music.decks[1].el.getAttribute('src')") == "/static/audio/rainbow.mp3"
+
+
+def test_the_song_follows_the_track(ctx):
+    """The switcher swaps worlds without a navigation, so which song plays is
+    not a page-load decision - `setSong` is called on every load and switch."""
+    ctx.eval(FAKE + "snd.setMusic(true); snd.setSong('costco');")
+    assert _cued(ctx)["src"] == "/static/audio/costco.mp3"
+    ctx.eval("snd.setSong('rainbow');")
+    assert _cued(ctx)["src"] == "/static/audio/rainbow.mp3"
+
+
+def test_a_track_with_no_song_is_silence_rather_than_the_last_one(ctx):
+    """Figure Eight has no entry, and neither does a draft out of the editor or
+    anything somebody made themselves. The failure worth preventing is not an
+    error - it is Coconut Mall playing over a track that is not Costco."""
+    ctx.eval(FAKE + "snd.setMusic(true); snd.setSong('costco');")
+    assert not _cued(ctx)["paused"]
+    ctx.eval("snd.setSong('eight');")
+    assert ctx.eval("snd.music.entry") is None
+    assert ctx.eval("snd.music.decks.every(function (d) { return d.el.paused; })")
+    assert ctx.eval("snd.currentSong()") is None
+
+
+def test_the_three_circuits_share_one_file_without_restarting_it(ctx):
+    """Spa, Silverstone and Monaco are one song in the manifest. Driving from
+    one to another is the same file, and cueing it again would restart it."""
+    ctx.eval(FAKE + "snd.setMusic(true); snd.setSong('spa');")
+    ctx.eval("snd.music.decks[snd.music.active].el.ready(300);")
+    ctx.eval("snd.music.decks[snd.music.active].el.currentTime = 42;")
+    ctx.eval("snd.setSong('monaco');")
+    assert _cued(ctx)["at"] == 42
+    assert not _cued(ctx)["paused"]
+
+
+def test_the_loop_point_is_a_crossfade_and_not_a_cut(ctx):
+    """A song trimmed to an in/out pair has a ringing tail at `out` and a cold
+    start at `in`, so butting them together clicks. Both decks are audible
+    across the seam, which is the whole of what stops it."""
+    ctx.eval(FAKE + "snd.setMusic(true); snd.setSong('rainbow');")
+    _ready(ctx, 400)
+    was = _n(ctx, "snd.music.active")
+    # Inside the fade of the hand-written `out` at 330, not of the file's 400.
+    ctx.eval("snd.music.decks[0].el.currentTime = 328.5; snd.musicTick();")
+    assert _n(ctx, "snd.music.active") != was
+    # The old deck is on its way down but still connected and still playing;
+    # the new one is cued to `in` and coming up.
+    assert ctx.eval("snd.music.decks[%d].el.paused" % 0) is False
+    to = _cued(ctx)
+    assert to["src"] == "/static/audio/rainbow.mp3"
+    assert to["gain"] > 0
+    # Only once the fade has actually run is the old deck parked.
+    ctx.eval("runTimers();")
+    assert ctx.eval("snd.music.decks[%d].el.paused" % 0) is True
+
+
+def test_the_written_loop_points_are_honoured(ctx):
+    """`in: 20` is a song that starts twenty seconds in, every time round -
+    including the first, which is the one a cold `currentTime` gets wrong."""
+    ctx.eval(FAKE + "snd.setMusic(true); snd.setSong('rainbow');")
+    _ready(ctx, 400)
+    assert _cued(ctx)["at"] == 20
+    ctx.eval("snd.music.decks[0].el.currentTime = 329; snd.musicTick();")
+    assert _cued(ctx)["at"] == 20
+
+
+def test_a_seek_before_the_metadata_is_applied_when_it_arrives(ctx):
+    """Setting `currentTime` on an element that has not loaded is thrown away,
+    which is how a song with an `in` starts at zero on a cold page."""
+    ctx.eval(FAKE + "snd.setMusic(true); snd.setSong('rainbow');")
+    assert _n(ctx, "snd.music.decks[0].el.readyState") == 0
+    assert _cued(ctx)["at"] == 0          # nothing to seek yet
+    _ready(ctx, 400)
+    assert _cued(ctx)["at"] == 20         # and the seek was kept for this moment
+
+
+def test_a_song_shorter_than_its_written_out_still_loops(ctx):
+    """`out` is trusted only as far as the file goes. A manifest that outlives
+    the file it names would otherwise wait for a moment that never comes."""
+    ctx.eval(FAKE + "snd.setMusic(true); snd.setSong('rainbow');")
+    _ready(ctx, 100)                                # written out is 330
+    ctx.eval("snd.music.decks[0].el.currentTime = 99; snd.musicTick();")
+    assert _n(ctx, "snd.music.active") == 1
+
+
+def test_the_music_off_plays_nothing(ctx):
+    ctx.eval(FAKE + "snd.setSong('costco');")       # off is the default
     for t in range(6):
         ctx.eval("snd.ctx.currentTime = %d; snd.musicTick();" % t)
-    assert _n(ctx, "LOG.made.length") == 0
+    assert ctx.eval("!snd.music.decks || snd.music.decks.every(function (d) { return d.el.paused; })")
 
 
-def test_a_backgrounded_tab_picks_up_rather_than_playing_the_backlog():
-    """A tab with no frames can be minutes behind when one arrives, and
-    catching up honestly would book every note of those minutes at once."""
-    c = jsrt.quickjs.Context()
-    c.eval(STUB)
-    c.eval(re.sub(r"^export\s+", "", open(SOUND_JS).read(), flags=re.M))
-    c.eval("var snd = new Sound(); snd.start(); snd.ctx.currentTime = 0;")
-    c.eval("snd.setMusic(true); snd.musicTick();")
-    c.eval("LOG.made = []; snd.ctx.currentTime = 600; snd.musicTick();")
-    # One tick's worth of lookahead, not ten minutes of it.
-    assert _n(c, "LOG.made.length") < 60
-    assert _n(c, "snd.music.next") >= 600
+def test_switching_the_music_on_starts_the_song_it_was_already_given(ctx):
+    """The track is loaded long before anybody opens settings, so turning the
+    switch on has to pick up the song that is already sitting there."""
+    ctx.eval(FAKE + "snd.setSong('costco');")
+    assert ctx.eval("!snd.music.decks || snd.music.decks[0].el.paused")
+    ctx.eval("snd.setMusic(true);")
+    assert not _cued(ctx)["paused"]
+    assert _cued(ctx)["src"] == "/static/audio/costco.mp3"
 
 
-def test_the_loop_is_a_loop(ctx):
-    """It wraps back to the top rather than counting up for ever, which is
-    what keeps the chord lookup honest after an hour of driving."""
-    ctx.eval("snd.ctx.currentTime = 0; snd.setMusic(true);")
-    for t in range(0, 40):
-        ctx.eval("snd.ctx.currentTime = %f; snd.musicTick();" % (t * 0.5))
-    assert 0 <= _n(ctx, "snd.music.step") < 4 * 16
+def test_a_manifest_that_lands_after_the_track_still_gets_played(ctx):
+    """`setSong` runs from `loadTrack` and the manifest is a fetch, so on a cold
+    load the slug is known first. Either order has to end up playing."""
+    ctx.eval("snd.setMusic(true); snd.setSong('costco');")   # no manifest yet
+    assert ctx.eval("snd.currentSong()") is None
+    ctx.eval(FAKE + "snd._applySong();")
+    assert _cued(ctx)["src"] == "/static/audio/costco.mp3"
+
+
+def test_the_card_is_told_what_is_playing(ctx):
+    """The now-playing card is a credit, so what it needs is the artist, the
+    title and the link - read from the manifest and not from the filename."""
+    ctx.eval(FAKE + "snd.setMusic(true); snd.setSong('costco');")
+    assert ctx.eval("snd.currentSong().artist") == "MKWii"
+    assert ctx.eval("snd.currentSong().title") == "Coconut Mall"
+    assert ctx.eval("snd.currentSong().url") == "https://example.invalid/1"
 
 
 def test_music_is_off_until_it_is_asked_for(ctx):
-    """The engine is what the game sounds like; a loop over the top of it is a
+    """The engine is what the game sounds like; a song over the top of it is a
     preference, so it is one you switch on rather than one you switch off."""
     assert ctx.eval("snd.musicOn") is False
     assert _n(ctx, "snd.music.bus.gain.value") == 0
@@ -494,6 +684,6 @@ def test_sleeping_before_the_first_gesture_is_a_no_op():
     that builds an AudioContext."""
     c = jsrt.quickjs.Context()
     c.eval(STUB)
-    c.eval(re.sub(r"^export\s+", "", open(SOUND_JS).read(), flags=re.M))
+    c.eval(_src())
     c.eval("var snd = new Sound(); snd.sleep(); snd.wake();")
     assert _n(c, "LOG.made.length") == 0

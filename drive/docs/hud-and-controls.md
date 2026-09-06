@@ -217,30 +217,63 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   that is happening. `tests/test_watch_sound.py` drives the real `updateWatch`
   through QuickJS for the mapping.
 - **Sound and Music are two switches because they are two buses.** `Sound.sfx`
-  carries the car and the world, `Music`'s own bus sits beside it under the
+  carries the car and the world, `MusicPlayer`'s own bus sits beside it under the
   master, and `mute` is the sfx gain rather than the master's - so muting the
   game leaves the music playing and vice versa, which is the only reading of
   two switches that is not a lie about one of them. Both are remembered
   (`drive.sound`, `drive.music`), which the mute never used to be. **Sound
   defaults on and music defaults off**: the engine is what the game sounds
-  like, and a loop over the top of it is something you ask for. `start` now
+  like, and a song over the top of it is something you ask for. `start` now
   declines to build a context only when *both* are off, since somebody driving
   muted with the music on still needs one.
-- **The music is synthesised, like everything else here.** There are no audio
-  files on the site and a loop long enough not to wear out is a megabyte of
-  them, so `Music` in `sound.js` is four bars of i - VI - III - VII in A minor
-  under a rolling sixteenth arpeggio, played on the same oscillators the clanks
-  and beeps are. Two things about it are load-bearing. **It is scheduled ahead
-  against `ctx.currentTime`, never played by a timer**: a note placed by a
-  `setTimeout` lands wherever the main thread is, which on the frame that
-  builds a track mesh is tens of milliseconds late and audibly so - `musicTick`
-  books everything due in the next `M_LOOK` and is called from the frame loop,
-  above its early returns, so a replay keeps its music and being called
-  irregularly moves nothing. A tab that stopped getting frames skips forward
-  rather than playing the backlog. And **the chords are inverted rather than
-  stacked from each root** (F is played A-C-F): written the obvious way, each
-  bar starts higher than the last and the figure ratchets up an octave and a
-  half across the loop instead of going round.
+- **The music is a file per track, and it is the one thing here that is not
+  synthesised.** It used to be: four bars of A minor under a sixteenth arpeggio,
+  the same four bars on all twenty-two tracks, played on the oscillators the
+  clanks are. Now a track has a song, and the engine for it is `music.js` -
+  `sound.js` sees only a bus and two calls (`setSong`, `musicTick`).
+  Four things about it are load-bearing.
+  - **The song follows the track from `loadTrack`, not from page load.** The
+    switcher swaps worlds without a navigation, so that function is the one
+    place that sees both arriving and switching. A slug with no manifest entry
+    - Figure Eight, a draft out of the editor, anything user-made - stops the
+    music rather than leaving the last track's song playing over a different
+    one, which is the failure actually worth preventing.
+  - **Two `<audio>` decks, ping-ponged, rather than one with `loop = true`.**
+    A looping element restarts at a hard cut, and a song trimmed to an
+    `in`/`out` pair has a ringing tail at one end and a cold start at the
+    other, so butting them together clicks. The loop is a crossfade between the
+    two decks instead. **Both are cued with the file up front**: a deck handed
+    its `src` at the crossfade has no metadata yet, so its seek to `in` is
+    deferred to `loadedmetadata` while `play()` has already started it at 0:00
+    - every song with an `in` came round the first time at the top of the file.
+  - **Streamed, not decoded.** `decodeAudioData` on a five-minute song is fifty
+    megabytes of float32 and several seconds of main thread; a
+    `MediaElementAudioSourceNode` is neither. The cost is that nothing can see
+    the samples, which is exactly why the loop points are hand-written in the
+    manifest rather than found by analysis. An element may be attached to a
+    media-element source **once, ever**, so the decks are built once and keep
+    their nodes for the life of the page.
+  - **The service worker must never cache `/static/audio/`.** An `<audio>`
+    element fetches with `Range` and gets a 206 back; putting one of those in
+    the Cache API throws, and a cached slice that did land would be served back
+    as if it were the whole song. `sw.js` returns early on that prefix.
+- **The now-playing card is a credit before it is a feature.** The music is
+  other people's work, so `#nowPlaying` names the artist and title from the
+  manifest and the whole card is an anchor back to the video, `target=_blank`
+  because leaving mid-lap is not what a credit should do to you. It shows on
+  entering a track with the music already on and on turning the music on - the
+  two moments the answer to "what is this?" changes - then goes away on a
+  timer. It never shows with the music off, and `pointer-events` follows the
+  visible state so a faded card is not an invisible link over the road.
+- **The menu pages get the menu song, and it carries across navigations.**
+  `menumusic.js` is on every page via `base.html` and **self-gates like
+  `portal.js`**: the play page defines `window.DRIVE_TRACK` and owns its own
+  music, and two AudioContexts on one page is two songs at once. These are
+  separate page loads rather than an SPA, so "carries on" is reconstructed -
+  each page writes where the song had got to and when into `sessionStorage`,
+  and the next resumes at that point plus the wall-clock gap, wrapped back into
+  the song's own `in`..`out` window. Nothing starts until the page is clicked,
+  because no browser will build an AudioContext before that.
 - **The world-record ghost has to be a lap that can be shown.** `?who=wr` took
   the fastest row and served whatever replay was on it, but a row keeps its
   time whether or not a ghost was stored beside it, so one old replay-less row

@@ -1,0 +1,9 @@
+# The songs themselves are not in git - see drive/CLAUDE.md.
+#
+# They are other people's recordings; this repo is public and the site is
+# public, so the files are put on the box by hand and the manifest beside this
+# file is the only part of the music that is version controlled. A slug whose
+# file is missing plays nothing and is not an error, so a fresh clone runs.
+*
+!.gitignore
+!music.json

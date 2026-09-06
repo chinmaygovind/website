@@ -130,6 +130,12 @@
     window.DRIVE_TRACK_NAMES = {{ track_names|tojson }};
   </script>
   <script src="{{ url_for('static', filename='js/pending.js') }}?v={{ asset_version }}"></script>
+  {# The menu music. On every page and self-gating, exactly like `portal.js`
+     above: the play page defines `window.DRIVE_TRACK` and owns its own music
+     through `sound.js`, so this does nothing there. A module because it shares
+     the engine with the game rather than reimplementing it, and modules are
+     deferred by definition - it cannot block the paint. #}
+  <script type="module" src="{{ url_for('static', filename='js/menumusic.js') }}?v={{ asset_version }}"></script>
   {% block scripts %}{% endblock %}
   <!-- The heartbeat behind the green dot on cgovind.com/accounts.
        Inline rather than a file of its own, and after the page's own scripts:

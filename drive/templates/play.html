@@ -238,6 +238,23 @@
   {% endif %}
 
   <div id="wrongWay" style="display:none">WRONG WAY</div>
+  {# The now-playing card: a credit first and a feature second, so the whole
+     thing is one anchor to the video the song came from rather than a panel
+     with a link tucked inside it. `target=_blank` because leaving mid-lap is
+     not what a credit should do to you, and `rel=noopener` with it.
+     Empty and hidden until `showNowPlaying` fills it - it is driven from the
+     manifest, and a track with no song never shows one. #}
+  <a id="nowPlaying" class="now-playing" target="_blank" rel="noopener noreferrer">
+    <svg class="np-icn" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M9 17.5V6.2l10-2v11.3"/>
+      <circle cx="6.6" cy="17.6" r="2.4"/>
+      <circle cx="16.6" cy="15.4" r="2.4"/>
+    </svg>
+    <span class="np-text">
+      <span class="np-title" id="npTitle"></span>
+      <span class="np-artist" id="npArtist"></span>
+    </span>
+  </a>
   <div id="toast"></div>
   <div class="countdown" id="countdown" style="display:none">3</div>
   <!-- Shown once, on your first run of the session. It is an instruction for
