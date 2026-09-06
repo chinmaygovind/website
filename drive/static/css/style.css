@@ -1416,23 +1416,49 @@ body.watching #touch, body.watching #startHint { display: none; }
   background: #fff; color: var(--ink); border-color: #fff;
 }
 .saves-intro .btn:hover { background: #e6e6e6; border-color: #e6e6e6; }
-/* Below about a laptop there is no room to the right of the sheet, so the note
-   goes back into the flow and wraps underneath it. That does move the sheet -
-   up, and only on a screen where the alternative is the note hanging off the
-   edge - which is the one place the trade is worth making.
+/* Below 1180px there is no room to the right of a centred 460px sheet, so the
+   note stops standing beside it and stands *over* it instead - still absolute,
+   still leaving the sheet exactly where it was, and now centred on the screen
+   with its own scroll.
 
-   Deliberately `flex-wrap` rather than a `:has()` on the intro's inline style:
-   the note is shown by clearing `style.display`, which can leave the attribute
-   empty, so a selector probing that string would be reading a coincidence.
-   Wrapping needs to know nothing about it. */
-#savesOv { flex-wrap: wrap; }
+   **It went into the flow here first and that was wrong twice.** It pushed the
+   sheet off centre on every screen between about 990 and 1180, where the two
+   still fitted on one flex line - the very thing being absolute was meant to
+   stop. And on a phone in landscape the wrapped note ran to 511px inside a
+   375px window with nothing to scroll, so the "Got it" button could not be
+   reached at all and the note could not be dismissed. Out of flow at every
+   size is the only version with neither failure. */
 @media (max-width: 1180px) {
   .saves-intro {
-    position: static; transform: none; width: 100%; max-width: 460px;
-    margin: .8rem auto 0;
+    left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: min(460px, 100vw - 2rem); max-height: calc(100vh - 2rem);
+    /* **Opaque here, and only here.** Standing beside the sheet the plate has
+       the road behind it, where .82 and a blur is the tour's own look. Standing
+       *over* the sheet it has white paper and a list of save states behind it
+       instead, and at .82 the rows bleed through the text - the one paragraph
+       somebody has to read is the one it happens to sit on. */
+    background: #0c0e14;
   }
 }
-.saves-body { max-height: 58vh; overflow: auto; display: flex; flex-direction: column; gap: .9rem; }
+/* A phone in landscape is 375px tall and the note is the only thing that has to
+   be readable on it, so it gives up the padding and the leading a desktop can
+   afford - the same trade `.tour-say` makes one screen over. */
+@media (max-height: 500px) {
+  .saves-intro { padding: .7rem .8rem; }
+  .saves-intro p { margin-bottom: .5rem; font-size: .8rem; line-height: 1.4; }
+  .saves-keys { margin-bottom: .55rem; gap: .15rem .8rem; font-size: .76rem; }
+  .saves-intro .warn { font-size: .74rem; line-height: 1.35; }
+}
+/* Nine rows are always rendered, so the content height is already constant -
+   the sheet cannot grow under the cursor as you press C, and cannot jump when
+   the last state is deleted. That makes this a *cap* rather than a fixed
+   height: a fixed one was 68px taller than nine rows need and left dead space
+   under slot 9. States on other tracks scroll into it rather than stretching
+   the sheet. */
+.saves-body {
+  max-height: min(470px, 58vh); overflow: auto;
+  display: flex; flex-direction: column; gap: .9rem;
+}
 .saves-group { display: flex; flex-direction: column; gap: 3px; }
 .saves-track {
   display: flex; justify-content: space-between; align-items: baseline;
@@ -1442,7 +1468,16 @@ body.watching #touch, body.watching #startHint { display: none; }
 .saves-row {
   display: flex; align-items: center; gap: .6rem; padding: .35rem .4rem;
   border-radius: 6px;
+  /* **Fixed, not a minimum.** A filled row carries a name field and an empty one
+     does not, which made the filled one 8px taller - so the sheet still grew by
+     73px between no states and nine, which is the resize this whole list is
+     shaped to avoid. One height for both, and the contents centre inside it. */
+  height: 46px;
 }
+/* An unused slot. Still numbered, because the number is the key that fills it. */
+.saves-row.empty { opacity: .45; }
+.saves-row.empty b { font-family: var(--mono); }
+.saves-free { font-size: .82rem; font-style: italic; }
 .saves-row.on { background: rgba(29, 29, 31, .07); }
 /* Greyed and unusable, but still there to be read and deleted. A state whose
    track has been re-authored under it would put the car inside whatever is
@@ -1471,6 +1506,25 @@ body.watching #touch, body.watching #startHint { display: none; }
 .saves-x { border-color: transparent; font-size: 1.1rem; line-height: 1; color: var(--ink-soft); }
 .saves-x:hover { color: var(--red); }
 .saves-foot { display: flex; justify-content: space-between; gap: .5rem; margin-top: 1rem; }
+/* Dead rather than gone - see `renderSaves`. */
+.saves-foot .btn:disabled {
+  opacity: .4; cursor: not-allowed; background: var(--line); border-color: var(--line);
+}
+.saves-foot .btn:disabled:hover { background: var(--line); }
+/* Nine slots in 217px of a landscape phone. At the desktop row height that
+   showed three of them and a sliced fourth, which reads as a broken list rather
+   than as a scrollable one - so on a short screen the row gives up the padding
+   it does not need and the body takes back the height the sheet was reserving
+   around it. */
+@media (max-height: 500px) {
+  .saves-body { max-height: 62vh; gap: .5rem; }
+  .saves-row { gap: .4rem; padding: .1rem .25rem; height: 32px; }
+  .saves-row b { font-size: .82rem; }
+  .saves-name { font-size: .8rem; padding: .08rem .3rem; }
+  .saves-n { font-size: .7rem; min-width: 1.3em; height: 1.3em; }
+  .saves-use, .saves-x { font-size: .76rem; padding: .06rem .4rem; }
+  .saves-track { font-size: .88rem; }
+}
 
 /* Preview-picture mode: the track and the sky, nothing else on the glass. */
 body.shot .hud, body.shot #touch, body.shot #rotate, body.shot .side { display: none; }

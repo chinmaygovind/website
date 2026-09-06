@@ -2771,33 +2771,53 @@ function renderSaves() {
   const body = $('savesBody');
   if (!body) return;
   const key = savesKey();
-  const groups = [];
-  if (key) groups.push([key, S.track.name, S.saves, true]);
   const names = window.DRIVE_TRACK_NAMES || {};
-  for (const [k, slots] of Object.entries(S.savesAll || {})) {
-    if (k === key || !slots.length) continue;
-    groups.push([k, names[k] || k, slots, false]);
-  }
-  if (!groups.length || !groups.some(g => g[2].length)) {
-    body.innerHTML = '<p class="muted empty">No save states yet. Press C while ' +
-                     'driving to save where you are.</p>';
-    return;
-  }
-  body.innerHTML = groups.filter(g => g[2].length).map(([k, name, slots, here]) => `
+  const other = Object.entries(S.savesAll || {})
+    .filter(([k, slots]) => k !== key && slots.length);
+
+  const row = (k, s, i, here) => `
+    <div class="saves-row${here && i === S.saveActive ? ' on' : ''}${here && saveIsStale(s) ? ' stale' : ''}"
+         data-key="${esc(k)}" data-i="${i}">
+      <span class="saves-n">${i + 1}</span>
+      <b>${fmt(s.run.time)}</b>
+      <input class="saves-name" value="${esc(slotName(s) || s.label || '')}"
+             placeholder="${esc(s.label || '')}" maxlength="40">
+      ${here && saveIsStale(s) ? '<span class="saves-stale">track has changed</span>'
+                               : (here ? '<button class="saves-use">Use</button>' : '')}
+      <button class="saves-x" title="Delete">&times;</button>
+    </div>`;
+
+  // **All nine, always.** The slots are numbered because 1-9 are the keys that
+  // reach them, so a list that shows only the ones you have filled is a list
+  // whose numbers stop matching the keyboard the moment you delete one from the
+  // middle. Showing the empties also stops the panel resizing as you use it -
+  // a sheet that grows a row every time you press C, and jumps when the last
+  // one goes, is a sheet that moves the button you were about to click.
+  const mine = key ? Array.from({ length: MAX_SLOTS }, (_, i) => {
+    const s = S.saves[i];
+    return s ? row(key, s, i, true) : `
+      <div class="saves-row empty">
+        <span class="saves-n">${i + 1}</span>
+        <b>--:--.---</b>
+        <span class="saves-free">Empty</span>
+      </div>`;
+  }).join('') : '';
+
+  body.innerHTML = (key ? `
     <div class="saves-group">
-      <div class="saves-track">${esc(name)}<span>${slots.length} state${slots.length > 1 ? 's' : ''}</span></div>
-      ${slots.map((s, i) => `
-        <div class="saves-row${here && i === S.saveActive ? ' on' : ''}${here && saveIsStale(s) ? ' stale' : ''}"
-             data-key="${esc(k)}" data-i="${i}">
-          <span class="saves-n">${i + 1}</span>
-          <b>${fmt(s.run.time)}</b>
-          <input class="saves-name" value="${esc(slotName(s) || s.label || '')}"
-                 placeholder="${esc(s.label || '')}" maxlength="40">
-          ${here && saveIsStale(s) ? '<span class="saves-stale">track has changed</span>'
-                                   : (here ? '<button class="saves-use">Use</button>' : '')}
-          <button class="saves-x" title="Delete">&times;</button>
-        </div>`).join('')}
+      <div class="saves-track">${esc(S.track.name)}<span>${S.saves.length} of ${MAX_SLOTS}</span></div>
+      ${mine}
+    </div>` : '') + other.map(([k, slots]) => `
+    <div class="saves-group">
+      <div class="saves-track">${esc(names[k] || k)}<span>${slots.length} state${slots.length > 1 ? 's' : ''}</span></div>
+      ${slots.map((s, i) => row(k, s, i, false)).join('')}
     </div>`).join('');
+
+  // Present but dead when there is nothing to clear, rather than absent. A
+  // button that comes and goes is the resize this list exists to avoid, and a
+  // greyed one also says *what would happen* if there were something to clear.
+  const clear = $('btnSavesClear');
+  if (clear) clear.disabled = !S.saves.length && !other.length;
 }
 
 /**
