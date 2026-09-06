@@ -488,11 +488,15 @@ than 15% or move a corner more than 8 degrees before refusing.
   on the nav's paper untiled, while the app icons are painted over `--paper`
   because iOS mattes a transparent apple-touch-icon onto black and Android crops
   a maskable icon to a circle.
-- Tests: `scripts/tests.sh drive` - 1,841 tests in about two and a half minutes, **run
-  serially on purpose** (see `docs/testing.md`). A third of that is the anti-cheat driving
-  real laps and re-driving them, which is the price of the one test that
-  matters: a lap somebody actually drove has to be accepted. Nothing in the
-  suite may sleep; `tests/conftest.py` enforces it.
+- Tests: `scripts/tests.sh drive` - 2,001 tests in about 23s, as **one pytest
+  process per test file** rather than under xdist, which cannot work here at all
+  (`eventlet.monkey_patch()` vs execnet's threads - see `docs/testing.md`). A
+  third of that is the anti-cheat driving real laps and re-driving them, which is
+  the price of the one test that matters: a lap somebody actually drove has to be
+  accepted. Nothing in the suite may sleep; `tests/conftest.py` enforces it. The
+  built track pool is cached under `tracks/__pycache__/pool`, keyed on the
+  content of the folders and of the code that builds them, which is most of why
+  `import tracks` is 0.04s instead of 4s.
 
 ## Deploy
 

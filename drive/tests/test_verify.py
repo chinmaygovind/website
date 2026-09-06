@@ -51,7 +51,10 @@ def rt():
            json.dumps([runcheck.input_fields(b) for b in range(256)]))
     with open(DRIVER_JS) as f:
         r.eval(f.read())
-    return r
+    # The laps below are driven on a handful of tracks and each `drive` builds
+    # one. The verifier's own runtime is untouched - see `memoize_build_track`.
+    from conftest import memoize_build_track
+    return memoize_build_track(r)
 
 
 @pytest.fixture(scope="module")

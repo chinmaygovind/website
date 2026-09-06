@@ -125,8 +125,9 @@ def rt():
 def _folders_with_scenery():
     if not os.path.isdir(TRACKS_DIR):
         return []
-    return sorted(d for d in os.listdir(TRACKS_DIR)
-                  if os.path.exists(os.path.join(TRACKS_DIR, d, "scenery.js")))
+    from conftest import track_folders
+    return [d for d in track_folders()
+            if os.path.exists(os.path.join(TRACKS_DIR, d, "scenery.js"))]
 
 
 def test_there_is_at_least_one_scenery_file():

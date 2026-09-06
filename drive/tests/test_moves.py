@@ -23,11 +23,14 @@ from tracks import moves, solver
 from tracks.builder import Builder
 from tuning import ROAD_W
 
+from conftest import track_folders  # noqa: E402
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 TRACKS_DIR = os.path.join(HERE, "..", "tracks")
 
-SLUGS = sorted(d for d in os.listdir(TRACKS_DIR)
-               if os.path.exists(os.path.join(TRACKS_DIR, d, "track.py")))
+# Via `conftest`, so a scratch folder another worker is part way through
+# writing is not mistaken for a track. See `track_folders`.
+SLUGS = track_folders()
 
 
 def _module(slug):

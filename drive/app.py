@@ -4811,7 +4811,24 @@ def _stale_cleanup():
         _run()
 
 
-eventlet.spawn(_stale_cleanup)
+# **Not spawned under test, because it is spawned at import and the tests import
+# this module hundreds of times.** `tests/conftest.py:boot_app` re-imports it for
+# every test file that wants a fresh database, and each of those runs this line
+# again - so a full suite ended with hundreds of immortal greenlets, every one of
+# them sleeping five minutes in a loop that never returns. Nothing failed. The
+# process just had a hub full of pending timers and would not exit promptly.
+#
+# **It is not, on its own, the xdist stall** - that was measured, and the stall
+# survived this fix. The stall is `monkey_patch()` on line 2 against the OS
+# threads execnet made before it; see `docs/testing.md`. This is the other thing
+# found while chasing it, and it is worth fixing on its own account.
+#
+# The sweep is a production janitor and there is nothing for it to reap in a
+# test: no room outlives the process, and every test that wants it calls `_run`
+# itself. So it is opt-out rather than made conditional on `TESTING`, which is
+# set after the import and so too late to be read here.
+if os.environ.get("DRIVE_SWEEP") != "0":
+    eventlet.spawn(_stale_cleanup)
 
 
 if __name__ == "__main__":

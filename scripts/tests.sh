@@ -111,29 +111,26 @@ ensure_venv() {
 # kot is CPU bound with independent tests, so this is most of the speed there:
 # 2:25 -> 1:10.
 #
-# **drive opts out, and that is a trade made on measurements rather than a
-# preference.** It used to run `-n 4 --dist loadfile`, worth 5:40 -> 1:35 back
-# when test_sim.py drove all thirteen tracks. That file is gone and what is left
-# is 66s serial against 42s on four workers - xdist now buys 24s.
+# **drive does not come through here at all any more - see `run_parallel`.** It
+# runs as separate pytest processes rather than under xdist, because the stall
+# that `drive/docs/testing.md` recorded as "not understood" turned out to be
+# xdist plus `eventlet.monkey_patch()`, and it is not fixable by tuning `-n`.
 #
-# What it costs is the other half. **Three of the last 34 CI drive jobs hung**
-# (~9%, about one push in eleven): the run reaches 94-98% in 15-42 seconds and
-# then sits with the controller and all four workers at 0.0% CPU until something
-# kills it - 739s, 901s and 246s before that happened. The tests all pass; the
-# session never ends. `##[error]The operation was canceled` is followed by five
-# orphan python3 processes being terminated, which is the controller and its four
-# workers still alive with nothing to do.
+# **The stall, since it was open for months:** `app.py` monkey-patches on its
+# second line, which greens `threading`. xdist's workers talk to the controller
+# over pipes using OS threads execnet creates at start-up, *before* any test
+# imports `app` - so from the first import onward the worker has real threads
+# holding green primitives, and a real thread signalling one does not wake
+# eventlet's hub. The worker's main thread goes to sleep waiting for something
+# that cannot arrive. Every test has passed; the session just never ends. It is
+# visible in `/proc`: each worker's main thread in `hrtimer_nanosleep`, its pipe
+# reader in `anon_pipe_read`, the controller in `futex_do_wait`. At `-n 16` it
+# reproduced in two runs out of three.
 #
-# Two things make that worse than the 24s it saves. The stall ends as
-# **cancelled rather than failed**, so `deploy`'s `always()` guard skips the
-# ship and the run does not read as a test failure. And the length is set by
-# `cancel-in-progress` - the next push is what ends it - so it is bounded by
-# when somebody notices, not by `timeout-minutes`. At 9% of ~700s the expected
-# cost is about 63s a run, which is more than the 24s it wins.
-#
-# So drive runs serially. If it ever grows back into needing workers, the thing
-# to fix first is the deadlock (pytest-timeout, plus a step-level
-# `timeout-minutes`), not this line.
+# **`kot` monkey-patches too and still runs under xdist below, so it still has
+# this.** That is the 3-in-34 CI stall, and the fix is to move it to
+# `run_parallel` as well - not done here because it wants its own measurement,
+# the way drive's did.
 #
 # Four workers rather than every core for kot, deliberately: on a 16 core laptop
 # its self-play tests contend badly enough that the suite stops finishing.
@@ -143,17 +140,17 @@ parallel_for() {
   # 18 tests in a twentieth of a second. Starting workers costs more.
   [ "$m" = ers ] && return 0
 
-  # 66s serial vs 42s parallel, against a ~9% chance of an open-ended hang.
-  # See the note above - this is deliberate, not an oversight.
+  # **drive must never be handed to xdist, and this is the belt to
+  # `run_parallel`'s braces.** It deadlocks there - `eventlet.monkey_patch()`
+  # against the OS threads execnet already made, see the note above - and the
+  # fallback path in `run_module` would otherwise hand it `-n 4` the moment
+  # `run_parallel` was unavailable. That is not a slower run, it is a hung one.
   [ "$m" = drive ] && return 0
 
-  # gto is the same trade with better numbers on the winning side and the same
-  # ones on the losing side: 47s serial against 14s on four workers, so xdist
-  # buys 33s here. The stall costs ~700s at ~9%, which is ~63s expected, and it
-  # ends as *cancelled* rather than failed. 33 < 63, so this runs serially too -
-  # on the same arithmetic as drive rather than on a different opinion. If the
-  # deadlock is ever fixed, this is the first line to revisit: the win here is
-  # 70% of the runtime, far more than drive ever had to gain.
+  # gto runs serially: 47s against 14s on four workers. It does not monkey-patch
+  # and so does not have drive's deadlock, but it has never been measured under
+  # `run_parallel` either. Moving it there is the obvious next win - 70% of its
+  # runtime - and wants the same before-and-after drive got.
   [ "$m" = gto ] && return 0
 
   # Optional, like quickjs: without it the suite runs serially rather than
@@ -208,6 +205,45 @@ gated_wanted() {
   if git -C "$ROOT" ls-files --others --exclude-standard -- "$@" 2>/dev/null \
        | grep -q .; then return 0; fi
   return 1
+}
+
+# Run a module's tests as one process per test file, several at a time.
+#
+# Used for drive, which cannot use xdist (see above). One process per file is
+# also why `drive/tests/EXCLUSIVE` exists: `test_track_folders.py` writes real
+# folders into `tracks/`, and anything importing the pool while one is there
+# picks it up as a track.
+#
+# Falls back to a plain serial pytest when the caller asked for something whose
+# meaning a split run would change: `-x` should stop the run, not stop each of
+# fifty runs, and an explicit `-n` is the caller asking for xdist by name.
+# 99 means "I did not run anything, use the fallback". Anything else is the
+# result of a real run. **They have to be different numbers**: with both as 1, a
+# drive suite with one failing test looked like a decline, and the fallback then
+# ran the whole suite again - under xdist, where it hangs. A red test became a
+# hang, which is the worst way round.
+run_parallel() {
+  m="$1"; py="$2"
+  case " $pytest_args " in
+    *" -x "*|*" -n "*|*" --exitfirst "*|*" -p no:xdist "*) return 99 ;;
+  esac
+  [ -f "$ROOT/scripts/parallel_pytest.py" ] || return 99
+
+  # **Physical cores, not `nproc`.** These processes are CPU bound, so the two
+  # hyperthreads on a core do not give two cores' worth of work - on this laptop
+  # 16 processes over 8 cores measured 26.5s against 27.6s for 8, which is a
+  # second for twice the contention. And contention is not free elsewhere: it is
+  # what the per-test time budget in `drive/tests/conftest.py` has to tolerate.
+  n="$(lscpu -p=core 2>/dev/null | grep -cv '^#')"
+  [ -n "$n" ] && [ "$n" -gt 0 ] 2>/dev/null || n=0
+  if [ "$n" -gt 0 ]; then
+    n="$(lscpu -p=core 2>/dev/null | grep -v '^#' | sort -u | wc -l)"
+  else
+    n="$(nproc 2>/dev/null || echo 4)"
+  fi
+  [ "$n" -lt 1 ] && n=1
+  [ "$n" -gt 16 ] && n=16
+  "$py" "$ROOT/scripts/parallel_pytest.py" "$ROOT/$m" "$py" "$n" $pytest_args
 }
 
 run_module() {
@@ -275,6 +311,15 @@ run_module() {
     if [ -d "$ROOT/tests" ]; then
       ( cd "$ROOT" && "$py" -m pytest tests/ $par $pytest_args )
     fi
+  elif [ "$m" = drive ]; then
+    run_parallel "$m" "$py"
+    rc=$?
+    if [ "$rc" != 99 ]; then
+      return "$rc"                     # it ran; that is the answer
+    fi
+    # It declined (an -x, an explicit -n) or is missing. Serial, never xdist -
+    # `parallel_for` returns nothing for drive, so `$par` is empty here.
+    ( cd "$ROOT/$m" && "$py" -m pytest tests/ $par $sel $pytest_args )
   else
     ( cd "$ROOT/$m" && "$py" -m pytest tests/ $par $sel $pytest_args )
   fi

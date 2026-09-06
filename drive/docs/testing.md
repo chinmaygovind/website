@@ -4,27 +4,88 @@ Read this before adding or removing a Drive test, or when a test surprises
 you. Also read it before shipping a rendering change — there is no browser
 in CI.
 
-`scripts/tests.sh drive` - **1,841 tests, about 150s**, on one core. A third of
-that is the anti-cheat: `test_verify.py` and `test_held_laps.py` drive real laps
-through the real physics and then re-drive them, which is what it costs to have
-the one test worth having there - a lap somebody actually drove is accepted.
+`scripts/tests.sh drive` - **2,001 tests, about 23s** on an idle 8-core
+laptop, as 49 pytest processes (nearer 50s with a browser running - these are
+eight CPU-bound processes and they compete with whatever else is on the machine). It was 150s on one core in Aug 2026; what the 6x is made of is
+below, and none of it was deleting a test. A third of the remaining time is the
+anti-cheat: `test_verify.py` and `test_held_laps.py` drive real laps through the
+real physics and then re-drive them, which is what it costs to have the one test
+worth having there - a lap somebody actually drove is accepted.
 
-**Drive runs serially on purpose, and the reason is a measurement.** It used to
-run `-n 4 --dist loadfile`, which was worth 5:40 -> 1:35 while `test_sim.py`
-drove all thirteen tracks (nineteen now). That file is gone; the suite was 66s serial
-against 42s on four workers when this was measured, so xdist bought 24s. Against that, **three of the
-last 34 CI drive jobs hung**: the run reaches 94-98% in 15-42 seconds and then
-sits with the controller and all four workers at 0.0% CPU, 739s / 901s / 246s,
-until a later push cancelled it. Every test passes; the session just never ends.
-That is ~9% of runs, about one push in eleven, and at ~700s apiece it costs more
-in expectation (~63s a run) than the 24s it saves - before counting that a stall
-reports **cancelled rather than failed**, so the deploy is skipped and it does
-not read as a test failure. If drive grows back into needing workers, fix the
-deadlock first (`pytest-timeout`, plus a step-level `timeout-minutes` so a hang
-is bounded by the clock rather than by whoever notices).
+**Drive runs as separate processes, not under xdist, and the reason is a bug
+that took months to find.** `scripts/parallel_pytest.py` starts one `pytest` per
+test file, several at a time. That is a worse scheduler than xdist - it cannot
+split work inside a file except where it is told to, so the wall clock cannot go
+below the slowest single unit - and it is used anyway, because **xdist cannot
+work in this module at all**.
 
-An explicit `-n` after `--` still wins, so `scripts/tests.sh drive -- -n 4` is
-there when you want it and know the risk.
+**The stall, explained.** `drive/docs/testing.md` used to record three of 34 CI
+jobs hanging at 739s, 901s and 246s: the run reaches 93-98%, every test passes,
+and then the controller and all four workers sit at 0.0% CPU until somebody
+kills the job. It was written up as not understood. It is `eventlet`.
+`app.py` calls `eventlet.monkey_patch()` on its second line - it has to, since
+one eventlet worker serves every live race - and that **greens `threading`**.
+xdist's workers talk to their controller over pipes using OS threads execnet
+creates at start-up, *before* any test imports `app`. From the first import
+onward the worker has real threads holding green primitives, and a real thread
+signalling one of those does not wake eventlet's hub, so the worker's main
+thread goes to sleep waiting for something that cannot arrive. In `/proc` it is
+unmistakable: every worker's main thread in `hrtimer_nanosleep`, its pipe reader
+in `anon_pipe_read`, the controller in `futex_do_wait`. At `-n 16` it reproduced
+in two runs out of three, which is what made it findable at all.
+
+So it is not a tuning problem and `-n 4` is not safer than `-n 16` - it is
+rarer, which is worse. **`kot` monkey-patches too and still runs under xdist**;
+that is the same bug, still live, and moving it to `run_parallel` is the fix.
+
+An explicit `-n` after `--` still hands the run to xdist, so
+`scripts/tests.sh drive -- -n 4` is there if you want to watch it hang. `-x`
+also opts out, since "stop at the first failure" cannot mean "stop each of fifty
+runs".
+
+**Where the 150s went, in order of size.** Each of these is a thing that was
+being done repeatedly and did not need to be:
+
+- **`import tracks` was 3.97s, and every process paid it.** Building the pool is
+  a pure function of the track folders and of the code that interprets them, and
+  most of the cost is not the ribbons (0.9s for all 22) but what is derived from
+  them - `laptime`'s racing line relaxes 320 iterations over every station.
+  Each finished track is now pickled under `tracks/__pycache__/pool`, keyed on a
+  hash of its two source files plus `builder`/`solver`/`checks`/`look`/`laptime`/
+  `tuning`. A stale entry is not possible rather than unlikely: the key *is* the
+  content. **0.04s warm**, and the cached pool was checked identical to a freshly
+  built one down to float `repr` and key order.
+- **`test_track_folders.py` was 13.1s and is 0.30s**, entirely from that cache -
+  it calls `_assemble()` once per broken-folder case, and 21 of the 22 tracks
+  are unchanged every time.
+- **`buildTrack` in QuickJS is a second for Spa** and files were calling it once
+  per test for the same three circuits. `conftest.memoize_build_track` makes a
+  runtime build each track object once; `test_closed_lap.py` went 15.3s -> 10.0s.
+  It is **keyed on the track object, not the slug** - a slug is not unique to a
+  document, since the editor reuses `draft` - and it is **capped at four**,
+  because holding the whole pool is an out-of-memory out of QuickJS's 512MB,
+  which `test_a_point_to_point_track_is_unaffected` found immediately. It is
+  opt-in per runtime and the verifier's runtime does not use it.
+
+**Two leaks were fixed on the way and neither was making tests fail.**
+`close_app` unlinked the database and not SQLite's `-wal` and `-shm` sidecars,
+and `/tmp` here is a **tmpfs** - so a full run left ~500 pairs of droppings *in
+RAM*, and 8,000 of each had accumulated to **13GB of a 16GB `/tmp`**. And
+`app.py`'s `eventlet.spawn(_stale_cleanup)` runs at import, which `boot_app`
+does afresh for every test file, so a run left hundreds of immortal greenlets
+each sleeping five minutes. Neither had a symptom you would chase; both are the
+kind of thing that only shows up as the machine being slow.
+
+**One test file gets the machine to itself, and `tests/EXCLUSIVE` is where that
+is declared.** `test_track_folders.py` writes real folders into `tracks/` -
+the only honest way to test that a broken folder cannot take the pool down -
+and every other file does `import tracks` at module scope. A file that imports
+while a scratch folder is on disk gets it **in the pool**, so `test_tracks.py`
+then parametrizes its whole suite over a track called `zzscratch` and fails on
+it. Filtering directory listings is not enough (`conftest.track_folders` does
+that, for the four files that used to list `tracks/` themselves); this one
+arrives through the assembled pool. The scratch folder also carries the worker
+id now, so two processes cannot delete each other's.
 
 **Nothing in this suite may sleep, and there is a test that enforces it.**
 `tests/conftest.py` fails any test whose call phase exceeds `SLOW_TEST_BUDGET_S`

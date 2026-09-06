@@ -90,6 +90,8 @@ DRIVE_TRACKS = {
     "shroom": "Shroom Street",
     "silverstone": "Silverstone",
     "monaco": "Monaco",
+    "dino": "Dino Park",
+    "railway": "Rickety Rails",
 }
 
 

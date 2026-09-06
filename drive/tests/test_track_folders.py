@@ -49,7 +49,13 @@ def build(b):
     b.finish()
 '''
 
-SLUG = "zzscratch"
+# **One scratch folder per xdist worker, because `tracks/` is shared state.**
+# This file is the only thing in the suite that writes into the real `tracks/`
+# directory, and under `-n` there are sixteen processes reading it. Two workers
+# on one folder name would each delete the other's track mid-test; the worker id
+# keeps them apart. Empty when running serially, so the folder is plain
+# `zzscratch` in the loop people actually watch.
+SLUG = "zzscratch" + os.environ.get("PYTEST_XDIST_WORKER", "")
 
 CASES = {
     # The likeliest thing a first-time contributor pushes.
@@ -163,7 +169,13 @@ def test_a_good_scratch_folder_just_works(scratch):
     """The control. Without it every test below could pass because the fixture
     never manages to add a track at all."""
     mod = scratch(GOOD % SLUG)
-    assert not mod.BROKEN, mod.BROKEN
+    # Every folder that is not somebody's scratch. Under `-n` another worker may
+    # have its own broken one on disk right now, and that is not this test's
+    # business - `test_tracks.py::test_every_track_folder_loads` is the gate on
+    # the real pool being clean, and it reads a `BROKEN` filled at import.
+    others = {k: v for k, v in mod.BROKEN.items() if not k.startswith("zzscratch")}
+    assert not others, others
+    assert SLUG not in mod.BROKEN, mod.BROKEN[SLUG]
     t = mod.get(SLUG)
     assert t is not None, "a valid folder did not reach the pool"
     # `_reload` stops before medal times, so derive them here - once, in the one

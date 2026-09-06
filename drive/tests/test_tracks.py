@@ -545,6 +545,13 @@ def test_no_track_folder_is_silently_ignored():
             continue
         if os.path.exists(os.path.join(d, "track.py")):
             continue
+        # `test_track_folders.py` writes exactly this folder, on purpose and
+        # briefly, and one of its cases is a folder with no `track.py` in it.
+        # Under `-n` that lands while this test is listing the directory, so a
+        # run would fail on the suite's own scaffolding rather than on anything
+        # a contributor did. The name is reserved to that file and gitignored.
+        if entry.startswith("zzscratch"):
+            continue
         stray.append((entry, sorted(os.listdir(d))[:6]))
     assert not stray, "\n".join(
         ["", "folder(s) in tracks/ with no track.py, so they are not tracks:", ""]

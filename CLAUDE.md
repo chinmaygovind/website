@@ -135,9 +135,10 @@ stale: `gh secret set EC2_HOST --body 54.157.20.148`.
 
 ## Tests: run only what changed
 
-The full suite is about 2,850 tests in four minutes (drive 1,875 in ~130s, kot
-221 in ~30s, gto 468 in ~22s, site 266 in ~5s, ers 18 in ~1s), and nearly every
-change is to one service, so **never reach for the whole thing by hand**:
+The full suite is about 2,975 tests in a bit over a minute (drive 2,001 in ~23s
+on an idle machine,
+kot 221 in ~30s, gto 468 in ~22s, site 266 in ~5s, ers 18 in ~1s), and nearly
+every change is to one service, so **never reach for the whole thing by hand**:
 
 ```bash
 scripts/tests.sh              # only the modules the working tree touches
@@ -175,24 +176,37 @@ scripts/tests.sh drive -- -k ghost -x     # after --, straight to pytest
   a 16-core laptop kot's self-play tests contend badly enough that the suite stops
   finishing. `ers` opts out (18 tests in 0.05s), an explicit `-n` after `--` wins,
   and a venv without `pytest-xdist` runs serially rather than refusing.
-- **drive opts out too, and the trade is in `drive/docs/testing.md`.** `-n 4
-  --dist loadfile` was worth 5:40 → 1:35 when `test_sim.py` drove all thirteen
-  tracks; that file is gone and what was left was 66s serial against 42s
-  parallel. Set against **three of 34 CI drive jobs hanging**, the 24s is not
-  worth it.
-- **xdist occasionally deadlocks and it is still not understood.** The run
-  reaches 93-98% in under a minute, then the controller **and all four workers
-  sit at 0.0% CPU** until something kills it; every test has passed, the session
-  just never ends. Three of 34 CI jobs, stalling 739s, 901s and 246s. The
-  identical command passes next run, so it is **intermittent, not a bad commit**
-  - the first stall was written off as infrastructure until a local `kot`
-  reproduction disproved that. Three consequences: a stall reports **cancelled**
-  rather than failed, so it does not look like a test failure; its length is set
-  by `cancel-in-progress`, so it is bounded by when somebody notices rather than
-  by `timeout-minutes: 20`; and the per-test speed guard cannot see it, because a
-  deadlocked test never finishes and so has no duration. **`drive` is out of
-  range now** (serial); `kot` is the one left exposed. The cheap mitigation there,
-  still not applied, is `pytest-timeout` plus a step-level `timeout-minutes`.
+- **drive does not use xdist at all**; `scripts/parallel_pytest.py` runs it as
+  one pytest process per test file, several at a time - 130s → 23s. It also owns
+  `drive/tests/EXCLUSIVE`, for the one file that writes into `tracks/` and so
+  cannot run beside anything that imports the pool. Full account, including what
+  the 6x is made of, in `drive/docs/testing.md`.
+- **The xdist deadlock is understood now, and it is `eventlet`.** The stall this
+  file used to describe as not understood - the run reaches 93-98%, every test
+  passes, then the controller and all four workers sit at 0.0% CPU until
+  something kills it - is `eventlet.monkey_patch()`, which `drive/app.py` and
+  `kot/app.py` both call on line 2 and which **greens `threading`**. xdist's
+  workers talk to their controller over pipes on OS threads execnet creates at
+  start-up, before any test imports the app; from that import on, a real thread
+  is holding green primitives, and signalling one does not wake eventlet's hub.
+  The worker's main thread sleeps for something that cannot arrive. In `/proc`:
+  workers in `hrtimer_nanosleep`, their pipe readers in `anon_pipe_read`, the
+  controller in `futex_do_wait`. At `-n 16` it reproduces about two runs in
+  three, which is what made it findable.
+  **So it is not a tuning problem - `-n 4` is rarer, not safer.** `drive` is out
+  of range now; **`kot` still monkey-patches and still runs under xdist, so it
+  still has this**, and the fix is to move it to `run_parallel` rather than to
+  add `pytest-timeout`. The consequences that made it hard to see are unchanged:
+  a stall reports **cancelled** rather than failed, its length is set by
+  `cancel-in-progress` rather than by `timeout-minutes: 20`, and the per-test
+  speed guard cannot see it because a deadlocked test never finishes.
+- **Two silent leaks came out of that hunt and both cost the machine, not the
+  suite.** `drive`'s test fixture unlinked its throwaway SQLite file but not
+  SQLite's `-wal`/`-shm` sidecars, and `/tmp` here is a **tmpfs** - 8,000 of each
+  had built up to **13GB of a 16GB `/tmp`**, i.e. 13GB of RAM. And
+  `eventlet.spawn(_stale_cleanup)` runs at `app.py` import, which the fixture
+  does afresh per test file, leaving hundreds of immortal greenlets each sleeping
+  five minutes. Neither failed a test; both just made everything slow.
 - **gto gates two suites the same way**, for the same reason and with the same
   CI gap: `exhaustive` is the evaluator's proof over all 2,598,960 five-card
   hands (~90s) and `calibration` measures each bot's actual VPIP and PFR against

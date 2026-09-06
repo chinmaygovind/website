@@ -1,0 +1,15 @@
+# Test files that must not run while any other file is running.
+#
+# `scripts/parallel_pytest.py` runs one process per file, and these get the
+# machine to themselves before the rest start. Blank lines and # comments are
+# ignored.
+
+# Writes real folders into `tracks/` and takes them away again - which is the
+# only honest way to test that a broken folder cannot take the pool down with
+# it. Every other test file does `import tracks` at module scope, and the pool
+# is assembled once, at that import. A file that imports while a scratch folder
+# is on disk gets it *in the pool*, so `test_tracks.py` then parametrizes its
+# whole suite over a track called `zzscratch` and fails on it. Filtering the
+# listing is not enough (see `conftest.track_folders`), because this arrives
+# through the assembled pool rather than through a listing.
+test_track_folders.py

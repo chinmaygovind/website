@@ -76,7 +76,10 @@ def rt():
     r = jsrt.Runtime()
     r.load_tuning_and_tracks()
     r.eval(HARNESS)
-    return r
+    # Ten tests over three circuits, and `makeRun` builds the track every time.
+    # See `memoize_build_track` - Spa alone is a second a call.
+    from conftest import memoize_build_track
+    return memoize_build_track(r)
 
 
 def closed_slugs():

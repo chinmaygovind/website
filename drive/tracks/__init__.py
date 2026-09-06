@@ -63,6 +63,8 @@ import hashlib
 import importlib
 import logging
 import os
+import pickle
+import tempfile
 
 from tracks import look, solver
 
@@ -90,6 +92,144 @@ BROKEN = {}
 # Where a track ends up when it does not say. Middle of the range, so a track can
 # be pushed either way without renumbering the pool.
 DEFAULT_ORDER = 500
+
+# ---------------------------------------------------------------------------
+# The built pool, cached on disk
+# ---------------------------------------------------------------------------
+#
+# **Building the pool is 4 seconds and it is the same 4 seconds every time.** A
+# track is a pure function of its own two source files and of the shared code
+# that interprets them - `builder`, `solver`, `checks`, `look`, `laptime`,
+# `tuning` - so the answer only changes when one of those does. Most of the cost
+# is not the ribbon (0.9s for all 22) but what is derived from it: `laptime`'s
+# racing line relaxes 320 iterations over every station, and `gate_ceiling`
+# tracks every gate across the whole map.
+#
+# That was 4 seconds on `import tracks`, which is paid by every pytest process,
+# every `verify.py` in production, and every one of the sixteen xdist workers -
+# and twelve more times over in `test_track_folders.py`, which calls `_assemble`
+# once per broken-folder case.
+#
+# So each finished track is pickled under `__pycache__`, keyed on a hash of
+# everything that can change it. It sits beside the `.pyc` files for the same
+# reason they do: derived from the source, worthless if the source moves, and
+# already ignored by git. A stale entry is not possible rather than unlikely -
+# the key *is* the content - and a corrupt or unreadable one is a miss, so the
+# worst case is the 4 seconds this replaces.
+_CACHE_DIR = os.path.join(HERE, "__pycache__", "pool")
+
+# Bump when the *shape* of a cached dict changes in a way the source hash cannot
+# see - a new derived key, a different type. The file hashes below cover
+# everything else.
+_CACHE_VERSION = 1
+
+_code_stamp_cached = None
+
+
+def _code_stamp():
+    """A hash of every file that can change how any track comes out.
+
+    The shared interpreters, not the track folders - those are hashed per track.
+    `laptime` and `tuning` are in here because the ideal lap and the medals
+    derived from it are cached too, so retuning the car has to invalidate every
+    entry; that is the same rule the module docstring states for `tuning.py`.
+    """
+    global _code_stamp_cached
+    if _code_stamp_cached is None:
+        h = hashlib.sha1()
+        h.update(b"v%d" % _CACHE_VERSION)
+        up = os.path.dirname(HERE)
+        for path in ([os.path.join(HERE, n) for n in sorted(os.listdir(HERE))
+                      if n.endswith(".py")]
+                     + [os.path.join(up, "laptime.py"), os.path.join(up, "tuning.py")]):
+            try:
+                with open(path, "rb") as f:
+                    h.update(f.read())
+            except OSError:
+                # A file that cannot be read is a key that cannot be trusted, so
+                # make it one nothing will match rather than one that ignores it.
+                h.update(os.urandom(16))
+        _code_stamp_cached = h.hexdigest()
+    return _code_stamp_cached
+
+
+def _cache_key(folder):
+    """The cache key for one track folder, or None if it cannot be read.
+
+    `track.py` and `palette.py` are the whole of what a folder contributes to
+    the built dict. `scenery.js` is deliberately *not* in here: it is read on
+    demand by `scenery_source` and never enters the track document - `stamp()`
+    hashes it separately, for the different question of whether a save state is
+    still valid.
+    """
+    h = hashlib.sha1()
+    h.update(_code_stamp().encode())
+    h.update(folder.encode())
+    for name in ("track.py", "palette.py"):
+        path = os.path.join(HERE, folder, name)
+        try:
+            with open(path, "rb") as f:
+                h.update(f.read())
+        except FileNotFoundError:
+            h.update(b"-")
+        except OSError:
+            return None
+    return h.hexdigest()
+
+
+def _cache_load(key):
+    """The finished track dict for `key`, or None.
+
+    A fresh object every time, because the caller owns what it gets back -
+    `_time_it` writes into it, and `from_document` and the maker both hand
+    track dicts around expecting to be able to. Unpickling *is* the copy, and it
+    is 13ms for the whole pool against the 4 seconds of building it.
+    """
+    if key is None:
+        return None
+    try:
+        with open(os.path.join(_CACHE_DIR, key), "rb") as f:
+            return pickle.load(f)
+    except (OSError, pickle.UnpicklingError, EOFError, AttributeError,
+            ValueError):
+        return None
+
+
+def _cache_store(key, t):
+    """Write one finished track under its key. Never raises.
+
+    Written to a uniquely named temporary and renamed, because sixteen xdist
+    workers cold-start on the same cache directory at once and `os.replace` is
+    atomic: a reader either sees the previous file or the whole new one, never
+    half of one. A failure here costs the 4 seconds and nothing else, so it is
+    swallowed rather than allowed to take the pool down - a read-only checkout
+    must still be able to build its tracks.
+    """
+    if key is None:
+        return
+    try:
+        os.makedirs(_CACHE_DIR, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=_CACHE_DIR, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                pickle.dump(t, f, pickle.HIGHEST_PROTOCOL)
+            os.replace(tmp, os.path.join(_CACHE_DIR, key))
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+    except (OSError, pickle.PicklingError):
+        pass
+
+
+# Keys for the tracks this process actually built, so the loop at the foot of
+# the module can write them once they are complete. A track is only cacheable
+# when it has its `ideal` and `medals` on it, and those need `laptime`, which
+# cannot be imported until the ribbons exist - see the import further down.
+_to_cache = {}
+
 
 def _discover():
     """Every folder in `tracks/` that has a `track.py`, by name.
@@ -264,7 +404,27 @@ def _assemble():
 
 
 def _one(e):
-    """Build one track, all the way to its medals-ready dict."""
+    """Build one track, all the way to its medals-ready dict.
+
+    Answered from the disk cache when this folder and the code that interprets
+    it are both unchanged - see `_cache_key`. A hit comes back with `ideal` and
+    `medals` already on it and the loop at the foot of this module leaves it
+    alone; a miss is remembered in `_to_cache` so that same loop can write it
+    once `laptime` has finished it off.
+    """
+    # **Only a folder is cacheable.** `from_document` comes through here too,
+    # for a track that has no folder to hash and whose geometry changes under a
+    # slug the editor reuses - `draft` is one slug shared by every draft in
+    # flight - so a key built from the slug would hand one player's track to
+    # another. `module` is the discriminator: `_meta` puts the imported
+    # `track.py` on it, and a document has None.
+    key = _cache_key(e["slug"]) if e.get("module") is not None else None
+    if key is not None:
+        hit = _cache_load(key)
+        if hit is not None:
+            return hit
+        _to_cache[e["slug"]] = key
+
     def fresh():
         x, y, z, yaw = e["origin"]
         return Builder(x, y, z, yaw=yaw, width=e["width"], rails=e["rails"])
@@ -389,7 +549,14 @@ def _time_it(t):
 
 
 for _t in TRACKS:
-    _time_it(_t)
+    # A cache hit already carries both, and recomputing `ideal` is the 3 seconds
+    # the cache exists to skip. `_time_it` stays the one place the "declared
+    # times win, otherwise derive" rule lives, for the misses and for
+    # `from_document`.
+    if "ideal" not in _t:
+        _time_it(_t)
+    if _t["slug"] in _to_cache:
+        _cache_store(_to_cache.pop(_t["slug"]), _t)
 
 
 def scenery_path(slug):

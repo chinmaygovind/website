@@ -65,4 +65,11 @@ gto/avatars/
 # folder is contained rather than fatal. So a `git add -A` during a local run
 # commits a track designed to fail `test_every_track_folder_loads`, which is
 # precisely what it then does, in CI, blocking the deploy.
-drive/tracks/zzscratch/
+# One per xdist/parallel worker now (`zzscratchgw0`, ...), since the suite runs
+# as several processes and two of them on one folder name would delete each
+# other's track mid-test.
+drive/tracks/zzscratch*/
+
+# What `scripts/parallel_pytest.py` recorded about how long each test file took
+# last run. A hint for ordering the next run, derived and machine-specific.
+drive/.pytest-file-times

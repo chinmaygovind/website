@@ -53,11 +53,9 @@ def resolved():
 
 # -- the chokepoint ----------------------------------------------------------
 def test_the_pool_is_untouched_by_the_hook(resolved):
-    assert len(tracks_mod.TRACKS) == 19 or len(tracks_mod.TRACKS) == len(
-        [d for d in os.listdir(os.path.join(os.path.dirname(__file__), "..",
-                                            "tracks"))
-         if os.path.exists(os.path.join(os.path.dirname(__file__), "..",
-                                        "tracks", d, "track.py"))])
+    from conftest import track_folders
+    assert len(tracks_mod.TRACKS) == 19 or \
+        len(tracks_mod.TRACKS) == len(track_folders())
     assert tracks_mod.get("spa")["name"] == "Spa-Francorchamps"
 
 

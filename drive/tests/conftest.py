@@ -11,44 +11,94 @@ So the clock gets an assertion. A test that suddenly takes seconds is nearly alw
 one of two things - a real sleep, or a loop that grew - and both are worth being told
 about at the moment they land rather than a month later.
 
-**Failing the offending test rather than the session** is deliberate: `drive` runs
-under `pytest-xdist` (`-n 4 --dist loadfile`), where `pytest_sessionfinish` runs once
-per worker and an exit status set there does not reliably reach the controller. A
-failed report does, and it names the culprit instead of just the total.
+**It is two budgets, on CPU and on waiting, and it used to be one on the wall
+clock.** That mattered the moment drive started running as sixteen pytest
+processes at once (`scripts/parallel_pytest.py`): a test that takes 2.2s alone
+takes 12.7s when it is sharing eight cores with fifteen other processes, and the
+old single wall-clock budget failed four honest tests on the first parallel run.
+Raising it was the documented remedy and it is the wrong one - the sleep that
+started all this was twelve seconds, so a budget loose enough to survive
+contention is one that would have missed the bug it was written for.
+
+Splitting it fixes that, because **neither half is inflated by contention**:
+
+- `CPU_BUDGET_S` is `time.process_time()` across the call - work actually done.
+  A starved process does not accumulate CPU while it waits for a core, so this
+  number is the same whether the machine is idle or oversubscribed. This is the
+  half that catches **a loop that grew**.
+- `WAIT_BUDGET_S` is wall minus CPU - time the test spent not computing. This is
+  the half that catches **a real sleep**, which is pure wait and no CPU.
+
+Contention lands in the second one, which is why it is the looser of the two, and
+why it is still nowhere near twelve seconds. A `sleep(12)` shows up as ~12s of
+wait against ~0s of CPU and is caught by a mile; sixteen processes queueing for
+eight cores cost a couple of seconds of wait on a test that does a couple of
+seconds of work.
+
+**Failing the offending test rather than the session** is deliberate. It was
+written when `drive` ran under `pytest-xdist`, where `pytest_sessionfinish` runs
+once per worker and an exit status set there does not reliably reach the
+controller. Drive runs as separate processes now - see `drive/docs/testing.md`
+for why xdist cannot work in this module at all - and the reasoning holds for
+that too: a failed report names the culprit, where a session-level status would
+be one process of forty-nine exiting non-zero without saying which test did it.
 
 Mark a test `@pytest.mark.slow` to opt out, which is a decision somebody should make
-on purpose. **Exactly one test in drive has needed it**, and it is worth knowing which
-kind: `test_the_cap_model_changes_nothing_on_a_track_without_any` speed-profiles the
-whole track pool twice, so it is O(pool) rather than slow by accident, and it grows
-every time a track is added. That is the honest use of the marker - the guard is for
-a sleep or a loop that grew *unnoticed*, and a test whose cost is the point is neither.
+on purpose. **Two tests in drive need it**, and they are the same kind:
+`test_the_cap_model_changes_nothing_on_a_track_without_any` and
+`test_a_point_to_point_track_is_unaffected` both work over the whole track pool,
+so they are O(pool) rather than slow by accident, and they grow every time a
+track is added. That is the honest use of the marker - the guard is for a sleep
+or a loop that grew *unnoticed*, and a test whose cost is the point is neither.
 """
 
 import os
 import sys
 import tempfile
+import time
 
 import pytest
 
-# Six times the slowest honest test (`test_a_real_lap_passes_the_anti_cheat[rainbow]`,
-# ~1.6s) and still under the 12s sleep that prompted this.
+# **Two budgets, and the reasoning for both is in the module docstring above.**
 #
-# **It was 5s, and 5s produced a false failure.** A wall-clock budget is sensitive to
-# whatever else the machine is doing: with a stuck earlier run competing for cores,
-# the rainbow sim went from 1.6s to over 5s and this guard failed it. Nothing was
-# wrong with the test. CI runners are noisy in exactly that way, and a guard that
-# fails a deploy for load is worse than the slow suite it was added to prevent.
-#
-# 10s keeps the thing it was for - a real sleep is a second or more, and the one that
-# started this was twelve - while leaving enough room that ordinary contention cannot
-# trip it. If it ever false-fails again, raise it rather than deleting it, or mark the
-# offending test `slow`.
-SLOW_TEST_BUDGET_S = 10.0
+# CPU: the slowest honest test does about 2.2s of real work
+# (`test_a_lap_the_physics_drove_is_accepted[bigred]`, which drives a lap of the
+# longest track in the pool and re-drives it). 10s is four and a half times that
+# and well under the twelve-second sleep that prompted any of this. It does not
+# move with machine load, so unlike the wall-clock budget it replaced there is no
+# reason to keep raising it.
+CPU_BUDGET_S = 10.0
+
+# Waiting: wall minus CPU. Nothing here is supposed to block on anything - no
+# network, no real sleeps, SQLite on a local file - so in a serial run this is
+# near zero for every test. It is set at 8s to leave room for sixteen processes
+# queueing for eight cores, which costs a second or two on the tests that do the
+# most work. A real `eventlet.sleep(12)` is 12s of pure wait and is still caught
+# with four seconds to spare.
+WAIT_BUDGET_S = 8.0
+
+# Kept as the name the old single budget had, since `docs/testing.md` and the
+# messages below refer to "the budget". It is the CPU one.
+SLOW_TEST_BUDGET_S = CPU_BUDGET_S
+
+# CPU time consumed by each test's call phase, filled in by the hook below.
+# `report.duration` is wall clock and pytest offers no CPU equivalent.
+_cpu_used = {}
 
 
 def pytest_configure(config):
     config.addinivalue_line(
         "markers", "slow: this test is allowed to exceed the per-test time budget")
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_call(item):
+    """Record how much CPU the call phase actually burned."""
+    started = time.process_time()
+    try:
+        yield
+    finally:
+        _cpu_used[item.nodeid] = time.process_time() - started
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -58,17 +108,67 @@ def pytest_runtest_makereport(item, call):
         return                       # a failure already has something to say
     if item.get_closest_marker("slow"):
         return
-    if report.duration > SLOW_TEST_BUDGET_S:
+
+    cpu = _cpu_used.pop(item.nodeid, None)
+    if cpu is None:
+        return                       # never ran the call phase; nothing to judge
+    wait = max(0.0, report.duration - cpu)
+
+    if cpu > CPU_BUDGET_S:
         report.outcome = "failed"
         report.longrepr = (
-            f"{item.nodeid} took {report.duration:.2f}s, over the "
-            f"{SLOW_TEST_BUDGET_S:.0f}s per-test budget.\n\n"
-            "Almost always a real sleep on a code path a test calls synchronously "
-            "(see _close_race / RESULTS_HOLD_S in app.py for the one that prompted "
-            "this budget), or a loop that grew.\n"
-            "If the test genuinely needs the time, mark it @pytest.mark.slow and "
-            "say why."
+            f"{item.nodeid} used {cpu:.2f}s of CPU, over the "
+            f"{CPU_BUDGET_S:.0f}s budget (wall {report.duration:.2f}s).\n\n"
+            "This is work actually done, not time waiting, so it is not the "
+            "machine being busy - it is almost always a loop that grew.\n"
+            "If the test genuinely needs the time, mark it @pytest.mark.slow "
+            "and say why."
         )
+    elif wait > WAIT_BUDGET_S:
+        report.outcome = "failed"
+        report.longrepr = (
+            f"{item.nodeid} spent {wait:.2f}s not computing "
+            f"(wall {report.duration:.2f}s, CPU {cpu:.2f}s), over the "
+            f"{WAIT_BUDGET_S:.0f}s budget.\n\n"
+            "Almost always a real sleep on a code path a test calls "
+            "synchronously - see _close_race / RESULTS_HOLD_S in app.py for the "
+            "one that prompted this budget.\n"
+            "If the machine was simply overloaded this can be a false alarm; if "
+            "the test genuinely needs to wait, mark it @pytest.mark.slow and say "
+            "why."
+        )
+
+
+# ---------------------------------------------------------------------------
+# What counts as a track folder on disk
+# ---------------------------------------------------------------------------
+
+# The name `test_track_folders.py` writes its deliberately-broken folders under,
+# with the xdist worker id appended so sixteen of them do not collide.
+SCRATCH_PREFIX = "zzscratch"
+
+TRACKS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tracks")
+
+
+def track_folders():
+    """Every real track folder in `tracks/`, newest listing, scratch excluded.
+
+    **Four test files used to list that directory themselves and all four were a
+    race.** `test_track_folders.py` writes a folder into the live `tracks/` tree
+    and takes it away again - which is the only honest way to test that a broken
+    folder cannot take the pool down - and while it is there, anything else
+    reading the directory sees a track that is about to stop existing. Serially
+    that is invisible, because the writer and the readers never overlap. Run the
+    suite in parallel processes and it is a `FileNotFoundError` on
+    `tracks/zzscratch/track.py` in a test that has nothing to do with any of it.
+
+    So the exclusion lives here, once, rather than in each caller: a scratch
+    folder is the suite's own scaffolding and was never a track. The one file
+    that *is* about those folders looks for them by name and does not use this.
+    """
+    return sorted(d for d in os.listdir(TRACKS_DIR)
+                  if not d.startswith(SCRATCH_PREFIX)
+                  and os.path.exists(os.path.join(TRACKS_DIR, d, "track.py")))
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +224,71 @@ def lap_splits(track, frames):
         at = hits[0] if hits else at
         out.append(int(round(at / runcheck.GHOST_HZ * 1000)))
     return out
+
+
+# ---------------------------------------------------------------------------
+# Building a track in QuickJS once per runtime instead of once per test
+# ---------------------------------------------------------------------------
+
+# **`buildTrack` is the most expensive call in the suite and most of the calls
+# are for a track that was already built.** It is a second for Spa, 0.9s for
+# Monaco, 0.7s for the Costco - it lays every quad of the mesh and every
+# triangle of the collider - and files like `test_closed_lap.py` call it once
+# per test for the same three circuits, so the same second is paid nine times.
+#
+# `Course` copies six references off the result and adds nothing to it, and
+# nothing in `Run` writes to `gates`, `line` or `collider` - they are read
+# straight through - so two tests can share one built track. That is checked
+# rather than assumed: break any of the behaviour these files pin and they still
+# go red, because what they walk through a gate is their own stub car and their
+# own fresh `Run`.
+#
+# **Keyed on the track object, not on its slug.** A slug is not unique to a
+# document - the editor reuses `draft` for every draft in flight, and
+# `from_document` can hand back a different track under a slug that is already
+# in the pool - so a slug key could serve one track's mesh for another's. Two
+# calls with the same object are asking for the same thing; two documents are
+# two objects, and each gets built.
+#
+# Opt-in, per runtime, and only from a fixture: `verify.py`'s runtime is the
+# anti-cheat's and must keep building exactly what it is asked to build.
+# **Capped, because a built track is big and the context is not.** Holding the
+# whole pool at once is an `InternalError: out of memory` out of QuickJS's 512MB
+# - `test_a_point_to_point_track_is_unaffected` builds all 22 in one expression
+# and found it immediately. Four is chosen off the shape of the callers rather
+# than as a round number: the files that repeat a build repeat it over the three
+# closed circuits, so the working set is three, and a sweep over the pool churns
+# through the cap and keeps no more resident than not memoizing would.
+MEMO_BUILD_TRACK = """
+(function () {
+  var real = buildTrack;
+  var memo = new Map();
+  var CAP = 4;
+  buildTrack = function (track, T) {
+    if (!track || typeof track !== 'object') return real(track, T);
+    if (memo.has(track)) {
+      var hit = memo.get(track);      // freshen: Map keeps insertion order,
+      memo.delete(track);             // so re-inserting makes this the newest
+      memo.set(track, hit);
+      return hit;
+    }
+    var built = real(track, T);
+    memo.set(track, built);
+    while (memo.size > CAP) memo.delete(memo.keys().next().value);
+    return built;
+  };
+})();
+"""
+
+
+def memoize_build_track(rt):
+    """Make `buildTrack` in this runtime build each track object once.
+
+    For a fixture that hands one runtime to many tests. Returns the runtime so
+    it can be used inline.
+    """
+    rt.eval(MEMO_BUILD_TRACK)
+    return rt
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +394,12 @@ def boot_app(verify=None, **environ):
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
     os.environ["DATABASE_URL"] = "sqlite:///" + path
+    # Switch off the background room sweep. It is spawned at import, so every
+    # boot below would otherwise leave behind another greenlet sleeping five
+    # minutes in a loop that never returns - hundreds of them over a full run,
+    # and a process that will not exit promptly. See the note beside
+    # `eventlet.spawn(_stale_cleanup)` in app.py, including what it is *not*.
+    os.environ["DRIVE_SWEEP"] = "0"
     if verify is not None:
         os.environ["DRIVE_VERIFY"] = verify
     for key, value in environ.items():
@@ -251,7 +422,24 @@ def close_app(path, verify=None):
 
     `verify` only has to be truthy-or-not here; it is passed as the same value
     the boot used so the two calls read as a pair.
+
+    **The `-wal` and `-shm` sidecars are deleted too, and leaving them out was a
+    13GB leak.** SQLite in WAL mode keeps its journal in `<path>-wal` and its
+    index in `<path>-shm`, both created beside the database and neither named by
+    `mkstemp`. Unlinking only `path` left the two of them behind on every one of
+    the ~500 boots a full run does, and `/tmp` here is a **tmpfs** - so the
+    droppings were not on a disk with 300GB spare, they were in RAM. Eight
+    thousand of each had accumulated to 13GB of a 16GB `/tmp`, which is where
+    the "out of disk" and the machine's missing memory came from.
+
+    `missing_ok`, because the sidecars only exist if the connection was in WAL
+    mode and had something to journal - a test that booted the app and never
+    wrote leaves neither.
     """
     if verify is not None:
         os.environ.pop("DRIVE_VERIFY", None)
-    os.unlink(path)
+    for suffix in ("", "-wal", "-shm"):
+        try:
+            os.unlink(path + suffix)
+        except FileNotFoundError:
+            pass
