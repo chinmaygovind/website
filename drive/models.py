@@ -525,6 +525,49 @@ class DrivePrefs(db.Model):
             return {}
 
 
+class DriveSave(db.Model):
+    """One row per (user, track): their practice save states, up to nine.
+
+    A save state is the whole of the car and the run at one instant - see
+    ``Car.snapshot`` and ``Run.snapshot`` - so that pressing R puts you back on
+    the same corner at the same speed with the clock reading what it read. It is
+    a practice tool and nothing that comes out of one reaches a board: the client
+    marks the run tainted and ``verify.py`` could not accept it anyway, since a
+    restored input stream does not re-drive from the line.
+
+    **One JSON blob rather than a row per slot**, for ``drive_prefs``' reason:
+    ``create_all`` makes tables and not columns, so a tenth field inside a slot
+    arrives on the live database by itself where a tenth column would need a
+    migration over SSH. Nine slots of a few hundred bytes is a small row, and it
+    is always written whole, so two tabs cannot interleave a partial update.
+
+    ``track`` is the slug for a pool track and the *draft token* for a track
+    being built in ``/make``. Keying a draft on its slug would be wrong in the
+    way ``localBest`` documents: every draft drives under the one reserved
+    ``draft``, so all of them would share one set of states.
+
+    Each slot carries the ribbon fingerprint it was taken on
+    (``tracks.moves.fingerprint``, plus the track's ``scenery.js``). A state
+    whose track has since moved is shown greyed and refuses to restore rather
+    than being deleted - a slot you can see and remove beats one that vanished
+    with no explanation.
+    """
+    __tablename__ = "drive_saves"
+
+    user_id    = db.Column(db.Integer, db.ForeignKey("users.id"), primary_key=True)
+    track      = db.Column(db.String(64), primary_key=True)
+    saves_json = db.Column(db.Text, default="[]")
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    @property
+    def saves(self):
+        try:
+            got = json.loads(self.saves_json or "[]")
+            return got if isinstance(got, list) else []
+        except Exception:
+            return []
+
+
 class DriveGame(db.Model):
     __tablename__ = "drive_games"
 

@@ -664,6 +664,68 @@ export class Car {
     if (want === 0 && this.catchupBoost < 0.01) this.catchupBoost = 0;
   }
 
+  /**
+   * Every mutable number on the car, for a practice save state.
+   *
+   * **Deliberately not `placeAt`.** That is the respawn path and it *zeroes* most
+   * of what is here on purpose - a car being put down has no tow, no pad boost
+   * and no let-go tyres. A save state is the opposite question: the car must
+   * drive out of the restore exactly the way it drove in, so mid-air, mid-drift
+   * and one tenth into a boost pad all have to survive. Leave `coyote`,
+   * `padBoost` or `slipBoost` out and the restore is *nearly* right, which is
+   * the worst kind: the section you are drilling is not the section you saved.
+   *
+   * Everything is copied out by value - a snapshot that shared a Vector3 with
+   * the live car would track it and restore to wherever the car ended up.
+   */
+  snapshot() {
+    return {
+      // Components rather than `toArray`, the way `Run.noteStep` writes its
+      // anchors. `three_stub.js` is the anti-cheat's three.js and carries only
+      // the maths the game actually does - growing it so that a practice
+      // feature can use a convenience method would be putting something in the
+      // verifier's runtime that has no business being judged against.
+      pos: [this.pos.x, this.pos.y, this.pos.z],
+      vel: [this.vel.x, this.vel.y, this.vel.z],
+      quat: [this.quat.x, this.quat.y, this.quat.z, this.quat.w],
+      groundN: [this.groundN.x, this.groundN.y, this.groundN.z],
+      grounded: this.grounded, coyote: this.coyote, airTime: this.airTime,
+      steer: this.steer, braking: this.braking, offroad: this.offroad,
+      surface: this.surface, speed: this.speed, slip: this.slip,
+      bumpLean: this.bumpLean, bumpTimer: this.bumpTimer, bumpSlip: this.bumpSlip,
+      respawnIn: this.respawnIn, tick: this.tick, _tick: this._tick,
+      frozen: this.frozen, wheelSpin: this.wheelSpin, towed: this.towed,
+      slipCharge: this.slipCharge, slipBoost: this.slipBoost,
+      padBoost: this.padBoost, bounceLock: this.bounceLock,
+      catchupBoost: this.catchupBoost, _wallHit: this._wallHit,
+      bumpCooldown: [...this._bumpCooldown],
+      respawn: this._respawn ? { p: this._respawn.p.slice(), fwd: this._respawn.fwd.slice() } : null,
+    };
+  }
+
+  restore(s) {
+    this.pos.set(s.pos[0], s.pos[1], s.pos[2]);
+    this.vel.set(s.vel[0], s.vel[1], s.vel[2]);
+    this.quat.set(s.quat[0], s.quat[1], s.quat[2], s.quat[3]);
+    this.groundN.set(s.groundN[0], s.groundN[1], s.groundN[2]);
+    this.grounded = s.grounded; this.coyote = s.coyote; this.airTime = s.airTime;
+    this.steer = s.steer; this.braking = s.braking; this.offroad = s.offroad;
+    this.surface = s.surface; this.speed = s.speed; this.slip = s.slip;
+    this.bumpLean = s.bumpLean; this.bumpTimer = s.bumpTimer; this.bumpSlip = s.bumpSlip;
+    this.respawnIn = s.respawnIn; this.tick = s.tick; this._tick = s._tick;
+    this.frozen = s.frozen; this.wheelSpin = s.wheelSpin; this.towed = s.towed;
+    this.slipCharge = s.slipCharge; this.slipBoost = s.slipBoost;
+    this.padBoost = s.padBoost; this.bounceLock = s.bounceLock;
+    this.catchupBoost = s.catchupBoost; this._wallHit = s._wallHit;
+    this._bumpCooldown = new Map(s.bumpCooldown || []);
+    // Not carried across a restore: `lastBump` is a one-frame message to the
+    // renderer (sparks), consumed and cleared by whoever reads it, so restoring
+    // one would throw a shower of sparks for a hit that happened minutes ago.
+    this.lastBump = null;
+    this._respawn = s.respawn ? { p: s.respawn.p.slice(), fwd: s.respawn.fwd.slice() } : null;
+    this._syncAxes();
+  }
+
   requestRespawn() {
     if (this.respawnIn > 0) return;
     this.respawnIn = this.T.RESPAWN_DELAY;

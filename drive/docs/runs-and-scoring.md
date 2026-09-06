@@ -17,8 +17,14 @@ recording.
 - **Starts are counted as well as finishes**, because a board of finishes cannot
   say how many goes a track took out of you - and on a hard one that is most of
   the story. An attempt is *the clock starting*: `/api/start` is posted from the
-  one place in `game.js` that calls `run.start()`, which is why loading the
-  page does not count as one. A lap in a **room** is not counted at either end
+  place in `game.js` that calls `run.start()`, which is why loading the
+  page does not count as one - **and from one other place, a practice
+  restore**, which is a deliberate exception rather than a second rule. Going
+  back to a save state does not start a *run*, but it is somebody having another
+  go at the thing, and that is what the counter is for. The cost is that a
+  corner drilled thirty times reads as thirty attempts at the whole track next
+  to somebody's honest twelve; the invariant that actually matters - never more
+  finishes than attempts - is untouched, since a restored lap finishes nothing. A lap in a **room** is not counted at either end
   - see the leaderboard rule below. They live in their own `drive_starts` table, one row per (user, track) -
   `create_all` creates tables and not columns, so a new table lands on the live
   database by itself where a new column would need a migration, and a track you
@@ -97,6 +103,55 @@ recording.
     it is done and there is nothing to re-run; it is described here because the
     *method* is the reusable part, and because the figures are the only record of
     what the totals were before.
+- **A lap restored from a practice save state is not a lap, and the flag lives
+  on the run rather than on the session.** `C` freezes the car, the run and the
+  ghost into a slot and `R` puts you back there; `Run.restore` sets
+  `tainted`, and a tainted run reaches no board, wins no medal, sets no personal
+  best, becomes no session ghost and offers no `verifyPayload`. `Run.reset` and
+  `Run.start` are what clear it, which is the whole reason it is per-run: the
+  alternative - "any lap is unranked while a save state exists" - means a slot
+  left lying around silently costs somebody the next honest lap they drive, and
+  they would never find out why. Press `Shift+R` - which deactivates the slot
+  rather than deleting it - drive it properly, and it counts.
+  - **The client flag is not the defence and must not be described as one.** A
+    modified client could clear it. What actually keeps the board honest here is
+    the re-simulation: `verify.py` re-drives the recorded input stream from the
+    start line through the real `Car.step`, and a stream that begins halfway
+    round the track lands nowhere near its own anchors. What the flag protects
+    is the honest player's own numbers - their PB, their medal, their ghost, and
+    the midfield of the board, which is stored unverified.
+  - **`Run.stepBase` is what keeps Dino Park honest.** The herd is posed off
+    `Run.stepIndex()`, which is `inputs.length` - so a restore that put the clock
+    back to 0:41 and left the step count where it had got to would meet the
+    hadrosaurs somewhere else, and the section you are drilling would not be the
+    section you saved. A restore clears the recording arrays (so thirty restores
+    cost no memory) and carries the count in `stepBase` instead, rather than
+    padding with fabricated input bytes. `test_save_state_js.py` pins it.
+  - **The driving still counts, and that forced `reportActivity` to send a delta
+    rather than a total.** Minutes and kilometres are play stats and not records,
+    the same split that lets a room lap count for them. But `/api/activity` is
+    additive on the server and a restore *rewinds* the clock and the odometer, so
+    sending the total on every press of `R` would credit everything before the
+    save point again each time. `Run.claimReport` keeps a mark on the run clock,
+    `Run.restore` moves the mark back with it, and the sum across any number of
+    restores is exactly the driving that happened. Below `MIN_REPORTED_MS`
+    nothing is claimed *and the mark does not move*, so a corner drilled in
+    four-second bites accumulates instead of being thrown away. For an ordinary
+    run - one report, from zero - the delta and the total are the same number.
+  - **A state is pinned to the geometry it was taken on.** Each slot stores
+    `tracks.stamp`, which is `moves.fingerprint` (the ribbon, the gates, the
+    spawn) **plus the bytes of the track's `scenery.js`** - and that second half
+    is not padding: a third of the pool keeps its collider in that file, so a
+    stamp blind to it would keep a save state valid across an edit that moved a
+    wall into it. A state whose stamp no longer matches is shown greyed and
+    refuses, rather than being deleted: a slot you can see and remove beats one
+    that vanished with no explanation.
+  - Storage is `drive_saves`, one row per (user, track), one JSON blob of up to
+    nine slots for `drive_prefs`' reason - `create_all` makes tables and not
+    columns. A guest keeps theirs in `localStorage` and `pending.js` hands them
+    over at login, merged into the free slots, exactly as it already does for a
+    lap. A draft is keyed on its **token** and not its slug, since every draft
+    drives under the one reserved `draft` - the trap `localBest` documents.
 - **The leaderboard is for laps driven alone against the clock, so nothing set
   in a room reaches it.** No time, no medal, no ghost, no distance, and no
   attempt either: `countsForTheBoard()` in `game.js` is the single answer, and

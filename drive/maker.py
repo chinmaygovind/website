@@ -383,6 +383,11 @@ def make_drive(token):
         return redirect(url_for("make"))
     track["slug"] = DRAFT_SLUG
     track["name"] = doc.get("name") or "Your track"
+    # A draft never reaches `_track_payload`, so its practice-save stamp is set
+    # here. The scenery has to be passed in: a draft's collider lives in its
+    # document rather than in a `scenery.js` next to it, and a stamp blind to it
+    # would keep a save state valid across a wall being dragged into the road.
+    track["stamp"] = tracks_mod.stamp(track, doc.get("scenery"))
     user = get_current_user()
     return render_template(
         "play.html", mode="solo", track=track, draft_token=token,

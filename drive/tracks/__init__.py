@@ -59,6 +59,7 @@ then ``slug``, never by whatever the filesystem happened to return, and a
 duplicate slug is an error rather than a coin flip.
 """
 
+import hashlib
 import importlib
 import logging
 import os
@@ -409,6 +410,48 @@ def scenery_source(slug):
         return None
     with open(p) as f:
         return f.read()
+
+
+_STAMPS = {}
+
+
+def stamp(t, scenery=None):
+    """A fingerprint of everything about a track that a saved car position
+    depends on: the ribbon, the gates, the spawn, and the track's own collider.
+
+    Practice save states store one and refuse to restore when it has moved, so
+    that a corner re-authored under you cannot put you back inside a rock. It is
+    `tracks.moves.fingerprint` - which already exists to wipe a user track's
+    board when its geometry changes, the same question asked for the same reason
+    - **plus the bytes of the track's `scenery.js`**, which the pool needs and a
+    user track does not. That file is where the collider lives for a third of
+    the pool: Rickety Rails' portal frames, the Costco's racking, Silverstone's
+    anti-cut barriers. Fingerprinting the ribbon alone would leave a save state
+    valid across an edit that moved a wall into it.
+
+    Cached, because it hashes tens of KB of source and the answer only changes
+    when the process restarts - which is also when an edited `scenery.js` is
+    picked up, since `scenery_source` reads on demand.
+    """
+    from tracks import moves
+
+    slug = t.get("slug")
+    # Only the pool is cached. A user track has no folder to read and its
+    # geometry changes under the same slug every time the editor saves - and a
+    # draft shares the one reserved `draft` with every other draft, so a cache
+    # keyed on the slug would hand one person's stamp to another's track.
+    pool = slug in BY_SLUG and not t.get("user")
+    if pool and slug in _STAMPS:
+        return _STAMPS[slug]
+    h = hashlib.sha1()
+    h.update(moves.fingerprint(t, scenery).encode())
+    src = scenery_source(slug) if pool else None
+    if src:
+        h.update(src.encode())
+    got = h.hexdigest()[:16]
+    if pool:
+        _STAMPS[slug] = got
+    return got
 
 
 def all_scenery():

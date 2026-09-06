@@ -405,6 +405,13 @@ than 15% or move a corner more than 8 degrees before refusing.
   a room reaches it - no time, no medal, no ghost, no distance, no attempt.
   `countsForTheBoard()` in `game.js` is the single answer and both `/api/run` and
   `/api/start` read it. Details in `docs/runs-and-scoring.md`.
+- **A lap restored from a practice save state is not a lap either**, and that is
+  a *second* gate rather than part of the one above: `countsForTheBoard()` stays
+  a pure function of the session, and `Run.tainted` is a fact about the run. `C`
+  saves where you are, `R` puts you back, `Shift+R` deactivates the slot and
+  hands `R` back its old meaning, and a tainted run reaches no board, medal, PB
+  or ghost - but its minutes and kilometres still count, the same split a room
+  lap gets. Solo only. `docs/runs-and-scoring.md`.
 - **A lap that would place in the top 3 is re-driven on the server before it goes
   on the board**, through the real `Car.step` in QuickJS, against the input stream
   and the anchors the client recorded (`verify.py`). It waits in

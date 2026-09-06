@@ -230,6 +230,16 @@ export class Run {
     this.respawnGate = this.course.startGate();
     this.wrongWay = false;
     this.bestS = 0;
+    // Steps that happened before the recording arrays were last cleared. Zero
+    // for every ordinary run; see `stepIndex` and `restore`.
+    this.stepBase = 0;
+    // Restored from a practice save state, so the lap is not a lap: no board,
+    // no medal, no PB, no ghost. See `restore`.
+    this.tainted = false;
+    // How much of this run has already been sent to `/api/activity`, as a
+    // position on the run clock rather than a total - see `reportedSoFar`.
+    this.reportedMs = 0;
+    this.reportedM = 0;
     this.course.resetHint(0);
   }
 
@@ -255,6 +265,20 @@ export class Run {
     this.inputs = [];
     this.anchors = [];
     this._sides.clear();
+    // A new run from the line is a clean one, whatever the last one was, which
+    // is what makes "press Shift+R and drive it properly" always give you a lap
+    // that counts - without it a session would have to be reloaded to set a
+    // time again.
+    //
+    // `reset` clears these too, and it is actually the one that fires: a
+    // restored run is already `running`, so `start` returns at its first line
+    // and the path back to a clean lap is `resetToStart` and then setting off.
+    // Both do it, because a flag whose meaning is "this run is not a lap" must
+    // not depend on which of the two ways a run began.
+    this.stepBase = 0;
+    this.tainted = false;
+    this.reportedMs = 0;
+    this.reportedM = 0;
   }
 
   /**
@@ -298,17 +322,128 @@ export class Run {
    * published here rather than counted separately by the game loop precisely so
    * that there is one definition of it: `inputs.length` before the push *is* the
    * index of the step whose input is about to be pushed.
+   *
+   * `stepBase` is what keeps that true across a practice restore. Dino Park's
+   * herd is posed off this number, so a restore that put the clock back to 0:41
+   * and left the step count where it was would meet the hadrosaurs somewhere
+   * else - the section you are drilling would not be the section you saved. So
+   * `restore` clears the recording arrays and carries the count in `stepBase`
+   * instead, which costs nothing and does not fabricate input bytes to pad with.
    */
   stepIndex() {
     if (this.state !== 'running') return null;
     if (this.inputs.length >= MAX_INPUT_STEPS) return null;
-    return this.inputs.length;
+    return this.stepBase + this.inputs.length;
   }
 
   /** The evidence, as `/api/run` sends it, or null if there is none. */
   verifyPayload() {
+    // A restored run has no evidence to give: the input stream starts wherever
+    // the save state was, so re-driving it from the line lands nowhere near the
+    // anchors. Nothing should be asking - a tainted run never reaches
+    // `/api/run` - but the refusal belongs next to the format rather than only
+    // at the call site, because a half-lap of inputs claiming to be a whole one
+    // is the shape of an attack rather than of a mistake.
+    if (this.tainted) return null;
     if (!this.inputs.length || !this.anchors.length) return null;
     return { i: packInputs(this.inputs), a: this.anchors };
+  }
+
+  /**
+   * The driving done since the last time anything was banked, and marking it
+   * banked. Milliseconds and metres.
+   *
+   * `/api/activity` is additive on the server, so what it wants is a delta and
+   * not a total. For an ordinary run that distinction is invisible - one report,
+   * from zero - but practice reports the same run over and over, and a restore
+   * *rewinds* the clock and the odometer. Reporting the total each time would
+   * credit everything before the save point again on every press of R; keeping a
+   * mark on the run clock instead means the sum across any number of restores is
+   * exactly the driving that happened. `restore` moves the mark back with the
+   * clock, which is what makes that come out right.
+   */
+  claimReport(minMs) {
+    const ms = Math.round(this.time - this.reportedMs);
+    // Below the floor nothing is claimed **and the mark does not move**, so the
+    // driving accumulates into the next report instead of being dropped. That
+    // matters here in a way it never did for a single report per run: drilling
+    // a corner in four-second bites would otherwise throw away every metre of
+    // it, four seconds at a time.
+    if (ms < (minMs || 0)) return null;
+    const m = this.distance - this.reportedM;
+    this.reportedMs = this.time;
+    this.reportedM = this.distance;
+    return { ms, m: Math.max(0, m) };
+  }
+
+  /**
+   * Everything a practice save state has to put back. See `Car.snapshot`, which
+   * is the other half and carries the harder part.
+   *
+   * Gates are stored as indices into `course.gates` rather than as the objects
+   * themselves, because a state outlives the world it was taken in: it goes to
+   * the database, comes back on another machine, and is applied to a `Course`
+   * rebuilt from scratch whose gate objects are different objects. The ribbon
+   * fingerprint stored beside it is what says those indices still mean the same
+   * corners - see `/api/saves`.
+   */
+  snapshot() {
+    const gi = (g) => (g ? this.course.gates.indexOf(g) : -1);
+    return {
+      time: this.time, splits: this.splits.slice(), nextCp: this.nextCp,
+      missed: this.missed, distance: this.distance, wrongWay: this.wrongWay,
+      bestS: this.bestS, hint: this.course.hint,
+      respawnGate: gi(this.respawnGate),
+      lastPos: this._lastPos ? this._lastPos.slice() : null,
+      sides: [...this._sides].map(([g, side]) => [gi(g), side]),
+      stepIndex: this.stepBase + this.inputs.length,
+    };
+  }
+
+  /**
+   * Put the run back to a save state, and mark it as no longer a lap.
+   *
+   * `nowMs` rebases the clock so it resumes reading what it read when the state
+   * was taken, rather than jumping to zero or carrying on from where practice
+   * had got to.
+   */
+  restore(s, nowMs) {
+    const gates = this.course.gates;
+    this.state = 'running';
+    this.startedAt = nowMs - s.time;
+    this.time = s.time;
+    this.splits = s.splits.slice();
+    this.nextCp = s.nextCp;
+    this.missed = s.missed;
+    this.distance = s.distance;
+    this.wrongWay = s.wrongWay;
+    this.bestS = s.bestS;
+    this.course.resetHint(s.hint | 0);
+    this.respawnGate = s.respawnGate >= 0 ? gates[s.respawnGate] : null;
+    this._lastPos = s.lastPos ? s.lastPos.slice() : null;
+    this._sides = new Map();
+    for (const [i, side] of s.sides || []) {
+      if (gates[i]) this._sides.set(gates[i], side);
+    }
+    // The recording starts again from here and the step count carries on in
+    // `stepBase`, so the movers keep their place - see `stepIndex`.
+    this.stepBase = s.stepIndex | 0;
+    this.inputs = [];
+    this.anchors = [];
+    // The ghost frames are dropped rather than truncated. They are only ever
+    // read as a whole lap - submitted with a time, or replayed against - and a
+    // tainted run is never either, so keeping a discontinuous half of one would
+    // only be something to get wrong later.
+    this.ghost = [];
+    this._ghostN = 0;
+    this._prevPose = null;
+    // Everything up to the save point has already been banked by whoever called
+    // this; the mark moves back with the clock so the next report is the driving
+    // done *from here*. See `claimReport`.
+    this.reportedMs = s.time;
+    this.reportedM = s.distance;
+    this.counted = false;
+    this.tainted = true;
   }
 
   /**

@@ -298,6 +298,56 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   never presses Escape still closes the board and the switcher with it. The
   controls sheet says `Esc / O` and so do the tooltips on the gear and on the
   settings sheet's X.
+- **Save states are `C`, `R`, `Shift+R`, `1`-`9` and `J`, plus two HUD buttons.**
+  `C` freezes the car, the run and the ghost into a slot and `R` puts you back
+  there at the same speed with the clock reading what it read; the digits pick a
+  slot, and `J` is the panel. Solo only, drafts included - in a room you would be
+  teleporting past cars that are really there.
+  - **`R` means two things and which one depends on whether a slot is active.**
+    With none active it is the restart it has always been; the moment you press
+    `C` it becomes the restore. That is the right way round because the restore
+    is what you want twenty times a minute while drilling a corner and the
+    restart is what you want twice an hour.
+  - **`Shift+R` deactivates rather than restarting, and that is the way out.**
+    It clears the *selection* and resets the run; the slot stays in the panel.
+    Without it there is no way back to a plain `R` that does not involve deleting
+    work you spent the session placing - and somebody who just wants to go for a
+    time should not have to. A digit or another `C` makes a slot active again, so
+    nothing is lost either way. The controls sheet lists `R` on two rows for that
+    reason: it genuinely is two keys.
+  - **The two buttons sit with restart and last-checkpoint, on both clusters.**
+    A bookmark-with-a-plus makes a state and a list opens the panel, beside the
+    other two because they are the same kind of thing - the ways of not driving
+    the whole lap again. They are in the touch cluster as well as the desktop
+    one, and that is not a nicety: a phone has no `C` and no `J`, and drilling
+    one corner is exactly what somebody on a phone wants, since they are not
+    going to drive Big Red end to end with their thumbs. All four doors go
+    through `saveState`/`toggleSaves` rather than repeating the rules, so the
+    phone cannot grow its own idea of when a save is allowed.
+  - **`M` was briefly taken for the panel and was given back.** It mutes in solo
+    and opens the chat in a room, as it always has.
+  - **The `PRACTICE` badge sits on the clock, and it is not decoration.** A
+    restored run reaches no board, wins no medal, sets no personal best and
+    becomes no ghost, so a fast time with nothing over it would read as the game
+    losing your lap. Amber rather than red: the run is not an error, it is just
+    not a lap. It is lit exactly while `Run.tainted`, which has three
+    transitions - a restore sets it, and `Run.reset` and `Run.start` clear it.
+  - **It is under the one-panel rule like everything else.** `closeOtherPanels`
+    and `syncPaused` both know about it, so opening it closes the board and the
+    switcher, `Escape` closes it, and the car does not drive on underneath it.
+    Missing from either list is the bug this shape exists to prevent - the
+    controls sheet was once missing from the `Escape` chain, and pressing Escape
+    while reading it opened settings on top.
+  - **The panel lists every track's states, not just this one's.** A slot
+    outlives the session that made it and follows the account to another
+    machine, so there has to be one place that shows what you are carrying
+    around; otherwise the only way to find a state on a track you have not
+    driven for a week is to go and drive it. Rename, use and delete are per row;
+    **Clear all** is the one destructive button and it is the only thing in the
+    foot.
+  - The rules about what a state contains, what refuses to restore, and why a
+    practice lap counts for minutes and kilometres but not for the board are in
+    `docs/runs-and-scoring.md`.
 - **The `?` sheet is Controls, and it is the controls and nothing else.** It
   used to open on a one-line description of the track and close on two
   paragraphs about grass and crests, which is reading matter in front of

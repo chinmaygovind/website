@@ -151,6 +151,9 @@ const S = {
   // the second one is the line below.
   ghostMode: storedGhostMode(),
   ghostRun: null,          // {id, who, time_ms} while chasing somebody's lap
+  // Practice save states for the track being driven, the one R goes back to,
+  // and every track's, cached for the panel. See `saveState`.
+  saves: [], saveActive: -1, savesAll: null,
   // Whether that lap is *drawn* as a car. Nothing to do with which lap it is:
   // wanting the splits off a lap you do not want a translucent car driving in
   // front of you is an ordinary thing to want, and it used to be unaskable.
@@ -304,6 +307,7 @@ function boot() {
   S.renderer = new Renderer($('gl'));
   loadTrack(S.track);
   bindInput();
+  wireSaves();
   if (CFG.mode === 'room') connect();
   if (CFG.mode === 'replay') {
     // Straight away, not when the cars arrive: the HUD is about a run of yours
@@ -491,6 +495,10 @@ function loadTrack(track, opts = {}) {
   document.querySelectorAll('.board-link').forEach((a) => {
     a.href = '/track/' + track.slug;
   });
+  // Practice states belong to the track, so the switcher changes which set is
+  // in front of you. Not awaited: the world is already built and drivable, and
+  // pressing R before they arrive gets the restart it would have got anyway.
+  loadSaves();
   // A guest has no server-side PB, but the one in localStorage is still theirs.
   S.bestTime = (CFG.pbs && CFG.pbs[track.slug]) || storedBest() || null;
   renderMedalTable();
@@ -604,6 +612,9 @@ function resetToStart() {
   if (S.ghost) S.ghost.t = 0;
   showStartHint();
   clearDelta();
+  // `Run.reset` lifted the taint, so the badge goes with it. Shift+R is how you
+  // get back to a lap that counts, and it has to *look* like it worked.
+  updatePracticeTag();
 }
 
 /**
@@ -649,6 +660,8 @@ function markHintSeen() {
  */
 const SEEN_GOAL = 'drive.seen.goal';
 const SEEN_TOUR = 'drive.seen.tour';
+// The save states panel explains itself once. See `showSavesIntro`.
+const SEEN_SAVES = 'drive.seen.saves';
 
 function firstTime(key) {
   try {
@@ -743,10 +756,28 @@ function whenPlayable(fn) {
 // every one of those uprights end above the line it would have crossed, so the
 // four arrows nest instead of tangling. Reverse this list and it is a thicket.
 const TOUR_TIPS = [
-  ['btnBoard', "View this track's best times!"],
-  ['btnTracks', 'Check out the other tracks!'],
+  ['btnBoard', "View this track's best times"],
+  ['btnTracks', 'Check out the other tracks'],
   ['btnHelp', 'View the Controls'],
   ['btnSettings', 'Settings'],
+];
+
+// The other corner, and the ordering rule is the same one mirrored in both
+// axes. These labels sit *above* the buttons and run off to the *right*, so a
+// run passes over the uprights of every button to its **right** - which makes
+// the rightmost button the one that needs the shortest arrow. Hence this list
+// is right to left where the one above is left to right. Read down, the labels
+// still come out in the same order as the buttons they point at.
+//
+// Only reachable in solo: the two save buttons do not exist in a room, and
+// `.mapbtns` is `display: none` on touch, where the same four live under your
+// thumb instead. Both cases are handled by measuring the button rather than by
+// asking - see `tourTip`.
+const TOUR_TIPS_BL = [
+  ['btnSaves', 'Manage your save states'],
+  ['btnSaveNew', 'Save where you are'],
+  ['btnRestart', 'Start the lap again'],
+  ['btnCheckpoint', 'Back to the last checkpoint'],
 ];
 
 /**
@@ -771,22 +802,13 @@ function startTour() {
   if (!layer) return;
   layer.innerHTML = '';
   S.tourTips = [];
-  for (const [id, say] of TOUR_TIPS) {
-    const btn = $(id);
-    if (!btn) continue;              // the room shows people where solo shows a podium
-    const el = document.createElement('div');
-    el.className = 'tour-tip';
-    el.style.transitionDelay = (S.tourTips.length * 90) + 'ms';
-    const text = document.createElement('span');
-    text.className = 'tour-say';
-    text.textContent = say;
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('class', 'tour-arrow');
-    el.append(text, svg);
-    layer.appendChild(el);
-    S.tourTips.push({ el, svg, btn, rank: S.tourTips.length });
-  }
+  addTourTips(layer, TOUR_TIPS, 'tr');
+  addTourTips(layer, TOUR_TIPS_BL, 'bl');
   if (!S.tourTips.length) return;
+  // The stagger is over the whole set rather than per corner, so the two
+  // groups read as one sweep across the screen instead of two things starting
+  // at once. Assigned after both are built because it counts the total.
+  S.tourTips.forEach((t, i) => { t.el.style.transitionDelay = (i * 90) + 'ms'; });
 
   S.tourOn = true;
   document.body.classList.add('tour');
@@ -806,8 +828,42 @@ function startTour() {
     document.addEventListener('click', endTour, true);
     document.addEventListener('keydown', endTour, true);
   }, 800);
-  S.tourTimer = setTimeout(endTour, 16000);
+  // Long enough to read all of them. It was 16s for four labels; there are
+  // eight now across two corners, and the last one does not finish arriving
+  // until the stagger has run - so the budget doubles rather than being split
+  // between twice as many things to read.
+  S.tourTimer = setTimeout(endTour, 32000);
   window.addEventListener('resize', placeTour);
+}
+
+/**
+ * Build one corner's worth of tips, skipping any button that is not there.
+ *
+ * **Measured rather than asked**, and that covers three separate absences with
+ * one line: the save buttons do not exist in a room, `.mapbtns` is
+ * `display: none` on touch, and a future build might drop one. A button that is
+ * not on the screen has no rectangle, and an arrow pointing at nothing is worse
+ * than no arrow - it points at the road.
+ */
+function addTourTips(layer, list, group) {
+  for (const [id, say] of list) {
+    const btn = document.getElementById(id);
+    if (!btn || !btn.getBoundingClientRect().width) continue;
+    const el = document.createElement('div');
+    el.className = 'tour-tip' + (group === 'bl' ? ' bl' : '');
+    const text = document.createElement('span');
+    text.className = 'tour-say';
+    text.textContent = say;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'tour-arrow');
+    // The arrow is on the side the button is on, so the elbow always turns
+    // *away* from the label and into the button rather than back across it.
+    if (group === 'bl') el.append(svg, text);
+    else el.append(text, svg);
+    layer.appendChild(el);
+    const rank = S.tourTips.filter(t => t.group === group).length;
+    S.tourTips.push({ el, svg, btn, rank, group });
+  }
 }
 
 /**
@@ -828,6 +884,22 @@ function arrowPath(w, h) {
 }
 
 /**
+ * The same elbow mirrored in both axes: in along the top from the right, a
+ * rounded corner, then straight **down** into the button.
+ *
+ * A second function rather than a signed parameter on the first, because every
+ * one of the six numbers changes and a version taking `dir` would be two
+ * functions wearing one name.
+ */
+function arrowPathBL(w, h) {
+  const x = 12;                            // the upright, over the button's centre
+  const y = 4;                             // the run, level with the label
+  const r = Math.max(2, Math.min(12, (w - x - 4) / 2, (h - y - 10) / 2));
+  return `<path d="M ${w - 2} ${y} H ${x + r} Q ${x} ${y} ${x} ${y + r} V ${h - 6}"/>` +
+         `<path d="M ${x - 4.5} ${h - 11.5} L ${x} ${h - 6} L ${x + 4.5} ${h - 11.5}"/>`;
+}
+
+/**
  * Put every tip where its button currently is.
  *
  * The labels are one right-aligned column clear of the whole button bar, rather
@@ -836,17 +908,34 @@ function arrowPath(w, h) {
  * it, which is what this looked like the first time.
  */
 function placeTour() {
-  const bar = document.querySelector('.hud-tr .btnbar');
-  if (!bar || !(S.tourTips || []).length) return;
-  const col = bar.getBoundingClientRect().left - 6;     // where every label ends
+  if (!(S.tourTips || []).length) return;
+  const trBar = document.querySelector('.hud-tr .btnbar');
+  const blBar = document.querySelector('.hud-bl .mapbtns');
+  // Where every label in that corner ends: clear of the whole bar, so the
+  // column is straight however wide the individual buttons are.
+  const trCol = trBar ? trBar.getBoundingClientRect().left - 6 : 0;
+  const blCol = blBar ? blBar.getBoundingClientRect().right + 6 : 0;
   for (const t of S.tourTips) {
     const r = t.btn.getBoundingClientRect();
     const cx = r.left + r.width / 2;
     const h = 26 + t.rank * 34;
+    if (t.group === 'bl') {
+      // Mirrored: the upright sits 12 in from the svg's *left* edge, the label
+      // column is to the right, and the whole tip hangs off the bottom so it
+      // grows upward as the ranks climb.
+      const w = Math.max(24, Math.round(blCol - (cx - 12)));
+      t.el.style.bottom = Math.round(window.innerHeight - r.top + 4) + 'px';
+      t.el.style.left = Math.max(4, Math.round(cx - 12)) + 'px';
+      t.svg.setAttribute('width', w);
+      t.svg.setAttribute('height', h);
+      t.svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+      t.svg.innerHTML = arrowPathBL(w, h);
+      continue;
+    }
     // The upright sits 12 in from the svg's right edge, so anchoring that edge
     // 12 past the button's centre lands it on the centre; the width is then
     // whatever it takes to reach back to the column.
-    const w = Math.max(24, Math.round(cx + 12 - col));
+    const w = Math.max(24, Math.round(cx + 12 - trCol));
     t.el.style.top = (r.bottom + 4) + 'px';
     t.el.style.right = Math.max(4, Math.round(window.innerWidth - (cx + 12))) + 'px';
     t.svg.setAttribute('width', w);
@@ -910,7 +999,31 @@ function bindInput() {
     // checkpoint and leaves the clock running, which is the difference between
     // "that lap is gone" and "I just fell off". Both do nothing until you have
     // actually set off - see restartRun.
-    if (e.code === 'KeyR') restartRun();
+    // **R is two keys now, and which one it is depends on whether you have
+    // saved anything.** With no practice states on this track it is the restart
+    // it has always been. The moment you press C it becomes "back to the save
+    // state", which is the thing you want twenty times a minute while drilling
+    // a corner - and Shift+R is the full restart, which you want twice an hour.
+    // Giving the common action the bare key is worth the split; giving practice
+    // its own sixth key and leaving R alone would have been the wrong way round.
+    if (e.code === 'KeyR') {
+      if (S.saveActive >= 0 && savesEnabled()) {
+        // Shift **deactivates** rather than merely restarting. The slot stays in
+        // the panel - you spent the session placing it - but nothing is active
+        // any more, so R goes straight back to being the restart it has always
+        // been. That is the whole way out of practice mode, and it is one key.
+        if (e.shiftKey) deactivateSave();
+        else restoreState(S.saveActive);
+      } else restartRun();
+    }
+    // C saves; the digits pick. A digit is `code` rather than `key` so that it
+    // still works on a layout where the unshifted character is not a number.
+    if (e.code === 'KeyC') { e.preventDefault(); saveState(); }
+    if (/^Digit[1-9]$/.test(e.code) && savesEnabled()) {
+      e.preventDefault();
+      restoreState(+e.code.slice(5) - 1);
+    }
+
     // T and only T. Enter and Backspace used to do this as well, and Enter is
     // worth more as the host's key than as a third way to press T: starting the
     // session is the one thing a room waits on, and it was a button in the top
@@ -957,6 +1070,10 @@ function bindInput() {
     // choice worth having on a key. A lap chased off the board is not in the
     // cycle - it is not a mode you can arrive at by pressing a key, so pressing
     // one leaves it.
+    // The save states. J has no mnemonic worth defending - every letter that
+    // does is either a driving key or already opens something - but it sits with
+    // K, L, O and P, which is where the panel keys live.
+    if (e.code === 'KeyJ' && savesEnabled()) { e.preventDefault(); toggleSaves(); }
     if (e.code === 'KeyK') setGhostMode(nextGhostMode());
     // G is the car. A toggle rather than a cycle, because there are two states
     // and landing on the one you wanted should not depend on where you started.
@@ -1633,7 +1750,8 @@ function setPingOn(on, opts = {}) {
 function syncPaused() {
   const anyOpen = S.menuOpen || S.helpOpen ||
                   $('boardOv').style.display !== 'none' ||
-                  $('tracksOv').style.display !== 'none';
+                  $('tracksOv').style.display !== 'none' ||
+                  $('savesOv').style.display !== 'none';
   S.paused = anyOpen && CFG.mode === 'solo';
   // A portal wants to know when the player is actually playing rather than
   // reading a sheet, and this is already the one place that question is
@@ -2382,6 +2500,382 @@ function backToCheckpoint() {
   S.car.requestRespawn();
 }
 
+// ---------------------------------------------------------------------------
+// Practice save states
+// ---------------------------------------------------------------------------
+/**
+ * C freezes the car, the run and the ghost into a slot; R puts you back there
+ * at the same speed with the clock reading what it read. It is for drilling one
+ * corner without driving the three minutes of track in front of it.
+ *
+ * **Nothing that comes out of a restore is a lap.** `Run.restore` sets
+ * `tainted`, `Run.start` is the only thing that clears it, and the finish path
+ * refuses a tainted run before `/api/run` - so no board, no medal, no personal
+ * best and no ghost. That is deliberately a flag on the *run* and not on the
+ * session: the alternative is that a save state left lying around silently
+ * costs you the next honest lap you drive, and nobody would ever find out why.
+ *
+ * The client flag is not the defence, and should not be described as one. A
+ * modified client could clear it - but `verify.py` re-drives the recorded input
+ * stream from the start line through the real `Car.step`, and a stream that
+ * begins halfway round the track lands nowhere near its own anchors. What this
+ * protects is the honest player's own numbers.
+ *
+ * Solo only, drafts included. In a room you would be teleporting past cars that
+ * are really there, and `racecheck.py` drops the pose anyway.
+ */
+const MAX_SLOTS = 9;
+
+/** Which set of slots this session is looking at, or null if it has none. */
+function savesKey() {
+  if (CFG.mode !== 'solo') return null;
+  // A draft is keyed on its token and not on its slug. Every draft in the world
+  // drives under the one reserved `draft`, so keying on that would hand one
+  // person's states to the next track they built - the trap `localBest`
+  // documents for the personal best.
+  if (CFG.draft) return CFG.draftToken || null;
+  return S.track ? S.track.slug : null;
+}
+
+function savesEnabled() { return savesKey() !== null; }
+
+/** Everything stored locally, as `{key: [slot, ...]}`. */
+function localSaves() {
+  try { return JSON.parse(localStorage.getItem('drive.saves') || '{}') || {}; }
+  catch (e) { return {}; }
+}
+
+function writeLocalSaves(all) {
+  try {
+    if (Object.keys(all).length) localStorage.setItem('drive.saves', JSON.stringify(all));
+    else localStorage.removeItem('drive.saves');
+  } catch (e) { /* private mode: the states live for this page and no longer */ }
+}
+
+/**
+ * Write this track's slots through to wherever they live.
+ *
+ * Logged in they go to `drive_saves` and follow you to the next machine; a
+ * guest keeps them in `localStorage` and `pending.js` uploads them the moment
+ * there is an account to hang them on, exactly as it already does for a lap.
+ * Both stores hold the same shape, so the upload is a copy rather than a
+ * conversion.
+ *
+ * Always the whole list, never one slot - see `/api/saves`.
+ */
+function persistSaves() {
+  const key = savesKey();
+  if (!key) return;
+  const slots = S.saves;
+  if (CFG.loggedIn) {
+    fetch('/api/saves/' + encodeURIComponent(key), {
+      method: slots.length ? 'PUT' : 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: slots.length ? JSON.stringify({ saves: slots }) : undefined,
+    }).catch(() => { /* offline: they are still in memory for this session */ });
+    return;
+  }
+  const all = localSaves();
+  if (slots.length) all[key] = slots; else delete all[key];
+  writeLocalSaves(all);
+}
+
+/** This track's slots, from whichever store this player uses. */
+async function loadSaves() {
+  S.saves = [];
+  S.saveActive = -1;
+  const key = savesKey();
+  if (!key) return;
+  if (!CFG.loggedIn) {
+    S.saves = localSaves()[key] || [];
+  } else {
+    // Fetched whole rather than per track, and cached: the panel lists every
+    // track's states at once, and the switcher changes track often enough that
+    // a request per switch would be a request per glance.
+    if (!S.savesAll) {
+      try {
+        const r = await fetch('/api/saves');
+        S.savesAll = (await r.json()).tracks || {};
+      } catch (e) { S.savesAll = {}; }
+    }
+    S.saves = S.savesAll[key] || [];
+  }
+  if (S.saves.length) S.saveActive = 0;
+  renderSaves();
+}
+
+/** Is this state still describing the road that is actually out there? */
+function saveIsStale(s) {
+  return !!(S.track && S.track.stamp && s.stamp && s.stamp !== S.track.stamp);
+}
+
+/**
+ * Where you were, in words, for the panel and the toast.
+ *
+ * The time plus which checkpoint is behind you, because that is what tells
+ * three slots on the same lap apart - and both are known without asking, which
+ * is the point: C is pressed at speed and must not stop to ask for a name. The
+ * panel lets you type a real one over it.
+ */
+function autoLabel(run) {
+  const cp = run.nextCp;
+  return cp > 0 ? 'after CP' + cp : 'before CP1';
+}
+
+function slotName(s) { return s.name || s.label || ''; }
+
+/** C: freeze where you are into the next free slot. */
+function saveState() {
+  if (!savesEnabled()) return;
+  // Nothing to save before the clock starts, and silent about it - the same
+  // rule and the same reasoning as R and T. See `restartRun`.
+  if (!S.started || !S.run || S.run.state !== 'running') return;
+  if (S.saves.length >= MAX_SLOTS) {
+    toast('All ' + MAX_SLOTS + ' slots full - clear one with J');
+    return;
+  }
+  S.saves.push({
+    car: S.car.snapshot(),
+    run: S.run.snapshot(),
+    // Where the lap you are chasing had got to. Restored whatever ghost is
+    // loaded when you come back to it: the useful part is that it is the same
+    // distance up the road, not that it is the same recording.
+    ghost: S.ghost ? { t: S.ghost.t, mode: S.ghostMode } : null,
+    label: autoLabel(S.run),
+    ms: Math.round(S.run.time),
+    // What the road looked like when this was taken. A state whose track has
+    // since been re-authored would put the car inside whatever is there now, so
+    // it is refused rather than restored - see `tracks.stamp`.
+    stamp: (S.track && S.track.stamp) || null,
+  });
+  S.saveActive = S.saves.length - 1;
+  persistSaves();
+  renderSaves();
+  toast('Saved to Slot ' + S.saves.length + '  ' + fmt(S.run.time));
+}
+
+/**
+ * R, or a digit: back to a slot.
+ *
+ * The ordering here is the one thing that has to be right. Everything driven
+ * since the last report is banked **before** the run is rewound, because the
+ * rewind is what destroys the numbers being reported - the same rule
+ * `resetToStart` follows, and the reason `Run.claimReport` measures a delta
+ * rather than a total.
+ */
+function restoreState(i) {
+  if (!savesEnabled()) return false;
+  const s = S.saves[i];
+  if (!s) return false;
+  if (saveIsStale(s)) {
+    toast('That state is from an older version of this track');
+    return false;
+  }
+  reportActivity('practice restore');
+  S.saveActive = i;
+  S.car.restore(s.car);
+  S.run.restore(s.run, performance.now());
+  // The part-accumulated physics step is thrown away for the reason it is
+  // thrown away at a start: carried across, it is up to a whole extra substep
+  // of throttle on a coin flip, which is a difference between two attempts at
+  // the same corner that the driver did not make. See `Stepper.reset`.
+  S.stepper.reset();
+  if (S.ghost) S.ghost.t = (s.ghost && s.ghost.t) || 0;
+  S.started = true;
+  S.finishedPayload = null;
+  hideResults();
+  clearDelta();
+  markHintSeen();
+  // Every restore is another go at the track. `/api/start` is posted from the
+  // one place that calls `run.start()` and from here, and this is the exception
+  // rather than a second rule: a restore does not start a *run*, but it is
+  // somebody having another attempt at the thing, which is what the counter is
+  // for. See `docs/runs-and-scoring.md`.
+  noteStart();
+  updatePracticeTag();
+  toast('Slot ' + (i + 1) + '  ' + fmt(s.run.time) +
+        (slotName(s) ? '  ' + slotName(s) : ''));
+  return true;
+}
+
+/**
+ * Shift+R: stop practising, without throwing the slots away.
+ *
+ * The way *out* of practice mode, and it is one key because otherwise there
+ * isn't one: with a slot active, R restores, and somebody who wants to go for a
+ * time would have to open the panel and delete work they spent the session
+ * placing. So the slot stays and only the *selection* is cleared - nothing is
+ * active, R is the restart it has always been, and the run resets clean, which
+ * is what lifts the taint.
+ *
+ * Picking a slot with a digit, or saving a new one with C, makes it active
+ * again. Nothing is lost either way.
+ */
+function deactivateSave() {
+  S.saveActive = -1;
+  resetToStart();
+  renderSaves();
+  toast('Save state off - R restarts');
+}
+
+/** The PRACTICE badge over the clock: lit exactly while the run is tainted. */
+function updatePracticeTag() {
+  const el = $('practiceTag');
+  if (el) el.style.display = (S.run && S.run.tainted) ? '' : 'none';
+}
+
+function toggleSaves(force) {
+  const el = $('savesOv');
+  const on = force != null ? force : el.style.display === 'none';
+  // Before the display moves, like every other panel: one sheet is in front of
+  // you at a time, and `syncPaused` reads the DOM.
+  if (on) closeOtherPanels('saves');
+  el.style.display = on ? '' : 'none';
+  if ($('btnSaves')) $('btnSaves').classList.toggle('on', on);
+  syncPaused();
+  if (on) { renderSaves(); showSavesIntro(); }
+}
+
+/**
+ * What a save state is, said once and then never again.
+ *
+ * The first-visit tour points at four buttons in a corner and says what each
+ * one opens, which is the whole of what those four need. This one cannot be an
+ * arrow, because what has to be said is not *where* the thing is - they just
+ * clicked it - but three rules that are invisible from the outside: that the
+ * ghost is frozen along with the car, that `R` changes meaning while a slot is
+ * active, and that a lap driven from one does not count. The third is the one
+ * that matters: finding it out by setting a personal best that silently fails
+ * to save is the worst possible way to learn it.
+ *
+ * Same flag mechanism as the tour (`localStorage`, once per browser, `?tour=1`
+ * to force it back) so there is one answer to "how does this game remember what
+ * it has already told you".
+ */
+function showSavesIntro() {
+  const el = $('savesIntro');
+  if (!el) return;
+  if (!tourForced() && (beingPhotographed() || !firstTime(SEEN_SAVES))) return;
+  el.style.display = '';
+}
+
+/**
+ * The panel: every track's states, this one first.
+ *
+ * All of them rather than only this track's, because a slot outlives the
+ * session that made it and there has to be one place that shows what you are
+ * actually carrying around - otherwise the only way to find a state on a track
+ * you have not driven for a week is to go and drive it.
+ */
+function renderSaves() {
+  const body = $('savesBody');
+  if (!body) return;
+  const key = savesKey();
+  const groups = [];
+  if (key) groups.push([key, S.track.name, S.saves, true]);
+  const names = window.DRIVE_TRACK_NAMES || {};
+  for (const [k, slots] of Object.entries(S.savesAll || {})) {
+    if (k === key || !slots.length) continue;
+    groups.push([k, names[k] || k, slots, false]);
+  }
+  if (!groups.length || !groups.some(g => g[2].length)) {
+    body.innerHTML = '<p class="muted empty">No save states yet. Press C while ' +
+                     'driving to save where you are.</p>';
+    return;
+  }
+  body.innerHTML = groups.filter(g => g[2].length).map(([k, name, slots, here]) => `
+    <div class="saves-group">
+      <div class="saves-track">${esc(name)}<span>${slots.length} state${slots.length > 1 ? 's' : ''}</span></div>
+      ${slots.map((s, i) => `
+        <div class="saves-row${here && i === S.saveActive ? ' on' : ''}${here && saveIsStale(s) ? ' stale' : ''}"
+             data-key="${esc(k)}" data-i="${i}">
+          <span class="saves-n">${i + 1}</span>
+          <b>${fmt(s.run.time)}</b>
+          <input class="saves-name" value="${esc(slotName(s) || s.label || '')}"
+                 placeholder="${esc(s.label || '')}" maxlength="40">
+          ${here && saveIsStale(s) ? '<span class="saves-stale">track has changed</span>'
+                                   : (here ? '<button class="saves-use">Use</button>' : '')}
+          <button class="saves-x" title="Delete">&times;</button>
+        </div>`).join('')}
+    </div>`).join('');
+}
+
+/**
+ * One handler for the whole panel rather than a listener per row, because the
+ * rows are rebuilt on every change and per-row listeners would have to be too.
+ */
+function wireSaves() {
+  const body = $('savesBody');
+  if (!body) return;
+  body.addEventListener('click', (e) => {
+    const row = e.target.closest('.saves-row');
+    if (!row) return;
+    const i = +row.dataset.i;
+    const mine = row.dataset.key === savesKey();
+    if (e.target.closest('.saves-use')) {
+      if (mine && restoreState(i)) toggleSaves(false);
+      return;
+    }
+    if (!e.target.closest('.saves-x')) return;
+    if (mine) {
+      S.saves.splice(i, 1);
+      if (S.saveActive >= S.saves.length) S.saveActive = S.saves.length - 1;
+      persistSaves();
+      if (S.savesAll) S.savesAll[row.dataset.key] = S.saves;
+    } else {
+      // Another track's row: edit the cached copy and write that track's whole
+      // list back, which is the same request this track's would make.
+      const slots = (S.savesAll || {})[row.dataset.key] || [];
+      slots.splice(i, 1);
+      S.savesAll[row.dataset.key] = slots;
+      fetch('/api/saves/' + encodeURIComponent(row.dataset.key), {
+        method: slots.length ? 'PUT' : 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: slots.length ? JSON.stringify({ saves: slots }) : undefined,
+      }).catch(() => {});
+    }
+    renderSaves();
+  });
+  // Renaming is committed on the way out of the field rather than per keystroke,
+  // so typing a name is one write and not twelve.
+  body.addEventListener('change', (e) => {
+    const row = e.target.closest('.saves-row');
+    if (!row || !e.target.classList.contains('saves-name')) return;
+    if (row.dataset.key !== savesKey()) return;
+    const s = S.saves[+row.dataset.i];
+    if (!s) return;
+    s.name = e.target.value.trim().slice(0, 40);
+    persistSaves();
+  });
+  $('btnSavesClose').onclick = () => toggleSaves(false);
+  // Dismissed rather than auto-timed, unlike the tour: the tour sits over a
+  // results sheet and is in the way of driving again, while this is inside a
+  // panel somebody deliberately opened and there is nothing behind it to get
+  // back to.
+  $('btnSavesIntroOk').onclick = () => { $('savesIntro').style.display = 'none'; };
+  // Four doors into two actions: a key and a button for each, on desktop and on
+  // touch. They go through the same two functions rather than repeating the
+  // rules, which is what stops the phone growing its own idea of when a save is
+  // allowed.
+  for (const id of ['btnSaveNew', 'tSaveNew']) {
+    const el = $(id);
+    if (el) el.onclick = () => saveState();
+  }
+  for (const id of ['btnSaves', 'tSaves']) {
+    const el = $(id);
+    if (el) el.onclick = () => toggleSaves();
+  }
+  $('btnSavesClear').onclick = () => {
+    S.saves = [];
+    S.saveActive = -1;
+    S.savesAll = {};
+    if (CFG.loggedIn) fetch('/api/saves', { method: 'DELETE' }).catch(() => {});
+    else writeLocalSaves({});
+    renderSaves();
+    toast('Save states cleared');
+  };
+}
+
 /**
  * Enter: whatever the host's button says right now.
  *
@@ -2412,6 +2906,7 @@ function onEscape() {
   if (S.watch) stopWatching();
   else if ($('boardOv').style.display !== 'none') toggleBoard(false);
   else if ($('tracksOv').style.display !== 'none') toggleTracks(false);
+  else if ($('savesOv').style.display !== 'none') toggleSaves(false);
   else if (S.helpOpen) toggleHelp(false);
   else toggleMenu();
 }
@@ -2585,6 +3080,10 @@ function frame(now) {
     clockStarting = true;
     noteStart();
     markHintSeen();
+    // `Run.start` is the one thing that lifts the taint, so it is one of the
+    // three places the badge can change. The other two are a restore and a
+    // reset; between them they are every transition it has.
+    updatePracticeTag();
   }
   if (S.raceMode && S.racePhase === 'racing' && !S.started && S.raceT0 != null && now >= S.raceT0) {
     S.started = true;
@@ -2598,6 +3097,7 @@ function frame(now) {
     S.run.start(S.raceT0);
     noteStart();
     markHintSeen();
+    updatePracticeTag();
   }
 
   // `?draft=charge|boost` pins the tow, for the same reason `?panel=` and
@@ -3381,10 +3881,17 @@ const MIN_REPORTED_MS = 500;
 function reportActivity(why, opts = {}) {
   const run = S.run;
   if (!CFG.loggedIn || !S.started || !run || run.counted) return;
-  if (run.time < MIN_REPORTED_MS) return;
+  // **A delta, not a total**, and that is what makes practice add up. `/api/activity`
+  // is additive on the server, and a practice restore reports the same run again
+  // and then rewinds its clock and its odometer - so sending the total each time
+  // would credit everything before the save point on every press of R. For an
+  // ordinary run, which reports once from zero, the two are the same number.
+  // `Run.claimReport` owns the mark; `Run.restore` moves it back with the clock.
+  const got = run.claimReport(MIN_REPORTED_MS);
+  if (!got) return;
   run.counted = true;
-  const body = JSON.stringify({ track: S.track.slug, ms: Math.round(run.time),
-                                distance: Math.round(run.distance), why });
+  const body = JSON.stringify({ track: S.track.slug, ms: got.ms,
+                                distance: Math.round(got.m), why });
   // A tab that is going away cannot wait for `fetch`. `sendBeacon` hands the
   // request to the browser to deliver after the page is gone, which is the only
   // way a run abandoned *by closing the tab* survives - and that is how most runs
@@ -3403,11 +3910,21 @@ function reportActivity(why, opts = {}) {
 
 async function onFinish() {
   const run = S.run;
-  const medal = medalFor(run.time);
+  // No medal for a restored lap, and that has to be decided here rather than at
+  // the results sheet: the fanfare is picked off this value, and a gold chime
+  // for a lap that is about to say "not saved" is the game telling you two
+  // different things a second apart.
+  const medal = run.tainted ? null : medalFor(run.time);
   S.sound.finish(medal);
   S.car.frozen = false;
   const prev = S.bestTime;
-  const improved = prev == null || run.time < prev;
+  // **A restored lap is not a lap.** It is shown, because you drove the part of
+  // it you were practising and the time is worth seeing, but nothing it could
+  // improve is allowed to notice it: not the board, not the medal, not the
+  // personal best, not the ghost, not the session best. `improved` is where
+  // that has to happen rather than at the submit alone - it is what the PB
+  // readout, `localBest` and the ghost swap all key off.
+  const improved = !run.tainted && (prev == null || run.time < prev);
   // A race ends with the standings sheet, not this one - and it ends when the
   // last car is in, not when you cross the line.
   const racing = S.raceMode;
@@ -3431,7 +3948,7 @@ async function onFinish() {
   // In a room your ghost is the best lap of this practice session. Not your
   // all-time PB: the room is a place you turn up and learn a track together,
   // and a ghost from three weeks ago is not what you are chasing there.
-  if (CFG.mode === 'room' && !racing &&
+  if (CFG.mode === 'room' && !racing && !run.tainted &&
       (S.sessionBest == null || run.time < S.sessionBest)) {
     S.sessionBest = run.time;
     // Your lap, so your car - the same colour you are driving.
@@ -3470,8 +3987,28 @@ async function onFinish() {
       if (S.racePhase === 'qualifying') resetToStart();
     }, 1200);
   }
-  else showResults({ time: run.time, medal, pb: improved ? run.time : prev });
+  // A restored lap gets its sheet from the practice branch below, which has the
+  // note on it. Showing this one first would flash a plain result for a frame.
+  else if (!run.tainted) showResults({ time: run.time, medal, pb: improved ? run.time : prev });
 
+  // A lap restored from a practice save state stops here, and it stops for a
+  // different reason from a room lap: a room lap was driven and is simply not a
+  // record, while this one was not driven - most of it is somebody else's
+  // driving, frozen. The time is still shown, because you drove the section you
+  // were working on and that is the number you wanted.
+  //
+  // The driving itself still counts. Minutes and kilometres are play stats and
+  // not records, which is the same split that lets a room lap count for them.
+  if (run.tainted) {
+    reportActivity('practice lap');
+    if (!racing && !qualifying) {
+      showResults({ time: run.time, medal, pb: S.bestTime,
+                    wr: S.track.record_ms,
+                    note: 'Practice run - restored from a save state, so it is ' +
+                          'not saved. Shift+R for a lap that counts.' });
+    }
+    return;
+  }
   // Nothing from a room goes up: no time, no medal, no ghost, no distance, no
   // attempt - see countsForTheBoard. The session ghost above still gets it,
   // because that is what the room is for.
@@ -3483,7 +4020,7 @@ async function onFinish() {
     reportActivity('room lap');
     if (!racing && !qualifying) {
       showResults({ time: run.time, medal, pb: S.bestTime, wr: S.track.record_ms,
-                    note: 'Practice lap - times set in a room stay in the room.' });
+                    note: 'Room lap - times set in a room stay in the room.' });
     }
     return;
   }
@@ -3753,6 +4290,7 @@ function closeOtherPanels(keep) {
   if (keep !== 'help' && S.helpOpen) toggleHelp(false);
   if (keep !== 'board' && $('boardOv').style.display !== 'none') toggleBoard(false);
   if (keep !== 'tracks' && $('tracksOv').style.display !== 'none') toggleTracks(false);
+  if (keep !== 'saves' && $('savesOv').style.display !== 'none') toggleSaves(false);
 }
 
 function toggleMenu(force) {

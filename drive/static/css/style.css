@@ -758,6 +758,14 @@ body.touch .mapbtns { display: none; }
   text-shadow: 0 2px 8px rgba(0, 0, 0, .6);
 }
 .hud-bc .delta.show { opacity: 1; }
+/* Sits on the clock, because the clock is what it is qualifying: a fast time
+   with this over it has to read as unofficial before the number does. Amber
+   rather than red - the run is not an error, it is just not a lap. */
+.hud-bc .practice-tag {
+  font-family: var(--mono); font-size: .68rem; font-weight: 700;
+  letter-spacing: .14em; text-transform: uppercase; color: #ffc65c;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, .6); line-height: 1.4;
+}
 .delta.ahead { color: #55e08a; }
 .delta.behind { color: #ff8a7a; }
 .sub { font-size: .78rem; color: #b9c2d0; text-transform: uppercase; letter-spacing: .08em; }
@@ -890,13 +898,21 @@ body.tour .hud { z-index: 70; }
 /* Two selectors and not one, because `.hud-tr` is a column and only its top row
    is being pointed at: the medal table underneath it is in the same box and
    sat lit up behind the labels until this second line existed. */
-body.tour .hud > *:not(.hud-tr),
-body.tour .hud-tr > *:not(.btnbar) { opacity: 0; pointer-events: none; }
-/* `.hud-tr` is a tall transparent column and lifting it puts that whole box over
-   the results sheet, where it would eat the click aimed at Retry. Only the row
-   being pointed at takes clicks; the box itself stops taking any. */
-body.tour .hud-tr { pointer-events: none; }
-body.tour .hud-tr .btnbar { pointer-events: auto; }
+/* Four selectors and not one, because two corners are being pointed at and each
+   is a column with something else in the same box: the medal table under
+   `.hud-tr` sat lit up behind the labels until the second line existed, and
+   `.hud-l` carries the track name and the minimap either side of the row that
+   is actually being talked about. Walk down to the row in each case. */
+body.tour .hud > *:not(.hud-tr):not(.hud-l),
+body.tour .hud-tr > *:not(.btnbar),
+body.tour .hud-l > *:not(.hud-bl),
+body.tour .hud-bl > *:not(.mapbtns) { opacity: 0; pointer-events: none; }
+/* `.hud-tr` and `.hud-l` are tall transparent columns and lifting them puts
+   those whole boxes over the results sheet, where they would eat the click
+   aimed at Retry. Only the rows being pointed at take clicks; the boxes
+   themselves stop taking any. */
+body.tour .hud-tr, body.tour .hud-l, body.tour .hud-bl { pointer-events: none; }
+body.tour .hud-tr .btnbar, body.tour .hud-bl .mapbtns { pointer-events: auto; }
 #tour {
   position: fixed; inset: 0; z-index: 71; pointer-events: none;
   font-family: var(--sans); color: #fff;
@@ -906,6 +922,10 @@ body.tour .hud-tr .btnbar { pointer-events: auto; }
   opacity: 0; transform: translateY(-8px);
   transition: opacity .4s ease, transform .4s ease;
 }
+/* The bottom corner's tips hang off the bottom and grow upward, and they come
+   in from below rather than from above - a label that slid down into the road
+   would be moving away from the button it is pointing at. */
+.tour-tip.bl { align-items: flex-start; transform: translateY(8px); }
 #tour.in .tour-tip { opacity: 1; transform: none; }
 /* White text over whatever the sky happens to be, so it carries its own
    darkness rather than trusting the scrim under it. */
@@ -924,6 +944,9 @@ body.tour .hud-tr .btnbar { pointer-events: auto; }
      level with the bottom of the svg, and the stroke runs 4px above that. */
   transform: translateY(9px);
 }
+/* And up onto it in the other corner, where `flex-start` aligns the tops and
+   the stroke runs 4px below that instead. */
+.tour-tip.bl .tour-say { transform: translateY(-9px); }
 .tour-arrow {
   fill: none; stroke: #fff; stroke-width: 2;
   stroke-linecap: round; stroke-linejoin: round;
@@ -1338,6 +1361,116 @@ body.watching #touch, body.watching #startHint { display: none; }
 .wcar i { font-style: normal; font-family: var(--mono); opacity: .7; font-size: .78rem; }
 .wcar .st-dot { width: 9px; height: 9px; border-radius: 50%; }
 .btn.small { font-size: .85rem; padding: .3rem .8rem; }
+
+/* Practice states panel.
+   A list of rows and nothing else. The slot number is the key you press to
+   reach it, so it is set like a key rather than like a bullet - the panel is
+   also how you learn that 1-9 do anything. */
+/* The once-ever explainer, standing beside the sheet rather than inside it.
+   Same plate as the first-visit tour's labels - dark, bordered, blurred - so
+   the two pieces of once-ever teaching in this game look like the same voice,
+   and so this reads as a note *about* the panel rather than as part of it.
+   `.overlay` is already a centring flex row, so being a sibling of `.sheet` is
+   the whole of the layout. */
+.saves-intro {
+  /* **Out of flow, so the sheet does not move.** As an ordinary flex item this
+     pushed the panel off centre the moment it appeared - and the panel is the
+     thing being explained, so having it jump sideways to make room for its own
+     explanation is exactly backwards. Absolute instead, parked against the
+     sheet's right edge, which is where `50% + half the sheet` is: the sheet is
+     `min(460px, 100% - 2rem)` wide inside a centred overlay with 1rem of
+     padding, so half of it is `min(230px, 50vw - 1rem)`. */
+  position: absolute; top: 50%; transform: translateY(-50%);
+  left: calc(50% + min(230px, 50vw - 1rem) + .9rem);
+  width: 330px; max-height: 90vh; overflow: auto; color: #fff;
+  background: rgba(12, 14, 20, .82); border: 1px solid var(--hud-line);
+  border-radius: 14px; padding: 1rem 1.1rem;
+  backdrop-filter: blur(6px);
+  box-shadow: 5px 5px 0 rgba(0, 0, 0, .3);
+}
+.saves-intro p { margin: 0 0 .8rem; line-height: 1.5; font-size: .88rem; }
+.saves-keys {
+  display: grid; grid-template-columns: 1fr auto; gap: .3rem .8rem;
+  margin: 0 0 .9rem; font-size: .82rem;
+}
+.saves-keys dt { color: #c8cdd7; }
+.saves-keys dd {
+  margin: 0; justify-self: end; font-family: var(--mono); font-weight: 700;
+  white-space: nowrap;
+}
+/* The warning and the way out, side by side along the bottom: the text gives up
+   the width the button needs rather than the button dropping onto a line of its
+   own and leaving a hole beside the paragraph. */
+.saves-intro-foot { display: flex; align-items: flex-end; gap: .7rem; }
+.saves-intro-foot .btn { flex: 0 0 auto; }
+/* The one line somebody has to actually read, so it is the one line that is not
+   the colour of the rest. Learning this by setting a personal best that
+   silently fails to save is the outcome the whole note exists to prevent. */
+.saves-intro .warn {
+  flex: 1; min-width: 0; margin: 0; color: var(--red-soft); font-size: .8rem;
+  line-height: 1.45;
+}
+.saves-intro .warn b { font-weight: 700; }
+/* A dark plate needs a light button on it; `.btn` is drawn for the paper sheet. */
+.saves-intro .btn {
+  background: #fff; color: var(--ink); border-color: #fff;
+}
+.saves-intro .btn:hover { background: #e6e6e6; border-color: #e6e6e6; }
+/* Below about a laptop there is no room to the right of the sheet, so the note
+   goes back into the flow and wraps underneath it. That does move the sheet -
+   up, and only on a screen where the alternative is the note hanging off the
+   edge - which is the one place the trade is worth making.
+
+   Deliberately `flex-wrap` rather than a `:has()` on the intro's inline style:
+   the note is shown by clearing `style.display`, which can leave the attribute
+   empty, so a selector probing that string would be reading a coincidence.
+   Wrapping needs to know nothing about it. */
+#savesOv { flex-wrap: wrap; }
+@media (max-width: 1180px) {
+  .saves-intro {
+    position: static; transform: none; width: 100%; max-width: 460px;
+    margin: .8rem auto 0;
+  }
+}
+.saves-body { max-height: 58vh; overflow: auto; display: flex; flex-direction: column; gap: .9rem; }
+.saves-group { display: flex; flex-direction: column; gap: 3px; }
+.saves-track {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-weight: 700; padding-bottom: .2rem; border-bottom: 1px solid var(--line);
+}
+.saves-track span { font-size: .78rem; color: var(--ink-soft); font-weight: 400; }
+.saves-row {
+  display: flex; align-items: center; gap: .6rem; padding: .35rem .4rem;
+  border-radius: 6px;
+}
+.saves-row.on { background: rgba(29, 29, 31, .07); }
+/* Greyed and unusable, but still there to be read and deleted. A state whose
+   track has been re-authored under it would put the car inside whatever is
+   there now; one that simply vanished would look like the game lost it. */
+.saves-row.stale { opacity: .55; }
+.saves-n {
+  font-family: var(--mono); font-size: .78rem; font-weight: 700;
+  min-width: 1.5em; height: 1.5em; display: grid; place-items: center;
+  border: 1px solid var(--line); border-radius: 4px;
+}
+.saves-row b { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.saves-name {
+  flex: 1; min-width: 0; font: inherit; font-size: .88rem; color: var(--ink);
+  background: none; border: 1px solid transparent; border-radius: 4px;
+  padding: .15rem .35rem;
+}
+.saves-name:hover { border-color: rgba(29, 29, 31, .2); }
+.saves-name:focus { border-color: var(--line); outline: none; }
+.saves-stale { font-size: .78rem; color: var(--ink-soft); }
+.saves-use, .saves-x {
+  font: inherit; font-size: .82rem; cursor: pointer; background: none;
+  border: 1px solid var(--line); border-radius: 5px; padding: .12rem .5rem;
+  color: var(--ink);
+}
+.saves-use:hover { background: var(--ink); color: var(--paper); }
+.saves-x { border-color: transparent; font-size: 1.1rem; line-height: 1; color: var(--ink-soft); }
+.saves-x:hover { color: var(--red); }
+.saves-foot { display: flex; justify-content: space-between; gap: .5rem; margin-top: 1rem; }
 
 /* Preview-picture mode: the track and the sky, nothing else on the glass. */
 body.shot .hud, body.shot #touch, body.shot #rotate, body.shot .side { display: none; }

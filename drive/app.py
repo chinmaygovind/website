@@ -24,7 +24,7 @@ from sqlalchemy import func
 import models as models_mod
 from models import (db, User, DriveStats, DriveTime, DriveStart, DriveRunCheck,
                     DriveGame, DrivePlayer, DriveRace, DriveGarage, DrivePrefs,
-                    DriveCheatFlag, DriveUserTrack)
+                    DriveCheatFlag, DriveUserTrack, DriveSave)
 import portal as portal_mod
 import tracks as tracks_mod
 import tuning
@@ -1260,6 +1260,127 @@ def api_prefs():
     return jsonify({"ok": True, "prefs": merged})
 
 
+# ---------------------------------------------------------------------------
+# Practice save states
+# ---------------------------------------------------------------------------
+# Press C mid-lap and the car, the run and the ghost are frozen into a slot;
+# press R and you are back there at the same speed with the clock reading what
+# it read. It is for drilling one corner without driving the three minutes in
+# front of it.
+#
+# **Nothing that comes out of a restore is a lap.** The client marks the run
+# tainted and never posts it, and that is belt and braces rather than the
+# defence: `verify.py` re-drives the recorded input stream from the start line,
+# and a stream that begins halfway round lands nowhere near its anchors. So the
+# board is safe from this whatever a modified client claims - what the flag
+# protects is the honest player's own PB, medal and session ghost.
+
+# Nine, because that is how many digits there are to restore them with, and a
+# tenth slot would be one you could only reach through the panel.
+MAX_SAVE_SLOTS = 9
+# A slot is the car, the run and a short label - about 700 bytes. The ceiling is
+# there so the table cannot be used as free storage, and it is per track rather
+# than per slot so that one enormous slot is refused as readily as ten.
+MAX_SAVES_BYTES = 24 * 1024
+# A slug, or a draft token. Drafts are keyed on the token because every draft
+# drives under the one reserved `draft` slug - see `DriveSave`.
+MAX_SAVE_KEY = 64
+
+
+def _saves_key(raw):
+    """The track a set of save states belongs to, or None.
+
+    A pool slug is checked against the pool. Anything else is taken as a draft
+    token and only has to look like one, because a token names a row this route
+    has no business reading - if it is somebody else's, the states are stored
+    under it and are still only ever handed back to the account that wrote them.
+    """
+    key = str(raw or "")[:MAX_SAVE_KEY]
+    if not key:
+        return None
+    if tracks_mod.get(key) and key != maker.DRAFT_SLUG:
+        return key
+    if all(c.isalnum() or c in "-_" for c in key) and len(key) >= 8:
+        return key
+    return None
+
+
+@app.route("/api/saves")
+def api_saves_all():
+    """Every save state this account has, for the panel.
+
+    One request rather than one per track: the panel lists all of them together
+    so that "clear everything" is a thing you can see before you do it, and the
+    whole set is a few kilobytes.
+
+    A guest is not an error. They keep their states in `localStorage` and get an
+    empty list here, which is the rule `/api/start` and `/api/activity` already
+    follow - there is nothing stored and nothing has gone wrong.
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"ok": True, "stored": False, "tracks": {}})
+    rows = DriveSave.query.filter_by(user_id=user.id).all()
+    return jsonify({"ok": True, "stored": True,
+                    "tracks": {r.track: r.saves for r in rows}})
+
+
+@app.route("/api/saves/<path:key>", methods=["PUT", "DELETE"])
+def api_saves_track(key):
+    """One track's slots, written whole or deleted.
+
+    **Always the whole list**, never one slot. Nine small objects cost nothing to
+    resend, and it means two tabs drilling the same track cannot interleave a
+    partial update into a set of slots that never existed. It also makes delete,
+    rename, reorder and save one route instead of four.
+    """
+    key = _saves_key(key)
+    if key is None:
+        return jsonify({"ok": False, "error": "no such track"}), 404
+    user = get_current_user()
+    if not user:
+        return jsonify({"ok": True, "stored": False})
+    row = DriveSave.query.filter_by(user_id=user.id, track=key).first()
+    if request.method == "DELETE":
+        if row is not None:
+            db.session.delete(row)
+            db.session.commit()
+        return jsonify({"ok": True, "stored": True})
+    slots = (request.get_json(silent=True) or {}).get("saves")
+    if not isinstance(slots, list):
+        return jsonify({"ok": False, "error": "expected a list of saves"}), 400
+    slots = slots[:MAX_SAVE_SLOTS]
+    blob = json_mod.dumps(slots)
+    if len(blob) > MAX_SAVES_BYTES:
+        return jsonify({"ok": False, "error": "too much to store"}), 413
+    # An empty list is a delete rather than an empty row: the panel's "clear this
+    # track" and its last [x] are the same gesture and should leave the same
+    # nothing behind.
+    if not slots:
+        if row is not None:
+            db.session.delete(row)
+            db.session.commit()
+        return jsonify({"ok": True, "stored": True, "saves": []})
+    if row is None:
+        row = DriveSave(user_id=user.id, track=key)
+        db.session.add(row)
+    row.saves_json = blob
+    row.updated_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({"ok": True, "stored": True, "saves": slots})
+
+
+@app.route("/api/saves", methods=["DELETE"])
+def api_saves_clear():
+    """Clear all of them, everywhere. The panel's one destructive button."""
+    user = get_current_user()
+    if not user:
+        return jsonify({"ok": True, "stored": False})
+    DriveSave.query.filter_by(user_id=user.id).delete()
+    db.session.commit()
+    return jsonify({"ok": True, "stored": True})
+
+
 @app.route("/lobbies")
 @require_name
 def lobbies():
@@ -1595,6 +1716,11 @@ def _track_payload(slug):
     # The time and not the holder: whose lap it is belongs on the leaderboard,
     # not on a card read at 200km/h with three other times on it.
     out["record_ms"] = best.time_ms if best else None
+    # What a practice save state is pinned to. A saved car position only means
+    # anything on the geometry it was taken on, so a state whose stamp no longer
+    # matches is shown greyed and refuses rather than putting somebody back
+    # inside a rock. See `tracks.stamp` and `/api/saves`.
+    out["stamp"] = tracks_mod.stamp(track)
     return out
 
 

@@ -78,6 +78,17 @@
       <button class="hbtn" id="btnRestart" title="Restart the run (R)">
         <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 3.5V9h-5.5"/></svg>
       </button>
+      {% if mode != 'room' %}
+      {# Beside restart and last-checkpoint because they are the same kind of
+         thing: the three ways of not driving the whole lap again. A bookmark
+         with a plus to make one, a list to manage them. #}
+      <button class="hbtn" id="btnSaveNew" title="Create a save state (C)">
+        <svg viewBox="0 0 24 24"><path d="M7 3.5h7.5V20L10.75 17 7 20z"/><path d="M17.5 5.5v6M14.5 8.5h6"/></svg>
+      </button>
+      <button class="hbtn" id="btnSaves" title="Manage save states (J)">
+        <svg viewBox="0 0 24 24"><path d="M9 6.5h11M9 12h11M9 17.5h11"/><path d="M4.5 6.5h.01M4.5 12h.01M4.5 17.5h.01"/></svg>
+      </button>
+      {% endif %}
     </div>
     <div class="card"><canvas id="minimap" width="190" height="150"></canvas></div>
   </div>
@@ -183,6 +194,12 @@
        the corners stay free for the touch controls. -->
   <div class="hud-bc">
     <div class="delta" id="delta"></div>
+    <!-- Lit whenever the run was restored from a save state, and therefore is
+         not a lap: no board, no medal, no PB, no ghost. It sits on the clock
+         because the clock is the thing it is qualifying - a fast time with this
+         over it has to read as unofficial at a glance, or the first reaction to
+         a personal best that did not save is that the game lost it. -->
+    <div class="practice-tag" id="practiceTag" style="display:none">Practice</div>
     <div class="timer" id="time">0:00.000</div>
     <div class="brow">
       <div class="stat pb"><b id="pbTime">--:--.---</b><span>{% if draft_token %}Best this session{% else %}Personal best{% endif %}</span></div>
@@ -250,8 +267,8 @@
        timed to the moment they are wanted. -->
 
   <div id="firstBanner" style="display:none">
-    <span class="fb-goal">Try to set your best time on this track!</span>
-    <span class="fb-cps">Go through all the checkpoints!</span>
+    <span class="fb-goal">Try to set your best time on this track</span>
+    <span class="fb-cps">Go through all the yellow checkpoints</span>
   </div>
 
 
@@ -387,6 +404,18 @@
       <div class="tbtn small" id="tRestart" title="Restart the run">
         <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 3.5V9h-5.5"/></svg>
       </div>
+      {% if mode != 'room' %}
+      {# A phone has no C and no M, so without these two the feature simply does
+         not exist there - and drilling one corner is exactly what somebody on a
+         phone wants, because they are not going to drive Big Red end to end
+         with their thumbs. #}
+      <div class="tbtn small" id="tSaveNew" title="Create a save state">
+        <svg viewBox="0 0 24 24"><path d="M7 3.5h7.5V20L10.75 17 7 20z"/><path d="M17.5 5.5v6M14.5 8.5h6"/></svg>
+      </div>
+      <div class="tbtn small" id="tSaves" title="Manage save states">
+        <svg viewBox="0 0 24 24"><path d="M9 6.5h11M9 12h11M9 17.5h11"/><path d="M4.5 6.5h.01M4.5 12h.01M4.5 17.5h.01"/></svg>
+      </div>
+      {% endif %}
     </div>
     <div class="pedals">
       <div class="tbtn" id="tBrake" title="Brake">
@@ -746,6 +775,58 @@
   </div>
 </div>
 
+<!-- Practice save states.
+     C freezes the car, the run and the ghost into a slot; R puts you back. This
+     is the list of them, on J, because slots outlive a session and outlive the
+     track you are on - so there has to be somewhere that shows all of them and
+     lets you throw them away. Every row is one track's; the active slot on the
+     current track is the one R restores. -->
+<div class="overlay" id="savesOv" style="display:none">
+  <div class="sheet">
+    <div class="sheet-head">
+      <h2>Save States</h2>
+      <button class="sheet-x" id="btnSavesClose" title="Close" aria-label="Close">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="saves-body" id="savesBody"></div>
+    <div class="saves-foot">
+      <button class="btn small danger" id="btnSavesClear">Clear all</button>
+    </div>
+  </div>
+  <!-- Shown once, the first time this panel is opened, and never again -
+       `drive.seen.saves`, the same mechanism and the same reasoning as the
+       first-visit tour. A save state is the one thing in the game whose rules
+       you cannot work out by looking at it: that the ghost is frozen with the
+       car, and that a lap driven from one does not count, are both invisible
+       until somebody says so. `?tour=1` brings it back for a look.
+
+       Beside the sheet rather than inside it, and dressed as the tour's plate
+       rather than as more sheet. Two reasons and they point the same way: a
+       block at the top of the list pushes the states themselves off the screen
+       on a laptop, and a note that arrives once and leaves for ever should not
+       look like part of the furniture it is explaining. `.overlay` is already a
+       centring flex row, so this simply sits next to the sheet. -->
+  <div class="saves-intro" id="savesIntro" style="display:none">
+    <p>A <b>save state</b> saves the car, ghost and the clock frozen exactly
+      where you are. Come back to it as many times as you like to practice a
+      tricky section of the track without having to drive the minute in front
+      of it.</p>
+    <dl class="saves-keys">
+      <dt>Create Save State</dt><dd>C</dd>
+      <dt>Back to Save State</dt><dd>R</dd>
+      <dt>Deactivate Save State</dt><dd>Shift + R</dd>
+      <dt>Choose Save State</dt><dd>1 - 9</dd>
+    </dl>
+    <div class="saves-intro-foot">
+      <p class="warn">A lap driven from a save state <b>does not count</b>: no
+        leaderboard, no medal, no personal best. Press <b>Shift + R</b> to
+        return to normal driving.</p>
+      <button class="btn small" id="btnSavesIntroOk">Got it</button>
+    </div>
+  </div>
+</div>
+
 <!-- Controls.
      The controls and nothing else. This used to open on a one-line description
      of the track and close on two paragraphs of advice about grass and crests,
@@ -780,9 +861,23 @@
       {# Twice mid-race and once everywhere else, which is worth the words: R is
          next to T, and T is the key you reach for when you have fallen off. The
          note is only on the room sheet because solo has no race to protect. #}
-      <tr><td>Restart the run</td><td>R{% if mode == 'room' %}
+      <tr><td>Restart Run</td><td>R{% if mode == 'room' %}
         <span class="muted">(twice, mid-race)</span>{% endif %}</td></tr>
       <tr><td>Back to last checkpoint</td><td>T</td></tr>
+      {% if mode != 'room' %}
+      {# Solo only. In a room you would be teleporting yourself past cars that
+         are actually on the road, and the pose stream says so.
+
+         R appears twice on purpose, because it genuinely is two keys: with no
+         save state active it restarts the run, and with one active it goes back
+         to it. Shift+R is the way out - it deactivates the state (which stays in
+         the panel) and hands R back its first meaning. #}
+      <tr><td>Create Save State</td><td>C</td></tr>
+      <tr><td>Back to Save State</td><td>R</td></tr>
+      <tr><td>Deactivate Save State</td><td>Shift + R</td></tr>
+      <tr><td>Choose Save State</td><td>1 - 9</td></tr>
+      <tr><td>Manage Save States</td><td>J</td></tr>
+      {% endif %}
       {# P has always changed track and was in no list anywhere, so the only way
          to find it was to read the tooltip on an icon. #}
       <tr><td>Change track</td><td>P</td></tr>
@@ -803,7 +898,7 @@
       {# Two keys for the one sheet, because Escape belongs to the browser in
          fullscreen: it leaves fullscreen and the game never sees it. #}
       <tr><td>Settings</td><td>Esc / O</td></tr>
-      <tr><td>Controls (this sheet)</td><td>H</td></tr>
+      <tr><td>Controls (this page)</td><td>H</td></tr>
       {% if mode == 'room' %}
       <tr><td>Start qualifying / the race <span class="muted">(host)</span></td><td>Enter</td></tr>
       {% endif %}
@@ -814,6 +909,10 @@
       <tr><td>Drift</td><td>Drag down the throttle, or double-tap and hold an arrow</td></tr>
       <tr><td>Restart the run</td><td>The arrow, above the pedals</td></tr>
       <tr><td>Back to last checkpoint</td><td>The flag, above the pedals</td></tr>
+      {% if mode != 'room' %}
+      <tr><td>Create Save State</td><td>The bookmark, above the pedals</td></tr>
+      <tr><td>Manage Save States</td><td>The list, above the pedals</td></tr>
+      {% endif %}
     </table>
   </div>
 </div>

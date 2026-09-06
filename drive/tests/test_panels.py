@@ -15,9 +15,11 @@ of `game.js` by name and runs them against a DOM stub, the same technique
 statement about what the code *does* and a source-reading test of it would be
 pinning the current spelling of the fix instead.
 
-The parametrised sweep is the point of the file: twelve ordered pairs, so a fifth
-panel added without a line in `closeOtherPanels` fails eight times rather than
-passing quietly.
+The parametrised sweep is the point of the file: every ordered pair of panels, so
+a new one added without a line in `closeOtherPanels` fails many times over rather
+than passing quietly. **That is not hypothetical - it is what happened when the
+save states panel landed**, which is why there are five here now: the code got its
+line and this file did not, and thirty tests said so.
 """
 
 import os
@@ -29,7 +31,7 @@ from jsrt import HAVE_QUICKJS, JS
 
 pytestmark = pytest.mark.skipif(not HAVE_QUICKJS, reason="quickjs not installed")
 
-PANELS = ("menu", "help", "board", "tracks")
+PANELS = ("menu", "help", "board", "tracks", "saves")
 
 
 def _fn(src, name):
@@ -46,7 +48,7 @@ def _toggles():
     src = open(os.path.join(JS, "game.js")).read()
     return "\n".join(_fn(src, n) for n in
                      ("closeOtherPanels", "toggleMenu", "toggleHelp",
-                      "toggleBoard", "toggleTracks"))
+                      "toggleBoard", "toggleTracks", "toggleSaves"))
 
 
 # Enough DOM for four overlays and the buttons that light up with them.
@@ -68,6 +70,7 @@ function $(id) { if (!els[id]) els[id] = new El(id); return els[id]; }
 // would make the first press of either a *close*.
 $('boardOv').style.display = 'none';
 $('tracksOv').style.display = 'none';
+$('savesOv').style.display = 'none';
 var S = { menuOpen: false, helpOpen: false, isHost: true,
           track: { name: 'Sunrise Circuit', slug: 'sunrise' } };
 var CFG = { mode: 'solo' };
@@ -76,6 +79,10 @@ var CFG = { mode: 'solo' };
 var SYNCS = 0;
 function syncPaused() { SYNCS++; }
 function markActiveTrack() {}
+function renderSaves() {}
+// The save-states panel says what a save state is on its first open. It is not
+// what this file is about, and it reaches for `localStorage`.
+function showSavesIntro() {}
 """
 
 HARNESS = r"""
@@ -84,6 +91,7 @@ function open_(p) {
   else if (p === 'help') toggleHelp(true);
   else if (p === 'board') toggleBoard(true);
   else if (p === 'tracks') toggleTracks(true);
+  else if (p === 'saves') toggleSaves(true);
   else throw new Error('no panel ' + p);
 }
 function toggle_(p) {
@@ -91,17 +99,19 @@ function toggle_(p) {
   else if (p === 'help') toggleHelp();
   else if (p === 'board') toggleBoard();
   else if (p === 'tracks') toggleTracks();
+  else if (p === 'saves') toggleSaves();
 }
 function isOpen(p) {
   if (p === 'menu') return !!S.menuOpen;
   if (p === 'help') return !!S.helpOpen;
   if (p === 'board') return $('boardOv').style.display !== 'none';
   if (p === 'tracks') return $('tracksOv').style.display !== 'none';
+  if (p === 'saves') return $('savesOv').style.display !== 'none';
 }
 /* Every panel currently up, as a sorted comma-joined string, so a failure names
    what was on screen instead of saying False is not True. */
 function upNow() {
-  return ['board', 'help', 'menu', 'tracks'].filter(isOpen).join(',');
+  return ['board', 'help', 'menu', 'saves', 'tracks'].filter(isOpen).join(',');
 }
 """
 

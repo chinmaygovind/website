@@ -17,6 +17,7 @@
  */
 (function () {
   const KEY = 'drive.pending';
+  const SAVES = 'drive.saves';
   const POS = 100, ROT = 4096;
 
   function read() {
@@ -113,6 +114,53 @@
     return saved;
   }
 
+  /**
+   * Practice save states a guest built up, handed over with the laps.
+   *
+   * Here rather than in `game.js` for the reason the laps are: logging in
+   * happens on `/login`, where the game code never runs, and this script is on
+   * every page. Both stores hold the same shape, so it is a copy rather than a
+   * conversion - see `savesKey` and `persistSaves`.
+   *
+   * **Merged, not replaced.** The account may already have states on a track
+   * from another machine, and a guest session is not evidence that those are
+   * finished with; the local ones fill the free slots after them and anything
+   * past nine is dropped, which is the same ceiling every other path obeys.
+   * Silent either way: a state is a convenience, and a note about nine of them
+   * on top of the note about the lap is not worth the screen.
+   */
+  async function flushSaves() {
+    if (!window.DRIVE_USER) return;
+    let mine;
+    try { mine = JSON.parse(localStorage.getItem(SAVES) || '{}') || {}; }
+    catch (e) { return; }
+    const keys = Object.keys(mine);
+    if (!keys.length) return;
+    let theirs = {};
+    try {
+      const r = await fetch('/api/saves');
+      theirs = ((await r.json()) || {}).tracks || {};
+    } catch (e) { return; }   // offline: keep them and try again next page
+    for (const key of keys) {
+      const merged = (theirs[key] || []).concat(mine[key] || []).slice(0, 9);
+      try {
+        const r = await fetch('/api/saves/' + encodeURIComponent(key), {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ saves: merged }),
+        });
+        // Only forget the local copy once the server has actually taken it. A
+        // 4xx is the server declining for good (too big, no such track), so
+        // that one is dropped rather than offered again for ever - the same
+        // rule the laps above follow.
+        if (r.ok || (r.status >= 400 && r.status < 500)) delete mine[key];
+      } catch (e) { /* keep it */ }
+    }
+    try {
+      if (Object.keys(mine).length) localStorage.setItem(SAVES, JSON.stringify(mine));
+      else localStorage.removeItem(SAVES);
+    } catch (e) { /* private mode */ }
+  }
+
   const fmt = (ms) => {
     const m = Math.floor(ms / 60000), s = Math.floor((ms % 60000) / 1000);
     return m + ':' + String(s).padStart(2, '0') + '.' + String(ms % 1000).padStart(3, '0');
@@ -136,11 +184,16 @@
     }, 5200);
   }
 
-  window.DrivePending = { save, flush, count: () => Object.keys(read()).length };
+  window.DrivePending = { save, flush, flushSaves,
+                          count: () => Object.keys(read()).length };
 
+  // The laps first and the save states after: a lap is somebody's record and a
+  // save state is a convenience, so if only one of the two requests gets away
+  // before the tab is closed it should be the one that matters.
+  const go = () => { flush().then(flushSaves); };
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', flush);
+    document.addEventListener('DOMContentLoaded', go);
   } else {
-    flush();
+    go();
   }
 })();

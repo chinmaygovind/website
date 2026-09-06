@@ -87,9 +87,9 @@ def _z(selector):
     return int(m.group(1))
 
 
-def _tip_ids():
-    """The button ids `TOUR_TIPS` names, in the order it names them."""
-    block = GAME[GAME.index("const TOUR_TIPS"):]
+def _tip_ids(name="TOUR_TIPS"):
+    """The button ids one of the tip lists names, in the order it names them."""
+    block = GAME[GAME.index("const %s = [" % name):]
     return re.findall(r"\['(btn\w+)',", block[:block.index("];")])
 
 
@@ -105,7 +105,11 @@ def test_the_goal_banner_and_the_tour_layer_are_on_the_play_page(env):
     r = env.app.test_client().get("/solo/sunrise")
     body = r.get_data(as_text=True)
     assert 'id="firstBanner"' in body
-    assert "Try to set your best time on this track!" in body
+    assert "Try to set your best time on this track" in body
+    # The second line names the colour, because "the checkpoints" is only
+    # obvious to somebody who already knows which of the things on the road
+    # they are.
+    assert "Go through all the yellow checkpoints" in body
     assert 'id="tour"' in body
     # Hidden until asked for. A banner that is in the flow at load and then
     # hidden by script is a banner that flashes on every visit for everybody.
@@ -141,10 +145,44 @@ def test_the_marks_are_pointed_at_buttons_that_exist(env):
     them are missing.
     """
     body = env.app.test_client().get("/solo/sunrise").get_data(as_text=True)
-    ids = _tip_ids()
-    assert len(ids) == 4
+    ids = _tip_ids() + _tip_ids("TOUR_TIPS_BL")
+    assert len(ids) == 8
     for i in ids:
         assert 'id="%s"' % i in body, i
+
+
+def test_the_bottom_row_is_pointed_at_right_to_left(env):
+    """The ordering is load-bearing, and it is mirrored from the top corner's.
+
+    A bottom-left label sits *above* its button and runs off to the *right*, so
+    its horizontal run passes over the uprights of every button to its **right**
+    - which means the rightmost button needs the shortest arrow, and the list has
+    to be written right to left. Get it backwards and the four arrows form a
+    thicket instead of nesting, which is what the top corner's list learnt the
+    first time.
+
+    Read off the template rather than hardcoded here, so moving a button in the
+    HUD fails this instead of quietly un-nesting the arrows.
+    """
+    order = [m for m in re.findall(r'id="(btn(?:Checkpoint|Restart|SaveNew|Saves))"', PLAY)]
+    assert order == ["btnCheckpoint", "btnRestart", "btnSaveNew", "btnSaves"], order
+    assert _tip_ids("TOUR_TIPS_BL") == list(reversed(order))
+
+
+def test_the_two_corners_have_their_own_arrow_geometry(env):
+    """One elbow mirrored in both axes, and two functions rather than a flag.
+
+    The bottom arrow runs in along the *top* from the right and turns *down*; a
+    single function taking a direction would be two functions wearing one name,
+    and every one of the six numbers in it differs.
+    """
+    assert "function arrowPath(" in GAME
+    assert "function arrowPathBL(" in GAME
+    # And the placer actually picks between them rather than defaulting to one.
+    place = GAME[GAME.index("function placeTour("):]
+    place = place[:re.compile(r"^\}$", re.M).search(place).end()]
+    assert "arrowPathBL(" in place and "arrowPath(" in place
+    assert "t.group === 'bl'" in place
 
 
 # --- once, and only for a new player ---------------------------------------
@@ -243,21 +281,32 @@ def test_the_labels_are_drawn_over_the_lifted_buttons(env):
 
 
 def test_the_rest_of_the_lifted_hud_stops_taking_clicks(env):
-    """Two boxes, both invisible and both in front of the Retry button.
+    """Invisible boxes in front of the Retry button.
 
-    `.hud-bc` is the clock, 340px wide across the bottom centre; `.hud-tr` is a
-    tall transparent column down the right. Fading them to `opacity: 0` leaves
-    both hit-testable, and once the HUD is above the sheet they are the things a
-    click lands on.
+    `.hud-bc` is the clock, 340px wide across the bottom centre; `.hud-tr` and
+    `.hud-l` are tall transparent columns down either side. Fading them to
+    `opacity: 0` leaves them hit-testable, and once the HUD is above the sheet
+    they are the things a click lands on.
+
+    **Two corners are pointed at now**, so the fade walks down two columns: the
+    row of four in `.hud-tr`, and `.mapbtns` inside `.hud-bl` inside `.hud-l`.
+    Both parents have to be excluded from the fade and both have to give up
+    their own clicks, or the corner that is not being read about goes dark or
+    the column that is lit eats the Retry click.
     """
     rule = re.search(
-        r"body\.tour \.hud > \*:not\(\.hud-tr\),\s*"
-        r"body\.tour \.hud-tr > \*:not\(\.btnbar\) \{([^}]*)\}", CSS)
+        r"body\.tour \.hud > \*:not\(\.hud-tr\):not\(\.hud-l\),\s*"
+        r"body\.tour \.hud-tr > \*:not\(\.btnbar\),\s*"
+        r"body\.tour \.hud-l > \*:not\(\.hud-bl\),\s*"
+        r"body\.tour \.hud-bl > \*:not\(\.mapbtns\) \{([^}]*)\}", CSS)
     assert rule, "the fade rule is not where this test can read it"
     assert "opacity: 0" in rule.group(1)
     assert "pointer-events: none" in rule.group(1)
-    assert re.search(r"body\.tour \.hud-tr \{[^}]*pointer-events: none", CSS)
-    assert re.search(r"body\.tour \.hud-tr \.btnbar \{[^}]*pointer-events: auto", CSS)
+    for box in (r"\.hud-tr", r"\.hud-l", r"\.hud-bl"):
+        assert re.search(r"body\.tour [^{]*%s[^{]*\{[^}]*pointer-events: none" % box, CSS), box
+    assert re.search(r"body\.tour \.hud-tr \.btnbar[^{]*\{[^}]*pointer-events: auto", CSS)
+    assert re.search(r"body\.tour \.hud-bl \.mapbtns[^{]*\{[^}]*pointer-events: auto", CSS) or \
+        re.search(r"body\.tour \.hud-tr \.btnbar, body\.tour \.hud-bl \.mapbtns \{[^}]*pointer-events: auto", CSS)
     assert re.search(r"^#tour \{[^}]*pointer-events: none", CSS, re.M), \
         "the label layer would block the buttons it is pointing at"
 
