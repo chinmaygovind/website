@@ -44,11 +44,13 @@ def _fn(src, name):
 
 def _lifted():
     src = open(os.path.join(JS, "game.js")).read()
+    extra = _fn(src, "recordedSpeed")
     # The three that turn a frame into what you hear and what you see, plus the
     # table that says which element each bit lights - which is lifted rather
     # than restated, so a bit added to one and not the other fails here.
     keys = src.index("const INPUT_KEYS = [")
     return "\n".join([
+        extra,
         _fn(src, "inputsOf"),
         _fn(src, "paintInputs"),
         src[keys:src.index("];", src.index("const DRIFT_LIT")) + 2],
@@ -107,6 +109,16 @@ function $(id) {
 }
 function syncWatchUi() {}
 var IN = { THROTTLE: 1, BRAKE: 2, HANDBRAKE: 4, RIGHT: 8, LEFT: 16 };
+var DRIFT_TAP = 0.15;
+// A lap that is driving for `after` seconds and then goes sideways for good,
+// which is what a handbrake flick into a long corner actually looks like.
+function slideFrom(step, after, n) {
+  var out = [];
+  for (var i = 0; i < (n || 12); i++) {
+    out.push([i * step, 0, 0, 0, 0, 0, 1, (i / 10 >= after) ? FLAG.DRIFT : 0]);
+  }
+  return out;
+}
 function fmt() { return ''; }
 function lampsOf() { return {}; }
 
@@ -268,7 +280,9 @@ def test_an_old_lap_infers_the_hands_from_the_car(js):
     js.eval("HEARD = []; watching([car(lap(0.5, FLAG.BRAKE))]); play();")
     assert _lit(js, "kDown") and not _lit(js, "kUp")
 
-    js.eval("HEARD = []; watching([car(lap(0.5, FLAG.DRIFT))]); play();")
+    # The slide has to be *new* to read as a flick - see the tap tests below.
+    js.eval("HEARD = []; watching([car(slideFrom(0.5, 0.4))]);"
+            " S.watch.t = 0.4; play(1);")
     assert _lit(js, "kSpace")
 
 
@@ -298,6 +312,65 @@ def test_a_recorded_lap_is_not_second_guessed(js):
 # ---------------------------------------------------------------------------
 # The transport
 # ---------------------------------------------------------------------------
+
+def test_an_inferred_handbrake_is_the_flick_and_not_the_slide(js):
+    """`FLAG.DRIFT` is the car sideways, which is a consequence rather than an
+    input: a driver flicks the key and lets go, and the slide runs on for a
+    second or more after their thumb is off it.
+
+    Drawing the whole slide put a key held down through a corner that was
+    tapped, and it visibly disagreed with the brake lamps next to it on the car.
+    """
+    # The slide starts at 0.4s. On its first frame the bar is lit...
+    js.eval("watching([car(slideFrom(0.5, 0.4))]); S.watch.t = 0.4; play(1);")
+    assert _lit(js, "kSpace"), "the flick that started the slide is not drawn"
+    # ...and a good deal later, with the car still sideways, it is not.
+    js.eval("HEARD = []; watching([car(slideFrom(0.5, 0.4))]);"
+            " S.watch.t = 0.4 + DRIFT_TAP * 3; play(1);")
+    assert not _lit(js, "kSpace"), "the key is still held a slide later"
+
+
+def test_the_flick_is_found_by_looking_back_rather_than_by_remembering(js):
+    """Which is what makes it survive a scrub. A stateful version would carry
+    "were we drifting last frame", and dragging the bar into the middle of a
+    slide would then light the bar as though the flick had just happened - so
+    every scrub would invent a handbrake. The recording already says when the
+    car went sideways; this reads it."""
+    # Land cold in the middle of a long slide, with no frames played before it.
+    js.eval("watching([car(slideFrom(0.5, 0.2))]); S.watch.t = 1.0; play(1);")
+    assert not _lit(js, "kSpace")
+
+
+def test_a_recorded_handbrake_is_not_shortened(js):
+    """The tap is a guess about a lap that did not record one. A lap that did
+    says how long the key was actually down, and a driver who really does hold
+    it through a corner has to be drawn holding it."""
+    js.eval("watching([car(lap(0.5, FLAG.DRIFT, 8, true, IN.HANDBRAKE), true)]);"
+            " S.watch.t = 0.6; play(1);")
+    assert _lit(js, "kSpace")
+
+
+def test_a_scrubbed_car_is_not_a_stopped_car(js):
+    """The camera measures speed between the frame it drew last and this one,
+    and a seek clears that on purpose - a jump measured that way is the distance
+    jumped, heard as an engine at several thousand km/h. But a *paused* replay
+    never draws a second frame either, so a scrub landed on a car reading zero:
+    the engine went quiet and the pad dropped the throttle, on a frame where the
+    driver was flat out.
+
+    The recording knows how fast it was going. One frame ahead over one frame of
+    time - the same quantity the camera estimates, and not an estimate."""
+    js.eval("watching([car(lap(0.5, 0))]); S.watch.t = 0.3; play(1);")
+    assert _last(js, "sf") > 0, "a car scrubbed to is silent"
+    assert _lit(js, "kUp"), "a car scrubbed to has let go of the throttle"
+    # And it stays right for as long as you sit there. The camera's measure is
+    # an honest zero about a still picture - the car does not move between two
+    # frames of a paused replay - so the pad has to be asking the recording
+    # rather than the picture, or the throttle drops out one frame later on
+    # exactly the frame somebody paused to look at.
+    js.eval("S.watch.playing = false; play(6);")
+    assert _lit(js, "kUp"), "the throttle fell off a paused frame"
+
 
 def test_the_playback_rate_does_not_change_the_engine_note(js):
     """Slow motion is a slower *film*, not a slower car. The speed is measured

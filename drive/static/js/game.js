@@ -2174,6 +2174,15 @@ function startWatching(frames, hz, meta) {
 // to is a speed nobody chose - and because these seven read as numbers.
 const REPLAY_RATES = [0.1, 0.25, 0.5, 1, 1.5, 2, 4];
 
+// How long the space bar stays lit at the start of an *inferred* slide, in
+// seconds of lap time. A real handbrake flick is one or two tenths, and this is
+// the length the pad is guessing at rather than a fade: the recording says when
+// the car went sideways and nothing about how long a thumb was on the key.
+//
+// In lap time and not wall time, so it is the same flick at 0.1x as at 4x.
+// Recorded laps never reach it - they have the actual byte.
+const DRIFT_TAP = 0.15;
+
 /**
  * Play these cars back together.
  *
@@ -2548,6 +2557,27 @@ function watchLastCheckpoint() {
 }
 
 /**
+ * How fast this car was going at `t`, out of the recording itself.
+ *
+ * The camera measures speed between the frame it drew last and this one, which
+ * is right while the replay is running and has no answer at all the moment it is
+ * not: a seek clears `prev` on purpose (a jump measured that way is the distance
+ * jumped, which is an engine at several thousand km/h), and a *paused* replay
+ * never draws a second frame to measure against. So a scrub landed on a car
+ * reading zero - the engine went quiet and the pad dropped the throttle, on a
+ * frame where the driver was flat out.
+ *
+ * The recording knows. One ghost frame ahead over one ghost frame of time, which
+ * is the same quantity the camera is estimating and is not an estimate.
+ */
+function recordedSpeed(c, t) {
+  const h = 1 / (c.g.hz || GHOST_RATE);
+  const a = c.g.at(t), b = c.g.at(t + h);
+  if (!a || !b) return 0;
+  return Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) / h;
+}
+
+/**
  * What the driver's hands were doing at this frame.
  *
  * A lap driven since the ninth value knows, and this is simply that byte. Any
@@ -2559,23 +2589,33 @@ function watchLastCheckpoint() {
  *    used since a replay first made a noise: there is no third thing a car on
  *    the road can be doing, and a coast through a corner reads as a lift for
  *    exactly as long as it lasts.
- *  - **The handbrake** is `FLAG.DRIFT`, which is the car sliding rather than the
- *    key being down. Those are the same thing often enough to be worth drawing
- *    and different often enough that this is the half of the pad an old lap gets
- *    most wrong.
+ *  - **The handbrake is the *start* of a slide, not the slide.** `FLAG.DRIFT` is
+ *    the car sideways, which is a consequence and not an input: a driver flicks
+ *    the key and lets go, and the slide it started runs on for a second or more
+ *    after their thumb is off it. Drawing the whole slide put a key held down
+ *    through a corner that was tapped, and it visibly disagreed with the brake
+ *    lamps beside it. So the bar is lit only while the slide is younger than
+ *    `DRIFT_TAP`, which reads as the flick that caused it.
+ *
+ *    Found by **looking one `DRIFT_TAP` back in the recording** rather than by
+ *    remembering the last frame, so it survives a scrub: the state a stateful
+ *    version would be carrying is already written down in the frames.
  *  - **Steering** is how fast the car is turning about its own vertical, which
  *    is the only place it is written down at all. The deadband keeps a straight
  *    from flickering, and below walking pace it is left alone: a stationary car
  *    turning on its own axis is not a driver steering.
  */
-function inputsOf(car, f, dt) {
+function inputsOf(car, f, t, dt) {
   if (car.recorded) return f[8] | 0;
   const fl = f[7] | 0;
   let b = 0;
   const speed = car.spd || 0;
   if (fl & FLAG.BRAKE) b |= IN.BRAKE;
   else if (speed > 3) b |= IN.THROTTLE;
-  if (fl & FLAG.DRIFT) b |= IN.HANDBRAKE;
+  if (fl & FLAG.DRIFT) {
+    const back = car.g.at(t - DRIFT_TAP);
+    if (!(back && ((back[7] | 0) & FLAG.DRIFT))) b |= IN.HANDBRAKE;
+  }
   if (car.prevFwd && car.fwdNow && car.upNow && speed > 2 && dt > 1e-4) {
     // Signed yaw about the car's own up axis, so a corner taken upside down on
     // Rainbow Road reads the way the driver's hands did.
@@ -2673,7 +2713,10 @@ function updateWatch(dt) {
       // the same second, so without this every number downstream - the camera's
       // pull-back and the engine note both - would say the car had slowed down.
       // What slowed down is the film.
-      s.speed = c.prev ? p.distanceTo(c.prev) / Math.max(1e-3, dt * w.rate) : 0;
+      // How fast the car was, asked of the recording. The camera falls back to
+      // it (below) and the pad reads nothing else.
+      const real = recordedSpeed(c, w.t);
+      s.speed = c.prev ? p.distanceTo(c.prev) / Math.max(1e-3, dt * w.rate) : real;
       s.pos.copy(p);
       s.fwd.set(0, 0, -1).applyQuaternion(q);
       s.up.set(0, 1, 0).applyQuaternion(q);
@@ -2694,11 +2737,18 @@ function updateWatch(dt) {
                      !!(fl & FLAG.AIR));
       // What the pad needs and the pose does not carry, kept on the car so that
       // `inputsOf` is a pure reading of it.
-      c.spd = s.speed;
+      //
+      // **The recording's speed and not the camera's**, which are the same
+      // number while the replay is running and nothing like it when it is not.
+      // Paused, the car does not move between frames, so the camera's measure is
+      // an honest zero about a still picture - and the pad read it as a driver
+      // who had stopped: no throttle, on a frame where they were flat out. That
+      // is exactly the frame somebody paused to look at.
+      c.spd = real;
       c.prevFwd = c.fwdNow || null;
       c.fwdNow = s.fwd.clone();
       c.upNow = s.up.clone();
-      const b = inputsOf(c, f, dt * w.rate);
+      const b = inputsOf(c, f, w.t, dt * w.rate);
       if (b !== w.shown) { w.shown = b; paintInputs(b); }
     }
     c.prev = p.clone();

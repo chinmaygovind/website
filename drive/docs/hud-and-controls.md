@@ -476,11 +476,29 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
     replay** - a race is built from the live pose stream, which has never carried
     inputs. Those are *inferred* from the motion instead: brake off the flag
     byte, throttle from not-braking-and-moving (the rule the engine note already
-    uses), the handbrake from `FLAG.DRIFT`, and steering from how fast the car is
-    turning about its own vertical, with a deadband so a straight does not
-    flicker. **The pad says which of the two it is drawing** - a small
-    *Estimated* under it, and only there - because a pad that never explains
-    itself is a pad you can believe.
+    uses), and steering from how fast the car is turning about its own vertical,
+    with a deadband so a straight does not flicker. **The pad says which of the
+    two it is drawing** - a small *Estimated* under it, and only there - because
+    a pad that never explains itself is a pad you can believe.
+  - **The inferred handbrake is the *start* of a slide, not the slide.**
+    `FLAG.DRIFT` is the car sideways, which is a consequence and not an input: a
+    driver flicks the key and lets go, and the slide runs on for a second or more
+    after their thumb is off it. Drawing the whole slide put a key held down
+    through a corner that was tapped, and it visibly disagreed with the brake
+    lamps on the car beside it - which is how it was noticed. On BotTyler's Big
+    Red lap that was 5.8 seconds of held space bar, one stretch of it 1.2s long;
+    it is 21 flicks of `DRIFT_TAP` now. **Found by looking one `DRIFT_TAP` back
+    in the recording** rather than by remembering the last frame, so a scrub into
+    the middle of a slide does not invent a handbrake that was pressed seconds
+    ago.
+  - **The pad's speed comes from the recording, not from the camera.** They are
+    the same number while the replay is running and nothing like it when it is
+    not: paused, the car does not move between frames, so the camera's measure is
+    an honest zero about a still picture - and the pad read it as a driver who
+    had stopped, dropping the throttle on exactly the frame somebody paused to
+    look at. `recordedSpeed` asks the frames instead. The camera keeps its own
+    measure and only falls back to this on the frame after a seek, where there is
+    no previous frame to measure against.
   - **The drift is amber on the button doing it.** The space bar goes amber
     whenever the bit is set, because it *is* the handbrake; the phone's three go
     amber only while also being held, which is what it looks like under a real
