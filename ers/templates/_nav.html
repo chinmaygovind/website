@@ -11,6 +11,8 @@
     {% if current_user %}
       <a href="/account" class="{% if active_page == 'account' %}active{% endif %}">Account</a>
       <a href="/logout">Log out</a>
+    {% elif is_guest %}
+      <a href="/login?signup=1">Sign up</a>
     {% else %}
       <a href="/login">Log in</a>
     {% endif %}

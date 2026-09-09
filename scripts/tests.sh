@@ -162,7 +162,14 @@ parallel_for() {
 
   n="$(nproc 2>/dev/null || echo 4)"
   [ "$n" -gt 4 ] && n=4
-  echo "-n $n --dist load"
+  # `loadgroup` rather than `load`, and for kot it is load-bearing. Two workers
+  # each importing `app.py` - i.e. each calling `eventlet.monkey_patch()` - is
+  # the stall above, and it is not a 1-in-34 there: it hangs every run. So kot's
+  # app-importing files carry `pytestmark = pytest.mark.xdist_group("app")` and
+  # this keeps them on one worker. `loadgroup` is `load` for everything else, so
+  # nothing unmarked moves. It is a containment, not the fix - the fix is still
+  # `run_parallel`, which is why the note above still stands.
+  echo "-n $n --dist loadgroup"
 }
 
 # kot's three bot self-play tests are marked `strength` and deselected by

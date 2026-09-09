@@ -6,6 +6,15 @@ Flask-SocketIO, its own eventlet gunicorn `-w 1` on `127.0.0.1:5004`, its own ve
 (`kot/venv`) and `.env` (both gitignored, hand-made on the box), sharing TTR's `users`
 table for accounts. Stats live in `kot_stats`, games in `kot_games` / `kot_players`.
 
+- **A guest is not signed in, and `/login` must stay reachable for one.** It
+  used to redirect anybody with a `guest_name` to the lobbies, which made the
+  nav's own link a loop: the one control offering an account was the one that
+  did nothing. `login_page` now sends away only `get_current_user()`. The nav
+  reads `is_guest` (a context-processor flag, not `effective_name != 'Guest'`,
+  which a guest who types "Guest" defeats) and offers **Sign up** →
+  `/login?signup=1`, which is what opens the register tab rather than the login
+  one. `tests/test_login.py` pins both halves, and **that file imports `app.py`,
+  so it carries `pytest.mark.xdist_group("app")`** - see the root `CLAUDE.md`.
 - **Layout:** `kot/game_logic.py` (pure rules engine), `kot/cards.py` (all 66 power
   cards), `kot/bot.py` (the bot brain, also pure), `kot/app.py` (auth, lobby, socket
   game loop, bot orchestration, ELO), `kot/models.py`, `kot/templates/` + `kot/static/`.

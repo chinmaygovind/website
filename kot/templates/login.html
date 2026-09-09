@@ -11,21 +11,22 @@
 
   <div class="login-col">
   <div class="panel">
+    {% if is_guest %}<p class="muted" style="font-size:.9rem;margin:0 0 1rem">Playing as {{ effective_name }}. Make an account to keep your rating and stats.</p>{% endif %}
     <div class="tabs">
-      <div class="tab active" data-tab="login">Log in</div>
-      <div class="tab" data-tab="register">Sign up</div>
+      <div class="tab {% if not signup %}active{% endif %}" data-tab="login">Log in</div>
+      <div class="tab {% if signup %}active{% endif %}" data-tab="register">Sign up</div>
       <div class="tab" data-tab="guest">Guest</div>
     </div>
     <div class="error" id="err"></div>
 
-    <form class="tabform active" id="f-login">
+    <form class="tabform {% if not signup %}active{% endif %}" id="f-login">
       <div class="field"><label>Username or email</label><input id="li-user" autocomplete="username"/></div>
       <div class="field"><label>Password</label><input id="li-pass" type="password" autocomplete="current-password"/></div>
       <button class="btn big" style="width:100%">Log in</button>
       <p class="forgot"><a href="{{ site_url }}/accounts/forgot">Forgot your password?</a></p>
     </form>
 
-    <form class="tabform" id="f-register">
+    <form class="tabform {% if signup %}active{% endif %}" id="f-register">
       <div class="field"><label>Username</label><input id="rg-user" autocomplete="off"/></div>
       <div class="field"><label>Email</label><input id="rg-email" type="email" autocomplete="off"/></div>
       <div class="field"><label>Password</label><input id="rg-pass" type="password" autocomplete="new-password"/></div>

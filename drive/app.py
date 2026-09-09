@@ -553,6 +553,11 @@ ASSET_VERSION = os.environ.get("ASSET_VERSION") or _derive_asset_version()
 def inject_globals():
     return {"current_user": get_current_user(),
             "effective_name": get_effective_name(),
+            # Whether the nav offers "Log in" or "Sign up", and which form the
+            # login page opens on. A flag of its own rather than
+            # `effective_name != 'Guest'`, which a guest who types "Guest" as
+            # their name defeats.
+            "is_guest": bool(session.get("guest_name")) and not get_current_user(),
             # Which portal is framing us, or None here. Every template that
             # differs between the two builds of Drive differs on this one name -
             # the nav's log-in link, the login page itself, the way out to the
@@ -622,9 +627,17 @@ PRESENCE_BY_ENDPOINT = {
 
 @app.route("/login", methods=["GET"])
 def login_page():
-    if get_current_user() or session.get("guest_name"):
+    """Only an *account* is sent away, and a guest is not one.
+
+    A guest who clicks the nav is somebody who has decided to make a real
+    account, and this is the page that makes it - bouncing them to the lobbies
+    made that link look broken. `?signup=1` is what the nav carries outside a
+    portal, and it opens the register form rather than the login one.
+    """
+    if get_current_user():
         return redirect(request.args.get("next") or url_for("lobbies"))
-    return render_template("login.html", next=request.args.get("next", ""))
+    return render_template("login.html", next=request.args.get("next", ""),
+                           signup=bool(request.args.get("signup")))
 
 
 @app.route("/login", methods=["POST"])

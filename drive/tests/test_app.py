@@ -1112,6 +1112,38 @@ def test_a_guest_is_offered_a_login_and_not_a_garage(env):
     assert 'href="/login"' in html
 
 
+def test_a_guest_is_offered_a_sign_up_and_can_reach_it(env):
+    """The link that used to be a loop.
+
+    `login_page` counted a guest name as "already signed in" and redirected
+    them to the lobbies, so the one thing in the nav offering an account was
+    the one thing in the nav that did nothing. A guest is somebody who has not
+    signed up, so the link says so and the page behind it opens on the form
+    that signs them up.
+    """
+    c = env.app.test_client()
+    assert c.post("/guest", json={"name": "Dave"}).get_json()["ok"]
+
+    html = c.get("/leaderboard").get_data(as_text=True)
+    assert 'href="/login?signup=1"' in html
+    assert ">Log in</a>" not in html
+
+    resp = c.get("/login?signup=1")
+    assert resp.status_code == 200, "a guest was bounced off the sign-up page"
+    page = resp.get_data(as_text=True)
+    assert '<div id="regForm">' in page
+    assert '<div id="loginForm" style="display:none">' in page
+    assert "Dave" in page
+
+
+def test_an_account_is_still_sent_on_from_the_login_page(env):
+    c = env.app.test_client()
+    _login(c, _user(env, "quick"))
+    resp = c.get("/login")
+    assert resp.status_code == 302
+    assert "/lobbies" in resp.headers["Location"]
+
+
 def test_the_livery_round_trips_through_the_api(env):
     c = env.app.test_client()
     _login(c, _user(env, "quick"))

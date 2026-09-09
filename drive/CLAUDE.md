@@ -437,6 +437,16 @@ than 15% or move a corner more than 8 degrees before refusing.
   response also carries a `frame-ancestors` sitelock. Anything touching login,
   the nav, `/privacy` or who a player is has to work in both. Read
   `docs/portal.md`.
+- **A guest is not signed in, and `/login` must stay reachable for one.** It
+  used to redirect anybody with a `guest_name` on to `next` or the lobbies,
+  which made the nav's own link a loop: the one control offering an account was
+  the one that did nothing. `login_page` now sends away only
+  `get_current_user()`. The nav reads `is_guest` (a context-processor flag, not
+  `effective_name != 'Guest'`, which a guest who types "Guest" defeats) and
+  offers **Sign up** → `/login?signup=1`, which opens the register form instead
+  of the login one. **Outside a portal only** - in a portal there is no
+  account of ours to make, so that link stays "Sign in" and the register form
+  is not in the page at all. `tests/test_app.py` pins both.
 - **Nothing cosmetic may touch the simulation** - not ride height, not `CAR_RADIUS`,
   not the wheel radius, not a gram of mass. A cosmetic that changed how the car
   drives would make every time on the board mean something different.

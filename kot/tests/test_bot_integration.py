@@ -18,6 +18,13 @@ import uuid
 
 import pytest
 
+# Every test that imports `app` runs on one xdist worker. `app.py` calls
+# `eventlet.monkey_patch()` on line 2, and a *second* worker doing that is the
+# stall `scripts/tests.sh` describes: greened `threading` against the OS threads
+# execnet already made, and the session never ends. One patched worker has been
+# fine for as long as this file has existed; two is a hang every time.
+pytestmark = pytest.mark.xdist_group("app")
+
 
 @pytest.fixture(scope="module")
 def kot():

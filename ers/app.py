@@ -216,6 +216,11 @@ def _make_code():
 def inject_globals():
     return {"current_user": get_current_user(),
             "effective_name": get_effective_name(),
+            # Whether the nav offers "Log in" or "Sign up", and whether the
+            # login page opens on its sign-up tab. A separate flag rather than
+            # `effective_name != 'Guest'`, which a guest who types "Guest" as
+            # their name defeats.
+            "is_guest": bool(session.get("guest_name")) and not get_current_user(),
             # Where the flag art lives. It is one copy on the main site
             # rather than four, so a game refers to it by absolute URL - see
             # `UserProfile.flag_path`, which returns the path half.
@@ -241,9 +246,14 @@ PRESENCE_BY_ENDPOINT = {
 
 @app.route("/login", methods=["GET"])
 def login_page():
-    if get_current_user() or session.get("guest_name"):
+    # Only an *account* is sent away. A guest who clicks the nav is somebody
+    # who has decided to make a real one, and this is the page that makes it;
+    # sending them back to the lobbies made that link do nothing at all.
+    # `?signup=1` is what the nav link carries, and it opens the sign-up tab.
+    if get_current_user():
         return redirect(url_for("lobbies"))
-    return render_template("login.html")
+    return render_template("login.html",
+                           signup=bool(request.args.get("signup")))
 
 
 @app.route("/login", methods=["POST"])

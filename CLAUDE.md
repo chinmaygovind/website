@@ -196,7 +196,15 @@ scripts/tests.sh drive -- -k ghost -x     # after --, straight to pytest
   **So it is not a tuning problem - `-n 4` is rarer, not safer.** `drive` is out
   of range now; **`kot` still monkey-patches and still runs under xdist, so it
   still has this**, and the fix is to move it to `run_parallel` rather than to
-  add `pytest-timeout`. The consequences that made it hard to see are unchanged:
+  add `pytest-timeout`. What kot has in the meantime is a **containment**: the
+  split is `--dist loadgroup` and every kot test file that imports `app` carries
+  `pytestmark = pytest.mark.xdist_group("app")`, so they all land on one worker.
+  One patched worker has always been fine; a *second* one is not a 1-in-34 there
+  but a hang on every run, which is what adding `kot/tests/test_login.py` beside
+  `test_bot_integration.py` demonstrated. `loadgroup` is `load` for everything
+  unmarked, so nothing else moved. **A new kot test file that imports `app` must
+  carry that mark**, and nothing will tell you if you forget - it will simply
+  hang. The consequences that made it hard to see are unchanged:
   a stall reports **cancelled** rather than failed, its length is set by
   `cancel-in-progress` rather than by `timeout-minutes: 20`, and the per-test
   speed guard cannot see it because a deadlocked test never finishes.

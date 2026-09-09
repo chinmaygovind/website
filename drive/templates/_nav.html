@@ -89,7 +89,11 @@
          different page: there is no account to log into there, only the
          portal's own, so the word that matches what happens is theirs. Still
          one link and one route - `login.html` is the thing that branches. #}
-      <a href="/login">{{ icn(icon_in) }}{% if portal %}Sign in{% else %}Log in{% endif %}</a>
+      {% if not portal and is_guest %}
+        <a href="/login?signup=1">{{ icn(icon_in) }}Sign up</a>
+      {% else %}
+        <a href="/login">{{ icn(icon_in) }}{% if portal %}Sign in{% else %}Log in{% endif %}</a>
+      {% endif %}
     {% endif %}
   </div>
 </nav>

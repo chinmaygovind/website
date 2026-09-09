@@ -19,6 +19,11 @@
     <h1>Who are you?</h1>
     <p class="muted">Sign in with CrazyGames and your times, your rating and the
     car you built follow you to every machine you play on. Or pick a name and go.</p>
+  {% elif is_guest %}
+    <h1>Make an account</h1>
+    <p class="muted">Racing as {{ effective_name }}. An account puts your times on
+    the leaderboard and keeps them - the same one works on Ticket to Ride,
+    Egyptian Rat Screw and King of Tokyo.</p>
   {% else %}
     <h1>Log in</h1>
     <p class="muted">Your cgovind.com account works here - the same one as Ticket to
@@ -35,14 +40,14 @@
     </div>
   {% else %}
   <div class="panel">
-    <div id="loginForm">
+    <div id="loginForm"{% if signup %} style="display:none"{% endif %}>
       <div class="field"><label>Username or email</label><input id="lu" autocomplete="username"/></div>
       <div class="field"><label>Password</label><input id="lp" type="password" autocomplete="current-password"/></div>
       <button class="btn" style="width:100%" onclick="doLogin()">Log in</button>
       <p class="muted" style="font-size:.9rem"><a href="{{ site_url }}/accounts/forgot" target="_blank" rel="noopener noreferrer">Forgot your password?</a> &nbsp;·&nbsp; No account? <a href="#" onclick="show('reg');return false">Register</a></p>
     </div>
 
-    <div id="regForm" style="display:none">
+    <div id="regForm"{% if not signup %} style="display:none"{% endif %}>
       <div class="field"><label>Username</label><input id="ru"/></div>
       <div class="field"><label>Email</label><input id="re" type="email"/></div>
       <div class="field"><label>Password</label><input id="rp" type="password" autocomplete="new-password"/></div>

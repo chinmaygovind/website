@@ -13,6 +13,14 @@ per-game lock wins.
   works on both sites. `users` is the shared account table; ERS creates `ers_stats` /
   `ers_games` / `ers_players` / `ers_slaps` in that same file (WAL + busy_timeout for
   concurrent access). ERS's `User` model maps only the account columns.
+- **A guest is not signed in, and `/login` must stay reachable for one.** It
+  used to redirect anybody with a `guest_name` to the lobbies, which made the
+  nav's own link a loop: the one control offering an account was the one that
+  did nothing. `login_page` now sends away only `get_current_user()`. The nav
+  reads `is_guest` (a context-processor flag, not `effective_name != 'Guest'`,
+  which a guest who types "Guest" defeats) and offers **Sign up** →
+  `/login?signup=1`, which is what opens the register tab rather than the login
+  one. `tests/test_login.py` pins both halves.
 - **Prod DB path gotcha:** the live TTR does NOT run from this repo's `ttr/` submodule; it
   runs from a **separate clone `/home/ubuntu/TicketToRide`** (systemd `tickettoride`, port
   5001), whose db is `/home/ubuntu/TicketToRide/instance/tickettoride.db` -- that is the
