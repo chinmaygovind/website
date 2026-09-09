@@ -119,6 +119,42 @@ def test_a_ghost_from_before_flags_existed_still_unpacks():
     assert len(out) == len(frames) and all(len(f) == 7 for f in out)
 
 
+def test_a_ghost_carries_what_the_driver_pressed():
+    """The ninth value, and it is not the eighth said twice: the flag byte is
+    about the *car* - `FLAG_DRIFT` is a car that is sliding, whether or not
+    anybody asked for it - and there is nothing in it about steering or the
+    throttle at all. Only a replay's input pad reads this."""
+    frames = synth_run(TRACK, seconds=4)
+    for i, f in enumerate(frames):
+        f.append(0)
+        f.append(runcheck.input_byte(1, 0, -1 if i % 2 else 1, i % 3 == 0))
+    out = runcheck.unpack_ghost(runcheck.pack_ghost(frames))
+    assert [f[8] for f in out] == [f[8] for f in frames]
+
+
+def test_the_input_byte_is_the_verifier_s_byte():
+    """One definition of what a driver's hands are. They are a different length
+    of recording - one per physics step for the anti-cheat, one per ghost frame
+    for the pad - but a second encoding would be two things to keep in step for
+    no reason at all, and the brake and the handbrake are one bit apart."""
+    assert runcheck.input_byte(1, 0, 0, 0) & 1
+    assert runcheck.input_byte(0, 1, 0, 0) & 2
+    assert runcheck.input_byte(0, 0, 0, 1) & 4
+    assert runcheck.input_byte(0, 0, 1, 0) & 8
+    assert runcheck.input_byte(0, 0, -1, 0) & 16
+
+
+def test_a_ghost_with_flags_and_no_inputs_still_unpacks():
+    """The other half of the stride rule, and the one that covers every lap
+    driven between the flag byte landing and the input byte landing."""
+    frames = synth_run(TRACK, seconds=4)
+    for f in frames:
+        f.append(8)
+    out = runcheck.unpack_ghost(runcheck.pack_ghost(frames))
+    assert all(len(f) == 8 for f in out)
+    assert [f[7] for f in out] == [8] * len(frames)
+
+
 def test_ghost_packing_is_compact():
     """A ghost is stored per player per track, so it has to stay small."""
     frames = synth_run(TRACK, seconds=60)

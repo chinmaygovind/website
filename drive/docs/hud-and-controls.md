@@ -385,15 +385,115 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   used to open on a one-line description of the track and close on two
   paragraphs about grass and crests, which is reading matter in front of
   somebody who pressed it to find
-  out which key drifts. **The table follows the device** - `body.touch` swaps
-  the keyboard rows for the gestures (`.keys-only` / `.touch-only`, the same
-  mechanism as the start hint), so it never describes controls you do not have.
-- **Watching is not driving, so it takes the HUD away.** `body.watching` hides the
-  clock, the map and the pedals - none of it is true during somebody else's lap - and
-  leaves a bar with their name and the replay clock. The camera reads its speed and
-  orientation back off the ghost's own motion, since a replay carries neither. It
-  loops, and it refuses to start mid-race: it parks your car and stops your pose going
-  out, which in a race would leave a stationary obstacle with your name on it.
+  out which key drifts. **The table follows the device, the session and whether you have a car** -
+  three pairs of classes and one mechanism: `.keys-only`/`.touch-only`,
+  `.solo-only`/`.room-only`, and `.drive-only`/`.watch-only`, so it never
+  describes controls you do not have. A replay gets its own two tables (the
+  transport, and the four buttons on a phone) in place of the driving ones, and
+  the save-state rows are in them only outside `/race/<id>` - a save state is
+  solo's, and there is no car of yours on that page to put anywhere.
+  **The save-state buttons themselves are `{% if mode == 'solo' %}` now** rather
+  than `!= 'room'`, which was never the same question and let them onto the
+  replay page as four controls that could not work. It is `savesEnabled()`'s own
+  test, so the template and the rule agree by construction.
+- **Watching is not driving, but it is not nothing either, and the line between
+  the two is what the HUD keeps.** `body.watching` hides what is about *your run*
+  - the clock, the delta, your personal best, the speed - and keeps what is about
+  the track and the recording: the minimap, the four session buttons over it, and
+  the panels in the top right, which are as openable while watching as while
+  driving. The camera reads its speed and orientation back off the ghost's own
+  motion, since a replay carries neither. It refuses to start mid-race: it parks
+  your car and stops your pose going out, which in a race would leave a
+  stationary obstacle with your name on it.
+  - **It used to hide all of it**, which was right while a replay was a clock
+    that ran and looped, and stopped being right the moment there was anything to
+    operate. The four buttons over the map are the same four, doing the same four
+    things in the only currency a replay has - restart the lap you are watching,
+    go back to the checkpoint the *driver* went through, save where they are,
+    open the panel - so `restartRun` and `backToCheckpoint` answer for a replay
+    at the top rather than each of the four doors (the key, the HUD button, the
+    phone's button and Retry) growing its own idea of what those words mean.
+- **A replay is a transport now: play, a scrubber and a speed.** The corner you
+  are trying to see goes past in a fifth of a second at racing speed, and the
+  only way back to it was to sit through the rest of the lap. It is three pieces
+  of state - `playing`, `t` and `rate` - and everything on the bar reads those
+  three through one `syncWatchUi`, for `syncPaused`'s reason: six things move the
+  clock, and a play button that is a lie because one of them forgot is the
+  failure this shape cannot have. **Nothing writes `w.t` except `watchSeek` and
+  the one line in `updateWatch` that advances it**, because a seek that forgets
+  to clear the per-car `prev` reads the distance jumped as speed - a scrub to the
+  far end heard as an engine at several thousand km/h.
+  - **It stops at the flag rather than looping.** A bar that never stops moving
+    cannot be read, and a replay that starts itself again is one you have to
+    catch. Play, or R, puts it back on the line - and pressing play *at* the flag
+    starts it again rather than doing nothing, since that is what the button
+    looks like it should do.
+  - **A seek pauses and does not un-pause.** You moved the film to look at
+    something, and running on from where you stopped is the picture being taken
+    away again.
+  - **The playback rate is one multiplication, in `updateWatch` and nowhere
+    else**, and the speed the camera and the engine are handed is **divided back
+    out by it**. That is the difference between a speed and a distance per frame:
+    at 0.25x the car covers a quarter of the ground in the same second, so
+    without it every number downstream would say the car had slowed down. What
+    slowed down is the film. Slow motion sounds like the lap it is.
+  - **The seven speeds are a list, not a range** (`REPLAY_RATES`), because a
+    speed you scrubbed to is a speed nobody chose and 1.37x reads as a fault.
+    Behind one chip rather than as a row of seven: a row is most of the width of
+    a phone and six of them are wrong at any moment.
+  - **The ticks on the bar are the checkpoints**, off whichever car the camera is
+    on. They are what makes a scrubber readable - an undifferentiated bar of lap
+    is something you hunt along - and they are most of why T is worth having
+    here. They come from the **stored splits** wherever there are any, since
+    those are the clock the game stamped at the moment of the crossing; a race
+    replay has none (`/api/race` carries poses and finishing times and nothing
+    else) and `replayGates` finds them instead by walking the recording along the
+    ribbon. **Along the ribbon rather than through the gate planes**: `Run`'s
+    gate test needs the car inside a gate's mouth on two consecutive samples,
+    which is true 120 times a second and not true at 15Hz - a car doing 200
+    covers most of four units between frames and would step straight over one.
+  - **The bar is sized off what is left of the floor**, not off the viewport:
+    900px centred on a 1280px screen runs through the minimap on one side and
+    the input pad on the other. On a phone it is inset by the thumb pads' own
+    width, written the same way the pads write it, because the play button was
+    otherwise underneath the left steering arrow.
+- **The input display is what the driver was pressing, and it is a ninth value on
+  a ghost frame rather than a guess.** Four keys in an inverted T with a space
+  bar under them, bottom right, mirroring the map bottom left - the shape the
+  keys make on the desk, so it is read without a legend. On a phone there is no
+  second pad: the pedals and arrows already there light up instead, which is the
+  same byte in the shape that phone's own hands use, and `bindInput` refuses to
+  write `touchDown` while `S.watch` is up so they are a readout rather than
+  controls.
+  - **The flag byte could not answer this and it is worth knowing why.**
+    `FLAG.DRIFT` is the car *sliding*, whether or not anybody asked for it, and
+    there is nothing in that byte about steering or the throttle at all. So a
+    ghost frame is nine wide now: the ninth is `inputByte`, the same five bits
+    the verifier's input stream is written in, so there is one definition of what
+    a driver's hands are and `test_verify.py` already holds it against
+    `runcheck.input_byte`. `docs/runs-and-scoring.md`.
+  - **Every lap already on the board is older than that, and so is every race
+    replay** - a race is built from the live pose stream, which has never carried
+    inputs. Those are *inferred* from the motion instead: brake off the flag
+    byte, throttle from not-braking-and-moving (the rule the engine note already
+    uses), the handbrake from `FLAG.DRIFT`, and steering from how fast the car is
+    turning about its own vertical, with a deadband so a straight does not
+    flicker. **The pad says which of the two it is drawing** - a small
+    *Estimated* under it, and only there - because a pad that never explains
+    itself is a pad you can believe.
+  - **The drift is amber on the button doing it.** The space bar goes amber
+    whenever the bit is set, because it *is* the handbrake; the phone's three go
+    amber only while also being held, which is what it looks like under a real
+    thumb. Without that second condition one held handbrake lights both arrows
+    and the pad says the driver is turning two ways.
+- **Escape works top of the screen down, and the replay is at the bottom of that
+  list rather than the top.** It used to be first, which was right while watching
+  took the whole HUD away: there was nothing that *could* be over a replay, so
+  "innermost" and "only" were the same sentence. Now the corner buttons are back
+  and C, J, L and P all work while watching - so Escape over the save-state panel
+  did not close the panel, it **ended the lap you were watching**, which is the
+  one thing in that chain a keypress cannot undo. Order: the speed menu, the four
+  panels, the replay, then "open settings".
 - **`S.paused` is derived in one place** (`syncPaused`), from whether any panel is
   open, and only solo. Four panels each assigning it meant closing any one of them
   unpaused a game with another still open, and the car rolled away behind the sheet you
@@ -550,6 +650,36 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   from the throttle at all. A handbrake has to be something you ask for, it cannot
   be a combination you were going to make anyway, and it should cost you nothing
   you were already holding.
+  **The thumb can also slide between the two buttons of a pad without leaving the
+  glass**, which is `dragDrift`'s objection one step further on: every way of
+  getting from the throttle to the brake, or from one arrow to the other, charged
+  a *release* - lift, find the other button, land on it - and for the half second
+  that takes the car is doing neither. Going from power to brakes at the end of a
+  straight is the most common transition there is and it was the one the phone
+  made hardest. Five things about it:
+  - **The boundary is measured, on X, at the midpoint between the two.** A touch
+    is delivered for its whole life to the element it went down on, so nothing in
+    the browser will say which button a finger is over now. X only, because a
+    thumb sliding sideways also wanders down the glass; past the outer edge of
+    either button the answer stays that button, which is what overshooting the
+    brake means. `SLIDE_HYST` is `DRAG_KEEP`'s answer to `DRAG_KEEP`'s problem: a
+    thumb resting on the line would otherwise alternate full throttle and full
+    brakes several times a second.
+  - **The two gestures are orthogonal and neither can fire the other**: sideways
+    hands the pedal over, downwards pulls the handbrake.
+  - **It releases the button it left**, drift included, because the drift
+    belonged to that button. `tb`'s own release only knows about the button the
+    thumb went *down* on, so without this a thumb that slid to the brake and
+    lifted would leave the brake held for the rest of the lap - the worst way for
+    this to fail, and silent.
+  - **It rebases the drag origin of whatever it lands on, and clears its drift.**
+    A thumb that goes to the brake and back has travelled a long way down the
+    glass; handed back its original origin it arrives already drifting. The clear
+    is not belt-and-braces: `dragDrift` is bound first, so on the very move that
+    hands the pedal over it has *already* run against the old origin.
+  - **It is not a release for the arrows' double-tap window.** Sliding off left
+    and back is a correction, not a request for the handbrake.
+
   Touch state lives in its own `touchDown`/`touchKeys` sets rather than being poked
   into `keys`, since it is not a one-button-one-control mapping. Laid out with
   flexbox off the safe-area insets. `?touch=1` on a play URL forces the touch HUD on
@@ -585,6 +715,17 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   there is to do that is not driving. **Enter is the host's start button** in a
   room, which is why it is no longer a third way to press T, along with
   Backspace - and inside the chat box it still sends the message.
+- **A replay takes the driving keys, because nothing is being driven.** Space is
+  play/pause, left/right seek five seconds, up/down step through the speeds,
+  comma and full stop step **one ghost frame** (1/15s - the recording has no state
+  between its own samples, so a smaller step would be the same picture twice), and
+  R, T, C, J and the digits mean what they always did. WASD reaches all of it too:
+  somebody who steers with those has their hand nowhere near the arrows, and a
+  transport half of them cannot reach is a transport half of them do not have.
+  `replayKey` **returns what it took**, so R, T, C, J and the digits are not also
+  answered by the handlers forty lines further down - and everything it does not
+  claim falls through untouched, so watching a lap is not a mode with its own
+  keyboard.
 - **`Q` looks behind you and `F` puts you in the driver's seat, and both are held
   rather than pressed.** A glance is a glance: it ends when you let go, so there is
   no camera state to arrive at a corner still in. They are entries in `KEYMAP`

@@ -78,10 +78,14 @@
       <button class="hbtn" id="btnRestart" title="Restart the run (R)">
         <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 3.5V9h-5.5"/></svg>
       </button>
-      {% if mode != 'room' %}
+      {% if mode == 'solo' %}
       {# Beside restart and last-checkpoint because they are the same kind of
          thing: the three ways of not driving the whole lap again. A bookmark
-         with a plus to make one, a list to manage them. #}
+         with a plus to make one, a list to manage them.
+
+         `mode == 'solo'` and not `!= 'room'`, which is `savesEnabled()`'s own
+         test: the replay page is neither, and a button there would be one that
+         cannot work. #}
       <button class="hbtn" id="btnSaveNew" title="Create a save state (C)">
         <svg viewBox="0 0 24 24"><path d="M7 3.5h7.5V20L10.75 17 7 20z"/><path d="M17.5 5.5v6M14.5 8.5h6"/></svg>
       </button>
@@ -292,9 +296,37 @@
   <!-- Watching somebody's lap. The whole HUD would be lying during a replay -
        it is not your clock and not your speed - so this replaces it. -->
   <div id="watchBar" style="display:none">
+    {# The transport, above the name, because the transport is the thing being
+       operated and the name is the label on it. Play, the bar, the clock, the
+       speed - left to right, which is the order every video player anybody has
+       ever used puts them in, and the one control on this page that can afford
+       to be unoriginal.
+
+       The ticks inside the bar are the checkpoints of whichever lap the camera
+       is on. They turn an undifferentiated bar into sectors you can aim at, and
+       they are most of why T is worth having here. #}
+    <div class="watch-transport">
+      <button class="tport" id="btnPlay" title="Pause (Space)" aria-label="Play or pause">
+        <svg class="ic-play" viewBox="0 0 24 24"><path d="M7.5 4.6 19 12 7.5 19.4z"/></svg>
+        <svg class="ic-pause" viewBox="0 0 24 24"><path d="M9 5v14M15 5v14"/></svg>
+      </button>
+      <div id="scrub" role="slider" tabindex="0" aria-label="Replay position"
+           aria-valuemin="0" aria-valuenow="0">
+        <i class="scrub-track"></i>
+        <i class="scrub-fill" id="scrubFill"></i>
+        <div id="scrubTicks"></div>
+        <i class="scrub-knob"></i>
+      </div>
+      <div class="watch-time"><b id="watchClock">0:00.000</b><span>/</span><i id="watchTotal">0:00.000</i></div>
+      {# Seven speeds behind one chip. A row of seven is most of the width of a
+         phone, and six of them are wrong at any given moment. #}
+      <div class="rate-pick">
+        <button class="tport rate-now" id="btnRate" title="Playback speed (Up / Down)"><span id="rateNow">1x</span></button>
+        <div id="rateList" style="display:none"></div>
+      </div>
+    </div>
     <div class="watch-head">
       <span id="watchWho">Watching</span>
-      <b id="watchClock">0:00.000</b>
       <!-- Three labels for one button, because it has three destinations: in a
            room or solo it stops watching and hands the car back, on a replay
            opened from a room it goes back to that room, and on a replay opened
@@ -306,6 +338,37 @@
          can watch it from inside the fight rather than from one seat, and the
          cars all run on one clock, so this moves the camera and nothing else. -->
     <div id="watchCars" style="display:none"></div>
+  </div>
+
+  {# What the driver is pressing: bottom right, mirroring the map bottom left.
+     An inverted T with the space bar under it, which is the shape the keys make
+     on the desk in front of you - so it is read without a legend.
+
+     Deliberately not glyphs. A triangle out of the symbol blocks renders as a
+     full-colour emoji on some platforms and a hairline outline on others, and
+     these are four small squares where either would be the whole of what is in
+     them. The rule is the same one every icon on this page is under.
+
+     The line down the middle of the space bar is the only thing on it: a bar
+     that wide with a word on it reads as a button, and a bar with one mark reads
+     as a key, which is what it is. #}
+  <div class="hud-br" id="inputPad">
+    <div class="keypad">
+      <div class="krow">
+        <i class="key" id="kUp"><svg viewBox="0 0 24 24"><path d="M12 8.5 17 15H7z"/></svg></i>
+      </div>
+      <div class="krow">
+        <i class="key" id="kLeft"><svg viewBox="0 0 24 24"><path d="M8.5 12 15 7v10z"/></svg></i>
+        <i class="key" id="kDown"><svg viewBox="0 0 24 24"><path d="M12 15.5 7 9h10z"/></svg></i>
+        <i class="key" id="kRight"><svg viewBox="0 0 24 24"><path d="M15.5 12 9 17V7z"/></svg></i>
+      </div>
+      <i class="key space" id="kSpace"><b></b></i>
+    </div>
+    {# Only shown where it is not the truth. A lap driven since the input byte
+       existed records what the driver pressed; anything older, and every race
+       replay, is read back off the car - and a pad that never explains itself is
+       a pad you can believe. #}
+    <div class="pad-est" id="padEst" style="display:none">Estimated</div>
   </div>
 </div>
 
@@ -404,7 +467,7 @@
      above line up under the same thumb. -->
 <div id="touch">
   <div class="tpad left">
-    {% if mode != 'room' %}
+    {% if mode == 'solo' %}
     {# **The left thumb, not the right.** A phone has no C and no J, so without
        these two the feature does not exist there at all - and drilling one
        corner is exactly what somebody on a phone wants, since they are not
@@ -615,7 +678,7 @@
          is still time to beat them. Picking somebody off the leaderboard is not
          that - everybody in the room is on the road with you, and the board is
          a list of people who are not. -->
-    <div class="set-row">
+    <div class="set-row splits-row">
       <div class="set-main">
         <h3>Splits</h3>
         <div class="opt-row" id="ghostOpts">
@@ -875,9 +938,9 @@
          different things from it: alone there is nothing to say and the sound
          is worth a key, and in a room the chat is. Muting is still a click away
          in settings, where every other preference is. -->
-    <table class="board controls keys-only">
+    <table class="board controls keys-only drive-only">
       <tr><td>Steer</td><td>&larr; &rarr; or A / D</td></tr>
-      <tr><td>Throttle / brake</td><td>&uarr; &darr; or W / S</td></tr>
+      <tr><td>Throttle / Brake</td><td>&uarr; &darr; or W / S</td></tr>
       <tr><td>Drift</td><td>Space or Shift</td></tr>
       {# With the hands rather than with the sheets: these are held while driving,
          like the three above them, and nothing about them opens a panel. There
@@ -888,9 +951,9 @@
       {# Twice mid-race and once everywhere else, which is worth the words: R is
          next to T, and T is the key you reach for when you have fallen off. The
          note is only on the room sheet because solo has no race to protect. #}
-      <tr><td>Restart Run</td><td>R{% if mode == 'room' %}
-        <span class="muted">(twice, mid-race)</span>{% endif %}</td></tr>
-      <tr><td>Back to last checkpoint</td><td>T</td></tr>
+      <tr><td>Restart Run</td><td>R</td></tr>
+      {% if mode == 'room' %}<tr><td>Restart Mid-Race</td><td>R, Twice</td></tr>{% endif %}
+      <tr><td>Last Checkpoint</td><td>T</td></tr>
       {% if mode != 'room' %}
       {# Solo only. In a room you would be teleporting yourself past cars that
          are actually on the road, and the pose stream says so.
@@ -907,11 +970,11 @@
       {% endif %}
       {# P has always changed track and was in no list anywhere, so the only way
          to find it was to read the tooltip on an icon. #}
-      <tr><td>Change track</td><td>P</td></tr>
+      <tr><td>Change Track</td><td>P</td></tr>
       {% if mode != 'room' %}
       {# Solo only, like the button it doubles for: in a room the drivers whose
          times you would be reading are on the road with you. #}
-      <tr><td>Track leaderboard</td><td>L</td></tr>
+      <tr><td>Leaderboard</td><td>L</td></tr>
       {% endif %}
       {# Two switches, two keys. K is *which* lap you drive against, G is whether
          a car is drawn for it - they shared G before, which meant the car could
@@ -925,18 +988,57 @@
       {# Two keys for the one sheet, because Escape belongs to the browser in
          fullscreen: it leaves fullscreen and the game never sees it. #}
       <tr><td>Settings</td><td>Esc / O</td></tr>
-      <tr><td>Controls (this page)</td><td>H</td></tr>
+      <tr><td>Controls</td><td>H</td></tr>
       {% if mode == 'room' %}
-      <tr><td>Start qualifying / the race <span class="muted">(host)</span></td><td>Enter</td></tr>
+      <tr><td>Start the Session</td><td>Enter</td></tr>
       {% endif %}
     </table>
-    <table class="board controls touch-only">
+    <table class="board controls touch-only drive-only">
       <tr><td>Steer</td><td>Arrows, left thumb</td></tr>
-      <tr><td>Throttle / brake</td><td>Pedals, right thumb</td></tr>
+      <tr><td>Throttle / Brake</td><td>Pedals, right thumb</td></tr>
       <tr><td>Drift</td><td>Drag down the throttle, or double-tap and hold an arrow</td></tr>
-      <tr><td>Restart the run</td><td>The arrow, above the pedals</td></tr>
-      <tr><td>Back to last checkpoint</td><td>The flag, above the pedals</td></tr>
+      <tr><td>Restart Run</td><td>The arrow, above the pedals</td></tr>
+      <tr><td>Last Checkpoint</td><td>The flag, above the pedals</td></tr>
       {% if mode != 'room' %}
+      <tr><td>Create Save State</td><td>The bookmark, above the steering</td></tr>
+      <tr><td>Manage Save States</td><td>The list, above the steering</td></tr>
+      {% endif %}
+    </table>
+    {# Watching, not driving - so the sheet says so, the same way it swaps the
+       keyboard rows for the gestures on a phone. The driving tables above are
+       `.drive-only` and these two take their place while `body.watching` is up,
+       which covers both ways in: a lap opened off the board on a track you are
+       driving, and the whole `/race/<id>` page.
+
+       The save-state rows are the one thing that differs between the two, and
+       for the reason `savesEnabled()` already gives: a save state is solo's,
+       and the replay page is not solo - there is no car of yours on it to put
+       anywhere. #}
+    <table class="board controls keys-only watch-only">
+      <tr><td>Play / Pause</td><td>Space</td></tr>
+      <tr><td>Seek</td><td>&larr; &rarr;</td></tr>
+      <tr><td>Step One Frame</td><td>, .</td></tr>
+      <tr><td>Playback Speed</td><td>&uarr; &darr;</td></tr>
+      <tr><td>Restart Replay</td><td>R</td></tr>
+      <tr><td>Last Checkpoint</td><td>T</td></tr>
+      {% if mode != 'replay' %}
+      <tr><td>Create Save State</td><td>C</td></tr>
+      <tr><td>Choose Save State</td><td>1 - 9</td></tr>
+      <tr><td>Manage Save States</td><td>J</td></tr>
+      {% endif %}
+      <tr><td>Rear View</td><td>Q</td></tr>
+      <tr><td>First Person View</td><td>F</td></tr>
+      <tr><td>Change Track</td><td>P</td></tr>
+      <tr><td>Settings</td><td>Esc / O</td></tr>
+      <tr><td>Controls</td><td>H</td></tr>
+    </table>
+    <table class="board controls touch-only watch-only">
+      <tr><td>Play / Pause</td><td>The button on the bar</td></tr>
+      <tr><td>Seek</td><td>Drag the bar</td></tr>
+      <tr><td>Playback Speed</td><td>The speed, on the bar</td></tr>
+      <tr><td>Restart Replay</td><td>The arrow, above the pedals</td></tr>
+      <tr><td>Last Checkpoint</td><td>The flag, above the pedals</td></tr>
+      {% if mode != 'replay' %}
       <tr><td>Create Save State</td><td>The bookmark, above the steering</td></tr>
       <tr><td>Manage Save States</td><td>The list, above the steering</td></tr>
       {% endif %}

@@ -90,6 +90,26 @@ def drive(rt, slug, **opts):
     return r
 
 
+def test_a_driven_lap_records_what_the_driver_pressed(honest):
+    """The ninth value, end to end: driven through the real `Run`, packed the way
+    the server packs it, and read back.
+
+    It is the same `inputByte` the verifier's stream is written in, which is the
+    whole reason there is no second encoding to keep in step - but they are two
+    recordings at two rates, so this is also the check that the *ghost's* one is
+    actually being written. A lap that quietly recorded zeros would look
+    identical everywhere except on the pad, where it would read as a driver who
+    never touched anything.
+    """
+    frames = honest["frames"]
+    assert all(len(f) == 9 for f in frames), "the ghost is not nine wide"
+    # Somebody drove this, so the throttle is held for most of it and the wheel
+    # is turned for some of it. Anything less is a recording of nobody.
+    held = [f[8] | 0 for f in frames]
+    assert sum(1 for b in held if b & 1) > len(held) * 0.5, "nobody was on the power"
+    assert any(b & 8 for b in held) and any(b & 16 for b in held), "nobody steered"
+
+
 def check(verifier, slug, lap, frames=None, time_ms=None, blob=None, splits=None):
     return verify.check(tracks_mod.get(slug), time_ms or lap["time"],
                         splits or lap["splits"], frames or lap["frames"],

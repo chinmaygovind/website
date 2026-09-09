@@ -85,18 +85,27 @@ MEDIAN_SPEED_CEIL = T.MAX_SPEED * 1.2
 
 
 def pack_ghost(frames):
-    """frames: [[x,y,z,qx,qy,qz,qw(,flags)], ...] -> compact base64 string.
+    """frames: [[x,y,z,qx,qy,qz,qw(,flags(,input))], ...] -> compact base64 string.
 
     The eighth value is the car's flag byte at that instant, which is how a
     ghost knows to light its brake lamps and go amber in a slide. A pose says
     where a car was and nothing about what the driver was doing, so without it
     every replay is a car coasting silently round the lap.
 
-    Laps recorded before it existed are seven wide and stay that way, so the
-    stride is written into the blob rather than assumed: an old ghost still
-    unpacks, it simply has no lamps.
+    The ninth is `input_byte` - what the driver's hands were doing, in the same
+    five bits the verifier's input stream uses - and it is not the eighth said
+    twice. The flag byte is about the *car*: `FLAG_DRIFT` is a car that is
+    sliding, whether or not anybody asked for it, and there is nothing in it
+    about steering or the throttle at all. Only a replay reads this; the
+    anti-cheat has its own copy of the inputs at 120Hz and is not told about
+    this one.
+
+    Laps recorded before either existed are seven or eight wide and stay that
+    way, so the stride is written into the blob rather than assumed: an old
+    ghost still unpacks, it simply has no lamps, or no hands.
     """
-    stride = 8 if frames and len(frames[0]) >= 8 else 7
+    w = len(frames[0]) if frames else 7
+    stride = 9 if w >= 9 else (8 if w >= 8 else 7)
     ints = []
     for f in frames:
         ints.append(int(round(f[0] * POS_Q)))
@@ -104,8 +113,8 @@ def pack_ghost(frames):
         ints.append(int(round(f[2] * POS_Q)))
         for k in range(3, 7):
             ints.append(int(round(f[k] * ROT_Q)))
-        if stride == 8:
-            ints.append(int(f[7] or 0) & 0xFF)
+        for k in range(7, stride):
+            ints.append(int(f[k] or 0) & 0xFF)
     raw = json.dumps({"hz": GHOST_HZ, "q": [POS_Q, ROT_Q], "n": stride, "d": ints},
                      separators=(",", ":")).encode()
     return base64.b64encode(zlib.compress(raw, 9)).decode()
@@ -121,14 +130,13 @@ def unpack_ghost(blob):
         pq, rq = obj.get("q", [POS_Q, ROT_Q])
         # Ghosts written before flags existed have no `n` and are seven wide.
         stride = int(obj.get("n", 7))
-        if stride not in (7, 8):
+        if stride not in (7, 8, 9):
             return None
         out = []
         for i in range(0, len(d) - stride + 1, stride):
             f = [d[i] / pq, d[i + 1] / pq, d[i + 2] / pq,
                  d[i + 3] / rq, d[i + 4] / rq, d[i + 5] / rq, d[i + 6] / rq]
-            if stride == 8:
-                f.append(d[i + 7])
+            f.extend(d[i + 7:i + stride])
             out.append(f)
         return out
     except Exception:

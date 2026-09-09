@@ -37,7 +37,12 @@ const GHOST_HZ = 15;
 
 const STEPS_PER_FRAME = 8;          // FIXED_DT is 1/120 and a frame is 1/15
 const MAX_INPUT_STEPS = 120 * 60 * 6;
-const IN_THROTTLE = 1, IN_BRAKE = 2, IN_HANDBRAKE = 4, IN_RIGHT = 8, IN_LEFT = 16;
+// Exported because the replay's input display reads them back out of a ghost
+// frame's ninth value. One definition of what a driver's hands are, and the
+// same one the verifier is checked against.
+export const IN = { THROTTLE: 1, BRAKE: 2, HANDBRAKE: 4, RIGHT: 8, LEFT: 16 };
+const IN_THROTTLE = IN.THROTTLE, IN_BRAKE = IN.BRAKE, IN_HANDBRAKE = IN.HANDBRAKE,
+      IN_RIGHT = IN.RIGHT, IN_LEFT = IN.LEFT;
 // Anchor quantisation: millimetres, and a steer angle far finer than anything
 // that could be driven. Rounding here rather than on the server only makes the
 // request smaller - the server quantises what it is sent to the same grid.
@@ -227,6 +232,9 @@ export class Run {
     this.anchors = [];           // the car itself, every STEPS_PER_FRAME steps
     this._sides = new Map();     // gate -> which side of its plane we were on
     this._lastPos = null;
+    // The last input byte seen by `update`, for the ninth value of a ghost
+    // frame. Zero is a car nobody is touching, which is what the line is.
+    this._lastInput = 0;
     this.respawnGate = this.course.startGate();
     this.wrongWay = false;
     this.bestS = 0;
@@ -461,12 +469,21 @@ export class Run {
    * be holding also takes the frame rate out of it, so a ghost recorded at
    * 30fps lines up with the same lap replayed at 144.
    */
-  _recordGhost(pos, quat, flags) {
+  _recordGhost(pos, quat, flags, input) {
     const t = this.time / 1000;
     // The eighth value is what the driver was doing - braking, sliding, off the
     // track - so a replay can light its own lamps. It is the one value here
     // that must not be interpolated: half a brake is not a state.
-    const cur = [pos.x, pos.y, pos.z, quat.x, quat.y, quat.z, quat.w, flags | 0];
+    //
+    // The ninth is what the driver was *pressing*, which is a different fact and
+    // not derivable from the eighth: `FLAG.DRIFT` says the car is sliding, not
+    // that the handbrake is down, and nothing in the flag byte knows about
+    // steering or the throttle at all. It is `inputByte` - the same five bits
+    // the verifier's input stream is written in, so there is one definition of
+    // what a driver's hands are and `test_verify.py` already holds it against
+    // `runcheck.input_byte`.
+    const cur = [pos.x, pos.y, pos.z, quat.x, quat.y, quat.z, quat.w, flags | 0,
+                 input | 0];
     while (this._ghostN / GHOST_HZ <= t) {
       const want = this._ghostN / GHOST_HZ;
       const prev = this._prevPose;
@@ -486,8 +503,10 @@ export class Run {
           p[3] + (cur[3] * sgn - p[3]) * u, p[4] + (cur[4] * sgn - p[4]) * u,
           p[5] + (cur[5] * sgn - p[5]) * u, p[6] + (cur[6] * sgn - p[6]) * u,
           // Whichever end of the interval this sample is nearer to. A flag byte
-          // has no midpoint, so it is picked rather than blended.
+          // has no midpoint, so it is picked rather than blended, and neither
+          // has an input byte: half a key is not a key.
           u < 0.5 ? (p[7] | 0) : cur[7],
+          u < 0.5 ? (p[8] | 0) : cur[8],
         ]);
       }
       this._ghostN++;
@@ -526,9 +545,16 @@ export class Run {
    * Advance the run. Returns a list of event strings for sound/HUD:
    * 'cp', 'finish', 'missed'.
    */
-  update(car, nowMs) {
+  update(car, nowMs, input) {
     const events = [];
     const pos = car.pos;
+    // What the driver was pressing this frame, for the ninth value of a ghost
+    // frame. Optional, and remembered rather than required: `noteStep` sees the
+    // same input eight times a frame and is the one place it is definitely the
+    // input the physics used, so a caller that does not pass one - the headless
+    // driver, a test stepping a stub car - simply keeps the last byte instead of
+    // fabricating a zero, which would read as a driver who let go.
+    if (input) this._lastInput = inputByte(input);
 
     const loc = this.course.locate(pos);
     this.s = loc.s;
@@ -546,7 +572,7 @@ export class Run {
                                     pos.z - this._lastPos[2]);
       }
       // Record the ghost at a fixed rate regardless of frame rate.
-      this._recordGhost(pos, car.quat, car.flags());
+      this._recordGhost(pos, car.quat, car.flags(), this._lastInput);
 
       // Gate crossings.
       //
@@ -636,10 +662,13 @@ export class Ghost {
   /**
    * Sample at time t seconds. Returns null past the end.
    *
-   * The pose is interpolated; the flag byte on the end (which lap it was
-   * recorded with - see Run._recordGhost) is taken from the frame we are in,
-   * because it is a state rather than a quantity. Laps recorded before flags
-   * existed are seven wide and simply have none.
+   * The pose is interpolated; the flag and input bytes on the end (see
+   * Run._recordGhost) are taken from the frame we are in, because they are
+   * states rather than quantities. Laps recorded before either existed are
+   * seven or eight wide and simply have none - the replay reads a missing input
+   * byte as "this lap did not record one" and falls back to inferring the
+   * driver's hands from the motion, which is a different thing from a driver
+   * holding nothing.
    */
   at(t) {
     if (!this.frames.length) return null;
@@ -652,6 +681,7 @@ export class Ghost {
                  a[3] + (b[3] - a[3]) * u, a[4] + (b[4] - a[4]) * u,
                  a[5] + (b[5] - a[5]) * u, a[6] + (b[6] - a[6]) * u];
     if (a.length > 7) out.push(a[7]);
+    if (a.length > 8) out.push(a[8]);
     return out;
   }
 }

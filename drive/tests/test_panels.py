@@ -46,9 +46,14 @@ def _fn(src, name):
 
 def _toggles():
     src = open(os.path.join(JS, "game.js")).read()
+    # `toggleRates` is the replay's speed list, closed unconditionally by
+    # `closeOtherPanels`. Lifted rather than stubbed for this file's own reason:
+    # a stub would be a fifth thing that can silently stop matching the real one,
+    # which is exactly what these tests exist to catch.
     return "\n".join(_fn(src, n) for n in
                      ("closeOtherPanels", "toggleMenu", "toggleHelp",
-                      "toggleBoard", "toggleTracks", "toggleSaves"))
+                      "toggleBoard", "toggleTracks", "toggleSaves",
+                      "toggleRates"))
 
 
 # Enough DOM for four overlays and the buttons that light up with them.

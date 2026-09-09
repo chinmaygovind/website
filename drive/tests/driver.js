@@ -167,7 +167,11 @@ function driveLap(slug, opts) {
         car.step(h, use);
       });
     }
-    run.update(car, now);
+    // The input as well as the car, exactly as the frame loop passes it: a
+    // ghost frame's ninth value is what the driver was pressing, and a harness
+    // that mirrors the loop has to mirror that too or every lap driven here is
+    // recorded a value narrower than a lap driven in a browser.
+    run.update(car, now, use);
     if (run.state === 'done') break;
   }
 

@@ -312,26 +312,34 @@ def test_an_attempt_in_a_room_is_not_counted_either():
 
 # --- Escape closes things before it opens one -------------------------------
 
+# Keyed by the real element id rather than by "the board or everything else",
+# because the chain is five deep now and a stub that could only tell two of them
+# apart would answer the same for a panel it had never heard of - which is how a
+# sixth one gets added and quietly tested against nothing.
 ESC_STUB = """
 var did = [];
-var shut = {board: true, tracks: true};
+var shut = {boardOv: true, tracksOv: true, savesOv: true, rateList: true};
 var S = {watch: null, helpOpen: false};
-function $(id) {
-  return {style: {display: shut[id === 'boardOv' ? 'board' : 'tracks'] ? 'none' : ''}};
-}
+function $(id) { return {style: {display: shut[id] === false ? '' : 'none'}}; }
 function stopWatching() { did.push('stopWatching'); }
+function toggleRates(v) { did.push('rates:' + v); }
 function toggleBoard(v) { did.push('board:' + v); }
 function toggleTracks(v) { did.push('tracks:' + v); }
+function toggleSaves(v) { did.push('saves:' + v); }
 function toggleHelp(v) { did.push('help:' + v); }
 function toggleMenu() { did.push('menu'); }
 """
 
 
 @pytest.mark.parametrize("open_what,want", [
-    ("S.watch = {}", "stopWatching"),
-    ("shut.board = false", "board:false"),
-    ("shut.tracks = false", "tracks:false"),
+    # Top of the screen down. The speed menu is inside the replay's own bar, the
+    # four panels are over the road, and the replay is the road.
+    ("S.watch = {}; shut.rateList = false", "rates:false"),
+    ("shut.boardOv = false", "board:false"),
+    ("shut.tracksOv = false", "tracks:false"),
+    ("shut.savesOv = false", "saves:false"),
     ("S.helpOpen = true", "help:false"),
+    ("S.watch = {}", "stopWatching"),
     ("", "menu"),
 ])
 def test_escape_closes_what_is_in_front_of_you_before_opening_settings(open_what, want):
@@ -343,6 +351,32 @@ def test_escape_closes_what_is_in_front_of_you_before_opening_settings(open_what
     ctx.eval(_fn("onEscape"))
     if open_what:
         ctx.eval(open_what + ";")
+    ctx.eval("onEscape();")
+    assert json.loads(ctx.eval("JSON.stringify(did)")) == [want]
+
+
+@pytest.mark.parametrize("panel,want", [
+    ("shut.rateList = false", "rates:false"),
+    ("shut.boardOv = false", "board:false"),
+    ("shut.tracksOv = false", "tracks:false"),
+    ("shut.savesOv = false", "saves:false"),
+    ("S.helpOpen = true", "help:false"),
+])
+def test_a_panel_over_a_replay_closes_before_the_replay_does(panel, want):
+    """The replay used to be first in that chain, and it was right until it
+    stopped being: while watching took the whole HUD away there was nothing that
+    *could* be over a replay, so "innermost" and "only" were the same sentence.
+
+    Now the corner buttons are back and C, J, L and P all work while watching, so
+    Escape over the save-state panel was ending the lap you were watching instead
+    of closing the panel - which is the one thing in that chain a keypress cannot
+    undo.
+    """
+    import json
+    ctx = jsrt.quickjs.Context()
+    ctx.eval(ESC_STUB)
+    ctx.eval(_fn("onEscape"))
+    ctx.eval("S.watch = {}; " + panel + ";")
     ctx.eval("onEscape();")
     assert json.loads(ctx.eval("JSON.stringify(did)")) == [want]
 

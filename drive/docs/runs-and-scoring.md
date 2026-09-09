@@ -138,6 +138,37 @@ recording.
     nothing is claimed *and the mark does not move*, so a corner drilled in
     four-second bites accumulates instead of being thrown away. For an ordinary
     run - one report, from zero - the delta and the total are the same number.
+  - **A slot can be taken from inside a replay, and it is an ordinary slot.**
+    `C` while watching stores the moment of the lap you are looking at as a real
+    save state: stop watching, press `R`, and your car is on the road there at
+    the speed that driver was carrying. The two halves joining up is the whole
+    reason it is worth having - a second kind of slot that could only be watched
+    would be a bookmark pretending to be a save state - so the panel does not
+    label it and nothing downstream asks. Three things have to be *built* rather
+    than copied, because a ghost frame is a pose and a save state is a car:
+    - **The velocity is a central difference** across one frame either side,
+      which is the best a 15Hz recording can answer and a good deal better than
+      either one-sided version at the apex of anything.
+    - **The base is a real `Car.snapshot()` of your own parked car**, with the
+      six fields that say *where and how fast* written over it and the transients
+      cleared by name (a tow, a pad, a bump, a respawn, and `steer`, which is the
+      smoothed angle and is nowhere in a pose). Fabricating the whole dictionary
+      would mean inventing values for twenty fields whose defaults `Car` owns.
+    - **The run is put where the driver's was** - their clock, their checkpoints
+      behind you, `respawnGate` the one they last went through - so `T` works
+      from the moment you land rather than sending you to the line.
+
+    `Run.restore` sets `tainted` on the way back in, so nothing that comes out of
+    this is a lap. That is not a special case; it is the rule every restore has
+    always been under. **Solo only**, like every other slot: on `/race/<id>`
+    `savesEnabled()` is false, `C` does nothing, and the buttons are not drawn.
+  - **Inside a replay, restoring a slot is a seek.** There is no car of yours on
+    the road to put anywhere, so `1`-`9` jump the replay clock to that slot's lap
+    time instead - which works on a slot taken while driving too, since a slot's
+    `ms` is a position on the lap clock whichever side of the screen it was made
+    on. `R` stays the restart there, always: a driver wants the restore twenty
+    times a minute and the restart twice an hour, and watching is the other way
+    round.
   - **A state is pinned to the geometry it was taken on.** Each slot stores
     `tracks.stamp`, which is `moves.fingerprint` (the ribbon, the gates, the
     spawn) **plus the bytes of the track's `scenery.js`** - and that second half
@@ -430,9 +461,39 @@ built thing would only have been a way to be told the wrong answer.)*
   anybody who has not chosen; what a car looks like once they have is **The
   garage** below.
 - **A ghost lights its own brake lights**, because the flag byte is recorded
-  with the pose. A ghost frame is eight values now, not seven, and `pack_ghost`
-  writes the stride into the blob: every lap already on the board is seven
-  wide, still unpacks, and simply has no lamps until it is driven again.
+  with the pose. `pack_ghost` writes the stride into the blob: every lap already
+  on the board is seven wide, still unpacks, and simply has no lamps until it is
+  driven again.
+- **And a ninth value says what the driver was *pressing*, which the eighth
+  cannot.** A ghost frame is nine values now. The flag byte is about the **car** -
+  `FLAG.DRIFT` is a car that is sliding, whether or not anybody asked for it, and
+  there is nothing in it about steering or the throttle at all - so a replay's
+  input display had nowhere to read a driver's hands from. The ninth is
+  `inputByte`: throttle, brake, handbrake, left, right, in **the same five bits
+  the verifier's input stream is written in**, so there is one definition of what
+  a driver's hands are and `test_verify.py` already holds the JS against
+  `runcheck.input_byte`. Five things about it:
+  - **It is recorded, not derived.** `Run.update` takes the frame's input as a
+    third argument and `_recordGhost` picks it at the sample the way it picks the
+    flag byte - half a key is not a key.
+  - **The stride carries it**, so nothing already stored changes shape: 7, 8 and
+    9 all unpack, and `game.js` reads a missing ninth value as *this lap did not
+    record one* rather than as a driver holding nothing. That distinction is the
+    whole of why the pad can say **Estimated** on an old lap instead of quietly
+    showing a coasting car.
+  - **The anti-cheat is not told about it and must not be.** It has its own copy
+    of the inputs at 120Hz, run-length encoded, sent with the run and kept out of
+    the ghost blob on purpose. This one is 15Hz, public, and read only by a
+    replay - a second thing to check against would be a second thing to keep in
+    step for no gain.
+  - **A race replay has none of it**, and never will: `_store_replay` packs the
+    live pose stream, which carries flags and no inputs. `/race/<id>` therefore
+    always shows the inferred pad.
+  - **`tests/driver.js` passes the input too**, because it is a mirror of the
+    frame loop: a harness that did not would record every test lap a value
+    narrower than a lap driven in a browser, and the end-to-end check
+    (`test_a_driven_lap_records_what_the_driver_pressed`) would be asserting on
+    the harness rather than on the game.
 - **A ghost frame is the pose at its own timestamp.** `Run._recordGhost` interpolates
   to exact multiples of `1/GHOST_HZ`. It used to accumulate dt and push a sample every
   time an interval had gone by, which meant the accumulator had to fill before frame 0

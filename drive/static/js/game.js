@@ -14,7 +14,7 @@
 import * as THREE from './vendor/three.module.js';
 import { buildTrack } from './trackmesh.js';
 import { Car, Stepper, FLAG } from './physics.js';
-import { Course, Run, Ghost, GHOST_RATE } from './course.js';
+import { Course, Run, Ghost, GHOST_RATE, IN } from './course.js';
 import { Renderer, CarView } from './render.js';
 import { Sound } from './sound.js';
 
@@ -296,7 +296,14 @@ const touchKeys = new Set();
 const TOUCH_KEYS = {
   tGas: ['up'], tBrake: ['down'], tLeft: ['left'], tRight: ['right'],
 };
+const SLIDE_HYST = 8;            // px past the midpoint before a pad hands over
+const dragOrigin = new Map();    // button id -> where its drag-to-drift is measured from
 const drifting = new Set();      // buttons currently asking for the handbrake
+// The buttons a replay borrows. During one they are lit by the recording rather
+// than by a thumb, so every gesture bound to them is turned off at the door -
+// see `tb`. The four small ones above them stay live, because restarting and
+// jumping to a checkpoint are things you do to a replay too.
+const REPLAY_INERT = new Set(['tGas', 'tBrake', 'tLeft', 'tRight']);
 function syncTouch() {
   touchKeys.clear();
   for (const id of touchDown) for (const k of TOUCH_KEYS[id] || []) touchKeys.add(k);
@@ -721,6 +728,16 @@ function showFirstGoal() {
   if (!forced && S.track.slug !== 'sunrise') return;
   const el = $('firstBanner');
   whenPlayable(() => {
+    // Not over somebody else's lap. `?watch=` is a link somebody was handed, so
+    // it lands on this track as easily as an ordinary visit does - and the one
+    // thing this line is for is saying what the clock in front of you is for,
+    // which during a replay is not your clock.
+    //
+    // **Both halves, and the URL is the load-bearing one.** The replay starts
+    // from a request, so it is a race: the door can open before `/api/ghost`
+    // answers, and on a quick connection it does not. `S.watch` alone was right
+    // about half the time, which is the worst kind of right.
+    if (S.watch || /[?&]watch=/.test(location.search)) return;
     // The flag is spent here and not at boot. Inside a frame the door holds
     // this back for as much as eight seconds, and somebody who closes the tab
     // while it is still up would otherwise have paid their one first visit for
@@ -1006,6 +1023,13 @@ function bindInput() {
   window.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     S.sound.start(); S.sound.resume();
+    // A replay takes the driving keys, because nothing is driving: the arrows
+    // and Space are the transport, and R, T, C, J and the digits mean the same
+    // thing they always did in the only currency the replay has. Everything it
+    // does not claim falls through to the ordinary handlers below - the panels,
+    // the two camera holds, Escape - so watching a lap is not a mode with its
+    // own keyboard, it is the same keyboard pointed at somebody else's lap.
+    if (S.watch && replayKey(e)) return;
     const k = KEYMAP[e.code];
     if (k) { keys.add(k); e.preventDefault(); }
     // R starts the whole run again; T only puts you back on the road at the last
@@ -1127,8 +1151,24 @@ function bindInput() {
   const tb = (id, on, off) => {
     const el = $(id);
     if (!el) return;
-    const down = (e) => { e.preventDefault(); S.sound.start(); on(); el.classList.add('down'); };
-    const up = (e) => { e.preventDefault(); off(); el.classList.remove('down'); };
+    // The four driving buttons are a *readout* during a replay - they light up
+    // with somebody else's hands - so a press has to do nothing at all.
+    // Answered once, here, rather than at each of the six bindings below: the
+    // pedals, the arrows, the drag to drift and the slide between them all end
+    // up writing `touchDown` or `drifting`, and a control that went on working
+    // would be steering a parked car while its own button says the driver in
+    // the replay is turning the other way.
+    const dead = () => !!S.watch && REPLAY_INERT.has(id);
+    const down = (e) => {
+      e.preventDefault(); S.sound.start();
+      if (dead()) return;
+      on(); el.classList.add('down');
+    };
+    const up = (e) => {
+      e.preventDefault();
+      if (dead()) return;
+      off(); el.classList.remove('down');
+    };
     el.addEventListener('touchstart', down, { passive: false });
     el.addEventListener('touchend', up, { passive: false });
     el.addEventListener('touchcancel', up, { passive: false });
@@ -1152,24 +1192,32 @@ function bindInput() {
   const dragDrift = (id) => {
     const el = $(id);
     if (!el) return;
-    let originY = null, tid = null;
     const paint = () => el.classList.toggle('drifting', drifting.has(id));
+    // The origin lives in a map rather than in this closure because the slide
+    // below has to move it: a thumb that goes to the brake and comes back has
+    // travelled a long way down the glass on the way, and handing it back its
+    // old origin would start a slide it never asked for.
+    const st = { originY: null, tid: null };
+    dragOrigin.set(id, st);
     const mine = (e) => {
       const list = e.changedTouches || [];
-      for (const t of list) if (t.identifier === tid) return t;
+      for (const t of list) if (t.identifier === st.tid) return t;
       return null;
     };
     el.addEventListener('touchstart', (e) => {
+      // Bound outside `tb`, so it needs the same door: during a replay this
+      // pedal is a light rather than a control.
+      if (S.watch) return;
       const t = (e.changedTouches || [])[0];
       if (!t) return;
-      tid = t.identifier;
-      originY = t.clientY;
+      st.tid = t.identifier;
+      st.originY = t.clientY;
     }, { passive: false });
     el.addEventListener('touchmove', (e) => {
-      const t = originY == null ? null : mine(e);
-      if (!t) return;
+      const t = st.originY == null ? null : mine(e);
+      if (!t || S.watch) return;
       e.preventDefault();
-      const dy = t.clientY - originY;
+      const dy = t.clientY - st.originY;
       // Two thresholds, so a thumb resting on the boundary does not chatter the
       // handbrake on and off underneath it.
       if (dy >= DRAG_DRIFT) drifting.add(id);
@@ -1181,7 +1229,7 @@ function bindInput() {
     // the system takes away - the car must never be left held sideways by a
     // gesture there is no longer a finger for.
     const end = () => {
-      originY = null; tid = null;
+      st.originY = null; st.tid = null;
       drifting.delete(id);
       syncTouch();
       paint();
@@ -1190,6 +1238,111 @@ function bindInput() {
     el.addEventListener('touchcancel', end, { passive: false });
   };
   dragDrift('tGas');
+  // **Slide between the two buttons of a pad without picking your thumb up.**
+  //
+  // The objection this answers is the one `dragDrift` answers for the handbrake,
+  // one step further on: every way of getting from the throttle to the brake, or
+  // from one arrow to the other, charged the thumb a *release* - lift, find the
+  // other button, land on it - and in the half second that takes, the car is
+  // doing neither. Going from power to brakes at the end of a straight is the
+  // most common transition in the game and it was the one the phone made
+  // hardest.
+  //
+  // **The boundary is the midpoint between the two, on X only.** A touch is
+  // delivered for its whole life to the element it started on, so this cannot be
+  // done with `elementFromPoint` semantics or with the browser's own hit
+  // testing - it is measured. X only because a thumb sliding sideways across the
+  // glass also wanders down it, and a vertical test would drop the press
+  // halfway; and past the outer edge of either button the answer simply stays
+  // that button, which is what a thumb overshooting the brake means.
+  //
+  // `SLIDE_HYST` is what stops a thumb parked on the line chattering the two
+  // under itself - the same problem `DRAG_KEEP` solves for the handbrake, and
+  // the same shape of answer.
+  //
+  // Three things follow from a slide being a press rather than a gesture:
+  // it releases the button it left (including its drift, which belonged to that
+  // button), it does not count as a release for the arrows' double-tap window -
+  // sliding off left and back is a correction, not a request for the handbrake -
+  // and it rebases the drag origin of whatever it lands on, so arriving on the
+  // throttle from below does not arrive already drifting.
+  const slide = (pair) => {
+    // touch identifier -> {from: the button it went down on, at: the one it
+    // holds now}. Keyed by identifier because that is what a browser gives two
+    // thumbs on one pad, and carrying `from` as well because that is the only
+    // thing that says this entry is *this* element's business: a stray release
+    // must never let go of a button a different finger is holding.
+    const held = new Map();
+    const take = (from, to, y, tid) => {
+      touchDown.delete(from); drifting.delete(from);
+      const a = $(from);
+      if (a) a.classList.remove('down', 'drifting');
+      touchDown.add(to);
+      // Arriving is not drifting, and this has to be said rather than assumed:
+      // `dragDrift` is bound before the slide is, so on the very move that hands
+      // the pedal over it has already run - against the origin the thumb went
+      // *down* with, half a screen further up. Without this, sliding back onto
+      // the throttle from the brake arrives with the handbrake on.
+      drifting.delete(to);
+      const b = $(to);
+      if (b) { b.classList.add('down'); b.classList.remove('drifting'); }
+      // Handed the drag as well as the press, so the handbrake is still there
+      // on the pedal the thumb has just arrived at - measured from where it
+      // arrived, not from where it first went down.
+      const st = dragOrigin.get(to);
+      if (st) { st.originY = y; st.tid = tid; }
+      syncTouch();
+    };
+    const at = (x, cur) => {
+      const a = $(pair[0]), b = $(pair[1]);
+      if (!a || !b) return cur;
+      const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+      const mid = (ra.right + rb.left) / 2;
+      if (x < mid - SLIDE_HYST) return pair[0];
+      if (x > mid + SLIDE_HYST) return pair[1];
+      return cur;
+    };
+    for (const id of pair) {
+      const el = $(id);
+      if (!el) continue;
+      el.addEventListener('touchstart', (e) => {
+        if (S.watch) return;
+        for (const t of (e.changedTouches || [])) held.set(t.identifier, { from: id, at: id });
+      }, { passive: false });
+      el.addEventListener('touchmove', (e) => {
+        if (S.watch) return;
+        for (const t of (e.changedTouches || [])) {
+          const h = held.get(t.identifier);
+          if (!h || h.from !== id) continue;
+          const now = at(t.clientX, h.at);
+          if (now === h.at) continue;
+          e.preventDefault();
+          take(h.at, now, t.clientY, t.identifier);
+          h.at = now;
+        }
+      }, { passive: false });
+      // The release has to be of whatever the thumb ended up on, not of the
+      // button it started on: `tb`'s own handler only knows about the second,
+      // so without this a thumb that slid to the brake and lifted would leave
+      // the brake held for the rest of the lap.
+      const end = (e) => {
+        for (const t of (e.changedTouches || [])) {
+          const h = held.get(t.identifier);
+          if (!h || h.from !== id) continue;
+          held.delete(t.identifier);
+          if (h.at === id) continue;      // `tb`'s own handler has this one
+          touchDown.delete(h.at); drifting.delete(h.at);
+          const c = $(h.at);
+          if (c) c.classList.remove('down', 'drifting');
+          syncTouch();
+        }
+      };
+      el.addEventListener('touchend', end, { passive: false });
+      el.addEventListener('touchcancel', end, { passive: false });
+    }
+  };
+  slide(['tBrake', 'tGas']);
+  slide(['tLeft', 'tRight']);
   // An arrow is the one button with two meanings, so it is bound by hand: a
   // press is steering, and a press that lands within DOUBLE_TAP of that same
   // arrow's last release is the handbrake as well, for as long as you keep your
@@ -1380,6 +1533,7 @@ function bindInput() {
   if ($('btnBoard')) $('btnBoard').onclick = () => openBoard();
   $('btnBoardClose').onclick = () => toggleBoard(false);
   $('btnWatchStop').onclick = () => stopWatching();
+  wireTransport();
   renderTrackCards();          // loadTrack has already set the ghost up
   // Everything room-shaped lives behind the hamburger, at every screen size.
   if ($('side')) {
@@ -1979,11 +2133,20 @@ async function watchGhost(row) {
  * nobody's car. The ghost you *chase* off the same endpoint never had this
  * problem, so the two ways of looking at one lap disagreed about whose car it
  * was.
+ *
+ * The splits come through with it and are used rather than re-derived: they are
+ * the times the game stamped as that lap was driven, and `replayGates` only has
+ * to guess when there are none.
  */
 function startWatching(frames, hz, meta) {
   startReplay([{ frames, hz, name: meta.who || 'Replay', color: meta.color,
-                 livery: meta.livery }]);
+                 livery: meta.livery, ms: meta.time_ms, splits: meta.splits }]);
 }
+
+// The playback speeds, slowest first. 0.1 is for one corner's hands and 4 is for
+// finding the corner. A list rather than a range, because a speed you scrubbed
+// to is a speed nobody chose - and because these seven read as numbers.
+const REPLAY_RATES = [0.1, 0.25, 0.5, 1, 1.5, 2, 4];
 
 /**
  * Play these cars back together.
@@ -2003,8 +2166,17 @@ function startReplay(cars, opts = {}) {
     // to its colour, which is exactly the car it was driven in.
     const view = new CarView(S.renderer.scene, c.livery || color);
     view.setLabel(c.name || 'Driver', view.plateColor);
-    return { g: new Ghost(c.frames, c.hz || GHOST_RATE), view, prev: null,
-             name: c.name || 'Driver', color, ms: c.ms };
+    const g = new Ghost(c.frames, c.hz || GHOST_RATE);
+    return { g, view, prev: null, name: c.name || 'Driver', color, ms: c.ms,
+             // When this car went through each checkpoint, in seconds: what T
+             // goes back to, and where the ticks on the scrubber are.
+             gates: replayGates(g, c.splits),
+             // Whether its frames carry the ninth value. A lap driven since the
+             // input byte existed knows what the driver pressed; anything older,
+             // and every race replay - built from the live pose stream, which
+             // has never carried inputs - does not, and the pad says which of
+             // the two it is drawing rather than passing off a guess as a fact.
+             recorded: (c.frames[0] || []).length > 8 };
   });
   if (!built.length) { toast('That replay is empty'); return; }
   S.watch = {
@@ -2013,12 +2185,78 @@ function startReplay(cars, opts = {}) {
     subject: { pos: new THREE.Vector3(), fwd: new THREE.Vector3(0, 0, -1),
                up: new THREE.Vector3(0, 1, 0), speed: 0, grounded: true },
     title: opts.title || null,
+    playing: true,
+    rate: 1,
+    // The last byte the pad drew, so it is only touched when it changes: nine
+    // elements and a class each, sixty times a second, for a byte that moves a
+    // handful of times a corner.
+    shown: -1,
   };
   S.car.frozen = true;
   S.view.setVisible(false);
   document.body.classList.add('watching');
   renderWatchBar();
+  renderRates();
   $('watchBar').style.display = '';
+  // The map is the track rather than the run, so it belongs to a replay as much
+  // as to a lap of your own - and it is what makes the four buttons above it
+  // mean anything. The frame loop returns early for a replay, so the replay
+  // branch draws it, and this is the first one.
+  drawMinimap();
+  syncWatchUi();
+}
+
+/**
+ * When this car passed each checkpoint, in seconds.
+ *
+ * The stored splits are the answer wherever there are any: they are the clock
+ * the game stamped at the moment of each crossing, and nothing derived can beat
+ * that. A race replay has none - `/api/race` carries poses and finishing times
+ * and nothing else - so they are found instead, by walking the recording along
+ * the ribbon and asking where it first got past each gate.
+ *
+ * **Along the ribbon rather than through the gate planes.** `Run.update`'s gate
+ * test needs the car inside a gate's mouth on two consecutive samples, which is
+ * true 120 times a second and not true at 15Hz: a car doing 200 covers most of
+ * four units between frames and would step straight over one. Arclength is
+ * monotone and cannot be missed.
+ */
+function replayGates(ghost, splits) {
+  if (splits && splits.length) return splits.map(ms => ms / 1000);
+  if (!S.course || !S.built) return [];
+  const gates = S.course.checkpoints();
+  if (!gates.length) return [];
+  // Each gate's own distance along the centreline, found once and globally: a
+  // gate is a fixed point rather than a car that was somewhere a moment ago, so
+  // `locate`'s forward-biased window has nothing to offer it.
+  const line = S.built.line, sArr = S.course.s;
+  const gateS = gates.map(g => {
+    let best = 0, bestD = Infinity;
+    for (let i = 0; i < line.length; i++) {
+      const p = line[i].p;
+      const d = (p[0] - g.p[0]) ** 2 + (p[1] - g.p[1]) ** 2 + (p[2] - g.p[2]) ** 2;
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return sArr[best];
+  });
+  // `locate` keeps its hint on the course, and the live car is about to want it
+  // back where it was.
+  const hint = S.course.hint;
+  S.course.resetHint(0);
+  const out = [];
+  const pos = new THREE.Vector3();
+  let next = 0, bestS = 0;
+  for (let i = 0; i < ghost.frames.length && next < gateS.length; i++) {
+    const f = ghost.frames[i];
+    pos.set(f[0], f[1], f[2]);
+    bestS = Math.max(bestS, S.course.locate(pos).s);
+    while (next < gateS.length && bestS >= gateS[next]) {
+      out.push(i / ghost.hz);
+      next++;
+    }
+  }
+  S.course.resetHint(hint);
+  return out;
 }
 
 /** Whose eyes you are watching through, and the buttons to change them. */
@@ -2027,6 +2265,13 @@ function renderWatchBar() {
   if (!w) return;
   const me = w.cars[w.at];
   $('watchWho').textContent = (w.title ? w.title + ' - ' : 'Watching ') + me.name;
+  $('watchTotal').textContent = fmt(w.dur * 1000);
+  // Said once, under the pad, and only where it is not the truth: a lap that
+  // recorded its inputs needs no label, because a pad that never explains itself
+  // is a pad you can believe.
+  const est = $('padEst');
+  if (est) est.style.display = me.recorded ? 'none' : '';
+  drawScrubTicks();
   const bar = $('watchCars');
   if (!bar) return;
   // One car is not a choice of camera, so it is not offered as one.
@@ -2043,12 +2288,41 @@ function renderWatchBar() {
   });
 }
 
+/**
+ * The checkpoints, on the bar.
+ *
+ * They are what makes a scrubber readable: an undifferentiated bar of lap is
+ * something you hunt along, and four ticks turn it into sectors you can aim at.
+ * Taken off the camera car, because in a race replay everybody went through at
+ * a different time and the bar belongs to whoever you are watching.
+ */
+function drawScrubTicks() {
+  const el = $('scrubTicks');
+  const w = S.watch;
+  if (!el || !w) return;
+  const c = w.cars[w.at];
+  el.innerHTML = (w.dur > 0 ? c.gates : []).map(t =>
+    `<i style="left:${(Math.min(t, w.dur) / w.dur * 100).toFixed(3)}%"></i>`).join('');
+}
+
+/** The seven speeds, as buttons. Built once; only the lit one moves after. */
+function renderRates() {
+  const el = $('rateList');
+  if (!el) return;
+  el.innerHTML = REPLAY_RATES.map(r =>
+    `<button class="rate" data-rate="${r}">${r}x</button>`).join('');
+  el.querySelectorAll('[data-rate]').forEach(b => {
+    b.onclick = () => { setReplayRate(parseFloat(b.dataset.rate)); toggleRates(false); };
+  });
+}
+
 /** Move the camera to another car, without moving the clock. */
 function watchFrom(i) {
   const w = S.watch;
   if (!w || !w.cars[i]) return;
   w.at = i;
   w.cars[i].prev = null;      // its speed is measured between frames, so restart it
+  w.shown = -1;
   renderWatchBar();
 }
 
@@ -2060,6 +2334,11 @@ function stopWatching() {
   S.view.setVisible(true);
   document.body.classList.remove('watching');
   $('watchBar').style.display = 'none';
+  toggleRates(false);
+  // The pad holds whatever the last frame lit, and nothing but the class on the
+  // body hides it - so a key left glowing would be sitting there waiting for the
+  // next replay to disagree with it.
+  paintInputs(0);
   // On the replay page there is no run to go back to - the whole page is the
   // replay - so leaving it is leaving the page. Back to the room if the watcher
   // is still in one, which after watching a race from a room they are: leaving
@@ -2075,11 +2354,266 @@ function stopWatching() {
   resetToStart();
 }
 
+/**
+ * The play button, the scrubber and the speed menu.
+ *
+ * **Pointer events and not mouse ones**, because this is the one new control
+ * that has to work under a thumb as well as a cursor, and `setPointerCapture` is
+ * what lets a drag carry on past the ends of a 200px bar - which every drag on
+ * a bar that short does. Without it a scrub that leaves the track stops dead
+ * where the pointer left, which reads as the bar being broken rather than as the
+ * drag being over.
+ *
+ * A drag pauses on the way in and does **not** start playing again on the way
+ * out. You stopped to look at something.
+ */
+function wireTransport() {
+  const play = $('btnPlay');
+  if (play) play.onclick = () => watchPlay(!(S.watch && S.watch.playing));
+  const rate = $('btnRate');
+  if (rate) rate.onclick = () => toggleRates();
+  const bar = $('scrub');
+  if (!bar) return;
+  let dragging = false;
+  const to = (e) => {
+    const w = S.watch;
+    if (!w) return;
+    const r = bar.getBoundingClientRect();
+    const u = r.width > 0 ? (e.clientX - r.left) / r.width : 0;
+    watchSeek(Math.max(0, Math.min(1, u)) * w.dur);
+  };
+  bar.addEventListener('pointerdown', (e) => {
+    if (!S.watch) return;
+    e.preventDefault();
+    dragging = true;
+    S.watch.playing = false;
+    bar.setPointerCapture(e.pointerId);
+    to(e);
+  });
+  bar.addEventListener('pointermove', (e) => { if (dragging) to(e); });
+  const end = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    try { bar.releasePointerCapture(e.pointerId); } catch (err) { /* already gone */ }
+  };
+  bar.addEventListener('pointerup', end);
+  bar.addEventListener('pointercancel', end);
+}
+
+// ---------------------------------------------------------------------------
+// Driving the replay
+// ---------------------------------------------------------------------------
+//
+// A replay used to be a clock that ran and looped, which is all a ghost needs
+// and much less than watching somebody's lap wants: the corner you are trying to
+// see goes past in a fifth of a second, and the only way back to it was to sit
+// through the rest of the lap. So it is a transport now - play, a scrubber and a
+// speed - and those three are one piece of state (`playing`, `t`, `rate`) that
+// everything else reads. Nothing writes `w.t` except `watchSeek` and the one
+// line in `updateWatch` that advances it.
+
+/** Move the clock. Every seek in the game goes through here. */
+function watchSeek(t, opts = {}) {
+  const w = S.watch;
+  if (!w) return;
+  w.t = Math.max(0, Math.min(w.dur, t));
+  // A car's speed is measured from the frame before this one, and a jump has no
+  // frame before it. Left alone it reads the distance jumped as speed, which is
+  // a scrub to the far end heard as an engine at several thousand km/h.
+  for (const c of w.cars) c.prev = null;
+  w.shown = -1;
+  // Landing exactly on the flag with the transport still running would play one
+  // frame and stop again. Arriving at the end is the end.
+  if (w.t >= w.dur && opts.play !== true) w.playing = false;
+  if (opts.play === true) w.playing = true;
+  syncWatchUi();
+}
+
+function watchPlay(on) {
+  const w = S.watch;
+  if (!w) return;
+  // Play at the flag starts it again, which is what the button looks like it
+  // should do. The alternative is a button that does nothing.
+  if (on && w.t >= w.dur - 1e-6) { watchSeek(0, { play: true }); return; }
+  w.playing = !!on;
+  syncWatchUi();
+}
+
+function setReplayRate(r) {
+  const w = S.watch;
+  if (!w) return;
+  w.rate = r;
+  syncWatchUi();
+}
+
+/** Up and down the seven, rather than to the nearest round number. */
+function stepReplayRate(dir) {
+  const w = S.watch;
+  if (!w) return;
+  const i = REPLAY_RATES.indexOf(w.rate);
+  const j = Math.max(0, Math.min(REPLAY_RATES.length - 1, (i < 0 ? 3 : i) + dir));
+  setReplayRate(REPLAY_RATES[j]);
+  toast(REPLAY_RATES[j] + 'x');
+}
+
+function toggleRates(force) {
+  const el = $('rateList');
+  if (!el) return;
+  const on = force != null ? force : el.style.display === 'none';
+  el.style.display = on ? '' : 'none';
+  const b = $('btnRate');
+  if (b) b.classList.toggle('on', on);
+}
+
+/**
+ * The bar, brought up to date with the state above it.
+ *
+ * One function rather than each caller touching whatever it happens to have
+ * changed, for `syncPaused`'s reason: the transport is three pieces of state
+ * with six ways in, and a play button that is a lie because one of them forgot
+ * is the failure this shape cannot have.
+ */
+function syncWatchUi() {
+  const w = S.watch;
+  if (!w) return;
+  const at = Math.min(w.t, w.dur);
+  $('watchClock').textContent = fmt(at * 1000);
+  const pct = (w.dur > 0 ? at / w.dur * 100 : 0).toFixed(3) + '%';
+  const fill = $('scrubFill');
+  if (fill) fill.style.width = pct;
+  const sc = $('scrub');
+  if (sc) {
+    // The knob rides a custom property rather than its own `left`, so the fill
+    // and the thing on the end of it are one number and cannot come apart.
+    sc.style.setProperty('--at', pct);
+    sc.setAttribute('aria-valuenow', at.toFixed(2));
+    sc.setAttribute('aria-valuetext', fmt(at * 1000));
+  }
+  const play = $('btnPlay');
+  if (play) {
+    play.classList.toggle('paused', !w.playing);
+    play.title = w.playing ? 'Pause (Space)' : 'Play (Space)';
+  }
+  const rate = $('rateNow');
+  if (rate) rate.textContent = w.rate + 'x';
+  const list = $('rateList');
+  if (list) list.querySelectorAll('[data-rate]').forEach(b =>
+    b.classList.toggle('on', parseFloat(b.dataset.rate) === w.rate));
+}
+
+/** T, on a replay: back to the last checkpoint the driver has been through. */
+function watchLastCheckpoint() {
+  const w = S.watch;
+  if (!w) return;
+  const gates = w.cars[w.at].gates;
+  // A moment before now, or pressing it while going through a checkpoint would
+  // land on the one you are standing on and travel nowhere.
+  let to = 0;
+  for (const g of gates) if (g < w.t - 0.25) to = g;
+  watchSeek(to);
+}
+
+/**
+ * What the driver's hands were doing at this frame.
+ *
+ * A lap driven since the ninth value knows, and this is simply that byte. Any
+ * older lap, and every race replay, has to be read off the car instead - which
+ * is an inference rather than a record, and is why the pad says so underneath.
+ *
+ *  - **Brake** is the flag byte, the one input that was already recorded.
+ *  - **Throttle** is not braking and moving, the same rule the engine note has
+ *    used since a replay first made a noise: there is no third thing a car on
+ *    the road can be doing, and a coast through a corner reads as a lift for
+ *    exactly as long as it lasts.
+ *  - **The handbrake** is `FLAG.DRIFT`, which is the car sliding rather than the
+ *    key being down. Those are the same thing often enough to be worth drawing
+ *    and different often enough that this is the half of the pad an old lap gets
+ *    most wrong.
+ *  - **Steering** is how fast the car is turning about its own vertical, which
+ *    is the only place it is written down at all. The deadband keeps a straight
+ *    from flickering, and below walking pace it is left alone: a stationary car
+ *    turning on its own axis is not a driver steering.
+ */
+function inputsOf(car, f, dt) {
+  if (car.recorded) return f[8] | 0;
+  const fl = f[7] | 0;
+  let b = 0;
+  const speed = car.spd || 0;
+  if (fl & FLAG.BRAKE) b |= IN.BRAKE;
+  else if (speed > 3) b |= IN.THROTTLE;
+  if (fl & FLAG.DRIFT) b |= IN.HANDBRAKE;
+  if (car.prevFwd && car.fwdNow && car.upNow && speed > 2 && dt > 1e-4) {
+    // Signed yaw about the car's own up axis, so a corner taken upside down on
+    // Rainbow Road reads the way the driver's hands did.
+    const cross = new THREE.Vector3().crossVectors(car.prevFwd, car.fwdNow);
+    const sin = Math.max(-1, Math.min(1, cross.length()));
+    const rate = Math.asin(sin) * (cross.dot(car.upNow) < 0 ? -1 : 1) / dt;
+    if (rate > 0.35) b |= IN.LEFT;
+    else if (rate < -0.35) b |= IN.RIGHT;
+  }
+  return b;
+}
+
+/**
+ * Light the keys.
+ *
+ * Both pads at once and unconditionally: the desktop pad and the phone's pedals
+ * are two drawings of one byte, and which of them is on the screen is a media
+ * query's business rather than this function's. Cheap, because the caller only
+ * calls it when the byte moves.
+ */
+function paintInputs(b) {
+  for (const [id, bit] of INPUT_KEYS) {
+    const el = $(id);
+    if (el) el.classList.toggle('on', !!(b & bit));
+  }
+  // Amber for the drift, for the reason the touch button goes amber while you
+  // are driving: it is the driver asking for something different, and a slide in
+  // the same colour as a held throttle is a slide you cannot see.
+  //
+  // The space bar is the handbrake, so it goes amber whenever the bit is set.
+  // The phone's three are not - they are the throttle and the two arrows, which
+  // is where the *gestures* live - so each goes amber only while it is also
+  // being held, which is exactly what it looks like under a real thumb. Without
+  // the second half, one held handbrake lights both arrows at once and the pad
+  // says the driver is turning two ways.
+  const drift = !!(b & IN.HANDBRAKE);
+  const sp = $('kSpace');
+  if (sp) sp.classList.toggle('drifting', drift);
+  for (const [id, bit] of DRIFT_LIT) {
+    const el = $(id);
+    if (el) el.classList.toggle('drifting', drift && !!(b & bit));
+  }
+}
+
+// Which element each bit lights. The phone's pedals and arrows are in the same
+// list: during a replay they are a readout of somebody else's hands rather than
+// controls, and `bindInput` refuses to write `touchDown` while `S.watch` is up,
+// so what is left of them is exactly this class.
+const INPUT_KEYS = [
+  ['kUp', IN.THROTTLE], ['kDown', IN.BRAKE], ['kLeft', IN.LEFT], ['kRight', IN.RIGHT],
+  ['kSpace', IN.HANDBRAKE],
+  ['tGas', IN.THROTTLE], ['tBrake', IN.BRAKE], ['tLeft', IN.LEFT], ['tRight', IN.RIGHT],
+];
+// The phone's three, with the bit each has to be holding to go amber. The space
+// bar is not in here: it *is* the handbrake, so it has no second condition.
+const DRIFT_LIT = [['tGas', IN.THROTTLE], ['tLeft', IN.LEFT], ['tRight', IN.RIGHT]];
+
 /** Advance the replay and point the camera at whoever it is following. */
 function updateWatch(dt) {
   const w = S.watch;
-  w.t += dt;
-  if (w.t > w.dur) { w.t = 0; for (const c of w.cars) c.prev = null; }
+  // The playback rate lives here and nowhere else: everything downstream - the
+  // camera, the engine, the clock on the bar - reads `w.t`, so slowing the
+  // replay down is one multiplication rather than a rate that every one of them
+  // has to remember to divide by.
+  const step = w.playing ? dt * w.rate : 0;
+  if (step) {
+    w.t += step;
+    // It stops at the flag rather than looping. A bar that never stops moving
+    // cannot be read, and a replay that starts itself again is one you have to
+    // catch. Play, or R, puts it back on the line.
+    if (w.t >= w.dur) { w.t = w.dur; w.playing = false; }
+  }
   for (let i = 0; i < w.cars.length; i++) {
     const c = w.cars[i];
     const f = c.g.at(w.t);
@@ -2099,7 +2633,13 @@ function updateWatch(dt) {
       const s = w.subject;
       // The camera wants a speed and a frame to orbit in, which a replay does
       // not carry - so both are read back off the motion itself.
-      s.speed = c.prev ? p.distanceTo(c.prev) / Math.max(1e-3, dt) : 0;
+      //
+      // **Divided by the rate**, which is the difference between a speed and a
+      // distance per frame. At 0.25x the car covers a quarter of the ground in
+      // the same second, so without this every number downstream - the camera's
+      // pull-back and the engine note both - would say the car had slowed down.
+      // What slowed down is the film.
+      s.speed = c.prev ? p.distanceTo(c.prev) / Math.max(1e-3, dt * w.rate) : 0;
       s.pos.copy(p);
       s.fwd.set(0, 0, -1).applyQuaternion(q);
       s.up.set(0, 1, 0).applyQuaternion(q);
@@ -2118,10 +2658,18 @@ function updateWatch(dt) {
                      !(fl & FLAG.BRAKE) && s.speed > 3 ? 1 : 0,
                      (fl & FLAG.DRIFT) ? 0.6 : 0,
                      !!(fl & FLAG.AIR));
+      // What the pad needs and the pose does not carry, kept on the car so that
+      // `inputsOf` is a pure reading of it.
+      c.spd = s.speed;
+      c.prevFwd = c.fwdNow || null;
+      c.fwdNow = s.fwd.clone();
+      c.upNow = s.up.clone();
+      const b = inputsOf(c, f, dt * w.rate);
+      if (b !== w.shown) { w.shown = b; paintInputs(b); }
     }
     c.prev = p.clone();
   }
-  $('watchClock').textContent = fmt(w.t * 1000);
+  syncWatchUi();
 }
 
 /**
@@ -2516,6 +3064,13 @@ function onQualStart(d) {
  * the answer to "why did nothing happen" is that you have not set off yet.
  */
 function restartRun() {
+  // The same button, the same key, and the same sentence about what it means:
+  // start this again from the beginning. Nothing below applies to a replay -
+  // there is no race to protect and no run to throw away - so it is answered
+  // here rather than at each of the four doors (R, the HUD button, the phone's
+  // button and Retry), which is what stops the phone growing its own idea of
+  // what restart means during a replay.
+  if (S.watch) { watchSeek(0, { play: true }); return; }
   if (!S.started) return;
   if (restartCostsARace() && !armRestart()) return;
   disarmRestart();
@@ -2582,6 +3137,10 @@ function disarmRestart() {
  * `Run.update` keeps the car's respawn target pinned to the last gate reached.
  */
 function backToCheckpoint() {
+  // On a replay the last checkpoint is one the *driver* went through, so this is
+  // a seek rather than a respawn: same key, same button, same meaning - back to
+  // the start of the bit you are trying to watch.
+  if (S.watch) { watchLastCheckpoint(); return; }
   if (!S.started) return;
   S.car.requestRespawn();
 }
@@ -2718,6 +3277,7 @@ function slotName(s) { return s.name || s.label || ''; }
 /** C: freeze where you are into the next free slot. */
 function saveState() {
   if (!savesEnabled()) return;
+  if (S.watch) { saveFromReplay(); return; }
   // Nothing to save before the clock starts, and silent about it - the same
   // rule and the same reasoning as R and T. See `restartRun`.
   if (!S.started || !S.run || S.run.state !== 'running') return;
@@ -2746,6 +3306,102 @@ function saveState() {
 }
 
 /**
+ * C, watching somebody's lap: a slot at this moment of the replay.
+ *
+ * **It is an ordinary slot, and that is the point.** The panel does not label it
+ * as a replay one and nothing downstream asks: watch the corner you keep losing,
+ * press C, stop watching, press R, and your car is on the road there at the
+ * speed they were carrying. The whole reason the feature is worth having on a
+ * replay is that the two halves join up, and a second kind of slot that could
+ * only be watched would be a bookmark pretending to be a save state.
+ *
+ * Three things have to be built rather than copied, because a ghost frame is a
+ * pose and a save state is a car.
+ *
+ *  - **Velocity is a central difference** across one frame either side, which is
+ *    the best a 15Hz recording can answer and is a good deal better than either
+ *    one-sided version at the apex of anything. The frames it reads are
+ *    `Ghost.at`'s interpolated ones, so it works at the ends of the lap too.
+ *  - **The base is a real snapshot of your own car**, taken while it sits parked
+ *    for the replay, with the six fields that say *where and how fast* written
+ *    over it. Fabricating the whole dictionary would be inventing values for
+ *    twenty fields whose defaults `Car` owns, and every one of them is a place
+ *    for the two to drift apart. The transient ones are cleared by name.
+ *  - **The run is put where the driver's was**: the clock reads what their clock
+ *    read, the checkpoints behind them are behind you, and `respawnGate` is the
+ *    one they last went through - so T works from the moment you land.
+ *
+ * `Run.restore` sets `tainted` on the way back in, so nothing that comes out of
+ * this is a lap. That is not a special case for replays; it is the rule every
+ * restore has always been under.
+ */
+function saveFromReplay() {
+  const w = S.watch;
+  if (S.saves.length >= MAX_SLOTS) {
+    toast('All ' + MAX_SLOTS + ' slots full - clear one with J');
+    return;
+  }
+  const c = w.cars[w.at];
+  const f = c.g.at(w.t);
+  if (!f) return;
+  const h = 1 / (c.g.hz || GHOST_RATE);
+  const a = c.g.at(Math.max(0, w.t - h)), b = c.g.at(Math.min(w.dur, w.t + h));
+  const span = Math.min(w.dur, w.t + h) - Math.max(0, w.t - h);
+  const vel = span > 1e-6
+    ? [(b[0] - a[0]) / span, (b[1] - a[1]) / span, (b[2] - a[2]) / span]
+    : [0, 0, 0];
+  const car = S.car.snapshot();
+  car.pos = [f[0], f[1], f[2]];
+  car.quat = [f[3], f[4], f[5], f[6]];
+  car.vel = vel;
+  car.speed = Math.hypot(vel[0], vel[1], vel[2]);
+  car.grounded = !((f[7] | 0) & FLAG.AIR);
+  // Nothing carried is theirs to give: a tow, a pad, a bump and a respawn are
+  // all states of a car in a session, and this car is about to be put on the
+  // road in a different one. `steer` is zero for the same reason - it is the
+  // *smoothed* angle, which the physics rebuilds within a few steps of the first
+  // input, and there is nowhere in a pose it could be read from.
+  car.steer = 0; car.slip = 0; car.slipCharge = 0; car.slipBoost = 0;
+  car.padBoost = 0; car.catchupBoost = 0; car.bumpSlip = 0; car.bumpLean = 0;
+  car.bumpTimer = 0; car.bounceLock = 0; car.respawnIn = 0; car.towed = false;
+  car.braking = !!((f[7] | 0) & FLAG.BRAKE);
+  car.frozen = false;
+  car.respawn = null;
+  car.tick = Math.round(w.t * 120);
+  const cps = S.course.checkpoints();
+  const done = c.gates.filter(t => t <= w.t + 1e-6);
+  const run = S.run.snapshot();
+  run.time = Math.round(w.t * 1000);
+  run.splits = done.map(t => Math.round(t * 1000));
+  run.nextCp = Math.min(cps.length, done.length);
+  run.missed = false;
+  run.wrongWay = false;
+  run.lastPos = [f[0], f[1], f[2]];
+  run.sides = [];
+  run.hint = S.course.locate(new THREE.Vector3(f[0], f[1], f[2])).idx;
+  run.bestS = S.course.s[run.hint];
+  run.respawnGate = run.nextCp > 0
+    ? S.course.gates.indexOf(cps[run.nextCp - 1])
+    : S.course.gates.indexOf(S.course.startGate());
+  run.stepIndex = car.tick;
+  S.saves.push({
+    car, run,
+    // The lap you are chasing, put where the lap you are watching has got to.
+    // The same rule a slot taken while driving follows: what is useful is that
+    // the ghost is the same distance up the road, not that it is the same
+    // recording.
+    ghost: { t: w.t, mode: S.ghostMode },
+    label: autoLabel(run),
+    ms: run.time,
+    stamp: (S.track && S.track.stamp) || null,
+  });
+  S.saveActive = S.saves.length - 1;
+  persistSaves();
+  renderSaves();
+  toast('Saved to Slot ' + S.saves.length + '  ' + fmt(run.time));
+}
+
+/**
  * R, or a digit: back to a slot.
  *
  * The ordering here is the one thing that has to be right. Everything driven
@@ -2761,6 +3417,17 @@ function restoreState(i) {
   if (saveIsStale(s)) {
     toast('That state is from an older version of this track');
     return false;
+  }
+  // Inside a replay a slot is a moment rather than a car: there is no car of
+  // yours on the road to put anywhere, and jumping the clock to the same point
+  // of the lap is the same request answered in the only currency there is here.
+  // It works on a slot taken while driving too - a slot's `ms` is a position on
+  // the lap clock whichever side of the screen it was made on.
+  if (S.watch) {
+    watchSeek((s.ms || 0) / 1000);
+    toast('Slot ' + (i + 1) + '  ' + fmt(s.ms || 0) +
+          (slotName(s) ? '  ' + slotName(s) : ''));
+    return true;
   }
   reportActivity('practice restore');
   S.saveActive = i;
@@ -2804,6 +3471,12 @@ function restoreState(i) {
  * whole point of the feature is not driving the lap again.
  */
 function restartOrRestore(deactivate) {
+  // **R is always the restart during a replay**, whatever is in the slots. The
+  // split below exists because a driver wants the restore twenty times a minute
+  // and the restart twice an hour; watching is the other way round - the thing
+  // you keep doing is watching the lap again - and a slot is reached with its
+  // own digit anyway.
+  if (S.watch) { restartRun(); return; }
   if (S.saveActive >= 0 && savesEnabled()) {
     if (deactivate) deactivateSave();
     else restoreState(S.saveActive);
@@ -3045,18 +3718,29 @@ function hostStart() {
 /**
  * Escape (or O): close whatever is in front of me.
  *
- * Innermost first - a replay, then a panel opened from another panel, then the
- * panel itself - and only when there is nothing left does it mean "open
- * settings". The controls sheet was missing from that list, so pressing Escape
- * while reading it opened settings on top of it: the one key everybody presses
- * to get out of something put something else in the way.
+ * Innermost first - the speed menu, then any panel, then the replay under all of
+ * it - and only when there is nothing left does it mean "open settings". The
+ * controls sheet was missing from that list, so pressing Escape while reading it
+ * opened settings on top of it: the one key everybody presses to get out of
+ * something put something else in the way.
+ *
+ * **The replay used to be first, and that was right until it stopped being.**
+ * While watching took the whole HUD away there was nothing that could be over a
+ * replay, so "a replay is the innermost thing" and "a replay is the only thing"
+ * were the same sentence. Now the corner buttons are back and C, J, L and P all
+ * work while watching, so a panel opened from inside a replay is genuinely on
+ * top of it - and with `S.watch` first, Escape over the save-state panel did not
+ * close the panel, it **ended the lap you were watching**, which is a keypress
+ * that cannot be undone. The panels go above it and the order is now what the
+ * screen looks like, top to bottom.
  */
 function onEscape() {
-  if (S.watch) stopWatching();
+  if ($('rateList') && $('rateList').style.display !== 'none') toggleRates(false);
   else if ($('boardOv').style.display !== 'none') toggleBoard(false);
   else if ($('tracksOv').style.display !== 'none') toggleTracks(false);
   else if ($('savesOv').style.display !== 'none') toggleSaves(false);
   else if (S.helpOpen) toggleHelp(false);
+  else if (S.watch) stopWatching();
   else toggleMenu();
 }
 
@@ -3067,6 +3751,42 @@ function readInput() {
   input.steer = (on('right') ? 1 : 0) - (on('left') ? 1 : 0);
   input.handbrake = on('drift');
   return input;
+}
+
+/**
+ * The keys a replay claims, or false if this is not one of them.
+ *
+ * The transport is the driving keys, which is not a coincidence: they are the
+ * ones a hand is already on, they are free because nothing is being driven, and
+ * every one of them means the same kind of thing it means on the road - the
+ * arrows move you through the lap, Space is the one you hold, and R, T, C and J
+ * are still restart, last checkpoint, save and the panel.
+ *
+ * **It returns true for what it took**, so the caller can stop: R, T, C, J and
+ * the digits are handled again forty lines further down for a driver, and the
+ * two answers are different. Everything it does not claim - H, K, L, O, P, M,
+ * Escape, and the Q and F camera holds - falls through untouched.
+ *
+ * Comma and full stop are the video-editor pair, and one frame is one *ghost*
+ * frame (1/15s) rather than one rendered one: the recording has no state between
+ * its own samples, so a smaller step would be the same picture twice.
+ */
+function replayKey(e) {
+  const w = S.watch;
+  const h = 1 / (w.cars[w.at].g.hz || GHOST_RATE);
+  switch (e.code) {
+    case 'Space': e.preventDefault(); watchPlay(!w.playing); return true;
+    // Seeking pauses, which is what a scrubber does: you moved the film to look
+    // at something, and having it run on from where you stopped is the thing
+    // taking the picture away again.
+    case 'ArrowLeft': case 'KeyA': e.preventDefault(); watchSeek(w.t - 5); return true;
+    case 'ArrowRight': case 'KeyD': e.preventDefault(); watchSeek(w.t + 5); return true;
+    case 'ArrowUp': case 'KeyW': e.preventDefault(); stepReplayRate(1); return true;
+    case 'ArrowDown': case 'KeyS': e.preventDefault(); stepReplayRate(-1); return true;
+    case 'Comma': e.preventDefault(); watchSeek(w.t - h); return true;
+    case 'Period': e.preventDefault(); watchSeek(w.t + h); return true;
+    default: return false;
+  }
 }
 
 /**
@@ -3193,6 +3913,11 @@ function frame(now) {
     // still going round out there, but a camera on somebody else's lap is not
     // where any of it is happening, so hearing it from here would be noise.
     S.sound.rivals(null);
+    // `updateHud` is below the early return and none of it is true here, but the
+    // map is: it is the track and where the cars on it are, which is exactly as
+    // true of somebody else's lap as of your own. So the replay draws the one
+    // piece of the HUD it has kept.
+    drawMinimap();
     S.renderer.render(dt);
     return;
   }
@@ -3302,7 +4027,9 @@ function frame(now) {
   if (S.built.movers) S.built.movers.place(S.car ? S.car.tick : 0);
 
   // run bookkeeping
-  const events = S.run.update(S.car, now);
+  // The input goes in as well as the car: a ghost frame's ninth value is what
+  // the driver was pressing, which no amount of looking at the car can recover.
+  const events = S.run.update(S.car, now, inp);
   for (const e of events) {
     if (e === 'cp') {
       S.sound.checkpoint();
@@ -3850,6 +4577,26 @@ function drawMinimap() {
     const [x, y] = mm(p);
     g.beginPath(); g.arc(x, y, r, 0, 7); g.fillStyle = color; g.fill();
   };
+  // During a replay the dots are the cars in it and your own parked car is not
+  // one of them - it is sitting on the line with nobody in it, and a dot for it
+  // would be the one car on the map that is not in the lap you are watching.
+  // The one the camera is on is drawn last and larger, the same way your own car
+  // is when you are driving: the map's job is "where am I", and in a replay
+  // "I" is whoever you are watching.
+  if (S.watch) {
+    const w = S.watch;
+    w.cars.forEach((c, i) => {
+      if (i === w.at || !c.view.group.visible) return;
+      const p = c.view.group.position;
+      dot([p.x, 0, p.z], c.color, 3);
+    });
+    const me = w.cars[w.at];
+    if (me.view.group.visible) {
+      const p = me.view.group.position;
+      dot([p.x, 0, p.z], me.color, 4.2);
+    }
+    return;
+  }
   for (const r of S.remotes.values()) dot([r.pos.x, 0, r.pos.z], r.color, 3);
   dot([S.car.pos.x, 0, S.car.pos.z], CFG.me ? CFG.me.color : '#fff', 4.2);
 }
@@ -4440,6 +5187,12 @@ function closeOtherPanels(keep) {
   if (keep !== 'board' && $('boardOv').style.display !== 'none') toggleBoard(false);
   if (keep !== 'tracks' && $('tracksOv').style.display !== 'none') toggleTracks(false);
   if (keep !== 'saves' && $('savesOv').style.display !== 'none') toggleSaves(false);
+  // The replay's speed list, unconditionally: it is never the thing being kept,
+  // because no panel key opens it. It is a dropdown rather than a sheet, so it
+  // would sit *underneath* whatever opened over it and come back when that
+  // closed - which is the exact failure this function exists to prevent, in the
+  // one shape that is invisible while it is happening.
+  toggleRates(false);
 }
 
 function toggleMenu(force) {

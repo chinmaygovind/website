@@ -393,7 +393,11 @@ than 15% or move a corner more than 8 degrees before refusing.
   `tools/snapshot_tracks.py` (proof that a refactor moved no geometry). The play
   page has three modes - `solo`, `room` and `replay` - and they are one template
   and one `game.js`, because a replay is a track, some cars and a clock and that
-  is what the game already draws.
+  is what the game already draws. **A replay is a transport now** - play, a
+  scrubber with the checkpoints ticked on it, seven playback speeds, the map and
+  its four buttons, and a pad showing what the driver was pressing - so watching
+  hides what is about *your run* and keeps what is about the track and the
+  recording. `docs/hud-and-controls.md`.
 
 ## The rules that hold everywhere in Drive
 
@@ -411,7 +415,10 @@ than 15% or move a corner more than 8 degrees before refusing.
   saves where you are, `R` puts you back, `Shift+R` deactivates the slot and
   hands `R` back its old meaning, and a tainted run reaches no board, medal, PB
   or ghost - but its minutes and kilometres still count, the same split a room
-  lap gets. Solo only. `docs/runs-and-scoring.md`.
+  lap gets. Solo only. **`C` works from inside a replay too**, and makes an
+  ordinary slot: watch a corner, press `C`, stop watching, press `R`, and you are
+  on the road there at the speed that driver was carrying.
+  `docs/runs-and-scoring.md`.
 - **A lap that would place in the top 3 is re-driven on the server before it goes
   on the board**, through the real `Car.step` in QuickJS, against the input stream
   and the anchors the client recorded (`verify.py`). It waits in
@@ -447,6 +454,15 @@ than 15% or move a corner more than 8 degrees before refusing.
   of the login one. **Outside a portal only** - in a portal there is no
   account of ours to make, so that link stays "Sign in" and the register form
   is not in the page at all. `tests/test_app.py` pins both.
+- **A ghost frame is nine values: a pose, the car's flag byte, and the driver's
+  input byte.** The last two are different facts and neither implies the other -
+  `FLAG.DRIFT` is a car that is *sliding*, and there is nothing in that byte
+  about steering or the throttle at all. The input byte is `inputByte`, the same
+  five bits the anti-cheat's own 120Hz input stream uses, so there is one
+  definition of a driver's hands. `pack_ghost` writes the stride, so every lap
+  already on the board (seven or eight wide) still unpacks and a replay of it
+  says so rather than showing a driver holding nothing.
+  `docs/runs-and-scoring.md`.
 - **Nothing cosmetic may touch the simulation** - not ride height, not `CAR_RADIUS`,
   not the wheel radius, not a gram of mass. A cosmetic that changed how the car
   drives would make every time on the board mean something different.
@@ -498,7 +514,7 @@ than 15% or move a corner more than 8 degrees before refusing.
   on the nav's paper untiled, while the app icons are painted over `--paper`
   because iOS mattes a transparent apple-touch-icon onto black and Android crops
   a maskable icon to a circle.
-- Tests: `scripts/tests.sh drive` - 2,001 tests in about 23s, as **one pytest
+- Tests: `scripts/tests.sh drive` - 2,085 tests in about 23s, as **one pytest
   process per test file** rather than under xdist, which cannot work here at all
   (`eventlet.monkey_patch()` vs execnet's threads - see `docs/testing.md`). A
   third of that is the anti-cheat driving real laps and re-driving them, which is

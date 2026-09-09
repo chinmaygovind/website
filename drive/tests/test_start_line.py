@@ -118,7 +118,10 @@ def _frame_loop():
     """The function that starts the clock, sliced out of game.js."""
     src = open(GAME_JS).read()
     i = src.index("S.run.start(now)")
-    j = src.index("const events = S.run.update(S.car, now)")
+    # Without the closing paren: `update` takes the frame's input as well now,
+    # for the ghost's ninth value, and this slice is about the *order* of the
+    # three calls rather than about their arguments.
+    j = src.index("const events = S.run.update(S.car, now")
     assert i < j, "the frame loop no longer starts the clock before it updates"
     return src[i - 2000:j]
 

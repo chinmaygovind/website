@@ -1143,6 +1143,19 @@ body.touch .touch-only { display: table; }
 .room-only { display: none; }
 body.room .room-only { display: table-row; }
 body.room .solo-only { display: none; }
+/* Which lap you drive against is not a question a replay has: there is no run
+   of yours in one, so both halves of that row describe nothing. The rest of the
+   sheet - the sound, the music, the two ways out - is as true while watching as
+   while driving, which is why the sheet is reachable at all. */
+body.watching .splits-row { display: none; }
+/* Watching is not driving, so the Controls sheet stops describing the driving.
+   The same mechanism as the two pairs above it, and the third question the sheet
+   asks: which device, which session, and whether you have a car. */
+.watch-only { display: none; }
+body.watching .drive-only { display: none; }
+body.watching .watch-only { display: table; }
+body.watching.touch .keys-only.watch-only { display: none; }
+body:not(.touch) .touch-only.watch-only { display: none; }
 .sheet .controls { margin: 0; }
 
 .overlay {
@@ -1380,21 +1393,218 @@ body.room .solo-only { display: none; }
 @media (max-width: 480px) { .tgrid { grid-template-columns: 1fr; } }
 
 /* --- watching a replay ---------------------------------------------------
-   Everything on the HUD is about your run, and during a replay none of it is
-   true, so all of it goes and this is what is left. */
-body.watching .hud-bc, body.watching .hud-bl, body.watching .hud-tr,
-body.watching #touch, body.watching #startHint { display: none; }
+   What goes is what is about *your run*: the clock, the delta, your personal
+   best, the speed. What stays is what is about the track and the recording -
+   the map, the four session buttons over it, and the panels in the top right,
+   which are as openable while watching as while driving.
+
+   The pedals stay too, and stop being controls: during a replay they are lit by
+   the recording rather than by a thumb (`bindInput` refuses to write `touchDown`
+   while `S.watch` is up), so what is on the screen is a readout of somebody
+   else's hands in the shape the reader's own hands know. */
+body.watching .hud-bc, body.watching #startHint { display: none; }
+/* The pad is a replay's, and only a desktop's - the phone has the pedals, which
+   are the same byte in the shape that phone's own hands use. */
+.hud-br { display: none; }
+body.watching .hud-br {
+  display: flex; flex-direction: column; align-items: flex-end; gap: .3rem;
+  position: absolute; right: 14px; bottom: 14px;
+}
+body.touch .hud-br { display: none !important; }
 #watchBar {
   position: fixed; z-index: 40; left: 50%; transform: translateX(-50%);
   bottom: calc(20px + env(safe-area-inset-bottom, 0px));
-  max-width: min(94vw, 900px);
-  display: flex; flex-direction: column; align-items: center; gap: .5rem;
+  width: min(94vw, 900px);
+  /* The bar shares the floor of the screen with two corners that now have
+     things in them, so it is sized off what is left rather than off the
+     viewport: 900px centred on a 1280px screen runs straight through the
+     minimap on one side and the input pad on the other. Below about 980 there
+     is nothing to clear, because the layouts that bring the map up out of the
+     corner have already fired. */
+  display: flex; flex-direction: column; align-items: stretch; gap: .5rem;
   background: var(--hud); color: #fff; border: 1px solid var(--hud-line);
   border-radius: 22px; padding: .5rem .7rem;
   backdrop-filter: blur(6px); font-family: var(--sans);
 }
-.watch-head { display: flex; align-items: center; gap: .8rem; padding-left: .5rem; }
+/* The bar shares the floor with the map in one corner and the pad in the other,
+   so on a desktop it is sized off what is left rather than off the viewport -
+   at every width, not past a breakpoint. 900px centred on a 1280px screen runs
+   straight through both of them, and a breakpoint only moved where that
+   happened. The floor is what stops a narrow window shrinking it to a stub
+   instead: below about 800px the three do not fit whatever this says, and a
+   readable bar with 20px of overlap beats an unreadable one without. */
+body:not(.touch) #watchBar {
+  width: clamp(280px, calc(100vw - 560px), 900px);
+}
+.watch-head {
+  display: flex; align-items: center; gap: .8rem; padding-left: .5rem;
+  justify-content: center;
+}
+/* On a phone the corners belong to the thumbs, and the bar has to sit between
+   them rather than over them - the play button was underneath the left steering
+   arrow, which is the worst place on the screen to put the one control the bar
+   is for. The inset is the pad's own width, written the same way the pad writes
+   it (`clamp(76px, 19.5vh, 124px)` a side plus the gap), so a tablet and a
+   phone both clear their own buttons rather than a number picked for one of
+   them. */
+body.touch #watchBar {
+  --pad: calc(2 * clamp(76px, 19.5vh, 124px) + clamp(10px, 2.4vh, 20px) + 26px);
+  left: calc(var(--pad) + env(safe-area-inset-left, 0px));
+  right: calc(var(--pad) + env(safe-area-inset-right, 0px));
+  width: auto; max-width: none; transform: none;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+}
 #watchBar b { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* The transport: play, the bar, the clock, the speed.
+   The bar is the only thing that grows, because it is the only one whose size
+   means anything - a wider clock is not a more useful clock. */
+.watch-transport { display: flex; align-items: center; gap: .6rem; }
+.tport {
+  flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(255, 255, 255, .1); border: 1px solid var(--hud-line);
+  color: #fff; cursor: pointer; font-family: var(--sans);
+}
+.tport:hover { background: rgba(255, 255, 255, .2); }
+.tport svg {
+  width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+/* Play is a filled triangle and pause is two strokes, so the play glyph is the
+   one place on this page a shape is filled rather than drawn - a hollow triangle
+   at 17px reads as an arrow pointing somewhere rather than as play. */
+.tport .ic-play { fill: currentColor; stroke: none; }
+#btnPlay .ic-play { display: none; }
+#btnPlay .ic-pause { display: block; }
+#btnPlay.paused .ic-play { display: block; }
+#btnPlay.paused .ic-pause { display: none; }
+
+/* The scrubber.
+   A 22px box with a 5px bar down the middle of it: the bar is what you read and
+   the box is what you hit, and on a phone the second has to be a great deal
+   bigger than the first. Everything inside is absolutely placed against the
+   track so that a percentage means the same thing to the fill, the ticks and
+   the knob. */
+#scrub {
+  position: relative; flex: 1 1 auto; height: 22px; cursor: pointer;
+  touch-action: none; min-width: 80px;
+}
+#scrub > i, #scrub > div { position: absolute; top: 50%; }
+.scrub-track {
+  left: 0; right: 0; height: 5px; margin-top: -2.5px; border-radius: 3px;
+  background: rgba(255, 255, 255, .22);
+}
+.scrub-fill {
+  left: 0; height: 5px; margin-top: -2.5px; border-radius: 3px;
+  background: var(--red); width: 0;
+}
+#scrubTicks { left: 0; right: 0; height: 0; }
+/* A checkpoint, on the bar. Two pixels wide and the full height of the track, so
+   it is a division rather than a dot on a line - and drawn over the fill, since
+   the sector you have watched is exactly the thing it is dividing. */
+#scrubTicks i {
+  position: absolute; top: -5px; width: 2px; height: 10px; margin-left: -1px;
+  border-radius: 1px; background: rgba(255, 255, 255, .8);
+}
+.scrub-knob {
+  left: var(--at, 0%); width: 12px; height: 12px; margin: -6px 0 0 -6px;
+  border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .5);
+  pointer-events: none;
+}
+#scrub:focus-visible { outline: 2px solid #fff; outline-offset: 3px; border-radius: 4px; }
+.watch-time {
+  flex: 0 0 auto; display: flex; align-items: baseline; gap: .3rem;
+  font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: .82rem;
+}
+.watch-time span, .watch-time i { opacity: .55; font-style: normal; }
+
+/* The speed, as a chip that opens upwards.
+   Upwards because the bar is already on the floor of the screen, and a menu that
+   opened down would be off it. */
+.rate-pick { position: relative; flex: 0 0 auto; }
+.tport.rate-now {
+  width: auto; min-width: 44px; border-radius: 999px; padding: 0 .6rem;
+  font-size: .82rem; font-variant-numeric: tabular-nums;
+}
+.tport.rate-now.on { background: rgba(255, 255, 255, .9); color: #12141c; }
+#rateList {
+  position: absolute; bottom: calc(100% + .45rem); right: 0; z-index: 3;
+  display: flex; flex-direction: column; gap: .15rem; padding: .3rem;
+  background: var(--hud); border: 1px solid var(--hud-line); border-radius: 12px;
+  backdrop-filter: blur(6px);
+}
+.rate {
+  background: none; border: 0; color: #fff; cursor: pointer; border-radius: 8px;
+  font-family: var(--mono); font-size: .82rem; padding: .25rem .7rem; text-align: right;
+}
+.rate:hover { background: rgba(255, 255, 255, .14); }
+.rate.on { background: #fff; color: #12141c; }
+
+/* The input pad.
+   Four keys in an inverted T with a space bar under them, sized off the screen
+   for the touch buttons' reason: this sits in the corner of a game played in a
+   700px browser window and on a 1440p monitor, and one fixed size is wrong at
+   one of them.
+
+   **Off the smaller of the two dimensions, not off the height alone.** Height is
+   the right question for the touch buttons, which are limited by a thumb's reach
+   in landscape; this is limited by the *floor*, which it shares with the minimap
+   on one side and the replay bar in the middle. A tall narrow window has plenty
+   of the first and none of the last, and a pad sized off `vh` there grows until
+   it sits on the bar. Capped at 76 for the touch buttons' other reason: past a
+   point a readout stops being easier to read and starts being a thing in front
+   of the road.
+
+   The gaps scale with it, or the pad reads as four keys further apart the
+   smaller it gets. */
+.keypad {
+  --k: clamp(38px, min(8vh, 5.2vw), 76px);
+  --kgap: calc(var(--k) * 0.11);
+  display: flex; flex-direction: column; align-items: center; gap: var(--kgap);
+}
+.krow { display: flex; gap: var(--kgap); }
+.key {
+  width: var(--k); height: var(--k); border-radius: calc(var(--k) * 0.16);
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(16, 18, 26, .42); border: 2px solid rgba(255, 255, 255, .55);
+  color: rgba(255, 255, 255, .72);
+  backdrop-filter: blur(3px); transition: background .06s linear, color .06s linear;
+  /* The touch buttons' rule, for the touch buttons' reason: half of every track
+     is a bright sky or a sunlit kerb, and an unlit key with no shadow under it
+     disappears into both. */
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .35);
+}
+/* The space bar is the width of the bottom three and the gaps between them, so
+   the pad is one rectangle rather than a T with a plank under it. Thinner,
+   because a space bar is. */
+.key.space {
+  width: calc(var(--k) * 3 + var(--kgap) * 2); height: calc(var(--k) * 0.58);
+}
+/* One mark, centred, and it is a line rather than the word. */
+.key.space b {
+  display: block; width: 42%; height: max(2px, calc(var(--k) * 0.045));
+  border-radius: 2px; background: currentColor;
+}
+.key svg {
+  width: 62%; height: 62%; fill: currentColor; stroke: none;
+}
+.key.on {
+  background: rgba(255, 255, 255, .82); border-color: #fff; color: #12141c;
+}
+/* Amber for the handbrake wherever it is drawn, the same as the touch button
+   while you are driving: it is the driver asking for something different, and a
+   slide in the colour of a held throttle is a slide you cannot see. */
+.key.drifting, .key.drifting.on {
+  background: rgba(120, 84, 12, .75); border-color: #ffd96b; color: #ffd96b;
+  box-shadow: 0 0 12px rgba(255, 217, 107, .45);
+}
+.pad-est {
+  font-family: var(--sans); font-size: clamp(.6rem, calc(var(--k, 44px) * 0.17), .8rem);
+  letter-spacing: .06em;
+  text-transform: uppercase; color: rgba(255, 255, 255, .5);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .6);
+}
 /* The cars in a race replay: the camera, as a row of the people who were in it.
    Scrolls sideways rather than wrapping, so a full grid of eight does not turn
    the bar into a block covering the race it is about. */
@@ -1903,6 +2113,11 @@ body.touch #touch { display: block; }
   backdrop-filter: blur(3px);
 }
 .tbtn.down { background: rgba(255, 255, 255, .5); color: #12141c; }
+/* Lit by a recording rather than by a thumb. Same paint as `.down` on purpose:
+   the pedals during a replay are the same buttons saying the same thing about
+   the same car, and a second visual language for "this is held" would only be a
+   thing to learn. */
+.tbtn.on { background: rgba(255, 255, 255, .5); color: #12141c; }
 /* An arrow, double-tapped into the handbrake. It has to be obvious that you
    asked for something different, or the slide reads as the car misbehaving. */
 .tbtn.drifting, .tbtn.drifting.down {

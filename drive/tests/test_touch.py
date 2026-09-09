@@ -39,7 +39,12 @@ def _input_bindings():
     # the R key shares it - so stubbing it here would leave the interesting half
     # of that button untested. Lifted whole, the same way test_panels.py lifts
     # the panel toggles: every function in game.js closes in column 0.
-    return src[start:end] + "\n" + _fn(src, "restartOrRestore")
+    # And the replay transport, for the same reason and a weaker one: it is
+    # called from the foot of `bindInput` and it is not what any of these tests
+    # are about, but a stub for it would be one more thing that can silently
+    # stop matching the real function.
+    return src[start:end] + "\n" + _fn(src, "restartOrRestore") + \
+        "\n" + _fn(src, "wireTransport")
 
 
 def _fn(src, name):
@@ -55,8 +60,21 @@ var NOW = 0;
 var performance = { now: function () { return NOW; } };
 var location = { search: '' };
 var els = {};
+// Where the four driving buttons are on the glass. The slide between the two
+// buttons of a pad is *measured* - a touch is delivered for its whole life to
+// the element it went down on, so nothing in the browser will tell it which
+// button a finger is over now - and that makes these rectangles part of what is
+// under test rather than scenery. Two side-by-side pairs, laid out the way the
+// pads are: the arrows on the left, the pedals on the right.
+var RECTS = {
+  tLeft: { left: 20, right: 120 },
+  tRight: { left: 140, right: 240 },
+  tBrake: { left: 500, right: 600 },
+  tGas: { left: 620, right: 720 },
+};
 function El(id) {
   this.id = id; this.h = {}; this.cls = {}; this.style = {};
+  this.getBoundingClientRect = () => RECTS[id] || { left: 0, right: 0 };
   this.classList = {
     add: (c) => this.cls[c] = 1,
     remove: (c) => delete this.cls[c],
@@ -113,12 +131,31 @@ bindInput();
 // A real touchstart always carries the finger that caused it, so the thumb here
 // does too - the drag gesture reads its identifier and where it landed.
 var Y0 = 500;
-function at(y) { return { changedTouches: [{ identifier: 1, clientY: y }] }; }
-function press(id) { NOW += 1; $(id).fire('touchstart', at(Y0)); }
-function release(id) { NOW += 1; $(id).fire('touchend', at(Y0)); }
+function at(y, x) {
+  return { changedTouches: [{ identifier: 1, clientY: y, clientX: x }] };
+}
+// A thumb goes down in the middle of the button it is pressing, which is the
+// only starting X that leaves the sideways gesture with nothing to say - so a
+// vertical drag in these tests is a vertical drag and not a slide as well.
+// The small buttons above the pads have no rectangle here, because nothing
+// slides between them - they are taps. Zero is as good a place as any for a
+// thumb that no sideways gesture is watching.
+function mid(id) {
+  var r = RECTS[id];
+  return r ? (r.left + r.right) / 2 : 0;
+}
+function press(id) { NOW += 1; $(id).fire('touchstart', at(Y0, mid(id))); }
+function release(id) { NOW += 1; $(id).fire('touchend', at(Y0, mid(id))); }
 // Distances are fractions of the threshold rather than pixel counts, so
 // retuning DRAG_DRIFT retunes the tests instead of quietly invalidating them.
-function dragBy(id, px) { NOW += 1; $(id).fire('touchmove', at(Y0 + px)); }
+function dragBy(id, px) { NOW += 1; $(id).fire('touchmove', at(Y0 + px, mid(id))); }
+// The sideways one. `slideTo` is a thumb arriving in the middle of the other
+// button of the pad without ever having left the glass; `slideX` puts it at an
+// exact place, which is how the hysteresis is measured.
+function slideX(id, x) { NOW += 1; $(id).fire('touchmove', at(Y0, x)); }
+function slideTo(from, to) { slideX(from, mid(to)); }
+function liftAt(id) { NOW += 1; $(id).fire('touchend', at(Y0, mid(id))); }
+function boundary(a, b) { return (RECTS[a].right + RECTS[b].left) / 2; }
 function wait(ms) { NOW += ms; }
 // Expressed against the window rather than in fixed milliseconds, so retuning
 // DOUBLE_TAP retunes the tests instead of silently invalidating them.
@@ -442,3 +479,136 @@ def test_two_slow_taps_are_two_restores_and_not_a_deactivate():
                    " slowTap();"
                    " press('tRestart'); release('tRestart');")
     assert got == "restore,restore"
+
+
+# ---------------------------------------------------------------------------
+# Sliding between the two buttons of a pad
+# ---------------------------------------------------------------------------
+#
+# The objection this answers is `dragDrift`'s, one step further on. Every way of
+# getting from the throttle to the brake, or from one arrow to the other,
+# charged the thumb a *release* - lift, find the other button, land on it - and
+# for the half-second that takes the car is doing neither. Going from power to
+# brakes at the end of a straight is the most common transition there is, and it
+# was the one the phone made hardest.
+#
+# The boundary is the midpoint between the two buttons, measured on X, because a
+# touch is delivered for its whole life to the element it went down on and
+# nothing in the browser will say which button it is over now.
+
+
+def test_sliding_from_the_throttle_to_the_brake_brakes():
+    """The whole point: the thumb never leaves the glass and the car goes from
+    full throttle to full brakes."""
+    assert run("press('tGas'); slideTo('tGas', 'tBrake'); held();") == "down"
+
+
+def test_sliding_back_returns_the_throttle():
+    assert run("""
+      press('tGas'); slideTo('tGas', 'tBrake'); slideTo('tGas', 'tGas'); held();
+    """) == "up"
+
+
+def test_lifting_after_a_slide_leaves_nothing_held():
+    """`tb`'s own release only knows about the button the thumb went *down* on,
+    so without the slide's own release a thumb that slid to the brake and lifted
+    would leave the brake on for the rest of the lap - which is the worst way
+    for this feature to fail, and silent."""
+    assert run("""
+      press('tGas'); slideTo('tGas', 'tBrake'); liftAt('tGas'); held();
+    """) == ""
+
+
+def test_the_arrows_slide_too():
+    """Left to right without a lift is the correction you make mid-corner, and
+    it is the same gesture on the other thumb."""
+    assert run("press('tLeft'); slideTo('tLeft', 'tRight'); held();") == "right"
+
+
+def test_a_thumb_on_the_boundary_does_not_chatter():
+    """`SLIDE_HYST`'s reason, and `DRAG_KEEP`'s: a pedal that swapped under a
+    thumb resting on the line would be the car alternating between full throttle
+    and full brakes several times a second."""
+    assert run("""
+      press('tGas');
+      slideX('tGas', boundary('tBrake', 'tGas') + SLIDE_HYST - 1);
+      held();
+    """) == "up"
+    # And past it, it does hand over.
+    assert run("""
+      press('tGas');
+      slideX('tGas', boundary('tBrake', 'tGas') - SLIDE_HYST - 1);
+      held();
+    """) == "down"
+
+
+def test_a_slide_is_not_a_drift():
+    """The two gestures are on one thumb and one of them must not be able to
+    fire the other. They are orthogonal on purpose - sideways hands the pedal
+    over, downwards pulls the handbrake - and this is that said as a test."""
+    assert run("""
+      press('tGas'); slideTo('tGas', 'tBrake'); [drifting_(), held()].join('|');
+    """) == "false|down"
+
+
+def test_sliding_off_the_throttle_drops_a_drift_it_was_holding():
+    """The handbrake belonged to the throttle, and the thumb is not on the
+    throttle any more. Leaving it on would be a slide nobody is asking for held
+    by a finger that has gone somewhere else."""
+    assert run("""
+      press('tGas'); dragBy('tGas', DRAG_DRIFT);
+      slideTo('tGas', 'tBrake');
+      [drifting_(), held()].join('|');
+    """) == "false|down"
+
+
+def test_arriving_on_the_throttle_from_below_does_not_arrive_drifting():
+    """A thumb that goes to the brake and comes back has travelled a long way
+    down the glass on the way. Handing it back the origin it went down with
+    would start a slide it never asked for, so the drag is re-based where the
+    thumb actually landed."""
+    assert run("""
+      press('tGas');
+      slideX('tGas', mid('tBrake'));
+      $('tGas').fire('touchmove', at(Y0 + DRAG_DRIFT * 3, mid('tGas')));
+      drifting_();
+    """) is False
+
+
+def test_the_handbrake_still_works_from_the_pedal_the_thumb_slid_to():
+    """Re-based, not taken away: the drag is still there on the pedal the thumb
+    has arrived at, measured from where it arrived."""
+    assert run("""
+      press('tBrake');
+      slideX('tBrake', mid('tGas'));
+      $('tGas').fire('touchmove', at(Y0 + DRAG_DRIFT, mid('tGas')));
+      [drifting_(), held()].join('|');
+    """) == "true|drift,up"
+
+
+def test_a_second_thumb_is_not_released_by_the_first_one_lifting():
+    """Two thumbs on one pad is two touches with two identifiers, and a release
+    must only ever let go of the button its own finger is holding."""
+    assert run("""
+      press('tLeft');
+      $('tRight').fire('touchstart',
+        { changedTouches: [{ identifier: 2, clientY: Y0, clientX: mid('tRight') }] });
+      release('tLeft');
+      held();
+    """) == "right"
+
+
+def test_the_pedals_are_a_readout_during_a_replay():
+    """Watching is not driving. The four driving buttons are lit by the
+    recording rather than by a thumb, so a press on one has to do nothing at all
+    - otherwise the phone would be steering a parked car while the button under
+    the thumb says the driver in the replay is turning the other way."""
+    assert run("S.watch = {}; press('tGas'); held();") == ""
+    assert run("S.watch = {}; press('tLeft'); slideTo('tLeft', 'tRight'); held();") == ""
+
+
+def test_the_small_buttons_stay_live_during_a_replay():
+    """Restarting and going back to a checkpoint are things you do to a replay
+    too, and on a phone these are the only doors to them."""
+    assert run("S.watch = {}; ACTS = []; S.saveActive = -1;"
+               " press('tRestart'); release('tRestart'); ACTS.join(',')") == "start"
