@@ -14,7 +14,33 @@
 import * as THREE from './vendor/three.module.js';
 import { buildTrack } from './trackmesh.js';
 import { Car, Stepper, FLAG } from './physics.js';
-import { Course, Run, Ghost, GHOST_RATE, IN } from './course.js';
+import { Course, Run, Ghost, GHOST_RATE, inputByte } from './course.js';
+
+/**
+ * The five bits of an input byte, asked of the encoder rather than restated.
+ *
+ * The replay's pad reads a ghost frame's ninth value, so it needs to know which
+ * bit is which - and there are already two copies of that table (`course.js` and
+ * `runcheck.input_byte`, held together by `test_verify.py`). This is not a
+ * third: it is those bits derived from the function that writes them, so a
+ * renumbering cannot leave the pad drawing the brake when the driver steered.
+ *
+ * **Derived rather than imported, and that is not a style choice.** `course.js`
+ * is reached by a bare `import` from this file and so carries no `?v=` token,
+ * which means nothing can bust it - `sw.js` precaches it and browsers hold it
+ * for an hour. A *new* named export is therefore a module that fails to load
+ * for everybody with the old file cached, and a failed import takes the whole
+ * graph with it: the game does not boot at all. `inputByte` has been exported
+ * since the verifier landed, so asking it is a question every cached copy of
+ * this file can already answer. See `drive/CLAUDE.md`.
+ */
+const IN = {
+  THROTTLE: inputByte({ throttle: 1, brake: 0, steer: 0, handbrake: false }),
+  BRAKE: inputByte({ throttle: 0, brake: 1, steer: 0, handbrake: false }),
+  HANDBRAKE: inputByte({ throttle: 0, brake: 0, steer: 0, handbrake: true }),
+  RIGHT: inputByte({ throttle: 0, brake: 0, steer: 1, handbrake: false }),
+  LEFT: inputByte({ throttle: 0, brake: 0, steer: -1, handbrake: false }),
+};
 import { Renderer, CarView } from './render.js';
 import { Sound } from './sound.js';
 
@@ -2176,7 +2202,15 @@ function startReplay(cars, opts = {}) {
              // and every race replay - built from the live pose stream, which
              // has never carried inputs - does not, and the pad says which of
              // the two it is drawing rather than passing off a guess as a fact.
-             recorded: (c.frames[0] || []).length > 8 };
+             //
+             // **Asked of `Ghost.at`, not of the frames.** They are the same
+             // answer whenever the two files agree, and they are not the same
+             // answer while a browser is holding a cached `course.js` from
+             // before `at` carried the ninth value through: the frames arrive
+             // fresh from `/api/ghost` and say *recorded*, and every sample the
+             // pad then reads is eight wide. Measuring the path that is
+             // actually used means the label can be wrong about nothing.
+             recorded: (g.at(0) || []).length > 8 };
   });
   if (!built.length) { toast('That replay is empty'); return; }
   S.watch = {

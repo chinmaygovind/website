@@ -585,6 +585,30 @@ token; `three.module.js`, `trackmesh.js`, `physics.js`, `render.js`, `course.js`
 and `sound.js` are reached by bare `import` from inside `game.js` and carry no
 token, so nothing can bust them. The map gives a tokened URL 30 days and an
 un-tokened one an hour. Version those imports before raising the second number.
+
+**So never add a new `export` to one of those six.** This is the sharpest edge
+on the whole deploy and it took the site down on 2026-09-09. `game.js` busts on
+its token and arrives new; `course.js` does not and arrives from the cache; a
+`import { IN } from './course.js'` for a name the cached copy has never heard of
+is a **module graph that does not load**, so the game does not boot at all -
+blank canvas, HTTP 200, nothing in any log, and the Action green. `sw.js`
+precaches `course.js`, so for a returning player it is not an hour, it is
+forever, until `CACHE` is bumped.
+- **Import only names the deployed copy already has.** The fix for that one was
+  to stop exporting the constants and derive them in `game.js` from `inputByte`,
+  which has been exported since the verifier landed - a question every cached
+  copy can already answer. `git show HEAD:drive/static/js/course.js | grep
+  '^export'` against the same grep on the working tree is the whole check, and
+  it takes five seconds.
+- **Changing what an existing export *returns* is fine and degrades**, which is
+  the shape to aim for: `Ghost.at` grew a ninth value in the same commit, and a
+  cached `course.js` simply hands back eight - so the pad says *Estimated*
+  instead of lying, rather than the page dying.
+- **Bump `CACHE` in `sw.js` in the same commit** whenever any of those six
+  changes at all. It is the only thing that drops the precached set.
+- **Reproduce it before you push**, because a fresh browser cannot see it:
+  `git show HEAD:drive/static/js/course.js > static/js/course.js`, load the
+  page, and read the console. Put it back afterwards.
 The token itself is derived from the newest mtime under `static/`
 (`_derive_asset_version`) rather than the old hand-bumped `ASSET_VERSION`, which
 is commented out in the box `.env`.

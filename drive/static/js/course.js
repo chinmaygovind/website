@@ -37,12 +37,7 @@ const GHOST_HZ = 15;
 
 const STEPS_PER_FRAME = 8;          // FIXED_DT is 1/120 and a frame is 1/15
 const MAX_INPUT_STEPS = 120 * 60 * 6;
-// Exported because the replay's input display reads them back out of a ghost
-// frame's ninth value. One definition of what a driver's hands are, and the
-// same one the verifier is checked against.
-export const IN = { THROTTLE: 1, BRAKE: 2, HANDBRAKE: 4, RIGHT: 8, LEFT: 16 };
-const IN_THROTTLE = IN.THROTTLE, IN_BRAKE = IN.BRAKE, IN_HANDBRAKE = IN.HANDBRAKE,
-      IN_RIGHT = IN.RIGHT, IN_LEFT = IN.LEFT;
+const IN_THROTTLE = 1, IN_BRAKE = 2, IN_HANDBRAKE = 4, IN_RIGHT = 8, IN_LEFT = 16;
 // Anchor quantisation: millimetres, and a steer angle far finer than anything
 // that could be driven. Rounding here rather than on the server only makes the
 // request smaller - the server quantises what it is sent to the same grid.
