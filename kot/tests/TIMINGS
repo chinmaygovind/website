@@ -1,0 +1,18 @@
+# Roughly what each test file costs, in milliseconds, most expensive first.
+#
+# **A hint for packing, not a measurement, and being out of date only costs
+# balance.** `scripts/parallel_pytest.py` packs files into bundles and starts
+# the heaviest first; it also splits the top few files, and with no table at all
+# it splits nothing - which here is the difference between 38s and 16s, because
+# `test_bot.py` alone is most of the suite.
+#
+# It is committed because the runner's own table (`.pytest-file-times`) is
+# gitignored and machine specific, so **CI never has one**.
+#
+# Same shape as `drive/tests/TIMINGS`; read that one for the longer note.
+# Measured on an idle 8-core laptop, so each figure includes about 1.3s of
+# interpreter and import start-up.
+34163 test_bot.py
+8509 test_bot_integration.py
+2734 test_login.py
+538 test_engine.py

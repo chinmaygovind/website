@@ -147,6 +147,16 @@ parallel_for() {
   # `run_parallel` was unavailable. That is not a slower run, it is a hung one.
   [ "$m" = drive ] && return 0
 
+  # **kot for the same reason, since Sep 2026.** It monkey-patches on `app.py`
+  # line 2 exactly as drive does, and it had drive's stall all along - the
+  # 3-in-34 CI cancellation this file used to describe as something kot "still
+  # has". Adding a second test file that imports `app` made it every run
+  # locally, and `--dist loadgroup` - keeping the app-importing files on one
+  # worker - was tried and is not enough: CI still reached 96%, passed every
+  # test and then sat for twenty minutes. So kot goes to `run_parallel` too,
+  # which is what the note above always said the fix was.
+  [ "$m" = kot ] && return 0
+
   # gto runs serially: 47s against 14s on four workers. It does not monkey-patch
   # and so does not have drive's deadlock, but it has never been measured under
   # `run_parallel` either. Moving it there is the obvious next win - 70% of its
@@ -162,14 +172,7 @@ parallel_for() {
 
   n="$(nproc 2>/dev/null || echo 4)"
   [ "$n" -gt 4 ] && n=4
-  # `loadgroup` rather than `load`, and for kot it is load-bearing. Two workers
-  # each importing `app.py` - i.e. each calling `eventlet.monkey_patch()` - is
-  # the stall above, and it is not a 1-in-34 there: it hangs every run. So kot's
-  # app-importing files carry `pytestmark = pytest.mark.xdist_group("app")` and
-  # this keeps them on one worker. `loadgroup` is `load` for everything else, so
-  # nothing unmarked moves. It is a containment, not the fix - the fix is still
-  # `run_parallel`, which is why the note above still stands.
-  echo "-n $n --dist loadgroup"
+  echo "-n $n --dist load"
 }
 
 # kot's three bot self-play tests are marked `strength` and deselected by
@@ -230,7 +233,10 @@ gated_wanted() {
 # ran the whole suite again - under xdist, where it hangs. A red test became a
 # hang, which is the worst way round.
 run_parallel() {
-  m="$1"; py="$2"
+  # `$3` is the module's own selection flag, if it has one - kot's
+  # `--override-ini=addopts=` on `--all`. It has to reach the child processes
+  # or the strength tests would be re-enabled by a flag nothing ever saw.
+  m="$1"; py="$2"; mod_sel="$3"
   case " $pytest_args " in
     *" -x "*|*" -n "*|*" --exitfirst "*|*" -p no:xdist "*) return 99 ;;
   esac
@@ -250,7 +256,7 @@ run_parallel() {
   fi
   [ "$n" -lt 1 ] && n=1
   [ "$n" -gt 16 ] && n=16
-  "$py" "$ROOT/scripts/parallel_pytest.py" "$ROOT/$m" "$py" "$n" $pytest_args
+  "$py" "$ROOT/scripts/parallel_pytest.py" "$ROOT/$m" "$py" "$n" $mod_sel $pytest_args
 }
 
 run_module() {
@@ -318,14 +324,15 @@ run_module() {
     if [ -d "$ROOT/tests" ]; then
       ( cd "$ROOT" && "$py" -m pytest tests/ $par $pytest_args )
     fi
-  elif [ "$m" = drive ]; then
-    run_parallel "$m" "$py"
+  elif [ "$m" = drive ] || [ "$m" = kot ]; then
+    run_parallel "$m" "$py" "$sel"
     rc=$?
     if [ "$rc" != 99 ]; then
       return "$rc"                     # it ran; that is the answer
     fi
     # It declined (an -x, an explicit -n) or is missing. Serial, never xdist -
-    # `parallel_for` returns nothing for drive, so `$par` is empty here.
+    # `parallel_for` returns nothing for either of these, so `$par` is empty
+    # here.
     ( cd "$ROOT/$m" && "$py" -m pytest tests/ $par $sel $pytest_args )
   else
     ( cd "$ROOT/$m" && "$py" -m pytest tests/ $par $sel $pytest_args )

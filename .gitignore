@@ -73,3 +73,4 @@ drive/tracks/zzscratch*/
 # What `scripts/parallel_pytest.py` recorded about how long each test file took
 # last run. A hint for ordering the next run, derived and machine-specific.
 drive/.pytest-file-times
+kot/.pytest-file-times

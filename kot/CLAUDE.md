@@ -13,12 +13,22 @@ table for accounts. Stats live in `kot_stats`, games in `kot_games` / `kot_playe
   reads `is_guest` (a context-processor flag, not `effective_name != 'Guest'`,
   which a guest who types "Guest" defeats) and offers **Sign up** →
   `/login?signup=1`, which is what opens the register tab rather than the login
-  one. `tests/test_login.py` pins both halves, and **that file imports `app.py`,
-  so it carries `pytest.mark.xdist_group("app")`** - see the root `CLAUDE.md`.
+  one. `tests/test_login.py` pins both halves.
 - **Layout:** `kot/game_logic.py` (pure rules engine), `kot/cards.py` (all 66 power
   cards), `kot/bot.py` (the bot brain, also pure), `kot/app.py` (auth, lobby, socket
   game loop, bot orchestration, ELO), `kot/models.py`, `kot/templates/` + `kot/static/`.
-- **Tests:** `scripts/tests.sh kot` - 221 tests in about 30s. `test_engine.py` covers the
+- **kot runs on `run_parallel`, not xdist, and that is not a preference.**
+  `app.py` monkey-patches on line 2 exactly as drive's does, and this suite had
+  drive's deadlock all along - the CI job that reaches 96%, passes every test
+  and then hangs until it is cancelled. Adding `tests/test_login.py` beside
+  `test_bot_integration.py` (a second file importing `app`) made it every run.
+  Keeping them on one xdist worker with `--dist loadgroup` was tried and hung in
+  CI anyway. So `scripts/tests.sh` sends kot to `scripts/parallel_pytest.py` -
+  one pytest process per bundle of files - and `tests/TIMINGS` is committed
+  because CI has no local timing table and without one `test_bot.py` is not
+  split, which is 38s against 16s. **Never hand this suite an explicit `-n`**:
+  that is `run_parallel` declining, and the fallback is serial, not xdist.
+- **Tests:** `scripts/tests.sh kot` - 224 tests in about 16s. `test_engine.py` covers the
   rules, `test_bot.py` covers the bot (liveness, legality, latency, strength). The
   three **strength** tests are gated off the default run - see the deploy section's
   note - so a plain `scripts/tests.sh kot` does *not* check that the bot is any good.

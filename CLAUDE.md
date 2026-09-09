@@ -135,9 +135,9 @@ stale: `gh secret set EC2_HOST --body 54.157.20.148`.
 
 ## Tests: run only what changed
 
-The full suite is about 2,975 tests in a bit over a minute (drive 2,001 in ~23s
+The full suite is about 3,025 tests in a bit over a minute (drive 2,016 in ~23s
 on an idle machine,
-kot 221 in ~30s, gto 468 in ~22s, site 266 in ~5s, ers 18 in ~1s), and nearly
+kot 224 in ~16s, gto 495 in ~22s, site 266 in ~5s, ers 24 in ~1s), and nearly
 every change is to one service, so **never reach for the whole thing by hand**:
 
 ```bash
@@ -171,16 +171,18 @@ scripts/tests.sh drive -- -k ghost -x     # after --, straight to pytest
   (`drive/verify.py`), so the box needs a JS engine. Without it the tests that
   need it **skip themselves, which reads as a pass** - which is why CI installs
   requirements rather than trusting a venv.
-- **`parallel_for` splits kot across four cores**, most of the difference between
-  a three minute run and a much longer one. Four rather than every core, since on
-  a 16-core laptop kot's self-play tests contend badly enough that the suite stops
-  finishing. `ers` opts out (18 tests in 0.05s), an explicit `-n` after `--` wins,
-  and a venv without `pytest-xdist` runs serially rather than refusing.
-- **drive does not use xdist at all**; `scripts/parallel_pytest.py` runs it as
-  one pytest process per test file, several at a time - 130s → 23s. It also owns
-  `drive/tests/EXCLUSIVE`, for the one file that writes into `tracks/` and so
-  cannot run beside anything that imports the pool. Full account, including what
-  the 6x is made of, in `drive/docs/testing.md`.
+- **`parallel_for` is what is left of xdist here, and only `site` still uses
+  it.** `ers` opts out (18 tests in 0.05s), `gto` runs serially by measurement,
+  and `drive` and `kot` are on `run_parallel` because xdist deadlocks them. An
+  explicit `-n` after `--` wins, and a venv without `pytest-xdist` runs serially
+  rather than refusing.
+- **drive and kot do not use xdist at all**; `scripts/parallel_pytest.py` runs
+  them as one pytest process per bundle of test files, several at a time - drive
+  130s → 23s, kot 38s → 16s. It also owns `drive/tests/EXCLUSIVE`, for the one
+  file that writes into `tracks/` and so cannot run beside anything that imports
+  the pool, and reads a committed `tests/TIMINGS` per module because CI never
+  has a local timing table. Full account, including what drive's 6x is made of,
+  in `drive/docs/testing.md`.
 - **The xdist deadlock is understood now, and it is `eventlet`.** The stall this
   file used to describe as not understood - the run reaches 93-98%, every test
   passes, then the controller and all four workers sit at 0.0% CPU until
@@ -193,18 +195,18 @@ scripts/tests.sh drive -- -k ghost -x     # after --, straight to pytest
   workers in `hrtimer_nanosleep`, their pipe readers in `anon_pipe_read`, the
   controller in `futex_do_wait`. At `-n 16` it reproduces about two runs in
   three, which is what made it findable.
-  **So it is not a tuning problem - `-n 4` is rarer, not safer.** `drive` is out
-  of range now; **`kot` still monkey-patches and still runs under xdist, so it
-  still has this**, and the fix is to move it to `run_parallel` rather than to
-  add `pytest-timeout`. What kot has in the meantime is a **containment**: the
-  split is `--dist loadgroup` and every kot test file that imports `app` carries
-  `pytestmark = pytest.mark.xdist_group("app")`, so they all land on one worker.
-  One patched worker has always been fine; a *second* one is not a 1-in-34 there
-  but a hang on every run, which is what adding `kot/tests/test_login.py` beside
-  `test_bot_integration.py` demonstrated. `loadgroup` is `load` for everything
-  unmarked, so nothing else moved. **A new kot test file that imports `app` must
-  carry that mark**, and nothing will tell you if you forget - it will simply
-  hang. The consequences that made it hard to see are unchanged:
+  **So it is not a tuning problem - `-n 4` is rarer, not safer.** Both
+  monkey-patching modules are out of range now: **`kot` followed `drive` onto
+  `run_parallel` in Sep 2026**, which is what this entry always said the fix
+  was.
+  **Containment was tried first and is written down because it does not work.**
+  Adding a second kot test file that imports `app` turned the 3-in-34 stall into
+  a hang on every local run, so the split became `--dist loadgroup` with kot's
+  app-importing files marked `xdist_group("app")` to keep them on one worker.
+  That passed locally and **still hung in CI** - 224 tests, 96%, every one
+  passed, then twenty minutes of nothing and a cancel. One patched worker is not
+  safe either; it is just luckier. Nothing green should be built on it.
+  The consequences that made it hard to see are unchanged:
   a stall reports **cancelled** rather than failed, its length is set by
   `cancel-in-progress` rather than by `timeout-minutes: 20`, and the per-test
   speed guard cannot see it because a deadlocked test never finishes.
@@ -228,7 +230,10 @@ scripts/tests.sh drive -- -k ghost -x     # after --, straight to pytest
   three `@pytest.mark.strength` tests are deselected by `kot/pytest.ini` and
   switched back on by `tests.sh` on `--all` or when `kot/bot.py`/`kot/cards.py`
   is dirty (`--override-ini=addopts=`, a single token because these args go
-  through unquoted word splitting and an empty `-m ""` cannot survive it). The
+  through unquoted word splitting and an empty `-m ""` cannot survive it).
+  Now that kot runs on `run_parallel`, that token is passed to it as its third
+  argument and forwarded to every child process - a selection flag the child
+  never saw would silently leave the strength tests out on `--all`. The
   skip **prints a line**, since a skipped test otherwise reads as a pass. **The
   gap, plainly:** the check reads the working tree, so it does not fire in CI,
   where the checkout is clean and one commit deep - there they run only on the

@@ -12,11 +12,6 @@ import tempfile
 
 import pytest
 
-# Grouped onto the same xdist worker as the other tests that import `app` - see
-# the note in `test_bot_integration.py`; two workers calling
-# `eventlet.monkey_patch()` deadlock the run.
-pytestmark = pytest.mark.xdist_group("app")
-
 
 @pytest.fixture(scope="module")
 def app_mod():
