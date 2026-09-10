@@ -480,17 +480,28 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
     with a deadband so a straight does not flicker. **The pad says which of the
     two it is drawing** - a small *Estimated* under it, and only there - because
     a pad that never explains itself is a pad you can believe.
-  - **The inferred handbrake is the *start* of a slide, not the slide.**
-    `FLAG.DRIFT` is the car sideways, which is a consequence and not an input: a
-    driver flicks the key and lets go, and the slide runs on for a second or more
-    after their thumb is off it. Drawing the whole slide put a key held down
-    through a corner that was tapped, and it visibly disagreed with the brake
-    lamps on the car beside it - which is how it was noticed. On BotTyler's Big
-    Red lap that was 5.8 seconds of held space bar, one stretch of it 1.2s long;
-    it is 21 flicks of `DRIFT_TAP` now. **Found by looking one `DRIFT_TAP` back
-    in the recording** rather than by remembering the last frame, so a scrub into
-    the middle of a slide does not invent a handbrake that was pressed seconds
-    ago.
+  - **The inferred handbrake is gated on `FLAG.BRAKE`, and that gate is a proof
+    rather than a guess.** `Car.braking` is `(brake && moving forwards) ||
+    handbrake`, so the handbrake sets that bit *unconditionally* - which means
+    the bit being clear says the handbrake was **not** down, whatever the car is
+    doing. It is also the one input the flag byte has ever carried, which is why
+    it is what the tail lamps are wired to.
+
+    So: braking and sideways is the handbrake, braking and straight is the brake,
+    and not braking is neither. The two inputs share the one bit and cannot be
+    told apart directly, but a car slowing on the driver's say-so that is also
+    out of shape is the shape of a handbrake pull.
+
+    **`FLAG.DRIFT` on its own is worthless here and it took two goes to stop
+    using it.** It is `slip > 0.35`, which any hard corner produces. Drawing the
+    whole slide gave 5.8 seconds of held space bar on BotTyler's Big Red lap,
+    one stretch of it 1.2s; pulsing at each slide *onset* instead gave 21 taps,
+    and the driver's hands are provably off the key for **19 of them**. The gate
+    gives 3 pulls - 0.60s, 0.13s and 0.47s - which is a driver using it at three
+    corners. Both wrong versions were caught the same way and it is the check
+    worth keeping: the bar and the lamps read the same bit now, so a pad that
+    disagrees with the car beside it is a bug you can see without instrumenting
+    anything.
   - **The pad's speed comes from the recording, not from the camera.** They are
     the same number while the replay is running and nothing like it when it is
     not: paused, the car does not move between frames, so the camera's measure is

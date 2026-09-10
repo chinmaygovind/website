@@ -109,13 +109,14 @@ function $(id) {
 }
 function syncWatchUi() {}
 var IN = { THROTTLE: 1, BRAKE: 2, HANDBRAKE: 4, RIGHT: 8, LEFT: 16 };
-var DRIFT_TAP = 0.15;
-// A lap that is driving for `after` seconds and then goes sideways for good,
-// which is what a handbrake flick into a long corner actually looks like.
-function slideFrom(step, after, n) {
+// A lap that drives for `after` seconds and then goes sideways for good, with
+// the lamps lit or not - which is the whole question the pad has to answer.
+function slideFrom(step, after, braking, n) {
   var out = [];
   for (var i = 0; i < (n || 12); i++) {
-    out.push([i * step, 0, 0, 0, 0, 0, 1, (i / 10 >= after) ? FLAG.DRIFT : 0]);
+    var sliding = (i / 10 >= after);
+    var f = (sliding ? FLAG.DRIFT : 0) | (sliding && braking ? FLAG.BRAKE : 0);
+    out.push([i * step, 0, 0, 0, 0, 0, 1, f]);
   }
   return out;
 }
@@ -280,9 +281,9 @@ def test_an_old_lap_infers_the_hands_from_the_car(js):
     js.eval("HEARD = []; watching([car(lap(0.5, FLAG.BRAKE))]); play();")
     assert _lit(js, "kDown") and not _lit(js, "kUp")
 
-    # The slide has to be *new* to read as a flick - see the tap tests below.
-    js.eval("HEARD = []; watching([car(slideFrom(0.5, 0.4))]);"
-            " S.watch.t = 0.4; play(1);")
+    # Braking *and* sideways - see the handbrake tests below for why both.
+    js.eval("HEARD = []; watching([car(slideFrom(0.5, 0.4, true))]);"
+            " S.watch.t = 0.5; play(1);")
     assert _lit(js, "kSpace")
 
 
@@ -313,32 +314,55 @@ def test_a_recorded_lap_is_not_second_guessed(js):
 # The transport
 # ---------------------------------------------------------------------------
 
-def test_an_inferred_handbrake_is_the_flick_and_not_the_slide(js):
-    """`FLAG.DRIFT` is the car sideways, which is a consequence rather than an
-    input: a driver flicks the key and lets go, and the slide runs on for a
-    second or more after their thumb is off it.
+def test_a_slide_with_the_lamps_off_is_not_a_handbrake(js):
+    """The one deduction in here that is a **proof rather than a guess**, and the
+    reason the inferred space bar is worth drawing at all.
 
-    Drawing the whole slide put a key held down through a corner that was
-    tapped, and it visibly disagreed with the brake lamps next to it on the car.
+    `Car.braking` is `(brake && moving forwards) || handbrake`, so the handbrake
+    sets `FLAG.BRAKE` unconditionally - and therefore `FLAG.BRAKE` clear means
+    the handbrake was *not* down, whatever the car is doing. `FLAG.DRIFT` on its
+    own is `slip > 0.35`, which any hard corner produces: on BotTyler's Big Red
+    lap it fires 21 times and the driver's hands are provably off the key for 19
+    of them. Reading the slide alone put a handbrake on nearly every corner of a
+    lap that used it twice.
     """
-    # The slide starts at 0.4s. On its first frame the bar is lit...
-    js.eval("watching([car(slideFrom(0.5, 0.4))]); S.watch.t = 0.4; play(1);")
-    assert _lit(js, "kSpace"), "the flick that started the slide is not drawn"
-    # ...and a good deal later, with the car still sideways, it is not.
-    js.eval("HEARD = []; watching([car(slideFrom(0.5, 0.4))]);"
-            " S.watch.t = 0.4 + DRIFT_TAP * 3; play(1);")
-    assert not _lit(js, "kSpace"), "the key is still held a slide later"
+    js.eval("watching([car(slideFrom(0.5, 0.2, false))]); S.watch.t = 0.6; play(1);")
+    assert not _lit(js, "kSpace"), "a handbrake on a lap that could not have used it"
 
 
-def test_the_flick_is_found_by_looking_back_rather_than_by_remembering(js):
-    """Which is what makes it survive a scrub. A stateful version would carry
-    "were we drifting last frame", and dragging the bar into the middle of a
-    slide would then light the bar as though the flick had just happened - so
-    every scrub would invent a handbrake. The recording already says when the
-    car went sideways; this reads it."""
-    # Land cold in the middle of a long slide, with no frames played before it.
-    js.eval("watching([car(slideFrom(0.5, 0.2))]); S.watch.t = 1.0; play(1);")
-    assert not _lit(js, "kSpace")
+def test_braking_and_sideways_is_the_handbrake(js):
+    """The two inputs share the one bit, so which of them it was cannot be read
+    off directly - but a car slowing on the driver's say-so that is also out of
+    shape is the shape of a handbrake pull."""
+    js.eval("watching([car(slideFrom(0.5, 0.2, true))]); S.watch.t = 0.6; play(1);")
+    assert _lit(js, "kSpace")
+    # And it is the handbrake rather than the brake, which is the same bit
+    # reading a different way.
+    assert not _lit(js, "kDown")
+
+
+def test_braking_in_a_straight_line_is_the_brake(js):
+    js.eval("watching([car(lap(0.5, FLAG.BRAKE))]); play();")
+    assert _lit(js, "kDown") and not _lit(js, "kSpace")
+
+
+def test_the_inferred_space_bar_lasts_as_long_as_the_lamps_do(js):
+    """Which is the check the eye actually makes. The bar and the tail lamps read
+    the same bit now, so a pad that disagrees with the car beside it is a bug you
+    can see without instrumenting anything - and that is how the last two
+    versions of this were caught."""
+    got = js.eval("""
+      var out = [];
+      watching([car(slideFrom(0.5, 0.3, true))]);
+      for (var i = 0; i < 9; i++) {
+        S.watch.t = i / 10; S.watch.shown = -1; updateWatch(0.001);
+        var f = S.watch.cars[0].g.at(S.watch.t);
+        out.push(((f[7] & FLAG.BRAKE) ? 'L' : '-') + (LIT['kSpace'] ? 'S' : '-'));
+      }
+      out.join(' ');
+    """)
+    # Lamps and space bar move together, frame for frame.
+    assert all(p in ("--", "LS") for p in got.split()), got
 
 
 def test_a_recorded_handbrake_is_not_shortened(js):

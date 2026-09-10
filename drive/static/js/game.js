@@ -2174,15 +2174,6 @@ function startWatching(frames, hz, meta) {
 // to is a speed nobody chose - and because these seven read as numbers.
 const REPLAY_RATES = [0.1, 0.25, 0.5, 1, 1.5, 2, 4];
 
-// How long the space bar stays lit at the start of an *inferred* slide, in
-// seconds of lap time. A real handbrake flick is one or two tenths, and this is
-// the length the pad is guessing at rather than a fade: the recording says when
-// the car went sideways and nothing about how long a thumb was on the key.
-//
-// In lap time and not wall time, so it is the same flick at 0.1x as at 4x.
-// Recorded laps never reach it - they have the actual byte.
-const DRIFT_TAP = 0.15;
-
 /**
  * Play these cars back together.
  *
@@ -2584,38 +2575,40 @@ function recordedSpeed(c, t) {
  * older lap, and every race replay, has to be read off the car instead - which
  * is an inference rather than a record, and is why the pad says so underneath.
  *
- *  - **Brake** is the flag byte, the one input that was already recorded.
+ *  - **`FLAG.BRAKE` is an input, and it is the only one in the byte.**
+ *    `Car.braking` is `(brake && moving forwards) || handbrake` - the driver's
+ *    hands rather than what the car ended up doing, which is exactly why it is
+ *    what the tail lamps are wired to. Everything below hangs off it.
+ *  - **The handbrake is braking *and* sideways.** The two inputs share the one
+ *    bit, so which of them it was cannot be read off directly - but a car
+ *    slowing on the driver's say-so that is also out of shape is the shape of a
+ *    handbrake pull, and one doing it in a straight line is the brake.
+ *
+ *    **The contrapositive is the valuable half, and it is a proof rather than a
+ *    guess**: the handbrake sets `BRAKE` unconditionally, so `BRAKE` clear means
+ *    the handbrake is not down. That is what makes this worth drawing at all.
+ *    `FLAG.DRIFT` alone is `slip > 0.35`, which any hard corner produces - on
+ *    BotTyler's Big Red lap it fires 21 times and the hands are provably off the
+ *    key for 19 of them. Reading the slide on its own put a handbrake on nearly
+ *    every corner of a lap that used it twice.
  *  - **Throttle** is not braking and moving, the same rule the engine note has
  *    used since a replay first made a noise: there is no third thing a car on
  *    the road can be doing, and a coast through a corner reads as a lift for
  *    exactly as long as it lasts.
- *  - **The handbrake is the *start* of a slide, not the slide.** `FLAG.DRIFT` is
- *    the car sideways, which is a consequence and not an input: a driver flicks
- *    the key and lets go, and the slide it started runs on for a second or more
- *    after their thumb is off it. Drawing the whole slide put a key held down
- *    through a corner that was tapped, and it visibly disagreed with the brake
- *    lamps beside it. So the bar is lit only while the slide is younger than
- *    `DRIFT_TAP`, which reads as the flick that caused it.
- *
- *    Found by **looking one `DRIFT_TAP` back in the recording** rather than by
- *    remembering the last frame, so it survives a scrub: the state a stateful
- *    version would be carrying is already written down in the frames.
  *  - **Steering** is how fast the car is turning about its own vertical, which
  *    is the only place it is written down at all. The deadband keeps a straight
  *    from flickering, and below walking pace it is left alone: a stationary car
  *    turning on its own axis is not a driver steering.
  */
-function inputsOf(car, f, t, dt) {
+function inputsOf(car, f, dt) {
   if (car.recorded) return f[8] | 0;
   const fl = f[7] | 0;
   let b = 0;
   const speed = car.spd || 0;
-  if (fl & FLAG.BRAKE) b |= IN.BRAKE;
+  const braking = !!(fl & FLAG.BRAKE);
+  if (braking && (fl & FLAG.DRIFT)) b |= IN.HANDBRAKE;
+  else if (braking) b |= IN.BRAKE;
   else if (speed > 3) b |= IN.THROTTLE;
-  if (fl & FLAG.DRIFT) {
-    const back = car.g.at(t - DRIFT_TAP);
-    if (!(back && ((back[7] | 0) & FLAG.DRIFT))) b |= IN.HANDBRAKE;
-  }
   if (car.prevFwd && car.fwdNow && car.upNow && speed > 2 && dt > 1e-4) {
     // Signed yaw about the car's own up axis, so a corner taken upside down on
     // Rainbow Road reads the way the driver's hands did.
@@ -2748,7 +2741,7 @@ function updateWatch(dt) {
       c.prevFwd = c.fwdNow || null;
       c.fwdNow = s.fwd.clone();
       c.upNow = s.up.clone();
-      const b = inputsOf(c, f, w.t, dt * w.rate);
+      const b = inputsOf(c, f, dt * w.rate);
       if (b !== w.shown) { w.shown = b; paintInputs(b); }
     }
     c.prev = p.clone();
