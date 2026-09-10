@@ -397,7 +397,11 @@ than 15% or move a corner more than 8 degrees before refusing.
   scrubber with the checkpoints ticked on it, seven playback speeds, the map and
   its four buttons, and a pad showing what the driver was pressing - so watching
   hides what is about *your run* and keeps what is about the track and the
-  recording. `docs/hud-and-controls.md`.
+  recording. **A boost pad the driver went over is drawn and heard**, which
+  nothing recorded says: `padUnder` asks the collider what is under the pose,
+  the way `Car.step` does, so a lap from before any of this lights up on the
+  Costco's travelators - and a flag bit would only ever have answered for laps
+  driven after it. `docs/hud-and-controls.md`.
 
 ## The rules that hold everywhere in Drive
 

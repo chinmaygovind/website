@@ -12,7 +12,7 @@
 // keeps contact smooth (see Car.resolveCars for the bumping rules).
 
 import * as THREE from './vendor/three.module.js';
-import { buildTrack } from './trackmesh.js';
+import { buildTrack, KIND } from './trackmesh.js';
 import { Car, Stepper, FLAG } from './physics.js';
 import { Course, Run, Ghost, GHOST_RATE, inputByte } from './course.js';
 
@@ -2230,8 +2230,15 @@ function startReplay(cars, opts = {}) {
   S.watch = {
     cars: built, at: 0, t: 0,
     dur: Math.max(...built.map(c => c.g.duration)),
+    // The camera's car, and the air around it. The pose half is read off the
+    // recording every frame; the rest is what `Renderer.follow` and `Draft` ask
+    // of a car and a pose does not carry - `padBoost` is the one that moves (see
+    // `padUnder`), and the tow's two are here at zero because nothing recorded
+    // says a lap was in one and the effect must not be left half-wired.
     subject: { pos: new THREE.Vector3(), fwd: new THREE.Vector3(0, 0, -1),
-               up: new THREE.Vector3(0, 1, 0), speed: 0, grounded: true },
+               up: new THREE.Vector3(0, 1, 0), right: new THREE.Vector3(1, 0, 0),
+               speed: 0, grounded: true, T,
+               padBoost: 0, slipBoost: 0, slipCharge: 0, respawnIn: 0 },
     title: opts.title || null,
     share: opts.share || null,
     playing: true,
@@ -2725,6 +2732,55 @@ const INPUT_KEYS = [
 // desktop pad's space bar is deliberately not in here - see `paintInputs`.
 const DRIFT_LIT = [['tGas', IN.THROTTLE], ['tLeft', IN.LEFT], ['tRight', IN.RIGHT]];
 
+/**
+ * Was the car over a boost pad here?
+ *
+ * A pad is not in the recording and does not need to be: it is a place on the
+ * track, and the replay knows both the track and where the car was. So this is
+ * `Car.step`'s own test - the same ground probe, the same "close enough to be
+ * standing on it" rule - asked of a pose instead of a simulation, which is why
+ * a lap recorded years before this existed still lights up on the Costco's
+ * travelators.
+ *
+ * **Not the flag byte.** Adding a bit for it would only ever answer for laps
+ * driven after the bit, and every race replay - built from the pose stream -
+ * would still have nothing in it.
+ */
+function padUnder(pos, up) {
+  const col = S.built && S.built.collider;
+  if (!col) return false;
+  const q = col.ground(pos.x, pos.y, pos.z, up.x, up.y, up.z, T.PROBE);
+  return q.hit && q.dist <= T.RIDE_HEIGHT + T.SNAP && q.kind === KIND.BOOST;
+}
+
+/**
+ * The pad a replay drove over between the last frame and this one.
+ *
+ * Sampled along the ground covered rather than at the two ends of it, because
+ * the film's step is not the simulation's: the car was stepped at 120Hz when
+ * this was driven, and a replay moves it once a frame at up to 4x, which at
+ * speed is tens of units. A pad is a place, and a place can sit wholly between
+ * two of those samples - the Costco's travelators and Big Red's kickers are
+ * short enough for it. One probe per four units covered, capped, so 0.1x costs
+ * a single query and 4x costs six.
+ */
+function padCrossed(from, to, up) {
+  let d = from ? from.distanceTo(to) : 0;
+  // A jump is not a stretch of road that was driven. Scrubbing, T, and picking
+  // another car all move the pose by more than any frame can, and sampling
+  // *that* line is a probe of wherever the track happens to lie between two
+  // unrelated places - which fires the whoosh for a pad nobody drove over. Top
+  // speed at 4x is a few units a frame, so anything past forty is a cut.
+  if (d > 40) { from = to; d = 0; }
+  const n = Math.min(6, 1 + Math.floor(d / 4));
+  const at = new THREE.Vector3();
+  for (let k = 1; k <= n; k++) {
+    at.lerpVectors(from || to, to, k / n);
+    if (padUnder(at, up)) return true;
+  }
+  return false;
+}
+
 /** Advance the replay and point the camera at whoever it is following. */
 function updateWatch(dt) {
   const w = S.watch;
@@ -2748,7 +2804,11 @@ function updateWatch(dt) {
       // A car whose lap is shorter than the replay stops existing partway
       // through, and the one you are watching has to stop being audible with
       // it - nothing else in here would ever move its engine again.
-      if (i === w.at) S.sound.engine(0, 0, 0, false);
+      if (i === w.at) {
+        S.sound.engine(0, 0, 0, false);
+        w.subject.padBoost = 0;
+        S.sound.draft(0, 0);
+      }
       continue;
     }
     const p = new THREE.Vector3(f[0], f[1], f[2]);
@@ -2772,6 +2832,7 @@ function updateWatch(dt) {
       s.pos.copy(p);
       s.fwd.set(0, 0, -1).applyQuaternion(q);
       s.up.set(0, 1, 0).applyQuaternion(q);
+      s.right.set(1, 0, 0).applyQuaternion(q);
       // And it sounds like the car it is, off the same two things: the speed
       // just measured, and the flag byte the lap was recorded with. **Through
       // your own engine rather than a rival's voice**, because the camera is
@@ -2787,6 +2848,34 @@ function updateWatch(dt) {
                      !(fl & FLAG.BRAKE) && s.speed > 3 ? 1 : 0,
                      (fl & FLAG.DRIFT) ? 0.6 : 0,
                      !!(fl & FLAG.AIR));
+      /*
+       * A boost pad, the whole of it: the whoosh, the air going amber and hard
+       * round the car, the FOV punch and a small kick, exactly as they arrive
+       * from the driver's seat. Nothing here is a special case for replays -
+       * `padBoost` is the one number all four of those read, and this puts the
+       * recording's car on the same footing as a driven one by setting it.
+       *
+       * **Timed in the film's seconds, not the wall's** (`step`, which already
+       * carries the rate and is zero while paused). The boost has to fall away
+       * over the same stretch of road it did when it was driven, or at 0.25x
+       * the air is gone a corner before the car stops accelerating - and a
+       * paused frame in the middle of a pad has to keep looking like one.
+       *
+       * The rising edge is `padBoost <= 0` for the reason `Car.step` uses it:
+       * staying on a long pad re-arms rather than re-fires, so a travelator is
+       * one whoosh held open and not a stutter of them.
+       */
+      const airborne = !!(fl & FLAG.AIR);
+      s.padBoost = Math.max(0, s.padBoost - step);
+      if (!airborne && padCrossed(c.prev, p, s.up)) {
+        if (s.padBoost <= 0) { S.sound.boostPad(); S.renderer.kick(0.35); }
+        s.padBoost = T.PAD_BOOST;
+      }
+      // The rushing air, which is a per-frame level rather than an event and so
+      // has to be written every frame - including the frames with no boost in
+      // them, or the band stays open on whatever the last one left it at. No
+      // charge: a tow is wound up by driving and nobody is driving.
+      S.sound.draft(0, s.padBoost / T.PAD_BOOST);
       // What the pad needs and the pose does not carry, kept on the car so that
       // `inputsOf` is a pure reading of it.
       //
@@ -4039,7 +4128,12 @@ function frame(now) {
     // Same for the help you had for being behind: the race you were in is not
     // the one on the screen, and nothing steps the car while a replay runs.
     S.car.catchup(null, dt);
-    S.renderer.draft(S.car, dt);
+    // Your own effect, pointed at the car on the screen: the streaks are the
+    // renderer's and the car they blow past is whoever the camera is riding, so
+    // a pad that driver hit draws its air where you are looking. Any left over
+    // from a tow of your own finish their run around them, which is the same
+    // thing they would have done around your car.
+    S.renderer.draft(S.watch.subject, dt);
     // And everybody else's, for the same reason: nothing steps a rival while a
     // replay is on, so a tow one of them was in would hang in the air over
     // somebody else's lap for as long as you watched it.

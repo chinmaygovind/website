@@ -51,6 +51,8 @@ def _lifted():
     keys = src.index("const INPUT_KEYS = [")
     return "\n".join([
         extra,
+        _fn(src, "padUnder"),
+        _fn(src, "padCrossed"),
         _fn(src, "inputsOf"),
         _fn(src, "paintInputs"),
         src[keys:src.index("];", src.index("const DRIFT_LIT")) + 2],
@@ -85,13 +87,34 @@ V3.prototype.length = function () {
   return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z);
 };
 V3.prototype.dot = function (o) { return this.x * o.x + this.y * o.y + this.z * o.z; };
+V3.prototype.lerpVectors = function (a, b, u) {
+  this.x = a.x + (b.x - a.x) * u; this.y = a.y + (b.y - a.y) * u;
+  this.z = a.z + (b.z - a.z) * u; return this;
+};
 function Q4() {} Q4.prototype.normalize = function () { return this; };
 var THREE = { Vector3: V3, Quaternion: Q4 };
-var T = { MAX_SPEED: 50 };
+var T = { MAX_SPEED: 50, PROBE: 2.6, RIDE_HEIGHT: 0.45, SNAP: 0.12, PAD_BOOST: 1.3 };
 var FLAG = { DRIFT: 1, AIR: 2, RESPAWN: 4, BRAKE: 8, SLIP: 16 };
-var S = { watch: null, sound: { engine: function (sf, th, sl, air) {
-  HEARD.push({ sf: sf, th: th, sl: sl, air: !!air });
-} } };
+var KIND = { ROAD: 0, WALL: 1, OFFROAD: 2, BOOST: 3, BOUNCE: 4 };
+// One boost pad, two units of it, lying across the lap at x 2..4 - and a road
+// that never runs out, so anywhere else is a surface the car is on and not a
+// hole it is falling through.
+var PAD = [2, 4];
+// Every whoosh, and the level the rushing air was last left at.
+var WHOOSH = 0, AIR = [], KICKS = 0;
+var S = {
+  watch: null,
+  sound: {
+    engine: function (sf, th, sl, air) { HEARD.push({ sf: sf, th: th, sl: sl, air: !!air }); },
+    draft: function (charge, boost) { AIR.push(boost); },
+    boostPad: function () { WHOOSH++; },
+  },
+  renderer: { kick: function () { KICKS++; } },
+  built: { collider: { ground: function (x, y, z) {
+    return { hit: true, dist: T.RIDE_HEIGHT,
+             kind: (x >= PAD[0] && x <= PAD[1]) ? KIND.BOOST : KIND.ROAD };
+  } } },
+};
 // Enough of an element for the pad: `LIT` is which key ids are on, in the
 // same shape `classList.toggle` leaves them.
 var LIT = {}, AMBER = {};
@@ -156,9 +179,14 @@ function car(frames, recorded) {
 }
 function watching(cars, at) {
   S.watch = { cars: cars, at: at || 0, t: 0, dur: 1e6,
-              subject: { pos: new V3(), fwd: new V3(), up: new V3(), speed: 0 },
+              // The same shape `startReplay` builds, including the four numbers
+              // the camera and the air read off a car: a stub short of them
+              // would pass by never having a boost to get wrong.
+              subject: { pos: new V3(), fwd: new V3(), up: new V3(),
+                         right: new V3(), speed: 0, grounded: true, T: T,
+                         padBoost: 0, slipBoost: 0, slipCharge: 0, respawnIn: 0 },
               title: null, playing: true, rate: 1, shown: -1 };
-  LIT = {}; AMBER = {};
+  LIT = {}; AMBER = {}; WHOOSH = 0; AIR = []; KICKS = 0;
 }
 // Two frames, because a speed is measured between them: the first has nothing
 // to measure against and is honestly zero.
@@ -437,3 +465,89 @@ def test_a_lap_that_runs_out_goes_quiet(js):
     its engine again."""
     js.eval("watching([car(lap(0.5, 0, 3))]); play(6);")
     assert _last(js, "sf") == 0 and _last(js, "th") == 0
+
+
+# --- the boost pads a replay drives over ------------------------------------
+#
+# A pad is the one thing that happens to a car that is neither in the pose nor
+# in the flag byte: `padBoost` lives on the driven car and a recording has no
+# car. Watching one was therefore silent and dry - the driver was thrown down
+# the straight and the replay showed the throw with none of what makes it one.
+# It is recoverable because a pad is a *place*: the replay has the track and it
+# has where the car was, which is both halves of `Car.step`'s own test.
+
+
+def test_a_pad_in_a_replay_makes_its_noise(js):
+    """One whoosh, and the air goes with it."""
+    js.eval("watching([car(lap(0.5, 0, 40))]); play(12);")
+    assert js.eval("WHOOSH") == 1
+    assert js.eval("KICKS") == 1, "the camera took no punch"
+    assert js.eval("AIR[AIR.length - 1]") > 0
+
+
+def test_a_long_pad_is_one_whoosh_and_not_a_stutter(js):
+    """`Car.step` re-arms while the car is still on the pad rather than firing
+    again, so a travelator holds the boost open. The rising edge here is the
+    same one, for the same reason: the car is over the pad for five frames."""
+    js.eval("watching([car(lap(0.5, 0, 40))]); play(20);")
+    assert js.eval("WHOOSH") == 1
+
+
+def test_a_replay_that_touches_no_pad_stays_dry(js):
+    """The whole lap short of the pad, which is most laps on most tracks."""
+    js.eval("watching([car(lap(0.1, 0, 40))]); play(12);")
+    assert js.eval("WHOOSH") == 0
+    assert js.eval("AIR[AIR.length - 1]") == 0, "the band was left open"
+
+
+def test_a_car_over_a_pad_in_the_air_is_not_boosted(js):
+    """Same rule as the simulation: a pad is touched, not flown over. The flag
+    byte is what says which, and it is in every recording."""
+    js.eval("watching([car(lap(0.5, FLAG.AIR, 40))]); play(12);")
+    assert js.eval("WHOOSH") == 0
+
+
+def test_the_boost_falls_away_in_the_films_seconds(js):
+    """Slow motion is a slower film, not a shorter boost. The air has to fade
+    over the same stretch of road it faded over when it was driven, or at 0.25x
+    it is gone a corner before the car stops accelerating."""
+    js.eval("watching([car(lap(0.5, 0, 40))]); play(12);")
+    was = js.eval("S.watch.subject.padBoost")
+    # Off the far end of the pad at frame nine, so three frames of fade.
+    assert was == pytest.approx(1.3 - 0.4, abs=1e-6), "not decaying at all"
+    js.eval("S.watch.rate = 0.25; play(4);")
+    # Four frames at a quarter speed is one tenth of a second of the lap.
+    assert js.eval("S.watch.subject.padBoost") == pytest.approx(was - 0.1)
+
+
+def test_a_paused_boost_is_a_still_picture(js):
+    """Pause is the clock stopping, and the air is on that clock. A boost that
+    drained while somebody looked at the frame would empty the one thing they
+    paused to look at."""
+    js.eval("watching([car(lap(0.5, 0, 40))]); play(12); S.watch.playing = false;")
+    was = js.eval("S.watch.subject.padBoost")
+    js.eval("play(8);")
+    assert js.eval("S.watch.subject.padBoost") == was
+    assert js.eval("WHOOSH") == 1, "the pad fired again while nothing moved"
+
+
+def test_a_seek_is_not_a_stretch_of_road(js):
+    """`padCrossed` samples the ground the car covered, because the film's step
+    is not the simulation's and a short pad can sit wholly between two frames of
+    a 4x replay. A scrub moves the car by more than any frame can, and sampling
+    *that* line is a probe of wherever the track happens to lie between two
+    unrelated places - which fired the whoosh for a pad nobody drove over."""
+    assert js.eval("padCrossed(new V3(-100, 0, 0), new V3(100, 0, 0), new V3(0, 1, 0))") is False
+    # But the ground a frame really covers is sampled along, not at its ends:
+    # a car at 4x steps over a two-unit pad in one frame.
+    assert js.eval("padCrossed(new V3(0, 0, 0), new V3(6, 0, 0), new V3(0, 1, 0))") is True
+
+
+def test_a_car_that_runs_out_takes_its_boost_with_it(js):
+    """A lap shorter than the replay stops existing partway through, and
+    nothing else in there would ever close the band again."""
+    js.eval("watching([car(lap(0.5, 0, 6))]); play(4);")
+    assert js.eval("S.watch.subject.padBoost") > 0
+    js.eval("play(4);")
+    assert js.eval("S.watch.subject.padBoost") == 0
+    assert js.eval("AIR[AIR.length - 1]") == 0
