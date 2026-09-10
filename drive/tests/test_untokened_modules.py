@@ -4,7 +4,8 @@
 token derived from the newest mtime under `static/`, so a deploy busts them.
 **The modules `game.js` reaches by bare `import` carry no token** - there is
 nowhere in `import './course.js'` to put one - so nginx's map gives them an hour
-and `sw.js` precaches them forever, until its `CACHE` string changes.
+and nothing can shorten it. (`sw.js` is network-first, so it is not the thing
+holding them; it matters only to somebody offline when a deploy lands.)
 
 That asymmetry has exactly one fatal shape, and it shipped on 2026-09-09:
 
@@ -19,9 +20,10 @@ reproduce it, which is why it needs a test rather than a look.
 
 So this file pins the **export surface** of those modules. Adding an export is
 not forbidden - it is a thing you have to say out loud, by editing `EXPORTS`
-below, and the moment you are here you are being told the other half: bump
-`CACHE` in `sw.js` in the same commit, or a returning player keeps the old file
-indefinitely.
+below, and the moment you are here you are being told the other half: an hour of
+every player who has driven today gets the old file, so the new name has to be
+one they can already answer, or the deploy has to be one you are willing to
+break them for.
 
 Two things this deliberately does *not* check, because they are safe:
 
@@ -69,9 +71,10 @@ def test_an_untokened_module_did_not_grow_an_export(name):
     link for everybody holding the old one - and a failed link takes the whole
     graph with it, so the game does not boot.
 
-    If you meant to add one: put it in `EXPORTS` above **and** bump `CACHE` in
-    `sw.js`, which is the only thing that drops the precached copy. Then check
-    it the way the outage was found, since no fresh browser will show you:
+    If you meant to add one: put it in `EXPORTS` above, bump `CACHE` in `sw.js`
+    for anybody offline across the deploy, and understand that neither of those
+    shortens nginx's hour. Then check it the way the outage was found, since no
+    fresh browser will show you:
 
         git show HEAD:drive/static/js/course.js > drive/static/js/course.js
         # load the page, read the console, put it back
@@ -85,10 +88,10 @@ def test_an_untokened_module_did_not_grow_an_export(name):
     new = [n for n in got if n not in want]
     assert not new, (
         "%s gained %s. Nothing can bust this file - it is imported by name from "
-        "game.js, so it carries no ?v= token and sw.js precaches it - and a "
-        "browser holding the old copy cannot satisfy that import, which stops "
-        "the whole game booting. Add it to EXPORTS here and bump CACHE in "
-        "sw.js, or derive what you need from an export that is already there."
+        "game.js, so it carries no ?v= token and every browser that has driven "
+        "in the last hour holds the old one - and that copy cannot satisfy the "
+        "import, which stops the whole game booting. Derive what you need from "
+        "an export that is already there, or add it to EXPORTS here."
         % (name, ", ".join(new)))
     assert got == want, (
         "%s no longer exports %s. That direction is safe at the cache - old "
@@ -98,9 +101,9 @@ def test_an_untokened_module_did_not_grow_an_export(name):
 
 def test_the_service_worker_precaches_exactly_these():
     """The list above is only the right list if these are the files that get
-    stuck. `sw.js` is what makes an hour into forever, so the two have to name
-    the same modules - a seventh added to its precache and not to `EXPORTS`
-    would be a file with the same trap and no test."""
+    stuck, and `sw.js`'s precache is the closest thing in the repo to a written
+    list of them. A seventh added there and not to `EXPORTS` would be a file
+    with the same trap and no test."""
     with open(os.path.join(JS, "sw.js")) as f:
         sw = f.read()
     cached = set(re.findall(r'"/static/js/(?:vendor/)?([a-z_.]+\.js)"', sw))

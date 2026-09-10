@@ -591,9 +591,10 @@ on the whole deploy and it took the site down on 2026-09-09. `game.js` busts on
 its token and arrives new; `course.js` does not and arrives from the cache; a
 `import { IN } from './course.js'` for a name the cached copy has never heard of
 is a **module graph that does not load**, so the game does not boot at all -
-blank canvas, HTTP 200, nothing in any log, and the Action green. `sw.js`
-precaches `course.js`, so for a returning player it is not an hour, it is
-forever, until `CACHE` is bumped.
+blank canvas, HTTP 200, nothing in any log, and the Action green. The window is
+nginx's hour, not the service worker's lifetime: `sw.js` is network-first, so it
+always tries the wire and only falls back to its copy offline. An hour is
+plenty - it is every player who has driven that day.
 - **Import only names the deployed copy already has.** The fix for that one was
   to stop exporting the constants and derive them in `game.js` from `inputByte`,
   which has been exported since the verifier landed - a question every cached
@@ -605,7 +606,9 @@ forever, until `CACHE` is bumped.
   cached `course.js` simply hands back eight - so the pad says *Estimated*
   instead of lying, rather than the page dying.
 - **Bump `CACHE` in `sw.js` in the same commit** whenever any of those six
-  changes at all. It is the only thing that drops the precached set.
+  changes at all. It is not what saves you here - the cache is network-first -
+  but it is the only thing that drops a stale copy for somebody who is offline
+  or on a flaky connection when the deploy lands.
 - **Reproduce it before you push**, because a fresh browser cannot see it:
   `git show HEAD:drive/static/js/course.js > static/js/course.js`, load the
   page, and read the console. Put it back afterwards.

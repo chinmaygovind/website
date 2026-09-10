@@ -1404,11 +1404,33 @@ body:not(.touch) .touch-only.watch-only { display: none; }
    else's hands in the shape the reader's own hands know. */
 body.watching .hud-bc, body.watching #startHint { display: none; }
 /* The pad is a replay's, and only a desktop's - the phone has the pedals, which
-   are the same byte in the shape that phone's own hands use. */
+   are the same byte in the shape that phone's own hands use.
+
+   **Anchored to the viewport itself, not to `.hud`.** `.hud` is `fixed; inset:
+   0`, so an `absolute` child of it lands in the same place right up until
+   something gives `.hud` a different box - and a control in a corner is the one
+   thing that has to be in that corner on every machine rather than on the ones
+   that were measured. `fixed` is the same two lines and cannot be told
+   otherwise. The insets are `max()` against the safe area for the reason every
+   other anchor on this HUD is: a notch or a home indicator must not land on it.
+
+   `--k` lives here rather than on `.keypad` so that `.pad-est` inherits it -
+   it is a sibling of the keypad, so it was falling back to its own default and
+   sizing its label off a number the pad had stopped using. */
 .hud-br { display: none; }
 body.watching .hud-br {
+  --k: clamp(38px, min(8vh, 5.2vw), 76px);
+  --kgap: calc(var(--k) * 0.11);
   display: flex; flex-direction: column; align-items: flex-end; gap: .3rem;
-  position: absolute; right: 14px; bottom: 14px;
+  position: fixed;
+  right: max(14px, env(safe-area-inset-right, 0px));
+  bottom: max(14px, env(safe-area-inset-bottom, 0px));
+  /* It can never be wider or taller than the room it has, whatever `--k` and
+     whatever the browser. A pad that has run off the corner is a pad you cannot
+     read, and there is no arrangement of this thing where that is better than a
+     slightly smaller one. */
+  max-width: calc(100vw - 28px);
+  max-height: calc(100vh - 28px);
 }
 body.touch .hud-br { display: none !important; }
 #watchBar {
@@ -1559,8 +1581,6 @@ body.touch #watchBar {
    The gaps scale with it, or the pad reads as four keys further apart the
    smaller it gets. */
 .keypad {
-  --k: clamp(38px, min(8vh, 5.2vw), 76px);
-  --kgap: calc(var(--k) * 0.11);
   display: flex; flex-direction: column; align-items: center; gap: var(--kgap);
 }
 .krow { display: flex; gap: var(--kgap); }
@@ -1600,7 +1620,7 @@ body.touch #watchBar {
   box-shadow: 0 0 12px rgba(255, 217, 107, .45);
 }
 .pad-est {
-  font-family: var(--sans); font-size: clamp(.6rem, calc(var(--k, 44px) * 0.17), .8rem);
+  font-family: var(--sans); font-size: clamp(.6rem, calc(var(--k) * 0.17), .8rem);
   letter-spacing: .06em;
   text-transform: uppercase; color: rgba(255, 255, 255, .5);
   text-shadow: 0 1px 3px rgba(0, 0, 0, .6);
