@@ -1559,6 +1559,7 @@ function bindInput() {
   if ($('btnBoard')) $('btnBoard').onclick = () => openBoard();
   $('btnBoardClose').onclick = () => toggleBoard(false);
   $('btnWatchStop').onclick = () => stopWatching();
+  if ($('btnWatchShare')) $('btnWatchShare').onclick = () => shareReplay();
   wireTransport();
   renderTrackCards();          // loadTrack has already set the ghost up
   // Everything room-shaped lives behind the hamburger, at every screen size.
@@ -2103,12 +2104,19 @@ function showBoardRow(i) {
     </div>
     <div class="bd-splits">${rows || '<p class="muted">No splits recorded.</p>'}</div>
     ${row.has_ghost ? `<div class="bd-actions">
-      <button class="btn dark" data-race="${row.id}">Race this ghost</button>
-      <button class="btn secondary" data-watch="${row.id}">Watch it</button>
+      <button class="btn" data-race="${row.id}">Race this Ghost</button>
+      <button class="btn dark" data-watch="${row.id}">Watch Replay</button>
+      <button class="btn ghost bd-share" data-share="${row.id}">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="9" y="9" width="11" height="11" rx="2.2"/>
+          <path d="M15 5.6A2.6 2.6 0 0 0 12.4 3H6.6A2.6 2.6 0 0 0 4 5.6v5.8A2.6 2.6 0 0 0 6.6 14"/>
+        </svg>Share</button>
     </div>` : '<p class="muted">This lap has no replay to watch.</p>'}`;
   const detail = $('boardDetail');
   const race = detail.querySelector('[data-race]');
   const watch = detail.querySelector('[data-watch]');
+  const share = detail.querySelector('[data-share]');
+  if (share) share.onclick = () => shareBoardRow(row.id);
   if (race) race.onclick = () => raceGhost(row);
   if (watch) watch.onclick = () => watchGhost(row);
 }
@@ -2166,7 +2174,13 @@ async function watchGhost(row) {
  */
 function startWatching(frames, hz, meta) {
   startReplay([{ frames, hz, name: meta.who || 'Replay', color: meta.color,
-                 livery: meta.livery, ms: meta.time_ms, splits: meta.splits }]);
+                 livery: meta.livery, ms: meta.time_ms, splits: meta.splits }],
+              // What to hand somebody who wants to see this. The board's own
+              // share link, which `openRequestedLap` is the other end of - a lap
+              // is a row rather than a page, so this is the only address it has.
+              { share: meta.id != null
+                  ? location.origin + '/solo/' + S.track.slug + '?watch=' + meta.id
+                  : null });
 }
 
 // The playback speeds, slowest first. 0.1 is for one corner's hands and 4 is for
@@ -2219,6 +2233,7 @@ function startReplay(cars, opts = {}) {
     subject: { pos: new THREE.Vector3(), fwd: new THREE.Vector3(0, 0, -1),
                up: new THREE.Vector3(0, 1, 0), speed: 0, grounded: true },
     title: opts.title || null,
+    share: opts.share || null,
     playing: true,
     rate: 1,
     // The last byte the pad drew, so it is only touched when it changes: nine
@@ -2300,6 +2315,10 @@ function renderWatchBar() {
   const me = w.cars[w.at];
   $('watchWho').textContent = (w.title ? w.title + ' - ' : 'Watching ') + me.name;
   $('watchTotal').textContent = fmt(w.dur * 1000);
+  // A replay with no address is one nobody else can open - a ghost handed over
+  // by a room, say - so it is not offered rather than offered and broken.
+  const sh = $('btnWatchShare');
+  if (sh) sh.style.display = w.share ? '' : 'none';
   // Said once, under the pad, and only where it is not the truth: a lap that
   // recorded its inputs needs no label, because a pad that never explains itself
   // is a pad you can believe.
@@ -2309,7 +2328,13 @@ function renderWatchBar() {
   const bar = $('watchCars');
   if (!bar) return;
   // One car is not a choice of camera, so it is not offered as one.
-  bar.style.display = w.cars.length > 1 ? '' : 'none';
+  const many = w.cars.length > 1;
+  bar.style.display = many ? '' : 'none';
+  // A phone drops the "Watching X" caption when the chips are up, because they
+  // name everybody and light the one the camera is on - the same sentence twice,
+  // on the screen with the least room for it. Said as a class rather than read
+  // back off the chips' own `display`, so there is one place that knows.
+  document.body.classList.toggle('watch-many', many);
   if (w.cars.length < 2) { bar.innerHTML = ''; return; }
   bar.innerHTML = w.cars.map((c, i) => `
     <button class="wcar${i === w.at ? ' on' : ''}" data-cam="${i}">
@@ -2366,7 +2391,7 @@ function stopWatching() {
   S.watch = null;
   S.car.frozen = false;
   S.view.setVisible(true);
-  document.body.classList.remove('watching');
+  document.body.classList.remove('watching', 'watch-many');
   $('watchBar').style.display = 'none';
   toggleRates(false);
   // The pad holds whatever the last frame lit, and nothing but the class on the
@@ -2535,6 +2560,42 @@ function syncWatchUi() {
     b.classList.toggle('on', parseFloat(b.dataset.rate) === w.rate));
 }
 
+/**
+ * Copy a link, and say so.
+ *
+ * **The clipboard and not `navigator.share`**, which is the one place this
+ * deliberately parts company with `shareLap`. That one is a lap of *yours* on a
+ * results screen, where the OS sheet is what somebody on a phone means; these
+ * two doors are marked with a copy glyph and the word Share, and a button that
+ * shows a copy mark and then opens a sheet full of apps is a button that lied
+ * about what it does. It also means there is always a toast: the OS sheet is its
+ * own feedback and a copy has none, so a silent copy is indistinguishable from a
+ * dead button.
+ *
+ * The fallback is the URL in the toast. A clipboard write can be refused - an
+ * insecure origin, a permission, a browser that wants a user gesture it thinks
+ * this was not - and a link you can read and select beats a shrug.
+ */
+async function copyLink(url) {
+  try {
+    await navigator.clipboard.writeText(url);
+    toast('Link copied!');
+  } catch (e) {
+    toast(url);
+  }
+}
+
+/** The Share button on the replay bar. */
+function shareReplay() {
+  const w = S.watch;
+  if (w && w.share) copyLink(w.share);
+}
+
+/** A link to one lap on the board, which is where `?watch=` is answered. */
+function shareBoardRow(id) {
+  copyLink(location.origin + '/solo/' + S.track.slug + '?watch=' + id);
+}
+
 /** T, on a replay: back to the last checkpoint the driver has been through. */
 function watchLastCheckpoint() {
   const w = S.watch;
@@ -2634,19 +2695,17 @@ function paintInputs(b) {
     const el = $(id);
     if (el) el.classList.toggle('on', !!(b & bit));
   }
-  // Amber for the drift, for the reason the touch button goes amber while you
-  // are driving: it is the driver asking for something different, and a slide in
-  // the same colour as a held throttle is a slide you cannot see.
+  // Amber on the phone's three, and only there. It is on a *control* over
+  // there - under a thumb that asked for one thing and got another - so it has
+  // to be obvious a different thing was asked for, or the slide reads as the car
+  // misbehaving. The desktop pad is a picture of a keyboard, where a held key is
+  // a held key: `.key.on` already says so, and a second colour for one of the
+  // five is a distinction to learn for nothing.
   //
-  // The space bar is the handbrake, so it goes amber whenever the bit is set.
-  // The phone's three are not - they are the throttle and the two arrows, which
-  // is where the *gestures* live - so each goes amber only while it is also
-  // being held, which is exactly what it looks like under a real thumb. Without
-  // the second half, one held handbrake lights both arrows at once and the pad
-  // says the driver is turning two ways.
+  // Each of the three goes amber only while it is *also* being held, which is
+  // what it looks like under a real thumb. Without that, one held handbrake
+  // lights both arrows at once and the pad says the driver is turning two ways.
   const drift = !!(b & IN.HANDBRAKE);
-  const sp = $('kSpace');
-  if (sp) sp.classList.toggle('drifting', drift);
   for (const [id, bit] of DRIFT_LIT) {
     const el = $(id);
     if (el) el.classList.toggle('drifting', drift && !!(b & bit));
@@ -2662,8 +2721,8 @@ const INPUT_KEYS = [
   ['kSpace', IN.HANDBRAKE],
   ['tGas', IN.THROTTLE], ['tBrake', IN.BRAKE], ['tLeft', IN.LEFT], ['tRight', IN.RIGHT],
 ];
-// The phone's three, with the bit each has to be holding to go amber. The space
-// bar is not in here: it *is* the handbrake, so it has no second condition.
+// The phone's three, with the bit each has to be holding to go amber. The
+// desktop pad's space bar is deliberately not in here - see `paintInputs`.
 const DRIFT_LIT = [['tGas', IN.THROTTLE], ['tLeft', IN.LEFT], ['tRight', IN.RIGHT]];
 
 /** Advance the replay and point the camera at whoever it is following. */
@@ -2766,7 +2825,13 @@ async function openRaceReplay() {
   if (!d || !d.cars || !d.cars.length) { toast('That replay is not there'); return; }
   startReplay(d.cars.map(c => ({
     frames: c.frames, hz: d.hz, name: c.name, color: c.color, ms: c.ms,
-  })), { title: 'Race replay' });
+  })), {
+    title: 'Race replay',
+    // A race *is* a page, so the address is the one already in the bar. Read off
+    // `location` rather than rebuilt from `CFG.race`, which would drop the query
+    // somebody arrived with.
+    share: location.origin + location.pathname,
+  });
 }
 
 // ---------------------------------------------------------------------------

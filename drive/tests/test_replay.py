@@ -33,7 +33,16 @@ pytestmark = pytest.mark.skipif(not HAVE_QUICKJS, reason="quickjs not installed"
 
 
 def _fn(src, name):
+    """One top-level function, to its column-0 closing brace.
+
+    The `async` is part of it. Slicing from `function <name>(` drops that
+    keyword, and a function body with an `await` in it and no `async` on the
+    front is a **syntax error** rather than a wrong answer - so this fails loudly
+    the moment somebody lifts an async one, which is exactly what happened.
+    """
     at = src.index("function %s(" % name)
+    if src[max(0, at - 6):at] == "async ":
+        at -= 6
     return src[at:re.compile(r"^\}$", re.M).search(src, at).end()]
 
 
@@ -431,3 +440,85 @@ def test_a_full_set_of_slots_refuses_rather_than_silently_dropping_one(saver):
                " saveFromReplay();")
     assert saver.eval("S.saves.length") == 9
     assert "slots full" in saver.eval("TOASTS[TOASTS.length - 1]")
+
+
+# ---------------------------------------------------------------------------
+# Share
+# ---------------------------------------------------------------------------
+
+SHARE_STUB = r"""
+var COPIED = null, TOASTED = [];
+var navigator = { clipboard: { writeText: function (s) {
+  COPIED = s;
+  return Promise.resolve();
+} } };
+var location = { origin: 'https://drive.example' };
+function toast(m) { TOASTED.push(m); }
+S = { track: { slug: 'bigred' }, watch: null };
+"""
+
+
+def _share():
+    src = open(os.path.join(JS, "game.js")).read()
+    return "\n".join(_fn(src, n) for n in ("copyLink", "shareReplay", "shareBoardRow"))
+
+
+class Sharer:
+    """`copyLink` is async, so the toast lands in a microtask rather than during
+    the call. Nothing in the browser has to care - the next frame runs it - but a
+    QuickJS context only drains its job queue when asked, so a test that read the
+    toast straight after `eval` would assert on an empty list and pass for the
+    wrong reason once the toast stopped working."""
+
+    def __init__(self, ctx):
+        self.ctx = ctx
+
+    def run(self, script):
+        self.ctx.eval(script)
+        while self.ctx.execute_pending_job():
+            pass
+
+    def eval(self, expr):
+        return self.ctx.eval(expr)
+
+
+@pytest.fixture()
+def sharer():
+    c = quickjs.Context()
+    c.eval(SHARE_STUB)
+    c.eval(_share())
+    return Sharer(c)
+
+
+def test_a_lap_is_shared_as_the_link_that_opens_it(sharer):
+    """`/solo/<slug>?watch=<id>` and nothing else - it is the address
+    `openRequestedLap` is the other end of, and the only one a row has. A lap is
+    a row rather than a page, so getting this wrong is a link that loads the
+    track and quietly does not watch anything."""
+    sharer.run("shareBoardRow(173);")
+    assert sharer.eval("COPIED") == "https://drive.example/solo/bigred?watch=173"
+
+
+def test_sharing_says_it_copied(sharer):
+    """A copy has no feedback of its own - unlike an OS share sheet, which is
+    why this is not `navigator.share` - so a silent one is indistinguishable
+    from a dead button."""
+    sharer.run("shareBoardRow(173);")
+    assert sharer.eval("TOASTED[0]") == "Link copied!"
+
+
+def test_a_replay_shares_whatever_address_it_was_given(sharer):
+    """One lap is a row on a board and a whole race is a page, so the address is
+    carried on the replay rather than rebuilt here from what it happens to be."""
+    sharer.run("S.watch = { share: 'https://drive.example/race/42', cars: [{}], at: 0 };"
+               " shareReplay();")
+    assert sharer.eval("COPIED") == "https://drive.example/race/42"
+
+
+def test_a_replay_with_no_address_shares_nothing(sharer):
+    """A ghost handed over by a room has no link anybody else could open, so the
+    button is not offered - and if it is reached anyway it does nothing rather
+    than copying a URL that 404s."""
+    sharer.run("S.watch = { share: null, cars: [{}], at: 0 }; shareReplay();")
+    assert sharer.eval("COPIED") is None
+    assert sharer.eval("TOASTED.length") == 0

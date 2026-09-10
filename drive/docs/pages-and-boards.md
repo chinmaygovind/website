@@ -235,9 +235,18 @@ the track cards, `/account`, `/leaderboard`, the nav, or the in-game board panel
   the difficulty and the gold time.
 - **The board is in the game.** "View others" opens the leaderboard over the track;
   clicking a row opens that lap - its checkpoint splits against your own PB's, who set
-  it, and **Watch it** / **Race this ghost**. Picking somebody to chase is something you
+  it, and three things to do with it. Picking somebody to chase is something you
   do between runs on the track you are already on, so leaving the page for it would be
-  the wrong shape. The public `/track/<slug>` page opens a lap the same way and links
+  the wrong shape.
+  - **Three buttons, three weights, descending.** *Race this Ghost* (red) changes
+    what you are driving against and is the reason most people open a row;
+    *Watch Replay* (ink) is the other real thing to do with it; *Share* (outline,
+    with a copy mark) does nothing to the game at all and copies
+    `/solo/<slug>?watch=<id>`, which is the address `openRequestedLap` is the
+    other end of. They were ink and white before, which is two colours saying
+    nothing about which is which. `.bd-actions` is a grid rather than a row, so
+    each is the full width of the column - they are three things to do with one
+    lap, not a toolbar. The public `/track/<slug>` page opens a lap the same way and links
   back in with `?ghost=<id>` / `?watch=<id>`; `/api/board` carries each row's id and
   splits so no second request is needed, and `/api/ghost/<slug>?who=<id>` serves one
   lap, **scoped to the track that asked** so a replay cannot be played against geometry

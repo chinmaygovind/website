@@ -327,6 +327,17 @@
     </div>
     <div class="watch-head">
       <span id="watchWho">Watching</span>
+      {# The link to the thing you are looking at. Next to the name because that
+         is what it is a link *to* - somebody's lap, not this page - and it is a
+         copy mark rather than the OS share glyph because on a desktop, where
+         most of this is read, copying is all it does. #}
+      <button class="btn small ghost" id="btnWatchShare" title="Copy a link to this replay">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="9" y="9" width="11" height="11" rx="2.2"/>
+          <path d="M15 5.6A2.6 2.6 0 0 0 12.4 3H6.6A2.6 2.6 0 0 0 4 5.6v5.8A2.6 2.6 0 0 0 6.6 14"/>
+        </svg>
+        <span>Share</span>
+      </button>
       <!-- Three labels for one button, because it has three destinations: in a
            room or solo it stops watching and hands the car back, on a replay
            opened from a room it goes back to that room, and on a replay opened

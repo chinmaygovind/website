@@ -452,11 +452,37 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
     gate test needs the car inside a gate's mouth on two consecutive samples,
     which is true 120 times a second and not true at 15Hz - a car doing 200
     covers most of four units between frames and would step straight over one.
+  - **Share is a copy and says so.** A copy mark and the word, next to the
+    driver's name because the name is what it is a link *to* - a lap off the
+    board is `/solo/<slug>?watch=<id>`, and a race replay is the page you are
+    already on. It is **the clipboard rather than `navigator.share`**, which is
+    where it parts company with the results screen's `shareLap`: a button
+    wearing a copy glyph that opens a sheet full of apps has lied about what it
+    does. That also means there is always a toast - an OS sheet is its own
+    feedback and a copy has none, so a silent copy is a dead button. A replay
+    with no address (a ghost handed over by a room) is not offered one.
   - **The bar is sized off what is left of the floor**, not off the viewport:
     900px centred on a 1280px screen runs through the minimap on one side and
     the input pad on the other. On a phone it is inset by the thumb pads' own
     width, written the same way the pads write it, because the play button was
     otherwise underneath the left steering arrow.
+  - **And on a phone it is a wrapping row, not a stack.** A landscape phone is
+    about 390px tall with the car in the middle of it, so every row this bar
+    keeps is a row over the thing being watched: at desktop sizing it was 94px in
+    a time trial and **133px - a third of the screen - in a race replay**, whose
+    top edge landed exactly on the car. The transport and the two buttons beside
+    it are each about a third of the width between the thumb pads, so they share
+    one line and the chips take a line of their own (`flex-basis: 100%`);
+    somewhere narrower than all three fit, it wraps back into the stack it used
+    to be. With everything drawn smaller that is **40px in a time trial and 67px
+    in a race replay**, 10% and 17%.
+    - Three things go rather than shrink, each because the screen says them
+      twice: the *total* time (the position is the number that moves), the word
+      on the Share button (the mark is a control everybody knows), and - in a
+      race replay only - **the "Watching X" caption**, because the chips
+      underneath name everybody with the camera's own chip lit. That last one is
+      `body.watch-many`, set by `renderWatchBar`, which is the one place that
+      already knows whether there is a list of names.
 - **The input display is what the driver was pressing, and it is a ninth value on
   a ghost frame rather than a guess.** Four keys in an inverted T with a space
   bar under them, bottom right, mirroring the map bottom left - the shape the
@@ -510,11 +536,16 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
     look at. `recordedSpeed` asks the frames instead. The camera keeps its own
     measure and only falls back to this on the frame after a seek, where there is
     no previous frame to measure against.
-  - **The drift is amber on the button doing it.** The space bar goes amber
-    whenever the bit is set, because it *is* the handbrake; the phone's three go
-    amber only while also being held, which is what it looks like under a real
-    thumb. Without that second condition one held handbrake lights both arrows
-    and the pad says the driver is turning two ways.
+  - **The amber is the phone's, and the desktop pad has none.** They are one
+    byte drawn for two readers. On a phone it is on a *control*, under a thumb
+    that asked for one thing and got another, so it has to be obvious a different
+    thing was asked for or the slide reads as the car misbehaving - the rule the
+    driving buttons have always been under. The desktop pad is a picture of a
+    keyboard, where a held key is a held key: a second colour for one of the five
+    is a distinction to learn for nothing, and it made the one key that is purely
+    a readout look like a warning. The phone's three go amber only while *also*
+    being held, or one handbrake lights both arrows and the pad says the driver
+    is turning two ways.
 - **Escape works top of the screen down, and the replay is at the bottom of that
   list rather than the top.** It used to be first, which was right while watching
   took the whole HUD away: there was nothing that *could* be over a replay, so

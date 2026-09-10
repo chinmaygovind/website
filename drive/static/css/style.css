@@ -1313,7 +1313,22 @@ body:not(.touch) .touch-only.watch-only { display: none; }
 .sp i { font-style: normal; font-family: var(--mono); font-size: .85rem; }
 .sp i.ahead { color: #1f9d55; }
 .sp i.behind { color: var(--red); }
+/* A grid rather than a row, so the three stack and each is the full width of
+   the column - they are three things to do with one lap, not a toolbar.
+
+   **Three weights, descending.** Racing this lap changes what you are driving
+   against and is the reason most people open a row, so it is the primary; the
+   replay is the other real thing to do with it; Share does nothing to the game
+   at all and is an outline. They used to be ink and white, which is two colours
+   saying nothing about which is which. */
 .bd-actions { display: grid; gap: .45rem; }
+.bd-share {
+  display: inline-flex; align-items: center; justify-content: center; gap: .4rem;
+}
+.bd-share svg {
+  width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
 /* Bottom right, under both columns. A hairline above it so it reads as the foot
    of the panel rather than a stray link after the table. */
 .board-foot { display: flex; justify-content: flex-end; margin-top: .85rem;
@@ -1474,8 +1489,60 @@ body.touch #watchBar {
   left: calc(var(--pad) + env(safe-area-inset-left, 0px));
   right: calc(var(--pad) + env(safe-area-inset-right, 0px));
   width: auto; max-width: none; transform: none;
-  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  padding: .3rem .45rem; gap: .28rem; border-radius: 16px;
+  /* **A wrapping row rather than a column.** The transport and the two buttons
+     beside it are each about a third of the width available between the thumb
+     pads, so on a phone they fit on one line and there is no reason to spend a
+     second one - which on a 390px screen is 7% of it, over the car. The chips
+     take a whole line of their own (`flex-basis: 100%`) because a list of eight
+     names never shared one. Somewhere narrower than they all fit, this wraps
+     back into the stack it used to be, which is the graceful end of it. */
+  flex-direction: row; flex-wrap: wrap;
+  align-items: center; justify-content: center;
 }
+body.touch .watch-transport { flex: 1 1 200px; }
+body.touch .watch-head { flex: 0 1 auto; }
+body.touch #watchCars { flex: 1 0 100%; justify-content: center; }
+
+/* --- the phone's replay bar ------------------------------------------------
+   A landscape phone is about 390px tall and the car sits in the middle of it,
+   so every row this bar keeps is a row over the thing being watched. At full
+   size it was 94px in a time trial and **133px - a third of the screen - in a
+   race replay**, whose top edge landed exactly on the car.
+
+   Nothing is dropped that says something the screen does not say twice; what is
+   left is drawn small. The exception is the driver's name in a race replay,
+   which the chips underneath already give with the camera's own chip lit - so
+   there it is a caption on a list that is right there. */
+body.touch .watch-transport { gap: .38rem; }
+body.touch .tport { width: 28px; height: 28px; }
+body.touch .tport svg { width: 14px; height: 14px; }
+body.touch .tport.rate-now { min-width: 34px; padding: 0 .4rem; font-size: .72rem; }
+body.touch #scrub { height: 18px; min-width: 60px; }
+body.touch .watch-time { font-size: .72rem; gap: .2rem; }
+/* The total is a number you read once. The position is the one that moves. */
+body.touch .watch-time span, body.touch .watch-time i { display: none; }
+body.touch .watch-head { gap: .4rem; padding-left: .25rem; font-size: .78rem; }
+/* A long name must cost the row its width rather than a second line. */
+body.touch #watchWho {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+body.touch .btn.small { font-size: .74rem; padding: .18rem .5rem; border-width: 1px; }
+/* Share is a glyph here. The word is what makes it legible on a desktop, where
+   there is room for it; on a phone the mark is the whole of a control everybody
+   already knows. */
+body.touch .btn.small.ghost span { display: none; }
+body.touch .btn.small.ghost { padding: .18rem .38rem; }
+body.touch #watchCars { gap: .22rem; padding-bottom: 0; }
+body.touch .wcar { font-size: .7rem; padding: .12rem .45rem; gap: .28rem; }
+body.touch .wcar i { font-size: .66rem; }
+body.touch .wcar .st-dot { width: 7px; height: 7px; }
+/* The chips name everybody and light the one the camera is on, so the caption
+   above them is the same sentence twice - and that row is what pushed a race
+   replay's bar onto the car. `body.watch-many` is set by `renderWatchBar`, which
+   is the one place that already knows whether there is a list of names. */
+body.touch.watch-many #watchWho { display: none; }
 #watchBar b { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
 /* The transport: play, the bar, the clock, the speed.
@@ -1612,13 +1679,14 @@ body.touch #watchBar {
 .key.on {
   background: rgba(255, 255, 255, .82); border-color: #fff; color: #12141c;
 }
-/* Amber for the handbrake wherever it is drawn, the same as the touch button
-   while you are driving: it is the driver asking for something different, and a
-   slide in the colour of a held throttle is a slide you cannot see. */
-.key.drifting, .key.drifting.on {
-  background: rgba(120, 84, 12, .75); border-color: #ffd96b; color: #ffd96b;
-  box-shadow: 0 0 12px rgba(255, 217, 107, .45);
-}
+/* **The space bar is not amber, and the phone's pedals still are.** They are the
+   same fact drawn for two different readers. On a phone the amber is on a
+   *control*: it is under a thumb that asked for one thing and got another, so it
+   has to be obvious that a different thing was asked for, or the slide reads as
+   the car misbehaving. On the desktop pad nothing is under a thumb - it is a
+   picture of a keyboard, and on a keyboard a held key is a held key. A second
+   colour there is a distinction the reader has to learn for no gain, and it made
+   the one key that is a *readout* look like a warning. */
 .pad-est {
   font-family: var(--sans); font-size: clamp(.6rem, calc(var(--k) * 0.17), .8rem);
   letter-spacing: .06em;
@@ -1642,6 +1710,19 @@ body.touch #watchBar {
 .wcar i { font-style: normal; font-family: var(--mono); opacity: .7; font-size: .78rem; }
 .wcar .st-dot { width: 9px; height: 9px; border-radius: 50%; }
 .btn.small { font-size: .85rem; padding: .3rem .8rem; }
+/* Share: a copy mark and a word, quieter than the red way out beside it. It is
+   the second-most-pressed thing on the bar and the least consequential, which is
+   exactly the pair of facts an outline button is for. */
+.btn.small.ghost {
+  display: inline-flex; align-items: center; gap: .35rem;
+  background: rgba(255, 255, 255, .07); color: #fff;
+  border: 1px solid var(--hud-line);
+}
+.btn.small.ghost:hover { background: rgba(255, 255, 255, .18); }
+.btn.small.ghost svg {
+  width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
 
 /* Practice states panel.
    A list of rows and nothing else. The slot number is the key you press to

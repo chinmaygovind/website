@@ -262,13 +262,23 @@ def test_a_recorded_brake_is_not_a_recorded_throttle(js):
     assert _lit(js, "kDown") and not _lit(js, "kUp")
 
 
-def test_the_space_bar_is_the_handbrake_and_goes_amber(js):
-    """The one key on the pad that is a request rather than a direction, and it
-    is coloured like the touch button is for the same reason: a slide drawn in
-    the colour of a held throttle is a slide you cannot see."""
+def test_the_space_bar_is_lit_like_any_other_key(js):
+    """The desktop pad is a picture of a keyboard, and on a keyboard a held key
+    is a held key. The amber belongs to the phone's pedals, where it is on a
+    *control* under a thumb that asked for one thing and got another - here it
+    would be a second colour to learn for nothing, and it made the one key that
+    is purely a readout look like a warning."""
     js.eval("watching([car(lap(0.5, 0, 8, true, IN.HANDBRAKE), true)]); play();")
     assert _lit(js, "kSpace")
-    assert js.eval("!!AMBER['kSpace']")
+    assert not js.eval("!!AMBER['kSpace']"), "the space bar is still amber"
+
+
+def test_the_phone_pedal_still_goes_amber(js):
+    """The same byte, drawn for a different reader: on a phone the drift has to
+    be obvious or the slide reads as the car misbehaving."""
+    js.eval("watching([car(lap(0.5, 0, 8, true, IN.HANDBRAKE | IN.THROTTLE), true)]);"
+            " play();")
+    assert js.eval("!!AMBER['tGas']")
 
 
 def test_an_old_lap_infers_the_hands_from_the_car(js):
