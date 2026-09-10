@@ -246,7 +246,27 @@ the track cards, `/account`, `/leaderboard`, the nav, or the in-game board panel
     other end of. They were ink and white before, which is two colours saying
     nothing about which is which. `.bd-actions` is a grid rather than a row, so
     each is the full width of the column - they are three things to do with one
-    lap, not a toolbar. The public `/track/<slug>` page opens a lap the same way and links
+    lap, not a toolbar.
+  - **The splits are capped and scroll; the sheet does not.** A lap has as many
+    of them as its track has checkpoints - Sunrise has three and Rickety Rails
+    thirteen - so an uncapped list made the panel a different height for every
+    row you clicked, grew to the sheet's own `max-height: 90vh`, and took the
+    whole thing into `overflow: auto` with it, pushing the three buttons below
+    the fold. `.board-list` beside it had been capped since it was written, for
+    the same reason and against a longer list. `min-height: 0` on `.bd-splits` is
+    what makes the cap bite at all: a flex item's floor is its content, so
+    without it the list refuses to be shorter than thirteen rows and scrolls the
+    sheet instead of itself.
+  - **A short screen is not a narrow one, and this panel needed the other
+    query.** A landscape phone is 844x390 - wide enough to keep both columns side
+    by side and far too short for what was in them, so `max-width: 620px` never
+    fired and the sheet sat pinned at 90vh with its own scrollbar. The three
+    buttons were most of it: stacked they are about 150px, which on a 390px
+    screen is more than the splits above them, and in a row they are 44px with
+    the labels still fitting. With that and the two lists giving up a little,
+    `@media (max-height: 520px)` brings the whole panel back inside the screen -
+    304px against a 351px ceiling - so nothing is behind a scrollbar that you
+    have to find. The public `/track/<slug>` page opens a lap the same way and links
   back in with `?ghost=<id>` / `?watch=<id>`; `/api/board` carries each row's id and
   splits so no second request is needed, and `/api/ghost/<slug>?who=<id>` serves one
   lap, **scoped to the track that asked** so a replay cannot be played against geometry

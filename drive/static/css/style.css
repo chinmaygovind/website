@@ -1295,7 +1295,14 @@ body:not(.touch) .touch-only.watch-only { display: none; }
 .brow-pos { width: 1.6rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 .brow-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .brow-ms { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.board-detail { border-left: 1px solid var(--line); padding-left: .9rem; min-height: 12rem; }
+/* A column, so the splits are the part that gives. The time and the name at the
+   top and the three buttons at the foot are fixed points - they are what you
+   came to the row for - and everything between them is a list that can be any
+   length. */
+.board-detail {
+  border-left: 1px solid var(--line); padding-left: .9rem; min-height: 12rem;
+  display: flex; flex-direction: column;
+}
 .board-detail .empty { margin-top: 2.5rem; text-align: center; }
 .bd-head { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
 .bd-time {
@@ -1303,7 +1310,26 @@ body:not(.touch) .touch-only.watch-only { display: none; }
   font-variant-numeric: tabular-nums; letter-spacing: -.03em;
 }
 .bd-who { display: flex; align-items: center; gap: .35rem; color: var(--ink-soft); }
-.bd-splits { margin: .8rem 0; display: flex; flex-direction: column; gap: 1px; }
+/* **Capped and scrolled, because a lap has as many of these as it has
+   checkpoints.** Sunrise has three and Rickety Rails has thirteen, so an
+   uncapped list made the sheet a different height for every row you clicked -
+   it grew to the sheet's own 90vh, took the whole panel into `overflow: auto`
+   with it, and pushed Race / Watch / Share off the bottom, which is the half of
+   the panel you are there to press. `.board-list` next to it has been capped
+   since it was written, for the same reason and against a longer list.
+
+   `min-height: 0` is what makes the cap bite at all: a flex item's floor is its
+   content, so without it this refuses to be shorter than thirteen rows and
+   scrolls the sheet instead of itself. */
+.bd-splits {
+  margin: .8rem 0; display: flex; flex-direction: column; gap: 1px;
+  flex: 1 1 auto; min-height: 0;
+  max-height: min(42vh, 320px); overflow-y: auto;
+  /* The scrollbar sits where the delta column ends, so give it somewhere to be
+     rather than letting it crop the number. */
+  padding-right: .2rem;
+  overscroll-behavior: contain;
+}
 /* Their split, then what it is worth against yours - which is the only part of
    somebody else's lap you can act on. */
 .sp { display: grid; grid-template-columns: 3.4rem 1fr auto; gap: .5rem;
@@ -1344,10 +1370,33 @@ body:not(.touch) .touch-only.watch-only { display: none; }
 /* The arrow leads the eye out of the panel, so it moves rather than the text. */
 .board-all:hover svg { transform: translateX(2px); }
 .board-all svg { transition: transform .12s ease-out; }
+/* **A short screen, which is not the same question as a narrow one.** A phone in
+   landscape is 844x390: wide enough to keep both columns side by side and far too
+   short for what was in them. The sheet is capped at 90vh, so everything that did
+   not fit went into its own scrollbar and took Race / Watch / Share below the
+   fold - the half of the panel you opened the row to press.
+
+   The three buttons are most of it. Stacked they are about 150px, which on a
+   390px screen is more than the splits they sit under; in a row they are 44px and
+   the labels still fit. The rest is the two lists giving up a little and the big
+   time being a bit smaller. */
+@media (max-height: 520px) {
+  .board-list { max-height: 34vh; }
+  .bd-splits { max-height: 28vh; margin: .5rem 0; }
+  .bd-time { font-size: 1.4rem; }
+  .bd-actions { grid-template-columns: repeat(3, 1fr); }
+  .bd-actions .btn { font-size: .85rem; padding: .4rem .5rem; }
+  .board-foot { margin-top: .5rem; padding-top: .4rem; }
+}
 @media (max-width: 620px) {
   .board-split { grid-template-columns: 1fr; }
   .board-detail { border-left: 0; border-top: 1px solid var(--line); padding: .8rem 0 0; }
   .board-list { max-height: 30vh; }
+  /* Stacked, the two lists share one screen instead of standing beside each
+     other, so the splits get about what the times above them get. On a landscape
+     phone that is a handful of rows and a scroll, which is the right trade: the
+     buttons under it stay on the screen. */
+  .bd-splits { max-height: 26vh; }
 }
 
 /* --- the track switcher --------------------------------------------------
