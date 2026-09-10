@@ -30,8 +30,16 @@
 export const MANIFEST_URL = '/static/audio/music.json';
 
 const FADE = 1.2;      // default crossfade, seconds - overridable per song
-const LEVEL = 0.5;     // the music bus, under the master with the sfx bus
-const ENABLE_TC = 0.3; // switching the music on is a fade, not a cut
+// The music bus, beside the sfx bus under the master. Above 1 on purpose: the
+// songs are normalised to -17 LUFS in the file, which is the loudest a linear
+// gain can make the quietest-headroom song in the pool (chicane, true peak
+// -0.10dBFS) without clipping it - so the loudness they are actually played at
+// is made up here instead of in the file. Peak stays safe: -1dBTP x 1.35 x the
+// master's 0.55 is 0.66 of full scale.
+const LEVEL = 1.1;
+// Switching the music on is a fade, not a cut. A time constant rather than a
+// ramp, so it is ~63% up after one of these and ~95% after three.
+const ENABLE_TC = 0.3;
 
 /**
  * Fetch the manifest, once per page.
@@ -77,11 +85,16 @@ export class MusicPlayer {
   /**
    * @param ctx   an AudioContext, already built on a user gesture
    * @param out   the node to play into - the master, beside the sfx bus
-   * @param opts  `level`, and `onsong(entry|null)` for the now-playing popup
+   * @param opts  `level`, `enableTc`, and `onsong(entry|null)` for the
+   *              now-playing popup
    */
   constructor(ctx, out, opts = {}) {
     this.ctx = ctx;
     this.level = opts.level != null ? opts.level : LEVEL;
+    // How gently the song arrives, and only the arrival: going *off* keeps
+    // `ENABLE_TC` whatever this is, because a switch you press is a switch that
+    // should answer you. The menu asks for a slower one - see `menumusic.js`.
+    this.enableTc = opts.enableTc != null ? opts.enableTc : ENABLE_TC;
     this.onsong = opts.onsong || null;
 
     // Beside the sfx bus rather than under it, so the two switches in settings
@@ -121,9 +134,9 @@ export class MusicPlayer {
    * Which song. Called on entering a track and again whenever the track
    * switcher swaps worlds without a navigation.
    *
-   * A slug with no manifest entry - Figure Eight, a user-made track, a draft
-   * out of the editor - stops the music rather than leaving the last track's
-   * song playing over a different one.
+   * A slug with no manifest entry - a user-made track, a draft out of the
+   * editor - stops the music rather than leaving the last track's song playing
+   * over a different one.
    */
   setSong(entry) {
     const same = entry && this.entry && entry.src === this.entry.src;
@@ -138,8 +151,8 @@ export class MusicPlayer {
   enable(on) {
     if (on === this.on) return;
     this.on = on;
-    this.bus.gain.setTargetAtTime(on ? this.level : 0,
-                                  this.ctx.currentTime, ENABLE_TC);
+    this.bus.gain.setTargetAtTime(on ? this.level : 0, this.ctx.currentTime,
+                                  on ? this.enableTc : ENABLE_TC);
     if (on) {
       this._startActive(this.entry ? this.entry.in : 0);
     } else {

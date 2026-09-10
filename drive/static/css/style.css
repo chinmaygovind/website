@@ -839,21 +839,26 @@ body.touch .mapbtns { display: none; }
 #toast.show { opacity: 1; }
 
 /* --- now playing ---------------------------------------------------------
-   The song credit, on the right, under the top-right HUD column rather than in
-   it: that column is live readouts you glance at mid-corner, and this is a
-   thing you read once and then ignore. It slides in from the right and leaves
-   the same way, so it reads as arriving rather than appearing.
+   The song credit, last in the top-right HUD column. It slides in from the
+   right and leaves the same way, so it reads as arriving rather than appearing.
+
+   **It has no anchor of its own, and that is the fix rather than the style.**
+   It used to be `position: absolute` at a hand-picked 96px - clear of the
+   button bar and of the medal table, which is all there is in a time trial.
+   A room has neither: the standings and the qualifying board stack in that
+   same column and run far past 96px, so the credit sat on top of the order
+   everybody was racing for. `body.touch` moved it to 76px, which is the same
+   guess made twice and lands it over the medals on a phone. Being the last
+   child of the column instead means the stack decides where it goes, no offset
+   can be out of date, and it slides with the room drawer like everything else
+   in there. It is last because nothing may be pushed down when it appears.
+
+   Hidden it keeps its space, which costs nothing: there is nothing below it.
 
    `pointer-events` follows the visible state. A card faded to zero that still
    swallowed clicks would be an invisible link sitting over the track for as
-   long as the page is open, which is the kind of bug nobody thinks to look for.
-
-   The right offset clears `env(safe-area-inset-right)` for the same reason the
-   HUD does - on a notched phone held sideways, the inset is the camera. */
+   long as the page is open, which is the kind of bug nobody thinks to look for. */
 .now-playing {
-  position: absolute;
-  top: calc(96px + env(safe-area-inset-top, 0px));
-  right: calc(14px + env(safe-area-inset-right, 0px));
   display: flex; align-items: center; gap: .6rem;
   max-width: min(280px, 60vw);
   padding: .5rem .85rem .5rem .7rem;
@@ -880,13 +885,62 @@ body.touch .mapbtns { display: none; }
 .np-artist { font-size: .76rem; opacity: .72; }
 
 /* Thumbs own the top-right of a phone even less than they own the corners, and
-   the card is the least urgent thing on the screen - so it gets out of the way
-   of the readouts rather than the other way round. */
-body.touch .now-playing { top: calc(76px + env(safe-area-inset-top, 0px));
-                          max-width: min(210px, 52vw); padding: .4rem .7rem; }
+   the card is the least urgent thing on the screen - so it takes less of it. */
+body.touch .now-playing { max-width: min(210px, 52vw); padding: .4rem .7rem; }
 
 @media (prefers-reduced-motion: reduce) {
   .now-playing { transition: opacity .28s ease; transform: none; }
+}
+
+/* --- the menu music switch -----------------------------------------------
+   Music is off by default and its only control used to be in the play page's
+   settings sheet, so every menu page had a song it was never going to play.
+   This is that switch, on the pages that had none, and it is a switch rather
+   than a link into settings because the click that turns music on has to be
+   the click the browser accepts as a gesture - anything with a page load
+   between the two ends up with the setting on and no audio context.
+
+   Bottom left, which on these pages is the one corner nothing else claims: the
+   nav owns the top, the content owns the middle, and the bottom right is where
+   a browser puts its own link preview. The credit stacks above the button and
+   slides in from the same edge it does, so the two read as one thing.
+
+   Not on the play page, and not by a rule here - `menumusic.js` builds both
+   nodes and never runs there. The play page has its own switch in settings and
+   its own card in the HUD. */
+.menu-music {
+  position: fixed; z-index: 25;
+  left: calc(14px + env(safe-area-inset-left, 0px));
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+  /* The dock is a box around two small things and mostly empty; only the two
+     things themselves may take a click. */
+  pointer-events: none;
+}
+.menu-music > * { pointer-events: auto; }
+
+.mm-btn {
+  width: 38px; height: 38px; padding: 0; flex: 0 0 auto;
+  display: grid; place-items: center;
+  background: var(--hud); border: 1px solid var(--hud-line);
+  border-radius: 999px; color: #fff; cursor: pointer;
+  transition: color .12s ease, border-color .12s ease;
+}
+.mm-btn:hover, .mm-btn:focus-visible { border-color: rgba(255, 255, 255, .5); }
+.mm-btn svg { width: 19px; height: 19px; fill: none; stroke: currentColor;
+              stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* Off is the stroke through the note plus a dimmer note, because on a dark
+   circle the stroke alone is a detail you have to go looking for. */
+.mm-btn .mm-slash { opacity: 0; transition: opacity .12s ease; }
+.mm-btn.off { color: rgba(255, 255, 255, .55); }
+.mm-btn.off .mm-slash { opacity: 1; }
+
+/* Same card, other corner: it comes in from the left because that is the edge
+   it is parked against. */
+.menu-np { transform: translateX(-14px); max-width: min(280px, 74vw); }
+.menu-np.show { transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .menu-np { transform: none; }
 }
 
 .countdown {

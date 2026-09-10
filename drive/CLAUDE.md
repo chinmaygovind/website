@@ -536,10 +536,30 @@ instead, and the now-playing card in-game is the credit being shown.
 
 - **A slug with no file on disk plays nothing and is not an error.** That is
   deliberate and it is what makes a fresh clone run, and CI pass, with no audio
-  at all. Figure Eight has no entry either way.
+  at all. Every track in the pool has an entry now, Figure Eight included, so
+  the empty case is a player's own track rather than one of ours.
 - Adding a song is a line in `music.json` and a file beside it - no code
   change. `in`/`out` are seconds and optional; `fade` is the crossfade and
-  defaults to the manifest's. Spa, Silverstone and Monaco deliberately share
+  defaults to the manifest's. **A new file must be normalised to -17 LUFS
+  before it goes on the box**, because the whole pool is (see
+  `docs/hud-and-controls.md`) and `LEVEL` in `music.js` is 1.35 on the strength
+  of it: a stock master dropped in beside them will be somewhere between four
+  times too loud and three times too quiet, and **nothing whatsoever checks
+  this** - the loudness lives only in the untracked file, so it survives no
+  review, no test and no diff. The measurement is
+  `ffmpeg -i song.mp3 -af loudnorm=print_format=json -f null -`, and the fix is
+  a plain `volume=NdB` re-encode, never a limiter: keeping the true peak at or
+  under -1 dBTP matters more than hitting -17 exactly.
+- **`rainbow.mp3` is trimmed a second in, and re-downloading it would undo
+  that.** Its first 0.75s is a decaying artifact from whatever the upload was
+  cut out of, then a beat of silence, then the song - and being the top of the
+  file it was heard on every entry to the track *and* on every loop round. The
+  cut is `ffmpeg -ss 1.0 -i rainbow.mp3 -c copy`, a **stream copy**, so it costs
+  no third encode generation and leaves the loudness where it was. It was cut
+  rather than given `"in": 1.0` because a cold deck has no metadata yet: `_seek`
+  defers to `loadedmetadata` while `play()` has already started at 0:00, so an
+  `in` is not reliably in force on the very first pass - which is the one pass
+  that matters here. Spa, Silverstone and Monaco deliberately share
   one `file`, which is what stops driving between them restarting it.
 - Getting them onto the box is **`python tools/sync_music.py`**, which rsyncs
   them and then checks the manifest against what actually landed.

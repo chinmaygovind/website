@@ -1,13 +1,21 @@
 {
   "_comment": "What plays where. The audio files themselves are NOT in git - see drive/CLAUDE.md. A slug with no file on disk plays nothing and is not an error.",
   "fade": 1.2,
-  "level": 0.5,
+  "level": 1.1,
   "tracks": {
     "menu": {
       "file": "menu.mp3",
       "artist": "Qumu",
       "title": "File Select",
       "url": "https://www.youtube.com/watch?v=kvE9Wrv2mt0"
+    },
+    "eight": {
+      "file": "eight.mp3",
+      "artist": "Qumu",
+      "title": "Snow Mountain",
+      "url": "https://www.youtube.com/watch?v=pwpEt9rS-tU",
+      "out": 163.0,
+      "fade": 2.5
     },
     "sunrise": {
       "file": "sunrise.mp3",
@@ -140,7 +148,9 @@
       "file": "railway.mp3",
       "artist": "MKWii",
       "title": "Wario's Gold Mine",
-      "url": "https://www.youtube.com/watch?v=7M6hdm0ltY4"
+      "url": "https://www.youtube.com/watch?v=7M6hdm0ltY4",
+      "out": 128.6,
+      "fade": 2.0
     },
     "dino": {
       "file": "dino.mp3",

@@ -323,12 +323,12 @@ export class Sound {
     for (const o of this.osc) set(o.frequency, rpm, 0.05);
     set(this.engFilter.frequency,
         on ? 620 + speedFrac * 2400 + (throttle ? 500 : 0) : IDLE_HZ, on ? 0.08 : IDLE_TC);
-    set(this.engGain.gain, on ? (airborne ? 0.11 : 0.2 + throttle * 0.13) : 0, gTc);
+    set(this.engGain.gain, on ? (airborne ? 0.08 : 0.15 + throttle * 0.1) : 0, gTc);
     set(this.whine.frequency, rpm * 3.02, 0.05);
     // Half the time constant, so the top of the car is gone while the bottom
     // of it is still going.
     set(this.whineGain.gain,
-        on ? (throttle ? 0.045 : 0.012) * (0.4 + speedFrac) : 0,
+        on ? (throttle ? 0.034 : 0.009) * (0.4 + speedFrac) : 0,
         on ? 0.1 : IDLE_TC * 0.5);
     set(this.tyreGain.gain, airborne ? 0 : Math.min(0.3, slip * 0.34), 0.05);
     set(this.tyreFilter.frequency, 1300 + slip * 1400, 0.08);

@@ -183,6 +183,16 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
     load whine - the highest thing in the car - is given half the time constant
     and leaves first. What is left at the end is the bottom of the engine going
     away. Gain on its own reads as somebody turning a knob.
+- **Your own engine is 25% quieter than the rest of the field's, and that is
+  the music's doing.** `engGain` is `0.15 + throttle * 0.10` (0.08 airborne) and
+  the load whine scales with it; both were a quarter higher until the songs were
+  normalised, and a song that now holds a steady level everywhere had nothing to
+  hold it against. **The cut is the engine and the whine and nothing else** -
+  tyre squeal, wind, the slipstream, the clanks and `RIVAL_BUS` all keep their
+  level, because those are information (you are sliding, you were hit, somebody
+  is alongside) and the engine is texture. The consequence to know is that a
+  rival at full throttle right beside you is now marginally louder than your own
+  car, which is the intended reading of a mirror and not a bug to tune out.
 - **The other half is a hidden tab, and the idle fade cannot reach it.** Every
   gain in `sound.js` is moved by `engine`, `draft` and `rivals`, all three of
   which are called from the frame loop - and rAF stops in a background tab while
@@ -231,13 +241,14 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   the same four bars on all twenty-two tracks, played on the oscillators the
   clanks are. Now a track has a song, and the engine for it is `music.js` -
   `sound.js` sees only a bus and two calls (`setSong`, `musicTick`).
-  Four things about it are load-bearing.
+  Five things about it are load-bearing.
   - **The song follows the track from `loadTrack`, not from page load.** The
     switcher swaps worlds without a navigation, so that function is the one
     place that sees both arriving and switching. A slug with no manifest entry
-    - Figure Eight, a draft out of the editor, anything user-made - stops the
-    music rather than leaving the last track's song playing over a different
-    one, which is the failure actually worth preventing.
+    - a draft out of the editor, anything user-made - stops the music rather
+    than leaving the last track's song playing over a different one, which is
+    the failure actually worth preventing. Every track in the pool has an entry,
+    so that case is a player's own track and not one of ours.
   - **Two `<audio>` decks, ping-ponged, rather than one with `loop = true`.**
     A looping element restarts at a hard cut, and a song trimmed to an
     `in`/`out` pair has a ringing tail at one end and a cold start at the
@@ -257,6 +268,24 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
     element fetches with `Range` and gets a 206 back; putting one of those in
     the Cache API throws, and a cached slice that did land would be served back
     as if it were the whole song. `sw.js` returns early on that prefix.
+  - **The songs are normalised to -17 LUFS in the file, and the loudness you
+    actually hear is made up at the bus.** They arrived as twenty different
+    masters measuring -6.8 to -19.8 LUFS - DK Summit was four times the
+    perceived loudness of Wario's Gold Mine, so any Music setting that suited
+    one track was wrong on the next. They are now within 0.33 LU of each other.
+    **-17 rather than something louder because the normalisation is a plain
+    gain and nothing else**: these are loudness-war masters with no headroom
+    left - fifteen of the twenty peaked *above* 0 dBFS - and the tightest of
+    them, Slider at -0.10 dBFS, can take only 0.9 dB before it clips. -17 is
+    the loudest a linear gain can make the whole pool without touching one
+    song's dynamics, so nothing is limited or compressed and no song's
+    character moved. The level given up in the file comes back as `LEVEL` in
+    `music.js`, which is **1.35, deliberately above 1**: a gain node in a float
+    graph has headroom a 16-bit file does not, and -1 dBTP x 1.35 x the
+    master's 0.55 is 0.66 of full scale. Wario's Gold Mine is the one song that
+    lands at -17.31 rather than -17.00, because its peak reached the ceiling
+    before its loudness reached the target; 0.3 LU is inaudible and clipping is
+    not.
 - **The now-playing card is a credit before it is a feature.** The music is
   other people's work, so `#nowPlaying` names the artist and title from the
   manifest and the whole card is an anchor back to the video, `target=_blank`
@@ -265,6 +294,15 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   two moments the answer to "what is this?" changes - then goes away on a
   timer. It never shows with the music off, and `pointer-events` follows the
   visible state so a faded card is not an invisible link over the road.
+- **The menu song arrives four times more slowly than a track's**, at a time
+  constant of 1.2 against `ENABLE_TC`'s 0.3, so it is most of the way up after
+  about three and a half seconds rather than one. The short fade is right on the
+  play page and only there: you turned the music on from a settings sheet with a
+  car in front of you, and a song that takes four seconds to appear reads as the
+  switch not having worked. A menu has nothing else happening, so the song is
+  free to be an entrance. **Only the arrival is slowed** - `enable(false)` keeps
+  `ENABLE_TC` whichever player it is, because a button you press should answer
+  you, and a four-second fade-out on a mute button reads as a broken one.
 - **The menu pages get the menu song, and it carries across navigations.**
   `menumusic.js` is on every page via `base.html` and **self-gates like
   `portal.js`**: the play page defines `window.DRIVE_TRACK` and owns its own
