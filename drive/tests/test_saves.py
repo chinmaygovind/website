@@ -287,3 +287,28 @@ def test_loading_a_track_selects_no_save_state():
     assert "S.saveActive = -1;" in body, "arriving has to clear the selection"
     assert not re.search(r"S\.saveActive\s*=\s*[0-9]", body), \
         "nothing may pre-select a slot on arrival"
+
+
+def test_a_restore_banks_the_driving_but_is_not_an_attempt():
+    """A restore is another go at a corner, not at the track.
+
+    `restoreState` used to post `/api/start`, the one exception to "an attempt is
+    the clock starting". It read a corner drilled thirty times as thirty goes at
+    the whole track next to somebody's honest twelve. The driving still counts,
+    and that half is the easy one to lose by deleting the wrong line: the rewind
+    destroys the clock and the odometer, so the report has to happen *before* it.
+
+    Read off the source for `loadSaves`' reason - there is no browser in CI.
+    """
+    import os
+    import re
+    src = open(os.path.join(os.path.dirname(__file__), "..",
+                            "static", "js", "game.js")).read()
+    at = src.index("function restoreState(i) {")
+    body = src[at:re.compile(r"^\}$", re.M).search(src, at).end()]
+    code = "\n".join(l for l in body.splitlines()
+                     if not l.lstrip().startswith("//"))
+    assert "noteStart()" not in code, "a restore is not an attempt"
+    assert "reportActivity(" in code, "the minutes and the metres still count"
+    assert code.index("reportActivity(") < code.index("S.run.restore("), \
+        "report before the rewind, or there is nothing left to report"

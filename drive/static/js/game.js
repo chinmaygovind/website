@@ -3675,12 +3675,11 @@ function restoreState(i) {
   hideResults();
   clearDelta();
   markHintSeen();
-  // Every restore is another go at the track. `/api/start` is posted from the
-  // one place that calls `run.start()` and from here, and this is the exception
-  // rather than a second rule: a restore does not start a *run*, but it is
-  // somebody having another attempt at the thing, which is what the counter is
-  // for. See `docs/runs-and-scoring.md`.
-  noteStart();
+  // No `noteStart()` here. A restore is not an attempt at the track: `/api/start`
+  // is posted from the one place that calls `run.start()` and from nowhere else,
+  // so a corner drilled thirty times costs the counter nothing. The driving it
+  // does still counts - `reportActivity` above banks the minutes and the metres
+  // before the rewind destroys them. See `docs/runs-and-scoring.md`.
   updatePracticeTag();
   toast('Slot ' + (i + 1) + '  ' + fmt(s.run.time) +
         (slotName(s) ? '  ' + slotName(s) : ''));
@@ -4970,6 +4969,12 @@ function lapTimeline(frames, hz) {
  * behind the line - which is why this sits next to `run.start()` and nowhere
  * near setup, and why the race branch calls it too: a green light is a start
  * like any other, and a lap driven against other people is still a lap.
+ *
+ * **A practice restore is not one**, and used to be: going back to a save state
+ * is another go at a corner rather than at the track, and counting it read a
+ * corner drilled thirty times as thirty attempts next to somebody's honest
+ * twelve. The driving a restore rewinds is still banked, by `reportActivity` -
+ * minutes and kilometres are play stats and this is a record of goes taken.
  *
  * Fire and forget, and quietly. A start is a tally rather than a result: there
  * is nothing to tell the player if it fails, nothing to show them if it works,

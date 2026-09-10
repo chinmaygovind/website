@@ -17,14 +17,20 @@ recording.
 - **Starts are counted as well as finishes**, because a board of finishes cannot
   say how many goes a track took out of you - and on a hard one that is most of
   the story. An attempt is *the clock starting*: `/api/start` is posted from the
-  place in `game.js` that calls `run.start()`, which is why loading the
-  page does not count as one - **and from one other place, a practice
-  restore**, which is a deliberate exception rather than a second rule. Going
-  back to a save state does not start a *run*, but it is somebody having another
-  go at the thing, and that is what the counter is for. The cost is that a
-  corner drilled thirty times reads as thirty attempts at the whole track next
-  to somebody's honest twelve; the invariant that actually matters - never more
-  finishes than attempts - is untouched, since a restored lap finishes nothing. A lap in a **room** is not counted at either end
+  two places in `game.js` that call `run.start()` - the solo one and the race
+  one - which is why loading the page does not count as one, and why nothing
+  else posts it.
+  **A practice restore used to, and no longer does.** It was allowed as a
+  deliberate exception on the grounds that going back to a save state is
+  somebody having another go at the thing; the cost was that a corner drilled
+  thirty times read as thirty attempts at the whole track next to somebody's
+  honest twelve, which is a worse answer to "how many goes did this take out of
+  you" than the one it was trying to improve on. A restore is another go at a
+  *corner*. **The driving it does still counts**: `restoreState` calls
+  `reportActivity` before the rewind destroys the clock and the odometer, so the
+  minutes and the kilometres are banked in full - only the attempt counter is
+  untouched. That split is the same one that lets a room lap add to play stats
+  and reach no board. A lap in a **room** is not counted at either end
   - see the leaderboard rule below. They live in their own `drive_starts` table, one row per (user, track) -
   `create_all` creates tables and not columns, so a new table lands on the live
   database by itself where a new column would need a migration, and a track you
