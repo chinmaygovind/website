@@ -247,26 +247,43 @@ the track cards, `/account`, `/leaderboard`, the nav, or the in-game board panel
     nothing about which is which. `.bd-actions` is a grid rather than a row, so
     each is the full width of the column - they are three things to do with one
     lap, not a toolbar.
-  - **The splits are capped and scroll; the sheet does not.** A lap has as many
-    of them as its track has checkpoints - Sunrise has three and Rickety Rails
-    thirteen - so an uncapped list made the panel a different height for every
-    row you clicked, grew to the sheet's own `max-height: 90vh`, and took the
-    whole thing into `overflow: auto` with it, pushing the three buttons below
-    the fold. `.board-list` beside it had been capped since it was written, for
-    the same reason and against a longer list. `min-height: 0` on `.bd-splits` is
-    what makes the cap bite at all: a flex item's floor is its content, so
-    without it the list refuses to be shorter than thirteen rows and scrolls the
-    sheet instead of itself.
+  - **The sheet owns the height and the two lists divide what is left of it.**
+    Both used to be a fraction of the viewport instead - the times at `62vh`, the
+    splits at nothing at all - and a fraction is a guess about how much room the
+    *other* column and the panel's own chrome are going to want. It was a bad
+    guess in both directions. A lap has as many splits as its track has
+    checkpoints (Sunrise three, Rickety Rails thirteen), so the uncapped list
+    made the panel a different height for every row you clicked, grew to the
+    sheet's own `max-height: 90vh` and pushed Race / Watch / Share below the
+    fold; meanwhile the times stopped at 62vh with empty panel underneath them.
+    - So `.board-sheet` is a flex column, `.board-split` is the part that gives,
+      and the times and the splits each scroll inside their own cell. Nothing
+      names a viewport fraction any more (except stacked - see below), the panel
+      is exactly as tall as it needs to be up to 90vh, and past that the lists
+      shrink and nothing else moves.
+    - **`min-height: 0` on all three is what allows any of it.** A grid or flex
+      item's floor is its content, so without it each refuses to be shorter than
+      its own rows and pushes the sheet into a scrollbar instead. It is also why
+      `.board-detail`'s old `min-height: 12rem` had to go: that and `min-height:
+      0` are the same property. The floor for the "pick a time" state belongs to
+      the placeholder, which carries its own height now.
+    - `overflow: auto` on the sheet rather than `hidden`: the lists absorb
+      everything in practice, but the chrome has a floor of its own and on a
+      screen short enough to be under it, clipping the buttons with no way to
+      reach them is the wrong answer.
   - **A short screen is not a narrow one, and this panel needed the other
     query.** A landscape phone is 844x390 - wide enough to keep both columns side
     by side and far too short for what was in them, so `max-width: 620px` never
-    fired and the sheet sat pinned at 90vh with its own scrollbar. The three
-    buttons were most of it: stacked they are about 150px, which on a 390px
-    screen is more than the splits above them, and in a row they are 44px with
-    the labels still fitting. With that and the two lists giving up a little,
-    `@media (max-height: 520px)` brings the whole panel back inside the screen -
-    304px against a 351px ceiling - so nothing is behind a scrollbar that you
-    have to find. The public `/track/<slug>` page opens a lap the same way and links
+    fired. `@media (max-height: 520px)` puts the three buttons in a **row** (44px
+    against about 150px stacked, which on a 390px screen was more than the splits
+    above them) and takes a little off the big time. With the division above,
+    that is 239px of leaderboard on a landscape phone against 133px, and the
+    whole panel inside the screen with no scrollbar to find.
+    - The first version of this rationed `.board-list` to `34vh` to make the room
+      - about three rows on a phone, on the one panel whose entire purpose is the
+      list of times. Taking height *from* the leaderboard to fit the leaderboard
+      is the wrong trade, and it is what the division above exists to avoid
+      having to make. The public `/track/<slug>` page opens a lap the same way and links
   back in with `?ghost=<id>` / `?watch=<id>`; `/api/board` carries each row's id and
   splits so no second request is needed, and `/api/ghost/<slug>?who=<id>` serves one
   lap, **scoped to the track that asked** so a replay cannot be played against geometry

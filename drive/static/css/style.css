@@ -1281,8 +1281,34 @@ body:not(.touch) .touch-only.watch-only { display: none; }
    has been 620px the whole time. `.sheet.wide.settings` above works only because
    it happens to be three classes. Same trap as `.btn.danger`'s width. */
 .sheet.wide.board-sheet { max-width: 960px; }
-.board-split { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem; }
-.board-list { max-height: 62vh; overflow: auto; display: flex; flex-direction: column; gap: 2px; }
+/* **The sheet owns the height and the two lists divide what is left.**
+   Everything here used to be a fraction of the viewport instead - the times at
+   62vh, the splits uncapped - which is a guess about how much room the *other*
+   column and the panel's own chrome were going to want. It is a bad guess in
+   both directions: on a desktop the times stopped at 62vh with room to spare
+   below them, and on a 390px landscape phone the same arithmetic left three
+   rows on a leaderboard.
+
+   So: the sheet is a column, `.board-split` is the part that gives, and the
+   times and the splits each scroll inside their own cell. Nothing here names a
+   viewport fraction any more, and the panel is exactly as tall as it needs to
+   be up to `.sheet`'s 90vh - at which point the lists shrink and nothing else
+   moves. `min-height: 0` on all three is what allows that: a grid or flex item's
+   floor is its content, so without it each refuses to be shorter than its rows
+   and pushes the sheet into its own scrollbar instead. */
+/* `auto` and not `hidden`. The two lists absorb everything in practice, so this
+   scrollbar never appears - but the panel's own chrome (title, the big time, the
+   three buttons, the foot) has a floor of its own, and on a screen short enough
+   to be under it `hidden` would clip the buttons with no way to reach them.
+   Scrolling is the right thing to do when there is genuinely no room. */
+.board-sheet { display: flex; flex-direction: column; overflow: auto; }
+.board-split {
+  display: grid; grid-template-columns: 1fr 1fr; gap: .9rem;
+  flex: 1 1 auto; min-height: 0;
+}
+.board-list {
+  min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 2px;
+}
 .brow {
   display: flex; align-items: center; gap: .5rem; width: 100%;
   padding: .35rem .5rem; border-radius: 8px; cursor: pointer;
@@ -1300,10 +1326,15 @@ body:not(.touch) .touch-only.watch-only { display: none; }
    came to the row for - and everything between them is a list that can be any
    length. */
 .board-detail {
-  border-left: 1px solid var(--line); padding-left: .9rem; min-height: 12rem;
-  display: flex; flex-direction: column;
+  border-left: 1px solid var(--line); padding-left: .9rem;
+  display: flex; flex-direction: column; min-height: 0;
 }
-.board-detail .empty { margin-top: 2.5rem; text-align: center; }
+/* The floor for "nothing picked yet" belongs to the placeholder and not to the
+   column, which has to be free to shrink - `min-height: 12rem` on the column and
+   `min-height: 0` on the column are the same property, and the second is what
+   lets the splits scroll rather than the sheet. So the empty state carries its
+   own height and a chosen row is sized by what is in it. */
+.board-detail .empty { margin-top: 2.5rem; text-align: center; min-height: 9rem; }
 .bd-head { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
 .bd-time {
   font-family: var(--mono); font-size: 1.9rem; font-weight: 700; line-height: 1;
@@ -1323,8 +1354,7 @@ body:not(.touch) .touch-only.watch-only { display: none; }
    scrolls the sheet instead of itself. */
 .bd-splits {
   margin: .8rem 0; display: flex; flex-direction: column; gap: 1px;
-  flex: 1 1 auto; min-height: 0;
-  max-height: min(42vh, 320px); overflow-y: auto;
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
   /* The scrollbar sits where the delta column ends, so give it somewhere to be
      rather than letting it crop the number. */
   padding-right: .2rem;
@@ -1381,21 +1411,21 @@ body:not(.touch) .touch-only.watch-only { display: none; }
    the labels still fit. The rest is the two lists giving up a little and the big
    time being a bit smaller. */
 @media (max-height: 520px) {
-  .board-list { max-height: 34vh; }
-  .bd-splits { max-height: 28vh; margin: .5rem 0; }
+  .bd-splits { margin: .5rem 0; }
   .bd-time { font-size: 1.4rem; }
   .bd-actions { grid-template-columns: repeat(3, 1fr); }
   .bd-actions .btn { font-size: .85rem; padding: .4rem .5rem; }
   .board-foot { margin-top: .5rem; padding-top: .4rem; }
 }
+/* Stacked, the two are rows rather than columns and there is no "what is left"
+   to divide - one is above the other, so a share has to be named. This is the
+   one place a fraction still is, and the sheet scrolls again to catch anything
+   past it. */
 @media (max-width: 620px) {
-  .board-split { grid-template-columns: 1fr; }
+  .board-sheet { overflow: auto; }
+  .board-split { grid-template-columns: 1fr; flex: 0 1 auto; }
   .board-detail { border-left: 0; border-top: 1px solid var(--line); padding: .8rem 0 0; }
   .board-list { max-height: 30vh; }
-  /* Stacked, the two lists share one screen instead of standing beside each
-     other, so the splits get about what the times above them get. On a landscape
-     phone that is a handful of rows and a scroll, which is the right trade: the
-     buttons under it stay on the screen. */
   .bd-splits { max-height: 26vh; }
 }
 
