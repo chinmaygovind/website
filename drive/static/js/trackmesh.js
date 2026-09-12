@@ -2818,6 +2818,26 @@ const FLAGS = {
       'WWRRRRBBBBBBBBBWRRRRWBBBBBBBBBWWWWWW',
     ],
   },
+  // The tricolore, for Monza. Same construction as `be` - vertical thirds, so
+  // it is three columns of one colour each and no two quads overlap - with the
+  // flag's own green, white and red.
+  it: {
+    cols: { G: 0x009246, W: 0xf1f2f1, R: 0xce2b37 },
+    rows: [
+      'GGGGGGWWWWWWRRRRRR',
+      'GGGGGGWWWWWWRRRRRR',
+      'GGGGGGWWWWWWRRRRRR',
+      'GGGGGGWWWWWWRRRRRR',
+      'GGGGGGWWWWWWRRRRRR',
+      'GGGGGGWWWWWWRRRRRR',
+      'GGGGGGWWWWWWRRRRRR',
+      'GGGGGGWWWWWWRRRRRR',
+      'GGGGGGWWWWWWRRRRRR',
+      'GGGGGGWWWWWWRRRRRR',
+      'GGGGGGWWWWWWRRRRRR',
+      'GGGGGGWWWWWWRRRRRR',
+    ],
+  },
   be: {
     cols: { K: 0x1b1b1b, Y: 0xf2c200, R: 0xc3121f },
     rows: [
@@ -2838,6 +2858,13 @@ const FLAGS = {
 };
 
 function addFurniture(solid, bright, signs, track, pal, terrain, cfg, drop) {
+  // Seeded off the slug, so a crowd is the same crowd every time the track is
+  // built - the plan view, the cover shooter and the anti-cheat all rebuild the
+  // world, and a stand that reshuffles its spectators between them would make
+  // `test_scenery.py`'s triangle count a coin flip.
+  let _fseed = 7;
+  for (let i = 0; i < track.slug.length; i++) _fseed = _fseed * 31 + track.slug.charCodeAt(i);
+  const frnd = mulberry(_fseed);
   const line = track.line;
   const n = line.length;
   const at = (f) => Math.max(0, Math.min(n - 1, Math.round(f * (n - 1))));
@@ -3000,6 +3027,46 @@ function addFurniture(solid, bright, signs, track, pal, terrain, cfg, drop) {
       face(P(off, Math.min(foot, deck(j, off) - 0.5)),
            P(oEndBack, Math.min(foot, deck(j, oEndBack) - 0.5)),
            P(oEndBack, yRoof), P(off, yRoof), shade(conc, -0.18));
+    }
+
+    // The crowd, and the reason it is here rather than in a track's own
+    // `scenery.js`: the treads are computed above, and a second copy of that
+    // arithmetic somewhere else is the drift this file has been bitten by
+    // before. So people are laid on the rows the seating already worked out.
+    //
+    // **One box each.** A torso and a head doubles the triangle count of every
+    // stand in the pool for detail that is a couple of pixels from the road,
+    // and a crowd at this distance reads as dots of colour whatever it is made
+    // of. What makes it read as *people* rather than as a pattern is the gaps:
+    // filling every seat is a painted stripe, so a third of them stay empty and
+    // the colours are dealt at random from a handful of clothing tones.
+    //
+    // Stepped two stations at a time with three across each step, which is
+    // about a body's width apart at the station spacing the ribbon uses.
+    const CROWD = opts.crowd != null ? opts.crowd : 0.66;
+    if (CROWD > 0) {
+      const shirts = [0xd94f3d, 0xe8e3d6, 0x2f4f7a, 0xf2c94c, 0x3d6b4a,
+                      0x8a4fa0, 0xdd7f2e, 0x33383f, 0xb8443a, 0xcfd4d8];
+      for (let i = i0; i + 1 <= i1; i += 2) {
+        const e0 = line[i], e1 = line[i + 1];
+        for (let k = 0; k < tiers; k++) {
+          // Standing on the tread of row k, a little back from its front edge.
+          const oSeat = off + side * (k * depth + depth * 0.55);
+          const y0 = base + k * riseH;
+          for (let m = 0; m < 3; m++) {
+            if (frnd() > CROWD) continue;
+            const u = (m + 0.5) / 3;
+            const px = e0.p[0] + (e1.p[0] - e0.p[0]) * u;
+            const pz = e0.p[2] + (e1.p[2] - e0.p[2]) * u;
+            const lx = e0.lat[0] + (e1.lat[0] - e0.lat[0]) * u;
+            const lz = e0.lat[2] + (e1.lat[2] - e0.lat[2]) * u;
+            const h = 0.46 + frnd() * 0.20;
+            solid.box(px + lx * oSeat, y0 + h, pz + lz * oSeat,
+                      0.25, h, 0.21,
+                      shirts[(frnd() * shirts.length) | 0]);
+          }
+        }
+      }
     }
 
     // roof posts, sparse
@@ -3550,6 +3617,46 @@ function addScenery(buf, track, pal, bbox, CELL, terrain) {
         }
         buf.box(px + lean * base * 1.2, y0 + hgt * 0.76, pz + lean * base * 0.7,
                 base * 0.2, hgt * 0.07, base * 0.2, shade(leaf, 0.18));
+      } else if (kind === 'broadleaf') {
+        // An oak or a hornbeam: a bare trunk that forks, carrying one wide
+        // irregular crown. **The whole difference from `conifer` is where the
+        // foliage starts.** A conifer's is a triangle that reaches most of the
+        // way to the ground, and a wood full of them reads as the Ardennes -
+        // which is Spa, and was the one thing Monza's wood had to not be. This
+        // keeps the bottom third clear and puts everything up top, so from the
+        // road you see trunks under a closed canopy.
+        //
+        // The crown is three to five overlapping boxes at *similar* heights
+        // rather than a stack: a stack is a conifer whatever colour it is, and
+        // the overlap is what stops five boxes reading as five objects.
+        const hgt = 8 + rnd() * 9;
+        const tw = 0.34 + rnd() * 0.24;
+        const fork = baseY + hgt * (0.34 + rnd() * 0.12);
+        buf.box(px, (baseY + fork) / 2, pz, tw, (fork - baseY) / 2, tw,
+                shade(0x5a4530, (rnd() - 0.5) * 0.18));
+        // Two limbs out of the fork, leaning opposite ways, so the crown has
+        // something under it rather than floating on one post.
+        const la = rnd() * Math.PI * 2;
+        for (const sgn of [1, -1]) {
+          const lx = Math.cos(la) * sgn * (0.5 + rnd() * 0.7);
+          const lz = Math.sin(la) * sgn * (0.5 + rnd() * 0.7);
+          buf.box(px + lx, fork + hgt * 0.10, pz + lz, tw * 0.72,
+                  hgt * 0.11, tw * 0.72, 0x5a4530);
+        }
+        const lobes = 3 + Math.floor(rnd() * 3);
+        const spread = 1.9 + rnd() * 1.5;
+        const crown = rnd() < 0.5 ? pal.prop
+                                  : (pal.prop2 != null ? pal.prop2 : pal.prop);
+        for (let k = 0; k < lobes; k++) {
+          const a = (k / lobes) * Math.PI * 2 + rnd() * 0.8;
+          const d = spread * (0.25 + rnd() * 0.6);
+          const w = spread * (0.66 + rnd() * 0.5);
+          const cy = fork + hgt * (0.30 + rnd() * 0.22);
+          buf.box(px + Math.cos(a) * d, cy, pz + Math.sin(a) * d,
+                  w, hgt * (0.12 + rnd() * 0.08), w * (0.8 + rnd() * 0.45),
+                  shade(crown, (rnd() - 0.5) * 0.24));
+          cap(px + Math.cos(a) * d, cy + hgt * 0.2 + 0.16, pz + Math.sin(a) * d, w, w);
+        }
       } else if (kind === 'palm') {
         // A palm is a lean and a splay, and nothing else reads at this scale: a
         // straight trunk with a blob on top is a lollipop. So the trunk is a

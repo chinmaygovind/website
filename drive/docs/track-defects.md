@@ -542,3 +542,39 @@ New entries, unsorted, until somebody files them. One line is enough.
   framing except the one that looks across the gorge came back as a crown
   filling the lens. A track with a closed canopy needs `pitch` and `pad` large
   enough to put the camera over the roof - about 0.42 and 200 units out here.
+- **`pal.prop2` is the big pine's *foliage*, not just a structural colour.** `look.py`
+  calls it "second structural colour: trestles, columns", and `bigpine` reads
+  `pal.prop2 != null ? pal.prop2 : pal.prop` for every whorl. Monza set it to the
+  weathered concrete of its banking and got a wood a fifth of which was pale
+  blue-grey spikes - which reads as dead or snowed-on, not as a structural colour
+  used twice. If a track has big pines, `prop2` is a leaf colour first.
+- **`deadtree` is bare brown branches, so any real weight on it makes a winter
+  wood.** Monza's first pass ran it at 0.14 against Spa's 0.06 to stand in for
+  broadleaf crowns, and in the road views it reads as a dead forest. It is a
+  seasoning, not a species.
+- **A backdrop measured from station 0 instead of from the track's centre lands
+  inside the track.** Monza's Alps went 820 units along the pit straight's
+  heading from `line[0]` - and station 0 is on the *edge* of a circuit, not in
+  the middle of it, so a 3000-unit-wide, 150-unit-tall range was dropped through
+  the middle of the lap. At the Lesmos half the frame was an unfogged near-black
+  wall. Anything meant to sit on the horizon needs the ribbon's bounding-box
+  centre and its own radius (676 here), not a station.
+- **Trackside furniture placed by lap fraction can land on top of the thing it
+  was meant to sit beside.** Monza's `spans` deck at 0.362 came out 1156 units
+  into the lap, which is the middle of the Roggia braking zone - two pillars and
+  a deck standing across the 100 and 50 braking boards, i.e. hiding exactly the
+  signage the boost pad before it depends on. A fraction says nothing about what
+  is already there; check a new stand, span or flag line against the pads (`bp`)
+  and the gates before trusting it.
+- **A barrier on the inside kerb of a tight corner *looks* like it fills the
+  corner, and measuring is the only way to tell.** Monza walls both kerbs through
+  its chicanes at `hw + 1.9`; on the radius-19 Rettifilo the road's inside edge
+  is already at radius 12.5 and the wall sits at 10.6, so it wraps hard round the
+  apex and from the car it reads as a grey mound in the middle of the road. It was
+  called a blocked corner on the strength of that render and it is not: the offset
+  is the road's own half-width plus a margin, so the wall is beyond the road edge
+  at every station by construction - measured worst case **+1.30 units** clear
+  across all three chicanes. A render is evidence about how something *looks*; for
+  "can the car get through", offset the stations and measure the clearance, which
+  is ten lines of Python. Both claims went in a docstring before either was
+  checked.

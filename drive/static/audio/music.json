@@ -113,6 +113,15 @@
       "out": 179.0,
       "fade": 2.0
     },
+    "monza": {
+      "file": "f1.mp3",
+      "artist": "Hans Zimmer",
+      "title": "F1",
+      "url": "https://www.youtube.com/watch?v=YhX_Woa3kVA&list=RDYhX_Woa3kVA",
+      "in": 11.0,
+      "out": 179.0,
+      "fade": 2.0
+    },
     "costco": {
       "file": "costco.mp3",
       "artist": "MKWii",
