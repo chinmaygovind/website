@@ -8,7 +8,14 @@
 # about a page that is not there.
 #
 # Nothing replaces them. An empty allow-all is correct here: `/` is the only
-# static page and `/404.html` is not addressable.
+# static page meant to be found, and `/404.html` is not addressable.
+#
+# The coursework pages under `/ese2100/` are also meant not to be found, and they
+# are still not disallowed here. They each send `noindex` in their own `<head>`,
+# which is the stronger thing: a Disallow only stops the fetch, so a page linked
+# from somewhere else can be indexed on the strength of the link alone, whereas a
+# crawler that is told the URL and fetches it is told to its face not to keep it.
+# A rule here would also be the one file on the site that lists them.
 #
 # The two non-static things are deliberately left crawlable-by-default, which is
 # not the same as unprotected. `/admin` needs no rule because it sends

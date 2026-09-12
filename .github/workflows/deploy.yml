@@ -96,6 +96,12 @@ jobs:
       # pages: that needs `accounts/` and `tests/`, plus the flag art the
       # picker is generated from - and nothing else under site/, which is
       # 500MB of video and images only ever read per request.
+      #
+      # `site/ese2100` is the exception, and it is here because sparse mode is a
+      # *cone*: the flags pattern drags in `site/`'s own files but none of its
+      # subdirectories, so the coursework pages would be absent and the tests
+      # that read them would skip - which reads as a pass. They are three HTML
+      # files and no media, so asking for them costs nothing.
       - uses: actions/checkout@v4
         with:
           sparse-checkout: |
@@ -103,6 +109,7 @@ jobs:
             ${{ matrix.module == 'site' && 'accounts' || matrix.module }}
             ${{ matrix.module == 'site' && 'tests' || '' }}
             ${{ matrix.module == 'site' && 'site/assets/flags' || '' }}
+            ${{ matrix.module == 'site' && 'site/ese2100' || '' }}
 
       - uses: actions/setup-python@v5
         with:

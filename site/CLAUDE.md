@@ -276,20 +276,49 @@ took `site/` from 615MB to 140MB. It is in git history if a page is ever wanted
 back; the deleting commit is the one to read first, because the Mario game's
 audio had to be moved out of `home/` on the way.
 
-## `/cobweb`
+## `/ese2100`
+
+Coursework for ESE 2100, Introduction to Dynamical Systems: one simulation a
+week, each one a thing you can drag. `site/ese2100/index.html` is the index that
+lists the weeks, and it is **the URL that gets handed in** - the assignment asks
+for a link, so there has to be one address that keeps working as weeks are added.
+Newest week first; a new week is one `<a class="week">` and a directory.
+
+**All three pages are `noindex`, in no sitemap, and nothing on the landing page
+links to them.** They are pages you send someone the URL for. `tests/test_ese2100.py`
+pins the `noindex` on each, because nothing else in the suite would notice it
+going missing on the next edit.
+
+**They are the only `index.html`s under `site/` besides the landing page, so
+they are the first thing that has ever exercised `app.py`'s directory-index
+branch** - the one the root `CLAUDE.md` described for a year as kept-but-unused.
+They needed no server change to work. What that branch actually sends is a **302**
+and not the 301 both `CLAUDE.md`s claimed; `test_the_bare_path_redirects_to_the_slashed_one`
+pins the 302 now and says why it is the right one to keep.
+
+**`/cobweb` was the cobweb page's address first, and it 301s here forever.** The
+URL had already been handed to people, so it cannot just 404; the redirect is a
+route in `app.py` rather than a file, since a static tree has no way to say 301.
+A 301 rather than a 302 because this *is* the canonical address now.
+
+- **Each page reaches the font with its own number of `../`**, one for the index
+  and two for the week pages, and `test_the_font_is_reached_from_where_the_page_actually_sits`
+  checks the depth against the path. A wrong count breaks `@font-face` and
+  nothing else: the page renders in Comic Sans and reports no error anywhere.
+- **CI asks for `site/ese2100` by name in the sparse checkout.** Sparse mode is a
+  cone, so the existing `site/assets/flags` pattern drags in `site/`'s own files
+  but none of its subdirectories - without the extra pattern every test that
+  reads these pages would skip, which reads as a pass. They are three HTML files
+  and no media, so asking for them costs nothing.
+
+### `/ese2100/cobweb` (week 2)
 
 A cobweb-diagram visualiser: pick a one-dimensional map, drop an x&#8320;, and
 watch the orbit stair-step between the curve and the diagonal. It replaced
 `site/dynamical-1d/`, a four-tab toy (continuous phase lines, cobwebs,
 staircases, bifurcations) that lived for two days in Sep 2026; the rewrite kept
-one idea and threw the rest away. **It is `noindex`, in no sitemap, and nothing
-links to it** - it is a page you send someone the URL for. `/dynamical-1d/` is a
-404 now and that is fine: nothing ever linked there either.
-
-**It is the second `index.html` under `site/`, so it is the first thing that has
-ever exercised `app.py`'s directory-index branch** - the one the root
-`CLAUDE.md` describes as kept-but-unused. `/cobweb/` serves the file and
-`/cobweb` redirects to it, both verified by hand rather than by a test.
+one idea and threw the rest away. `/dynamical-1d/` is a 404 now and that is fine:
+nothing ever linked there either.
 
 - **The expression parser is hand-written and there is no `eval` on the page.**
   The old page compiled user input with `new Function(... with(Math) ...)`,
@@ -359,6 +388,107 @@ ever exercised `app.py`'s directory-index branch** - the one the root
   Grabbing the diamond pauses playback and reveals the whole orbit at once, so
   sweeping x&#8320; shows basins flipping; a plain click restarts the animation
   from n = 0 instead. Those two behaviours are deliberate opposites.
+
+### `/ese2100/bifurcations` (week 3)
+
+Two things on one page: an engine for any one-dimensional family
+x&#775; = f(x, &mu;), and a bead on a spinning hoop underneath it. Continuous
+time only - **the assignment forbids two dimensions**, because a 2-D system gives
+you Hopf bifurcations and those were not what week 3 was about. The hoop is 1-D
+for a specific reason and the page says so in its own subtitle: it is
+**overdamped**, so &phi; alone is the state and &phi;&#775; never appears.
+
+**It shares the cobweb page's parser by copy, not by import.** There is no build
+step here, so a shared module would be a second request on a page that is
+otherwise one file; the tokeniser, the recursive-descent parser, `compile`,
+`show` and `freeVars` are the same code in both files. **If you fix a parse bug,
+fix it twice.** The one deliberate difference is `LONGVARS`, a list of
+multi-character variable names holding exactly `mu`: without it `mu*x` tokenises
+as `m*u*x` and the axis of every diagram is called `m`. It is checked after
+function names and constants and before the single-letter fallback, and like the
+function names it only matches when the next character is not a letter.
+
+- **The letter you sweep is a choice, not a convention.** Every free letter
+  becomes a knob, as on the cobweb page, but one of them is the diagram's
+  horizontal axis and the rest stay sliders. The chips under the equation box
+  pick which; `mu` wins by default when it is there. Switching hands the old
+  axis's current value back to its slider, so nothing jumps.
+- **The phase strip is a separate band under the f(x) plot, not the line y = 0
+  on it.** Overlaying them was the first attempt and it is worse: the arrows,
+  the equilibria and the tracers all want the same pixels as the curve where it
+  crosses zero, which is exactly where you are looking. The band shares the x
+  mapping, so a root lines up with the curve above it - the dashed droplines are
+  what make that readable.
+- **The field arrows sit 14px above the band's line and the state sits on it.**
+  Same reason again: at the resolution of a 16:9 strip, eleven tracers and
+  twenty-four arrowheads on one line is a dotted mess and you cannot tell which
+  marks are moving.
+- **The tracers are RK4 with adaptive substepping, and the substepping is
+  load-bearing.** `mu - x^2` outside its equilibria grows fast enough that a
+  fixed step at any watchable speed overshoots to infinity in a few frames, and
+  the tracer vanishes rather than flowing off. The substep count is set from
+  `|f|` so the step stays about a hundredth of the window; the escape guard is
+  three window-widths, and a tracer that leaves is dead rather than clamped,
+  because clamping would draw a pile-up at the edge that does not exist.
+- **Changing &mu; does not reseed the tracers, and that is the best thing on the
+  page.** They keep flowing under the new field, so dragging &mu; through a
+  saddle-node shows the attractor they were sitting in stop existing and the
+  whole population slide away together. Reseeding on &mu; would throw that away;
+  `release` is there for when you do want a fresh spread.
+- **Equilibria come from a sign-change scan plus bisection, so a root of even
+  multiplicity is invisible.** At the bifurcation itself the two roots have
+  merged into one that does not change sign, and no amount of bisection finds
+  it. This is why the reported &mu;\* is the point where the *count* changes,
+  which on a 900-point scan of a 4-wide window is about 6e-6 out for
+  `mu - x^2` rather than exactly 0 - the grid cannot resolve two roots closer
+  together than its own spacing. `fmtSweep` prints the sweep value at a
+  precision set by the sweep's width instead of `fmt`'s significant figures, so
+  that lands as `0.0000` rather than as `2.42e-6`, which read as a bug and is
+  not one.
+- **An event candidate within one column of either end of the sweep is dropped.**
+  `describeEvent` compares the equilibria at &mu;\* &plusmn; h, and at the edge
+  one of those samples is outside the window the user asked about - so it would
+  be describing a before-and-after it cannot see. The budworm preset is where
+  this showed: its x = 0 root stops changing sign at exactly &mu; = 0, the left
+  end of its sweep, and the detector labelled the edge of the picture a
+  saddle-node.
+- **The three classifications are decided by what the roots do through the event,
+  not by pattern-matching the formula.** Count changes by two with no branch
+  surviving is a saddle-node; by two with a branch surviving *and flipping
+  stability* is a pitchfork, sub- or supercritical according to whether the
+  outer pair on the three-root side is unstable or stable; count unchanged with
+  two roots colliding and swapping stability is transcritical. **Transcritical is
+  the one that needs the collision test at all** - its signature is identical on
+  both sides (`US` either way for `mu*x - x^2`), so a count-and-stability
+  comparison alone sees nothing happen. That is also why it is the hard one to
+  find in a physical system.
+- **The presets are ordered simplest-formula-first and index 0 is the landing
+  state**, as on the cobweb page - so a first visit sees the saddle-node, which
+  is the one bifurcation whose picture needs no explanation. The last three are
+  there to be recognised rather than studied: the harvested fishery's fold is
+  the maximum sustainable yield, the budworm's two folds are the outbreak
+  hysteresis, and `sin(x)*(mu*cos(x) - 1)` is the hoop below, so the two halves
+  of the page are the same system twice.
+- **A preset writes its name to `location.hash` and the page reads it back on
+  load.** `/ese2100/bifurcations/#transcritical` is therefore a link to one
+  family, which is what makes a specific picture submittable. It is
+  `replaceState`, not a push, so the back button leaves the page rather than
+  walking the families.
+- **The hoop's potential is what makes the pitchfork obvious**, more than the
+  fork diagram does: V(&phi;) = -(&gamma; sin&sup2;&phi;)/2 - cos&phi; is one
+  bowl below &omega;<sub>c</sub> and two above it, with the bead visibly in
+  whichever it fell into. &gamma; = &omega;&sup2;R/g is the only parameter that
+  matters, and the readout shows it crossing 1.
+- **R is a slider because &omega;<sub>c</sub> = &sqrt;(g/R) has to be seen to
+  move.** With R fixed, the critical spin looks like a constant of the universe
+  rather than a property of the hoop. The ranges are chosen so that
+  &omega;<sub>c</sub> (2.6 to 5.7 rad/s) stays inside the &omega; slider's 0-8,
+  or the fork diagram would have a bifurcation off the edge of its own axis.
+- **Dragging the bead ignores the foreshortening on purpose.** The bead's screen
+  x is r&middot;sin&phi;&middot;cos&theta;, which cannot be inverted for &phi;
+  when the hoop is edge-on - cos&theta; is zero twice a turn and the angle would
+  jump. The drag reads the raw `atan2` instead, as though you were looking at
+  the hoop edge-on, which is a little wrong every frame and never surprising.
 
 ## The settings panel
 

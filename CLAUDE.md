@@ -27,12 +27,23 @@ It has its own CI and is not tested from this repo.
 
 ## What this is / how it runs
 
-- **`app.py` is the whole server, at 641 lines.** It serves `site/` as static
+- **`app.py` is the whole server, at 667 lines.** It serves `site/` as static
   files with GitHub-Pages-style directory indexes (`/foo/` → `site/foo/index.html`,
-  `/foo` → 301 → `/foo/`), path-safe via `werkzeug.utils.safe_join`.
-  **Nothing exercises the directory-index part today** - `site/index.html` is the
-  only `index.html` left - and it is kept anyway, because it is ten lines and it
-  is what makes the next `site/foo/index.html` you add simply work.
+  `/foo` → `/foo/`), path-safe via `werkzeug.utils.safe_join`. **That redirect is
+  a 302 where Pages sends a 301**, which this file used to claim it sent; keep the
+  302, because a path that is a directory today can be a bare file tomorrow and a
+  301 somebody's browser has cached cannot be taken back.
+  **`site/ese2100/` is what exercises the directory-index branch**, and for a
+  year nothing did - `site/index.html` was the only `index.html` left, and the
+  branch was kept anyway because it is ten lines and it is what makes the next
+  `site/foo/index.html` simply work. Three coursework pages later that is exactly
+  what happened: they needed no server change at all. `site/CLAUDE.md` →
+  **`/ese2100`**.
+- **`/cobweb` 301s to `/ese2100/cobweb/` and is the only redirect here that is
+  not a service hand-off.** The cobweb page lived at `/cobweb` for a fortnight
+  and the URL had been given out, so it keeps working; the 301 is right here
+  because the new address is canonical and there is no plan to move back. It has
+  to be a route: a static tree cannot answer 301.
 - **Static files revalidate on every request** (Flask's `no-cache` default). One
   exception: `fonts/` gets a year's `max-age`, because every page blocks on one
   font file and the revalidation round trip showed as a flash of the fallback

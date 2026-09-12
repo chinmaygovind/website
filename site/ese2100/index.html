@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESE 2100</title>
+<meta name="description" content="Simulations built for ESE 2100, Introduction to Dynamical Systems. One page per week, each one a thing you can drag.">
+<meta name="robots" content="noindex">
+<link rel="preload" href="../fonts/xkcd-script.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face {
+  font-family: "xkcd Script";
+  src: url("../fonts/xkcd-script.woff2") format("woff2"),
+       url("../fonts/xkcd-script.woff") format("woff");
+  font-display: block;
+}
+:root{
+  color-scheme: light;
+  --bg:#ffffff; --fg:#000000; --panel:#ffffff;
+  --hair: rgba(0,0,0,0.12); --wash: rgba(0,0,0,0.02);
+  --faint: rgba(0,0,0,0.4);
+  --math:#1f7a4d; --accent: var(--math);
+}
+html[data-theme="dark"]{
+  color-scheme: dark;
+  --bg:#101114; --fg:#ececec; --panel:#191b20;
+  --hair: rgba(255,255,255,0.16); --wash: rgba(255,255,255,0.03);
+  --faint: rgba(255,255,255,0.42);
+  --math:#52d68a;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--fg);
+  font-family:"xkcd Script","Comic Sans MS",cursive;
+  line-height:1.5;
+}
+html{-webkit-text-size-adjust:100%}
+.wrap{max-width:680px;margin:0 auto;padding:2rem 1.1rem 4rem}
+a.back{color:var(--faint);text-decoration:none;font-size:1rem}
+a.back:hover{color:var(--accent)}
+h1{
+  margin:0.9rem 0 0.3rem;font-weight:bold;line-height:1.05;
+  font-size:clamp(2rem,5vw,3.1rem);color:var(--accent);
+}
+.sub{color:var(--faint);margin:0 0 2rem;font-size:clamp(1rem,1.8vw,1.2rem)}
+.weeks{display:flex;flex-direction:column;gap:0.9rem}
+a.week{
+  display:block;text-decoration:none;color:inherit;
+  background:var(--panel);border:1px solid var(--hair);border-radius:14px;
+  padding:1rem 1.1rem;transition:border-color 0.15s ease,transform 0.12s ease;
+}
+a.week:hover{border-color:var(--accent);transform:translateY(-2px)}
+a.week:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.wk{font-size:0.76rem;letter-spacing:0.13em;text-transform:uppercase;color:var(--faint)}
+.nm{font-size:1.35rem;color:var(--accent);margin:0.15rem 0 0.3rem}
+.ds{color:var(--faint);font-size:0.95rem;margin:0}
+</style>
+<script>
+(function(){
+  var d=document.documentElement,s={};
+  try{ s=JSON.parse(localStorage.getItem("cgovind:settings"))||{}; }catch(e){}
+  var dark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;
+  d.dataset.theme=s.theme||(dark?"dark":"light");
+})();
+</script>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="/">&#8592; back</a>
+  <h1>ESE 2100</h1>
+  <p class="sub">Introduction to Dynamical Systems. One simulation a week, each one a thing you can drag.</p>
+
+  <div class="weeks">
+    <a class="week" href="/ese2100/bifurcations/">
+      <div class="wk">week 3</div>
+      <p class="nm">Bifurcations</p>
+      <p class="ds">Sweep &mu; through a one-dimensional family and watch the equilibria appear, collide and swap stability &mdash; then spin a hoop with a bead on it until the bottom stops being the place to sit.</p>
+    </a>
+    <a class="week" href="/ese2100/cobweb/">
+      <div class="wk">week 2</div>
+      <p class="nm">Cobweb</p>
+      <p class="ds">Pick a one-dimensional map, drop an x&#8320;, and watch the orbit stair-step between the curve and the diagonal into a fixed point, a cycle, or nothing at all.</p>
+    </a>
+  </div>
+</div>
+</body>
+</html>

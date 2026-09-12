@@ -7,16 +7,19 @@ the shared profile for the four games and Chinmay's console, both in the
 ``accounts`` package and registered at the bottom of this file.
 
 ``serve()`` re-implements GitHub Pages' directory-index behaviour - ``/foo/``
-serves ``site/foo/index.html``, and ``/foo`` 301-redirects to ``/foo/`` so
-relative links keep working - because the tree was authored for Pages and Flask
-does neither out of the box.
+serves ``site/foo/index.html``, and ``/foo`` redirects to ``/foo/`` so relative
+links keep working - because the tree was authored for Pages and Flask does
+neither out of the box. **That redirect is a 302 where Pages sends a 301**, and
+it should stay one: a path that is a directory today can be a bare file
+tomorrow, and a 301 somebody's browser has already cached is not retractable.
 
-**Nothing exercises that today.** August 2026 deleted the whole unlinked tree
-(``home/``, ``wii/``, ``channels/``, ``games/``, ``projects/``), so
-``site/index.html`` is now the only ``index.html`` on disk and every remaining
-path is a bare file. It is kept because it is ten lines and it is what makes the
-next page you add as ``site/foo/index.html`` simply work; delete it and that page
-404s until somebody puts it back.
+**The coursework pages under ``site/ese2100/`` are what exercises it.** For a
+while nothing did: August 2026 deleted the whole unlinked tree (``home/``,
+``wii/``, ``channels/``, ``games/``, ``projects/``) and left ``site/index.html``
+as the only ``index.html`` on disk, and the branch was kept anyway because it is
+ten lines and it is what makes the next ``site/foo/index.html`` simply work.
+``/ese2100/``, ``/ese2100/cobweb/`` and ``/ese2100/bifurcations/`` are that next
+page, three times over, and they needed no server change at all.
 """
 
 import base64
@@ -567,6 +570,24 @@ def drive():
 def gto():
     """Hand off to the poker trainer."""
     return redirect(GTO_URL, code=302)
+
+
+# `/cobweb` was where the cobweb page lived before there was a second one. It
+# moved under `/ese2100/` in September 2026 so the coursework pages share a
+# parent, and this keeps the old address working because it had already been
+# handed to people. A 301 rather than a 302: the new URL is the canonical one and
+# there is no plan to move it back, so a browser may remember the answer.
+#
+# It cannot be done by putting a file at `site/cobweb/index.html` - a static tree
+# has no way to say "301" - and it has to be a route rather than a rule in nginx,
+# because nginx config on the box is applied by hand and would not survive a
+# rebuild of it. `serve()` never sees the path: Werkzeug prefers this rule over
+# the `/<path:path>` catch-all for the same reason `/accounts/…` wins.
+@app.route("/cobweb")
+@app.route("/cobweb/")
+def cobweb():
+    """The cobweb page's old address, before the coursework pages had a parent."""
+    return redirect("/ese2100/cobweb/", code=301)
 
 
 # **The fonts are the one thing here worth caching hard, and not caching them
