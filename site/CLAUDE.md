@@ -444,7 +444,12 @@ function names it only matches when the next character is not a letter.
   together than its own spacing. `fmtSweep` prints the sweep value at a
   precision set by the sweep's width instead of `fmt`'s significant figures, so
   that lands as `0.0000` rather than as `2.42e-6`, which read as a bug and is
-  not one.
+  not one. **`fmtState` is the same trick against the x window**, and it was
+  added a commit later because the transcritical's root at x = 0 reached the
+  live page reading `x* = 6.82e-17`: bisection lands a hair off a root that is
+  exactly zero, and `fmt` goes exponential below 1e-4, so the honest answer
+  looked like a defect. Both formatters round to the precision the window can
+  actually justify; neither hides a number that matters at that scale.
 - **An event candidate within one column of either end of the sweep is dropped.**
   `describeEvent` compares the equilibria at &mu;\* &plusmn; h, and at the edge
   one of those samples is outside the window the user asked about - so it would
