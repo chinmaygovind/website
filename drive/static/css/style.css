@@ -126,6 +126,24 @@ html, body {
 a { color: var(--red); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
+/* --- announcement banner ------------------------------------------------ */
+/* The red strip above the nav, set in `_nav.html`. Red on red is what makes it
+   read as news rather than as another row of the site: the paper below it is
+   bone, so a filled bar of --red is the only solid colour above the fold. The
+   link is white and underlined because on a red ground the site's usual
+   red-on-paper link has nothing left to be, and the underline is the only cue
+   that any of the sentence is clickable. */
+.newsbar {
+  background: var(--red); color: #fff;
+  font-family: var(--sans); font-size: .82rem; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase; text-align: center;
+  padding: .4rem 1.1rem;
+  border-bottom: 2px solid var(--line);
+}
+.newsbar a { color: #fff; text-decoration: underline; text-underline-offset: .18em; }
+.newsbar a:hover { color: var(--paper); }
+.newsbar a:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
 /* --- nav ---------------------------------------------------------------- */
 .nav {
   display: flex; align-items: center; gap: 1rem;

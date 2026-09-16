@@ -13,6 +13,25 @@
 {% set icon_garage %}<path d="M3.5 10.6 12 5.2l8.5 5.4"/><path d="M5.6 20.4v-9.1h12.8v9.1"/><path d="M8.4 20.4v-5.9h7.2v5.9"/><path d="M8.4 17.6h7.2"/>{% endset %}
 {% set icon_build %}<path d="M4 20.4h4.2L20 8.6l-4.2-4.2L4 16.2z"/><path d="M14.4 6l3.6 3.6"/>{% endset %}
 {% set icon_in %}<path d="M11 4.6H6.1A1.6 1.6 0 0 0 4.5 6.2v11.6A1.6 1.6 0 0 0 6.1 19.4H11"/><path d="M14.6 8.4 18.2 12l-3.6 3.6"/><path d="M18.2 12H8.8"/>{% endset %}
+{# ---------------------------------------------------------------------------
+   The announcement banner: the red strip above the nav. **This dict is the
+   whole of it** - change the three strings to announce something else, and set
+   `banner` to `none` to take it down. It renders as "<before> <link> <after>",
+   with only the link clickable and underlined, so the eye lands on the name of
+   the thing rather than on the word "new".
+
+   It rides above `.nav` and is not sticky, so it scrolls away and costs the
+   page nothing after the first screen. Not on the play page, because
+   `_nav.html` is not included there - a red bar over a lap in progress is a way
+   of losing the lap.
+
+   `after` may be empty; `href` is an ordinary path on this site. #}
+{% set banner = {"before": "New Track:", "link": "Playground", "after": "", "href": "/solo/playground"} %}
+{% if banner %}
+<div class="newsbar">
+  {{ banner.before }} <a href="{{ banner.href }}">{{ banner.link }}</a>{% if banner.after %} {{ banner.after }}{% endif %}
+</div>
+{% endif %}
 <nav class="nav">
   <a class="brand" href="/"><img src="/static/img/icon.svg" alt="" class="brand-ico"/> Drive <small>· cgovind</small></a>
   {# Who you are sits beside the wordmark rather than at the head of the row of
