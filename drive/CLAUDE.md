@@ -491,20 +491,21 @@ than 15% or move a corner more than 8 degrees before refusing.
   response also carries a `frame-ancestors` sitelock. Anything touching login,
   the nav, `/privacy` or who a player is has to work in both. Read
   `docs/portal.md`.
-- **The announcement pill is one dict in `_nav.html`.** The red badge in the
-  nav ("New track: **Playground**", the name underlined, the whole pill the
-  link) is `{% set banner = {...} %}` with `before`, `link` and `href` - change
-  those three strings to announce the next thing, set `banner` to `none` to take
-  it down, and there is nothing else to touch. Deliberately not a config file or
-  a database row: it changes when a track ships, which is a deploy anyway.
-  **It is in the bar and not a strip above it**, so it sticks with the nav and
-  costs the page no height of its own - a strip above scrolls away, which is the
-  one place an announcement is no use. On a phone it takes **a row of its own**
-  between the brand row and the tab bar: that brand row is three pinned items
-  and a name that ellipsises, and a fourth item there is exactly the third row
-  the phone block exists to prevent. Not on the play page, because `_nav.html`
-  is not included there. Styling is `.newsflash` in `style.css`, built like
-  `.discord` so it reads as part of the bar.
+- **The announcement banner is one dict at the top of `_nav.html`.** The red
+  strip above the nav ("New Track: Playground", with only the name underlined
+  and clickable) is `{% set banner = {...} %}` with `before`, `link`, `after`
+  and `href` - change those four strings to announce the next thing, set
+  `banner` to `none` to take it down, and there is nothing else to touch.
+  Deliberately not a config file or a database row: it changes when a track
+  ships, which is a deploy anyway. It rides *above* `.nav` and is not sticky, so
+  it scrolls away; and it is not on the play page, because `_nav.html` is not
+  included there. Styling is `.newsbar` in `style.css`.
+  **Putting it inside the nav was tried and looks worse**, both as a pill beside
+  the wordmark and as a square band across the middle of the row. In the bar it
+  is competing with the wordmark, the invite and five links for the same line,
+  and it has to be small enough not to win - at which point it is another
+  button. Full width above them it is the only thing on its line and needs no
+  size at all to be read first. Ask before moving it back in.
 - **A guest is not signed in, and `/login` must stay reachable for one.** It
   used to redirect anybody with a `guest_name` on to `next` or the lobbies,
   which made the nav's own link a loop: the one control offering an account was
