@@ -198,6 +198,64 @@ find by looking at a bad picture.
 
 New entries, unsorted, until somebody files them. One line is enough.
 
+- **A roll laid on a straight cannot be driven, at any length or any speed.** On
+  a banked *corner* the bank is holding the car against the centripetal demand;
+  on a straight there is no demand, so gravity down the tilt is opposed by
+  nothing but `GRIP`, which is a damper rather than a limit - the car settles
+  into a steady slide toward the low edge and leaves. Measured at 40, 64 and 96
+  units for a full turn and at 30 and 50 for a quarter: all of them, every time.
+  Going faster does not help, because the drift is set by *time spent tilted* and
+  going slower is more of it. `Builder.wall` exists because of this; a bank that
+  is not on a corner is not a thing the car can use.
+
+- **A road that twists faster than about six degrees per station stops being
+  solid.** The collider triangulates a twisted quad into two flat facets, which
+  cut below the real surface by around `hw * sin(twist) / 2` - 1.3 units on a
+  15-wide road twisting 20 degrees a station, against a `SNAP` of 0.12. The car
+  falls into each facet, bounces off the next, and is airborne within three
+  stations; and once airborne it can never recover, because `STICK_FORCE` is
+  applied only while *grounded*. So the one thing that could hold it onto a wall
+  is switched off by the way it came off the road. `MAX_TWIST` in `builder.py`
+  is the cap, and a `wall` lays more stations rather than twisting harder.
+
+- **A wall's roll-up ramp has its own speed limit, and it is about 80 units of
+  arc.** Under that the surface rotates out from under the car before it is
+  tilted far enough for `STICK_FORCE` to hold it, and it leaves the road at
+  about 24 degrees of bank - well short of where any of the wall physics starts.
+  Measured: 40 and 60 units fail, 80 and 100 pass, at the same bank and radius.
+  It feels *clippy* rather than hard, which is the tell.
+
+- **How much of a wall you slide down is arithmetic, so it is a budget.** The
+  rate is `(g*sin(bank) - (v^2/R)*cos(bank)) / GRIP` and the time is `arc / v`,
+  so a 180-degree wall at radius 40 spends 5.8 units of a 7.5-unit half-width at
+  45 u/s and the car goes off the bottom. Tight and short holds; long and wide
+  does not, which is the opposite of the intuition. `STICK_FORCE` does not enter
+  into it - it pulls the car *into* the road, never up it.
+
+- **`tools/cut_check.py` over-reports badly on a track that floats.** Its model
+  is "a chord across grass costs about twice its length", and a void track has
+  no grass - a chord from one side of a wall's cylinder to the other is a fall,
+  not a shortcut. Playground showed 787 open paying chords against Rickety
+  Rails' 24, and every one of them was unreachable once the ballistics were
+  worked out. Filter to chords that leave *and* arrive on road the car is
+  upright on, then check whether the car can actually get there, before
+  believing any of it.
+
+- **An unlit accent in the same colour as the lit thing it sits on reads as a
+  separate object floating beside it.** `bright` is lifted linear->sRGB on the
+  way out and lifted hard, so Playground's teal knobs on teal posts came out
+  pale mint against posts the key light had shaded down - and at any distance
+  that is a slab hanging in the sky, not the top of a pole. An unlit accent
+  wants to be a *different* colour on purpose (yellow on teal reads as a lamp),
+  or it wants to be lit.
+
+- **"Pick it cooler and darker" is advice about value, not about saturation.**
+  Playground's first road was picked two steps down on the usual warning that a
+  warm key light multiplies a vertex colour toward mud, and it came out a dusty
+  mauve against a saturated sky. What the light eats is value; what a road needs
+  to survive a strong sky is *chroma*. Desaturating to be safe is how you get
+  grey.
+
 - A city track with nothing but scatter props on it does not read as a city. The
   scatter vocabulary has no building in it, so a city needs a `scenery.js` that
   stands real towers - there is no palette setting that gets there.

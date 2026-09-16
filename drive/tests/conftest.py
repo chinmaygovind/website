@@ -331,7 +331,7 @@ def memoize_build_track(rt):
 # line off the standing record via `/api/ghost/<slug>?who=wr`, so it cannot be
 # generated for a track nobody has driven. Set a lap and run
 # `tools/hotlap.py monza --site http://localhost:5005`, then drop the entry.
-NO_HOTLAP_YET = {"dino", "monza"}
+NO_HOTLAP_YET = {"dino", "monza", "playground"}
 
 # Waiting on a board deep enough to cut a standard from - five or so distinct
 # players. Drop the entry, then, on the box:

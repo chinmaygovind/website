@@ -72,6 +72,8 @@ SPEC = {
     "straight":        {"len": REQ, "rise": 0.0, "ease": True},
     "arc":             {"deg": REQ, "rad": REQ, "rise": 0.0, "ease": True,
                         "bank": None},
+    "wall":            {"deg": REQ, "rad": REQ, "bank": REQ, "ramp": 100.0,
+                        "rise": 0.0},
     "crest":           {"rise": REQ, "len": REQ},
     "hump":            {"rise": REQ, "len": REQ},
     "gap":             {"len": REQ, "drop": 0.0, "bow": None},
@@ -110,6 +112,12 @@ HELP = {
             "right - and `rad` is its radius, so a hairpin is a big `deg` with a "
             "small `rad`. Under about 12 nothing can drive it. `bank` tilts the "
             "road into the corner in degrees; `rise` climbs through it."),
+    "wall": ("A wall of death: a corner banked so far that the car is held on "
+             "by force rather than by gravity, and drives round the inside of a "
+             "cylinder. `bank` is degrees and goes toward the inside whichever "
+             "way `deg` turns; `ramp` is how much of the corner is spent rolling "
+             "up onto it and back down. The bank has to be laid on the corner - "
+             "a car rolled onto its side on a *straight* just slides off."),
     "crest": ("A sharp brow with no easing, which is what makes it launch you. "
               "`rise` over `len`. This is the deliberate version of the mistake "
               "`ease: false` makes by accident."),
@@ -147,8 +155,8 @@ assert set(HELP) == set(SPEC), "HELP and SPEC disagree about the vocabulary"
 # Moves that lay road, and therefore carry the width and barriers in force at
 # the point they were authored. `pipe`, `flat` and `finish_at_start` change no
 # geometry of their own and carry neither.
-LAYS_ROAD = ("start", "straight", "arc", "crest", "hump", "gap", "jump", "loop",
-             "boost", "bounce", "cp", "finish")
+LAYS_ROAD = ("start", "straight", "arc", "wall", "crest", "hump", "gap",
+             "jump", "loop", "boost", "bounce", "cp", "finish")
 
 # Fields the closure solver may substitute into, and therefore the only ones a
 # `FREE()` mark can sit on. See `Builder._tweak`: it is called with ("len",
@@ -255,6 +263,14 @@ class Recorder:
         return self._put("arc", deg=degrees, rad=radius, rise=rise, ease=ease,
                          bank=bank)
 
+    def wall(self, degrees, radius, bank, ramp=0.3, rise=0.0, w=None):
+        if w is not None:
+            self.rail(w)
+        # Unlike `roll`, this comes back to the bank it started from, so the
+        # sticky state is unchanged - same as `arc`'s eased `bank=`.
+        return self._put("wall", deg=degrees, rad=radius, bank=bank, ramp=ramp,
+                         rise=rise)
+
     def crest(self, rise, length, w=None):
         if w is not None:
             self.rail(w)
@@ -345,7 +361,7 @@ def replay(doc, b, spans=None):
 
     Sticky state is re-emitted only when it changes, which reproduces the
     author's original call sequence rather than a louder version of it. That
-    matters for one non-obvious reason: `loop` sets `self.roll = 0` on its way
+    matters for one non-obvious reason: `loop` sets `_roll` back to zero on its way
     out, so what the *next* move sees depends on whether a `bank()` call sat
     between them. Tracking what this function has set - rather than reading the
     builder back - keeps that faithful.
@@ -415,6 +431,8 @@ _APPLY = {
     "straight": lambda b, a: b.straight(a["len"], rise=a["rise"], ease=a["ease"]),
     "arc":      lambda b, a: b.arc(a["deg"], a["rad"], rise=a["rise"],
                                    ease=a["ease"], bank=a["bank"]),
+    "wall":     lambda b, a: b.wall(a["deg"], a["rad"], a["bank"],
+                                    ramp=a["ramp"], rise=a["rise"]),
     "crest":    lambda b, a: b.crest(a["rise"], a["len"]),
     "hump":     lambda b, a: b.hump(a["rise"], a["len"]),
     "gap":      lambda b, a: b.gap(a["len"], drop=a["drop"], bow=a["bow"]),

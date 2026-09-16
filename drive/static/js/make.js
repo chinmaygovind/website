@@ -306,6 +306,7 @@ const LOOK = [
     ['ground', 'c', 'ground'], ['prop', 'c', 'plants'],
     ['prop2', 'c', 'structures'], ['snow', 'c', 'snow'],
     ['density', 'n', 'how much scatter', 0, 0.5, 0.005],
+    ['legs', 'n', 'trestle legs every N units, 0 for none', 0, 60, 2],
   ]],
   ['Toys', [
     ['pad', 'c', 'boost pad'], ['padBase', 'c', 'pad base'],

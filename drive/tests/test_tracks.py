@@ -103,10 +103,27 @@ def test_every_gate_sits_on_the_racing_line(track):
 
 @pytest.mark.parametrize("track", ALL, ids=IDS)
 def test_gates_have_straight_road_either_side(track):
-    """Ten units of straight, flat, solid road before and after every gate.
+    """Ten units of straight, unrolled, solid road before and after every gate.
 
     The racing line through a corner cuts across the stations next to it, so a
     gate needs a settled run at it or the line misses its mouth entirely.
+
+    **Unrolled rather than level, and the two are not the same thing.** This
+    asserted `n[1] > 0.9` - the road's normal within 26 degrees of straight up -
+    which fails a *pitched* road as well as a banked one, and pitch is fine.
+    `_side` in course.js takes the full three-dimensional `gate.f`, so the gate
+    plane sits square across a ramp exactly as it does across a flat road, and
+    `_withinGate` measures its mouth with `gate.r`, which stays horizontal until
+    something rolls it. What breaks a gate is **roll** - it tips the mouth over
+    and shrinks the horizontal part of `r` that `lx` is measured along, until the
+    car passes through the posts instead of the gate - and a **profile**, which
+    `Builder._gate` refuses outright for the same reason.
+
+    So the check is on `lat`, which is the vector that actually has to stay put.
+    Nothing in the pool moves: every gate in all 24 tracks sits on road that is
+    both dead level and unrolled, so this was never exercised in either reading.
+    What it buys is a checkpoint part way up a ramp, which is a thing tracks want
+    and the geometry has always supported.
     """
     line = track["line"]
     span = int(round(10.0 / STATION))
@@ -118,7 +135,8 @@ def test_gates_have_straight_road_either_side(track):
             label = f"{track['slug']} {g['kind']}{g['gi'] or ''}"
             assert not e.get("air"), f"{label}: a gap runs through it"
             assert not e.get("curv"), f"{label}: a corner runs through it"
-            assert e["n"][1] > 0.9, f"{label}: the road is banked or pitched under it"
+            assert abs(e["lat"][1]) < 0.15, f"{label}: the road is banked under it"
+            assert not e.get("pf"), f"{label}: the road is profiled under it"
 
 
 @pytest.mark.parametrize("track", ALL, ids=IDS)

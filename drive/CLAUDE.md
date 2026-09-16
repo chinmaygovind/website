@@ -3,8 +3,8 @@
 **Live at `https://drive.cgovind.com`.** The fourth game, same shape as ERS/KoT:
 Flask + Flask-SocketIO, its own eventlet gunicorn `-w 1` on `127.0.0.1:5005`, its own
 venv (`drive/venv`) and `.env` (both gitignored, hand-made on the box), sharing TTR's
-`users` table for accounts. A PolyTrack-style low-poly driving game: twenty-two
-tracks, medal times, ghosts, and multiplayer rooms. Eighteen are point-to-point;
+`users` table for accounts. A PolyTrack-style low-poly driving game: twenty-three
+tracks, medal times, ghosts, and multiplayer rooms. Nineteen are point-to-point;
 **Spa-Francorchamps, Silverstone and Monaco are the three closed circuits** and
 start and finish on the same line. **Costco Wholesale, Monaco and Railway
 Raceway are the three that go under something** - the Costco's warehouse roof,
@@ -55,8 +55,8 @@ Road** (`rainbow`, difficulty 4,
 half-pipes in deep space with almost no barriers). Cloudbreak, Rainbow Road
 and Big Red are all in `tracks.EXPOSED`.
 
-**Big Red** (`bigred`, difficulty 5, 3335 units - now the longest track in
-the pool) is the descent: about 220 units of near-monotone fall through a red
+**Big Red** (`bigred`, difficulty 5, 3335 units - the longest track in the pool
+until Playground) is the descent: about 220 units of near-monotone fall through a red
 sunset, over a city drowned a long way below it, with the one loop as the only
 climb. Four full-size jumps and one small one break the fall up. A pad-fed
 kicker off a hairpin sends the car over a gap it clears the better part of two
@@ -228,8 +228,8 @@ it is the only track in the pool with anything on it that **moves**. Read
   chamfer sweep, collided as `KIND.OFFROAD` within 120 units - which is why the
   track is `exposed` with rails in one place only.
 
-**Rickety Rails** (`railway`, difficulty 5, 3006 units, ~70s ideal - the
-longest lap in the pool) is the mine, and it is the pool's first track with a
+**Rickety Rails** (`railway`, difficulty 5, 3006 units, ~70s ideal) is the
+mine, and it is the pool's first track with a
 roof over the whole lap. The road is a mine-cart trestle over a ravine:
 `ground = None`, with the bents drawn in `scenery.js` because the engine's own
 legs are a flat `p[1] - 16` and the floor is forty units down. Read
@@ -295,6 +295,49 @@ legs are a flat `p[1] - 16` and the floor is forty units down. Read
   a downward face - and this track has a loop, a trestle deck and a hundred bents
   whose undersides you look at from the ravine. At the first pass's 0x241c18 all
   of them were pure black and the loop read as a hole.
+
+**Playground** (`playground`, difficulty 5, 3903 units, ~88s ideal - the longest
+lap in the pool) is the stunt track: three walls of death, a hole in the road you
+jump on the way in and fall through on the way out, and nothing under any of it.
+It is `ground = None` with `below: {kind: void, haze}`, so what you fall into is
+cloud and then nothing. Read `docs/tracks-and-geometry.md` before touching it.
+
+- **`Builder.wall` is new and it is the whole track.** A corner banked past the
+  tilt where gravity could hold the car on, with the roll laid *on the corner*
+  rather than on a straight before it. That is not a stylistic choice: on a
+  straight there is nothing opposing gravity down the tilt, so the car slides off
+  every time, at every length and every speed. On a corner the bank is doing what
+  banking has always done. Three numbers govern one, and all three were measured
+  rather than guessed - see the constants in `track.py`.
+- **A wall is a helix, and which way it climbs decides whether it can be
+  skipped.** One that descends puts its own exit under the wrap, so dropping off
+  the top lands on it and the whole three hundred degrees is optional.
+  `tools/cut_check.py` cannot see that class at all - it ignores any chord with
+  more than six units of height between its ends - so it was found by driving.
+- **The ramp's roll-up needs about eighty units of arc.** Under that, the surface
+  rotates out from under the car before it is tilted far enough for
+  `STICK_FORCE`, and it leaves the road at about 24 degrees of bank. It feels
+  *clippy* rather than hard, which is the tell.
+- **Every wall station carries a flat nine-sample `pf`.** It changes the road's
+  shape by nothing and subdivides it across its width, which cuts the collider's
+  facet sag by eight - 0.42 units down to 0.000, against a `SNAP` of 0.12. That
+  is what stopped the walls being bumpy, and it costs triangles instead of
+  costing the racing line and the ghost sampling.
+- **The Climb is an alignment, and it is arithmetic.** You jump a hole, climb a
+  pad-fed ramp to 68 degrees, hairpin at the top and come back down the line you
+  arrived on to fall through the same hole. `OUT_RUN` adds up every horizontal
+  length between the two, and an S offsets the ramp by exactly the turn's own
+  `2R`, with an assert - because a turtle cannot be asked where it is (`Recorder`
+  has no `pos`, so a `build` that read its own position could not be recorded as
+  a document).
+- **`legs: 0` in the palette.** `buildTrack` puts a trestle pair under a
+  groundless road every 26 units so it reads as built rather than floating, which
+  is wrong for a road that is *supposed* to be floating. The key is new and is an
+  opt-out, so no existing track moves.
+- **The barrier is an edge beam, not rails.** `test_barriers_are_opt_in` counts
+  walled *stations*, so it has to be scenery - same reason as Rickety's timbering.
+  A low bar at each kerb rather than a rank of posts: posts read as a picket
+  fence down a track whose subject is the road's orientation.
 
 ## Adding a track
 

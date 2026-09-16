@@ -166,6 +166,12 @@
       "artist": "MKWii",
       "title": "DK Mountain",
       "url": "https://www.youtube.com/watch?v=O4b4AteSR2g"
+    },
+    "playground": {
+      "file": "playground.mp3",
+      "artist": "SM3DW",
+      "title": "Chainlink Charge",
+      "url": "https://www.youtube.com/watch?v=xmf6Za0Tc9Q"
     }
   }
 }

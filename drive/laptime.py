@@ -261,6 +261,16 @@ def speed_profile(track):
                 # rather than into it, so STICK_FORCE is the whole centripetal
                 # budget.
                 cap.append(min(top, math.sqrt(e["crad"] * T.STICK_FORCE)))
+            elif e.get("wrad"):
+                # A banked wall, and the same physics under a different word.
+                # The road is rolled past the tilt where gravity could hold the
+                # car on, so STICK_FORCE is again the whole centripetal budget
+                # and the yaw rate never binds - the cylinder does the cornering
+                # and the driver only has to stay on it. Reading this as an
+                # ordinary corner of the same radius is what would make the
+                # medals soft: `_corner_speed` brakes a wall of death down to
+                # third gear for a corner the car can take flat.
+                cap.append(min(top, math.sqrt(e["wrad"] * T.STICK_FORCE)))
             elif e.get("fix"):
                 cap.append(top)
             elif i - stride < 0 or i + stride >= n:

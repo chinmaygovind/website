@@ -197,6 +197,11 @@ export class Collider {
   ground(x, y, z, ux, uy, uz, maxDist) {
     let best = -1, bestD = Infinity, bestAlong = 0;
     let bqx = 0, bqy = 0, bqz = 0;
+    // A second, weaker candidate: the best surface found *ignoring* the car's
+    // attitude. Only ever used when the ordinary search comes back with
+    // nothing. See below.
+    let alt = -1, altD = Infinity, altAlong = 0;
+    let aqx = 0, aqy = 0, aqz = 0;
     const gen = ++this._gen, mark = this._mark;
     for (const arr of this.near(x, z)) {
       for (let ii = 0; ii < arr.length; ii++) {
@@ -205,7 +210,33 @@ export class Collider {
         mark[i] = gen;
         if (this.k[i] === KIND.WALL) continue;
         const nx = this.n[i * 3], ny = this.n[i * 3 + 1], nz = this.n[i * 3 + 2];
-        if (nx * ux + ny * uy + nz * uz < 0.15) continue;   // facing away from us
+        // **The attitude test is a preference now, not a gate**, and that
+        // distinction is the whole fix.
+        //
+        // It used to be `if (n . up < 0.15) continue` - throw away any surface
+        // whose normal is more than 81 degrees off the car's own up. That is not
+        // "the car is on the wrong side of this road", it is "the car is
+        // arriving at a steep angle", and the two are different questions. The
+        // symptom was passing straight through solid geometry: nose-first into a
+        // mushroom, head-on into the face of a banked wall (its normal is
+        // horizontal and yours is not, so the dot is ~0), sideways across a
+        // half-pipe, and landing upside down off a long jump. None of it is
+        // tunnelling - the surface was never a candidate, so there was nothing
+        // to hit at any speed or any step size.
+        //
+        // **But removing it outright is too much, and Spa proved it.** That
+        // track is the only one with a height field, and a field has surfaces
+        // lying almost coincident with the apron swept along the ribbon - which
+        // the old cut happened to keep apart. Letting them all compete moved
+        // *every* lap on Spa's board 1-2 units closer to its slip budget and
+        // pushed three over it. Re-driven, 29/29 became 26/29.
+        //
+        // So the aligned surface is found exactly as it always was, and the
+        // unaligned one is remembered separately and used **only when the
+        // ordinary search finds nothing at all**. Wherever a car has a surface
+        // under it the answer is bit-identical to before - which is every
+        // grounded moment on every track in the pool - and the fallback only
+        // speaks up in the case that used to return "there is no road here".
         closestOnTri(x, y, z, this.v, i * 9, Q);
         const dx = x - Q[0], dy = y - Q[1], dz = z - Q[2];
         const d = Math.hypot(dx, dy, dz);
@@ -225,8 +256,24 @@ export class Collider {
         //    snapping onto the wrong deck.
         const agree = nx * ux + ny * uy + nz * uz;
         const score = d - agree * 0.8 + (this.k[i] === KIND.OFFROAD ? 0.35 : 0);
+        if (agree < 0.15) {
+          // Not something the car is standing on. Kept as the fallback only,
+          // and only if the car is in *front* of it: the case this exists for is
+          // a car arriving at a surface it is about to hit, where `along` is
+          // positive. Letting a slightly-behind one through is what was still
+          // moving Spa's laps - a height field has surfaces lying almost
+          // coincident with the apron swept along the ribbon, and the car is a
+          // hair behind one of them often enough to matter.
+          if (along > 0 && d < altD) {
+            altD = d; alt = i; altAlong = along; aqx = Q[0]; aqy = Q[1]; aqz = Q[2];
+          }
+          continue;
+        }
         if (score < bestD) { bestD = score; best = i; bestAlong = along; bqx = Q[0]; bqy = Q[1]; bqz = Q[2]; }
       }
+    }
+    if (best < 0 && alt >= 0) {
+      best = alt; bestAlong = altAlong; bqx = aqx; bqy = aqy; bqz = aqz;
     }
     if (best < 0) return HIT_MISS;
     HIT.hit = true; HIT.px = bqx; HIT.py = bqy; HIT.pz = bqz;
@@ -929,7 +976,17 @@ export function buildTrack(track, T) {
     }
     return false;
   };
-  const legEvery = Math.max(4, Math.round(26 / (track.station || 3.5)));
+  // **How often a leg pair is drawn, in units, and `legs: 0` means never.**
+  //
+  // They exist so an elevated road reads as built rather than floating, which is
+  // the right instinct on a trestle over a gorge and the wrong one for a road
+  // that is *supposed* to be floating: on a track in open sky with nothing under
+  // it, a rank of stilts descending into the void is answering a question
+  // nobody asked, and it is the first thing anybody has ever complained about
+  // here. Opt-out rather than opt-in, so no existing track moves.
+  const legSpacing = pal.legs != null ? pal.legs : 26;
+  const legEvery = legSpacing <= 0
+    ? Infinity : Math.max(4, Math.round(legSpacing / (track.station || 3.5)));
   for (let i = Math.floor(legEvery / 2); i < line.length; i += legEvery) {
     const e = line[i];
     if (e.air || e.fix || e.pf) continue;       // nor under a pipe, whose edges

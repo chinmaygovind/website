@@ -1,4 +1,5 @@
-"""A replay you can hear, and a replay you can read the driver's hands off.
+"""A replay you can hear, a replay you can read the driver's hands off, and the
+air round the cars in one.
 
 Watching used to be silent about the thing on the screen and loud about the
 thing that was not - your own parked car went on making whatever noise it had
@@ -18,10 +19,22 @@ a car that is sliding, and nothing in the flag byte knows about steering or the
 throttle at all. Anything older, and every race replay, is inferred from the
 motion instead, and the pad says which of the two it is drawing.
 
+The third question is what a boost looks like in a recording, and it has two
+halves that come from two different places. A **pad** is not recorded at all and
+does not need to be - it is a place on the track, and the replay knows the track
+and where the car was, so `padUnder` asks the collider exactly what `Car.step`
+asks it. A **tow** is `FLAG.SLIP`, which is set for precisely as long as the
+boost pays; its *charge* is recorded nowhere and is reconstructed backwards from
+the payout, which is the one thing in here that is an inference rather than a
+reading. Both are worked out once per recording as a timeline and then read by
+time, so scrubbing, pausing, playing at 4x and switching cars are all right
+without any of them being handled.
+
 Driven rather than read, like `test_panels.py` and `test_touch.py`: `inputsOf`,
-`paintInputs` and `updateWatch` are lifted out of `game.js` by name and run
-against stubs, because what is under test is the mapping from a recorded frame
-to an engine note and a lit key.
+`paintInputs`, `updateWatch`, the timeline pair and `ghostAir` are lifted out of
+`game.js` by name and run against stubs, because what is under test is the
+mapping from a recorded frame to an engine note, a lit key and the air round a
+car.
 """
 
 import os
@@ -51,8 +64,18 @@ def _lifted():
     keys = src.index("const INPUT_KEYS = [")
     return "\n".join([
         extra,
-        _fn(src, "padUnder"),
-        _fn(src, "padCrossed"),
+        _fn(src, "surfaceUnder"),
+        _fn(src, "recordedTimeline"),
+        _fn(src, "zeroDraft"),
+        _fn(src, "padBoostAt"),
+        _fn(src, "padHeardIn"),
+        _fn(src, "slipStartedIn"),
+        _fn(src, "slipAt"),
+        _fn(src, "recordedCar"),
+        _fn(src, "surfaceAt"),
+        _fn(src, "smokeFor"),
+        _fn(src, "tyreSmoke"),
+        _fn(src, "ghostAir"),
         _fn(src, "inputsOf"),
         _fn(src, "paintInputs"),
         src[keys:src.index("];", src.index("const DRIFT_LIT")) + 2],
@@ -87,32 +110,56 @@ V3.prototype.length = function () {
   return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z);
 };
 V3.prototype.dot = function (o) { return this.x * o.x + this.y * o.y + this.z * o.z; };
+V3.prototype.addScaledVector = function (o, k) {
+  this.x += o.x * k; this.y += o.y * k; this.z += o.z * k; return this;
+};
 V3.prototype.lerpVectors = function (a, b, u) {
   this.x = a.x + (b.x - a.x) * u; this.y = a.y + (b.y - a.y) * u;
   this.z = a.z + (b.z - a.z) * u; return this;
 };
-function Q4() {} Q4.prototype.normalize = function () { return this; };
+function Q4() {}
+Q4.prototype.set = function () { return this; };
+Q4.prototype.normalize = function () { return this; };
 var THREE = { Vector3: V3, Quaternion: Q4 };
-var T = { MAX_SPEED: 50, PROBE: 2.6, RIDE_HEIGHT: 0.45, SNAP: 0.12, PAD_BOOST: 1.3 };
+var T = { MAX_SPEED: 50, PROBE: 2.6, RIDE_HEIGHT: 0.45, SNAP: 0.12, PAD_BOOST: 1.3,
+          SLIP_CHARGE: 1.5, SLIP_BOOST: 1.6 };
+var GHOST_RATE = 15;
 var FLAG = { DRIFT: 1, AIR: 2, RESPAWN: 4, BRAKE: 8, SLIP: 16 };
 var KIND = { ROAD: 0, WALL: 1, OFFROAD: 2, BOOST: 3, BOUNCE: 4 };
-// One boost pad, two units of it, lying across the lap at x 2..4 - and a road
-// that never runs out, so anywhere else is a surface the car is on and not a
-// hole it is falling through.
-var PAD = [2, 4];
+// One boost pad, two units of it, lying across the lap at x 2..4, and the grass
+// out past x 20 - with road everywhere else, so anywhere is a surface the car is
+// on and not a hole it is falling through.
+var PAD = [2, 4], GRASS = 20;
 // Every whoosh, and the level the rushing air was last left at.
-var WHOOSH = 0, AIR = [], KICKS = 0;
+var WHOOSH = 0, AIR = [], AIRC = [], KICKS = 0, DRAWN = [], FXN = 0, PUFFS = [];
 var S = {
   watch: null,
+  // The chased ghost's half of this: its recording, its air and the effect
+  // drawing it, all built on demand by `ghostAir`.
+  ghost: null, ghostTl: null, ghostTlFor: null, ghostAir: null, ghostFx: null,
   sound: {
     engine: function (sf, th, sl, air) { HEARD.push({ sf: sf, th: th, sl: sl, air: !!air }); },
-    draft: function (charge, boost) { AIR.push(boost); },
+    draft: function (charge, boost) { AIR.push(boost); AIRC.push(charge); },
     boostPad: function () { WHOOSH++; },
   },
-  renderer: { kick: function () { KICKS++; } },
+  renderer: {
+    kick: function () { KICKS++; },
+    makeDraft: function () { var id = ++FXN; return { id: id, gone: false,
+                                                      dispose: function () { this.gone = true; } }; },
+    // Every car's air, as it was drawn: which effect, and the three numbers
+    // `Draft` reads off a car. The last row is the last car drawn this frame.
+    // Every puff, in order: what kind and where the back of the car was.
+    smoke: function (pos, vel, kind) { PUFFS.push({ kind: kind, x: pos.x }); },
+    draft: function (st, dt, fx) {
+      DRAWN.push({ fx: fx ? fx.id : 0, pad: st.padBoost, slip: st.slipBoost,
+                   charge: st.slipCharge, out: st.respawnIn > 0 });
+    },
+  },
   built: { collider: { ground: function (x, y, z) {
-    return { hit: true, dist: T.RIDE_HEIGHT,
-             kind: (x >= PAD[0] && x <= PAD[1]) ? KIND.BOOST : KIND.ROAD };
+    var kind = KIND.ROAD;
+    if (x >= PAD[0] && x <= PAD[1]) kind = KIND.BOOST;
+    else if (x > GRASS) kind = KIND.OFFROAD;
+    return { hit: true, dist: T.RIDE_HEIGHT, kind: kind };
   } } },
 };
 // Enough of an element for the pad: `LIT` is which key ids are on, in the
@@ -143,6 +190,27 @@ function slideFrom(step, after, braking, n) {
   }
   return out;
 }
+// A lap with a tow paying out over frames [from, to). The bit is set for
+// exactly as long as `slipBoost` is above zero, which is what makes a run of it
+// the payout itself rather than a hint about one.
+// Well clear of `PAD`, so the tow is the only boost in the lap - a pad's air
+// and a tow's are the same air, and a test that could not tell them apart would
+// pass on either.
+function towLap(step, from, to, n) {
+  var out = [];
+  for (var i = 0; i < (n || 40); i++) {
+    out.push([-100 + i * step, 0, 0, 0, 0, 0, 1, (i >= from && i < to) ? FLAG.SLIP : 0]);
+  }
+  return out;
+}
+// A lap already out on the grass, past `GRASS`, at whatever pace the step says.
+function grassLap(step, flags, n) {
+  var out = [];
+  for (var i = 0; i < (n || 12); i++) {
+    out.push([30 + i * step, 0, 0, 0, 0, 0, 1, flags | 0]);
+  }
+  return out;
+}
 function fmt() { return ''; }
 function lampsOf() { return {}; }
 
@@ -164,7 +232,7 @@ function car(frames, recorded) {
   // to the nearest sample: a stub that quantised would report a car standing
   // still on every frame that landed inside a sample, which is exactly the
   // shape a slowed-down replay is.
-  return { g: { at: function (t) {
+  var g = { frames: frames, at: function (t) {
                   var q = t * 10, i = Math.floor(q), u = q - i;
                   var a = frames[i], b = frames[i + 1];
                   if (!a) return null;
@@ -173,8 +241,9 @@ function car(frames, recorded) {
                   out[0] = a[0] + (b[0] - a[0]) * u;
                   return out;
                 },
-                hz: 10 },
-           view: { update: function () {}, group: {} }, prev: null,
+                hz: 10 };
+  return { g: g, view: { update: function () {}, group: {} }, prev: null,
+           fx: S.renderer.makeDraft(), air: null, tl: recordedTimeline(g),
            gates: [], recorded: !!recorded };
 }
 function watching(cars, at) {
@@ -186,7 +255,8 @@ function watching(cars, at) {
                          right: new V3(), speed: 0, grounded: true, T: T,
                          padBoost: 0, slipBoost: 0, slipCharge: 0, respawnIn: 0 },
               title: null, playing: true, rate: 1, shown: -1 };
-  LIT = {}; AMBER = {}; WHOOSH = 0; AIR = []; KICKS = 0;
+  LIT = {}; AMBER = {}; WHOOSH = 0; AIR = []; AIRC = []; KICKS = 0; DRAWN = [];
+  PUFFS = [];
 }
 // Two frames, because a speed is measured between them: the first has nothing
 // to measure against and is honestly zero.
@@ -531,16 +601,37 @@ def test_a_paused_boost_is_a_still_picture(js):
     assert js.eval("WHOOSH") == 1, "the pad fired again while nothing moved"
 
 
-def test_a_seek_is_not_a_stretch_of_road(js):
-    """`padCrossed` samples the ground the car covered, because the film's step
-    is not the simulation's and a short pad can sit wholly between two frames of
-    a 4x replay. A scrub moves the car by more than any frame can, and sampling
-    *that* line is a probe of wherever the track happens to lie between two
-    unrelated places - which fired the whoosh for a pad nobody drove over."""
-    assert js.eval("padCrossed(new V3(-100, 0, 0), new V3(100, 0, 0), new V3(0, 1, 0))") is False
-    # But the ground a frame really covers is sampled along, not at its ends:
-    # a car at 4x steps over a two-unit pad in one frame.
-    assert js.eval("padCrossed(new V3(0, 0, 0), new V3(6, 0, 0), new V3(0, 1, 0))") is True
+def test_a_pad_between_two_recorded_frames_is_still_a_pad(js):
+    """The lap was driven at 120Hz and recorded at 15. At speed that is three
+    units a frame, which is wider than a pad - so the timeline samples the
+    ground *between* frames as well as on them, or a pad drives clean through
+    the gap and the boost it gave never happened."""
+    # Eight units a frame, which steps over the whole pad in one.
+    js.eval("watching([car(lap(8, 0, 12))]); play(4);")
+    assert js.eval("WHOOSH") == 1
+    assert js.eval("S.watch.subject.padBoost") > 0
+
+
+def test_a_scrub_past_a_pad_is_not_a_pad_anybody_drove_over(js):
+    """The whoosh is the one event among levels, so it asks what the film just
+    crossed rather than where it is. Dragging the bar past a pad is not a car
+    going over one, and the replay must not shout about it - but the boost it
+    lands *in* is a level, and that is simply true of where it landed."""
+    js.eval("watching([car(lap(0.5, 0, 40))]); S.watch.playing = false;"
+            " S.watch.t = 0.85; play(1);")
+    assert js.eval("WHOOSH") == 0, "a scrub made a noise"
+    assert js.eval("S.watch.subject.padBoost") > 0, "a scrub into a boost is dry"
+
+
+def test_a_boost_is_read_off_the_recording_and_not_carried(js):
+    """Everything about a boost is a pure function of where the film is, which
+    is what makes scrubbing, T and picking another car right for nothing. Land
+    on the same frame from either direction and it is the same boost."""
+    js.eval("watching([car(lap(0.5, 0, 40))]); play(12);")
+    forwards = js.eval("S.watch.subject.padBoost")
+    js.eval("watching([car(lap(0.5, 0, 40))]); S.watch.playing = false;"
+            " S.watch.t = 1.2; play(1);")
+    assert js.eval("S.watch.subject.padBoost") == pytest.approx(forwards)
 
 
 def test_a_car_that_runs_out_takes_its_boost_with_it(js):
@@ -551,3 +642,239 @@ def test_a_car_that_runs_out_takes_its_boost_with_it(js):
     js.eval("play(4);")
     assert js.eval("S.watch.subject.padBoost") == 0
     assert js.eval("AIR[AIR.length - 1]") == 0
+
+
+# --- the tow, and everybody's air -------------------------------------------
+#
+# `FLAG.SLIP` has been in the pose and in every recording since the tail lamps
+# needed it, and it is set for exactly as long as the boost is paying - so the
+# payout in a replay is a fact rather than a reading. The *charge* is not
+# recorded anywhere, and it is the half worth watching: see `slipAt` for what is
+# reconstructed and what that costs.
+
+
+def _air(js, key, i=0):
+    """One number out of the air drawn for the i-th car of the frame just played.
+
+    In car order, because that is the order `updateWatch` draws them in - and
+    the tests clear `DRAWN` immediately before the frame they are about, so the
+    rows are that frame and nothing else.
+    """
+    return js.eval("DRAWN[%d].%s" % (i, key))
+
+
+def test_a_recorded_tow_pays_out_in_the_replay(js):
+    """The bit is the boost: a run of it starts where the tow fired and ends
+    where it ran out, so the air goes amber for the same second and a half it
+    did when it was driven."""
+    js.eval("watching([car(towLap(0.5, 6, 22))]); S.watch.t = 0.7; play(1);")
+    assert js.eval("S.watch.subject.slipBoost") > 0
+    assert js.eval("AIR[AIR.length - 1]") > 0
+    # And it is gone once the bit is, rather than lingering over a car that is
+    # back to its own engine.
+    js.eval("S.watch.t = 2.5; play(1);")
+    assert js.eval("S.watch.subject.slipBoost") == 0
+
+
+def test_the_boost_is_what_is_left_and_not_a_switch(js):
+    """`Draft` reads seconds, not a flag, so the air peters out with the boost
+    the way it does from the seat. Later in the same run is less of it."""
+    js.eval("watching([car(towLap(0.5, 6, 22))]); S.watch.t = 0.65; play(1);")
+    early = js.eval("S.watch.subject.slipBoost")
+    js.eval("S.watch.t = 1.9; play(1);")
+    assert 0 < js.eval("S.watch.subject.slipBoost") < early
+
+
+def test_the_charge_fills_towards_a_tow_that_is_coming(js):
+    """The wind-up is the half you can only see from outside the car, and the
+    only thing in the recording that says it happened is the payout at the far
+    end of it. A boost at t means the driver was in somebody's air a full
+    SLIP_CHARGE earlier, so the ramp runs back from there."""
+    js.eval("watching([car(towLap(0.5, 20, 36))]);")   # the tow fires at t=2.0
+    js.eval("S.watch.playing = false; S.watch.t = 1.9; DRAWN = []; play(1);")
+    nearly = js.eval("S.watch.subject.slipBoost")
+    assert nearly == 0, "not paying yet"
+    assert js.eval("AIR[AIR.length - 1]") == 0, "the band opens on the boost"
+    # The rushing air fills with the charge instead, which is what `Sound.draft`
+    # takes as its first argument - so you hear the boost coming, watching, the
+    # same way you do driving.
+    assert js.eval("AIRC[AIRC.length - 1]") > 0
+    late = _air(js, "charge")
+    js.eval("S.watch.t = 0.6; DRAWN = []; play(1);")
+    early = _air(js, "charge")
+    assert 0 < early < late < 1
+
+
+def test_a_lap_with_no_tow_in_it_has_no_charge_anywhere(js):
+    """Nothing to run a ramp back from, which is most laps: the tow belongs to
+    a room and the leaderboard is driven alone."""
+    js.eval("watching([car(lap(0.1, 0, 40))]); play(9); DRAWN = []; play(1);")
+    assert _air(js, "charge") == 0
+    assert _air(js, "slip") == 0
+
+
+def test_a_tow_makes_the_same_noise_a_pad_does(js):
+    """Both are the same fact from inside the car - more engine than you had a
+    moment ago - and the whoosh is the announcement either way."""
+    js.eval("watching([car(towLap(0.5, 6, 22))]); play(12);")
+    assert js.eval("WHOOSH") == 1
+    assert js.eval("KICKS") == 1
+
+
+def test_every_car_in_a_race_replay_gets_its_own_air(js):
+    """A tow is the one move in this game its own driver cannot see, so a race
+    replay showing only the camera car's air would be hiding the half worth
+    watching. One `Draft` each, because the streaks have to fly their own run
+    out and cannot be shared."""
+    js.eval("watching([car(towLap(0.5, 6, 22)), car(lap(0.5, 0, 40))], 0);"
+            " S.watch.t = 0.7; DRAWN = []; play(1);")
+    assert _air(js, "slip") > 0, "the car the camera is on"
+    assert _air(js, "slip", 1) == 0, "a car that was not in a tow"
+    # And the one being towed is the *other* car, from the same one frame.
+    js.eval("watching([car(lap(0.5, 0, 40)), car(towLap(0.5, 6, 22))], 0);"
+            " S.watch.t = 0.7; DRAWN = []; play(1);")
+    assert _air(js, "slip", 1) > 0, "a rival's tow is not drawn"
+
+
+def test_a_car_being_put_back_on_the_road_has_no_air(js):
+    """`Draft` already knows this and only has to be told, and the recording
+    says so: RESPAWN is in the same byte."""
+    js.eval("watching([car(lap(0.5, FLAG.RESPAWN | FLAG.SLIP, 40))]);"
+            " play(3); DRAWN = []; play(1);")
+    assert _air(js, "out") is True
+
+
+# --- the ghost you are chasing ----------------------------------------------
+#
+# Same two timelines, no sound. A ghost is a lap you are being shown rather than
+# a rival, and where its driver took a pad or picked up a tow is most of what
+# there is to learn from it.
+
+
+def _ghost(js, frames):
+    js.eval("S.ghost = null; S.ghostFx = null; S.ghostTl = null;"
+            " S.ghostTlFor = null; S.ghostAir = null; DRAWN = [];")
+    js.eval("S.ghost = car(%s).g;" % frames)
+
+
+def test_the_ghost_gets_the_air_its_lap_had_in_it(js):
+    _ghost(js, "towLap(0.5, 6, 22)")
+    js.eval("DRAWN = []; ghostAir(0.7, new V3(3, 0, 0), new Q4(), 0.1);")
+    assert _air(js, "slip") > 0
+
+
+def test_the_ghost_finds_the_pads_the_track_has(js):
+    """Off the collider, the same way a replay does - so a ghost recorded years
+    before any of this lights up on the pads it drove over."""
+    _ghost(js, "lap(0.5, 0, 40)")
+    js.eval("DRAWN = []; ghostAir(0.9, new V3(4, 0, 0), new Q4(), 0.1);")
+    assert _air(js, "pad") > 0
+
+
+def test_the_ghost_is_silent(js):
+    """The whoosh belongs to the car you are sitting in. Two of them on one pad
+    reads as an echo, and the ghost is not the one you are driving."""
+    _ghost(js, "lap(0.5, 0, 40)")
+    js.eval("DRAWN = []; ghostAir(0.9, new V3(4, 0, 0), new Q4(), 0.1);")
+    assert js.eval("WHOOSH") == 0 and js.eval("KICKS") == 0
+
+
+def test_the_ghosts_timeline_is_built_once_per_ghost(js):
+    """Keyed on the `Ghost` object, because a ghost is swapped by five different
+    things and none of them should have to know an effect exists. A different
+    object is a different lap; the same one is the same answer."""
+    _ghost(js, "lap(0.5, 0, 40)")
+    js.eval("DRAWN = []; ghostAir(0.9, new V3(4, 0, 0), new Q4(), 0.1);")
+    fx = js.eval("S.ghostFx.id")
+    # A mark on the timeline that only survives if it is not rebuilt.
+    js.eval("S.ghostTl.mine = 1; ghostAir(1.0, new V3(5, 0, 0), new Q4(), 0.1);")
+    assert js.eval("S.ghostTl.mine") == 1, "the timeline was built again"
+    assert js.eval("S.ghostFx.id") == fx, "a second effect was made"
+    assert js.eval("S.ghostTlFor === S.ghost") is True
+    # A different lap is a different object, and gets its own.
+    js.eval("S.ghost = car(lap(0.5, 0, 40)).g;"
+            " ghostAir(0.9, new V3(4, 0, 0), new Q4(), 0.1);")
+    assert js.eval("S.ghostTl.mine") is None, "a new ghost kept the old timeline"
+
+
+def test_a_ghost_off_the_screen_lets_its_air_fly_out(js):
+    """Called with no pose before the lap starts, after it ends and with ghosts
+    off - what is in the air finishes its run instead of freezing over the road,
+    and nothing new is launched."""
+    _ghost(js, "lap(0.5, 0, 40)")
+    js.eval("DRAWN = []; ghostAir(0.9, new V3(4, 0, 0), new Q4(), 0.1);")
+    assert _air(js, "pad") > 0
+    js.eval("DRAWN = []; ghostAir(null, null, null, 0.1);")
+    assert _air(js, "pad") == 0
+
+
+# --- the dust ---------------------------------------------------------------
+#
+# Smoke is `smokeFor`, which is one rule read off a car and is the same function
+# the driven car uses. A recording answers it with the byte for the slide and
+# with the timeline's surface pass for the grass - which is the same trick the
+# pads are: the road knows what it is made of and the recording does not have to.
+
+
+def _puff(js, i=-1, key="kind"):
+    return js.eval("(PUFFS.length ? PUFFS[%s].%s : null)"
+                   % ("PUFFS.length - 1" if i < 0 else i, key))
+
+
+def test_a_sliding_replay_smokes(js):
+    """`FLAG.DRIFT` is in every recording, and a slide on the road is smoke."""
+    js.eval("watching([car(lap(0.5, FLAG.DRIFT, 40))]); play(4);")
+    assert _puff(js) == "smoke"
+
+
+def test_a_slide_on_the_grass_is_dust_and_not_smoke(js):
+    """Which of the two it is, is a fact about the *track*, and the track is the
+    one thing a replay has all of."""
+    js.eval("watching([car(grassLap(0.5, FLAG.DRIFT))]); play(4);")
+    assert _puff(js) == "dust"
+
+
+def test_running_wide_trails_dust_without_sliding(js):
+    """The second half of the rule: on the grass at any pace is dust, which is
+    what a car that has simply run wide is doing."""
+    js.eval("watching([car(grassLap(3, 0))]); play(4);")
+    assert _puff(js) == "dust"
+
+
+def test_a_car_crawling_on_the_grass_kicks_up_nothing(js):
+    js.eval("watching([car(grassLap(0.05, 0))]); play(4);")
+    assert js.eval("PUFFS.length") == 0
+
+
+def test_a_car_in_the_air_leaves_no_tyre_marks(js):
+    """Not grounded is not smoking, however sideways the byte says it was."""
+    js.eval("watching([car(lap(0.5, FLAG.DRIFT | FLAG.AIR, 40))]); play(4);")
+    assert js.eval("PUFFS.length") == 0
+
+
+def test_a_paused_replay_stops_smoking(js):
+    """The same frame drawn over and over, and a puff a frame would bury the
+    still picture somebody paused to look at."""
+    js.eval("watching([car(lap(0.5, FLAG.DRIFT, 40))]); play(4);"
+            " S.watch.playing = false; PUFFS = []; play(8);")
+    assert js.eval("PUFFS.length") == 0
+
+
+def test_only_the_camera_car_smokes(js):
+    """The rule the live track runs on - the one car making smoke is the one you
+    are sitting in - and a budget as well as a rule: the pool is ninety
+    particles and one sliding car fills a third of it."""
+    js.eval("watching([car(lap(0.5, FLAG.DRIFT, 40)), car(lap(0.5, FLAG.DRIFT, 40))], 0);"
+            " PUFFS = []; play(1);")
+    assert js.eval("PUFFS.length") == 1
+
+
+def test_the_ghost_you_are_chasing_smokes_too(js):
+    """Where a ghost is sliding and where it has run wide are the two things
+    about somebody else's lap you can read at a glance from behind it."""
+    _ghost(js, "lap(0.5, FLAG.DRIFT, 40)")
+    js.eval("PUFFS = []; ghostAir(0.9, new V3(4, 0, 0), new Q4(), 0.1);")
+    assert _puff(js) == "smoke"
+    # And it stops with the ghost, rather than smoking over the road it left.
+    js.eval("PUFFS = []; ghostAir(null, null, null, 0.1);")
+    assert js.eval("PUFFS.length") == 0

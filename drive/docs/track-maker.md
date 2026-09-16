@@ -40,7 +40,7 @@ Tests: `test_moves.py`, `test_make.py`, `test_user_tracks.py`,
 
 ## The document
 
-A track is a **list of moves** — a turtle walking a road into existence. Fifteen
+A track is a **list of moves** — a turtle walking a road into existence. Sixteen
 move types, in `moves.SPEC`, each described in one line in `moves.HELP` (the two
 are asserted to cover the same set, because `HELP` is handed to somebody's AI and
 a vocabulary described in a file somewhere else is one that will be described

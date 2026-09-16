@@ -69,8 +69,20 @@ def self_proximity(track, clearance=None):
     n = len(line)
     if clearance is None:
         clearance = CROSS_CLEAR
-    # Stations closer than this along the road are neighbours, not a crossing.
-    skip = int(30.0 / STATION) + 1
+    # Stations closer than this *along the road* are neighbours, not a crossing.
+    #
+    # Measured as real distance rather than as a count of stations, because
+    # station spacing is not uniform any more: `Builder.wall` lays them as fine
+    # as `MAX_TWIST` needs, which on a tight wall is under two units apart. A
+    # fixed count of nine then spans thirteen units of road instead of thirty,
+    # and the check reads a wall's own next corner-and-a-bit as a car trap - six
+    # of them on the first track that had any. With uniform spacing this is the
+    # same window it always was.
+    near = 30.0
+    run = [0.0] * n
+    for i in range(1, n):
+        run[i] = run[i - 1] + math.dist(line[i]["p"], line[i - 1]["p"])
+    total = run[-1]
     # On a closed circuit the ribbon is a ring, so the last station is the first
     # station's neighbour however far apart their indices are. Measuring the gap
     # linearly would read the join as the worst car trap on the track and, via
@@ -82,8 +94,11 @@ def self_proximity(track, clearance=None):
         a = line[i]
         if a.get("air"):
             continue
-        for j in range(i + skip, n):
-            if closed and n - (j - i) < skip:
+        j = i + 1
+        while j < n and run[j] - run[i] < near:
+            j += 1
+        for j in range(j, n):
+            if closed and total - (run[j] - run[i]) < near:
                 break
             b = line[j]
             if b.get("air"):
@@ -123,8 +138,14 @@ def pole_side(track):
     i0 = start["si"] if start else 0
     limit = math.radians(FIRST_TURN_DEG)
     total = 0.0
-    for e in line[i0:]:
-        total += e.get("curv", 0.0) * STATION
+    # `curv` is per unit of road, so it is integrated against the real gap to the
+    # previous station rather than against `STATION`. They are the same number
+    # everywhere except inside a `wall`, which lays its stations as fine as the
+    # twist needs - and counting those as a full station each would read its
+    # first corner as several times the angle it actually turns.
+    for k in range(i0 + 1, len(line)):
+        total += line[k].get("curv", 0.0) * math.dist(line[k]["p"],
+                                                      line[k - 1]["p"])
         if abs(total) >= limit:
             break
     return 1 if total > 0 else -1

@@ -192,6 +192,7 @@ _FIELD_TO_ARG = {
     "boost": {"len": "length"},
     "bounce": {"len": "length"},
     "arc": {"deg": "degrees", "rad": "radius"},
+    "wall": {"deg": "degrees", "rad": "radius"},
     "loop": {"rad": "radius", "dir": "dir"},
     "jump": {},
 }

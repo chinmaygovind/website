@@ -82,6 +82,25 @@ PROF_SAMPLES = 9
 # depth is smoothstepped in and out over this distance at each end.
 PROF_BLEND = 14.0
 
+# The most the road may twist between one station and the next. See `wall`.
+#
+# The collider triangulates a twisted quad into two flat facets, and they cut
+# below the real surface along the diagonal by about `hw * sin(twist) / 2`. At
+# 3.5-unit stations a bank rolled on over 96 units twists 20 degrees a station,
+# which on a 15-wide road is 1.3 units of dip against a `SNAP` seam tolerance of
+# 0.12 - so the car falls into every facet, bounces off the next, and is
+# airborne within three stations. It never recovers, because `STICK_FORCE` is
+# applied only while grounded: the one thing that could hold it onto a wall is
+# switched off by the way it came off the road. Six degrees puts the dip near a
+# tenth of a unit, which is `SNAP`'s order rather than ten times it, and a
+# `wall` simply lays more stations to stay under it.
+MAX_TWIST = math.radians(6.0)
+
+# A cross-section of zero rise, used by `wall` to subdivide the road laterally.
+# Baked once: it is the same list on every wall station and there is no reason
+# for nine hundred copies of it.
+_FLAT_PF = None    # built below, once `_profile` exists
+
 def _profile(depth, floor, side, samples=PROF_SAMPLES):
     """Cross-section samples for a trough ``depth`` deep with a flat floor.
 
@@ -105,6 +124,9 @@ def _profile(depth, floor, side, samples=PROF_SAMPLES):
             rise = depth * (1.0 - math.cos(t * math.pi / 2.0))
         out.append([round(u, 4), round(rise, 3)])
     return out
+
+
+_FLAT_PF = _profile(0.0, 0.34, "lr")
 
 
 def rise_at(e, u):
@@ -204,7 +226,7 @@ class Builder:
         self.x, self.y, self.z = float(x), float(y), float(z)
         self.yaw = math.radians(yaw)
         self.hw = width / 2.0
-        self.roll = 0.0
+        self._roll = 0.0
         self.rails = rails
         self.wl = rails
         self.wr = rails
@@ -376,7 +398,7 @@ class Builder:
 
     def bank(self, degrees):
         """Roll the road. Positive raises the right-hand edge."""
-        self.roll = math.radians(degrees)
+        self._roll = math.radians(degrees)
         return self
 
     def pipe(self, depth=4.5, floor=0.34, side="lr"):
@@ -422,7 +444,7 @@ class Builder:
             s = length * u
             dh, grade = self._height(rise, u, length, ease)
             pitch = math.atan(grade)
-            f, r, up = _frame(self.yaw, pitch, self.roll)
+            f, r, up = _frame(self.yaw, pitch, self._roll)
             p = [x0 + f0[0] * s, y0 + dh, z0 + f0[2] * s]
             self._emit(p, up, r, kick=(rise != 0.0 and not ease))
             self.x, self.y, self.z = p
@@ -452,7 +474,7 @@ class Builder:
         cz = self.z + r0[2] * sign * radius
         yaw0 = self.yaw
         y0 = self.y
-        roll_target = math.radians(bank) * sign if bank else self.roll
+        roll_target = math.radians(bank) * sign if bank else self._roll
         for i in range(1, n + 1):
             u = i / n
             a = total * u
@@ -461,16 +483,164 @@ class Builder:
             pitch = math.atan(grade)
             # Ease the bank in and out across the corner so the entry and exit
             # join the straights flat.
-            roll = self.roll + (roll_target - self.roll) * math.sin(math.pi * u) \
-                if bank else self.roll
+            roll = self._roll + (roll_target - self._roll) * math.sin(math.pi * u) \
+                if bank else self._roll
             f, r, up = _frame(yaw, pitch, roll)
-            # position on the arc: pivot plus radius back along the new right
-            px = cx - r[0] * sign * radius
-            pz = cz - r[2] * sign * radius
+            # Position on the arc: the pivot, plus a radius back along the
+            # right-hand vector. **Which right-hand vector is the whole
+            # subtlety, and the answer here is knowingly two answers.**
+            #
+            # The correct one is the *unrolled* right. Bank is a property of the
+            # frame about the path and never of the path itself, so rolling the
+            # road may not move the road - and measuring back along the rolled
+            # `r` instead lays a corner of `radius * cos(roll)`. At the 88
+            # degrees a wall of death is held at, `r` is vertical, has no
+            # horizontal component left to measure along, and the entire arc
+            # collapses onto its own pivot: a 38-unit hole in the ribbon.
+            # `straight` and `roll` both take their heading from the unrolled
+            # frame already; this was the one primitive that did not.
+            #
+            # **An eased `bank=` nonetheless keeps the rolled one, and that is a
+            # decision about boards rather than about geometry.** Eleven tracks
+            # corner with `bank=`, up to Big Red's 20 degrees, and correcting
+            # them moves their ribbons by up to 7.3 units - the road shifting
+            # under every ghost and every time already set on them, and Spa's
+            # collider with it. What the error actually costs there is a corner's
+            # midpoint pulled a fraction of a unit toward its own pivot, which
+            # nobody has ever seen or ever will. So `bank=` keeps the geometry it
+            # was driven on, and a **held** roll - which nothing in the pool had
+            # before Playground, because `b.bank()` as a statement had no caller -
+            # gets the right answer. Worth revisiting the day those boards reset.
+            if bank is None:
+                _, ra, _ = _frame(yaw, 0.0, 0.0)
+            else:
+                ra = r
+            px = cx - ra[0] * sign * radius
+            pz = cz - ra[2] * sign * radius
             p = [px, y0 + dh, pz]
             self._emit(p, up, r, curv=sign / radius)
             self.x, self.y, self.z = p
         self.yaw = yaw0 + sign * total
+        return self
+
+    def wall(self, degrees, radius, bank, ramp=100.0, rise=0.0, w=None):
+        """A corner banked past where gravity could hold the car on it.
+
+        A wall of death: the road rolls up onto its side, holds there through
+        the corner, and comes back down, and the car drives round the inside of
+        the cylinder that makes.
+
+        **The roll is laid on the corner and not on a straight before it, and
+        that is the whole reason this is a primitive rather than a `roll` and an
+        `arc`.** On a straight there is nothing at all opposing gravity down the
+        tilt: `STICK_FORCE` pulls the car *into* the road, never up it, so the
+        only thing left is `GRIP` chewing at the lateral velocity, and the car
+        slides steadily toward the low edge and off. Measured: a car entering a
+        rolling straight at 45 u/s is a road's half-width off centre by 90
+        degrees of roll and gone by 118, at every length from 40 units to 96 -
+        going faster does not help, because the drift is set by time spent
+        tilted and going slower is more time. On a *corner* the bank is doing
+        the job banking has always done, which is holding the car against the
+        centripetal demand instead of letting gravity have it.
+
+        So the roll ramps up over the first ``ramp`` of the arc, holds through
+        the middle, and ramps back down over the last ``ramp`` - the bank
+        arriving together with the corner that needs it.
+
+        ``bank`` is unsigned and is applied toward the inside of the corner,
+        because a bank that leaned the other way would be a ramp off the edge.
+        Past about 32 degrees (``STICK_TILT``) the car is held on by
+        ``STICK_FORCE`` rather than by gravity, and then the fastest it can be
+        held is ``sqrt(radius * STICK_FORCE)`` - which `_emit` writes onto every
+        station as ``wrad`` and `laptime.py` times the lap with.
+        """
+        if w is not None:
+            self.rail(w)
+        if radius <= 0:
+            raise ValueError("wall radius must be positive")
+        self.sections.append({"t": "wall", "deg": degrees, "rad": radius,
+                              "bank": bank, "ramp": ramp, "rise": rise})
+        sign = 1.0 if degrees >= 0 else -1.0
+        total = math.radians(abs(degrees))
+        length = total * radius
+        if 2.0 * ramp > length + 1e-6:
+            raise ValueError(
+                "a %g-degree wall at radius %g is %.0f units of arc and cannot "
+                "hold two %g-unit ramps. Lengthen the corner or widen the "
+                "radius - and read why the ramp has to be long before "
+                "shortening it." % (degrees, radius, length, ramp))
+        target = math.radians(abs(bank)) * sign
+        # Enough stations that neither ramp twists more than `MAX_TWIST` between
+        # one and the next - see `roll` for what a coarse twist does to the
+        # collider.
+        n = max(self._steps(length),
+                int(math.ceil(abs(target - self._roll) / MAX_TWIST
+                              * length / ramp)))
+        _, r0, _ = _frame(self.yaw, 0.0, 0.0)
+        cx = self.x + r0[0] * sign * radius
+        cz = self.z + r0[2] * sign * radius
+        yaw0, y0, roll0 = self.yaw, self.y, self._roll
+        for i in range(1, n + 1):
+            u = i / n
+            a = total * u
+            yaw = yaw0 + sign * a
+            dh, grade = self._height(rise, u, length, True)
+            pitch = math.atan(grade)
+            # `ramp` is units of arc, so the roll *rate* is the same whatever
+            # size the corner is - which is the number that decides whether the
+            # car stays on it. See the docstring.
+            run = length * u
+            if run < ramp:
+                k = _smooth(run / ramp)
+            elif run > length - ramp:
+                k = _smooth((length - run) / ramp)
+            else:
+                k = 1.0
+            roll = roll0 + (target - roll0) * k
+            f, r, up = _frame(yaw, pitch, roll)
+            _, rf, _ = _frame(yaw, 0.0, 0.0)
+            p = [cx - rf[0] * sign * radius, y0 + dh, cz - rf[2] * sign * radius]
+            e = self._emit(p, up, r, curv=sign / radius)
+            # **The whole wall carries `wrad`, ramps included**, where an
+            # ordinary banked arc only gets it on the stations actually rolled
+            # past `STICK_TILT`. A wall is one authored object and the car is on
+            # its way onto a cylinder for the whole of it - so timing the ramp as
+            # a *flat* corner of this radius, which is all `_corner_speed` knows
+            # how to do, brakes the car to a crawl right where it most needs the
+            # speed. That is not conservatism, it is the thing that made the
+            # first version undrivable: entered at 30 u/s instead of 45, the
+            # centripetal term collapses, and then gravity down the wall is
+            # opposed by nothing and the car slides off the bottom.
+            #
+            # `_corner_speed` has no bank term at all - every `arc(bank=)` in the
+            # pool is timed as though flat, which is harmless at 8 degrees and
+            # absurd at 88. Saying so here is narrower than fixing that, and it
+            # is the part this track needs.
+            e["wrad"] = round(radius, 2)
+            e["fix"] = 1
+            # **A flat cross-section, purely to subdivide the road across its
+            # own width - and this is what stops a wall being bumpy to drive.**
+            #
+            # The road between two stations is one quad, and the collider cuts
+            # it into two flat triangles. On a *twisted* quad those triangles
+            # both sag away from the real ruled surface, worst along the shared
+            # diagonal, by about `hw * sin(twist per station) / 2`. On a 21-wide
+            # wall rolling 88 degrees over a 90-unit ramp that measured 0.42
+            # units against a `SNAP` seam tolerance of 0.12 - so the car drops
+            # into every facet and is thrown by the next, which is exactly the
+            # "it still feels bumpy going onto the walls" that came back from
+            # driving it.
+            #
+            # A profiled station is built as `len(pf)-1` quads across instead of
+            # one, so nine samples of *zero rise* change the shape of the road
+            # not at all and cut each facet's sag by eight. Measured after: 0.05,
+            # comfortably inside `SNAP`. The alternative was eight times the
+            # stations, which costs the racing line, the ghost sampling and the
+            # payload rather than only triangles.
+            e["pf"] = _FLAT_PF
+            self.x, self.y, self.z = p
+        self.yaw = yaw0 + sign * total
+        self._roll = roll0
         return self
 
     def crest(self, rise, length, w=None):
@@ -590,7 +760,7 @@ class Builder:
         """
         self.sections.append({"t": "gap", "len": length, "drop": drop})
         n = self._steps(length)
-        f, r, up = _frame(self.yaw, 0.0, self.roll)
+        f, r, up = _frame(self.yaw, 0.0, self._roll)
         x0, y0, z0 = self.x, self.y, self.z
         if bow is None:
             bow = min(4.0, length * 0.12)
@@ -681,7 +851,7 @@ class Builder:
         # Exit upright, heading unchanged, `shift` to the side.
         self.x += r0[0] * sd * shift
         self.z += r0[2] * sd * shift
-        self.roll = 0.0
+        self._roll = 0.0
         return self
 
     # -- gates -------------------------------------------------------------
@@ -713,7 +883,7 @@ class Builder:
         # station 0 from whatever came before it, so without this the ribbon has
         # no surface at its own origin - and the car spawned into thin air and
         # fell through the world before it had moved.
-        f, r, up = _frame(self.yaw, 0.0, self.roll)
+        f, r, up = _frame(self.yaw, 0.0, self._roll)
         self._emit(self.pos, up, r)
         self.straight(STATION * 2)
         f, _, _ = _frame(self.yaw, 0.0, 0.0)
