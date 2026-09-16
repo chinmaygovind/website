@@ -527,12 +527,18 @@ function fixedFor(span){
   return Math.max(3,Math.min(9,Math.ceil(-Math.log(Math.max(1e-12,span))/Math.LN10)+4));
 }
 
+function fixed(v,d){
+  if(!isFinite(v)) return String(v);
+  if(Math.abs(v)<0.5*Math.pow(10,-d)) v=0;
+  return v.toFixed(d);
+}
+
 function fmtSweep(v){
-  return isFinite(v)?v.toFixed(fixedFor(S.mhi-S.mlo)):String(v);
+  return fixed(v,fixedFor(S.mhi-S.mlo));
 }
 
 function fmtState(v){
-  return isFinite(v)?v.toFixed(fixedFor(S.xhi-S.xlo)):String(v);
+  return fixed(v,fixedFor(S.xhi-S.xlo));
 }
 
 function slug(name){
@@ -562,6 +568,7 @@ function sizeCanvas(cv){
 }
 
 var PRESETS=[
+  {name:"bead on a hoop", expr:"sin(x)*(mu*cos(x) - 1)", xlo:-3.3, xhi:3.3, mlo:0, mhi:3, mu:1.8, params:{}},
   {name:"saddle-node", expr:"mu - x^2", xlo:-2.2, xhi:2.2, mlo:-2, mhi:2, mu:1, params:{}},
   {name:"transcritical", expr:"mu*x - x^2", xlo:-2.2, xhi:2.2, mlo:-2, mhi:2, mu:1, params:{}},
   {name:"pitchfork", expr:"mu*x - x^3", xlo:-1.8, xhi:1.8, mlo:-2, mhi:2, mu:1, params:{}},
@@ -570,7 +577,6 @@ var PRESETS=[
    params:{h:{v:0.18,min:-1,max:1}}},
   {name:"harvested fishery", expr:"x*(1 - x) - mu", xlo:-0.35, xhi:1.35, mlo:0, mhi:0.45, mu:0.15, params:{}},
   {name:"pendulum with torque", expr:"mu - sin(x)", xlo:-3.3, xhi:3.3, mlo:-2, mhi:2, mu:0.5, params:{}},
-  {name:"bead on a hoop", expr:"sin(x)*(mu*cos(x) - 1)", xlo:-3.3, xhi:3.3, mlo:0, mhi:3, mu:1.8, params:{}},
   {name:"budworm outbreak", expr:"mu*x*(1 - x/k) - x^2/(1 + x^2)", xlo:-0.4, xhi:10, mlo:0, mhi:0.8, mu:0.42,
    params:{k:{v:8,min:2,max:14}}}
 ];
@@ -740,17 +746,17 @@ function describeEvent(mstar,h){
     }
   }
   if(dn===2||dn===-2){
-    var many=dn===2?hi:lo, few=dn===2?lo:hi;
+    var many=dn===2?hi:lo, few=dn===2?lo:hi, taken=[], born=[];
+    for(i=0;i<pairs.length;i++) taken.push(dn===2?pairs[i].b:pairs[i].a);
+    for(i=0;i<many.length;i++) if(taken.indexOf(many[i])<0) born.push(many[i]);
     if(flipped&&few.length>0){
-      var outer=many.length>=3?[many[0],many[many.length-1]]:[];
-      var sup=outer.length===2&&outer[0].cls==="stable"&&outer[1].cls==="stable";
-      return {
-        kind:"pitchfork",
-        note:(sup?"supercritical":"subcritical")+", "+
-          (dn===2?lo.length+" → "+hi.length:lo.length+" → "+hi.length)+" equilibria"
-      };
+      var tag="";
+      if(born.length===2&&born[0].cls===born[1].cls){
+        tag=born[0].cls==="stable"?"supercritical, ":"subcritical, ";
+      }
+      return {kind:"pitchfork", note:tag+lo.length+" \u2192 "+hi.length+" equilibria"};
     }
-    return {kind:"saddle-node", note:lo.length+" → "+hi.length+" equilibria"};
+    return {kind:"saddle-node", note:lo.length+" \u2192 "+hi.length+" equilibria"};
   }
   if(dn===0&&flipped){
     return {kind:"transcritical", note:"two branches cross and swap stability"};
@@ -1461,7 +1467,7 @@ document.addEventListener("keydown",function(e){
 
 var HOOP={
   omega:1.2, R:1, phi:0.35, g:9.81, rate:2.6, t:0,
-  dragging:false, kick:0
+  dragging:false, trail:[], speed:0
 };
 var hel={
   hoop:document.getElementById("hoop"),
@@ -1494,102 +1500,206 @@ function wrapPi(p){
 }
 
 function stepHoop(dt){
-  if(HOOP.dragging) return;
-  var sub=8, h=dt/sub, i;
-  for(i=0;i<sub;i++){
-    var a=phiDot(HOOP.phi);
-    var b=phiDot(HOOP.phi+h*a/2);
-    var c=phiDot(HOOP.phi+h*b/2);
-    var d=phiDot(HOOP.phi+h*c);
-    HOOP.phi+=h*(a+2*b+2*c+d)/6;
+  if(!HOOP.dragging){
+    var sub=8, h=dt/sub, i;
+    for(i=0;i<sub;i++){
+      var a=phiDot(HOOP.phi);
+      var b=phiDot(HOOP.phi+h*a/2);
+      var c=phiDot(HOOP.phi+h*b/2);
+      var d=phiDot(HOOP.phi+h*c);
+      HOOP.phi+=h*(a+2*b+2*c+d)/6;
+    }
+    HOOP.phi=wrapPi(HOOP.phi);
   }
-  HOOP.phi=wrapPi(HOOP.phi);
+  HOOP.speed=Math.abs(phiDot(HOOP.phi));
+  HOOP.trail.push(HOOP.phi);
+  if(HOOP.trail.length>26) HOOP.trail.shift();
+}
+
+function hoopGeom(size){
+  var r=Math.min(size.w,size.h)*0.315;
+  return {cx:size.w/2, cy:size.h/2-r*0.06, r:r};
+}
+
+function ringAt(phi,g,ct){
+  return [g.cx+g.r*Math.sin(phi)*ct, g.cy+g.r*Math.cos(phi)];
+}
+
+function strokeRing(phiA,phiB,g,ct){
+  var n=44, i, pt;
+  hctx.beginPath();
+  for(i=0;i<=n;i++){
+    pt=ringAt(phiA+(phiB-phiA)*i/n,g,ct);
+    if(i===0) hctx.moveTo(pt[0],pt[1]); else hctx.lineTo(pt[0],pt[1]);
+  }
+  hctx.stroke();
+}
+
+function arrowHead(x,y,dx,dy,sz){
+  var len=Math.sqrt(dx*dx+dy*dy);
+  if(!(len>0)) return;
+  var ux=dx/len, uy=dy/len, px=-uy, py=ux;
+  hctx.beginPath();
+  hctx.moveTo(x,y);
+  hctx.lineTo(x-ux*sz+px*sz*0.55,y-uy*sz+py*sz*0.55);
+  hctx.lineTo(x-ux*sz-px*sz*0.55,y-uy*sz-py*sz*0.55);
+  hctx.closePath();
+  hctx.fill();
 }
 
 function drawHoop(){
-  var size=sizeCanvas(hel.hoop);
+  var size=sizeCanvas(hel.hoop), g=hoopGeom(size), i, k, pt;
   hctx.setTransform(size.dpr,0,0,size.dpr,0,0);
   hctx.clearRect(0,0,size.w,size.h);
-  var cx=size.w/2, cy=size.h/2, r=Math.min(size.w,size.h)*0.36;
 
-  var faint=cssVar("--faint"), fg=cssVar("--fg"), hair=cssVar("--hair"),
-      math=cssVar("--math"), unstable=cssVar("--unstable"), orbit=cssVar("--orbit"),
+  var faint=cssVar("--faint"), fg=cssVar("--fg"), math=cssVar("--math"),
+      unstable=cssVar("--unstable"), orbit=cssVar("--orbit"),
       panel=cssVar("--panel"), semi=cssVar("--semi");
 
-  var ct=Math.cos(spin), foresh=Math.abs(ct);
+  var ct=Math.cos(spin), st=Math.sin(spin), r=g.r, cx=g.cx, cy=g.cy;
+  var front=st>=0?[0,Math.PI]:[-Math.PI,0];
+  var back=st>=0?[-Math.PI,0]:[0,Math.PI];
+  function isFront(phi){ return Math.sin(phi)*st>=0; }
 
-  hctx.strokeStyle=faint; hctx.globalAlpha=0.5; hctx.lineWidth=1.2;
+  var rho=r*Math.abs(Math.sin(HOOP.phi));
+  if(rho>3){
+    hctx.strokeStyle=semi; hctx.globalAlpha=0.3; hctx.lineWidth=1.2;
+    hctx.setLineDash([4,5]);
+    hctx.beginPath();
+    hctx.ellipse(cx,cy+r*Math.cos(HOOP.phi),rho,rho*0.26,0,0,Math.PI*2);
+    hctx.stroke();
+    hctx.setLineDash([]); hctx.globalAlpha=1;
+  }
+
+  if(HOOP.omega>1.5){
+    var gspread=0.12*(HOOP.omega/8)*(0.35+0.65*Math.abs(ct));
+    hctx.strokeStyle=fg; hctx.lineWidth=2.6; hctx.globalAlpha=0.05;
+    for(k=1;k<=2;k++) strokeRing(-Math.PI,Math.PI,g,Math.cos(spin-k*gspread));
+    hctx.globalAlpha=1;
+  }
+
+  hctx.strokeStyle=faint; hctx.globalAlpha=0.45; hctx.lineWidth=1.3;
   hctx.setLineDash([5,5]);
-  hctx.beginPath(); hctx.moveTo(cx,cy-r*1.28); hctx.lineTo(cx,cy+r*1.28); hctx.stroke();
+  hctx.beginPath(); hctx.moveTo(cx,cy-r*1.2); hctx.lineTo(cx,cy+r*1.2); hctx.stroke();
   hctx.setLineDash([]); hctx.globalAlpha=1;
 
-  hctx.save();
-  hctx.translate(cx,cy);
-  hctx.scale(Math.max(0.06,foresh),1);
-  hctx.beginPath(); hctx.arc(0,0,r,0,Math.PI*2);
-  hctx.restore();
-  hctx.strokeStyle=fg; hctx.globalAlpha=0.32; hctx.lineWidth=3.4; hctx.stroke();
+  hctx.strokeStyle=semi; hctx.globalAlpha=0.7; hctx.lineWidth=1.6;
+  hctx.beginPath();
+  hctx.ellipse(cx,cy-r*1.1,r*0.3,r*0.09,0,Math.PI*0.1,Math.PI*1.55);
+  hctx.stroke();
+  hctx.fillStyle=semi;
+  arrowHead(cx-r*0.3*Math.cos(Math.PI*0.1),cy-r*1.1+r*0.09*Math.sin(Math.PI*0.1),
+            0,-r*0.09,r*0.055);
   hctx.globalAlpha=1;
 
-  var i;
-  hctx.fillStyle=fg; hctx.globalAlpha=0.18;
-  for(i=0;i<16;i++){
-    var a=Math.PI*2*i/16;
-    hctx.beginPath();
-    hctx.arc(cx+r*Math.sin(a)*ct, cy+r*Math.cos(a), 1.6, 0, Math.PI*2);
-    hctx.fill();
-  }
+  hctx.strokeStyle=fg; hctx.globalAlpha=0.14; hctx.lineWidth=2.4;
+  strokeRing(back[0],back[1],g,ct);
   hctx.globalAlpha=1;
 
   var rest=restAngle(), sup=gamma()>1;
-  function mark(p,cls){
-    var mx=cx+r*Math.sin(p)*ct, my=cy+r*Math.cos(p);
-    var col=cls==="stable"?math:unstable;
+  function mark(phi,cls,wantFront){
+    if(isFront(phi)!==wantFront) return;
+    var pos=ringAt(phi,g,ct), col=cls==="stable"?math:unstable;
+    var dim=0.42+0.58*(Math.sin(phi)*st+1)/2;
     hctx.lineWidth=2.2;
-    hctx.beginPath(); hctx.arc(mx,my,5.4,0,Math.PI*2);
-    if(cls==="stable"){ hctx.fillStyle=col; hctx.globalAlpha=0.55; hctx.fill(); hctx.globalAlpha=1; }
-    else { hctx.fillStyle=panel; hctx.fill(); }
-    hctx.strokeStyle=col; hctx.globalAlpha=cls==="stable"?0.8:0.7; hctx.stroke(); hctx.globalAlpha=1;
+    hctx.beginPath(); hctx.arc(pos[0],pos[1],5.4,0,Math.PI*2);
+    if(cls==="stable"){ hctx.fillStyle=col; hctx.globalAlpha=0.5*dim; hctx.fill(); }
+    else { hctx.fillStyle=panel; hctx.globalAlpha=dim; hctx.fill(); }
+    hctx.globalAlpha=(cls==="stable"?0.85:0.7)*dim;
+    hctx.strokeStyle=col; hctx.stroke();
+    hctx.globalAlpha=1;
   }
-  mark(0,sup?"unstable":"stable");
-  mark(Math.PI,"unstable");
-  if(sup){ mark(rest,"stable"); mark(-rest,"stable"); }
+  function marks(wantFront){
+    mark(0,sup?"unstable":"stable",wantFront);
+    mark(Math.PI,"unstable",wantFront);
+    if(sup){ mark(rest,"stable",wantFront); mark(-rest,"stable",wantFront); }
+  }
 
-  var bx=cx+r*Math.sin(HOOP.phi)*ct, by=cy+r*Math.cos(HOOP.phi);
-  hctx.strokeStyle=orbit; hctx.globalAlpha=0.35; hctx.lineWidth=2;
-  hctx.beginPath(); hctx.moveTo(cx,cy); hctx.lineTo(bx,by); hctx.stroke();
-  hctx.globalAlpha=1;
+  function bead(wantFront){
+    if(isFront(HOOP.phi)!==wantFront) return;
+    var pos=ringAt(HOOP.phi,g,ct), bx=pos[0], by=pos[1];
+    var depth=(Math.sin(HOOP.phi)*st+1)/2;
+    var rad=6.4+3.4*depth, dim=0.45+0.55*depth;
 
-  hctx.fillStyle=orbit; hctx.globalAlpha=0.22;
-  hctx.beginPath(); hctx.arc(bx,by,15,0,Math.PI*2); hctx.fill();
-  hctx.globalAlpha=1;
-  hctx.beginPath(); hctx.arc(bx,by,8.5,0,Math.PI*2);
-  hctx.fillStyle=orbit; hctx.fill();
-  hctx.strokeStyle=panel; hctx.lineWidth=2; hctx.stroke();
+    hctx.strokeStyle=orbit; hctx.lineCap="round";
+    for(i=1;i<HOOP.trail.length;i++){
+      var p0=ringAt(HOOP.trail[i-1],g,ct), p1=ringAt(HOOP.trail[i],g,ct);
+      hctx.globalAlpha=0.5*dim*Math.pow(i/HOOP.trail.length,2.2);
+      hctx.lineWidth=1+3.4*(i/HOOP.trail.length);
+      hctx.beginPath(); hctx.moveTo(p0[0],p0[1]); hctx.lineTo(p1[0],p1[1]); hctx.stroke();
+    }
+    hctx.globalAlpha=1;
 
-  hctx.strokeStyle=semi; hctx.globalAlpha=0.75; hctx.lineWidth=1.6;
+    hctx.strokeStyle=orbit; hctx.globalAlpha=0.3*dim; hctx.lineWidth=2;
+    hctx.beginPath(); hctx.moveTo(cx,cy); hctx.lineTo(bx,by); hctx.stroke();
+
+    hctx.fillStyle=orbit;
+    hctx.globalAlpha=(0.14+0.3*Math.min(1,HOOP.speed/2.5))*dim;
+    hctx.beginPath(); hctx.arc(bx,by,rad*2.1,0,Math.PI*2); hctx.fill();
+    hctx.globalAlpha=dim;
+    hctx.beginPath(); hctx.arc(bx,by,rad,0,Math.PI*2); hctx.fill();
+    hctx.strokeStyle=panel; hctx.lineWidth=2.2; hctx.stroke();
+    hctx.globalAlpha=1;
+  }
+
+  marks(false);
+  bead(false);
+
+  hctx.strokeStyle=fg; hctx.globalAlpha=0.5; hctx.lineWidth=3.6; hctx.lineCap="round";
+  strokeRing(front[0],front[1],g,ct);
+  hctx.globalAlpha=1; hctx.lineCap="butt";
+
+  marks(true);
+  bead(true);
+
+  var bpos=ringAt(HOOP.phi,g,ct), bx=bpos[0], by=bpos[1];
+  var fade=Math.abs(ct);
+  if(fade>0.18){
+    var Lg=r*0.3;
+    hctx.globalAlpha=0.75*fade; hctx.lineWidth=2.2; hctx.lineCap="round";
+    hctx.strokeStyle=faint; hctx.fillStyle=faint;
+    hctx.beginPath(); hctx.moveTo(bx,by); hctx.lineTo(bx,by+Lg); hctx.stroke();
+    arrowHead(bx,by+Lg,0,Lg,7);
+    hctx.font='10px ui-monospace, Menlo, Consolas, monospace';
+    hctx.textAlign="center"; hctx.textBaseline="top";
+    hctx.fillText("mg",bx,by+Lg+4);
+
+    var Lc=Math.min(r*0.82,Lg*gamma()*Math.abs(Math.sin(HOOP.phi)));
+    if(Lc>3){
+      var dir=(Math.sin(HOOP.phi)>=0?1:-1)*(ct>=0?1:-1);
+      hctx.strokeStyle=semi; hctx.fillStyle=semi;
+      hctx.beginPath(); hctx.moveTo(bx,by); hctx.lineTo(bx+dir*Lc*fade,by); hctx.stroke();
+      arrowHead(bx+dir*Lc*fade,by,dir*Lc*fade,0,7);
+      if(Lc*fade>20){
+        hctx.textAlign=dir>0?"left":"right";
+        hctx.textBaseline="bottom";
+        hctx.fillText("mω²ρ",bx+dir*(Lc*fade+5),by-4);
+      }
+    }
+    hctx.globalAlpha=1; hctx.lineCap="butt";
+  }
+
+  hctx.strokeStyle=semi; hctx.globalAlpha=0.7; hctx.lineWidth=1.6;
   hctx.beginPath();
-  hctx.arc(cx,cy,r*0.3,Math.PI/2,Math.PI/2-HOOP.phi,HOOP.phi>0);
+  hctx.arc(cx,cy,r*0.26,Math.PI/2,Math.PI/2-HOOP.phi,HOOP.phi>0);
   hctx.stroke();
   hctx.globalAlpha=1;
 
   hctx.fillStyle=faint;
   hctx.font='12px ui-monospace, Menlo, Consolas, monospace';
-  hctx.textAlign="center"; hctx.textBaseline="top";
-  hctx.fillText("φ = "+(HOOP.phi*180/Math.PI).toFixed(1)+"°",cx,cy+r*0.34);
-
   hctx.textAlign="left"; hctx.textBaseline="top";
-  hctx.fillText("g",cx-r*1.32,cy+r*0.9);
-  hctx.strokeStyle=faint; hctx.lineWidth=1.6;
+  hctx.fillText("φ = "+(HOOP.phi*180/Math.PI).toFixed(1)+"°",12,10);
+
+  hctx.fillText("g",cx-r*1.34,cy+r*0.86);
+  hctx.strokeStyle=faint; hctx.lineWidth=1.6; hctx.fillStyle=faint;
   hctx.beginPath();
-  hctx.moveTo(cx-r*1.24,cy+r*0.78); hctx.lineTo(cx-r*1.24,cy+r*1.12);
-  hctx.lineTo(cx-r*1.29,cy+r*1.04); hctx.moveTo(cx-r*1.24,cy+r*1.12);
-  hctx.lineTo(cx-r*1.19,cy+r*1.04);
+  hctx.moveTo(cx-r*1.26,cy+r*0.76); hctx.lineTo(cx-r*1.26,cy+r*1.1);
   hctx.stroke();
+  arrowHead(cx-r*1.26,cy+r*1.1,0,r*0.2,6);
 
   hctx.fillStyle=faint;
   hctx.textAlign="center"; hctx.textBaseline="bottom";
-  hctx.fillText("ω = "+HOOP.omega.toFixed(2)+" rad/s",cx,cy-r*1.34);
+  hctx.fillText("ω = "+HOOP.omega.toFixed(2)+" rad/s",cx,cy-r*1.26);
 }
 
 function drawWell(){
@@ -1805,7 +1915,7 @@ function frame(now){
   for(i=0;i<S.tracers.length;i++) if(!S.tracers[i].dead) live++;
   el.counter.textContent=live+" tracer"+(live===1?"":"s");
 
-  spin+=HOOP.omega*dt;
+  spin=(spin+HOOP.omega*dt)%(Math.PI*2);
   stepHoop(dt);
   HOOP.t+=dt;
 
