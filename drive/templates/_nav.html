@@ -13,27 +13,27 @@
 {% set icon_garage %}<path d="M3.5 10.6 12 5.2l8.5 5.4"/><path d="M5.6 20.4v-9.1h12.8v9.1"/><path d="M8.4 20.4v-5.9h7.2v5.9"/><path d="M8.4 17.6h7.2"/>{% endset %}
 {% set icon_build %}<path d="M4 20.4h4.2L20 8.6l-4.2-4.2L4 16.2z"/><path d="M14.4 6l3.6 3.6"/>{% endset %}
 {% set icon_in %}<path d="M11 4.6H6.1A1.6 1.6 0 0 0 4.5 6.2v11.6A1.6 1.6 0 0 0 6.1 19.4H11"/><path d="M14.6 8.4 18.2 12l-3.6 3.6"/><path d="M18.2 12H8.8"/>{% endset %}
-{# ---------------------------------------------------------------------------
-   The announcement banner: the red strip above the nav. **This dict is the
-   whole of it** - change the three strings to announce something else, and set
-   `banner` to `none` to take it down. It renders as "<before> <link> <after>",
-   with only the link clickable and underlined, so the eye lands on the name of
-   the thing rather than on the word "new".
-
-   It rides above `.nav` and is not sticky, so it scrolls away and costs the
-   page nothing after the first screen. Not on the play page, because
-   `_nav.html` is not included there - a red bar over a lap in progress is a way
-   of losing the lap.
-
-   `after` may be empty; `href` is an ordinary path on this site. #}
-{% set banner = {"before": "New Track:", "link": "Playground", "after": "", "href": "/solo/playground"} %}
-{% if banner %}
-<div class="newsbar">
-  {{ banner.before }} <a href="{{ banner.href }}">{{ banner.link }}</a>{% if banner.after %} {{ banner.after }}{% endif %}
-</div>
-{% endif %}
 <nav class="nav">
   <a class="brand" href="/"><img src="/static/img/icon.svg" alt="" class="brand-ico"/> Drive <small>· cgovind</small></a>
+  {# ---------------------------------------------------------------------------
+     The announcement pill: the red badge in the nav, next to the wordmark.
+     **This dict is the whole of it** - change the strings to announce the next
+     thing, and set `banner` to `none` to take it down. `before` is the small
+     print ("New track:") and `link` is the name, underlined, because the name
+     is the thing worth clicking; the whole pill is the target so a thumb does
+     not have to find the word.
+
+     It is in the nav rather than a strip above it, so it sticks with the bar
+     and costs the page no height of its own. Not on the play page, because
+     `_nav.html` is not included there - a red badge over a lap in progress is a
+     way of losing the lap. `href` is an ordinary path on this site. #}
+  {% set banner = {"before": "New track:", "link": "Playground", "href": "/solo/playground"} %}
+  {% if banner %}
+    <a class="newsflash" href="{{ banner.href }}">
+      <span class="newsflash-pre">{{ banner.before }}</span>
+      <span class="newsflash-name">{{ banner.link }}</span>
+    </a>
+  {% endif %}
   {# Who you are sits beside the wordmark rather than at the head of the row of
      places, which is where it used to be. On a phone that row is a tab bar of
      equal columns and a name is not one of the places; up here it is on the
