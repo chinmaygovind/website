@@ -818,6 +818,15 @@ idea which track it is looking at:
   `radial` puts a halo around the disc, which is what any sun up in the sky
   wants. A sun drawn on the horizon must still have its *light* come from much
   higher, or nothing in the world gets lit.
+  **Stars stop just under the skyline on an ordinary track and wrap the whole
+  sphere on a void one**, and nothing in the palette says which - `makeSky` reads
+  `below.kind` and hands `starfield` a `full` flag. A track with ground hides the
+  lower dome anyway, so the bias is free there; a void track puts it in frame,
+  and the field ending at a horizon that does not exist left a bare purple band
+  under the ribbon on Rainbow Road and Spiral - visible on the covers as much as
+  in the game. `stars.count` stays a count of the ordinary upper-dome field and
+  is scaled up for a full sphere, so turning it on does not thin the sky
+  overhead. Set `stars.full` explicitly to override either way.
 - **`below`** - what is under a track that floats, dispatched on `kind`: a city
   drowned in cloud, a desert, a downtown, a lava field, `pillars` (rock spires
   through an overcast, Cloudbreak) or `void` (which also suppresses the distant

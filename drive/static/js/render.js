@@ -1850,16 +1850,21 @@ function sunSprite(sun) {
  * it is - which is both what a star does and the only way it stays visible at
  * this distance. Biased to the upper hemisphere, because the lower half of the
  * dome is under the horizon on a track that has one, and looks wrong on one
- * that does not.
+ * that does not. `full` is for the tracks that have no horizon - a void floor
+ * puts the whole dome in frame, and stopping the field just under the skyline
+ * left a bare band beneath the ribbon. `count` stays a count of the ordinary
+ * upper-dome field, so a full sphere gets proportionally more stars rather than
+ * the same ones spread half as thin.
  */
 function starfield(cfg) {
   const rnd = mulberry(cfg.seed != null ? cfg.seed : 5);
-  const n = cfg.count != null ? cfg.count : 800;
+  const yLo = cfg.full ? -1 : -0.12, span = 1 - yLo;
+  const n = Math.round((cfg.count != null ? cfg.count : 800) * span / 1.12);
   const pos = [], col = [];
   const warm = new THREE.Color(0xffe6c4), cold = new THREE.Color(0xcfe0ff);
   const white = new THREE.Color(0xffffff);
   for (let i = 0; i < n; i++) {
-    const y = -0.12 + rnd() * 1.12;
+    const y = yLo + rnd() * span;
     const r = Math.sqrt(Math.max(0, 1 - y * y));
     const a = rnd() * Math.PI * 2;
     const d = R_SKY * 0.97;
@@ -1889,7 +1894,11 @@ function makeSky(pal) {
     return group;
   }
   group.add(skyDome(spec));
-  if (spec.stars) group.add(starfield(spec.stars));
+  // A void track shows the underside of the dome, so its stars wrap all the way
+  // round; anything with a ground plane hides that half anyway.
+  const void_ = pal.below && pal.below.kind === 'void';
+  if (spec.stars) group.add(starfield(
+    void_ && spec.stars.full == null ? Object.assign({}, spec.stars, { full: true }) : spec.stars));
   if (spec.sun) group.add(sunSprite(spec.sun));
   return group;
 }

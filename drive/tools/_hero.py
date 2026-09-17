@@ -324,6 +324,76 @@ FRAMES = {
     # flat; 5.00 is the timbered drift, which is busy and much darker.
     "railway": dict(at=0.50, azimuth=3.50, pitch=0.16, pad=0.34, span=0.07,
                     cars=10, air=0.0, liveryFrom=3),
+    # **The Drum, because a wall of death has to be shot from the side.** This
+    # track's whole subject is the road's orientation, and the default framing
+    # was the one angle that destroys it: from an establishing height you look
+    # *into* the cylinder and a wall photographs as a flat pink disc. Its own
+    # `track.py` says as much about the world below - a wall is only legible
+    # while the road is the only thing in frame with an orientation.
+    #
+    # `at` is 0.86 off the sweep. The Drum is the last thing before the flag and
+    # the biggest of the walls, and it is the only window where one stands up as
+    # a cylinder with the road spiralling out of the bottom of it; the Drop at
+    # 0.02 is the runner-up and is half the size, and 0.38 is two walls edge-on.
+    # The scan's own pick is no use here for the usual reason - it scores roll,
+    # and on this track nearly everything rolls.
+    #
+    # 2.05 off the contact sheet, and the four sides are not close. It is the
+    # one that has the cylinder whole against sky with the run-in sweeping down
+    # from the left. 3.50 puts the camera *inside* the wall and photographs
+    # pink; 5.00 is the Drum edge-on behind the Slot; 0.60 is the same picture
+    # as 2.05 with the cylinder smaller and clipped by the frame. The low row of
+    # the sheet is the right one - at 0.52 you are already looking down into the
+    # drum rather than at it, which is the failure this entry exists to avoid.
+    #
+    # **No air.** There is nothing to jump off inside this window - the Drum is
+    # an arc, a wall and a run-out - and the track's own note is that a car
+    # hanging over a road it cannot have left reads as a bug.
+    # **And the field has to be told to stand on the wall.** The Drum runs from
+    # arc 0.911 to 0.944, which is a third of even this narrowed window, so at
+    # the pool's `carFrom`/`carTo` of 0.10-0.86 almost every car was parked on
+    # the approach roads and the cover of the pool's hardest track had six
+    # specks on a flat road. 0.22-0.80 puts them round the inside of the
+    # cylinder, which is the only place a car says what this track is.
+    #
+    # `pitch` 0.42 rather than the 0.34 the contact sheet was shot at: from 0.34
+    # you see the drum's outer skirt, a flat maroon mass across the foot of the
+    # frame, and from 0.46 you are looking down into the bowl and it stops being
+    # a wall. 0.42 is the band where the inner face and the exit spiralling out
+    # of the bottom are both legible. `pad` 0.56 rather than 0.50 for
+    # `shoot_covers.py`: the fit is against whichever angle is tighter, so a
+    # crop that merely fills a 16:9 card clips the cylinder at portal sizes.
+    # **The Sopraelevata, which the scan cannot find and the pool default walks
+    # straight past.** Monza is flat, so the scan spends its whole score on bend
+    # and lands on the pit straight - and the cover this track shipped with was
+    # exactly that: grey tarmac, a gantry, dead axial, no car big enough to see.
+    # The 1955 banking crossing over the circuit is the reason the track was
+    # built (`scenery.js` says so in its first line) and is the only derelict
+    # structure in the game, so it is the picture.
+    #
+    # `at` 0.62 off the sweep, which puts the crossing - `CROSS_AT` 0.655 by arc
+    # length, and `at` is arc length too - a third of the way into a narrowed
+    # window. `span` 0.10 for Monaco's reason: a sixth of a lap this long is a
+    # map of a park.
+    #
+    # 3.50, and the choice is between two readings of the same object rather
+    # than between four sides. From 2.05 you see it end-on from underneath -
+    # piers, deck, and a viaduct, which is the one thing `scenery.js` says it
+    # must not look like, and the reason its `BANK` was doubled to 21 over 30.
+    # From 3.50 it sweeps across the top of the frame with the banked surface
+    # and the guardrail along the lip both visible, and the circuit curves
+    # underneath with the field on it. 5.00 is the same shot with the banking
+    # crowding the road out; 0.60 was never seen, for the reason in SHOOT.
+    # `pitch` 0.28 is low for this pool because the subject is *overhead* - from
+    # 0.34 you are level with the deck and it flattens into a grey band.
+    #
+    # No air, and nothing here is close: Monza is a real circuit and the only
+    # thing over the road is sixty years abandoned.
+    "monza": dict(at=0.62, azimuth=3.50, pitch=0.28, pad=0.38, span=0.10,
+                  cars=13, air=0.0, liveryFrom=10),
+    "playground": dict(at=0.88, azimuth=2.05, pitch=0.42, pad=0.56, span=0.10,
+                       cars=12, carFrom=0.22, carTo=0.80, air=0.0,
+                       liveryFrom=13),
 }
 
 
@@ -388,8 +458,20 @@ async (a) => {
   // wait that pending frame runs after this returns, calls the game's own
   // `shotCamera()` and repaints - so the screenshot is the game's framing with
   // our cars as specks in it.
+  //
+  // **150ms was not enough and the way it failed is the worst one here.** On a
+  // heavy track under software GL, on a machine with something else running,
+  // the pending frame lands *after* the wait: the compose is overwritten and
+  // the picture is the game's own camera at the start line. It is a perfectly
+  // plausible photograph of the wrong thing, at the right filename, with no
+  // error anywhere - and it is deterministic enough to look real, because it is
+  // always the first compose on a fresh page. Three Monza contact sheets came
+  // back with a pit-straight tile labelled az=0.60, az=2.05 and az=3.50, all
+  // pixel-identical, which is what gave it away: different camera arguments
+  // cannot produce the same frame. Tiles after the first are fine, because by
+  // then the loop has been stopped for a whole compose.
   window.requestAnimationFrame = () => 0;
-  await new Promise(r => setTimeout(r, 150));
+  await new Promise(r => setTimeout(r, 800));
 
   (window.__coverCars || []).forEach(v => v.dispose());
   window.__coverCars = [];
@@ -542,6 +624,16 @@ def pick_window(rows, at, span):
 # longest tracks in the pool are three times the size of the shortest.
 BUILD_MS = 7000
 
+# **Playwright's 30s screenshot default is not enough for a heavy track here,
+# and what you get is a `TimeoutError` after the picture was composed.** The
+# compose loop leaves `__coverTick` repainting the scene every 40ms so the
+# capture always lands on a current frame (see SHOOT), and on software GL a
+# rasterise of Monza - a wood of broadleaves, the Alps, and the banking - does
+# not reliably finish inside a default timeout while that is running. Monza
+# failed twice in a row on it and Playground passed the identical command, which
+# is the shape of the problem: it is the track's weight, not a bug.
+SHOT_MS = 180000
+
 
 class Hero:
     """One browser for a run; one page per track and size.
@@ -627,7 +719,7 @@ def shoot(slugs, out_dir, size=CARD, port=5097):
             page = hero.open(slug, size)
             try:
                 res = hero.compose(page, frame_for(slug))
-                page.screenshot(path=out)
+                page.screenshot(path=out, timeout=SHOT_MS)
             finally:
                 page.close()
             if os.path.exists(out):
@@ -687,7 +779,7 @@ def _shots_to_sheet(hero, slug, shots, out, cols):
             for label, over in shots:
                 hero.compose(page, frame_for(slug), **over)
                 p = os.path.join(tmp, label.replace(" ", "") + ".png")
-                page.screenshot(path=p)
+                page.screenshot(path=p, timeout=SHOT_MS)
                 tiles.append((label, p))
             return _sheet(tiles, out, cols)
     finally:
