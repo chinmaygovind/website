@@ -134,7 +134,7 @@ a:hover { text-decoration: underline; }
    red-on-paper link has nothing left to be, and the underline is the only cue
    that any of the sentence is clickable. */
 .newsbar {
-  background: var(--red); color: #fff;
+  background: #030163; color: #fff;
   font-family: var(--sans); font-size: .82rem; font-weight: 700;
   letter-spacing: .04em; text-transform: uppercase; text-align: center;
   padding: .4rem 1.1rem;
