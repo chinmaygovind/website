@@ -198,6 +198,52 @@ find by looking at a bad picture.
 
 New entries, unsorted, until somebody files them. One line is enough.
 
+- **A groundless track with no `below` block gets a distant floor plate.**
+  `buildTrack` draws one across the whole bounding box at `minY - 34` so a void
+  has something to look at. On a track that has its own ground it is a grey
+  rectangle over most of `plan.png` and a floor in the middle distance from the
+  road. `below: {kind: "void"}` draws none. Found on The Vigil, and it took
+  three renders to identify because nothing about it looks like a floor.
+- **`solid.box` is axis-aligned, so its *reach* along a diagonal road is not its
+  thickness.** A thin wall across a corner running at 45 degrees presents its
+  corner to the driver and reaches back by `hx*|ux| + hz*|uz|`, which on The
+  Vigil was twelve units against the 2.6 a painting was stood off by - so the
+  painting hung inside the masonry. No error, no warning, simply no painting.
+- **A `CanvasTexture` that is not tagged `SRGBColorSpace` comes out washed.**
+  Since three r152 an untagged texture is treated as linear and converted again
+  on output. It does not show on the sponsor boards, because flat brand colours
+  survive the double conversion looking merely a bit off; on a photograph it is
+  the difference between a dark oil portrait and a pale grey-green one.
+- **Scenery drawn one box per grid cell will blow the render tool's budget
+  before it costs a single frame.** The Vigil's first vault was ~13,000 boxes
+  for a few flat sheets, and its masks were queried per cell rather than stamped
+  outward from the stations. What that broke was not frame rate:
+  `tools/track_views.py` allows 14s a shot, and eight of ten shots quietly
+  rendered **a different track** instead. Merge horizontal sheets into runs, and
+  stamp masks from the stations.
+- **A wall built round the road's corridor must cut its doorways from *every*
+  station, not just the ones it encloses.** The Vigil's hall is the indoor road
+  grown outward, so its wall stands forty units past the first indoor station -
+  a dozen stations of road that are outside the indoor range. Cutting doorways
+  only over that range left the west front solid, and you drove down the lane
+  and hit the front of the building.
+- **An unlit surface renders at exactly its palette value, so it has to be
+  authored far darker than it looks.** The gills under a `bounce` cap are drawn
+  `bright`; on a night track everything else is multiplied down by a dim key
+  light and they are not, so a mid-grey 0x4e5654 was the brightest thing in the
+  frame and read as a flying saucer over the churchyard. Same trap as Rickety
+  Rails' cave roof measuring `#605c62` from 0x201d22.
+- **`tools/shoot_tracks.py <slug>` can touch other tracks' files, including
+  deleting one.** A run for `chapel` left four other previews modified and
+  `monza.png` **deleted**, which fails `test_every_track_has_a_preview_picture_on_disk`
+  a long way from anything you changed. `git status static/img` after shooting,
+  and `git checkout` everything that is not the track you meant.
+- **A `bounce` cap with the pool's usual `capSpot` contrast is a toadstool.**
+  The surface is drawn as a disc with spots because Shroom Street is what it was
+  written for. On a gothic track a pale spot on a coloured cap lands as a
+  green-grey mushroom in a churchyard. Put `capSpot` two steps off `cap`, not
+  ten.
+
 - **A roll laid on a straight cannot be driven, at any length or any speed.** On
   a banked *corner* the bank is holding the car against the centripetal demand;
   on a straight there is no demand, so gravity down the tilt is opposed by
@@ -636,3 +682,122 @@ New entries, unsorted, until somebody files them. One line is enough.
   "can the car get through", offset the stations and measure the clearance, which
   is ten lines of Python. Both claims went in a docstring before either was
   checked.
+
+- **A building grown outward from the road is a tunnel, not a building, and
+  nothing in the render step catches it.** The Vigil's chapel was the indoor
+  road's corridor widened by a constant, so the wall was the same distance from
+  the tarmac everywhere - and from the car the nave, the aisle and the gallery
+  were indistinguishable. It passed every test, rendered fine in stills, and was
+  rejected on the first drive with "every part makes no sense". A building has a
+  *footprint*: author the plan in world coordinates the way Costco's `SHELL_X`
+  is authored, lay the road inside it, and check containment on every load.
+- **Still renders answer "does it look right" and cannot answer "does it make
+  sense to drive".** Ten views, twenty-six pool statistics and 2,230 green tests
+  all passed on a track that was binned after one lap. Nothing in this repo
+  measures pacing or legibility, so do not read a clean render sheet as
+  agreement about the layout - that answer only ever comes from the road.
+- **A pitched roof built as two slabs that taper to a positive width has a slot
+  down its ridge.** Tapering to 2.0 instead of 0 left a five-unit gap the length
+  of Tenebrae's nave: invisible from inside, and from above it meant the whole
+  interior was drawn in `plan.png` with no roof over it. Overlap the two slopes
+  past the centreline rather than stopping either of them short of it.
+- **A window has to be shorter than the wall it is in, and a section drawing is
+  the only thing that will tell you.** Tenebrae's clerestory lancets were 6.5
+  units tall in a band 1.6 deep, so they stood four units proud of the wall head
+  and read from the aisle as a large white parallelogram hanging in mid-air. It
+  looks exactly like a lighting bug and is not one.
+- **A gallery's headroom is set by the eaves, not by the ceiling over the nave
+  beside it.** At 32 the triforium road had six units of air over it and rendered
+  as a tunnel - the chase camera alone wants 4.3 - while the nave twenty units
+  away was thirty-five units tall. Measure the clearance over the *road*, per
+  storey, not over the tallest space in the building.
+- **Abstracting a photograph by downsampling it evenly still leaves a face.** At
+  9x13 cells the remaining dark masses land as two eyes and a mouth, and
+  posterising sharpens them into it - a small round region of one flat colour is
+  read as a pupil however abstract the rest is. Downsampling *anisotropically*
+  (5 wide by 18 tall) destroys it, because the bands that survive are vertical
+  and a face needs horizontal structure. Soften the posterisation afterwards or
+  the flat regions close back into shapes.
+
+- **`capSpot` set equal to `cap` does not turn a mushroom's spots off.** The
+  crown goes into `solid` and the spots into `bright`, so one number is two
+  colours on screen: the disc is multiplied down by the key light and the spots
+  are not. On BOO!'s ghost pads, equal values came out as a ring of floodlit
+  hexagons a metre across on a dark cap. Pick the spot colour to land *under*
+  where the lit crown lands, not equal to it.
+- **Anything in `bright` is authored in linear, and the difference is enormous
+  at the dark end.** An unlit 0x49535a measures about 0x92a0aa on screen, so a
+  colour picked to be "nearly invisible" arrives as a mid grey. Roughly, author
+  `(wanted / 255) ** 2.2`. Third time this has bitten a track here, after
+  Rickety Rails' cave roof and The Vigil's cap gills - if a `bright` surface
+  looks too light, the value is not slightly wrong, it is wrong by a power.
+- **A glowing prop standing on the racing line is a wall you cannot see past.**
+  BOO!'s first ghost sat centred on its `bounce` pad at cap width: an opaque
+  near-white figure in the middle of the nave with the whole rest of the
+  building behind it, so the one thing hidden while you were being launched was
+  where you were being launched *to*. Put it beside the road and lean it over.
+- **A palette block can go missing on an edit with no error in either
+  language.** A careless rewrite dropped BOO!'s whole `below` key; `look.py`
+  only refuses keys it does not know, never notices one that is absent, and the
+  symptoms were three separate things that each looked like their own bug - no
+  clouds, a grey plate under the crypt, and trestle legs coming back. Check the
+  built `track['pal']` for the key, not the file you think you edited.
+- **`_hero.py`'s scan finds the most interesting geometry, which on a track
+  with an interior is often its roof.** BOO!'s cover scanned to the crypt, whose
+  most photogenic feature from an establishing height is the top of its own
+  ceiling: one flat grey slab over four fifths of the frame. Same split that
+  pinned Sandy Cove and the Costco - pin `at` by hand when the track is *known
+  for* something the scan cannot score.
+- **A low overcast costs you the plan view entirely.** `below.above` at cover
+  0.74 and a deck a hundred units up is a lid: `tools/track_views.py` shoots
+  `plan.png` from above and gets nothing but cloud, and `_hero.py`'s pitch 0.52
+  row comes back as cloud too. Worth it if the track wants that sky, but decide
+  it knowingly - the layout can then only be checked by driving or by reading
+  station coordinates.
+
+- **A banked corner indoors sinks its inner edge into the floor.** A cross-section
+  banked `d` degrees puts its inner kerb `hw * sin(d)` below the centreline - eight
+  units of half-width at nine degrees is 1.25 down - so BOO!'s sanctuary hairpin,
+  banked on a slab whose top is 0.12 under the road, scraped a 1.1-unit ledge every
+  lap. It reads as the *surface* being bumpy rather than as something being hit,
+  which is why it survived a render. Bank a corner on a drawn floor only if the
+  floor is banked too.
+- **A dressing block that clears the centreline does not clear the road.** BOO!'s
+  altar stood 11 units off the hairpin's apex, which is 3 units off an 8-unit
+  half-width - and it was also square in front of the one painting on the track.
+  Measure furniture against `p +/- hw`, with a few units on top for the line a car
+  actually takes, never against the ribbon.
+- **A `gap` starts dropping before the road leaves the building.** BOO!'s jump lip
+  was six units inside the east gable, so the last two stations sank under the
+  gallery floor slab and the car flew into that slab's end face. A deck the road
+  drives on has to stop where the road stops being level, not at the wall.
+- **`Collider.ground` returns the nearest point on a triangle, not the point under
+  the query**, so a sweep that flags "something above the road here" will also flag
+  a deck edge eight units to the side. Check the returned `px/pz` before believing
+  a hit.
+- **A slab the road climbs onto has to begin where the road stops climbing.**
+  BOO!'s gallery floor started at the top of the ramp, where the road was still
+  0.2 short of deck height - so its end face stood across the full width of the
+  ramp and simply stopped the car. It is a fifth of a unit and it is a wall.
+- **A wall of death inherits the road width it is written in, and 13 is not
+  enough.** BOO!'s helix ran at radius 34 in a 13-wide crypt over an 80-unit
+  roll-up and was undrivable; Playground's three are 21 wide at radius 40-44
+  over 90. Hold speed is `sqrt(radius * STICK_FORCE)`, so a tight radius caps it
+  low, and the width is the budget for the slide when a car exceeds it.
+- **Anything stamped off the ribbon gets stamped under the wall of death too.**
+  The helix's base sits at crypt level, so it stamped a 40-unit disc of floor -
+  and the car, out on an 84-degree bank with its collision sphere reaching
+  sideways, met that slab's rim. Filter wall stations (`e.wrad`) out of any
+  floor derived from the road.
+- **`tools/cut_check.py` says "blocked" when its ray strikes a pier, not when a
+  car cannot fit.** An arcade of 35-unit openings read as blocked and was a
+  motorway between the nave and the aisle that skipped the only braking zone on
+  the lap. If the geometry across a chord has gaps wider than a car, it is open
+  whatever the tool says.
+- **A mover's face points the way it walks, and the car arrives at ninety
+  degrees to that.** Every ghost on BOO! was a blank white back until the face
+  was drawn on all four sides. `Movers.pose` is a pure function of the step
+  index and must stay one, so there is no billboarding available.
+- **A `Movers` mesh is Lambert, so a mover on a night track is as dark as the
+  night.** `glow` (opt-in) swaps it for `MeshBasicMaterial`; author those colours
+  the way `bright`'s are authored.

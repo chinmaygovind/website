@@ -938,7 +938,15 @@ export function buildTrack(track, T) {
   // One mushroom per maximal run of cap stations. A separate pass rather than a
   // branch inside the road loop, because a cap is one object spanning seven or
   // eight station pairs and the road loop's whole subject is a single pair.
-  for (let i = 0; i < line.length; i++) {
+  //
+  // **`caps: 0` draws none of it and changes nothing a car can feel.** The whole
+  // mushroom is `solid` and `bright`; the only collider quads over a `bn` run are
+  // the road's own, written by the road loop, so a track can take the physics
+  // without the toadstool. BOO! needs exactly that - a bounce pad on a chapel
+  // floor is a ghost shoving the car up, and a forty-six unit stalk through the
+  // nave is not. Same shape as `legs`, and an opt-out, so no existing track moves.
+  const caps = pal.caps != null ? pal.caps : 1;
+  for (let i = 0; caps && i < line.length; i++) {
     if (!line[i].bn) continue;
     let j = i;
     while (j + 1 < line.length && line[j + 1].bn) j++;
@@ -1233,8 +1241,16 @@ export function buildTrack(track, T) {
       }
       if (buf.pos.length) {
         const g = new THREE.Group();
-        g.add(buf.toMesh(new THREE.MeshLambertMaterial({
-          vertexColors: true, flatShading: true })));
+        // **`glow` makes a mover unlit, and it is opt-in so no herd moves.**
+        // A Lambert mover is multiplied down by whatever key light the track
+        // has, which is right for a dinosaur in daylight and wrong for the one
+        // thing on a night track that is supposed to be the brightest object
+        // in the frame. Unlit renders at the literal vertex colour - so author
+        // those in linear, the way `bright` is authored.
+        g.add(buf.toMesh(m.glow
+          ? new THREE.MeshBasicMaterial({ vertexColors: true })
+          : new THREE.MeshLambertMaterial({
+              vertexColors: true, flatShading: true })));
         m.obj = g;
         group.add(g);
       }
@@ -1263,9 +1279,16 @@ export function buildTrack(track, T) {
   // `drive_run_checks` forever and never reaches the leaderboard.
   if (signs.length && typeof document !== 'undefined') {
     const byText = new Map();
+    // What each batch is a picture *of*. A sign is keyed by its word, and a
+    // sign carrying `art` is keyed by the file instead - so two paintings of
+    // the same picture share one canvas exactly as two hoardings reading DRIVE
+    // do, and a batch knows which of the two kinds it is without a second list.
+    const artOf = new Map();
     for (const s of signs) {
-      let buf = byText.get(s.text);
-      if (!buf) byText.set(s.text, buf = new SignBuf());
+      const key = s.art || s.text;
+      if (s.art) artOf.set(key, s);
+      let buf = byText.get(key);
+      if (!buf) byText.set(key, buf = new SignBuf());
       const c = buf.panel(s.c, s.r, s.u, s.hw, s.hh, s.n);
       // The back and the edges, in the world mesh. Without these a board is a
       // sheet of paper you can see the wrong way through from behind the stand.
@@ -1278,7 +1301,10 @@ export function buildTrack(track, T) {
       solid.quad(c[0], c[3], B(c[3]), B(c[0]), back);   // ends
       solid.quad(c[1], B(c[1]), B(c[2]), c[2], back);
     }
-    for (const [text, buf] of byText) group.add(buf.toMesh(signTexture(text)));
+    for (const [key, buf] of byText) {
+      const s = artOf.get(key);
+      group.add(buf.toMesh(s ? artTexture(s.art, s.aspect) : signTexture(key)));
+    }
   }
   // Cloud is its own mesh so it can be translucent. depthWrite is off on
   // purpose: it is what lets overlapping boxes *accumulate* into something
@@ -2816,6 +2842,61 @@ function signTexture(text) {
   };
   boardArt().then(again);
   return t;
+}
+
+/** An image file on a quad: a painting rather than a word.
+ *
+ * The sponsor boards are the only textured geometry in this game and they are
+ * all lettering, drawn into a 4:1 canvas by `signTexture`. A portrait is the
+ * same mechanism and neither of those two facts: it is a *file*, and it is
+ * taller than it is wide.
+ *
+ * **It rides the `signs` list rather than being a mesh of its own** because
+ * that list is the only path from a track's `scenery.js` to something with UVs
+ * on it - a scenery function is handed mesh buffers that carry vertex colours
+ * and no texture coordinates, and no `THREE` to make a material with. Which is
+ * the right constraint: it means a picture is batched, culled and disposed
+ * exactly as every other textured thing here already is.
+ *
+ * Nothing about it reaches QuickJS. The whole block is behind `typeof document
+ * !== 'undefined'`, so the anti-cheat builds the same track with no canvas, no
+ * image and no painting - and a painting is not in the collider, so the two
+ * still re-drive a lap identically.
+ */
+const _pic = {};
+function artTexture(src, aspect) {
+  if (_pic[src]) return _pic[src].tex;
+  const W = 512, H = Math.max(1, Math.round(W / (aspect || 1)));
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  // Something in the frame before the file arrives. A canvas left untouched is
+  // transparent black, which on an unlit material is a hole in the wall rather
+  // than a picture that has not loaded yet.
+  g.fillStyle = '#2a2318';
+  g.fillRect(0, 0, W, H);
+  const tex = new THREE.CanvasTexture(c);
+  tex.anisotropy = 4;
+  // The canvas is written top-down and three samples bottom-up, so without this
+  // every painting hangs upside down - which on a portrait is obvious and on an
+  // abstract would not be.
+  tex.flipY = true;
+  // **Tagged sRGB, or a photograph comes out washed.** Since r152 three treats
+  // an untagged texture as linear data and converts it again on the way out, so
+  // a picture painted in sRGB is brightened and flattened: the first render of
+  // this had a warm dark oil portrait hanging on the wall as a pale grey-green
+  // one. It does not show on the sponsor boards - flat brand colours survive the
+  // double conversion looking merely a bit off - which is presumably why nothing
+  // here set it before.
+  if (THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+  const im = new Image();
+  im.onload = () => {
+    g.drawImage(im, 0, 0, W, H);
+    tex.needsUpdate = true;
+  };
+  im.src = src;
+  _pic[src] = { tex, im };
+  return tex;
 }
 
 /**

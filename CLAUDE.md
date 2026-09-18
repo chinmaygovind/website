@@ -99,10 +99,18 @@ It has its own CI and is not tested from this repo.
   is hardcoded in `kot/app.py`, `drive/models.py` and the box's `.env`.
   **`app.py` reads `CONDUCTOR_URL` but falls back to `TTR_URL`**, because the
   box's `.env` is the one thing the deploy never touches.
-  **`ttr.cgovind.com` still resolves and 301s to `conductor.cgovind.com` with the
-  path intact** (`$request_uri`), because a year of game invites point at it; the
-  `/ttr` route is kept for the same reason. That 301 is the second non-hand-off
-  redirect here, alongside `/cobweb`.
+  **`ttr.cgovind.com` is dead and must stay dead.** It 301'd to
+  `conductor.cgovind.com` for a few hours on the day of the rename and that was
+  taken out again: a redirect is still that hostname answering, and the whole
+  point is that the hostname Rapid7 named does not answer. There is no vhost, no
+  DNS record, and **the name has been removed from the `cgovind.com`
+  certificate** - which is the part that bites. A SAN list holding a hostname
+  that no longer resolves fails HTTP-01 at renewal and takes every other name on
+  that cert down with it, so `cgovind.com` and `www` would have gone dark at the
+  next renewal. If it ever has to resolve again, put it back on the cert first.
+  **The `/ttr` *path* on cgovind.com is kept**, because a path is not the
+  hostname anyone was notified about and the Wii channel points at it; it is a
+  second route onto the same 302 as `/conductor`.
   **The scans are still in the game repo's git history** - it was not rewritten -
   so a history purge is the open follow-up if Asmodee ever asks.
 - **`visits.py` is one file copied verbatim into five places** - the repo root,

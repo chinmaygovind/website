@@ -611,7 +611,18 @@ def test_the_editor_draws_a_control_for_every_palette_key():
     editor. A palette carrying them keeps them untouched through a borrow.
     """
     SCENERY = {"terrain", "furniture", "building", "shore",
-               "rainbow", "rainbowLanes", "props", "below", "rain"}
+               "rainbow", "rainbowLanes", "props", "below", "rain",
+               # `lamps` is here for `rain`'s reason rather than as an
+               # exception: it is not colour, it is a list of placements
+               # derived off the ribbon - a fraction of the lap and an offset
+               # from the road - so it belongs to the scenery editor and a
+               # palette carrying it keeps it untouched through a borrow.
+               "lamps",
+               # And `storm` for `lamps`' reason. It carries a colour, but the
+               # thing it is is a list of lap fractions to fire lightning at,
+               # and a swatch for one is a control that cannot be used without
+               # the other four numbers beside it.
+               "storm"}
     src = open(os.path.join(os.path.dirname(__file__), "..", "static", "js",
                             "make.js")).read()
     schema = src[src.index("const LOOK = ["):src.index("];", src.index("const LOOK = ["))]

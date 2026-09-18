@@ -349,6 +349,23 @@ function boot() {
   // for the first time keeps the settings this browser was already holding.
   adoptLocalPrefs();
   S.renderer = new Renderer($('gl'));
+  // The one hook a track's own effects have back into the mix, and it is only
+  // ever sound: the fright at BOO!'s gable is one of that track's own ghosts,
+  // flown at the camera by the renderer (`Storm._lunge`), and this is the
+  // shriek that lands with it. `Storm` fires the light itself and calls this a
+  // beat later, because the flash arrives before the crack does and a track
+  // about being frightened should get that the right way round. Set before
+  // `loadTrack`, since that is what builds the storm out of the palette.
+  S.renderer.onThunder = (kind) =>
+    (kind === 'scare' ? S.sound.scare() : S.sound.thunder());
+  // The other two are the same arrangement and the same reason: the renderer
+  // knows *when* - a candle catching as the pool reaches it, a ghost coming
+  // inside thirteen units - and has no `Sound` and should not get one. Both are
+  // on `sfx`, so the mute switch covers them, and both are quiet enough that a
+  // track without them sounds like this one with the volume down rather than
+  // like a different track.
+  S.renderer.onCandle = () => S.sound.candle();
+  S.renderer.onGhostNear = () => S.sound.ghost();
   loadTrack(S.track);
   bindInput();
   wireSaves();

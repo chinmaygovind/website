@@ -112,6 +112,19 @@ export class Sound {
     this.sfx.gain.value = this.enabled ? 1 : 0;
     this.sfx.connect(this.master);
 
+    // **The one recording in here**, fetched once the context exists and never
+    // waited on. If it 404s or fails to decode, `thunder()` falls back to the
+    // synthesised strike, so a checkout without it - or a box where the file
+    // did not land - is quieter rather than broken. See
+    // `static/audio/sfx/CREDITS.md` for what it is and whose it is.
+    for (const [name, key] of [['thunder', 'thunderBuf'], ['ghost', 'ghostBuf']]) {
+      fetch('/static/audio/sfx/' + name + '.ogg')
+        .then(r => (r.ok ? r.arrayBuffer() : Promise.reject(r.status)))
+        .then(b => ctx.decodeAudioData(b))
+        .then(buf => { this[key] = buf; })
+        .catch(() => { this[key] = null; });
+    }
+
     // --- engine ----------------------------------------------------------
     this.engGain = ctx.createGain();
     this.engGain.gain.value = 0;
@@ -542,6 +555,374 @@ export class Sound {
     [784, 988, 1175, 1568].forEach((f, i) =>
       this._blip({ freq: f, type: 'square', dur: 0.3, gain: 0.2, delay: i * 0.09 }));
   }
+
+  /**
+   * A candle catching, as you come up on it.
+   *
+   * **The quietest thing on this bus by a distance**, and it has to be: BOO!
+   * has a hundred and sixty candles on it and the pool lights eight of them at
+   * a time, so at racing speed this fires two or three times a second down the
+   * nave. Anything with a transient you could name would be a machine gun. What
+   * is left is a breath of noise with no click on the front of it - 25ms of
+   * attack, which is slow enough that the ear takes it as air rather than as an
+   * event - and a tap of resonance under it for the wick.
+   *
+   * Quiet, but **measured quiet rather than assumed quiet** - about half the
+   * RMS of the checkpoint chime, where the first pass was a fifth of it and
+   * inaudible under the engine.
+   *
+   * Rate limiting lives in `Lamps`, not here: this is a sound, and how often a
+   * sound is allowed is a fact about the candles.
+   */
+  candle() {
+    if (!this.ready) return;
+    const ctx = this.ctx, t = ctx.currentTime, DUR = 0.34;
+    const src = ctx.createBufferSource();
+    src.buffer = whiteNoise(ctx, DUR);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.Q.value = 0.8;
+    bp.frequency.setValueAtTime(2600, t);
+    bp.frequency.exponentialRampToValueAtTime(900, t + DUR);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.24, t + 0.025);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + DUR);
+    src.connect(bp).connect(g).connect(this.sfx);
+    src.start(t); src.stop(t + DUR);
+
+    // The wick: one soft partial, detuned a little each time so a row of
+    // candles down one wall is a row of different candles.
+    const o = ctx.createOscillator();
+    o.type = 'triangle';
+    o.frequency.value = 430 + Math.random() * 120;
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.0001, t);
+    og.gain.exponentialRampToValueAtTime(0.13, t + 0.03);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+    o.connect(og).connect(this.sfx);
+    o.start(t); o.stop(t + 0.24);
+  }
+
+  /**
+   * A ghost, as you go by it: the high staccato giggle a Boo has.
+   *
+   * **The reference is Nintendo's and the sound is not.** That laugh cannot be
+   * shipped - it is their recording on a public site - so what is copied is its
+   * *shape*, which is not ownable and is anyway most of what makes it read:
+   *
+   *  * **High.** A Boo is a pitched-up voice, about an octave over a talking
+   *    one. This sits at 520-660Hz where the first attempt sat at 300, and that
+   *    single number is the difference between a giggle and a man chuckling in
+   *    a cellar.
+   *  * **Fast and staccato.** Five or six bursts about 85ms apart, each one
+   *    ~55ms long with almost no tail. Three slow ones read as a laugh being
+   *    described rather than a laugh.
+   *  * **Bright and nasal.** Three formants, not two: 520 / 2400 / 3300. The
+   *    third is what gives it the cartoon edge - two alone is a vowel, three is
+   *    a *voice*, and a nasal one because the second and third sit close.
+   *  * **Bouncy, then gone.** Each burst lifts about 8% in pitch across itself,
+   *    which is the "heh" rather than "hunh", and the last one falls away
+   *    instead of ending flat.
+   *
+   * The formant bank costs most of what goes into it - see the gains, which
+   * look enormous and measure at about the level of the record fanfare.
+   */
+  ghost() {
+    if (!this.ready) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const rnd = (a, b) => a + Math.random() * (b - a);
+
+    // **A recording, and it is Chinmay laughing into a phone with the speed
+    // wound up.** Which is how this kind of sound has always been made: a Boo
+    // is a person going "hehehe" played fast, and every synthesised attempt
+    // below - three of them, each measured and each louder than the last -
+    // sounded like a synthesiser going "hehehe". The file is trimmed, denoised,
+    // resampled to 1.45x (so it is higher *and* quicker, which is the whole
+    // trick) and normalised; see `static/audio/sfx/CREDITS.md`.
+    //
+    // A little rate jitter per ghost, because two of them passing within a few
+    // seconds should not be the same laugh twice.
+    if (this.ghostBuf) {
+      const src = ctx.createBufferSource();
+      src.buffer = this.ghostBuf;
+      src.playbackRate.value = rnd(0.95, 1.1);
+      const g = ctx.createGain();
+      g.gain.value = rnd(0.85, 1.0);
+      src.connect(g).connect(this.sfx);
+      src.start(t);
+      return;
+    }
+    const f0 = rnd(520, 660);
+    const n = 4 + (Math.random() < 0.5 ? 1 : 2);   // five or six "heh"s
+    const gap = rnd(0.078, 0.095);
+    const HE = rnd(0.05, 0.062);
+    const end = n * gap + 0.28;
+
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, t);
+
+    // Three formants in parallel. The third is the cartoon in it.
+    const bank = [[520, 6, 1.0], [2400, 9, 0.75], [3300, 11, 0.45]].map(([f, q, g]) => {
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q;
+      const lvl = ctx.createGain(); lvl.gain.value = g;
+      osc.connect(bp).connect(lvl).connect(env);
+      return bp;
+    });
+
+    for (let i = 0; i < n; i++) {
+      const at = t + i * gap;
+      const last = i === n - 1;
+      const base = f0 * (1 - 0.02 * i);
+      // Up across the burst - "heh" - and the last one drops away instead.
+      osc.frequency.setValueAtTime(base, at);
+      osc.frequency.exponentialRampToValueAtTime(last ? base * 0.72 : base * 1.08,
+                                                 at + (last ? 0.26 : HE));
+      env.gain.setValueAtTime(0.0001, at);
+      env.gain.exponentialRampToValueAtTime(last ? 1.15 : 0.95, at + 0.012);
+      env.gain.exponentialRampToValueAtTime(0.0001, at + (last ? 0.27 : HE));
+      if (last) {
+        // The vowel opens on the way out, which is the "haw" at the end of it.
+        bank[0].frequency.setValueAtTime(520, at);
+        bank[0].frequency.exponentialRampToValueAtTime(700, at + 0.22);
+        bank[1].frequency.setValueAtTime(2400, at);
+        bank[1].frequency.exponentialRampToValueAtTime(1500, at + 0.22);
+      }
+    }
+
+    env.connect(this.sfx);
+    osc.start(t); osc.stop(t + end + 0.05);
+
+    // A breath on each burst, quiet and high - the "h", and the only thing
+    // keeping it from sounding like a synthesiser playing a tune.
+    const src = ctx.createBufferSource();
+    src.buffer = whiteNoise(ctx, end + 0.1);
+    const bf = ctx.createBiquadFilter();
+    bf.type = 'bandpass'; bf.Q.value = 1.0; bf.frequency.value = 2800;
+    const bg = ctx.createGain();
+    bg.gain.setValueAtTime(0.0001, t);
+    for (let i = 0; i < n; i++) {
+      const at = t + i * gap;
+      bg.gain.setValueAtTime(0.0001, at);
+      bg.gain.exponentialRampToValueAtTime(0.09, at + 0.008);
+      bg.gain.exponentialRampToValueAtTime(0.0001, at + HE * 0.8);
+    }
+    src.connect(bf).connect(bg).connect(this.sfx);
+    src.start(t); src.stop(t + end + 0.05);
+  }
+
+  /**
+   * Thunder: a strike that is close, and then a roll that takes six seconds to
+   * get out of the churchyard.
+   *
+   * **This is built off what a real close strike does, because the first
+   * version was built off what thunder is imagined to do** - one crack, one
+   * three-second hiss under it, both smooth. Smooth is what gives a synthesised
+   * strike away: nothing in the real event has a clean envelope on it.
+   *
+   * What a recording of a strike a few hundred metres away actually has in it,
+   * in order, and every one of them is here:
+   *
+   *  * **A rip, not a crack.** The return stroke is a channel kilometres long
+   *    and its sound does not arrive all at once - the near part of the channel
+   *    reaches you before the far part, so the front of it is a burst of three
+   *    or four separate cracks tens of milliseconds apart. One crack is a
+   *    gunshot; three is lightning.
+   *  * **A thump you feel.** A sine falling to the high twenties under the
+   *    rip. This is most of what "close" means, and it is the part a laptop
+   *    speaker will not give you at all - which is fine, it is for the people
+   *    on headphones.
+   *  * **A roll that wanders.** The tail is not a decay, it is a sequence of
+   *    arrivals off cloud base and terrain, so its level goes *up* as often as
+   *    down for the first few seconds. That is done here as a random walk
+   *    written into the gain a step at a time, and it is the single thing that
+   *    makes this read as a recording rather than as a filter closing.
+   *  * **No two the same.** Every number below is jittered per strike. A
+   *    repeated identical crack is the other thing that gives a synth away, and
+   *    this track fires the same spot every lap.
+   *
+   * The filter still closes over the tail - 700Hz down to 55 - because that is
+   * air, and it is the one part of the old version that was right.
+   *
+   * Loudest thing on the bus, deliberately, but on `sfx` like everything else,
+   * so the mute switch covers it and the music's path is untouched.
+   */
+  thunder() {
+    if (!this.ready) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+
+    // **A real strike, when we have one.** Everything else this game plays is
+    // synthesised and thunder is the one place that does not work: the whole
+    // character of a close strike is in how ragged it is - the rip, the slap
+    // back off the ground, the roll wandering as it goes - and the synth below
+    // is an imitation of that shape rather than the thing. Three passes of
+    // tuning it got nowhere, which is the tell.
+    //
+    // Pitched down a little and varied per strike, so the same file fired every
+    // lap is not the same sound every lap: a semitone of drift is inaudible as
+    // pitch and completely audible as "that is the recording again".
+    if (this.thunderBuf) {
+      const src = ctx.createBufferSource();
+      src.buffer = this.thunderBuf;
+      src.playbackRate.value = 0.88 + Math.random() * 0.1;
+      const g = ctx.createGain();
+      g.gain.value = 0.9 + Math.random() * 0.2;
+      src.connect(g).connect(this.sfx);
+      src.start(t);
+      return;
+    }
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    const DUR = rnd(5.4, 6.6);
+    const src = ctx.createBufferSource();
+    src.buffer = whiteNoise(ctx, DUR + 0.3);
+
+    // The rip: three or four cracks, each shorter and duller than the last,
+    // because the far end of the channel is further away through more air.
+    const rip = ctx.createBiquadFilter();
+    rip.type = 'highpass'; rip.frequency.value = 700; rip.Q.value = 0.7;
+    const rg = ctx.createGain();
+    rg.gain.setValueAtTime(0.0001, t);
+    let at = 0;
+    const n = Math.random() < 0.5 ? 3 : 4;
+    for (let i = 0; i < n; i++) {
+      const peak = (i === 0 ? 0.62 : 0.42) * Math.pow(0.72, i) * rnd(0.85, 1.15);
+      rg.gain.exponentialRampToValueAtTime(peak, t + at + 0.006);
+      rg.gain.exponentialRampToValueAtTime(peak * 0.06, t + at + rnd(0.05, 0.13));
+      at += rnd(0.035, 0.11);
+    }
+    rg.gain.exponentialRampToValueAtTime(0.0001, t + at + 0.9);
+    src.connect(rip).connect(rg).connect(this.sfx);
+
+    // The thump. Not through any filter and not through the rip's gain: it is
+    // the pressure step, and it arrives with the first crack.
+    const sub = ctx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(rnd(72, 88), t);
+    sub.frequency.exponentialRampToValueAtTime(rnd(26, 32), t + 0.55);
+    const sg = ctx.createGain();
+    sg.gain.setValueAtTime(0.0001, t);
+    sg.gain.exponentialRampToValueAtTime(0.55, t + 0.02);
+    sg.gain.exponentialRampToValueAtTime(0.0001, t + 1.5);
+    sub.connect(sg).connect(this.sfx);
+    sub.start(t); sub.stop(t + 1.6);
+
+    // The roll. The filter closes smoothly; the level does not - it is walked
+    // in steps of about a fifth of a second, each one up to half again or half
+    // as loud as the one before, under an overall decay. Ramped rather than
+    // stepped, or the steps themselves are audible as a tremolo.
+    const body = ctx.createBiquadFilter();
+    body.type = 'lowpass'; body.Q.value = 0.9;
+    body.frequency.setValueAtTime(700, t);
+    body.frequency.exponentialRampToValueAtTime(55, t + DUR);
+    const bg = ctx.createGain();
+    bg.gain.setValueAtTime(0.0001, t);
+    bg.gain.exponentialRampToValueAtTime(0.5, t + rnd(0.12, 0.2));
+    let lvl = 0.5;
+    for (let s2 = 0.35; s2 < DUR - 0.4; s2 += rnd(0.16, 0.3)) {
+      // The decay is on the *ceiling*, not on the level, so the walk can climb
+      // and the roll still ends.
+      const ceil = 0.5 * Math.pow(0.5, s2 / (DUR * 0.45));
+      lvl = Math.max(0.012, Math.min(ceil * 1.25, lvl * rnd(0.6, 1.5)));
+      bg.gain.exponentialRampToValueAtTime(lvl, t + s2);
+    }
+    bg.gain.exponentialRampToValueAtTime(0.0001, t + DUR);
+    src.connect(body).connect(bg).connect(this.sfx);
+
+    src.start(t);
+    src.stop(t + DUR + 0.2);
+  }
+
+  /**
+   * The jumpscare, and it is the one sound in here meant to hurt.
+   *
+   * Everything else on this bus is information - what the car just did, where a
+   * rival is, whether that lap counted. This is the opposite: it exists to make
+   * you flinch as the road runs out at the gable.
+   *
+   * **The first version was two clean sawtooths and it was a laser, not a
+   * scream.** A synthesised glide is smooth, and smooth is the one thing a
+   * scream never is - what a throat does is overblow, so the spectrum is full
+   * of junk that is not a multiple of anything. So every layer here runs into
+   * one hard clipper: clipping folds the layers into each other and fills the
+   * gaps between their partials, which is the whole difference. The three
+   * sawtooths are each frequency-modulated by a partner in the 20-50Hz range,
+   * far too fast to hear as vibrato and far too slow to be a pitch - it is the
+   * rate a voice cracks at, and it stops any of them sitting still long enough
+   * to sound tuned.
+   *
+   * Under it a sine sweeping to 34Hz, which is the part you feel rather than
+   * hear, and which **bypasses the clipper**: a clipped sine is a square, and a
+   * square at 34Hz is a buzz rather than a thump.
+   *
+   * Down, not up: a rising glide is an alarm and you brace for the top of it,
+   * and a falling one has its worst moment in the first fifty milliseconds,
+   * before you can. It holds at full for half a second and then is *cut* - a
+   * fade tells you it is over and lets you recover on the way out.
+   *
+   * No delay, unlike the thunder. The thunder is half a mile away and the light
+   * beats the sound to you; this is in the car with you.
+   */
+  scare() {
+    if (!this.ready) return;
+    const ctx = this.ctx, t = ctx.currentTime, DUR = 0.95;
+
+    const drive = ctx.createGain();
+    drive.gain.value = 3.4;
+    const clip = ctx.createWaveShaper();
+    clip.curve = CLIP;
+    clip.oversample = '4x';
+    const out = ctx.createGain();
+    out.gain.setValueAtTime(0.0001, t);
+    out.gain.exponentialRampToValueAtTime(0.62, t + 0.005);
+    out.gain.setValueAtTime(0.62, t + 0.5);
+    out.gain.exponentialRampToValueAtTime(0.0001, t + DUR);
+    drive.connect(clip).connect(out).connect(this.sfx);
+
+    for (const [f0, f1, g, m] of [[1240, 250, 0.34, 37], [1870, 330, 0.26, 53],
+                                  [610, 140, 0.30, 23]]) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(f0, t);
+      o.frequency.exponentialRampToValueAtTime(f1, t + DUR * 0.8);
+      const lfo = ctx.createOscillator();
+      lfo.type = 'sawtooth';
+      lfo.frequency.value = m;
+      const depth = ctx.createGain();
+      depth.gain.value = f0 * 0.42;
+      lfo.connect(depth).connect(o.frequency);
+      const vg = ctx.createGain();
+      vg.gain.value = g;
+      o.connect(vg).connect(drive);
+      lfo.start(t); o.start(t);
+      lfo.stop(t + DUR); o.stop(t + DUR);
+    }
+
+    const sub = ctx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(150, t);
+    sub.frequency.exponentialRampToValueAtTime(34, t + 0.5);
+    const sg = ctx.createGain();
+    sg.gain.setValueAtTime(0.8, t);
+    sg.gain.exponentialRampToValueAtTime(0.0001, t + DUR);
+    sub.connect(sg).connect(this.sfx);
+    sub.start(t); sub.stop(t + DUR);
+
+    // The breath in it: noise falling from a hiss to a rasp, through the same
+    // clipper so it tears rather than shushes.
+    const src = ctx.createBufferSource();
+    src.buffer = whiteNoise(ctx, DUR + 0.1);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.Q.value = 1.1;
+    bp.frequency.setValueAtTime(3200, t);
+    bp.frequency.exponentialRampToValueAtTime(680, t + DUR);
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.5, t);
+    ng.gain.exponentialRampToValueAtTime(0.02, t + DUR);
+    src.connect(bp).connect(ng).connect(drive);
+    src.start(t); src.stop(t + DUR);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -707,6 +1088,15 @@ function _rot(q, x, y, z) {
           y + q.w * ty + q.z * tx - q.x * tz,
           z + q.w * tz + q.x * ty - q.y * tx];
 }
+
+// The jumpscare's clipper, built once. `tanh` rather than a clamp: a clamp has
+// a corner in it and every signal through it gets the same corner, so a chord
+// of them aliases into one fizz. This one saturates.
+const CLIP = (() => {
+  const c = new Float32Array(1024);
+  for (let i = 0; i < c.length; i++) c[i] = Math.tanh(((i / 1023) * 2 - 1) * 4);
+  return c;
+})();
 
 let _noiseCache = new Map();
 function whiteNoise(ctx, seconds) {

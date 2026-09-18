@@ -1449,6 +1449,551 @@ class Rain {
   }
 }
 
+// Lamps
+//
+// Local lights: candles in an abbey, a lamp over a doorway, anything that has to
+// light the road near it rather than the whole world. Turned on by a `lamps`
+// block in a palette, and it lives here beside `Rain` for the same reason -
+// these are the two things in the world that are not baked into the track's one
+// buffer, so they are torn down and rebuilt by `setTrack` when the switcher
+// changes track without navigating.
+//
+// **Until this, the whole game had two lights: one directional, one hemisphere.**
+// That was enough while every track was lit by the sky, and a night interior is
+// the first thing that is not - the reference for The Vigil is a black nave with
+// pools of candlelight in it, and there is no value of `hemi.ground` that says
+// "bright here, dark four units away".
+//
+// Three things had to be true before this was worth doing, and all three are:
+//
+//  * **`MeshLambertMaterial` is per-fragment in three r169.** It was per-vertex
+//    for years, and on a road whose stations are several units apart a point
+//    light would have crawled between them and popped - which is presumably why
+//    nobody tried. It shades per pixel now and a candle pool is smooth.
+//  * **The light count is fixed.** three rebuilds the shader program when the
+//    number of lights of a type changes, so a naive "add a light per candle"
+//    both blows the uniform budget and recompiles mid-lap. Instead there is a
+//    fixed pool, created once, and every frame it is *moved* to the nearest
+//    emitters. A hundred candles cost the same as six.
+//  * **It is visual only.** No light is in the collider, nothing about it
+//    reaches `Car.step`, and `verify.py` never builds one - so a lit track and
+//    an unlit one re-drive a lap identically, and no medal moves.
+//
+// **There are still no shadows** and this does not add them. A lamp makes a pool
+// of brightness; it does not throw a shape. Shadow maps are a different and much
+// larger change, and they would fight the flat-shaded look everywhere else.
+/**
+ * Lightning: a flash on the scene's own lights, and a thunder crack after it.
+ *
+ * **Fired by where the camera is, not by lap progress**, which is what keeps
+ * this to one class and no plumbing. `render(dt)` is handed the frame and
+ * nothing else - there is no `Run` in here and there should not be, because the
+ * renderer is also what draws replays, the track switcher's previews and the
+ * shot tool, none of which have one. A trigger point is authored the way a
+ * lamp is (a fraction of the lap and an offset), turned into a world position
+ * once, and armed again when the car leaves - so it fires on every lap, in a
+ * replay, and for a rival's camera, without any of them knowing it exists.
+ *
+ * **Nothing here touches the collider, the ribbon or a medal time.** It is
+ * light and sound over a track that drives identically without it, which is the
+ * only way an effect can be added to a game whose anti-cheat re-drives laps in
+ * QuickJS: `verify.py` has no renderer at all, so a flash that changed anything
+ * a car could feel would make every lap on this track unverifiable.
+ *
+ * The shape of the flash is three spikes, not one ramp. A single envelope reads
+ * as somebody turning a light on; real lightning is a strike, a stutter and a
+ * longer return stroke, and 90ms apart is close enough that the eye reads the
+ * three as one event with texture in it.
+ */
+// Scratch, so a frame of the lunge allocates nothing.
+const _sv0 = new THREE.Vector3();
+const _sv1 = new THREE.Vector3();
+
+class Storm {
+  constructor(scene, cfg, line, lights, movers) {
+    const c = cfg || {};
+    this.scene = scene;
+    this.lights = lights;               // { sun, hemi }
+    this.near = c.near != null ? c.near : 55;    // fires inside this
+    this.rearm = c.rearm != null ? c.rearm : 95; // and arms again outside it
+    this.gain = c.gain != null ? c.gain : 5.0;   // peak multiple of the key light
+    this.sky = new THREE.Color(c.color || 0xdfe8ff);
+    this.boom = c.boom != null ? c.boom : 0.42;  // seconds of light before sound
+    this.onboom = null;                 // the play page hangs `sound.thunder` here
+    this.spots = [];
+    const n = line ? line.length : 0;
+    for (const p of (c.at || [])) {
+      if (!n) break;
+      const e = line[Math.max(0, Math.min(n - 1, Math.round((p.f || 0) * n)))];
+      const off = p.off || 0;
+      // **Per spot, because one track wants two different frights.** The strike
+      // over the chapel is half a mile off and the light beats the sound to
+      // you; the thing at the gable is in the car with you, so it is white
+      // rather than blue, over in half the time, and its `boom` is zero. The
+      // `kind` is handed to `onboom` and the play page picks the sound - the
+      // renderer has no `Sound` and should not get one.
+      this.spots.push({ p: [e.p[0] + e.lat[0] * off, e.p[1], e.p[2] + e.lat[2] * off],
+                        kind: p.kind || 'thunder',
+                        near: p.near != null ? p.near : this.near,
+                        rearm: p.rearm != null ? p.rearm : this.rearm,
+                        gain: p.gain != null ? p.gain : this.gain,
+                        boom: p.boom != null ? p.boom : this.boom,
+                        color: new THREE.Color(p.color || (c.color || 0xdfe8ff)),
+                        armed: true });
+    }
+    // **The jumpscare, and it is one of the track's own ghosts.**
+    //
+    // A mover flagged `scare` by the scenery - BOO! puts it in the crypt, and
+    // wearing the nastiest of that track's four faces - is cloned here, once,
+    // and parked invisible. When a `scare` spot fires, the clone is flown at
+    // the camera. `Object3D.clone` shares the geometry and the material, so
+    // this is one more draw call and no memory, and the original goes on
+    // walking its segment in the crypt with nothing about it changed.
+    //
+    // Why a clone of a *mover* rather than a thing of its own: a scare that is
+    // a new creature is just a picture. Flying the ghost you drove past two
+    // minutes ago is the whole point, and it costs one flag on a list this file
+    // already receives.
+    //
+    // Nothing in here touches the car. It is a mesh moved in front of a camera,
+    // and `verify.py` re-drives the same lap in QuickJS with no renderer at
+    // all - which is the only reason an effect can be put on the one jump where
+    // a lap is won or lost.
+    this.ghost = null;
+    const gm = (movers && movers.list || []).find(m => m.scare && m.obj);
+    if (gm) {
+      this.ghost = gm.obj.clone();
+      this.ghost.visible = false;
+      this.scene.add(this.ghost);
+    }
+    this.jump = -1;                     // seconds into the lunge, <0 is idle
+    this.t = -1;                        // seconds since the strike, <0 is idle
+    this.pending = -1;                  // seconds until the crack
+    this.pendKind = null;               // ...and which one it is
+    this.hot = null;                    // the spot that is flashing
+    // What the lights were before any of this, so the flash is always applied
+    // to the palette's own values rather than to last frame's.
+    this.base = { sun: lights.sun.intensity, hemi: lights.hemi.intensity,
+                  sunC: lights.sun.color.clone(), hemiC: lights.hemi.color.clone() };
+  }
+
+  /** The three-spike envelope, 0..1, over about half a second. */
+  _level(t) {
+    if (t < 0) return 0;
+    const spike = (at, w, h) => (t < at ? 0 : h * Math.exp(-(t - at) / w));
+    return Math.min(1, spike(0, 0.055, 1.0) + spike(0.09, 0.03, 0.55)
+                       + spike(0.19, 0.15, 0.75));
+  }
+
+  update(dt, camera) {
+    const c = camera.position;
+    for (const s of this.spots) {
+      const d = Math.hypot(c.x - s.p[0], c.y - s.p[1], c.z - s.p[2]);
+      if (s.armed && d < s.near) {
+        s.armed = false;
+        this.t = 0;
+        this.hot = s;
+        this.pending = s.boom;
+        this.pendKind = s.kind;
+        if (s.kind === 'scare' && this.ghost) this.jump = 0;
+      } else if (!s.armed && d > s.rearm) {
+        s.armed = true;
+      }
+    }
+    if (this.pending >= 0) {
+      this.pending -= dt;
+      if (this.pending < 0 && this.onboom) this.onboom(this.pendKind);
+    }
+    if (this.jump >= 0) this._lunge(dt, camera);
+    if (this.t < 0) return;
+    this.t += dt;
+    const k = this._level(this.t);
+    if (k <= 0.002 && this.t > 0.6) {
+      this.t = -1;
+      this.lights.sun.intensity = this.base.sun;
+      this.lights.hemi.intensity = this.base.hemi;
+      this.lights.sun.color.copy(this.base.sunC);
+      this.lights.hemi.color.copy(this.base.hemiC);
+      return;
+    }
+    const g = this.hot ? this.hot.gain : this.gain;
+    const col = this.hot ? this.hot.color : this.sky;
+    this.lights.sun.intensity = this.base.sun + k * g;
+    this.lights.hemi.intensity = this.base.hemi + k * g * 0.45;
+    this.lights.sun.color.copy(this.base.sunC).lerp(col, k);
+    this.lights.hemi.color.copy(this.base.hemiC).lerp(col, k);
+  }
+
+  /**
+   * Put the ghost on the screen, shake it, and take it out through the top.
+   *
+   * **It is anchored to the camera every frame, not flown to a place in the
+   * world**, and that is the fix for the first version rather than a flourish.
+   * This fires as the wheels leave the gable, so the car is airborne at sixty
+   * units a second and there is no collider on the thing: parked in the world
+   * it was a shape you flew *through* about four frames after it appeared, and
+   * what most people saw was a white flicker. Anchored, it rides in front of
+   * the car for as long as it is wanted, which is the only way anybody gets to
+   * see what it is.
+   *
+   * The beats, and they are short because the landing is coming: it swings up
+   * from below the nose over the first fifth, shakes in your face for about
+   * half a second, then leaves *upward* - accelerating, out through the top of
+   * the frame rather than fading, because a thing that fades was never there.
+   *
+   * **Faced by yaw and not by `lookAt`.** A ghost wears its face on local +x,
+   * because these walk across the road and `Movers.pose` yaws them onto their
+   * own direction of travel - so pointing +z at the camera, which is what
+   * `lookAt` does, would fly a blank white sheet at you.
+   *
+   * Getting on for twice the size it is in the crypt. The clone is scaled and
+   * the mover is not, so the ghost you meet underground keeps the collision box
+   * the lap was measured against - this one has no collider at all and can be
+   * any size that frightens.
+   */
+  _lunge(dt, camera) {
+    const DUR = 1.25, RISE = 0.66;      // when it starts leaving
+    const DIST = 9.0;                   // how far out in front of the lens it rides
+    this.jump += dt;
+    const u = this.jump / DUR;
+    if (u >= 1) { this.jump = -1; this.ghost.visible = false; return; }
+
+    // **Where it sits relative to the camera, and the first number was inside
+    // your own head.** A crypt ghost is about three and a half units across the
+    // body before this scales it, so anchored two units ahead of the camera the
+    // near wall of it was *behind* the lens: what you got was the inside of a
+    // white box and then a flicker as it left. It has to stand clear of its own
+    // depth plus the near plane, and then be scaled back up to fill the frame
+    // from there. **Nine out at 1.7x, where it used to be six and a half at
+    // 1.8** - it subtends about a quarter less of the screen, which is the
+    // difference between a white shape filling the windscreen and a ghost you
+    // can see the face of. Seeing the face is the whole point of flying the
+    // crypt's own ghost at you rather than any white shape, and at the old
+    // distance the frame cut its eyes off at the top on a short viewport.
+    const k = Math.min(1, u / 0.2);                     // the swing up
+    const up = -6.6 * (1 - k) * (1 - k)                  // from under the nose
+             + (u > RISE ? 20.0 * Math.pow((u - RISE) / (1 - RISE), 2.1) : 0);
+    // A shudder, and only while it is on the screen to shudder - at 26Hz, fast
+    // enough to read as a thing vibrating rather than a thing swaying.
+    const hold = u > 0.16 && u < RISE ? 1 : 0.2;
+    const sh = 0.16 * hold * Math.sin(this.jump * 163);
+
+    const fwd = camera.getWorldDirection(_sv0);
+    const p = _sv1.copy(camera.position).addScaledVector(fwd, DIST);
+    const gy = p.y + up - 0.9 + sh * 0.6;
+    this.ghost.position.set(p.x + sh, gy, p.z - sh);
+    // **It is tilted back to look up at you, and the tilt is measured rather
+    // than picked.** The ghost hangs below the camera - under the nose at the
+    // start of the swing, on the sight line by the hold - so left upright it
+    // faces the horizon and you get the top of its head. The pitch is just the
+    // angle from the ghost up to the lens, plus a token 0.05 - **measured, and
+    // not a number chosen to look like a lot.** At +0.16 on top of the angle it
+    // was fifteen degrees past level and what you saw was the underside of its
+    // jaw; the whole of the effect here is a few degrees, because the thing is
+    // close and scaled and a small tip shows a lot of chin.
+    //
+    // Capped, too. In the first fifth of the swing it is six units below the
+    // lens and the true angle is forty degrees, which would have it lying on
+    // its back as it comes up.
+    //
+    // It goes in the **z** slot and that is not a roll: the face is on local
+    // +x, so a rotation about local z swings the face towards local +y. With
+    // three's default XYZ order that z happens before the yaw, so it stays a
+    // pitch however the camera is pointing. The sine on top of it is the same
+    // nod it always had, now around the new angle.
+    const pitch = Math.min(0.40, Math.atan2(camera.position.y - gy, DIST)) + 0.05;
+    this.ghost.rotation.set(0, Math.atan2(-(camera.position.z - p.z),
+                                          camera.position.x - p.x),
+                            pitch + 0.13 * Math.sin(this.jump * 11) + sh);
+    this.ghost.scale.setScalar(1.7 + 0.45 * u);
+    this.ghost.visible = true;
+  }
+
+  dispose() {
+    // The clone only ever borrowed its geometry and material from the mover it
+    // came from, so it is removed and not disposed - freeing either would take
+    // out the ghost still walking the crypt.
+    if (this.ghost) { this.scene.remove(this.ghost); this.ghost = null; }
+    this.lights.sun.intensity = this.base.sun;
+    this.lights.hemi.intensity = this.base.hemi;
+    this.lights.sun.color.copy(this.base.sunC);
+    this.lights.hemi.color.copy(this.base.hemiC);
+  }
+}
+
+class Lamps {
+  constructor(scene, cfg, line, col) {
+    const c = cfg || {};
+    this.scene = scene;
+    // Where the emitters are. Authored the way scenery placements are - a
+    // fraction of the lap and an offset from the road - rather than as world
+    // coordinates, so a lamp cannot end up somewhere the road no longer goes.
+    // That is the rule `scenery_kit.js` is built on and it is the reason six of
+    // the defects in `docs/track-defects.md` stopped being reachable.
+    // Each spot is `[x, y, z, nx, nz]`: where the flame is, and the way the
+    // candle faces - the unit vector back towards the road, which is what the
+    // bracket is hung the other side of. A lamp authored with no side to it
+    // (`off` of zero) gets a zero normal and is built as a free-standing
+    // pricket instead of a sconce.
+    this.spots = [];
+    const n = line ? line.length : 0;
+    for (const p of (c.at || [])) {
+      if (!n) break;
+      const e = line[Math.max(0, Math.min(n - 1, Math.round((p.f || 0) * n)))];
+      const off = p.off || 0, up = p.up != null ? p.up : (c.up != null ? c.up : 7);
+      const s = off > 0 ? -1 : (off < 0 ? 1 : 0);
+      this.spots.push([e.p[0] + e.lat[0] * off, e.p[1] + up, e.p[2] + e.lat[2] * off,
+                       e.lat[0] * s, e.lat[2] * s, p.bare ? 1 : 0]);
+    }
+    // And the automatic ones: every `n`th station of a span, both sides. This
+    // is what an arcade of candles actually is, and authoring two hundred of
+    // them by fraction would be authoring the nave twice.
+    for (const r of (c.runs || [])) {
+      if (!n) break;
+      const a = Math.round((r.from || 0) * n), b = Math.round((r.to || 1) * n);
+      const step = Math.max(1, Math.round(r.every || 24));
+      const off = r.off != null ? r.off : 17;
+      const up = r.up != null ? r.up : (c.up != null ? c.up : 7);
+      for (let i = Math.max(0, a); i < Math.min(n, b); i += step) {
+        const e = line[i];
+        for (const s of (r.sides || [-1, 1])) {
+          this.spots.push([e.p[0] + e.lat[0] * s * off, e.p[1] + up,
+                           e.p[2] + e.lat[2] * s * off, -e.lat[0] * s, -e.lat[2] * s,
+                           r.bare ? 1 : 0]);
+        }
+      }
+    }
+
+    // The pool. Six by default: enough that a corridor of candles reads as
+    // continuous as you drive it, few enough to stay well inside the uniform
+    // budget on the weakest thing this game is played on.
+    const count = Math.max(1, Math.min(12, c.count != null ? c.count : 6));
+    this.range = c.range != null ? c.range : 62;
+    this.intensity = c.intensity != null ? c.intensity : 3.2;
+    this.lights = [];
+    for (let i = 0; i < count; i++) {
+      const l = new THREE.PointLight(c.color != null ? c.color : 0xffc98a,
+                                     0, this.range, c.decay != null ? c.decay : 1.6);
+      // Never culled: it is moved every frame, so three's own bounds are always
+      // a frame stale - the same reason `Rain` turns culling off.
+      l.frustumCulled = false;
+      scene.add(l);
+      this.lights.push(l);
+    }
+
+    // **The candles themselves.** Until this there was nothing there: a pool of
+    // light on a wall with no source in the middle of it, which reads as a
+    // spotlight rather than as a flame, and is the thing that gave the nave its
+    // "why is that glowing" look from the gallery.
+    //
+    // Every emitter gets one, all of them in a single buffer, because there are
+    // a couple of hundred and they never move. The wax is built so its wick
+    // lands exactly on the emitter - the flame and the light are the same point
+    // in space, which is the only way the shading agrees with the picture.
+    const wax = c.wax != null ? c.wax : 0xe9dcc0;
+    const iron = c.iron != null ? c.iron : 0x17181c;
+    const buf = new MeshBuf();
+    for (const s of this.spots) {
+      const [x, y, z, nx, nz, bare] = s;
+      // **`bare` is a light with nothing on it**, which is what a run gets when
+      // the place wants the pool and not the object: the crypt is lit by
+      // candles it does not show you, because `scenery.js` already stands a
+      // pricket on a third of the sarcophagi down there and a second set along
+      // the road read as a runway. The light is unchanged; only the wax goes.
+      if (bare) continue;
+      // **A candle is only built where there is something to put it on**, and
+      // the collider is what is asked. A lamp is authored as a fraction and an
+      // offset - which is right for a *light*, since a pool of light in the air
+      // is just a pool of light - but a candle hanging in mid-air four units off
+      // the wall is a mistake you can see, and it was all over the nave.
+      //
+      // Two supports, in order: a wall within reach of a bracket, or a floor
+      // within reach of a stand. Neither, and the emitter keeps its light and
+      // gets no candle at all. Nothing here is authored per track: move a leg
+      // and the candles follow the masonry, because the masonry is what was
+      // asked.
+      let wall = false;
+      if (col && (nx || nz)) col.walls(x, y, z, 2.6, () => { wall = true; });
+      const g = !wall && col ? col.ground(x, y, z, 0, 1, 0, 16) : null;
+      const drop = g && g.hit && g.dist > 0.6 ? g.dist : 0;
+      if (!wall && !drop) continue;
+
+      buf.box(x, y - 1.05, z, 0.32, 0.95, 0.32, wax);                  // the candle
+      buf.box(x, y - 2.10, z, 0.62, 0.18, 0.62, iron);                 // its drip pan
+      if (wall) {
+        // A sconce: a bracket back to the wall the probe found, and a reflector
+        // plate behind the flame. Both are drawn *away* from the road, so
+        // neither can end up between the car and the light.
+        buf.box(x - nx * 0.55, y - 2.05, z - nz * 0.55, 0.62, 0.10, 0.62, iron);
+        buf.box(x - nx * 0.95, y - 1.45, z - nz * 0.95, 0.72, 0.95, 0.72, iron);
+      } else {
+        // A pricket stand, and its height is the measured drop rather than a
+        // number - so the same candle stands on the churchyard, on the chapel
+        // floor and on the crypt floor without any of them being told about it.
+        const h = (drop - 2.2) / 2;
+        buf.box(x, y - 2.2 - h, z, 0.13, h, 0.13, iron);
+        buf.box(x, y - drop + 0.12, z, 0.75, 0.14, 0.75, iron);
+      }
+    }
+    this.wax = buf.toMesh(new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }));
+    this.wax.frustumCulled = false;
+    scene.add(this.wax);
+
+    // **The flames are the pool, not the candles.** There is one per *light*,
+    // not one per candle, and it is parked on whichever emitter that light is
+    // currently sitting on - so a flame lights as you come up on it and dies as
+    // you leave, in step with the pool it belongs to, and the count stays at six
+    // however many hundred candles a track has. That is also why it reads as the
+    // candle catching rather than as a light being switched on: the flame grows
+    // out of nothing on the same curve the light brightens on.
+    // A teardrop, not a spike: a short cone sitting on a hemisphere of the same
+    // radius. At the first size - a 0.85-tall cone - it read as a paper hat on
+    // the candle rather than as a flame, which is what a cone on its own always
+    // does. The halo over it is twice the width and half the height it would
+    // be, because what gives a candle away at twenty units is the bloom, not
+    // the shape of the flame itself.
+    const fgeo = new THREE.ConeGeometry(0.17, 0.62, 7);
+    fgeo.translate(0, 0.30, 0);
+    // The bloom is a **sprite with a painted gradient**, not geometry. A
+    // low-poly sphere with additive blending was the first try and it reads as
+    // exactly what it is: a faceted grey ball round the flame, with an edge on
+    // it. A radial gradient has no edge and always faces you, which is what a
+    // glow is.
+    const gc = document.createElement('canvas');
+    gc.width = gc.height = 64;
+    const g2 = gc.getContext('2d');
+    const grad = g2.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0, 'rgba(255,238,200,0.95)');
+    grad.addColorStop(0.35, 'rgba(255,190,110,0.40)');
+    grad.addColorStop(1, 'rgba(255,170,80,0)');
+    g2.fillStyle = grad;
+    g2.fillRect(0, 0, 64, 64);
+    const gtex = new THREE.CanvasTexture(gc);
+    this.flames = [];
+    for (let i = 0; i < count; i++) {
+      const core = new THREE.Mesh(fgeo, new THREE.MeshBasicMaterial({ color: 0xfff0c4 }));
+      // The halo is what stops a flame being a yellow triangle. Additive and
+      // depth-write off, so it lies over the candle behind it instead of
+      // punching a hole in it.
+      const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: gtex, color: c.color != null ? c.color : 0xffc98a, transparent: true,
+        blending: THREE.AdditiveBlending, depthWrite: false }));
+      for (const m of [core, halo]) { m.frustumCulled = false; m.visible = false; scene.add(m); }
+      this.flames.push([core, halo]);
+    }
+    this.t = 0;
+    // Which pool slots were alight last frame, so a flame *catching* can be told
+    // from a flame that is simply still burning.
+    this.lit = new Array(count).fill(false);
+    this.onlight = null;                // the play page hangs `sound.candle` here
+    this.quiet = 0;                     // seconds until another catch may be heard
+  }
+
+  update(camera, dt) {
+    if (!this.spots.length) return;
+    this.t += (dt || 0.016);
+    this.quiet -= (dt || 0.016);
+    const c = camera.position;
+    // Nearest-first, and only the nearest `count` are lit. A full sort every
+    // frame would be fine at this size, but the array is the whole world's
+    // candles and this runs at 60Hz - so it is a partial selection instead,
+    // which is linear and does not allocate.
+    const k = this.lights.length;
+    const bestD = new Array(k).fill(Infinity), bestI = new Array(k).fill(-1);
+    for (let i = 0; i < this.spots.length; i++) {
+      const s = this.spots[i];
+      const dx = s[0] - c.x, dy = s[1] - c.y, dz = s[2] - c.z;
+      const d = dx * dx + dy * dy + dz * dz;
+      if (d >= bestD[k - 1]) continue;
+      let j = k - 1;
+      while (j > 0 && bestD[j - 1] > d) { bestD[j] = bestD[j - 1]; bestI[j] = bestI[j - 1]; j--; }
+      bestD[j] = d; bestI[j] = i;
+    }
+    for (let j = 0; j < k; j++) {
+      const l = this.lights[j];
+      const fl = this.flames[j];
+      if (bestI[j] < 0) {
+        l.intensity = 0;
+        fl[0].visible = fl[1].visible = false;
+        this.lit[j] = false;
+        continue;
+      }
+      const s = this.spots[bestI[j]];
+      l.position.set(s[0], s[1], s[2]);
+      // **A bare emitter gets no flame either**, for the reason it has no
+      // candle: a flame hanging on its own in mid-air is the same mistake as a
+      // candle hanging in mid-air, and worse, because it is the bright thing in
+      // the frame. The pool it throws is the whole point of the run, and down
+      // in the crypt what the eye reads as its source is the prickets
+      // `scenery.js` stands on the sarcophagi.
+      if (s[5]) {
+        fl[0].visible = fl[1].visible = false;
+        this.lit[j] = false;
+        const d0 = Math.sqrt(bestD[j]);
+        const t0 = Math.max(0, Math.min(1, (this.range * 1.6 - d0) / (this.range * 0.6)));
+        l.intensity = this.intensity * t0 * t0;
+        continue;
+      }
+      // Faded out at the edge of its own range rather than switched off. A
+      // light that appears at full strength the moment it becomes one of the
+      // nearest six is a flicker every time the ranking changes, and the eye
+      // reads that as the candle guttering - which would be a lovely effect and
+      // is not one anybody asked for or could control.
+      const d = Math.sqrt(bestD[j]);
+      const t = Math.max(0, Math.min(1, (this.range * 1.6 - d) / (this.range * 0.6)));
+      l.intensity = this.intensity * t * t;
+      // The flame rides the same `t`, so it is alight exactly when its light
+      // is. The flicker is two sines that do not share a period, which is the
+      // cheapest thing that does not read as a pulse - and it is on the flame's
+      // *height* only. The light itself is deliberately left smooth: a
+      // guttering point light in a black nave is a strobe, and the fade in
+      // `Lamps` was written to avoid exactly that.
+      const f = 0.86 + 0.14 * Math.sin(this.t * 11.3 + j * 2.1)
+                     + 0.07 * Math.sin(this.t * 27.7 + j);
+      // **The catch, and it is an edge rather than a state.** A slot is alight
+      // or it is not; the sound belongs to the one frame in which the flame was
+      // not there and now is.
+      //
+      // Rate limited here rather than in `Sound`, because how often a candle
+      // may be heard is a fact about the candles: eight slots over a nave with
+      // one every thirty units means two or three catch every second at racing
+      // speed, and without this the aisle is a crackle. One is heard and the
+      // rest of that moment's catches are silent - the ear hears "a candle lit"
+      // either way and cannot count them.
+      const now = t > 0.02;
+      if (now && !this.lit[j] && this.onlight && this.quiet <= 0) {
+        this.quiet = 0.45;
+        this.onlight();
+      }
+      this.lit[j] = now;
+      fl[0].visible = fl[1].visible = now;
+      fl[0].position.set(s[0], s[1] - 0.10, s[2]);
+      fl[0].scale.set(t, t * f, t);
+      // The bloom sits on the flame's middle and is round, so it takes the
+      // flicker as a size rather than as a stretch - a sprite scaled taller
+      // just looks like a different sprite.
+      fl[1].position.set(s[0], s[1] + 0.20, s[2]);
+      fl[1].scale.setScalar(t * (2.6 + 0.5 * (f - 1)));
+    }
+  }
+
+  dispose() {
+    for (const l of this.lights) this.scene.remove(l);
+    for (const fl of this.flames) {
+      for (const m of fl) { this.scene.remove(m); m.material.dispose(); }
+      // The cone is ours; the halo is a `Sprite`, whose geometry is **shared by
+      // every sprite in three** - disposing that one would take out anything
+      // else on the page that is a sprite, now or later.
+      fl[0].geometry.dispose();
+    }
+    this.flames.length = 0;
+    this.scene.remove(this.wax);
+    this.wax.geometry.dispose();
+    this.wax.material.dispose();
+    this.lights.length = 0;
+  }
+}
+
 export class Renderer {
   constructor(canvas) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -1508,6 +2053,11 @@ export class Renderer {
     // switch off a wet track leaves it raining on a dry one.
     if (this.rain) { this.rain.dispose(); this.rain = null; }
     if (pal.rain) this.rain = new Rain(this.scene, pal.rain);
+    // Same teardown rule as the rain, and for a sharper reason: a `PointLight`
+    // left behind by the previous track is a pool of candlelight hanging in the
+    // open air of the next one, at a world coordinate that means nothing there.
+    if (this.lamps) { this.lamps.dispose(); this.lamps = null; }
+    if (pal.lamps) this.lamps = new Lamps(this.scene, pal.lamps, built.line, built.collider);
     const spec = (pal.sky && pal.sky.stops) ? pal.sky : null;
     // Fog is the haze the world dissolves into, so it has to be the colour of
     // the sky at the horizon or the join shows.
@@ -1534,6 +2084,24 @@ export class Renderer {
     this.hemi.color.set(H ? H.sky : 0xffffff);
     this.hemi.groundColor.set(H ? H.ground : 0x5a6172);
     this.hemi.intensity = H && H.intensity != null ? H.intensity : 0.72;
+    // **After the lights, not with the rain and the lamps**, because a `Storm`
+    // records what it is going to flash *from* - and two lines up those were
+    // still the previous track's.
+    if (this.storm) { this.storm.dispose(); this.storm = null; }
+    if (pal.storm) {
+      this.storm = new Storm(this.scene, pal.storm, built.line,
+                             { sun: this.sun, hemi: this.hemi }, built.movers);
+      this.storm.onboom = this.onThunder || null;
+    }
+    // **What the ghosts are heard by**, and it is the movers themselves rather
+    // than a list of places: a mover walks, so a fixed trigger point would fire
+    // where one used to be. Armed per mover, disarmed until you have left it
+    // again, so one pass of one ghost is one sound whatever the camera does in
+    // between.
+    this.movers = built.movers || null;
+    this.moverArmed = [];
+    this.moverQuiet = 0;
+    if (this.lamps) this.lamps.onlight = this.onCandle || null;
     this.started = false;
     this.precompile();
   }
@@ -1688,9 +2256,57 @@ export class Renderer {
     }
   }
 
+  /**
+   * The ghosts you drive past, heard rather than seen.
+   *
+   * **The radius is measured from the camera, and the camera is not the car.**
+   * The chase lens trails by about 11.6 units, so when the car is level with a
+   * ghost the camera is already twelve away - at the 13 this first used, a
+   * clean pass down the middle of the road often never crossed the threshold
+   * and the ghost said nothing. 20 is that trail plus the width of the road,
+   * so passing one speaks and the one two bays over does not. It still changes
+   * lap to lap, because the herd is posed off the physics step and you arrive
+   * at a different point in their walk every time.
+   *
+   * Two guards, and they are different questions. `armed` is per mover, so one
+   * ghost cannot chatter while you sit beside it; `moverQuiet` is global, so
+   * driving through a group of four is one voice rather than a chord. Nothing
+   * in here touches the mover - it is not moved, not posed and not collided
+   * with, and `verify.py` re-drives the lap with no renderer at all.
+   */
+  _ghostsNear(dt) {
+    const list = this.movers && this.movers.list;
+    if (!list || !list.length || !this.onGhostNear) return;
+    this.moverQuiet -= dt;
+    const c = this.camera.position;
+    for (let i = 0; i < list.length; i++) {
+      // **Only one ghost in four has a voice.** Every one of them laughing is a
+      // funhouse; a track with thirty-two movers on it wants the sound to be
+      // the exception that makes you look. Chosen by index rather than at
+      // random, so it is the same ghosts every lap - which is what lets you
+      // learn where they are, and is the difference between a haunting and a
+      // slot machine.
+      if (i % 4) continue;
+      const o = list[i].obj;
+      if (!o) continue;
+      const d = Math.hypot(o.position.x - c.x, o.position.y - c.y, o.position.z - c.z);
+      if (this.moverArmed[i] === false) {
+        if (d > 34) this.moverArmed[i] = true;
+        continue;
+      }
+      if (d < 20) {
+        this.moverArmed[i] = false;
+        if (this.moverQuiet <= 0) { this.moverQuiet = 2.5; this.onGhostNear(); }
+      }
+    }
+  }
+
   render(dt) {
+    this._ghostsNear(dt);
     this.particles.update(dt, this.camera);
     if (this.rain) this.rain.update(dt, this.camera);
+    if (this.lamps) this.lamps.update(this.camera, dt);
+    if (this.storm) this.storm.update(dt, this.camera);
     this.renderer.render(this.scene, this.camera);
   }
 

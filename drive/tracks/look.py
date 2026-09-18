@@ -42,12 +42,34 @@ KNOWN = REQUIRED + (
     "snow",           # the white slab under Figure Eight
     "gravel",         # run-off colour, where there is run-off
     "pad", "padBase",  # boost pads
-    "cap", "capSpot",  # mushroom caps: the disc, and the spots on it
+    "cap", "capSpot", "capStalk",  # mushroom caps: the disc, the spots on it,
+                      # and the gills under it. `capStalk` was read by
+                      # `trackmesh.js` and missing from this list, which is the
+                      # "palette change that did nothing" defect turned inside
+                      # out: not a key that is ignored, a key that cannot be set
+                      # at all. Its default is a cream, so the first dark track
+                      # to use a `bounce` got a floating white lampshade over its
+                      # churchyard and no way to say otherwise.
     "rain",           # falling rain: the only animated scenery there is, so it
                       # lives in render.js and not in a track's scenery.js
+    "storm",          # lightning: a flash on the scene's own two lights and a
+                      # thunder crack after it, fired by the camera reaching an
+                      # authored point rather than by lap progress. Nothing in
+                      # it touches the collider or a medal time - `verify.py`
+                      # has no renderer, so an effect a car could feel would
+                      # make every lap on the track unverifiable. See `Storm`.
+    "lamps",          # local point lights - candles, a lamp over a door. Lives
+                      # beside `rain` in render.js for the same reason: it is
+                      # not baked into the track's buffer, so the switcher has
+                      # to be able to tear it down. Visual only and never in the
+                      # collider, so no lap and no medal moves.
     "prop2",          # second structural colour: trestles, columns
     "legs",           # how often a trestle leg pair goes under a floating
                       # road, in units; 0 for none (default 26)
+    "caps",           # 0 draws no mushroom over a `bounce` run (default 1). The
+                      # bounce surface is physics and the toadstool is dressing;
+                      # BOO! wants the first indoors without the second. Visual
+                      # only - the cap is never in the collider.
     "rainbow", "rainbowLanes",  # Rainbow Road's per-station hue sweep
 )
 

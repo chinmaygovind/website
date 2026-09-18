@@ -339,7 +339,7 @@ NO_HOTLAP_YET = {"dino", "monza", "playground"}
 # Empty: every track in the pool now declares its own three times. Kept rather
 # than deleted because it is the escape hatch a brand-new folder needs on the
 # commit that adds it - a track nobody has driven has no board to cut from.
-NO_CUT_MEDALS_YET = {"silverstone", "monaco", "dino", "monza"}
+NO_CUT_MEDALS_YET = {"silverstone", "monaco", "dino", "monza", "boo"}
 
 
 # ---------------------------------------------------------------------------

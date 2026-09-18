@@ -145,6 +145,44 @@ FRAMES = {
     "dino": dict(at=0.81, azimuth=5.60, pitch=0.42, pad=0.52, span=0.14,
                  cars=16, packStep=0.045, air=0.0, liveryFrom=4),
 
+    # **The chapel, because that is what the track is called after.** The scan
+    # lands at 0.68, which is the middle of the crypt - genuinely the most
+    # interesting geometry on the lap by roll and bend, and from an establishing
+    # height it is the *top* of the undercroft's ceiling: one flat grey slab
+    # filling four fifths of the frame with a thread of road along the top edge.
+    # The same "where is this track interesting" against "what is this track
+    # known for" split that pinned Sandy Cove and the Costco.
+    #
+    # So `at` is the churchyard, looking up the lane at the west front with the
+    # graveyard either side of it, which is both the first thing a player sees
+    # and the only view in which the building is a whole object.
+    # 3.50 is the only one of the four that is the *front* of the building: the
+    # others are the flank, which is a long dark wall with windows in it and
+    # could be any hall. And `pitch` stays at 0.34 because this palette's
+    # overcast sits about 130 units over the road - at 0.52 the camera is
+    # inside it and all four candidates came back as cloud.
+    # **The cover moved indoors when the sky went dark**, and the reason is
+    # worth keeping: the churchyard framing above was right for the palette it
+    # was chosen under, and the sky it depended on is now a near-black violet
+    # with the lower half of the dome at zero. A night exterior lit by nothing
+    # renders as a black rectangle with rain on it - which is what the first
+    # re-shoot produced, and a cover has to survive being 300px wide on a home
+    # page.
+    #
+    # Inside, the track lights itself: a hundred and sixty candles, eight real
+    # point lights, three coronas over the nave and the altarpiece at the end of
+    # it. So `at` is the nave, and the camera has to be *under* the vault rather
+    # than over the building - which is Rickety Rails' problem and takes the
+    # same two numbers. `span` 0.05 keeps the window short enough that the
+    # establishing height stays inside the room, and `pad` 0.30 crops to the
+    # arcade instead of backing off into the masonry.
+    #
+    # `pitch` is low for the same reason: at 0.34 the camera is in the vault
+    # ribs. `air` stays 0 - there is nothing to jump indoors and a car off the
+    # ground in a chapel reads as a bug.
+    "boo": dict(at=0.215, azimuth=3.50, pitch=0.16, pad=0.30, span=0.05,
+                cars=9, air=0.0, liveryFrom=2),
+
     # --- The three the storefront covers were cut from first -----------------
     # The loop, the hairpin under it, and the ribbon running out to the stars.
     # `at` is pinned because the scan would also accept the half-pipes either

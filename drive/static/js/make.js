@@ -307,10 +307,12 @@ const LOOK = [
     ['prop2', 'c', 'structures'], ['snow', 'c', 'snow'],
     ['density', 'n', 'how much scatter', 0, 0.5, 0.005],
     ['legs', 'n', 'trestle legs every N units, 0 for none', 0, 60, 2],
+    ['caps', 'n', 'draw a mushroom over a bounce pad', 0, 1, 1],
   ]],
   ['Toys', [
     ['pad', 'c', 'boost pad'], ['padBase', 'c', 'pad base'],
     ['cap', 'c', 'bounce cap'], ['capSpot', 'c', 'cap spots'],
+    ['capStalk', 'c', 'cap underside'],
   ]],
   ['The sun', [
     ['sky.sun.color', 'c', 'disc'], ['sky.light.color', 'c', 'key light'],

@@ -4,6 +4,13 @@
 # public, so the files are put on the box by hand and the manifest beside this
 # file is the only part of the music that is version controlled. A slug whose
 # file is missing plays nothing and is not an error, so a fresh clone runs.
+# **`sfx/` is the exception and it is committed**, because those are not the
+# same problem: one short recording under a licence that permits redistribution,
+# with its attribution in `sfx/CREDITS.md`. Being in git is the point - it is a
+# game sound rather than a soundtrack, so a fresh clone, CI and the deploy all
+# have to have it without anybody rsyncing anything.
 *
 !.gitignore
 !music.json
+!sfx/
+!sfx/**
