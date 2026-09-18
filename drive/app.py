@@ -1426,7 +1426,7 @@ def _online_now():
 
 # The four games as a profile would name them, for the one-line "who is on"
 # list. Deliberately short: this is a sidebar, not a profile.
-PRESENCE_LABEL = {"drive": "Drive", "ttr": "Ticket to Ride",
+PRESENCE_LABEL = {"drive": "Drive", "ttr": "Conductor",
                   "ers": "Egyptian Rat Screw", "kot": "King of Tokyo",
                   "site": "On the site"}
 

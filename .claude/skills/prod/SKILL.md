@@ -41,7 +41,7 @@ Six Flask apps behind nginx + certbot, each its own systemd service and port:
 | Service        | Port | Directory                    | Serves                |
 |----------------|------|------------------------------|-----------------------|
 | `website`      | 5002 | `/home/ubuntu/website`       | `cgovind.com`, `www`  |
-| `tickettoride` | 5001 | `/home/ubuntu/TicketToRide`  | `ttr.cgovind.com`     |
+| `tickettoride` | 5001 | `/home/ubuntu/TicketToRide`  | `conductor.cgovind.com`, `ttr` |
 | `ers`          | 5003 | `/home/ubuntu/website/ers`   | `ers.cgovind.com`     |
 | `kot`          | 5004 | `/home/ubuntu/website/kot`   | `kot.cgovind.com`     |
 | `drive`        | 5005 | `/home/ubuntu/website/drive` | `drive.cgovind.com`   |
@@ -56,9 +56,16 @@ gunicorn (`-w 3`), it pushes nothing, and the table you are sitting at is stored
 in the database rather than in a worker - which is exactly so that three workers
 and a deploy cannot end a session mid-hand.
 
-**The TTR gotcha:** the live Ticket to Ride is NOT this repo's `ttr/` submodule.
+**The Conductor gotcha:** the live Conductor is NOT this repo's `ttr/` submodule.
 It is a separate clone at `/home/ubuntu/TicketToRide`, and its instance directory
 holds the database everything else shares.
+
+**The service, the directory and the database file are all still called some form
+of "tickettoride", and that is deliberate.** The game was renamed to Conductor in
+Sep 2026 after a trademark notice, but none of those three names is public, and
+that path is hardcoded in `kot/app.py`, `drive/models.py`, `kot/.env.example` and
+the box's own `.env`. Renaming the directory would move the SQLite file five
+services share. Only what a visitor can see was renamed.
 
 ## The database
 

@@ -2342,7 +2342,7 @@ class SignBuf {
  * entire job is to read as a brand at a hundred miles an hour is the only thing
  * that matters. The real artwork is smaller than the code that approximated it.
  *
- * Three come from inside this repo: Ticket to Ride's locomotive is the file its
+ * Three come from inside this repo: Conductor's locomotive is the file its
  * own site draws, and King of Tokyo's monster and Rat Screw's pyramid are those
  * games' app icons. The other four are the brands' own, off Wikipedia. Penn's
  * is a PNG resampled to 1200 wide - the original is 2908 and half a megabyte,
@@ -2507,7 +2507,7 @@ function hotdog(g, cx, cy, h) {
  *
  *  Recolouring is a `source-in` fill on a scratch canvas rather than a filter,
  *  because these are flat single-colour marks on boards whose palette is not
- *  the website's - Ticket to Ride's locomotive is black artwork and its board
+ *  the website's - Conductor's locomotive is black artwork and its board
  *  is gold on near-black. `tint` of null leaves the artwork as it is, which is
  *  what the two app icons want: they are whole badges, not silhouettes.
  *
@@ -2530,7 +2530,7 @@ function mark(g, key, x, y, maxW, maxH, tint) {
  *  fifth of the board wide and the other four fifths are plate: from the car
  *  that is a white rectangle with a smudge on it, which is the one thing a
  *  hoarding may not be. Drawn as two source rectangles side by side it fills
- *  the board the way Ticket to Ride's mark-then-wordmark does, and every pixel
+ *  the board the way Conductor's mark-then-wordmark does, and every pixel
  *  is still the brand's own - which matters, because all three of these brands
  *  use commissioned lettering that no font will give you.
  *
@@ -2612,7 +2612,7 @@ const PARTS = {
  * The colours are still the ones those pages use, which is what makes a board
  * read as *that* game rather than as advertising in general: the landing page's
  * per-game accents, ERS's wood and gold, King of Tokyo's purple-and-gold poster,
- * Ticket to Ride's gold on near-black, and Drive's own ink-on-paper with the
+ * Conductor's gold on near-black, and Drive's own ink-on-paper with the
  * red it uses for a finish line.
  *
  * The four that are not this site are their own artwork end to end. Three of
@@ -2632,11 +2632,11 @@ const SPONSORS = {
          { font: '400 ' + (H * 0.52) + 'px "xkcd Script", cursive', fill: '#1d1d1f' });
   },
 
-  'TICKET TO RIDE': (g, W, H) => {
+  'CONDUCTOR': (g, W, H) => {
     plate(g, W, H, '#14120f', '#c8a84b');
     mark(g, 'ttr', H * 0.58, H * 0.5, H * 0.68, H * 0.68, '#c8a84b');
-    word(g, 'TICKET TO RIDE', W * 0.60, H * 0.5, W * 0.63,
-         { font: '700 ' + (H * 0.42) + 'px Cinzel, Georgia, serif',
+    word(g, 'CONDUCTOR', W * 0.60, H * 0.5, W * 0.63,
+         { font: '700 ' + (H * 0.50) + 'px Cinzel, Georgia, serif',
            fill: '#e8c97a', track: H * 0.03 });
   },
 

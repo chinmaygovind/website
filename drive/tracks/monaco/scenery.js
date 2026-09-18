@@ -510,7 +510,7 @@
     // runs along it, and `u` is world up. A board is a flat quad and the barrier
     // it hangs on is not flat, so it takes its right vector from the chord
     // between two stations rather than from one station's lateral.
-    const BOARDS = ['DRIVE', 'MARLBORO', 'CGOVIND.COM', 'TICKET TO RIDE',
+    const BOARDS = ['DRIVE', 'MARLBORO', 'CGOVIND.COM', 'CONDUCTOR',
                     'GO BIRDS', 'TACO BELL', 'KING OF TOKYO', 'RAT SCREW',
                     'COSTCO WHOLESALE', 'PENN ENGINEERING'];
     let nb = 0;

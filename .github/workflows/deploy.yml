@@ -168,7 +168,7 @@ jobs:
             set -e
 
             APP=/home/ubuntu/website
-            # The live Ticket to Ride is NOT this repo's ttr/ submodule: it is
+            # The live Conductor is NOT this repo's ttr/ submodule: it is
             # its own clone, and its instance/ holds the SQLite file all five
             # services share. **Never `git clean` in there** - the database and
             # the .env are both untracked, and cleaning would delete the site's
@@ -241,7 +241,7 @@ jobs:
             # unchanged site. Nothing catches that but looking at the page.
             game gto
 
-            # Ticket to Ride, from this repo's submodule pointer.
+            # Conductor, from this repo's submodule pointer.
             #
             # The pointer is the source of truth on purpose: shipping TTR means
             # bumping it here and pushing, so what this repo records is what

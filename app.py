@@ -1,7 +1,7 @@
 """Personal website server.
 
 Serves the static site under ``site/`` (``site/index.html`` is the landing page)
-and redirects ``/ttr``, ``/ers`` and ``/kot`` to the game subdomains. Also hosts
+and redirects ``/conductor``, ``/ers`` and ``/kot`` to the game subdomains. Also hosts
 ``/accounts`` and ``/admin``, the only things on this domain that are not static:
 the shared profile for the four games and Chinmay's console, both in the
 ``accounts`` package and registered at the bottom of this file.
@@ -48,9 +48,14 @@ load_dotenv()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SITE_DIR = os.path.join(BASE_DIR, "site")
 
-# Where the Wii "TTR" channel / the /ttr endpoint sends visitors. TTR runs as its
-# own service (the ``ttr/`` git submodule); set TTR_URL to wherever it is reachable.
-TTR_URL = os.environ.get("TTR_URL", "https://ttr.cgovind.com")
+# Where the Wii channel / the /conductor endpoint sends visitors. Conductor runs
+# as its own service (the ``ttr/`` git submodule, still named that on disk); set
+# CONDUCTOR_URL to wherever it is reachable. TTR_URL is the old name for the same
+# thing and is still read, because it is what the prod box's .env says and the
+# deploy never touches that file - see CLAUDE.md.
+CONDUCTOR_URL = os.environ.get(
+    "CONDUCTOR_URL", os.environ.get("TTR_URL", "https://conductor.cgovind.com")
+)
 
 # Where /ers redirects. Egyptian Rat Screw runs as its own service (website/ers),
 # like TTR; point this at wherever it is reachable.
@@ -537,11 +542,18 @@ def spotify_top_artists():
     return {"artists": artists}
 
 
+@app.route("/conductor")
+@app.route("/conductor/")
 @app.route("/ttr")
 @app.route("/ttr/")
-def ttr():
-    """Hand off to the Ticket to Ride service."""
-    return redirect(TTR_URL, code=302)
+def conductor():
+    """Hand off to the Conductor service.
+
+    ``/ttr`` is kept because it is the address the Wii channel and a year of
+    shared links use. It is the same 302, not a 301: the target moved once
+    already and a cached 301 cannot be taken back.
+    """
+    return redirect(CONDUCTOR_URL, code=302)
 
 
 @app.route("/ers")

@@ -1,6 +1,6 @@
 """Database models for Drive.
 
-The ``users`` table is shared with Ticket to Ride, Egyptian Rat Screw and King
+The ``users`` table is shared with Conductor, Egyptian Rat Screw and King
 of Tokyo - same physical table, same columns - so one account works across
 every game at cgovind.com. This module maps only the account/identity columns of
 ``users``; Drive keeps its own per-user stats in ``drive_stats``, its best times

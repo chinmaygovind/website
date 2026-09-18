@@ -38,11 +38,11 @@ PALETTE = { "road": 0x3e444e, "kerb": 0xf5f2ee, "kerb2": 0xd23b32,
   # enough, that no brand lands twice in the same braking zone.
   # Every name here has to be a key in SPONSORS or it comes out as
   # the plain fallback board.
-  "sponsors": ['CGOVIND.COM', 'TICKET TO RIDE', 'TACO BELL', 'RAT SCREW',
+  "sponsors": ['CGOVIND.COM', 'CONDUCTOR', 'TACO BELL', 'RAT SCREW',
              'KING OF TOKYO', 'MARLBORO', 'DRIVE', 'CGOVIND.COM',
-             'GO BIRDS', 'TICKET TO RIDE', 'RAT SCREW',
+             'GO BIRDS', 'CONDUCTOR', 'RAT SCREW',
              'PENN ENGINEERING', 'KING OF TOKYO', 'DRIVE', 'TACO BELL',
-             'CGOVIND.COM', 'RAT SCREW', 'MARLBORO', 'TICKET TO RIDE',
+             'CGOVIND.COM', 'RAT SCREW', 'MARLBORO', 'CONDUCTOR',
              'GO BIRDS'],
   "boardEvery": 26,
   # How tall a hoarding on the barrier stands. Width follows, at
@@ -67,7 +67,7 @@ PALETTE = { "road": 0x3e444e, "kerb": 0xf5f2ee, "kerb2": 0xd23b32,
       "seat": 0x2f333c, "trim": 0xc0182b },
     { "at": [0.322, 0.352], "side": -1, "tiers": 6, "text": 'KING OF TOKYO',
       "seat": 0x5c2678, "trim": 0xf2c94c },
-    { "at": [0.680, 0.712], "side": -1, "tiers": 6, "text": 'TICKET TO RIDE',
+    { "at": [0.680, 0.712], "side": -1, "tiers": 6, "text": 'CONDUCTOR',
       "seat": 0x6b4226, "trim": 0xc0182b },
     # The Bus Stop, the last corner before the line.
     { "at": [0.938, 0.962], "side": -1, "tiers": 8, "text": 'RAT SCREW',

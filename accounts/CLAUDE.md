@@ -181,7 +181,7 @@ green dot.** Two tables in the shared database, both created by raw
   for three days. Drive's play page overrides it through `window.driveWhere`,
   because the switcher changes track with no navigation.
 - **The wording lives in `accounts/presence.py`** and nowhere else: "Playing
-  Drive - Sunrise Circuit", "Playing Ticket to Ride - In Lobby", "Browsing
+  Drive - Sunrise Circuit", "Playing Conductor - In Lobby", "Browsing
   cgovind.com", "Offline - last online 5 hours ago". Offline is a *length of
   time* rather than a timestamp, in whole units, and a clock a second fast
   reads "just now" rather than a negative age.

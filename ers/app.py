@@ -61,7 +61,7 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
 
-# Cross-subdomain SSO with Ticket to Ride: same SECRET_KEY + a cookie scoped to
+# Cross-subdomain SSO with Conductor: same SECRET_KEY + a cookie scoped to
 # .cgovind.com means a login on either site is valid on both. Left unset locally
 # (host-only cookie on localhost, which is shared across ports anyway).
 _cookie_domain = os.environ.get("SESSION_COOKIE_DOMAIN")
@@ -70,7 +70,7 @@ if _cookie_domain:
 if os.environ.get("SESSION_COOKIE_SECURE", "").lower() in ("1", "true", "yes"):
     app.config["SESSION_COOKIE_SECURE"] = True
 
-# Share Ticket to Ride's database so accounts are the same. Locally this defaults
+# Share Conductor's database so accounts are the same. Locally this defaults
 # to TTR's dev SQLite file; in prod DATABASE_URL points at the shared file.
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 if DATABASE_URL.startswith("postgres://"):
@@ -392,7 +392,7 @@ def _online_now():
 
 # The four games as a profile would name them, for the one-line "who is on"
 # list. Deliberately short: this is a sidebar, not a profile.
-PRESENCE_LABEL = {"drive": "Drive", "ttr": "Ticket to Ride",
+PRESENCE_LABEL = {"drive": "Drive", "ttr": "Conductor",
                   "ers": "Egyptian Rat Screw", "kot": "King of Tokyo",
                   "site": "On the site"}
 

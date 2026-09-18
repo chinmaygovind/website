@@ -2,7 +2,8 @@
 
 Chinmay Govind's personal website: a **Flask** server that serves a static site
 and redirects to four games and a poker trainer. `/` is the landing page.
-`/ttr`, `/ers`, `/kot`, `/drive` and `/gto` redirect to the subdomains.
+`/conductor`, `/ers`, `/kot`, `/drive` and `/gto` redirect to the subdomains.
+`/ttr` is kept as a second route onto the same hand-off - see **Conductor** below.
 
 ## Where the documentation is
 
@@ -22,7 +23,9 @@ directory. Read the one for the thing you are changing; do not read the others.*
 `drive/docs/` is 360KB across thirteen files - more than the rest of the repo put
 together - so `drive/CLAUDE.md` is an index that says which single one to read.
 
-`ttr/` is a **submodule**: edit TTR in its own repo, then bump the pointer here.
+`ttr/` is a **submodule**: edit Conductor in its own repo, then bump the pointer
+here. The directory is still called `ttr/` and the repo is now
+`chinmaygovind/Conductor` - see **Conductor** below.
 It has its own CI and is not tested from this repo.
 
 ## What this is / how it runs
@@ -79,10 +82,29 @@ It has its own CI and is not tested from this repo.
 
 ## Conventions / gotchas
 
-- **TTR is never reverse-proxied.** Its templates hardcode root-absolute paths
-  (`/lobbies`, `/login`, `/static/…`) and connect Socket.IO at root, so it only
-  runs at a host's root. `/ttr` redirects. Change the target via `TTR_URL`, never
-  by mounting TTR under a path.
+- **Conductor is never reverse-proxied.** Its templates hardcode root-absolute
+  paths (`/lobbies`, `/login`, `/static/…`) and connect Socket.IO at root, so it
+  only runs at a host's root. `/conductor` redirects. Change the target via
+  `CONDUCTOR_URL`, never by mounting it under a path.
+- **The game was called Ticket to Ride until Sep 2026, and the rename was not a
+  preference.** Rapid7, acting for Asmodee, sent AWS a trademark notice naming
+  `ttr.cgovind.com` (case 178949924200884-1). What changed is everything a
+  visitor can see: the name, the stacked wordmark, "Destination Tickets" (now
+  "Destinations"), and the publisher's own rulebook PDFs and retail board scans,
+  which were deleted from the game repo - they were only tracing references, and
+  the board the game draws on is our own SVG. What deliberately did **not**
+  change is anything private and load-bearing: the `ttr/` directory name, the
+  `tickettoride` systemd unit, the `/home/ubuntu/TicketToRide` checkout and
+  `instance/tickettoride.db`, which is the file **all five services share** and
+  is hardcoded in `kot/app.py`, `drive/models.py` and the box's `.env`.
+  **`app.py` reads `CONDUCTOR_URL` but falls back to `TTR_URL`**, because the
+  box's `.env` is the one thing the deploy never touches.
+  **`ttr.cgovind.com` still resolves and 301s to `conductor.cgovind.com` with the
+  path intact** (`$request_uri`), because a year of game invites point at it; the
+  `/ttr` route is kept for the same reason. That 301 is the second non-hand-off
+  redirect here, alongside `/cobweb`.
+  **The scans are still in the game repo's git history** - it was not rewritten -
+  so a history purge is the open follow-up if Asmodee ever asks.
 - **`visits.py` is one file copied verbatim into five places** - the repo root,
   `ers/`, `kot/`, `drive/`, `gto/`. `accounts/` has no copy; it is a blueprint on the
   root app and uses that one. Nothing in it may be service-specific, and a
@@ -126,10 +148,13 @@ loading the page and looking for what you shipped. **Verify a deploy by looking
 at the live page, never by looking at the Action.** A new service needs a
 `game <name>` line adding here, and nothing will tell you if you forget.
 
-**TTR deploys from this repo's submodule pointer.** The live TTR is not the
-`ttr/` submodule but its own clone at `/home/ubuntu/TicketToRide`; the deploy
-fetches and `reset --hard`s it to whatever commit `ttr/` names here. So shipping
-TTR is: change it in its own repo, `git -C ttr pull`, `git add ttr`, push. The
+**Conductor deploys from this repo's submodule pointer.** The live Conductor is
+not the `ttr/` submodule but its own clone at `/home/ubuntu/TicketToRide`; the
+deploy fetches and `reset --hard`s it to whatever commit `ttr/` names here. So
+shipping it is: change it in its own repo, `git -C ttr pull`, `git add ttr`,
+push. **Its own repo also deploys itself on push** to the same clone, so a push
+there is live before this pointer moves; bump the pointer anyway, or this repo
+stops recording what prod runs. The
 pointer is the source of truth on purpose - what this repo records is what prod
 runs, readable with one `git ls-tree`. **Never `git clean` in that clone**:
 `instance/tickettoride.db` is the SQLite file *all five services share* and
@@ -161,8 +186,9 @@ scripts/tests.sh drive -- -k ghost -x     # after --, straight to pytest
 
 - **`scripts/changed-modules.sh` is the one place a path becomes a module**, and
   both the runner and CI call it, so a laptop and the Action cannot disagree. It
-  maps *tests*, not deploys: `ttr/` maps to nothing here because TTR has its own
-  CI, while the deploy does its own path matching on the box and does ship TTR.
+  maps *tests*, not deploys: `ttr/` maps to nothing here because Conductor has
+  its own CI, while the deploy does its own path matching on the box and does
+  ship it.
   `drive/`, `ers/`, `kot/`, `gto/` map to themselves; `app.py`/`site/` (and
   anything unrecognised, deliberately) map to `site`. Docs, `deploy/` and `.claude/` map
   to nothing. **`scripts/` and `.github/workflows/` map to everything**, because

@@ -87,7 +87,7 @@ portal.js  getUserToken()  ->  POST /api/portal/auth  ->  verify_token()
 ### The account it lands on
 
 An ordinary row in the shared `users` table - the same leaderboard as everybody
-else, unmarked, and usable in Ticket to Ride and King of Tokyo. Two things mark
+else, unmarked, and usable in Conductor and King of Tokyo. Two things mark
 it out and both are deliberate:
 
 - **The username is a hash** (`cg-` + 12 hex of `sha256(portal:userId)`). A

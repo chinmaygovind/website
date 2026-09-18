@@ -76,10 +76,10 @@ PALETTE = {
   # so nothing lands in the braking zone it lands in there. Every name has to be a
   # key in `SPONSORS` or it comes out as the plain fallback board.
   "sponsors": ['DRIVE', 'GO BIRDS', 'CGOVIND.COM', 'MARLBORO', 'KING OF TOKYO',
-             'TACO BELL', 'TICKET TO RIDE', 'CGOVIND.COM', 'RAT SCREW',
+             'TACO BELL', 'CONDUCTOR', 'CGOVIND.COM', 'RAT SCREW',
              'PENN ENGINEERING', 'DRIVE', 'COSTCO WHOLESALE', 'GO BIRDS',
              'KING OF TOKYO', 'CGOVIND.COM', 'TACO BELL', 'RAT SCREW',
-             'TICKET TO RIDE', 'MARLBORO', 'COSTCO WHOLESALE'],
+             'CONDUCTOR', 'MARLBORO', 'COSTCO WHOLESALE'],
   "boardEvery": 26,
   "boardH": 2.6,
   # Eleven stands against Spa's six, and that is the point rather than
@@ -109,7 +109,7 @@ PALETTE = {
       "seat": 0x5c2678, "trim": 0xf2c94c },
     { "at": [0.156, 0.180], "side": 1, "off": 36, "tiers": 7, "text": 'RAT SCREW',
       "seat": 0xb8860b, "trim": 0x3f2311 },
-    { "at": [0.200, 0.224], "side": 1, "off": 38, "tiers": 5, "text": 'TICKET TO RIDE',
+    { "at": [0.200, 0.224], "side": 1, "off": 38, "tiers": 5, "text": 'CONDUCTOR',
       "seat": 0x6b4226, "trim": 0xc0182b },
     # Brooklands and Luffield, the slow left-right that ends the back section.
     { "at": [0.338, 0.364], "side": -1, "off": 37, "tiers": 6, "text": 'PENN ENGINEERING',
@@ -129,7 +129,7 @@ PALETTE = {
     { "at": [0.826, 0.852], "side": -1, "off": 42, "tiers": 6, "text": 'DRIVE',
       "seat": 0x2f333c, "trim": 0xc0182b },
     # Club, the last corner.
-    { "at": [0.928, 0.958], "side": -1, "off": 37, "tiers": 6, "text": 'TICKET TO RIDE',
+    { "at": [0.928, 0.958], "side": -1, "off": 37, "tiers": 6, "text": 'CONDUCTOR',
       "seat": 0x6b4226, "trim": 0xc0182b },
   ],
   # The garages and the pit wall, on the infield side of the Hamilton Straight,

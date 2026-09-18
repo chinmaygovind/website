@@ -26,7 +26,7 @@ python3 -m venv "$VENV"
 # ── .env ──────────────────────────────────────────────────────────────────────
 if [ ! -f "$APP_DIR/.env" ]; then
     cp "$APP_DIR/.env.example" "$APP_DIR/.env"
-    echo "==> Created .env from .env.example - edit TTR_URL before going live"
+    echo "==> Created .env from .env.example - edit CONDUCTOR_URL before going live"
 fi
 
 # ── systemd service ───────────────────────────────────────────────────────────
@@ -53,7 +53,7 @@ PUBLIC_IP=$(curl -sf http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/
 echo ""
 echo "✓ Website up at http://$PUBLIC_IP"
 echo ""
-echo "Ticket to Ride:"
-echo "  /ttr redirects to TTR_URL (set in .env). Either keep TTR on its own host,"
+echo "Conductor:"
+echo "  /conductor redirects to CONDUCTOR_URL (set in .env). Either keep it on its own host,"
 echo "  or run it from the submodule on this box (see deploy/ttr.service and"
 echo "  ttr/deploy/setup.sh) behind a subdomain."

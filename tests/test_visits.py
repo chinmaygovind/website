@@ -260,7 +260,7 @@ def test_the_line_names_the_game_and_what_they_are_doing():
         {"online": True, "service": "drive", "detail": "Sunrise Circuit"})
     assert online and txt == "Playing Drive - Sunrise Circuit"
     _, txt = presence.line_for({"online": True, "service": "ttr", "detail": "In Lobby"})
-    assert txt == "Playing Ticket to Ride - In Lobby"
+    assert txt == "Playing Conductor - In Lobby"
 
 
 def test_the_main_site_is_not_a_game():

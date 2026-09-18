@@ -1,6 +1,6 @@
 """Database models for Egyptian Rat Screw.
 
-The ``users`` table is shared with the Ticket to Ride app - same physical table,
+The ``users`` table is shared with the Conductor app - same physical table,
 same columns - so one account works on both sites. This module maps only the
 account/identity columns of ``users`` (TTR owns its own ``ttr_stats``); ERS keeps
 its own per-user stats in ``ers_stats`` and its own games/players in ``ers_games``

@@ -1,6 +1,6 @@
 """Database models for King of Tokyo.
 
-The ``users`` table is shared with Ticket to Ride and Egyptian Rat Screw - same
+The ``users`` table is shared with Conductor and Egyptian Rat Screw - same
 physical table, same columns - so one account works across every game at
 cgovind.com. This module maps only the account/identity columns of ``users``;
 King of Tokyo keeps its own per-user stats in ``kot_stats`` and its own

@@ -1,11 +1,11 @@
-# OPTIONAL: run Ticket to Ride from the bundled submodule (website/ttr) on this box,
+# OPTIONAL: run Conductor from the bundled submodule (website/ttr) on this box,
 # so the whole site is served from one repo. Skip this unit if TTR keeps its own
-# deployment elsewhere (just point TTR_URL at wherever it already runs).
+# deployment elsewhere (just point CONDUCTOR_URL at wherever it already runs).
 #
 # TTR needs its own .env (SECRET_KEY, etc.) in {{APP_DIR}}/ttr/.env and its own
 # virtualenv at {{APP_DIR}}/ttr/venv (see ttr/deploy/setup.sh).
 [Unit]
-Description=Ticket to Ride (from website submodule)
+Description=Conductor (from website submodule)
 After=network.target
 
 [Service]

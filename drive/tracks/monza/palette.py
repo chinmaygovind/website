@@ -76,10 +76,10 @@ PALETTE = {
   "armco": 30, "concrete": 0xcfcabc,
   "board": { "bg": '#13181f', "fg": '#f2efe6' },
   "sponsors": ['CGOVIND.COM', 'KING OF TOKYO', 'MARLBORO', 'RAT SCREW',
-             'DRIVE', 'TICKET TO RIDE', 'TACO BELL', 'CGOVIND.COM',
+             'DRIVE', 'CONDUCTOR', 'TACO BELL', 'CGOVIND.COM',
              'PENN ENGINEERING', 'RAT SCREW', 'DRIVE', 'GO BIRDS',
-             'KING OF TOKYO', 'TICKET TO RIDE', 'MARLBORO', 'CGOVIND.COM',
-             'TACO BELL', 'DRIVE', 'RAT SCREW', 'TICKET TO RIDE'],
+             'KING OF TOKYO', 'CONDUCTOR', 'MARLBORO', 'CGOVIND.COM',
+             'TACO BELL', 'DRIVE', 'RAT SCREW', 'CONDUCTOR'],
   "boardEvery": 26, "boardH": 2.6,
   # Monza's grandstands are bare aluminium rather than painted, so these run
   # cooler and lighter than Spa's - but they still wear a sponsor, because a row
@@ -100,7 +100,7 @@ PALETTE = {
     { "at": [0.432, 0.460], "side": -1, "tiers": 6, "text": 'KING OF TOKYO',
       "seat": 0x5c2678, "trim": 0xf2c94c },
     # Ascari.
-    { "at": [0.690, 0.722], "side": -1, "tiers": 7, "text": 'TICKET TO RIDE',
+    { "at": [0.690, 0.722], "side": -1, "tiers": 7, "text": 'CONDUCTOR',
       "seat": 0x6b4226, "trim": 0xc0182b },
     # The outside of the Parabolica, which is where the tifosi actually are.
     { "at": [0.892, 0.936], "side": -1, "tiers": 9, "text": 'PENN ENGINEERING',

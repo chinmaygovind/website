@@ -1,6 +1,6 @@
 """Where the trainer keeps things.
 
-The ``users`` table is shared with Ticket to Ride, Egyptian Rat Screw, King of
+The ``users`` table is shared with Conductor, Egyptian Rat Screw, King of
 Tokyo and Drive - same physical table, same columns - so one cgovind.com account
 sits down here too. This module maps only the identity columns of it and
 ``create_all`` uses CREATE TABLE IF NOT EXISTS, so nothing here can clobber the

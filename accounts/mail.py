@@ -1,7 +1,7 @@
 """Sending the four emails this site sends.
 
 Plain ``smtplib`` over the box's existing Gmail app password - the same account
-Ticket to Ride has been sending from for months - because adding a mail provider
+Conductor has been sending from for months - because adding a mail provider
 for four transactional emails would be more moving parts than the whole accounts
 feature. Configuration is the usual ``SMTP_*`` block in the box's ``.env``.
 
@@ -29,7 +29,7 @@ def _config():
     port = int(os.environ.get("SMTP_PORT", 587))
     user = os.environ.get("SMTP_USER")
     password = os.environ.get("SMTP_PASS")
-    # TTR's own SMTP_FROM says "Ticket to Ride", which is the wrong signature on
+    # TTR's own SMTP_FROM says "Conductor", which is the wrong signature on
     # a letter about a cgovind.com account, so this has its own default.
     sender = os.environ.get("ACCOUNTS_SMTP_FROM") or (
         formataddr(("cgovind.com", user)) if user else None)
@@ -79,7 +79,7 @@ def password_reset(to, name, link):
         to, "Reset your cgovind.com password",
         "Hi %s,\n\n"
         "Someone asked to reset the password on your cgovind.com account - the "
-        "one you use for Ticket to Ride, Egyptian Rat Screw, King of Tokyo and "
+        "one you use for Conductor, Egyptian Rat Screw, King of Tokyo and "
         "Drive.\n\n"
         "Set a new password here:\n%s\n\n"
         "The link works once and expires in an hour.\n\n"

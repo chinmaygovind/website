@@ -1,6 +1,6 @@
 """The shared account, and the one table this site adds to it.
 
-``users`` is the account table every game already shares - Ticket to Ride,
+``users`` is the account table every game already shares - Conductor,
 Egyptian Rat Screw, King of Tokyo and Drive all map it, all with the same
 columns, in their own ``models.py``. This module maps the identity columns of
 that same physical table for the accounts pages, following the established

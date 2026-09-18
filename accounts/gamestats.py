@@ -110,8 +110,8 @@ def tier(game, elo):
 # already gives it (site/index.html's :root). Order is the order they were
 # built, which is also the order the tabs appear in.
 GAMES = [
-    {"key": "ttr",   "name": "Ticket to Ride",     "short": "TTR",
-     "url": "https://ttr.cgovind.com",   "accent": "#6b4226"},
+    {"key": "ttr",   "name": "Conductor",     "short": "Conductor",
+     "url": "https://conductor.cgovind.com",   "accent": "#6b4226"},
     {"key": "ers",   "name": "Egyptian Rat Screw", "short": "ERS",
      "url": "https://ers.cgovind.com",   "accent": "#b8860b"},
     {"key": "kot",   "name": "King of Tokyo",      "short": "KoT",
@@ -195,7 +195,7 @@ def _when(value):
         return None
 
 
-# --- Ticket to Ride ---------------------------------------------------------
+# --- Conductor ---------------------------------------------------------
 
 def _ttr(conn, uid):
     if not _table_exists(conn, "ttr_stats"):

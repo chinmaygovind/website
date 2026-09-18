@@ -37,7 +37,7 @@ def test_a_profile_shows_the_person_and_all_four_games(client, make_user):
 
     assert "chinmay" in page
     assert "@chinmay" in page
-    for game in ("Ticket to Ride", "Egyptian Rat Screw", "King of Tokyo", "Drive"):
+    for game in ("Conductor", "Egyptian Rat Screw", "King of Tokyo", "Drive"):
         assert game in page, "%s has no panel" % game
 
 

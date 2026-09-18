@@ -24,7 +24,7 @@ not valid CSP** - the grammar has no TLD wildcard, so a browser drops the whole
 source expression and every ccTLD host with it. They are enumerated below.
 
 **The accounts made here are ordinary accounts.** A row in the shared ``users``
-table, usable in Ticket to Ride and King of Tokyo, on the same leaderboard as
+table, usable in Conductor and King of Tokyo, on the same leaderboard as
 everybody else, with a `drive_portal_users` row saying where it came from. The
 only two things that mark them out: the username is a hash rather than a name
 they chose (see `resolve_user`), and cgovind.com's accounts directory leaves

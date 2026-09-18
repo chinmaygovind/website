@@ -357,7 +357,7 @@ def test_the_auth_endpoint_does_not_exist_outside_the_portal(env, signed):
 def test_a_portal_player_is_an_ordinary_account_everywhere_else(env, signed):
     """One board, unmarked. A lap is a lap.
 
-    They are a row in the shared `users` table, so Ticket to Ride and King of
+    They are a row in the shared `users` table, so Conductor and King of
     Tokyo would take them too, and their profile page here works like anybody's.
     """
     client = _portal_client(env)

@@ -611,7 +611,7 @@ def reset():
     _sign_in(user)                       # straight in, rather than back to a form
     return render_template("accounts/message.html", title="Password set",
                            body="You're logged in. The same password works on "
-                                "Ticket to Ride, Egyptian Rat Screw, King of "
+                                "Conductor, Egyptian Rat Screw, King of "
                                 "Tokyo and Drive.",
                            link=url_for("accounts.profile", username=user.username),
                            link_text="Go to your profile")
