@@ -67,7 +67,7 @@ EXPECTED = {
     "cove":      {"total":   1930, "road":  1542, "wall":   240, "off":   148, "boost":  0},
     "pillars":   {"total":   1878, "road":  1398, "wall":   480, "off":     0, "boost":  0},
     "rainbow":   {"total":  13188, "road": 12608, "wall":   580, "off":     0, "boost":  0},
-    "spa":       {"total":  43676, "road":  1810, "wall":  3652, "off": 38214, "boost":  0},
+    "spa":       {"total":  43902, "road":  1810, "wall":  3878, "off": 38214, "boost":  0},
     "costco":    {"total":   4044, "road":  1188, "wall":  2834, "off":     2, "boost": 20},
     "bigred":    {"total":   2848, "road":  1582, "wall":  1188, "off":     0, "boost": 78},
     # Recorded when the track was added rather than off an earlier tree, since

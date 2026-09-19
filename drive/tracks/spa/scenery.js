@@ -1,4 +1,4 @@
-// Spa-Francorchamps: the wall on the inside of La Source, and nothing else.
+// Spa-Francorchamps: walls on the insides of La Source and Rivage.
 //
 // Everything else this track stands up - the grandstands, the pit building, the
 // gantry, the hoardings, the armco - is in `trackmesh.js`, drawn off the ribbon
@@ -101,6 +101,10 @@
     // rather than station indices, for the reason the furniture uses them - the
     // ribbon is re-solved for closure on every import and that changes how many
     // stations there are.
-    wall(0.056, 0.106, 1, 4.5);
+    wall(0.046, 0.122, 1, 4.5);
+
+    // Join the mountain-side barriers before and after Rivage. The short wall
+    // around the apex still left an entry gap large enough to cut through.
+    wall(0.350, 0.450, 1, 4.5);
   }
 })();
