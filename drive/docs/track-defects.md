@@ -287,6 +287,27 @@ New entries, unsorted, until somebody files them. One line is enough.
   upright on, then check whether the car can actually get there, before
   believing any of it.
 
+- **A barrier standing on the run-off is a foot shorter than its own number.**
+  Anything placed beside the road on a terrain track stands at the road's height
+  less `GRASS_DROP` (1.2), so Silverstone's `BAR_H` of 1.5 leaves three tenths
+  of a unit showing above the tarmac. The collision sphere still catches it, so
+  it works and it is invisible, which is the worst thing a wall can be - the
+  first pass of Spa's La Source wall read as nothing at all in every road view
+  and I went looking for a load-path bug that was not there. Measure a barrier
+  from the road, not from its footing.
+
+- **The cut nothing checks for is the one that flies.** `cut_check.py` drops
+  any chord with more than six units of height between its ends, or every loop
+  in the pool reads as a shortcut - so a lap that launches off a crest and
+  lands somewhere lower is invisible to it, and no barrier stops one anyway.
+  Spa's record did exactly that for a month: off the top of the hill after
+  Kemmel, 47 units wide of the road and 27 above it, down onto the Pouhon
+  entry - 490 units of circuit and 2.8 seconds, taken between two checkpoints.
+  Anywhere a long descent sits between two gates, check it, and check it by
+  pulling the standing record's ghost and measuring it against the ribbon
+  rather than by looking. The fix is a gate in the middle of it: a wall blocks
+  a car on the ground, a checkpoint kills a span at any height.
+
 - **An unlit accent in the same colour as the lit thing it sits on reads as a
   separate object floating beside it.** `bright` is lifted linear->sRGB on the
   way out and lifted hard, so Playground's teal knobs on teal posts came out

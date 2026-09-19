@@ -331,7 +331,14 @@ def memoize_build_track(rt):
 # line off the standing record via `/api/ghost/<slug>?who=wr`, so it cannot be
 # generated for a track nobody has driven. Set a lap and run
 # `tools/hotlap.py monza --site http://localhost:5005`, then drop the entry.
-NO_HOTLAP_YET = {"dino", "monza", "playground", "boo"}
+# `spa` is here for a different reason and it is the only one: it *had* a fast
+# line and it was thrown away. It was cut off the standing record, and that
+# record flew the descent - 490 units of circuit skipped through the air
+# between two checkpoints - so the quick bots flew it too. The gate at Rivage
+# closes that, which also invalidates every lap on the board it could be recut
+# from. Re-run `tools/hotlap.py spa` once somebody has set a record that drives
+# the whole circuit.
+NO_HOTLAP_YET = {"dino", "monza", "playground", "boo", "spa"}
 
 # Waiting on a board deep enough to cut a standard from - five or so distinct
 # players. Drop the entry, then, on the box:

@@ -13,6 +13,9 @@ ground = -1.2
 order = 130
 width = 16.0
 closed = True
+# One wall, on the inside of La Source; see scenery.js for why it is there and
+# why it cannot be a ribbon `rail`.
+scenery = True
 
 def build(b):
     """Spa-Francorchamps: the real circuit, compressed, and the only closed lap.
@@ -49,7 +52,10 @@ def build(b):
     is, and because the run-off does the punishing here rather than the kerb.
     There are no barriers on the road edge at all: what catches a car is the
     armco set back beyond the gravel, which is drawn and collided in trackmesh
-    off the ribbon rather than authored corner by corner.
+    off the ribbon rather than authored corner by corner. The one exception is
+    the wall on the inside of La Source in ``scenery.js``, which is not there to
+    catch anybody - it is there because the hairpin's entry and exit run fifty
+    units apart and the line everybody drove went straight between them.
     """
     # A checkpoint lays CP units of its own road (`cp`'s pre + post), so every
     # one of them is subtracted from the straight that hosts it. Miss that and
@@ -124,8 +130,26 @@ def build(b):
     b.width(14.0)
     b.arc(152, 23.40, rise=-7.0)         # Rivage, tight and downhill
     b.width(16.0)
-    b.straight(58.50, rise=-5.0)
-    b.arc(-75, 44.20, rise=-4.0)         # Speaker's Corner
+    # A checkpoint here, in the far corner of the circuit, and it is not for
+    # timing. The whole descent from Les Combes to Speaker's used to sit between
+    # two gates, and the board's top four all flew it: off the crest at the top
+    # of the hill, 47 units wide of the road and 27 above it, down onto the
+    # Pouhon entry - 490 units of circuit and 2.8s, which is the entire margin
+    # between first and fifth. `cut_check.py` cannot see that class of cut at
+    # all (it drops any chord with over six units of height between its ends, or
+    # every loop in the pool reads as a shortcut), and no barrier can stop it -
+    # a wall blocks a car on the ground and this one is in the air. A gate kills
+    # any span at any height, which is Rickety Rails' answer to the same
+    # problem. Rivage is the point on the lap furthest from that chord, so the
+    # flight cannot be re-flown in halves either.
+    # Only 2 of this leg's 5 units of descent are left on it: `straight` eases
+    # its rise, so -5 over the 24.5 units a checkpoint leaves is a 30-unit
+    # vertical crease, which `test_hills_are_eased_but_kickers_are_not` calls a
+    # kicker and is right to. The other 3 go onto Speaker's, which keeps the
+    # lap's rises summing to zero - the thing the closure needs.
+    b.straight(58.50 - CP, rise=-2.0)
+    b.cp()
+    b.arc(-75, 44.20, rise=-7.0)         # Speaker's Corner
     b.straight(78.0 - CP, rise=-4.0)
     b.cp()
 
