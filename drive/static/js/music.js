@@ -125,6 +125,17 @@ export class MusicPlayer {
       gain.gain.value = 0;
       const src = this.ctx.createMediaElementSource(el);
       src.connect(gain).connect(this.bus);
+      // The crossfade is `tick`'s job, and `tick` runs on the game's
+      // `requestAnimationFrame` - which the browser stops dead in a background
+      // tab. The deck then sails past its loop point, reaches the end of the
+      // file and stays there, and the song is over for the rest of the page.
+      // So the end of a deck is also a loop point: a hard restart rather than
+      // a crossfade, because by here there is no tail left to fade.
+      el.addEventListener('ended', () => {
+        if (this.on && !this.fading && this.decks[this.active].el === el) {
+          this._startActive(this.entry ? this.entry.in : 0);
+        }
+      });
       return { el, gain, src };
     });
     return this.decks;

@@ -147,6 +147,11 @@ Audio.prototype.addEventListener = function (k, fn) { (this._on[k] = this._on[k]
 Audio.prototype.removeEventListener = function (k, fn) {
   const a = this._on[k] || []; const i = a.indexOf(fn); if (i >= 0) a.splice(i, 1);
 };
+/** The file ran out - what a browser fires when a deck reaches its end. */
+Audio.prototype.finish = function () {
+  this.paused = true; this.currentTime = this.duration;
+  (this._on.ended || []).slice().forEach(function (f) { f(); });
+};
 /** Metadata arrived - which is what makes a seek stick. */
 Audio.prototype.ready = function (dur) {
   this.readyState = 4; this.duration = dur;
@@ -497,6 +502,30 @@ def test_the_loop_point_is_a_crossfade_and_not_a_cut(ctx):
     # Only once the fade has actually run is the old deck parked.
     ctx.eval("runTimers();")
     assert ctx.eval("snd.music.decks[%d].el.paused" % 0) is True
+
+
+def test_a_deck_that_reached_the_end_starts_the_song_again(ctx):
+    """`tick` is the only thing that crossfades, and it runs on the game's
+    requestAnimationFrame - which a background tab stops. The song then sails
+    past its loop point, hits the end of the file and used to stay there for
+    the rest of the page. The end of a deck is a loop point too."""
+    ctx.eval(FAKE + "snd.setMusic(true); snd.setSong('rainbow');")
+    _ready(ctx, 400)
+    ctx.eval("snd.music.decks[0].el.finish();")
+    assert ctx.eval("snd.music.decks[0].el.paused") is False
+    assert _cued(ctx)["at"] == 20          # back at `in`, not at the top
+
+
+def test_a_deck_that_ends_while_the_other_one_is_playing_is_left_alone(ctx):
+    """The deck the crossfade just handed off from runs to the end of the file
+    behind the new one. Restarting it there would be two songs at once."""
+    ctx.eval(FAKE + "snd.setMusic(true); snd.setSong('rainbow');")
+    _ready(ctx, 400)
+    ctx.eval("snd.music.decks[0].el.currentTime = 328.5; snd.musicTick();")
+    assert _n(ctx, "snd.music.active") == 1
+    ctx.eval("runTimers(); snd.music.decks[0].el.finish();")
+    assert ctx.eval("snd.music.decks[0].el.paused") is True
+    assert _n(ctx, "snd.music.active") == 1
 
 
 def test_the_written_loop_points_are_honoured(ctx):
