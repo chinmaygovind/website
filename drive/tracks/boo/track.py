@@ -64,7 +64,26 @@ EAVES = 36.0              # top of the outer walls, where the aisle roofs land.
                           # air over it and rendered as a tunnel: the deck is at
                           # 24, the roof lands 1.4 under the eaves, and the
                           # chase camera alone wants 4.3.
-RIDGE = 50.0              # the nave roof's ridge
+RIDGE = 62.0              # the nave roof's ridge. **26 units over the eaves
+                          # across a 26.5 half-span is about 45 degrees, which
+                          # is a roof.** At 50 it was 14 units over 26.5, drawn
+                          # as seven steps - so each tread was 3.8 units wide
+                          # and two deep, and from anywhere above the building
+                          # it read as a flat-topped ziggurat rather than a
+                          # pitch. Nothing drives above 26, so every number from
+                          # here up is decoration and free to be the shape it
+                          # should be.
+TOWER_TOP = 80.0          # the parapet of the west tower, over the narthex
+SPIRE_TOP = 148.0         # the tip of the needle on top of it. **Nothing up
+                          # here is clipped by anything - there is no cloud
+                          # layer on this track.** What looked like one is the
+                          # sky dome's bright band at u=0.58, which the palette
+                          # puts just over the horizon so that every silhouette
+                          # on the track is read against it. Above that band the
+                          # sky closes to a deep violet, so a spire drawn in
+                          # shaded masonry is dark on dark and its top dissolves
+                          # - which is a lighting problem and not a height one,
+                          # and is why the needle is `lit`.
 WALL_T = 5.0              # every wall's thickness, inside and out
 DOOR_HW = 15.0            # half-width of the great west door. Wider than the
                           # road by seven, because the chase camera trails the

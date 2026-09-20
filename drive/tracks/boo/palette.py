@@ -22,7 +22,8 @@ import math
 
 from .track import (AISLE_CEIL, AISLE_HW, BACK_X, COL_HW, CRYPT_Y, DOOR_H,
                     DOOR_HW, EAST_X, EAVES, FLOOR_Y, NARTHEX_X, NAVE_CEIL,
-                    NAVE_HW, RIDGE, TRIF_Y, WALL_T, WEST_X)
+                    NAVE_HW, RIDGE, SPIRE_TOP, TOWER_TOP, TRIF_Y, WALL_T,
+                    WEST_X)
 
 # The moon's bearing, used twice: once for the disc and once for the key light.
 # A disc drawn low with its light coming from the same place lights nothing, so
@@ -287,14 +288,27 @@ PALETTE = {
     # wants, and the fall reads as further because there is no scale in it.
     "below": {
         "kind": "void",
-        # **Heavy on purpose, and it costs the plan view.** At cover 0.74
-        # and a deck only a hundred units up this is a lid rather than weather -
-        # Cloudbreak, which is a track *about* cloud, uses 0.34 - so
-        # `tools/track_views.py` shoots `plan.png` straight into the top of it
-        # and the layout cannot be checked from above any more. That is a cost
-        # to authoring and not to the game, which is the right way round: from
-        # the road it is the low black overcast the track wanted, and Rickety
-        # Rails already has no usable plan view for the same kind of reason.
+        # **Heavy on purpose, and it costs the plan view.** At cover 0.74 this
+        # is a lid rather than weather - Cloudbreak, which is a track *about*
+        # cloud, uses 0.34 - so `tools/track_views.py` shoots `plan.png`
+        # straight into the top of it and the layout cannot be checked from
+        # above any more. That is a cost to authoring and not to the game, which
+        # is the right way round, and Rickety Rails already has no usable plan
+        # view for the same kind of reason.
+        #
+        # **`deck` is measured off the ribbon's `maxY` (24 here), but it is
+        # not where the cloud *is*.** `cloudDeck` scatters each puff at
+        # `deckY + (rnd-0.5)*26 + t*10 +- 2.5` with a half-height of
+        # `(4+11t)*(0.7+rnd*0.6)*puff`, so at `puff` 2.6 the underside reaches
+        # **56 units below `deckY`** - here, y=76. The steeple's cross is at
+        # 162, so the top of it is inside this deck and that is deliberate:
+        # raising the deck far enough to clear it (205) put its own rim in
+        # frame from a camera four units off the floor, and no `reach` or
+        # `cover` made that look better than the low lid does. The lid is the
+        # track; a spire in cloud on a midnight churchyard is not a defect.
+        #
+        # **The check for anything else built up there is `maxY + deck - 56`,
+        # not `maxY + deck`.** Nothing warns you either way.
         "above": {"deck": 108, "cover": 0.74, "cloud": 0x372a4d,
                   "puff": 2.6, "cloudStep": 12},
     },
@@ -313,6 +327,7 @@ PALETTE = {
         "naveCeil": FLOOR_Y + NAVE_CEIL, "aisleCeil": FLOOR_Y + AISLE_CEIL,
         "trifY": FLOOR_Y + TRIF_Y, "eaves": FLOOR_Y + EAVES,
         "ridge": FLOOR_Y + RIDGE, "wallT": WALL_T,
+        "towerTop": FLOOR_Y + TOWER_TOP, "spireTop": FLOOR_Y + SPIRE_TOP,
         "doorHW": DOOR_HW, "doorH": DOOR_H,
         # One bay is a pier, an arch under it and a triforium opening over it.
         # Eight of them down a 326-unit arcade is 41 units each, which at a road

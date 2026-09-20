@@ -58,6 +58,11 @@
     const NHW = B.naveHW, CHW = B.colHW, AHW = B.aisleHW;
     const FY = B.floorY, NC = B.naveCeil, AC = B.aisleCeil, TY = B.trifY;
     const EV = B.eaves, RG = B.ridge, T = B.wallT, BAY = B.bay;
+    const TT = B.towerTop, ST = B.spireTop;
+    const STEPS = 20, GSTEP = 14;  // treads in the nave roof and in the gables
+    const TWHW = 24.5;            // the tower's half-width: the narthex,
+                                  // square in plan, with the aisle roofs
+                                  // landing either side of it
     const DHW = B.doorHW, DH = B.doorH, CY = B.cryptY;
     const wallC = B.wall, innerC = B.inner, stoneC = B.stone;
     const leadC = B.lead, floorC = B.floor, grassC = pal.ground;
@@ -275,13 +280,13 @@
       span(WX - T - d, WX - T + 0.4, FY + DH + o - 1.5, FY + DH + o, -DHW - o, DHW + o,
            shade(stoneC, 0.10 - k * 0.04));
     }
-    // The gable, stepped up to the ridge.
-    for (let k = 0; k < 7; k++) {
-      const f = k / 7, g = (k + 1) / 7;
-      span(WX - T, WX, EV + (RG - EV) * f, EV + (RG - EV) * g,
-           -(AHW + T) * (1 - f) - CHW * f, (AHW + T) * (1 - f) + CHW * f,
-           shade(wallC, -0.03 - f * 0.05), 'wall');
-    }
+    // The west front, which is now the foot of the tower rather than a gable.
+    // Above the aisle roofs it steps in once, from the full width of the
+    // building to the tower's own - so the aisles read as having roofs that
+    // land against something, which is what they are for.
+    span(WX - T, WX, EV, EV + 3.0, -(AHW + T), AHW + T,
+         shade(wallC, -0.03), 'wall');
+    span(WX - T, WX, EV + 3.0, TT, -TWHW - T, TWHW + T, shade(wallC, 0.20));
     // A rose window over the loft: the one thing you see from the gallery
     // looking back west, and the one lit thing on the front as you arrive.
     //
@@ -314,13 +319,30 @@
     // Full height, because the sanctuary is open to the roof and this wall is
     // what the whole nave is pointed at. The hole in it is where the gallery
     // stops: the roof has gone at this end, and the lap leaves through it.
+    // **It tops out at the eaves and carries a gable over the nave, rather
+    // than running to the ridge across the whole width.** It used to be a
+    // rectangle 49 units either side of the axis and as tall as the roof's
+    // highest point, so the nave roof terraced up *behind* it and the east end
+    // of the building was a flat wall with nothing above it. The lintel over
+    // the gallery's opening is the south aisle roof, which lands at `EV` and
+    // runs to `BX - 2`, so nothing here has to hold the hole's top up.
     const holeA = CHW + 2.0, holeB = AHW - 1.5;
-    span(BX, BX + T, FY - 3.2, RG, -AHW - T, holeA, wallC, 'wall');
+    span(BX, BX + T, FY - 3.2, EV, -AHW - T, holeA, wallC, 'wall');
     span(BX, BX + T, FY - 3.2, TY - 1.5, holeA, AHW + T, wallC, 'wall');
-    span(BX, BX + T, EV, RG, holeA, AHW + T, shade(wallC, -0.08), 'wall');
-    span(BX, BX + T, FY - 3.2, RG, holeB, AHW + T, wallC, 'wall');
-    span(BX - 0.9, BX + 0.5, FY + 30.0, RG - 3.0, -14.0, 14.0, eastC, 'lit');
-    span(BX - 1.1, BX + 0.7, FY + 30.0, RG - 3.0, -0.5, 0.5, shade(stoneC, 0.04));
+    span(BX, BX + T, FY - 3.2, EV, holeB, AHW + T, wallC, 'wall');
+    // The gable itself, on the roof's own taper so the two meet along a line
+    // rather than crossing. Decoration: it begins ten units over the highest
+    // road on the track.
+    for (let k = 0; k < GSTEP; k++) {
+      const f = k / GSTEP, g = (k + 1) / GSTEP;
+      span(BX, BX + T, EV + (RG - EV) * f, EV + (RG - EV) * g,
+           -(CHW + T) * (1 - f), (CHW + T) * (1 - f),
+           shade(wallC, -0.03 - f * 0.05));
+    }
+    // The great east window, which now has a gable over it instead of stopping
+    // three units under a flat wall head.
+    span(BX - 0.9, BX + 0.5, FY + 30.0, EV + 11.0, -14.0, 14.0, eastC, 'lit');
+    span(BX - 1.1, BX + 0.7, FY + 30.0, EV + 11.0, -0.5, 0.5, shade(stoneC, 0.04));
 
     // ---- the arcades -------------------------------------------------------
     // Piers from the floor to the soffit, with the arches open between them.
@@ -488,13 +510,18 @@
     // stopping short of it**: tapering to a positive width left a five-unit
     // slot the length of the nave, invisible from inside and, from above, the
     // whole interior drawn in `plan.png` with no roof over it.
-    const STEPS = 7;
+    // **Twenty steps, not seven.** Seven treads across 26.5 units is a 3.8-unit
+    // terrace every two units of climb, which from any establishing height is a
+    // ziggurat - and `shoot_tracks.py` looks at this building from above. At
+    // twenty the tread is 1.3 and it reads as a slope from the churchyard and
+    // as a roof from the cover. The cost is 26 boxes instead of 12, in a file
+    // that draws two thousand.
     for (let k = 0; k < STEPS; k++) {
       const f = k / STEPS, g = (k + 1) / STEPS;
       const w0 = (CHW + T) * (1 - f), w1 = (CHW + T) * (1 - g);
       const y0 = EV + (RG - EV) * f, y1 = EV + (RG - EV) * g;
-      span(WX - T, BX - 24.0, y0, y1, -w0, -w1 + 1.2, shade(leadC, 0.06 - f * 0.04));
-      span(WX - T, BX - 24.0, y0, y1, w1 - 1.2, w0, shade(leadC, 0.02 - f * 0.04));
+      span(NX - T, BX - 24.0, y0, y1, -w0, -w1 + 1.2, shade(leadC, 0.06 - f * 0.04));
+      span(NX - T, BX - 24.0, y0, y1, w1 - 1.2, w0, shade(leadC, 0.02 - f * 0.04));
     }
     // And the ribs on the underside of it, which is most of what you see of a
     // vault from a car with headlights pointed forward.
@@ -502,6 +529,132 @@
       if (x < NX || x > BX) continue;
       span(x - 1.5, x + 1.5, NC - 1.3, NC, -CHW, CHW, shade(vaultC, 0.16));
     }
+
+    // ---- the west tower and its spire --------------------------------------
+    // **The thing that makes it a church from outside.** The building was a box
+    // with a terraced lid: eaves at 36, the highest point of it 50, and no part
+    // of the silhouette that arrived at a point. This stands over the narthex -
+    // the one bay you drive *through* on the way in, square in plan and already
+    // walled on all four sides at ground level, so the tower is those walls
+    // continued rather than new footings in the churchyard.
+    //
+    // **It is lit like the landmark it is, which is not how the rest of the
+    // building is lit.** The key light points down and there are no shadow
+    // maps, so a vertical face 80 units up catches almost nothing, and the
+    // first pass drew the whole tower at the masonry's own value: it came out
+    // the same lightness as the sky behind it and simply was not in the
+    // picture. Everything here is shaded well up from `wall`, `stone` and
+    // `lead` for that reason, and the belfry louvres are `lit` on top of it.
+    //
+    // **It is decoration, all of it.** The lowest thing here is at `EV + 3`,
+    // fifteen units over the gallery deck, which is the highest road on the
+    // track. Nothing can reach it, so none of it is in the collider and the
+    // whole tower costs the anti-cheat nothing.
+    const TWO = TWHW + T;
+    for (const [z0, z1] of [[-TWO, -TWHW], [TWHW, TWO]]) {
+      span(WX - T, NX, EV + 3.0, TT, z0, z1, shade(wallC, 0.20));
+    }
+    span(NX - T, NX, EV + 3.0, TT, -TWO, TWO, shade(wallC, 0.20));
+    // Clasping buttresses at the four corners, stepped back twice. Without them
+    // the tower is a chimney: a plain box is read as scaffolding at this height.
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        const x = sx < 0 ? WX - T : NX, z = sz < 0 ? -TWO : TWO;
+        for (let k = 0; k < 3; k++) {
+          const d = 4.2 - k * 1.2, top = EV + 3.0 + (TT - EV - 3.0) * (0.42 + k * 0.22);
+          span(x - (sx < 0 ? d : 0), x + (sx < 0 ? 0 : d), EV + 3.0, top,
+               z - (sz < 0 ? d : 0), z + (sz < 0 ? 0 : d),
+               shade(stoneC, 0.22 - k * 0.05));
+        }
+      }
+    }
+    // The belfry. Two tall louvres a side, and they are `lit` on purpose: this
+    // is the only thing on the track standing above the fog, the sky behind it
+    // is nearly black, and an unlit stone box at 80 units simply is not there.
+    // Lit, the tower is what you steer at from the churchyard.
+    for (const sz of [-1, 1]) {
+      for (const o of [-10.0, 10.0]) {
+        span(WX + 8.0 + o, WX + 20.0 + o, TT - 26.0, TT - 8.0,
+             sz * TWO - sz * 0.9, sz * TWO, candleC, 'lit');
+      }
+    }
+    for (const sx of [-1, 1]) {
+      for (const o of [-10.0, 10.0]) {
+        const x = sx < 0 ? WX - T : NX;
+        span(x, x + sx * 0.9, TT - 26.0, TT - 8.0, o - 6.0, o + 6.0, candleC, 'lit');
+      }
+    }
+    // The parapet, which is what the spire springs from. Corbelled out a unit
+    // and a half so the spire does not look like it grew out of the wall.
+    span(WX - T - 1.5, NX + 1.5, TT - 2.6, TT, -TWO - 1.5, TWO + 1.5,
+         shade(stoneC, 0.34));
+    // Pinnacles at the four corners of the parapet. They are what lets the
+    // needle spring from a base narrower than the tower without the shoulders
+    // reading as a mistake - the spire steps in, and something stands in the
+    // corner it stepped out of.
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        const x = sx < 0 ? WX - T + 3.4 : NX - 3.4, z = sz * (TWO - 3.4);
+        for (let k = 0; k < 9; k++) {
+          const f = k / 9, w = 3.4 * (1 - f * 0.92);
+          span(x - w, x + w, TT + 14.0 * f, TT + 14.0 * (f + 1 / 9),
+               z - w, z + w, shade(stoneC, 0.18 - f * 0.04), f > 0.5 ? 'lit' : 0);
+        }
+      }
+    }
+    // **The needle.** Seventy-two units over a 39-wide base, tapered to a point
+    // over twenty-eight treads - the same trick as the nave roof and for the
+    // same reason, that anything coarser reads as a stack of boxes. Lead rather
+    // than stone, because it is the one surface up here the moon gets to and it
+    // wants to be the lighter of the two.
+    const SPIRE = 28, SBASE = TWO * 0.66;
+    for (let k = 0; k < SPIRE; k++) {
+      const f = k / SPIRE, g = (k + 1) / SPIRE;
+      const w0 = SBASE * (1 - f);
+      const y0 = TT + (ST - TT) * f, y1 = TT + (ST - TT) * g;
+      // **The whole needle is `lit`, and the edge trim it used to carry is
+      // gone.** Two passes got this wrong in opposite directions. Shaded
+      // masonry disappears: the key points down, so a near-vertical face 80
+      // units up is lit to about the sky's own value whatever colour it is
+      // given, and the top of the spire dissolved into the violet above the
+      // sky's bright band. Then lighting only the four arrises drew the
+      // stepping as a white zigzag down each edge - the treads are a couple of
+      // pixels at this distance and it read as debris on the roof rather than
+      // as a hip. An unlit face is flat by definition, so the cone holds one
+      // even value from base to finial and its outline is its outline.
+      //
+      // **Unlit is not a licence to be bright, and the number you write is
+      // not the number you get.** At `shade(leadC, 0.40)` this was the
+      // lightest surface anywhere on the track - a white cone over a black
+      // churchyard - because an unlit face is drawn at full value while
+      // everything round it is shaded down. Dropping it to a slate `0.16`
+      // barely moved it, which is the second half of the trap: an unlit colour
+      // is lifted linear->sRGB on the way out and the lift is enormous at the
+      // dark end, so #5b6267 leaves the shader at about #b0b4b8. It is the
+      // same defect Rickety Rails' roof has, with the sign flipped. Going
+      // *under* `leadC` is what actually darkens it: -0.42 is #24292c in
+      // source and reads as a mid grey on screen, which separates from both
+      // the violet above the sky's bright band and the deck's 0x372a4d without
+      // being a lamp.
+      const cx = (WX - T + NX) / 2, hx0 = ((NX - WX + T) / 2) * 0.66;
+      span(cx - hx0 * (1 - f), cx + hx0 * (1 - f), y0, y1, -w0, w0,
+           shade(leadC, -0.42 - f * 0.06), 'lit');
+    }
+    // And a cross, because a needle that just stops is a needle that was cut.
+    //
+    // **It has to actually be one.** The first version was a six-by-six block
+    // with a pin standing on it, which at this distance is a bollard on the
+    // roof: the thing that makes a cross legible is the *arm*, and it did not
+    // have one. A shaft a unit and a half thick with a five-unit arm across it
+    // reads from the churchyard and costs three boxes. The arm runs in z
+    // because the west front faces down the lap and z is across your view from
+    // the only place anybody sees it from.
+    const FCX = (WX - T + NX) / 2, CX = 0.75;
+    span(FCX - 1.7, FCX + 1.7, ST - 0.9, ST + 0.9, -1.7, 1.7,
+         shade(stoneC, 0.22), 'lit');                       // where it is bedded
+    span(FCX - CX, FCX + CX, ST, ST + 8.0, -CX, CX, shade(stoneC, 0.26), 'lit');
+    span(FCX - CX, FCX + CX, ST + 4.6, ST + 6.1, -2.6, 2.6,
+         shade(stoneC, 0.26), 'lit');
 
     // ---- the fittings ------------------------------------------------------
     // **Pews, and they are pews rather than blocks.** A bench is a seat, a back
@@ -844,6 +997,16 @@
     // wants to be a stretch of chapel floor that throws you, not a landmark -
     // and a `bright` figure on this palette is unlit, so it was the brightest
     // thing on the track sitting exactly where you are trying to look.
+
+    const tbX = 782.0, tbZ = 70.0, tbHW = 8.6, tbHH = tbHW / 4;
+    const tbTop = FY + 16.0 + tbHH;
+    span(tbX - 0.9, tbX + 0.9, FY, tbTop - tbHH, tbZ - 0.9, tbZ + 0.9,
+         shade(stoneC, -0.34), 'wall');
+    span(tbX - 1.3, tbX + 1.3, tbTop - tbHH - 0.9, tbTop + tbHH + 0.9,
+         tbZ - tbHW - 0.9, tbZ + tbHW + 0.9, shade(stoneC, -0.30), 'wall');
+    signs.push({ text: 'TACO BELL', c: [tbX - 1.35, tbTop, tbZ],
+                 r: [0, 0, 1], u: [0, 1, 0], hw: tbHW, hh: tbHH,
+                 n: [-1, 0, 0] });
 
     // ---- the altarpiece ----------------------------------------------------
     // The one textured thing on the track, and it hangs where the nave points:

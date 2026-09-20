@@ -161,27 +161,56 @@ FRAMES = {
     # could be any hall. And `pitch` stays at 0.34 because this palette's
     # overcast sits about 130 units over the road - at 0.52 the camera is
     # inside it and all four candidates came back as cloud.
-    # **The cover moved indoors when the sky went dark**, and the reason is
-    # worth keeping: the churchyard framing above was right for the palette it
-    # was chosen under, and the sky it depended on is now a near-black violet
-    # with the lower half of the dome at zero. A night exterior lit by nothing
-    # renders as a black rectangle with rain on it - which is what the first
-    # re-shoot produced, and a cover has to survive being 300px wide on a home
-    # page.
+    # **It moved indoors when the sky went dark, went back out when the chapel
+    # got a steeple, and came back in - and the last move is the one worth
+    # recording, because the churchyard was never the problem.**
+    # The note this replaces was right about its own moment: a night exterior
+    # lit by nothing renders as a black rectangle with rain on it, and the
+    # interior at least lights itself - a hundred and sixty candles, eight point
+    # lights and the altarpiece. What it could not say is that the chapel had no
+    # silhouette to photograph either. It topped out in a flat terraced lid at
+    # 50, so from the churchyard it was a dark box, and the only picture in it
+    # was the one under the vault.
     #
-    # Inside, the track lights itself: a hundred and sixty candles, eight real
-    # point lights, three coronas over the nave and the altarpiece at the end of
-    # it. So `at` is the nave, and the camera has to be *under* the vault rather
-    # than over the building - which is Rickety Rails' problem and takes the
-    # same two numbers. `span` 0.05 keeps the window short enough that the
-    # establishing height stays inside the room, and `pad` 0.30 crops to the
-    # arcade instead of backing off into the masonry.
+    # The chapel has a west tower and a lit spire now, so the exterior finally
+    # has a silhouette - but a cover of it is still a small pale building at the
+    # end of a lot of black, and the orbit centres on the *road window* and
+    # knows nothing about scenery 150 units up, so any `pad` that holds the tip
+    # has already thrown the building away. Four exterior candidates were shot
+    # against this one and it beat all of them.
     #
-    # `pitch` is low for the same reason: at 0.34 the camera is in the vault
-    # ribs. `air` stays 0 - there is nothing to jump indoors and a car off the
-    # ground in a chapel reads as a bug.
-    "boo": dict(at=0.215, azimuth=3.50, pitch=0.16, pad=0.30, span=0.05,
-                cars=9, air=0.0, liveryFrom=2),
+    # **It is the only framing in this file that is a camera rather than an
+    # orbit**, and it is why `eye`/`look` exists: the shot is standing just
+    # inside the great door - `WX - T` is 415 - with the lens four and a half
+    # units off the floor, tilted up the nave. No (azimuth, pitch, pad) can say
+    # that, because the orbit measures pitch from a subject that is under the
+    # camera's feet here. What it gets is the thing this track actually is and
+    # no exterior can show: the arcade running away in perspective, a candle on
+    # a pier either side, the glass, and the altarpiece lit at the far end with
+    # the ghosts in front of it.
+    #
+    # **It is well down the nave rather than in the doorway, the lens is long
+    # rather than wide, and it rides at 7.5 rather than at eye height** - and
+    # all three are the same note. A wide lens in the narthex puts the whole
+    # room in frame and every part of it too small to read: the altarpiece, the
+    # banners and the hanging candelabra all ended up specks in a band across
+    # the middle, with the bottom of the picture empty carpet. Two bays further
+    # in at 44 degrees the piers have mouldings, the pews are pews and the
+    # altarpiece is the thing at the end of it; lifting the lens and aiming it
+    # up is what gives the arcade the space the floor was taking.
+    #
+    # **`eye.x` is 550 because of where the ghosts are.** They cross the nave at
+    # x = 510, 542, 573, 604 and so on, alternating sides, and a lens at 520 sat
+    # twenty units behind the one at 542 - which put a ghost the height of the
+    # frame in the corner of it, half out of shot. In front of that one, the
+    # ghost at 573 is the foreground instead, whole, with the 604 on the far
+    # side of the aisle. If the mover spacing in `scenery.js` changes, this
+    # number moves with it.
+    #
+    # `cars` is 0. The field is what sells a stretch of road; in here it would
+    # park five hatchbacks in a chapel, and the subject is the building.
+    "boo": dict(at=0.215, eye=[550, 7.5, 0], look=[820, 30, 0], fov=44,
+                cars=0, air=0.0, liveryFrom=2),
 
     # --- The three the storefront covers were cut from first -----------------
     # The loop, the hairpin under it, and the ribbon running out to the stars.
@@ -597,12 +626,32 @@ async (a) => {
   // horizontally - the 800x1200 cover would have cut the subject in half.
   const vFov = a.fov * Math.PI / 180;
   const hFov = 2 * Math.atan(Math.tan(vFov / 2) * S.renderer.camera.aspect);
-  const dist = radius / Math.sin(Math.min(vFov, hFov) / 2) * a.pad;
   const cam = S.renderer.camera;
-  cam.position.set(
-    centre.x + dist * Math.cos(a.pitch) * Math.cos(a.azimuth),
-    centre.y + dist * Math.sin(a.pitch),
-    centre.z + dist * Math.cos(a.pitch) * Math.sin(a.azimuth));
+
+  // **`eye`/`look` is the way out of the orbit, and one track needs it.**
+  // Everything above fits a sphere round the road window and then orbits it at
+  // an azimuth and a pitch, which is the right camera for a stretch of road
+  // seen from outside and cannot express a camera standing *in* the world
+  // looking up - there is no (azimuth, pitch, pad) that puts the lens four
+  // units off the floor inside a building and tilts it at the ceiling, because
+  // pitch is measured from the subject and the subject is under your feet.
+  // BOO! is shot from just inside its own front door looking up the nave, so
+  // it gives both points in world space and nothing here is fitted at all.
+  // `centre` becomes what it is pointed at, which is what the key light and
+  // the sky below are hung on.
+  const free = !!a.eye;
+  if (free) centre.set(a.look[0], a.look[1], a.look[2]);
+  const dist = free
+    ? centre.distanceTo(new THREE.Vector3(a.eye[0], a.eye[1], a.eye[2]))
+    : radius / Math.sin(Math.min(vFov, hFov) / 2) * a.pad;
+  if (free) {
+    cam.position.set(a.eye[0], a.eye[1], a.eye[2]);
+  } else {
+    cam.position.set(
+      centre.x + dist * Math.cos(a.pitch) * Math.cos(a.azimuth),
+      centre.y + dist * Math.sin(a.pitch),
+      centre.z + dist * Math.cos(a.pitch) * Math.sin(a.azimuth));
+  }
   cam.up.set(0, 1, 0);        // a high establishing shot is level with the world
   cam.lookAt(centre);
   cam.fov = a.fov;
