@@ -10,7 +10,7 @@ import uuid
 import random
 import string
 from functools import wraps
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from urllib import parse as urlparse
 
 from dotenv import load_dotenv
@@ -978,9 +978,42 @@ def index():
     below as a way of picking a specific one.
     """
     pbs = _my_pb_map()
-    return render_template("index.html", tracks=tracks_mod.summaries(),
+    pool = tracks_mod.summaries()
+    # The same three-way split the switcher makes, made once here so the two
+    # menus cannot disagree about which tab a track is in. `closed` is the whole
+    # rule for the first two - a circuit comes back to its own start line - and
+    # the third is whatever has been scheduled.
+    return render_template("index.html",
+                           sprints=[t for t in pool if not t["closed"]],
+                           circuits=[t for t in pool if t["closed"]],
+                           dailies=_daily_cards(),
+                           today=daily_slug(),
                            pbs=pbs, ranks=_my_rank_map(pbs), records=_records(),
                            name=get_effective_name(), user=get_current_user())
+
+
+def _daily_cards():
+    """The dailies the home page lists: today's, and the month behind it.
+
+    Its own small query rather than a filter over `_track_cards`, which builds
+    every community card as well and is the switcher's job. The home page is
+    read rather than driven from, so it wants the same rows and none of the
+    pictures.
+    """
+    if not DATABASE_URL:
+        return []
+    try:
+        rows = (DriveUserTrack.query
+                .filter(DriveUserTrack.status == "live",
+                        DriveUserTrack.daily_on.isnot(None),
+                        DriveUserTrack.daily_on <= date.today())
+                .order_by(DriveUserTrack.daily_on.desc())
+                .limit(DAILY_SHELF).all())
+    except Exception:
+        return []
+    return [{"slug": r.slug, "name": r.name, "difficulty": r.difficulty,
+             "daily_on": r.daily_on, "plan": r.plan_path,
+             "today": r.daily_on == date.today()} for r in rows]
 
 
 def _next_slug(slug):
@@ -1017,13 +1050,29 @@ def _track_cards():
         slug = t["slug"]
         pb = pbs.get(slug)
         out.append(dict(t, shelf="pool",
+                        # Which tab of the switcher this sits under. Derived
+                        # from the ribbon (`closed` is start-line-is-finish-line)
+                        # rather than from a list anybody maintains, so the next
+                        # circuit lands in the right tab by being a circuit.
+                        tab=("circuit" if t.get("closed") else "sprint"),
                         image="/static/img/tracks/%s.png?v=%s" % (slug, ver),
                         pb_ms=(pb.time_ms if pb else None),
                         pb_medal=(pb.medal_shown if pb else None),
+                        # How many laps you have finished here, for the "most
+                        # played" sort. Already on the PB row, so the sort costs
+                        # no query - and it is finishes, not starts, which is
+                        # the number the card can honestly claim.
+                        plays=(pb.runs if pb else 0),
                         pb_rank=ranks.get(slug)))
     out.extend(_community_cards(pbs, ranks))
     return out
 
+
+# How many past dailies the switcher's Dailies tab carries. A month is enough to
+# catch up on one you missed and few enough that the tab is a list rather than an
+# archive; everything older keeps working at its own `/solo/<slug>` for ever, it
+# is just not in the menu.
+DAILY_SHELF = 30
 
 _COVER_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "static", "img", "tracks")
@@ -1062,9 +1111,27 @@ def _community_cards(pbs, ranks):
     if not DATABASE_URL:
         return []
     try:
-        rows = (DriveUserTrack.query.filter_by(status="live")
-                .order_by(DriveUserTrack.published_at.desc().nullslast())
-                .limit(60).all())
+        # **Two queries, because they are two shelves with two lifetimes.** A
+        # daily is scheduled every day for ever, so a single `limit` shared with
+        # the community tracks would quietly starve them out inside four months
+        # - the menu would still look fine, and Community would just be empty.
+        # Bounding each separately is what stops that being possible.
+        dailies = (DriveUserTrack.query
+                   .filter(DriveUserTrack.status == "live",
+                           DriveUserTrack.daily_on.isnot(None),
+                           # Never tomorrow's. An approved track holds a future
+                           # date, and `tracks.get` resolves anything live - so
+                           # without this the switcher would list the next fifty
+                           # days of dailies and today's would mean nothing.
+                           DriveUserTrack.daily_on <= date.today())
+                   .order_by(DriveUserTrack.daily_on.desc())
+                   .limit(DAILY_SHELF).all())
+        community = (DriveUserTrack.query
+                     .filter(DriveUserTrack.status == "live",
+                             DriveUserTrack.daily_on.is_(None))
+                     .order_by(DriveUserTrack.published_at.desc().nullslast())
+                     .limit(60).all())
+        rows = dailies + community
     except Exception:
         return []
     out = []
@@ -1087,7 +1154,14 @@ def _community_cards(pbs, ranks):
                                  or 0xc9d3dc),
             "pb_ms": pb.time_ms if pb else None,
             "pb_medal": pb.medal_shown if pb else None,
+            "plays": pb.runs if pb else 0,
             "pb_rank": ranks.get(r.slug),
+            # A scheduled track is a daily for ever, not only on its day: its
+            # board is that day's board and stays readable afterwards. Which one
+            # is *today's* is `daily_slug()`, and the switcher marks it.
+            "tab": "daily" if r.daily_on else "community",
+            "daily_on": r.daily_on.isoformat() if r.daily_on else None,
+            "today": bool(r.daily_on and r.daily_on == date.today()),
         })
     return out
 
@@ -1109,6 +1183,51 @@ def solo(slug):
     if not tracks_mod.get(slug):
         return redirect(url_for("solo_last"))
     return _play_solo(slug)
+
+def daily_slug(day=None):
+    """The track that is today's daily, or None on a day nothing was scheduled.
+
+    One indexed query. Deliberately *not* cached for the process: the answer
+    changes at midnight UTC and a worker that has been up for a week would
+    otherwise still be serving Tuesday's.
+    """
+    if not DATABASE_URL:
+        return None
+    try:
+        row = (DriveUserTrack.query
+               .filter_by(daily_on=(day or date.today()), status="live")
+               .first())
+    except Exception:
+        return None
+    return row.slug if row else None
+
+
+@app.route("/daily")
+def daily():
+    """Today's track.
+
+    **There is no daily leaderboard in here, and there does not need to be one.**
+    Every day is its own track with its own slug, so the board that track already
+    has *is* that day's board - one row per player, the same anti-cheat, the same
+    ghosts, the same everything. A `WHERE date(created_at) = today` board over a
+    shared track would have been a second scoring path to keep honest, and
+    `drive_times` could not have backed it anyway: it keeps one row per player
+    per track and a better run overwrites it, so "your best today" is not a
+    question it can answer.
+
+    What "only valid for the day" means is therefore about the *page* and not
+    about the data: tomorrow this URL is somewhere else, and today's board stops
+    being the thing on the front page. Nothing is deleted, and yesterday's track
+    stays at `/solo/<slug>` with its board intact - which is what makes a record
+    on it worth having.
+    """
+    slug = daily_slug()
+    if not slug:
+        # Nothing scheduled. The queue has run dry, which is a thing to fix by
+        # approving more rather than an error to show somebody - so this is the
+        # ordinary track list, not a 404 on the game's front door.
+        return redirect(url_for("index"))
+    return redirect(url_for("solo", slug=slug))
 
 
 def fmt_ms(ms):

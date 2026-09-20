@@ -3179,18 +3179,116 @@ function toggleTracks(force) {
   }
 }
 
+// Which tab is open and how it is sorted, remembered between visits.
+//
+// `localStorage` and not the server, because this is a preference about a menu
+// rather than a fact about a player: it is per browser, it never has to be read
+// back by anything else, and losing it costs one click. Every read and write is
+// wrapped, because the accessor *throws* rather than returning null in a private
+// window and in a page with site data blocked - and a switcher that will not
+// open is a worse bug than one that forgot which tab you were on.
+const TPREF = {
+  tab: 'sprint', sort: 'pool', desc: false,
+  load() {
+    try {
+      const raw = localStorage.getItem('drive.tracks.view');
+      if (raw) Object.assign(this, JSON.parse(raw));
+    } catch (e) { /* no storage: the defaults above are a working menu */ }
+    return this;
+  },
+  save() {
+    try {
+      localStorage.setItem('drive.tracks.view', JSON.stringify(
+        { tab: this.tab, sort: this.sort, desc: this.desc }));
+    } catch (e) { /* nothing to do, and nothing worth saying */ }
+  },
+};
+
+// How each sort reads a card, as `[key, biggest-first?]`. A key returning null
+// means "no answer for this card", and those sink to the bottom whichever way
+// the sort runs - a track you have never driven has no place and no medal, and
+// putting it above somebody's gold because `null` sorts low would be a lie.
+const TSORTS = {
+  pool:       [(c, i) => i, false],
+  name:       [c => c.name.toLowerCase(), false],
+  difficulty: [c => c.difficulty, false],
+  // The ideal lap, which is the honest measure of a track's length: 3,000 units
+  // of hairpins is a longer drive than 3,000 of straight.
+  length:     [c => c.ideal || null, false],
+  plays:      [c => c.plays || null, true],
+  rank:       [c => c.pb_rank || null, false],
+  medal:      [c => ({ gold: 1, silver: 2, bronze: 3 })[c.pb_medal] || null, false],
+};
+
+/** The cards for the open tab, in the chosen order. */
+function visibleTrackCards() {
+  const all = CFG.cards || [];
+  const rows = all
+    .map((c, i) => [c, i])
+    .filter(([c]) => (c.tab || 'sprint') === TPREF.tab);
+  const [key, bigFirst] = TSORTS[TPREF.sort] || TSORTS.pool;
+  const dir = (TPREF.desc ? -1 : 1) * (bigFirst ? -1 : 1);
+  rows.sort(([a, ai], [b, bi]) => {
+    const ka = key(a, ai), kb = key(b, bi);
+    // Unanswerable last, both ways round. See TSORTS.
+    if (ka == null && kb == null) return ai - bi;
+    if (ka == null) return 1;
+    if (kb == null) return -1;
+    if (ka < kb) return -dir;
+    if (ka > kb) return dir;
+    return ai - bi;                       // pool order breaks every tie
+  });
+  return rows.map(([c]) => c);
+}
+
+/** The tab strip: which one is on, and how many cards each holds. */
+function renderTrackTabs() {
+  const all = CFG.cards || [];
+  document.querySelectorAll('#tTabs .ttab').forEach(el => {
+    const n = all.filter(c => (c.tab || 'sprint') === el.dataset.tab).length;
+    el.classList.toggle('on', el.dataset.tab === TPREF.tab);
+    // A tab with nothing in it is shown and disabled rather than hidden: a
+    // Community tab that vanishes reads as a feature that broke, where an empty
+    // one reads as a shelf nobody has filled yet.
+    el.classList.toggle('empty', n === 0);
+    el.setAttribute('aria-selected', el.dataset.tab === TPREF.tab ? 'true' : 'false');
+    let count = el.querySelector('i');
+    if (!count) { count = document.createElement('i'); el.appendChild(count); }
+    count.textContent = n || '';
+  });
+  document.querySelectorAll('#tSorts .tsort').forEach(el => {
+    const on = el.dataset.sort === TPREF.sort;
+    el.classList.toggle('on', on);
+    el.classList.toggle('desc', on && TPREF.desc);
+  });
+}
+
 function renderTrackCards() {
   const grid = $('tGrid');
   if (!grid) return;
-  // A shelf heading before the first community card, and only if there is one.
-  // The pool is the game; this is what people have made in it. Mixed together,
-  // finding Spa would be a search.
-  let shelved = false;
-  grid.innerHTML = (CFG.cards || []).map(c => `
-    ${c.shelf === 'community' && !shelved ? (shelved = true,
-      '<span class="tshelf">Made by people who play this' +
-      ' <a href="/tracks">see all</a></span>') : ''}
-    <button class="tcard2" data-track="${esc(c.slug)}">
+  // The switcher sets itself up on its first draw rather than from `bindInput`.
+  // Two reasons and the second is the binding one: this keeps the tab strip's
+  // setup next to the thing it drives, and `bindInput` is lifted out of this
+  // file as a *contiguous slice* by `tests/test_touch.py`, so a call in there
+  // to anything defined further down is a `ReferenceError` in QuickJS and 42
+  // red tests that have nothing to do with the switcher.
+  if (!S.tracksReady) {
+    S.tracksReady = true;
+    TPREF.load();
+    bindTrackControls();
+  }
+  renderTrackTabs();
+  const cards = visibleTrackCards();
+  if (!cards.length) {
+    grid.innerHTML = '<p class="tempty">' + (TPREF.tab === 'daily'
+      ? 'No daily has been set yet. Check back tomorrow.'
+      : TPREF.tab === 'community'
+        ? 'Nobody has published a track yet. <a href="/make">Make the first one</a>.'
+        : 'Nothing here.') + '</p>';
+    return;
+  }
+  grid.innerHTML = cards.map(c => `
+    <button class="tcard2${c.today ? ' today' : ''}" data-track="${esc(c.slug)}">
       <span class="tcard2-img"${c.image
         ? ` style="background-image:url('${esc(c.image)}')"`
         // No render taken yet, so the card wears the *plan* - the shape of the
@@ -3203,6 +3301,10 @@ function renderTrackCards() {
               preserveAspectRatio="xMidYMid meet" aria-hidden="true"
          ><path d="${esc(c.plan)}"/></svg>`}
         <span class="tcard2-live">Now</span>
+        <!-- Today's daily, marked on the card rather than only by being first:
+             the Dailies tab carries the last month, and which one is *today's*
+             is the only question that tab is really asked. -->
+        <span class="tcard2-today">Today</span>
         <!-- The one you have just clicked, while it loads. Same corner as "Now",
              because they are the same fact a moment apart. -->
         <span class="tcard2-busy">Loading</span>
@@ -3231,6 +3333,29 @@ function renderTrackCards() {
     el.onclick = () => pickTrack(el.dataset.track);
   });
   markActiveTrack();
+}
+
+/** The tab and sort buttons. Bound once; the grid is re-rendered, not rebound. */
+function bindTrackControls() {
+  document.querySelectorAll('#tTabs .ttab').forEach(el => {
+    el.onclick = () => {
+      if (el.dataset.tab === TPREF.tab) return;
+      TPREF.tab = el.dataset.tab;
+      TPREF.save();
+      renderTrackCards();
+    };
+  });
+  document.querySelectorAll('#tSorts .tsort').forEach(el => {
+    el.onclick = () => {
+      // Clicking the sort already on reverses it. One control, two directions -
+      // which is what every sortable table does, so it needs no explaining and
+      // no second button per key.
+      if (el.dataset.sort === TPREF.sort) TPREF.desc = !TPREF.desc;
+      else { TPREF.sort = el.dataset.sort; TPREF.desc = false; }
+      TPREF.save();
+      renderTrackCards();
+    };
+  });
 }
 
 /**

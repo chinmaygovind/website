@@ -764,6 +764,21 @@ class DriveUserTrack(db.Model):
     # queue. See `tracks.moves.look_fingerprint`.
     look_hash  = db.Column(db.String(40))
 
+    # The day this track is *the* daily, or null for everything else - which is
+    # every track a person made, and every generated one still in the queue.
+    #
+    # **A column and not a key on `doc`**, which is the rule this table already
+    # states: the blob holds the document and a column holds what a query has to
+    # filter or sort on without parsing every row. `/daily` asks for exactly one
+    # row by date on every request for it, so this is the one thing here that
+    # could not live in the JSON.
+    #
+    # **Unique, so two tracks cannot hold the same day.** The assignment walks
+    # forward from today looking for a free date, and a race between two approve
+    # clicks would otherwise hand both the same one - at which point `/daily` has
+    # to pick, and whichever it picks makes the other's board unreachable.
+    daily_on     = db.Column(db.Date, unique=True, index=True)
+
     created_at   = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at   = db.Column(db.DateTime, default=datetime.utcnow)
     queued_at    = db.Column(db.DateTime)
@@ -821,6 +836,13 @@ _ADDED = {
     "drive_user_tracks": [
         ("plan_path", "TEXT"),
         ("look_hash", "VARCHAR(40)"),
+        # No UNIQUE here, and that is not an oversight: `ALTER TABLE ADD COLUMN`
+        # cannot add a unique constraint in SQLite. The mapped column declares
+        # it, so a fresh database gets it from `create_all`; on the live box the
+        # index is added by hand. `_next_free_daily` re-checks before it writes
+        # either way, because a constraint it cannot rely on is one it must not
+        # rely on.
+        ("daily_on", "DATE"),
     ],
 }
 

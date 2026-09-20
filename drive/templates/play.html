@@ -546,7 +546,33 @@
       </button>
     </div>
     <p class="muted guest-only" id="tracksNote" style="display:none">Only the host can change the track.</p>
+    {# Three tabs, and the split is a fact about the ribbon rather than a list
+       anybody keeps: a circuit starts and finishes on the same line, a sprint
+       runs start to flag, and a daily is one that was scheduled. The counts are
+       filled in by `renderTrackTabs` so an empty tab can say so - a Dailies tab
+       that is empty because nothing is scheduled looks exactly like one that is
+       broken, and only a number tells them apart. #}
+    <div class="ttabs" id="tTabs" role="tablist">
+      <button class="ttab on" data-tab="sprint" role="tab">Sprints</button>
+      <button class="ttab" data-tab="circuit" role="tab">Circuits</button>
+      <button class="ttab" data-tab="daily" role="tab">Dailies</button>
+      <button class="ttab" data-tab="community" role="tab">Community</button>
+    </div>
     <div class="tgrid" id="tGrid"></div>
+    {# The sort, at the foot, because it is the thing you reach for second. Each
+       button is one key and clicking the one already on reverses it, which is
+       the behaviour every table in the world has and needs no second control.
+       Both the tab and the sort are remembered - see `TPREF` in game.js. #}
+    <div class="tsorts" id="tSorts">
+      <span class="tsorts-label">Sort</span>
+      <button class="tsort on" data-sort="pool">Default</button>
+      <button class="tsort" data-sort="name">A&ndash;Z</button>
+      <button class="tsort" data-sort="difficulty">Difficulty</button>
+      <button class="tsort" data-sort="length">Length</button>
+      <button class="tsort" data-sort="plays">Most played</button>
+      <button class="tsort" data-sort="rank">Your place</button>
+      <button class="tsort" data-sort="medal">Your medal</button>
+    </div>
   </div>
 </div>
 <!-- Framed only: the click that gives us the keyboard.

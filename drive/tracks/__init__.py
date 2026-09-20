@@ -660,9 +660,14 @@ def summaries():
     that track needs its `scenery.js` fetching - which lets it ask for the
     scenery and the track payload at the same time rather than one after the
     other. See `ensureScenery` in game.js.
+
+    `closed` is in here because it is what splits the track menu: a circuit
+    starts and finishes on the same line and a sprint runs start to flag, and
+    that is a fact about the ribbon rather than a label anybody maintains. Four
+    tracks in the pool are closed and the tab follows automatically.
     """
     return [{k: t[k] for k in ("slug", "name", "difficulty", "ideal",
-                               "medals", "checkpoints", "scenery")}
+                               "medals", "checkpoints", "scenery", "closed")}
             for t in TRACKS]
 
 

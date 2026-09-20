@@ -1,4 +1,37 @@
 {% extends "base.html" %}
+
+{# One track card, used by all three tabs. It was copied per tab in the first
+   pass, which is three places to forget when a card grows a field - and the
+   card is the thing most likely to grow one. #}
+{% macro tcard(t, pbs, ranks, records) %}
+  {% set pb = pbs.get(t.slug) %}
+  {% set rank = ranks.get(t.slug) %}
+  {% set rec = records.get(t.slug) %}
+    <a class="tcard" href="/solo/{{ t.slug }}">
+      <div class="tshot" style="background-image:url('/static/img/tracks/{{ t.slug }}.png?v={{ asset_version }}')"></div>
+      <div class="tcard-in">
+        <div class="tcard-top">
+          <h3>{{ t.name }}</h3>
+          <span class="diff d{{ t.difficulty }}" title="Difficulty {{ t.difficulty }}/5">
+            {% for i in range(5) %}<span class="pip {% if i < t.difficulty %}on{% endif %}"></span>{% endfor %}
+          </span>
+        </div>
+        <div class="tcard-foot">
+          {% if pb %}
+            <span class="medal {{ pb.medal_shown or 'none' }}"></span>
+            {# A time means nothing on its own, so it never appears without its place. #}
+            <span>{{ '%d:%06.3f'|format((pb.time_ms // 60000), (pb.time_ms % 60000) / 1000) }}{% if rank %} (#{{ rank }}){% endif %}</span>
+          {% else %}
+            <span class="medal none"></span><span>not driven</span>
+          {% endif %}
+          <span style="margin-left:auto">
+            {% if rec %}★ {{ '%d:%06.3f'|format((rec[0] // 60000), (rec[0] % 60000) / 1000) }} {{ rec[1].display if rec[1] else '?' }}{% else %}no record yet{% endif %}
+          </span>
+        </div>
+      </div>
+    </a>
+{% endmacro %}
+
 {# "Drive" alone is a word nobody can rank for and that says nothing in a list
    of results. The rest is what the game actually is, in the words somebody
    looking for it would use. `og_title` falls back to this, so it is the title
@@ -65,35 +98,72 @@
   moves your rating.</p>
 
   <h2>Tracks</h2>
-  <div class="tracks">
-    {% for t in tracks %}
-    {% set pb = pbs.get(t.slug) %}
-    {% set rank = ranks.get(t.slug) %}
-    {% set rec = records.get(t.slug) %}
-    <a class="tcard" href="/solo/{{ t.slug }}">
-      <div class="tshot" style="background-image:url('/static/img/tracks/{{ t.slug }}.png?v={{ asset_version }}')"></div>
-      <div class="tcard-in">
-        <div class="tcard-top">
-          <h3>{{ t.name }}</h3>
-          <span class="diff d{{ t.difficulty }}" title="Difficulty {{ t.difficulty }}/5">
-            {% for i in range(5) %}<span class="pip {% if i < t.difficulty %}on{% endif %}"></span>{% endfor %}
-          </span>
-        </div>
-        <div class="tcard-foot">
-          {% if pb %}
-            <span class="medal {{ pb.medal_shown or 'none' }}"></span>
-            {# A time means nothing on its own, so it never appears without its place. #}
-            <span>{{ '%d:%06.3f'|format((pb.time_ms // 60000), (pb.time_ms % 60000) / 1000) }}{% if rank %} (#{{ rank }}){% endif %}</span>
-          {% else %}
-            <span class="medal none"></span><span>not driven</span>
-          {% endif %}
-          <span style="margin-left:auto">
-            {% if rec %}★ {{ '%d:%06.3f'|format((rec[0] // 60000), (rec[0] % 60000) / 1000) }} {{ rec[1].display if rec[1] else '?' }}{% else %}no record yet{% endif %}
-          </span>
-        </div>
+  {# Three tabs with no JavaScript in them: a radio per tab, and `:checked ~`
+     picks the panel. The home page carries no script of its own and this is not
+     worth becoming the reason it starts - a radio group is a tab strip that
+     works with the keyboard, survives a failed script and needs no state. #}
+  <div class="htabs">
+    <input type="radio" name="ttab" id="ttab-sprint" checked>
+    <input type="radio" name="ttab" id="ttab-circuit">
+    <input type="radio" name="ttab" id="ttab-daily">
+    <div class="htabs-bar" role="tablist">
+      <label for="ttab-sprint">Sprints <i>{{ sprints|length }}</i></label>
+      <label for="ttab-circuit">Circuits <i>{{ circuits|length }}</i></label>
+      <label for="ttab-daily">Dailies{% if dailies %} <i>{{ dailies|length }}</i>{% endif %}</label>
+    </div>
+
+    <div class="htabs-panel" id="panel-sprint">
+      <div class="tracks">
+        {% for t in sprints %}{{ tcard(t, pbs, ranks, records) }}{% endfor %}
       </div>
-    </a>
-    {% endfor %}
+    </div>
+
+    <div class="htabs-panel" id="panel-circuit">
+      <p class="tabnote">Four real circuits, and the only tracks here that
+        start and finish on the same line.</p>
+      <div class="tracks">
+        {% for t in circuits %}{{ tcard(t, pbs, ranks, records) }}{% endfor %}
+      </div>
+    </div>
+
+    <div class="htabs-panel" id="panel-daily">
+      {% if dailies %}
+      <p class="tabnote">A new track every day. Today's board is today's -
+        tomorrow the daily moves on and this one keeps its times for good.</p>
+      <div class="tracks">
+        {% for d in dailies %}
+        {% set pb = pbs.get(d.slug) %}
+        <a class="tcard{% if d.today %} today{% endif %}" href="/solo/{{ d.slug }}">
+          <div class="tshot tshot-plan">
+            {% if d.plan %}<svg viewBox="0 0 200 96" preserveAspectRatio="xMidYMid meet"
+                 aria-hidden="true"><path d="{{ d.plan }}"/></svg>{% endif %}
+          </div>
+          <div class="tcard-in">
+            <div class="tcard-top">
+              <h3>{{ d.name }}</h3>
+              <span class="diff d{{ d.difficulty }}" title="Difficulty {{ d.difficulty }}/5">
+                {% for i in range(5) %}<span class="pip {% if i < d.difficulty %}on{% endif %}"></span>{% endfor %}
+              </span>
+            </div>
+            <div class="tcard-foot">
+              {% if pb %}
+                <span class="medal {{ pb.medal_shown or 'none' }}"></span>
+                <span>{{ '%d:%06.3f'|format((pb.time_ms // 60000), (pb.time_ms % 60000) / 1000) }}</span>
+              {% else %}
+                <span class="medal none"></span><span>not driven</span>
+              {% endif %}
+              <span style="margin-left:auto">
+                {% if d.today %}<b>Today</b>{% else %}{{ d.daily_on.strftime('%-d %b') }}{% endif %}
+              </span>
+            </div>
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="tabnote">No daily has been set yet.</p>
+      {% endif %}
+    </div>
   </div>
   {# The one place the privacy notice is signposted outside the game itself.
      A footer line rather than a sixth tab in the nav: that row is a tab bar of

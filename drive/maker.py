@@ -35,7 +35,7 @@ import uuid
 import json as json_mod
 import time
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from flask import (render_template, request, jsonify, redirect, url_for,
                    session, send_from_directory, abort)
@@ -982,6 +982,13 @@ def admin_track_action(slug, action):
     if action == "approve":
         row.status = "live"
         row.published_at = row.published_at or datetime.utcnow()
+        # A generated track takes the next free day on the way in. Approving is
+        # the only moment anybody has actually *judged* one, so it is the only
+        # honest place to schedule it - and it means a sitting of fifty is fifty
+        # days of dailies, in the order they were approved, with no second
+        # screen and nothing to remember.
+        if row.doc.get("generated") and row.daily_on is None:
+            row.daily_on = _next_free_daily()
     elif action == "hide":
         row.status = "hidden"
     elif action == "unhide":
@@ -996,6 +1003,29 @@ def admin_track_action(slug, action):
     db.session.commit()
     _forget_track(slug)
     return redirect(url_for("admin_tracks"))
+
+
+def _next_free_daily():
+    """The first day from today that no track has claimed.
+
+    Walks forward rather than counting rows, because the two are not the same
+    number the moment anything is hidden, rejected or scheduled by hand - and a
+    count that drifts puts two tracks on one day, or leaves a hole where
+    `/daily` has nothing to serve.
+
+    The column is unique, so this is belt and braces against two approve clicks
+    racing; the loser of that race gets an `IntegrityError` rather than a shared
+    day. It is bounded because an unbounded search on a corrupt table is a
+    request that never returns.
+    """
+    taken = {d for (d,) in db.session.query(DriveUserTrack.daily_on)
+             .filter(DriveUserTrack.daily_on.isnot(None)).all()}
+    day = date.today()
+    for _ in range(3650):
+        if day not in taken:
+            return day
+        day += timedelta(days=1)
+    return None
 
 
 @app.route("/admin/tracks/<slug>/drive")

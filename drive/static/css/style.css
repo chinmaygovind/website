@@ -2757,6 +2757,99 @@ body.garage-page .nav { flex: none; }
   background: #1f7a4d; box-shadow: 0 0 0 3px rgba(31, 122, 77, .22);
 }
 
+/* The home page's track tabs: a radio group, no script.
+   The inputs are hidden and their labels are the strip; `:checked ~` picks the
+   panel. Order matters - the inputs have to precede both the bar and the
+   panels, because a sibling combinator only ever looks forward. */
+.htabs > input[name="ttab"] { position: absolute; opacity: 0; pointer-events: none; }
+.htabs-bar { display: flex; gap: 4px; flex-wrap: wrap; margin: 0 0 18px;
+             border-bottom: 1px solid var(--rule, rgba(0,0,0,.12)); padding-bottom: 9px; }
+.htabs-bar label { cursor: pointer; font-weight: 600; padding: 8px 15px;
+                   border-radius: 9px; color: var(--ink-dim, #6b7280);
+                   display: inline-flex; align-items: baseline; gap: 7px; }
+.htabs-bar label:hover { background: rgba(127,127,127,.10); }
+.htabs-bar label i { font-style: normal; font-size: .82em; opacity: .55;
+                     font-weight: 500; }
+.htabs-panel { display: none; }
+/* One pair per tab. Verbose on purpose: `:has()` would collapse these to one
+   rule and is newer than some of the phones this is played on. */
+#ttab-sprint:checked  ~ .htabs-bar label[for="ttab-sprint"],
+#ttab-circuit:checked ~ .htabs-bar label[for="ttab-circuit"],
+#ttab-daily:checked   ~ .htabs-bar label[for="ttab-daily"] {
+  background: var(--ink, #111); color: var(--paper, #fff); }
+#ttab-sprint:checked  ~ #panel-sprint,
+#ttab-circuit:checked ~ #panel-circuit,
+#ttab-daily:checked   ~ #panel-daily { display: block; }
+/* The keyboard has to be able to see where it is, and the input carries the
+   focus rather than the label. */
+.htabs > input[name="ttab"]:focus-visible ~ .htabs-bar label { outline: none; }
+#ttab-sprint:focus-visible  ~ .htabs-bar label[for="ttab-sprint"],
+#ttab-circuit:focus-visible ~ .htabs-bar label[for="ttab-circuit"],
+#ttab-daily:focus-visible   ~ .htabs-bar label[for="ttab-daily"] {
+  outline: 2px solid var(--accent, #3b82f6); outline-offset: 2px; }
+
+.tabnote { color: var(--ink-dim, #6b7280); margin: -6px 0 16px; }
+
+/* A daily's card wears its plan view, since no cover has been shot for one. */
+.tshot-plan { display: grid; place-items: center; background: var(--card-2, #eef1f5); }
+.tshot-plan svg { width: 82%; height: 82%; }
+.tshot-plan path { fill: none; stroke: currentColor; stroke-width: 3;
+                   stroke-linejoin: round; stroke-linecap: round; opacity: .65; }
+.tcard.today { outline: 2px solid #e8b93c; }
+
+/* The switcher's tab strip and its sort bar.
+   The sheet is a column: tabs, then the grid, then the sorts. The grid is the
+   only part that scrolls, so the tabs stay reachable on a long list and the
+   sort bar cannot walk off the bottom of a phone.
+
+   **Inked, not white.** `.sheet` is `--paper` - the same light card the rest of
+   the site is - so the first pass here was white text on a near-white panel and
+   the whole strip was invisible in the screenshot. Every colour below comes off
+   the theme variables for that reason. */
+.tracks-sheet { display: flex; flex-direction: column; min-height: 0; }
+.tracks-sheet .tgrid { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+
+.ttabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 0 0 12px;
+         border-bottom: 2px solid var(--line); padding-bottom: 8px; }
+.ttab { appearance: none; background: none; border: 0; cursor: pointer;
+        font: inherit; font-weight: 700; color: var(--ink-soft);
+        padding: 7px 13px; border-radius: 9px;
+        display: inline-flex; align-items: baseline; gap: 6px; }
+.ttab:hover { color: var(--ink); background: rgba(29,29,31,.07); }
+.ttab.on { color: var(--paper); background: var(--ink); }
+/* The count, dimmer than the word, so the strip reads as four names and not as
+   four sums. */
+.ttab i { font-style: normal; font-size: .82em; opacity: .6; font-weight: 500; }
+.ttab.empty { opacity: .45; }
+
+.tsorts { display: flex; gap: 3px; flex-wrap: wrap; align-items: center;
+          margin: 12px 0 0; padding-top: 10px;
+          border-top: 2px solid var(--line); }
+.tsorts-label { font-family: var(--mono, monospace); font-size: 10px;
+                letter-spacing: .16em; text-transform: uppercase;
+                color: var(--ink-soft); margin-right: 6px; }
+.tsort { appearance: none; background: none; border: 0; cursor: pointer;
+         font: inherit; font-size: .86rem; color: var(--ink-soft);
+         padding: 5px 9px; border-radius: 7px; }
+.tsort:hover { color: var(--ink); background: rgba(29,29,31,.07); }
+.tsort.on { color: var(--paper); background: var(--ink); }
+/* Which way the sort runs, on the button that is running it. An arrow rather
+   than a word: the label is already the key, and "Difficulty (descending)" is a
+   sentence where this is a glyph. */
+.tsort.on::after { content: " \2191"; opacity: .75; }
+.tsort.on.desc::after { content: " \2193"; }
+
+.tempty { grid-column: 1 / -1; text-align: center; padding: 34px 16px;
+          color: var(--ink-soft); }
+
+/* Today's daily, on its card. Same corner as "Now" and the same shape, because
+   they are the same kind of fact - where you are, and when this is. */
+.tcard2-today { display: none; position: absolute; left: 8px; top: 8px;
+                background: #e8b93c; color: #1a1408; font-size: .7rem;
+                font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+                padding: 3px 7px; border-radius: 6px; }
+.tcard2.today .tcard2-today { display: block; }
+
 /* The Community shelf in the track switcher. Full width across the grid, so it
    reads as a divider rather than as a card that failed to load. */
 .tshelf { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 10px;
