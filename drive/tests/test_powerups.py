@@ -243,12 +243,19 @@ def test_a_banana_thrown_backwards_is_a_banana_dropped(A, bend):
     assert shell["p"][2] > 0 and shell["v"][2] > 0, "a shell thrown back still flies"
 
 
-def test_a_shell_thrown_backwards_keeps_its_own_clock(A, bend):
+def test_a_shell_thrown_backwards_keeps_its_own_clock(A, bend, monkeypatch):
     """`until` asked `back`, which was the banana's flag by accident - so a
     green thrown backwards lived BANANA_MS and bounced for forty-five
     seconds."""
     r = _room(A)
     _car(A, r, "a")
+    # **The clock is frozen because the assertion is about the two lifetimes,
+    # not about how long two calls take.** Each `_fire` stamps `until` from its
+    # own `_now_ms()`, so if the wall clock ticks between them the difference
+    # comes out one millisecond off and this fails - which it did, in CI,
+    # reporting -40001 where it wanted -40000. Freezing it is what the test
+    # means rather than a tolerance bolted onto the comparison.
+    monkeypatch.setattr(A, "_now_ms", lambda: 1_700_000_000_000)
     A._fire(r, "a", "green", back=True)
     A._fire(r, "a", "banana", back=True)
     shell, banana = r["shots"]
