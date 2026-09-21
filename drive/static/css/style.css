@@ -938,13 +938,14 @@ body.touch .hud-tl > .card:first-child { width: 12rem; }
   font-family: var(--mono); font-size: 3.4rem; font-weight: 700; line-height: .95;
   letter-spacing: -.03em; text-shadow: 0 3px 14px rgba(0, 0, 0, .75);
 }
-#place span {
-  font: 600 .72rem var(--sans); letter-spacing: .12em; text-transform: uppercase;
-  color: rgba(255, 255, 255, .72); text-shadow: 0 2px 8px rgba(0, 0, 0, .7);
-}
-/* First place gets the colour the medals use, because it is the one position
-   worth seeing without reading. */
-#place.lead b { color: #ffd76a; }
+/* The podium in the medals' own three colours, everything else white. It is
+   the one thing on the HUD you take in rather than read, and a colour lands
+   before a word does. Lightened from `--gold`/`--silver`/`--bronze` for the
+   reason `.res-next b` gives in reverse: those are backgrounds with dark ink
+   over them, and as 3.4rem of type over a moving track they are too dark. */
+#place.p1 b { color: #ffd76a; }
+#place.p2 b { color: #d8dde6; }
+#place.p3 b { color: #e0a06a; }
 /* **On a phone it goes to the top, beside the map.** The bottom right corner
    is the throttle, and the two things you look *up* for - where am I on the
    track, and where am I in the race - belong together where the eye already
@@ -959,7 +960,6 @@ body.touch #place {
   position: static; align-items: flex-start; gap: 0; padding-top: 2px;
 }
 body.touch #place b { font-size: 1.9rem; }
-body.touch #place span { font-size: .6rem; }
 
 #wrongWay {
   position: absolute; top: 26%; left: 50%; transform: translateX(-50%);

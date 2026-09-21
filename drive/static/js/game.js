@@ -5964,8 +5964,11 @@ function hud(now) {
     const me = order.findIndex(e => e.self) + 1;
     $('place').style.display = me ? '' : 'none';
     $('placeNum').textContent = me ? ordinal(me) : '-';
-    $('placeOf').textContent = 'of ' + order.length;
-    $('place').classList.toggle('lead', me === 1);
+    // **Gold, silver, bronze, then white**, and no "of 4" under it. How many
+    // cars there are is the standings list beside it, counted rather than
+    // read; what the number needs to say is where you are, and the podium
+    // three say that in a colour before the word is read at all.
+    $('place').className = me && me <= 3 ? 'p' + me : '';
     renderStandings(order);
     $('standingsCard').style.display = '';
   } else {
