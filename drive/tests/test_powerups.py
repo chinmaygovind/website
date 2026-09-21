@@ -211,6 +211,26 @@ def test_everything_leaves_the_nose_and_backwards_is_the_only_exception(A, bend)
     assert shell["v"][2] < 0 and banana["v"][2] < 0 and bomb["v"][2] < 0
 
 
+def test_a_bomb_is_thrown_past_the_car_that_threw_it(A, bend):
+    """`BOMB_SPEED` is 38 and a car does 50, so a bomb thrown at speed used to
+    be left behind by the thrower and go off under their own wheels."""
+    r = _room(A)
+    c = _car(A, r, "a")
+    c["v"] = [0.0, 0.0, -48.0]                # flat out, forward is -Z
+    A._fire(r, "a", "bomb")
+    assert r["shots"][0]["v"][2] < -48.0 - 10
+
+
+def test_a_bomb_thrown_backwards_is_just_lobbed(A, bend):
+    """Behind you it is separating from you already - adding your own speed to
+    it would plant it on your own back bumper."""
+    r = _room(A)
+    c = _car(A, r, "a")
+    c["v"] = [0.0, 0.0, -48.0]
+    A._fire(r, "a", "bomb", back=True)
+    assert r["shots"][0]["v"][2] == A.BOMB_SPEED
+
+
 def test_a_banana_thrown_backwards_is_a_banana_dropped(A, bend):
     """It is the one item whose backwards is *standing still*: dropping one on
     the road behind you is the whole of what a banana is for."""

@@ -2257,19 +2257,25 @@ const SHOT_CHASE = 16;
  */
 function hitByItem() {
   S.sound.itemHit();
-  // **Spun, not launched.** It used to throw the car 16 units up and tumble it
-  // about its own `right` axis, which is a flip: the horizon went over, the
-  // camera went with it, and where the car came down was a matter of luck on a
-  // narrow road. What a shell should cost is the one thing it now costs -
-  // your speed. The car is stopped to a crawl and turned through a full circle
-  // on the spot, which is slow to recover from and reads from the seat as
-  // being spun rather than as the game glitching.
+  // **A hop and a tumble, and then no speed at all.** The flip is what the hit
+  // has always looked like here and it stays; what was wrong with it was the
+  // scale - sixteen units of air is a launch, and the camera went with it. A
+  // third of that is a car being knocked off its wheels rather than fired off
+  // the track, and the speed goes with the hit instead of being carried
+  // through it, so what it costs you is the thing it should cost you.
+  //
+  // (A flat spin about `up` was tried in between and is worse: the chase
+  // camera lerps toward the car's own forward, so a car turning on the spot
+  // takes the camera round with it and you cannot see the road at all.)
   S.car.vel.multiplyScalar(HIT_KEEP);
-  S.spin = { left: HIT_SPIN_S, dir: Math.random() < 0.5 ? -1 : 1 };
-  S.car.bumpSlip = Math.max(S.car.bumpSlip, 0.8);
-  // A knock, not a punch: the camera is about to follow a car going round, and
-  // a shake on top of that is the part that made it unreadable.
-  S.renderer.kick(0.4);
+  S.car.vel.addScaledVector(S.car.up, HIT_AIR);
+  S.car._spin(S.car.right, 2.2);
+  S.car.bumpSlip = Math.max(S.car.bumpSlip, 1.1);
+  S.renderer.kick(0.9);
+  // And it goes on smoking while it gathers itself up, because the sparks are
+  // over in a tenth of a second and the slowdown lasts three - without this
+  // the car is simply crawling for no visible reason.
+  S.hitSmoke = HIT_SMOKE_S;
   // Sparks off the car itself, so there is something to *see* at the moment of
   // contact and not only afterwards in how the car is behaving. One call is a
   // burst - `Renderer.smoke` fans five out of every 'spark' - and two calls
@@ -2281,30 +2287,28 @@ function hitByItem() {
   }
 }
 
-// A hit, in two numbers. The whole turn is 2*PI, so the car ends up pointing
-// where it was pointing - which is what keeps this on the road and keeps the
-// camera, which lerps toward the car's own forward, from ending somewhere it
-// has to swing back from.
-const HIT_KEEP = 0.12;        // of the speed you had
-const HIT_SPIN_S = 0.9;       // seconds to go round once
+// A hit, in three numbers.
+const HIT_KEEP = 0.15;        // of the speed you had: it stops you, not slows you
+const HIT_AIR = 5.5;          // units/s upwards. It was 16, which is a launch.
+const HIT_SMOKE_S = 1.4;      // how long the car smokes afterwards
 
 /**
- * The turn itself, a frame at a time.
+ * The smoke off a car that has just been hit, a frame at a time.
  *
- * Yaw about the car's *up*, never its `right`: one is a spin and the other is a
- * flip. It is rotation only - nothing here touches the velocity, so the car
- * keeps sliding the way it was already going while it comes round, which is
- * what a spin-out looks like.
+ * `soot` rather than `smoke`, and the difference is the blend mode rather than
+ * the colour - see `Renderer.smoke`. It comes off the back of the car and
+ * drifts up, and it stops early if the car is put back on the road, because a
+ * respawn is a clean car.
  */
-function spinOut(dt) {
-  const sp = S.spin;
-  if (!sp) return;
-  // Put back on the road by a respawn, and the spin is not part of that.
-  if (S.car.respawnIn > 0) { S.spin = null; return; }
-  const step = Math.min(dt, sp.left);
-  S.car._spin(S.car.up, sp.dir * (Math.PI * 2 / HIT_SPIN_S) * step);
-  sp.left -= step;
-  if (sp.left <= 0) S.spin = null;
+function hitSmoke(dt) {
+  if (!S.hitSmoke) return;
+  if (S.car.respawnIn > 0) { S.hitSmoke = 0; return; }
+  S.hitSmoke = Math.max(0, S.hitSmoke - dt);
+  const back = S.car.pos.clone()
+    .addScaledVector(S.car.fwd, -1.1).addScaledVector(S.car.up, 0.35);
+  S.renderer.smoke(back, new THREE.Vector3((Math.random() - 0.5) * 3,
+                                           2 + Math.random() * 2,
+                                           (Math.random() - 0.5) * 3), 'soot');
 }
 
 /** How a hit reads when it was yours. The verb is the item's, not the car's. */
@@ -5774,7 +5778,7 @@ function tyreSmoke(car, kind) {
 
 function render(dt, now) {
   const car = S.car;
-  spinOut(dt);
+  hitSmoke(dt);
   animateItemBoxes(now);
   moveShots(dt);
   shellWarning(now);

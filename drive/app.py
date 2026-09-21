@@ -2980,6 +2980,7 @@ SHOT_LIFT = 0.9           # how far off the road a shell rides
 # it catches is whatever happens to be near it - **including whoever threw
 # it**, which is the whole of its character. A shell is aimed; a bomb is a bet.
 BOMB_SPEED = 38.0         # slower than a shell: it is lobbed, not fired
+BOMB_LOB = 18.0           # and how far ahead of your own car it is lobbed
 BOMB_FLY_MS = 900         # how long it travels before it settles
 BOMB_FUSE_MS = 3000       # and how long after that until it goes off
 BOMB_BLAST = 16.0         # how far the blast reaches
@@ -3270,7 +3271,15 @@ def _fire(r, owner, item, target=None, back=False):
     # own bodywork, which is exactly when you are trying to see where you have
     # aimed it. Five units is a car length clear.
     reach, speed = ((-4.0, 0.0) if drop else
-                    (3.0, BOMB_SPEED) if bomb else (5.0, SHOT_SPEED))
+                    (5.0, BOMB_SPEED) if bomb else (5.0, SHOT_SPEED))
+    if bomb and not behind:
+        # **It has to outrun the car that threw it.** `BOMB_SPEED` is 38 and a
+        # car does 50, so a bomb lobbed at speed was left behind by the thrower
+        # inside half a second and went off under their own back wheels. The
+        # throw is added to what the car is already doing, the way a real one
+        # would be - so it lands ahead at any speed, and `BOMB_SPEED` goes back
+        # to meaning what it says: how hard it is lobbed.
+        speed = max(speed, sum(c["v"][i] * f[i] for i in range(3)) + BOMB_LOB)
     if behind and not drop:
         reach = -4.0
     now = _now_ms()

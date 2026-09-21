@@ -1146,8 +1146,18 @@ class Particles {
     }
     this.next = 0;
   }
-  spawn(pos, vel, color, size, life, grow = 2.2) {
+  spawn(pos, vel, color, size, life, grow = 2.2, blend = THREE.AdditiveBlending) {
     const p = this.items[this.next = (this.next + 1) % this.items.length];
+    // **Additive for everything that glows, normal for everything that does
+    // not.** Smoke, dust and sparks are all light being added to what is
+    // behind them, which is why they can be pale over any track - and it is
+    // also why soot cannot: additive black is nothing at all. A particle that
+    // has to be *darker* than the road needs the other blend mode, and the
+    // material is per particle, so it is one flag rather than a second pool.
+    if (p.mesh.material.blending !== blend) {
+      p.mesh.material.blending = blend;
+      p.mesh.material.needsUpdate = true;
+    }
     p.mesh.position.copy(pos);
     p.mesh.scale.setScalar(size);
     p.mesh.material.color.set(color);
@@ -2317,6 +2327,12 @@ export class Renderer {
       }
     } else if (kind === 'dust') {
       this.particles.spawn(pos, vel, 0xd8cdb8, 0.9, 0.5);
+    } else if (kind === 'soot') {
+      // A hit car smoking. Dark, so it has to be blended normally - see
+      // `Particles.spawn`. A cached copy of this file falls through to the
+      // pale smoke below, which is a duller effect rather than a broken page.
+      this.particles.spawn(pos, vel, 0x15161a, 1.0, 0.55, 1.6,
+                           THREE.NormalBlending);
     } else {
       this.particles.spawn(pos, vel, 0xdfe6ef, 0.75, 0.42);
     }

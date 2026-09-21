@@ -1352,45 +1352,39 @@ def test_r_and_t_do_nothing_once_your_race_is_run():
         ["reset", "toast:Restart", "respawn"]
 
 
-# --- being hit spins the car, and does not flip it ---------------------------
+# --- being hit smokes the car for a moment ----------------------------------
 #
-# The axis is the whole of this. Yaw about the car's own up is a spin-out; the
-# same call about its `right` - which is what this used to do, with a 16-unit
-# launch under it - is a flip, and on a narrow road a flip is a fall. There is
-# no picture of it in CI, so the two things that can be asserted are: which axis
-# it turns about, and that the turn comes to exactly one revolution and stops.
+# The hit itself is four lines with no logic in them. What can go wrong here is
+# the trail that follows it: it has to stop on its own, and it has to stop early
+# when the car is put back on the road, or a car that fell off comes back from
+# its respawn still smoking.
 
-SPIN_STUB = """
-var turned = [];
-var S = {spin: {left: 0.9, dir: 1},
-         car: {up: 'up', right: 'right', respawnIn: 0,
-               _spin: (axis, a) => turned.push([axis, a])}};
-const HIT_SPIN_S = 0.9;
+SMOKE_STUB = """
+var puffs = [];
+var THREE = {Vector3: function (x, y, z) { this.x = x; this.y = y; this.z = z; }};
+var v3 = () => ({addScaledVector: function () { return this; }, clone: function () { return this; }});
+var S = {hitSmoke: 1.4,
+         car: {respawnIn: 0, pos: v3(), fwd: v3(), up: v3()},
+         renderer: {smoke: (p, v, kind) => puffs.push(kind)}};
 """
 
 
-def _spin_frames(dt, n, setup=SPIN_STUB):
+def _smoke_frames(n, setup=SMOKE_STUB, dt=0.1):
     ctx = _ctx(setup)
-    ctx.eval(_fn("spinOut"))
-    ctx.eval("for (var i = 0; i < %d; i++) spinOut(%r);" % (n, dt))
-    import json
-    return (json.loads(ctx.eval("JSON.stringify(turned)")),
-            json.loads(ctx.eval("JSON.stringify(S.spin)")))
+    ctx.eval(_fn("hitSmoke"))
+    ctx.eval("for (var i = 0; i < %d; i++) hitSmoke(%r);" % (n, dt))
+    return (json.loads(ctx.eval("JSON.stringify(puffs)")),
+            json.loads(ctx.eval("JSON.stringify(S.hitSmoke)")))
 
 
-def test_a_hit_yaws_the_car_rather_than_flipping_it():
-    turned, _ = _spin_frames(0.016, 4)
-    assert turned and all(axis == "up" for axis, _ in turned)
+def test_a_hit_car_smokes_and_then_stops():
+    puffs, left = _smoke_frames(40)
+    assert left == 0
+    # 1.4s of it at 0.1 a frame, and it is `soot` rather than `smoke` - the
+    # pale one is additive and a dark additive particle is nothing at all.
+    assert len(puffs) == 14 and set(puffs) == {"soot"}
 
 
-def test_the_spin_is_exactly_one_turn_and_then_stops():
-    turned, left = _spin_frames(0.016, 200)
-    assert left is None
-    assert sum(a for _, a in turned) == pytest.approx(math.pi * 2, rel=1e-9)
-
-
-def test_a_respawn_ends_it():
-    """Being put back on the road is not a moment to still be coming round."""
-    turned, left = _spin_frames(
-        0.016, 5, SPIN_STUB.replace("respawnIn: 0", "respawnIn: 1.2"))
-    assert turned == [] and left is None
+def test_a_respawn_puts_a_clean_car_back():
+    puffs, left = _smoke_frames(5, SMOKE_STUB.replace("respawnIn: 0", "respawnIn: 1.2"))
+    assert puffs == [] and left == 0
