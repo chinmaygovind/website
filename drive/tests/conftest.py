@@ -342,13 +342,7 @@ def memoize_build_track(rt):
 # shortcut, which invalidated every lap it could be recut from. The line here
 # now is off a lap that drives the whole circuit - `hotlap.py` reports the air
 # in a lap it cuts, and this one has no gap wide enough to be one.
-# Suzuka, the escape hatch doing exactly the job described above: it landed
-# with the commit below this one and prod's board has never seen it, so there
-# is no record to cut a line from. Drive a lap, then
-# `tools/hotlap.py suzuka --site https://drive.cgovind.com`, commit the file
-# and drop this entry - the test asserts the entry is gone once the file
-# exists, so it cannot rot.
-NO_HOTLAP_YET = {"suzuka"}
+NO_HOTLAP_YET = set()
 
 # Waiting on a board deep enough to cut a standard from - five or so distinct
 # players. Drop the entry, then, on the box:

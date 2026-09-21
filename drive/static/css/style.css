@@ -133,16 +133,22 @@ a:hover { text-decoration: underline; }
    link is white and underlined because on a red ground the site's usual
    red-on-paper link has nothing left to be, and the underline is the only cue
    that any of the sentence is clickable. */
+/* Blossom pink, for Suzuka. It is the one strip on the site whose colour is
+   allowed to follow whatever it is announcing, because it is taken down again
+   when the announcement is - see the `banner` dict in `_nav.html`.
+   The text is `--ink` and not white: on a background this light white measures
+   about 1.5:1, which is not a contrast failure so much as a strip nobody can
+   read. Dark on pale is 12:1 and keeps the stamped look the nav already has. */
 .newsbar {
-  background: #030163; color: #fff;
+  background: #f6d3e0; color: var(--ink);
   font-family: var(--sans); font-size: .82rem; font-weight: 700;
   letter-spacing: .04em; text-transform: uppercase; text-align: center;
   padding: .4rem 1.1rem;
   border-bottom: 2px solid var(--line);
 }
-.newsbar a { color: #fff; text-decoration: underline; text-underline-offset: .18em; }
-.newsbar a:hover { color: var(--paper); }
-.newsbar a:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.newsbar a { color: var(--ink); text-decoration: underline; text-underline-offset: .18em; }
+.newsbar a:hover { color: var(--red); }
+.newsbar a:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 /* --- nav ---------------------------------------------------------------- */
 .nav {
