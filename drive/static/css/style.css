@@ -950,17 +950,13 @@ body.touch .hud-tl > .card:first-child { width: 12rem; }
    track, and where am I in the race - belong together where the eye already
    goes. Left of centre, next to the map rather than over it, so neither has
    to be read past the other. */
-/* **Against the map's top corner**, reading across from it: the map's card
-   ends at 152px on a phone, so this starts at 160 and its cap line sits level
-   with the top of the card. Beside it rather than under it, because under it
-   is where the item slots come up from, and out in the open rather than
-   against it is the number floating in the middle of the windscreen that this
-   has twice been. Stacked, since there is depth here and not width. */
+/* **Beside the map, in the map's own row.** `movePlaceByMap` puts it there on
+   touch; all this does is stop it being positioned against the screen. It was
+   `left: 160px` - the map's width plus a gap *on one phone* - and on any other
+   it stood off in the middle of the windscreen with nothing near it. */
+body.touch .hud-bl { flex-direction: row; align-items: flex-start; gap: 10px; }
 body.touch #place {
-  bottom: auto; right: auto;
-  top: calc(74px + env(safe-area-inset-top, 0px));
-  left: calc(160px + env(safe-area-inset-left, 0px));
-  align-items: flex-start; gap: 0;
+  position: static; align-items: flex-start; gap: 0; padding-top: 2px;
 }
 body.touch #place b { font-size: 1.9rem; }
 body.touch #place span { font-size: .6rem; }
