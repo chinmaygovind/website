@@ -2298,8 +2298,9 @@ body.shot .hud, body.shot #touch, body.shot #rotate, body.shot .side { display: 
 .res-row .pt { min-width: 4.2rem; text-align: right; font-family: var(--mono);
                font-size: .85rem; color: var(--ink-soft); }
 .res-row .pt i { font-style: normal; }
-.res-row .pt b { display: inline-block; min-width: 1.6rem; margin-left: .35rem;
-                 padding: .02rem .3rem; border-radius: 999px;
+.res-row .pt b { display: inline-flex; align-items: center; justify-content: center;
+                 min-width: 1.45rem; height: 1.45rem; margin-left: .35rem;
+                 padding: 0 .35rem; border-radius: 999px; line-height: 1;
                  background: var(--gold); color: var(--ink); font-weight: 700; }
 .res-row .el { width: 3rem; text-align: right; font-family: var(--mono); font-size: .85rem; }
 .res-row .el.up { color: #12855a; }
@@ -2380,9 +2381,16 @@ body.touch.side-open .hud-tr { transform: none; }
 .pl-elo { font-family: var(--mono); font-size: .75rem; color: #b9c2d0; }
 /* Points this session. Gold, matching the pill on the result sheet, and a pill
    rather than a bare number so it is not read as a second rating. */
+/* **A flex box, not a padded inline one.** As an inline box its height was the
+   line box of one digit and its vertical padding was .02rem, so the gold sat
+   wherever the font's ink happened to sit inside the line - high, and visibly
+   so on a single digit, where there is no width to distract from it. Centring
+   both axes explicitly is the only way to say "the number is in the middle of
+   the pill", which is what it has to look like. */
 .pl-pts {
-  font-family: var(--mono); font-size: .75rem; font-weight: 700;
-  min-width: 1.5rem; text-align: center; padding: .02rem .3rem;
+  font-family: var(--mono); font-size: .75rem; font-weight: 700; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 1.35rem; height: 1.35rem; padding: 0 .35rem;
   border-radius: 999px; color: #ffd96b; background: rgba(255, 217, 107, .18);
 }
 .kick { background: none; border: 0; color: #ff8a7a; cursor: pointer; font-size: 1rem; }
@@ -2604,6 +2612,19 @@ body.side-open #touch { display: none; }
   .res-line { padding: .3rem .1rem; }
   .res-line b { font-size: 1.2rem; }
   .sheet-actions { margin-top: .8rem; }
+  /* **The table gives up the height, and the buttons never do.** A full grid's
+     standings on a 390px-tall screen pushed the row of buttons off the bottom
+     of the sheet, which on a phone is the row that ends the race - and a sheet
+     that scrolls is not an answer, because nothing tells you there is anything
+     below what you can see. The list scrolls inside itself instead: it is the
+     one part of this sheet you read rather than press. */
+  .res-standings { max-height: 34vh; overflow-y: auto; }
+  .res-row { font-size: .92rem; padding: .28rem .3rem; }
+  /* And all four across, rather than two-by-two: a landscape phone is short,
+     not narrow, so width is the thing there is plenty of. */
+  .sheet-actions.even[data-n="4"] { grid-template-columns: repeat(4, 1fr); }
+  .sheet-actions.even[data-n="5"] { grid-template-columns: repeat(5, 1fr); }
+  .sheet-actions.even .btn { font-size: .82rem; padding: .4rem .3rem; }
 }
 
 /* Landscape on a phone is short, not narrow: the left-hand column has to fit

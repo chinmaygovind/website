@@ -1729,7 +1729,8 @@ function renderSettings() {
 }
 
 const ITEM_LABEL = { boost: 'Boost', green: 'Green shell', red: 'Red shell',
-  blue: 'Blue shell', banana: 'Banana', shield: 'Shield', star: 'Star' };
+  blue: 'Blue shell', banana: 'Banana', shield: 'Shield', star: 'Star',
+  bomb: 'Bomb' };
 
 /**
  * What each item looks like in a slot.
@@ -2256,10 +2257,19 @@ const SHOT_CHASE = 16;
  */
 function hitByItem() {
   S.sound.itemHit();
-  S.car.vel.addScaledVector(S.car.up, 16);
-  S.car._spin(S.car.right, 2.2);
-  S.car.bumpSlip = Math.max(S.car.bumpSlip, 1.1);
-  S.renderer.kick(1.15);
+  // **Spun, not launched.** It used to throw the car 16 units up and tumble it
+  // about its own `right` axis, which is a flip: the horizon went over, the
+  // camera went with it, and where the car came down was a matter of luck on a
+  // narrow road. What a shell should cost is the one thing it now costs -
+  // your speed. The car is stopped to a crawl and turned through a full circle
+  // on the spot, which is slow to recover from and reads from the seat as
+  // being spun rather than as the game glitching.
+  S.car.vel.multiplyScalar(HIT_KEEP);
+  S.spin = { left: HIT_SPIN_S, dir: Math.random() < 0.5 ? -1 : 1 };
+  S.car.bumpSlip = Math.max(S.car.bumpSlip, 0.8);
+  // A knock, not a punch: the camera is about to follow a car going round, and
+  // a shake on top of that is the part that made it unreadable.
+  S.renderer.kick(0.4);
   // Sparks off the car itself, so there is something to *see* at the moment of
   // contact and not only afterwards in how the car is behaving. One call is a
   // burst - `Renderer.smoke` fans five out of every 'spark' - and two calls
@@ -2269,6 +2279,32 @@ function hitByItem() {
                      new THREE.Vector3((Math.random() - 0.5) * 8, up,
                                        (Math.random() - 0.5) * 8), 'spark');
   }
+}
+
+// A hit, in two numbers. The whole turn is 2*PI, so the car ends up pointing
+// where it was pointing - which is what keeps this on the road and keeps the
+// camera, which lerps toward the car's own forward, from ending somewhere it
+// has to swing back from.
+const HIT_KEEP = 0.12;        // of the speed you had
+const HIT_SPIN_S = 0.9;       // seconds to go round once
+
+/**
+ * The turn itself, a frame at a time.
+ *
+ * Yaw about the car's *up*, never its `right`: one is a spin and the other is a
+ * flip. It is rotation only - nothing here touches the velocity, so the car
+ * keeps sliding the way it was already going while it comes round, which is
+ * what a spin-out looks like.
+ */
+function spinOut(dt) {
+  const sp = S.spin;
+  if (!sp) return;
+  // Put back on the road by a respawn, and the spin is not part of that.
+  if (S.car.respawnIn > 0) { S.spin = null; return; }
+  const step = Math.min(dt, sp.left);
+  S.car._spin(S.car.up, sp.dir * (Math.PI * 2 / HIT_SPIN_S) * step);
+  sp.left -= step;
+  if (sp.left <= 0) S.spin = null;
 }
 
 /** How a hit reads when it was yours. The verb is the item's, not the car's. */
@@ -5737,6 +5773,7 @@ function tyreSmoke(car, kind) {
 
 function render(dt, now) {
   const car = S.car;
+  spinOut(dt);
   animateItemBoxes(now);
   moveShots(dt);
   shellWarning(now);
@@ -7211,8 +7248,21 @@ function connect() {
       toast((HIT_SAID[d.item] || 'Hit') + ' ' + nameOf(d.pid) + '!');
     }
     if (!d || !CFG.me || d.pid !== CFG.me.pid || S.car.star > 0) return;
+    // **And your own, named the other way round.** Being spun by something you
+    // never saw is the one event in the game with no explanation attached to
+    // it - a shell arrives from behind, the car goes round, and nothing says
+    // whether that was a red, a bomb somebody dropped a corner ago, or the
+    // banana you drove into yourself. Both halves are said: what, and whose.
+    const by = d.owner === CFG.me.pid ? 'your own '
+             : nameOf(d.owner) + "'s ";
+    const what = (ITEM_LABEL[d.item] || d.item).toLowerCase();
     // The shield is one hit, not a stretch of time: taking one is what ends it.
-    if (S.car.shield > 0) { S.car.shield = 0; S.sound.itemBlocked(); toast('Shield gone!'); return; }
+    if (S.car.shield > 0) {
+      S.car.shield = 0; S.sound.itemBlocked();
+      toast('Shield ate ' + by + what + '!');
+      return;
+    }
+    toast('Hit by ' + by + what + '!');
     hitByItem();
   });
   socket.on('track_change', (d) => { setItemBoxes(d.boxes); applyTrackChange(d.track); });
@@ -7637,6 +7687,12 @@ function rivalSound() {
       drift: !!(r.flags & FLAG.DRIFT),
       air: !!(r.flags & FLAG.AIR),
       charge: r.slipCharge, boost: r.slipBoost / T.SLIP_BOOST,
+      // **You hear somebody else's star the way you hear their engine.** It is
+      // already on the wire as a flag - it has to be, or the bubble would not
+      // be on your screen - so this costs nothing new and answers the question
+      // the bubble only answers once they are in shot: something untouchable
+      // is coming, and from which side.
+      star: !!(r.flags & FLAG.STAR),
     });
   }
   out.sort((a, b) => a.d2 - b.d2);

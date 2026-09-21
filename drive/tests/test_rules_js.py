@@ -26,6 +26,7 @@ What the rest have in common is that they used to be bugs:
 * a lap driven in a room used to go on the leaderboard, tow and all.
 """
 
+import math
 import json
 import os
 import re
@@ -1349,3 +1350,47 @@ def test_r_and_t_do_nothing_once_your_race_is_run():
     ctx.eval("restartRun(); backToCheckpoint();")
     assert json.loads(ctx.eval("JSON.stringify(calls)")) == \
         ["reset", "toast:Restart", "respawn"]
+
+
+# --- being hit spins the car, and does not flip it ---------------------------
+#
+# The axis is the whole of this. Yaw about the car's own up is a spin-out; the
+# same call about its `right` - which is what this used to do, with a 16-unit
+# launch under it - is a flip, and on a narrow road a flip is a fall. There is
+# no picture of it in CI, so the two things that can be asserted are: which axis
+# it turns about, and that the turn comes to exactly one revolution and stops.
+
+SPIN_STUB = """
+var turned = [];
+var S = {spin: {left: 0.9, dir: 1},
+         car: {up: 'up', right: 'right', respawnIn: 0,
+               _spin: (axis, a) => turned.push([axis, a])}};
+const HIT_SPIN_S = 0.9;
+"""
+
+
+def _spin_frames(dt, n, setup=SPIN_STUB):
+    ctx = _ctx(setup)
+    ctx.eval(_fn("spinOut"))
+    ctx.eval("for (var i = 0; i < %d; i++) spinOut(%r);" % (n, dt))
+    import json
+    return (json.loads(ctx.eval("JSON.stringify(turned)")),
+            json.loads(ctx.eval("JSON.stringify(S.spin)")))
+
+
+def test_a_hit_yaws_the_car_rather_than_flipping_it():
+    turned, _ = _spin_frames(0.016, 4)
+    assert turned and all(axis == "up" for axis, _ in turned)
+
+
+def test_the_spin_is_exactly_one_turn_and_then_stops():
+    turned, left = _spin_frames(0.016, 200)
+    assert left is None
+    assert sum(a for _, a in turned) == pytest.approx(math.pi * 2, rel=1e-9)
+
+
+def test_a_respawn_ends_it():
+    """Being put back on the road is not a moment to still be coming round."""
+    turned, left = _spin_frames(
+        0.016, 5, SPIN_STUB.replace("respawnIn: 0", "respawnIn: 1.2"))
+    assert turned == [] and left is None

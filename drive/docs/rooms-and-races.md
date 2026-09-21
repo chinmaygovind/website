@@ -428,6 +428,17 @@ with how late it was and what the rooms were doing.
     browser, so the server does for it: `BotWorld.hit` is the same shove on the
     same `Car`, and without it a red shell homed perfectly onto a bot and nothing
     whatsoever happened.
+  - **And what the shove is, in one place: `hitByItem`.** A spin, not a flip.
+    It throws none of the car's speed at the sky any more - it keeps 12% of the
+    velocity and yaws through a full circle about the car's own *up* over 0.9s,
+    which ends with the car pointing where it started and on the road it was on.
+    The old version launched 16 units up and rotated about `right`, so a hit on
+    a narrow track was as likely to be a fall as a delay, and the camera went
+    over with it. `spinOut` is the frame-by-frame half; the axis and the single
+    turn are pinned in `test_rules_js.py`, because there is no picture of it in
+    CI. `item_hit` also carries its `owner`, so the victim's toast names both
+    halves - *Hit by Dana's red shell!* - and a shield that eats one says whose
+    it ate.
   - **The boost is a window, not a press, and the room owns the clock.** It is
     the golden mushroom: the first `X` opens `BOOST_WINDOW_MS` (7s), every tap
     inside it is another short burst of engine, and the *slot keeps the item*

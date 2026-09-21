@@ -578,9 +578,7 @@ export class Sound {
    * else can hear that you are.
    */
   itemStar() {
-    const bar = [[784, 0], [1047, 0.075], [1319, 0.15], [1568, 0.225],
-                 [1319, 0.3], [1568, 0.375], [2093, 0.45], [1568, 0.525]];
-    for (const [f, t] of bar) {
+    for (const [f, t] of STAR_BAR) {
       this._blip({ freq: f, type: 'square', dur: 0.1, gain: 0.2, delay: t });
       if (t < 0.3) this._blip({ freq: f / 2, type: 'triangle', dur: 0.12,
                                 gain: 0.12, delay: t });
@@ -1056,6 +1054,13 @@ export class Sound {
 // airborne, boosting), so none of this needed anything new on the wire except
 // how full the tow is.
 
+// The star's bar, shared by your own `itemStar` and a rival's `_starBar` so the
+// two are the same tune - one of them is you being untouchable and the other is
+// somebody else being untouchable, and they should not be two different songs.
+const STAR_BAR = [[784, 0], [1047, 0.075], [1319, 0.15], [1568, 0.225],
+                  [1319, 0.3], [1568, 0.375], [2093, 0.45], [1568, 0.525]];
+const RIVAL_STAR_MS = 640;    // matches STAR_BAR_MS in game.js
+
 const RIVAL_BUS = 0.9;        // the whole field against your own car
 const MAX_RIVAL_VOICES = 7;   // a full grid minus you; the rest are too far to hear
 const RIVAL_REF = 9;          // units: about two car lengths, where a rival is loudest
@@ -1122,6 +1127,7 @@ class RivalVoice {
     this.boosting = false;
     this.placed = false;
     this.quiet = false;
+    this.starNext = 0;
   }
 
   update(r, t) {
@@ -1152,6 +1158,37 @@ class RivalVoice {
     // get that the car behind you is about to not be behind you.
     if (boosting && !this.boosting) this._whoosh(t);
     this.boosting = boosting;
+
+    // Their star, through the same panner as their engine - so it arrives from
+    // wherever they are and gets quieter as they leave, which is the whole
+    // reason to hear it at all: the tune is a warning, and a warning with no
+    // direction in it is just noise. Scheduled bar by bar rather than looped,
+    // for `itemStar`'s reason - it is eight blips, not a buffer.
+    if (r.star) {
+      if (this.starNext < t) this.starNext = t;
+      if (this.starNext < t + 0.1) {
+        this._starBar(this.starNext);
+        this.starNext += RIVAL_STAR_MS / 1000;
+      }
+    } else {
+      this.starNext = 0;
+    }
+  }
+
+  /** `Sound.itemStar`'s bar, quieter and placed at their car. */
+  _starBar(at) {
+    for (const [f, dt] of STAR_BAR) {
+      const o = this.ctx.createOscillator();
+      o.type = 'square';
+      o.frequency.value = f;
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0.0001, at + dt);
+      g.gain.exponentialRampToValueAtTime(0.09, at + dt + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + dt + 0.1);
+      o.connect(g).connect(this.panner);
+      o.start(at + dt);
+      o.stop(at + dt + 0.12);
+    }
   }
 
   _moveTo(r, t) {
