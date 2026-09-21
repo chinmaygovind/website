@@ -342,7 +342,13 @@ def memoize_build_track(rt):
 # shortcut, which invalidated every lap it could be recut from. The line here
 # now is off a lap that drives the whole circuit - `hotlap.py` reports the air
 # in a lap it cuts, and this one has no gap wide enough to be one.
-NO_HOTLAP_YET = set()
+# Suzuka, the escape hatch doing exactly the job described above: it landed
+# with the commit below this one and prod's board has never seen it, so there
+# is no record to cut a line from. Drive a lap, then
+# `tools/hotlap.py suzuka --site https://drive.cgovind.com`, commit the file
+# and drop this entry - the test asserts the entry is gone once the file
+# exists, so it cannot rot.
+NO_HOTLAP_YET = {"suzuka"}
 
 # Waiting on a board deep enough to cut a standard from - five or so distinct
 # players. Drop the entry, then, on the box:
@@ -350,7 +356,7 @@ NO_HOTLAP_YET = set()
 # Empty: every track in the pool now declares its own three times. Kept rather
 # than deleted because it is the escape hatch a brand-new folder needs on the
 # commit that adds it - a track nobody has driven has no board to cut from.
-NO_CUT_MEDALS_YET = {"silverstone", "monaco", "dino", "monza", "boo"}
+NO_CUT_MEDALS_YET = {"silverstone", "monaco", "dino", "monza", "boo", "suzuka"}
 
 
 # ---------------------------------------------------------------------------

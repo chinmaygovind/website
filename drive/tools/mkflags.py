@@ -61,19 +61,44 @@ def tricolour(bands, W=18, H=12):
     return [''.join(bands[min(len(bands) - 1, int(x * len(bands) / W))]
                     for x in range(W)) for _ in range(H)]
 
+
+def hinomaru(W=36, H=24):
+    """The Japanese flag: a red disc on white, centred, 3/5 of the height across.
+
+    The only two ways to get this wrong are the proportion and the centring, and
+    both are law rather than custom: the 1999 Act puts the disc dead centre at
+    three fifths of the hoist. Before it, the disc sat a hundredth of the length
+    towards the hoist and was 7/10 - which is the version most clip art still
+    draws, and it reads as slightly too big and slightly off to the left.
+
+    A disc on a square grid is the one design here whose cell count depends on
+    the resolution rather than on the construction, so W:H is held at 3:2 to
+    keep the cells square - on a non-square cell the disc comes out an ellipse.
+    """
+    assert W * 2 == H * 3, "the grid has to be 3:2 or the disc is an ellipse"
+    r = (3.0 / 5.0) * H / 2.0
+    g = []
+    for y in range(H):
+        row = []
+        for x in range(W):
+            dx, dy = (x + 0.5) - W / 2.0, (y + 0.5) - H / 2.0
+            row.append('R' if dx * dx + dy * dy <= r * r else 'W')
+        g.append(''.join(row))
+    return g
+
 def runs(grid):
     n = 0
     for r in grid:
         n += 1 + sum(1 for i in range(1, len(r)) if r[i] != r[i - 1])
     return n
 
-for name, grid in (('gb', union_jack()), ('be', tricolour('KYR'))):
+for name, grid in (('gb', union_jack()), ('be', tricolour('KYR')), ('jp', hinomaru())):
     art = {'B': '·', 'W': '#', 'R': '+', 'K': ' ', 'Y': ':'}
     print('%s  %dx%d  %d merged quads' % (name, len(grid[0]), len(grid), runs(grid)))
     for r in grid:
         print('   ', ''.join(art[c] for c in r))
     print()
-for name, grid in (('gb', union_jack()), ('be', tricolour('KYR'))):
+for name, grid in (('gb', union_jack()), ('be', tricolour('KYR')), ('jp', hinomaru())):
     print("    %s: [" % name)
     for r in grid:
         print("      '%s'," % r)

@@ -1904,6 +1904,70 @@ function solid_plate(buf, x0, x1, z0, z1, y, color) {
  */
 function buildTerrain(track, CELL, bbox, apron, drop) {
   const line = track.line;
+
+  // **A station with road underneath it is not ground, and must not be in the
+  // field.** This grid takes one height per cell from the *nearest* station, so
+  // where a circuit crosses over itself the upper road wins the cells beside
+  // the lower one and the field fills the gap between them solid - the road you
+  // drive under ends up buried in a mound, and the mound is in the collider. On
+  // Suzuka's crossing that measured 12.8 units of ground over the tarmac.
+  //
+  // Dropping those stations leaves the field following the lower road, which is
+  // what the ground there actually is; the road above it is then a bridge, and
+  // a bridge's deck, piers and parapet are `scenery.js`'s job. The other two
+  // consumers need no change and get this for free, because both already ask
+  // `toRoad` whether some other leg is nearer: `addApron` clips the run-off
+  // back and `addArmco` skips the barrier, so the span correctly gets neither.
+  //
+  // **Seeded narrowly, then grown along the ribbon**, and it has to be done in
+  // that order. The seed is a real overlap of tarmac - `hw + hw`, the same test
+  // `overRoad` uses - which on a track that never crosses itself marks nothing
+  // at all. Growing it by plan distance instead was tried and is what not to
+  // do: at `hw + hw + apron` it marked 568 of Spa's 906 stations, because a
+  // circuit on a hillside has lower road within fifty units of most of itself,
+  // and it put ground over Spa's own tarmac in 185 places. Growing *along the
+  // road* from a seed cannot do that - an empty seed stays empty, so Spa and
+  // Silverstone are untouched by construction rather than by luck.
+  //
+  // The growth exists because a crossing is shallow: the span either side of
+  // where the tarmac actually overlaps is still ten units up and only twenty or
+  // thirty out, so it goes on winning the cells beside the lower road's run-off.
+  // Seeding alone left 3.9 units of ground over Suzuka's under-bridge road.
+  // What has to be clear of the field is the whole footprint the lower road's
+  // apron needs, measured along the bridge rather than around it.
+  const over = new Uint8Array(line.length);
+  {
+    const step = track.station || 3.5;
+    const near = Math.ceil(30 / step) + 1;
+    let any = false;
+    for (let i = 0; i < line.length; i++) {
+      const e = line[i];
+      for (let j = 0; j < line.length; j++) {
+        if (Math.abs(j - i) <= near) continue;
+        const o = line[j];
+        if (o.air || o.p[1] > e.p[1] - 2) continue;
+        const r = e.hw + o.hw + 2;
+        const dx = o.p[0] - e.p[0], dz = o.p[2] - e.p[2];
+        if (dx * dx + dz * dz < r * r) { over[i] = 1; any = true; break; }
+      }
+    }
+    if (any) {
+      const grow = Math.ceil((apron + 8) / step);
+      const ring = !!track.closed;
+      const seed = over.slice();
+      const n = line.length;
+      for (let i = 0; i < n; i++) {
+        if (!seed[i]) continue;
+        for (let d = -grow; d <= grow; d++) {
+          let k = i + d;
+          if (ring) k = ((k % n) + n) % n;
+          else if (k < 0 || k >= n) continue;
+          over[k] = 1;
+        }
+      }
+    }
+  }
+
   const PAD = CELL * 10;
   const x0 = bbox.x0 - PAD, x1 = bbox.x1 + PAD;
   const z0 = bbox.z0 - PAD, z1 = bbox.z1 + PAD;
@@ -1925,6 +1989,7 @@ function buildTerrain(track, CELL, bbox, apron, drop) {
   const nbz = Math.floor(z1 / BUCKET) + span + 2 - bzMin;
   const buckets = new Array(nbx * nbz).fill(null);
   for (let i = 0; i < line.length; i++) {
+    if (over[i]) continue;                 // on a bridge: not ground, see above
     const p = line[i].p;
     const bx = Math.floor(p[0] / BUCKET) - bxMin, bz = Math.floor(p[2] / BUCKET) - bzMin;
     if (bx < 0 || bx >= nbx || bz < 0 || bz >= nbz) continue;
@@ -2974,6 +3039,38 @@ const FLAGS = {
       'GGGGGGWWWWWWRRRRRR',
       'GGGGGGWWWWWWRRRRRR',
       'GGGGGGWWWWWWRRRRRR',
+    ],
+  },
+  // The Hinomaru. Derived by `tools/mkflags.py` like the rest: the disc is
+  // three fifths of the hoist and dead centre, which is the 1999 Act's
+  // construction rather than the older off-centre 7/10 most clip art draws.
+  jp: {
+    cols: { W: 0xf4f4f2, R: 0xbc002d },
+    rows: [
+      'WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW',
+      'WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW',
+      'WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW',
+      'WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW',
+      'WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW',
+      'WWWWWWWWWWWWWWWRRRRRRWWWWWWWWWWWWWWW',
+      'WWWWWWWWWWWWWRRRRRRRRRRWWWWWWWWWWWWW',
+      'WWWWWWWWWWWWRRRRRRRRRRRRWWWWWWWWWWWW',
+      'WWWWWWWWWWWWRRRRRRRRRRRRWWWWWWWWWWWW',
+      'WWWWWWWWWWWRRRRRRRRRRRRRRWWWWWWWWWWW',
+      'WWWWWWWWWWWRRRRRRRRRRRRRRWWWWWWWWWWW',
+      'WWWWWWWWWWWRRRRRRRRRRRRRRWWWWWWWWWWW',
+      'WWWWWWWWWWWRRRRRRRRRRRRRRWWWWWWWWWWW',
+      'WWWWWWWWWWWRRRRRRRRRRRRRRWWWWWWWWWWW',
+      'WWWWWWWWWWWRRRRRRRRRRRRRRWWWWWWWWWWW',
+      'WWWWWWWWWWWWRRRRRRRRRRRRWWWWWWWWWWWW',
+      'WWWWWWWWWWWWRRRRRRRRRRRRWWWWWWWWWWWW',
+      'WWWWWWWWWWWWWRRRRRRRRRRWWWWWWWWWWWWW',
+      'WWWWWWWWWWWWWWWRRRRRRWWWWWWWWWWWWWWW',
+      'WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW',
+      'WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW',
+      'WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW',
+      'WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW',
+      'WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW',
     ],
   },
   be: {

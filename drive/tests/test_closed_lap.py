@@ -73,11 +73,26 @@ function through(ctx, gate) {
 
 @pytest.fixture(scope="module")
 def rt():
-    r = jsrt.Runtime()
+    # **The memory limit is a function of how many closed circuits there are.**
+    # `memoize_build_track` keeps every track it has built alive in this one
+    # context, which is what makes the suite quick - `makeRun` builds the track
+    # on every call and Spa alone is a second a time - but it also means the
+    # meshes accumulate rather than being collected between tests. A circuit of
+    # this size wants 128-160MB to build, so the default 512 covered four and
+    # ran out on the fifth: Suzuka arrived and monza, monaco and suzuka started
+    # failing with `InternalError: out of memory` inside `addScenery`, which
+    # reads as a fault in whichever track happened to be built last rather than
+    # as the ceiling it is.
+    #
+    # Raising it is the right fix and not a mask, because nothing in production
+    # builds more than one track per context: `verify.py` runs at
+    # `MEMORY_MB = 256` and re-drives one lap on one circuit, and both Spa and
+    # Suzuka build inside that on their own. The number below is the *test
+    # harness's* cost of memoizing the whole closed-lap pool, so it goes up
+    # again with the sixth one.
+    r = jsrt.Runtime(memory_mb=1280)
     r.load_tuning_and_tracks()
     r.eval(HARNESS)
-    # Ten tests over three circuits, and `makeRun` builds the track every time.
-    # See `memoize_build_track` - Spa alone is a second a call.
     from conftest import memoize_build_track
     return memoize_build_track(r)
 

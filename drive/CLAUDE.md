@@ -3,13 +3,16 @@
 **Live at `https://drive.cgovind.com`.** The fourth game, same shape as ERS/KoT:
 Flask + Flask-SocketIO, its own eventlet gunicorn `-w 1` on `127.0.0.1:5005`, its own
 venv (`drive/venv`) and `.env` (both gitignored, hand-made on the box), sharing TTR's
-`users` table for accounts. A PolyTrack-style low-poly driving game: twenty-three
-tracks, medal times, ghosts, and multiplayer rooms. Nineteen are point-to-point;
-**Spa-Francorchamps, Silverstone and Monaco are the three closed circuits** and
-start and finish on the same line. **Costco Wholesale, Monaco and Railway
-Raceway are the three that go under something** - the Costco's warehouse roof,
-Monaco's tunnel and Rickety Rails' cave roof are the only solid geometry over
-the road anywhere in the pool, and the last of those is over *all* of it.
+`users` table for accounts. A PolyTrack-style low-poly driving game: twenty-six
+tracks, medal times, ghosts, and multiplayer rooms. Twenty-one are point-to-point;
+**Spa-Francorchamps, Silverstone, Monaco, Monza and Suzuka are the five closed
+circuits** and start and finish on the same line. **Costco Wholesale, Monaco,
+Railway Raceway and Suzuka are the four that go under something** - the Costco's
+warehouse roof, Monaco's tunnel, Rickety Rails' cave roof and Suzuka's crossover
+bridge are the only solid geometry over the road anywhere in the pool, and the
+cave roof is over *all* of it. **Suzuka is the only track that goes under
+itself**: it is a figure-eight, so the road overhead is the same lap, 480 units
+further on.
 
 ## Read the one doc your change is about
 
@@ -118,6 +121,52 @@ commissioned faces no font will give you. They need four fonts nothing else here
 is set in, and both the fonts and the logos land *after* the track is built -
 see `docs/tracks-and-geometry.md` before touching any of it, because every way
 of getting this wrong is silent, and three of them have been.
+
+**Suzuka** (`suzuka`, difficulty 4, 3422 units, ~70s gold) is the figure-eight,
+and it is the only track in the pool that **crosses over itself** - the back
+straight passes twelve units above the run down from Degner, so the road
+overhead is the same lap, 480 units further on. Read
+`docs/tracks-and-geometry.md` before touching it.
+
+- **It is traced, not remembered, and that is the point of it.** The centreline
+  was lifted out of the published circuit diagram, resampled at four units and
+  cut into constant-curvature runs by measuring the turning of the real line;
+  every angle and radius in `track.py` is what came out of that, scaled by 0.88.
+  The other real circuits here were authored from a mental picture and do not
+  survive being held next to a map. `track.py`'s docstring is the whole method.
+- **Its corner angles sum to exactly zero, not to 360.** A figure-eight is an
+  immersed curve of rotation number 0 - one lobe is walked clockwise, the other
+  anticlockwise, and they cancel. Spa closes its heading by summing to a full
+  turn; this closes by summing to none. `tracks/solver.py` moves lengths and can
+  never fix a heading that does not already close, on either track.
+- **Almost none of its "straights" are straight**, and transcribing them as
+  straights is wrong by 108 units - the run out of the hairpin bends, the run to
+  Spoon bends, and the back straight is a 1172-radius left for its whole length.
+  That last one is why `pool_stats` flags its max radius as far outside the pool.
+- **A checkpoint here costs no road.** Every gate lays 34 units of its own
+  straight, and nine of those is 306 units the circuit does not have. Letting
+  the lap grow and re-closing it squeezed the shape until the Degner and 130R
+  runs passed 8 units apart where the real gap is 36, which `self_proximity`
+  correctly called a car trap. So a straight hosting a gate gives up 34 units of
+  length, and an **arc** gives up 34 units by shrinking its radius while keeping
+  its angle - which leaves the turning and the total length exactly where they
+  were. Any new gate on this track has to be paid for the same way.
+- **The closure was solved as a minimum-norm correction spread over every
+  straight at once**, not dumped on one or two: the worst leg moves 12%, where
+  closing on a single pair needed 55% - past the solver's own 15% guard.
+- **It needs `pal.terrain` for Spa's reason** (the road falls 27 units from
+  Dunlop to the hairpin, and a flat plate at `track.ground` would be a
+  collidable ceiling over the middle of the lap), and **its barriers are not
+  `rail`** for Spa's other reason - a ground track must carry zero walled
+  stations, so the bridge parapet and the wall across the Casio Triangle are
+  collider geometry in `scenery.js`.
+- **`scenery.js` is the bridge, the Casio wall and the Ferris wheel**; the
+  grandstands, pit building, gantry, hoardings, armco and flags are all Spa's
+  `furniture` kit configured in `palette.py`. Only the parapet is collided - the
+  bents and the wheel stand where no car can reach them.
+- **`jp` was added to `FLAGS` in `trackmesh.js`** for its Hinomaru, derived by
+  `tools/mkflags.py` like the other three rather than drawn by hand. It is the
+  one change this track needed outside its own folder.
 
 **Costco Wholesale** (`costco`, difficulty 3, 2106 units, ~50s) is the one that
 goes indoors, and it is the only track in the pool with solid geometry *over* the

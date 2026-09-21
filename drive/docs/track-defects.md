@@ -169,12 +169,25 @@ find by looking at a bad picture.
 
 ## Things that only bite certain tracks
 
-- **`pal.terrain` and road over road are mutually exclusive.** It samples one
-  height per (x, z) cell taken from the *nearest* road, which is single-valued by
-  construction - so over a helix, a stacked crossing or a rooftop deck it fills
-  the whole volume solid and the upper road ends up buried in a mound with ground
-  flush against both kerbs. No apron or blend setting reaches it. Found on Tokyo
-  Drift, whose car-park helix is three storeys of exactly this.
+- **`pal.terrain` and road over road were mutually exclusive, and a single
+  crossing is handled now.** It samples one height per (x, z) cell taken from the
+  *nearest* road, which is single-valued by construction - so over a helix, a
+  stacked crossing or a rooftop deck it filled the whole volume solid and the
+  upper road ended up buried in a mound with ground flush against both kerbs. No
+  apron or blend setting reaches it. Found on Tokyo Drift, whose car-park helix
+  is three storeys of exactly this.
+  **`buildTerrain` now drops any station with road underneath it**, which is
+  what Suzuka needed: its crossing measured 12.8 units of ground over the road
+  you drive under, in the collider. The set is seeded on a real overlap of
+  tarmac and then grown *along the ribbon*, and that order is the whole of it -
+  growing by plan distance instead marked 568 of Spa's 906 stations and put
+  ground over Spa's own tarmac in 185 places, because a circuit on a hillside
+  has lower road within fifty units of most of itself. An empty seed stays
+  empty, so a track that never crosses itself is untouched by construction.
+  **A helix is still out of reach**: this leaves the lower road's ground and
+  takes the upper road's away, which is right for a bridge and wrong for three
+  storeys that all want ground. Mount Joy's lower envelope of upward cones,
+  built in `scenery.js`, is still the pattern for that.
   **This is a limit of `pal.terrain`, not of height fields.** Mount Joy stacks
   switchbacks a hundred units over each other and has ground under all of them,
   because its field is built in `scenery.js` on a different rule - a lower
@@ -197,6 +210,17 @@ find by looking at a bad picture.
 ## Add here
 
 New entries, unsorted, until somebody files them. One line is enough.
+
+- **A wrongly-shaped key *inside* `sky` is silent, and `glow` turns the dome
+  black.** `look.py` validates the top-level palette keys only, so nothing looks
+  inside `sky`. `glow` is a colour int with `glowStrength` beside it and `sun` is
+  `{az, el, color, size}`; passing `{color, size, strength}` and `{at, size}`
+  instead - which is what they look like they should be - makes
+  `new THREE.Color({})`, which is black, and tints the whole dome black in every
+  road view. The plan view looks fine, because it points down.
+- **Sky `stops` are indexed with the horizon at `u = 0.5`, not at 0.** `u` is
+  `y / R * 0.5 + 0.5`, so 0 is the nadir and 1 the zenith. A gradient written
+  dark-to-light from 0 to 1 is upside down and nothing catches it.
 
 - **A groundless track with no `below` block gets a distant floor plate.**
   `buildTrack` draws one across the whole bounding box at `minY - 34` so a void
