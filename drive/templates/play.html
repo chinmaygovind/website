@@ -535,18 +535,6 @@
       </div>
     </div>
     {% endif %}
-    {% if mode == 'room' %}
-    {# **The left thumb, for the same reason the save buttons are on it.** The
-       right pad is the one being *used* - both pedals are held - and the two
-       buttons above them are what you reach for having already fallen off.
-       Firing a shell happens at speed, with the throttle down, so it has to be
-       on the hand that is only steering. #}
-    <div class="utils">
-      <div class="tbtn small" id="tItem" title="Use item">
-        <svg viewBox="0 0 24 24"><path d="m12 2 2.2 6.5L21 9l-5.2 4.2 1.7 6.8L12 16.3 6.5 20l1.7-6.8L3 9l6.8-.5z"/></svg>
-      </div>
-    </div>
-    {% endif %}
     <div class="steerpad">
       <div class="tbtn" id="tLeft" title="Steer left - double-tap and hold to drift">
         <svg viewBox="0 0 24 24"><path d="M15 4.5 8 12l7 7.5"/></svg>
@@ -558,6 +546,15 @@
   </div>
   <div class="tpad right">
     <div class="utils">
+      {% if mode == 'room' %}
+      {# **The item button is the X**, in the corner the throwing thumb is
+         already in, because the slots it spends are on the other side and a
+         control that is not beside what it affects is a control you look for.
+         It says X and not a picture: X is what the key is called everywhere
+         else in this game, and a phone and a keyboard should not need two
+         names for the same button. #}
+      <div class="tbtn small item-x" id="tItem" title="Use item (X)"><b>X</b></div>
+      {% endif %}
       <div class="tbtn small" id="tCheck" title="Back to the last checkpoint">
         <svg viewBox="0 0 24 24"><path d="M6.5 3v18"/><path d="M6.5 4.6 18 8.3 6.5 12z"/></svg>
       </div>

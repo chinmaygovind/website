@@ -742,11 +742,15 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
     never hold one. It is drawn for every car, not just yours, off `FLAG.SHIELD`
     in the pose byte through `lampsOf` - the point of a visible shield is the
     driver behind deciding not to waste a shell on it.
-  - On a phone the button is in the **left** pad's utils row, beside where the
-    save-state buttons sit in solo, and for that row's stated reason: the right
-    pad is the one being used, both pedals are held, and the two buttons above
-    them are what you reach for having already fallen off. The slots stay
-    visible on touch - a button for something you cannot see is pressed blind.
+  - **On a phone the slots are over the steering thumb and the button is on
+    the other side**, which is the one arrangement where you read one and press
+    the other without either hand covering anything: the slots sit above the
+    arrows, and the use button is up with the flag and the restart on the pedal
+    side. It says `X` rather than wearing a glyph, because X is what the key is
+    called everywhere else and a phone should not need a second name for it -
+    and it is bigger than the two beside it and amber rather than white, since
+    those two are what you press having already gone off and this one is part
+    of the race.
 
 - **The boxes pop rather than blink.** `animateItemBoxes` has three states and
   one number: gone, coming back, or there. Taken, a box bursts out over
@@ -845,6 +849,19 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   the car is moving. It closes on the first movement of a run and on the green
   light, and not on any later one, so a drawer opened deliberately mid-lap
   stays open.
+
+- **Nothing on the phone HUD may move once a race starts, and two things
+  did.** The left column is the track card, then whatever appears, then the
+  map - so the standings arriving at the green light pushed the map down the
+  screen mid-countdown, and the item slots did it again the first time a box
+  was taken. On a desktop that is a card settling; on a phone it is the one
+  thing you glance at moving while you are trying to glance at it. On touch the
+  two that come and go are pinned out of the column - the slots above the
+  steering thumb, the standings in the right-hand column that grows downward -
+  and what is left in the column is the track name and the map, which are there
+  from the first frame to the last. Pinned as a *measurement* in the phone
+  screenshot: the map's box is identical before the countdown, during it, and
+  at speed.
 
 - **The race position is an ordinal in a corner of its own.** It was a card in
   the top-left column reading `3/4` over the word *Position* - a fraction, in

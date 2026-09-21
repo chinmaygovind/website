@@ -619,6 +619,42 @@ body.playing { overflow: hidden; background: #9ed2f0; }
    - the map stops being pushed to the floor and simply follows the last card. */
 body.touch .hud-bl { margin-top: 0; }
 body.touch #minimap { width: 118px; height: 92px; }
+
+/* --- the phone's multiplayer HUD -----------------------------------------
+   **Nothing on a phone may move once the race starts, and two things did.**
+   The left column is track card, then whatever appears, then the map - so the
+   standings card arriving at the green light pushed the map down the screen
+   mid-countdown, and the item slots did it again the first time a box was
+   taken. On a desktop that is a card settling; on a phone it is the one thing
+   you glance at moving while you are trying to glance at it.
+
+   So on touch the two things that come and go are taken out of the column and
+   pinned: the standings under the buttons on the right, the slots above the
+   steering thumb where they are read. What is left in the column is the track
+   name and the map, both of which are there from the first frame to the last,
+   and neither can be pushed by anything. */
+/* The standings already live in the right-hand column, which is anchored at
+   the top and grows downward, so nothing moves when they appear. They are just
+   too big for a phone at desktop size. */
+body.touch #standingsCard { max-width: 44vw; padding: .35rem .5rem; }
+body.touch #standingsCard .st-row { font-size: .74rem; gap: .3rem; }
+body.touch #standingsCard .st-name { max-width: 14vw; }
+/* The slots sit over the steering pad, which is the hand that is not throwing:
+   you read them with the thumb that is already there and press with the other.
+   Bottom-anchored off the pad's own height so they clear the arrows on a phone
+   and on a tablet, where the buttons are half again the size. */
+body.touch .item-hud {
+  position: fixed; z-index: 36;
+  left: calc(16px + env(safe-area-inset-left, 0px));
+  bottom: calc(16px + clamp(76px, 19.5vh, 124px) + clamp(10px, 2.4vh, 20px)
+               + env(safe-area-inset-bottom, 0px));
+  margin: 0;
+}
+/* Bigger than the desktop pair: this is the thing you are checking mid-corner
+   at arm's length, and it is the only place a phone says what you are holding. */
+body.touch .item-slot { width: 42px; height: 42px; }
+body.touch .item-slot.big { width: 60px; height: 60px; border-radius: 15px; }
+body.touch .item-hint { font-size: 12px; }
 /* Restart and last-checkpoint, sitting on the minimap. Both are things you reach
    for mid-run after a mistake, so they cannot be behind a menu - and this is the
    corner your eye is already in when you have just gone off. On a phone the
@@ -890,14 +926,19 @@ body.touch .mapbtns { display: none; }
 /* First place gets the colour the medals use, because it is the one position
    worth seeing without reading. */
 #place.lead b { color: #ffd76a; }
-/* On a phone the bottom right corner is the throttle. Under the button row at
-   the top right is the only other place on the screen that nothing is ever
-   held over, and it is still on the side your eye goes to for the mirrors. */
+/* **On a phone it goes to the top, beside the map.** The bottom right corner
+   is the throttle, and the two things you look *up* for - where am I on the
+   track, and where am I in the race - belong together where the eye already
+   goes. Left of centre, next to the map rather than over it, so neither has
+   to be read past the other. */
 body.touch #place {
-  bottom: auto; top: calc(62px + env(safe-area-inset-top, 0px));
-  right: calc(14px + env(safe-area-inset-right, 0px));
+  bottom: auto; right: auto;
+  top: calc(96px + env(safe-area-inset-top, 0px));
+  left: calc(148px + env(safe-area-inset-left, 0px));
+  align-items: flex-start;
 }
-body.touch #place b { font-size: 2.4rem; }
+body.touch #place b { font-size: 2.1rem; }
+body.touch #place span { font-size: .62rem; }
 
 #wrongWay {
   position: absolute; top: 26%; left: 50%; transform: translateX(-50%);
@@ -2466,6 +2507,23 @@ body.touch #touch { display: block; }
    they sit over the throttle, where the thumb already rests - rather than spread
    across the pad, which put a gap between two buttons that belong together. */
 .tbtn.small { width: clamp(46px, 11.5vh, 72px); height: clamp(46px, 11.5vh, 72px); opacity: .8; }
+/* The use button wears the key's name. A glyph would be a third word for the
+   same thing - X on the keyboard, X in the hint, a star on the phone.
+   **Bigger than the two beside it and a different colour**, because they are
+   not the same kind of control: the flag and the arrow are what you press
+   having already gone off, and this one is part of the race. Amber rather than
+   white so it reads as the item button from the corner of the eye, which is
+   all the attention it will get while the other thumb is steering. */
+.tbtn.item-x {
+  width: clamp(54px, 13vh, 84px); height: clamp(54px, 13vh, 84px);
+  border-color: rgba(255, 210, 90, .85); color: #ffd96b;
+  background: rgba(70, 52, 10, .42);
+}
+.tbtn.item-x.down { background: #ffd96b; color: #12141c; border-color: #ffd96b; }
+.tbtn.item-x b {
+  font: 700 clamp(22px, 6vh, 38px)/1 var(--mono);
+  letter-spacing: .02em; text-shadow: 0 1px 3px rgba(0, 0, 0, .5);
+}
 #tGas { border-color: rgba(140, 240, 170, .6); }
 #tBrake { border-color: rgba(255, 150, 130, .6); }
 /* With the room drawer out you are reading, not driving - and the pedals would
