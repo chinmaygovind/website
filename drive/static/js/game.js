@@ -7259,7 +7259,7 @@ function connect() {
     // The shield is one hit, not a stretch of time: taking one is what ends it.
     if (S.car.shield > 0) {
       S.car.shield = 0; S.sound.itemBlocked();
-      toast('Shield ate ' + by + what + '!');
+      toast('Shield blocked ' + by + what + '!');
       return;
     }
     toast('Hit by ' + by + what + '!');
