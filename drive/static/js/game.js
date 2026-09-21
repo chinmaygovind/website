@@ -1840,6 +1840,11 @@ function renderItems() {
     $('item' + i).title = ITEM_LABEL[S.items[i]] || '';
   }
   for (let i = 0; i < 2; i++) $('item' + i).classList.toggle('empty', !S.items[i]);
+  // The phone's use button lights when there is something to spend. It is the
+  // one control whose whole state is "do I have one", and a thumb that has to
+  // look away from the road to answer that is a thumb that does not press it.
+  const x = $('tItem');
+  if (x) x.classList.toggle('armed', on && !!S.items.length);
   if (on) maybeHint(S.items[0]);
 }
 
@@ -4360,14 +4365,24 @@ function setMode(text, racing) {
   el.className = 'mode' + (racing ? ' racing' : '');
 }
 
-/** The room's phase, said out loud in the top-left corner. */
+/**
+ * The room's phase, said out loud in the top-left corner.
+ *
+ * **Two or three words, and the card they sit in is a fixed size.** They used
+ * to be sentences with `Multiplayer - ` on the front of each, which made the
+ * card a different width in every phase - so the one box that is supposed to
+ * be the fixed point of the screen resized itself at the green light, on the
+ * flag, and again at the results. `Multiplayer` is dropped because the room is
+ * the multiplayer: nobody arrives in one by accident and nothing else says
+ * this.
+ */
 const PHASE_LABEL = {
-  free: ['Multiplayer - Free practice', false],
-  qual_countdown: ['Multiplayer - Qualifying about to start', true],
-  qualifying: ['Multiplayer - Qualifying', true],
-  countdown: ['Multiplayer - Race about to start', true],
-  racing: ['Multiplayer - Race in progress', true],
-  results: ['Multiplayer - Race finished', false],
+  free: ['Free practice', false],
+  qual_countdown: ['Qualifying soon', true],
+  qualifying: ['Qualifying', true],
+  countdown: ['About to start', true],
+  racing: ['Racing live', true],
+  results: ['Race finished', false],
 };
 
 // The phases the lights belong to. `qual_countdown` uses the same overlay and

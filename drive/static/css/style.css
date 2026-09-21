@@ -654,7 +654,11 @@ body.touch .item-hud {
    at arm's length, and it is the only place a phone says what you are holding. */
 body.touch .item-slot { width: 42px; height: 42px; }
 body.touch .item-slot.big { width: 60px; height: 60px; border-radius: 15px; }
-body.touch .item-hint { font-size: 12px; }
+/* Over the slots rather than beside them: beside, it ran into the X sitting at
+   the other end of the same line. */
+body.touch .item-hint {
+  position: absolute; bottom: 100%; left: 0; margin: 0 0 6px; font-size: 12px;
+}
 /* Restart and last-checkpoint, sitting on the minimap. Both are things you reach
    for mid-run after a mistake, so they cannot be behind a menu - and this is the
    corner your eye is already in when you have just gone off. On a phone the
@@ -890,7 +894,16 @@ body.touch .mapbtns { display: none; }
 #minimap { display: block; width: 190px; height: 150px; }
 
 .trackname { font-family: var(--display); font-size: 1.25rem; font-weight: 700;
-             line-height: 1.1; letter-spacing: .01em; }
+             line-height: 1.1; letter-spacing: .01em;
+             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* **One size, whatever the phase says.** This card is the fixed point of the
+   screen - it is where you look to know where you are - and it was resizing
+   itself at the green light, on the flag and again at the results, because the
+   line under the name is a different length in each. A width rather than a
+   min-width, so a long track name is cut with an ellipsis instead of pushing
+   the box out; `Spa-Francorchamps` is the one that does it. */
+.hud-tl > .card:first-child { width: 13.5rem; }
+body.touch .hud-tl > .card:first-child { width: 12rem; }
 
 .mrow { display: flex; align-items: center; gap: .45rem; font-size: .82rem; padding: .1rem 0; }
 .mrow b { margin-left: auto; font-family: var(--mono); }
@@ -931,13 +944,18 @@ body.touch .mapbtns { display: none; }
    track, and where am I in the race - belong together where the eye already
    goes. Left of centre, next to the map rather than over it, so neither has
    to be read past the other. */
+/* **Tucked under the map, on the map's own left edge**, so the two read as one
+   block rather than as a number floating in the middle of the windscreen -
+   which is what it was, sitting off the map's right-hand side with nothing
+   around it. One line instead of two, because the space between the map and
+   the item slots is about thirty pixels on a phone. */
 body.touch #place {
   bottom: auto; right: auto;
-  top: calc(96px + env(safe-area-inset-top, 0px));
-  left: calc(148px + env(safe-area-inset-left, 0px));
-  align-items: flex-start;
+  top: calc(186px + env(safe-area-inset-top, 0px));
+  left: calc(20px + env(safe-area-inset-left, 0px));
+  flex-direction: row; align-items: baseline; gap: 6px;
 }
-body.touch #place b { font-size: 2.1rem; }
+body.touch #place b { font-size: 1.75rem; }
 body.touch #place span { font-size: .62rem; }
 
 #wrongWay {
@@ -2514,16 +2532,21 @@ body.touch #touch { display: block; }
    having already gone off, and this one is part of the race. Amber rather than
    white so it reads as the item button from the corner of the eye, which is
    all the attention it will get while the other thumb is steering. */
+/* The item row spans the steering pad so the button can sit over the right
+   arrow rather than wherever the row happens to end. The save-state buttons
+   in solo use the same `.utils` and stay left, which is where the thumb rests
+   between corners; this one is aimed at a specific button under it. */
+.tpad.left .utils.item-row { width: 100%; justify-content: flex-end; }
 .tbtn.item-x {
   width: clamp(54px, 13vh, 84px); height: clamp(54px, 13vh, 84px);
   border-color: rgba(255, 210, 90, .85); color: #ffd96b;
   background: rgba(70, 52, 10, .42);
 }
 .tbtn.item-x.down { background: #ffd96b; color: #12141c; border-color: #ffd96b; }
-.tbtn.item-x b {
-  font: 700 clamp(22px, 6vh, 38px)/1 var(--mono);
-  letter-spacing: .02em; text-shadow: 0 1px 3px rgba(0, 0, 0, .5);
-}
+/* Drawn rather than typed: a letter X is whatever the font says it is - one
+   stroke thin, one thick, the angles unequal - where two lines at 45 degrees
+   are the same X at any size and match the other glyphs on these buttons. */
+.tbtn.item-x svg { width: 42%; height: 42%; stroke-width: 2.6; }
 #tGas { border-color: rgba(140, 240, 170, .6); }
 #tBrake { border-color: rgba(255, 150, 130, .6); }
 /* With the room drawer out you are reading, not driving - and the pedals would

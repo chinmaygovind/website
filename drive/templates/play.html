@@ -29,7 +29,7 @@
   <div class="hud-tl">
     <div class="card">
       <div class="trackname" id="trackName">{{ track.name }}</div>
-      <div class="mode" id="modeLabel">{% if mode == 'room' %}Multiplayer - Free practice{% elif mode == 'replay' %}Race replay{% elif draft_token %}Draft &mdash; nothing here is saved{% else %}Solo time trial{% endif %}</div>
+      <div class="mode" id="modeLabel">{% if mode == 'room' %}Free practice{% elif mode == 'replay' %}Race replay{% elif draft_token %}Draft &mdash; nothing here is saved{% else %}Solo time trial{% endif %}</div>
     </div>
     {# The way back out of a draft, and it is a button on the screen rather than
        a line in the settings sheet. Driving a draft is a full page navigation,
@@ -535,6 +535,20 @@
       </div>
     </div>
     {% endif %}
+    {% if mode == 'room' %}
+    {# **Directly over the right-hand arrow**, which is where the steering
+       thumb already is: an item is used mid-corner, and a button on the other
+       side of the screen means letting go of the throttle *or* the steering to
+       press it. The slots sit on the same line at the left, over the other
+       arrow, so what you are holding and the button that spends it are one
+       thing to look at. It says X and not a picture - X is what the key is
+       called everywhere else, and a phone should not need a second name. #}
+    <div class="utils item-row">
+      <div class="tbtn small item-x" id="tItem" title="Use item (X)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6 18 18M18 6 6 18"/></svg>
+      </div>
+    </div>
+    {% endif %}
     <div class="steerpad">
       <div class="tbtn" id="tLeft" title="Steer left - double-tap and hold to drift">
         <svg viewBox="0 0 24 24"><path d="M15 4.5 8 12l7 7.5"/></svg>
@@ -546,15 +560,7 @@
   </div>
   <div class="tpad right">
     <div class="utils">
-      {% if mode == 'room' %}
-      {# **The item button is the X**, in the corner the throwing thumb is
-         already in, because the slots it spends are on the other side and a
-         control that is not beside what it affects is a control you look for.
-         It says X and not a picture: X is what the key is called everywhere
-         else in this game, and a phone and a keyboard should not need two
-         names for the same button. #}
-      <div class="tbtn small item-x" id="tItem" title="Use item (X)"><b>X</b></div>
-      {% endif %}
+
       <div class="tbtn small" id="tCheck" title="Back to the last checkpoint">
         <svg viewBox="0 0 24 24"><path d="M6.5 3v18"/><path d="M6.5 4.6 18 8.3 6.5 12z"/></svg>
       </div>
