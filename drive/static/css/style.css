@@ -2528,30 +2528,30 @@ body.touch #touch { display: block; }
    they sit over the throttle, where the thumb already rests - rather than spread
    across the pad, which put a gap between two buttons that belong together. */
 .tbtn.small { width: clamp(46px, 11.5vh, 72px); height: clamp(46px, 11.5vh, 72px); opacity: .8; }
-/* The use button wears the key's name. A glyph would be a third word for the
-   same thing - X on the keyboard, X in the hint, a star on the phone.
-   **Bigger than the two beside it and a different colour**, because they are
-   not the same kind of control: the flag and the arrow are what you press
-   having already gone off, and this one is part of the race. Amber rather than
-   white so it reads as the item button from the corner of the eye, which is
-   all the attention it will get while the other thumb is steering. */
-/* The item row spans the steering pad so the button can sit over the right
-   arrow rather than wherever the row happens to end. The save-state buttons
-   in solo use the same `.utils` and stay left, which is where the thumb rests
-   between corners; this one is aimed at a specific button under it. */
+/* The item row spans the steering pad so the buttons sit over the right arrow
+   rather than wherever the row happens to end. The save-state buttons in solo
+   use the same `.utils` and stay left, which is where the thumb rests between
+   corners; this pair is aimed at a specific button under it. */
 .tpad.left .utils.item-row {
   width: 100%; justify-content: space-between; align-items: center;
 }
-.tbtn.item-x {
-  width: clamp(54px, 13vh, 84px); height: clamp(54px, 13vh, 84px);
-  border-color: rgba(255, 210, 90, .85); color: #ffd96b;
-  background: rgba(70, 52, 10, .42);
+/* **The same white as the flag and the arrow, and the same size.** They were an
+   oversized amber pair of one, which made the phone's only coloured control the
+   one thing the eye went to on every frame of every race. Four small white
+   buttons in two corners is one visual language for "a thing you tap", and the
+   only colour left on the pad is the one that means something: an item you can
+   actually spend. */
+.item-btns { display: flex; align-items: center; gap: clamp(8px, 1.6vh, 14px); }
+.tbtn.item-x.has {
+  opacity: 1; border-color: rgba(255, 210, 90, .9); color: #ffd96b;
+  background: rgba(70, 52, 10, .45);
+  box-shadow: 0 0 12px rgba(255, 217, 107, .35);
 }
-.tbtn.item-x.down { background: #ffd96b; color: #12141c; border-color: #ffd96b; }
+.tbtn.item-x.has.down { background: #ffd96b; color: #12141c; border-color: #ffd96b; }
 /* Drawn rather than typed: a letter X is whatever the font says it is - one
    stroke thin, one thick, the angles unequal - where two lines at 45 degrees
    are the same X at any size and match the other glyphs on these buttons. */
-.tbtn.item-x svg { width: 54%; height: 54%; stroke-width: 2.4; }
+.tbtn.item-x svg { width: 50%; height: 50%; stroke-width: 2.4; }
 #tGas { border-color: rgba(140, 240, 170, .6); }
 #tBrake { border-color: rgba(255, 150, 130, .6); }
 /* With the room drawer out you are reading, not driving - and the pedals would

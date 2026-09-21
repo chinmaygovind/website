@@ -536,10 +536,12 @@ def test_the_tow_comes_back_as_the_two_numbers_it_is_drawn_from():
 # from KEYMAP through `viewKeys` into `Renderer.follow` in another file, where a
 # name that stopped matching would leave a key that does nothing at all.
 
-def _view(*held):
-    """`viewKeys` with exactly these actions held."""
+def _view(*held, touch=()):
+    """`viewKeys` with exactly these actions held on the keyboard, and these on
+    the glass."""
     import json
-    ctx = _ctx("var keys = new Set(%s);" % json.dumps(list(held)))
+    ctx = _ctx("var keys = new Set(%s); var touchKeys = new Set(%s);"
+               % (json.dumps(list(held)), json.dumps(list(touch))))
     ctx.eval(_fn("viewKeys"))
     return json.loads(ctx.eval("JSON.stringify(viewKeys())"))
 
@@ -554,6 +556,13 @@ def test_no_key_held_is_the_chase_camera():
 ])
 def test_each_key_asks_for_its_own_view(held, want):
     assert _view(held) == want
+
+
+def test_the_phones_mirror_button_asks_for_the_same_view():
+    """`tRear` writes `touchKeys`, and a phone has no Q. If `viewKeys` stopped
+    reading that set the button would be a button that does nothing at all -
+    which is exactly how it failed before it read it."""
+    assert _view(touch=("rear",)) == {"rear": True, "first": False}
 
 
 def test_both_at_once_is_a_look_over_the_shoulder():

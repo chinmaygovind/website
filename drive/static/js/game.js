@@ -345,6 +345,7 @@ const touchDown = new Set();     // ids of touch buttons currently held
 const touchKeys = new Set();
 const TOUCH_KEYS = {
   tGas: ['up'], tBrake: ['down'], tLeft: ['left'], tRight: ['right'],
+  tRear: ['rear'],
 };
 const SLIDE_HYST = 8;            // px past the midpoint before a pad hands over
 const dragOrigin = new Map();    // button id -> where its drag-to-drift is measured from
@@ -1275,6 +1276,9 @@ function bindInput() {
   const hold = (id) => tb(id, () => { touchDown.add(id); syncTouch(); },
                               () => { touchDown.delete(id); syncTouch(); });
   tb('tItem', () => itemDown(), () => itemUp());
+  // Held exactly like a pedal, because that is what it is: press to look, let
+  // go to drive. `hold` is what writes `touchKeys`, which `viewKeys` reads.
+  hold('tRear');
   for (const id of ['tGas', 'tBrake']) hold(id);
   // The throttle, dragged downwards, is the handbrake too - without ever coming
   // off the throttle, which is the whole reason this thumb can carry a gesture
@@ -1855,7 +1859,7 @@ function renderItems() {
   // one control whose whole state is "do I have one", and a thumb that has to
   // look away from the road to answer that is a thumb that does not press it.
   const x = $('tItem');
-  if (x) x.classList.toggle('armed', on && !!S.items.length);
+  if (x) x.classList.toggle('has', on && !!S.items.length);
   if (on) maybeHint(S.items[0]);
 }
 
@@ -5415,14 +5419,15 @@ function replayKey(e) {
  *
  * Held, not toggled, and that is the whole design: a look behind you is a glance
  * you take with a hand you need back, so it ends when you let go and there is no
- * state left to be stuck in. Nothing here reads `touchKeys` - a phone has four
- * driving buttons and nowhere for a fifth, and a view you cannot let go of on
- * the road is worse than no view.
+ * state left to be stuck in - which is also what makes it safe to put on glass,
+ * where there is no keyup to rely on but a thumb leaving the button is the same
+ * event. `touchKeys` is read for `rear` only: the phone's mirror button lives
+ * beside the item button in a room, and there is nowhere to put a second one.
  *
  * The names are a contract with `Renderer.follow`, and pinned in test_rules_js.
  */
 function viewKeys() {
-  return { rear: keys.has('rear'), first: keys.has('first') };
+  return { rear: keys.has('rear') || touchKeys.has('rear'), first: keys.has('first') };
 }
 
 // ---------------------------------------------------------------------------
