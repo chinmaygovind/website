@@ -2234,8 +2234,17 @@ export class Renderer {
     // loop from throwing the camera around while still following the car over it.
     // It is the *car's* frame, which is why it is the same frame in all four
     // views and why a view can be taken up mid-loop without the horizon moving.
-    const kf = 1 - Math.exp(-(car.grounded ? 9 : 4.5) * dt);
-    const ku = 1 - Math.exp(-(car.grounded ? 7 : 3.0) * dt);
+    //
+    // **Except while the car is being thrown about by something that is not
+    // driving.** A car flipped by a shell rotates through 130 degrees in a
+    // third of a second, and following that frame puts the lens through the
+    // road and then at the sky - so for the length of a hit the frame is held
+    // where it was and the car tumbles *inside* the shot. You watch it happen
+    // instead of going with it. The caller says when (`opts.hold`); a cached
+    // copy of this file has never heard of it and simply follows, which is the
+    // behaviour this replaces rather than a broken page.
+    const kf = opts.hold ? 0 : 1 - Math.exp(-(car.grounded ? 9 : 4.5) * dt);
+    const ku = opts.hold ? 0 : 1 - Math.exp(-(car.grounded ? 7 : 3.0) * dt);
     this.camFwd.lerp(car.fwd, kf).normalize();
     this.camUp.lerp(car.up, ku).normalize();
 

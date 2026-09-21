@@ -1388,3 +1388,22 @@ def test_a_hit_car_smokes_and_then_stops():
 def test_a_respawn_puts_a_clean_car_back():
     puffs, left = _smoke_frames(5, SMOKE_STUB.replace("respawnIn: 0", "respawnIn: 1.2"))
     assert puffs == [] and left == 0
+
+
+def _hold(n, setup=SMOKE_STUB, dt=0.1):
+    ctx = _ctx(setup.replace("var S = {hitSmoke: 1.4,", "var S = {hitSmoke: 1.4, hitHold: 1.0,"))
+    ctx.eval(_fn("hitSmoke"))
+    ctx.eval("for (var i = 0; i < %d; i++) hitSmoke(%r);" % (n, dt))
+    return json.loads(ctx.eval("JSON.stringify(S.hitHold)"))
+
+
+def test_the_camera_is_handed_back_on_its_own():
+    """The frame is held for the tumble and no longer. It runs off the same
+    call the smoke does, so there is one clock for the whole of a hit - a hold
+    that outlived its own timer would be a camera that never came back."""
+    assert _hold(5) == pytest.approx(0.5)
+    assert _hold(20) == 0
+
+
+def test_a_respawn_hands_it_back_at_once():
+    assert _hold(1, SMOKE_STUB.replace("respawnIn: 0", "respawnIn: 1.2")) == 0

@@ -353,6 +353,14 @@ with how late it was and what the rooms were doing.
     to catch. Down the back is where those two live, along with the boost and
     the bomb. Practice is flat and has neither of them for the same reason it
     has no positions.
+    **The green was a fifth of every box in the game and is not any more.** It
+    is the worst item to be handed - forwards it needs a car in range and a
+    straight, backwards it needs somebody sitting on you, and most of the time
+    it is neither, so a box that pays a green pays nothing. 28/18/14 across the
+    three bands became 18/12/8, and what it gave up went to what each band is
+    *for*: bananas and a shield in front, a red in the pack, and a star, a
+    boost or a bomb at the back, which is the only place the odds can make
+    catching up possible.
   - **Two slots, and the front one is what `X` spends.** `PRACTICE_ITEMS` is the
     practice pool; a race adds the blue shell and the star, which are the two
     items that only mean anything when there is a leader and a last place.
@@ -449,6 +457,14 @@ with how late it was and what the rooms were doing.
     it. **A flat spin about `up` was tried in between and is worse** - the
     chase camera lerps toward the car's own forward, so a car turning on the
     spot takes the camera round with it and you cannot see the road at all.
+    **The camera keeps its own frame for the first second of it**
+    (`opts.hold` in `Renderer.follow`, timed by the same `hitSmoke` call). The
+    chase frame lerps toward the car's own forward and up, and a car flipped
+    by a shell turns through 130 degrees in a third of a second - so the lens
+    went through the road and then at the sky, and a hit was a second of
+    brown. Held, the car tumbles inside the shot and you watch it happen. A
+    cached `render.js` has never heard of the flag and simply follows, which
+    is the old behaviour rather than a broken page.
     The car then smokes for 1.4s (`hitSmoke`), because the sparks are over in a
     tenth of a second and the slowdown lasts three - without it the car is
     crawling for no visible reason. That smoke is `soot`, a *normally* blended

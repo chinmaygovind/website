@@ -3121,6 +3121,14 @@ def _boxes_for(track):
 # thirds of the running order. A leader who could draw a star has nothing to
 # fear and nothing to catch; a last place who draws a banana has been handed
 # the one item that only helps somebody being chased.
+# **The green is the one item every band was getting too much of**, and it is
+# the worst item in the game to be handed: thrown forwards it needs a car in
+# range and a straight, thrown backwards it needs somebody sitting on you, and
+# most of the time it is neither, so a box that pays a green pays nothing. It
+# was 28/18/14 across the three bands - a fifth of every box in the game - and
+# is 18/12/8 now. What it gave up went to what each band is *for*: bananas and
+# a shield in front, a red in the pack, and a star, a boost or a bomb at the
+# back, which is where catching up has to actually be possible.
 ITEM_ODDS = {
     # Out in front: things to defend with, and only the occasional red.
     #
@@ -3130,13 +3138,14 @@ ITEM_ODDS = {
     # where; a shield defends it by existing, and at one box in four the leader
     # simply has one nearly all the time, which takes the point out of hitting
     # them at all.
-    "front": {"banana": 32, "green": 28, "red": 14, "boost": 16, "shield": 10},
+    "front": {"banana": 34, "green": 18, "red": 16, "boost": 18, "shield": 14},
     # In the pack: everything, weighted toward what makes a move.
-    "mid": {"red": 22, "green": 18, "banana": 14, "boost": 16, "bomb": 12,
-            "shield": 12, "star": 4, "blue": 2},
-    # Down the back: the two items that exist to fix being there.
-    "back": {"star": 20, "blue": 12, "bomb": 16, "boost": 20, "red": 18,
-             "green": 14},
+    "mid": {"red": 24, "banana": 16, "boost": 18, "green": 12, "bomb": 12,
+            "shield": 8, "star": 6, "blue": 4},
+    # Down the back: the items that exist to fix being there, and nothing that
+    # only defends a place you have not got.
+    "back": {"star": 22, "boost": 22, "red": 20, "bomb": 16, "blue": 12,
+             "green": 8},
 }
 
 

@@ -2276,6 +2276,10 @@ function hitByItem() {
   // over in a tenth of a second and the slowdown lasts three - without this
   // the car is simply crawling for no visible reason.
   S.hitSmoke = HIT_SMOKE_S;
+  // The camera stops taking the car's word for which way is up until the
+  // tumble is over - see `Renderer.follow`. Without it the lens goes through
+  // the road with the car and the hit is a second of brown.
+  S.hitHold = HIT_HOLD_S;
   // Sparks off the car itself, so there is something to *see* at the moment of
   // contact and not only afterwards in how the car is behaving. One call is a
   // burst - `Renderer.smoke` fans five out of every 'spark' - and two calls
@@ -2291,6 +2295,7 @@ function hitByItem() {
 const HIT_KEEP = 0.15;        // of the speed you had: it stops you, not slows you
 const HIT_AIR = 5.5;          // units/s upwards. It was 16, which is a launch.
 const HIT_SMOKE_S = 1.4;      // how long the car smokes afterwards
+const HIT_HOLD_S = 1.0;       // how long the camera keeps its own frame
 
 /**
  * The smoke off a car that has just been hit, a frame at a time.
@@ -2301,6 +2306,7 @@ const HIT_SMOKE_S = 1.4;      // how long the car smokes afterwards
  * respawn is a clean car.
  */
 function hitSmoke(dt) {
+  if (S.hitHold) S.hitHold = S.car.respawnIn > 0 ? 0 : Math.max(0, S.hitHold - dt);
   if (!S.hitSmoke) return;
   if (S.car.respawnIn > 0) { S.hitSmoke = 0; return; }
   S.hitSmoke = Math.max(0, S.hitSmoke - dt);
@@ -5782,7 +5788,7 @@ function render(dt, now) {
   animateItemBoxes(now);
   moveShots(dt);
   shellWarning(now);
-  S.renderer.follow(car, dt, viewKeys());
+  S.renderer.follow(car, dt, { ...viewKeys(), hold: S.hitHold > 0 });
   // The ears ride the camera, so they are moved the moment it has been - and
   // the field is spatialised against where it has just gone rather than where
   // it was last frame. Your own car stays out of this: it is the thing you are
