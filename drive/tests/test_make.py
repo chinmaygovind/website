@@ -622,7 +622,13 @@ def test_the_editor_draws_a_control_for_every_palette_key():
                # thing it is is a list of lap fractions to fire lightning at,
                # and a swatch for one is a control that cannot be used without
                # the other four numbers beside it.
-               "storm"}
+               "storm",
+               # `moverVoice` is not colour either, and it is not even
+               # geometry: it is a fact about what this track's movers *are* -
+               # a chapel full of Boos rather than a herd of hadrosaurs - and
+               # a maker who has no way to put a mover on a track has nothing
+               # to say about the noise one makes.
+               "moverVoice"}
     src = open(os.path.join(os.path.dirname(__file__), "..", "static", "js",
                             "make.js")).read()
     schema = src[src.index("const LOOK = ["):src.index("];", src.index("const LOOK = ["))]

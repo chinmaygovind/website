@@ -12,6 +12,7 @@ road there is always somebody's air to sit in, and a lap you lost is a lap you
 can get back by picking your way through traffic. That is why the levels are
 *mixed* rather than uniform, and why "fill the grid" exists.
 
+
 - **A bot is an ordinary seat.** `DrivePlayer.is_bot`, a name, a colour, a place
   in the roster, a row in the standings, frames in the stored replay, and the
   same `×` next to it that kicks anybody else. Everything downstream of a pose
@@ -479,3 +480,33 @@ up the gap to each record, print it. The gains are not matters of taste - the
 wrong lookahead runs the car wide out of corners and lands it on the grass after
 every jump - so they are measured, and the numbers in `TUNE` are what the
 measurement said.
+
+- **The dropdown starts on Max, and that is a judgement about the calibration
+  rather than a preference.** `bots.DEFAULT_LEVEL` is what a seat gets when
+  nothing chose for it - the first reading of the room's dropdown and
+  `_seat_bot`'s fallback. Easy and medium are calibrated against bronze and
+  silver, the medals were re-cut underneath them and nothing re-solved, so
+  medium is up to eleven seconds off the pace it is supposed to set. Max is
+  5.6% under gold and beats it on fifteen of sixteen tracks. A mixed field is
+  still one press per level away, which is what the dropdown is for; this only
+  decides what you get for not touching it. It moves back the day
+  `tools/calibrate_bots.py` has been re-run.
+
+- **A bot that gives up goes back a few points up its own line, not to the
+  last checkpoint** (`RECOVER_BACK` in `bot.js`). The checkpoint is the right
+  answer for a person pressing T - they asked for it and they know what they
+  are giving up - but for a bot in a race it is a penalty far bigger than the
+  mistake, forty seconds of road handed back for a wall it brushed. Worse, on
+  a track whose first hazard comes *before* the first checkpoint the last gate
+  is the start line, so the car appeared to restart the race.
+
+- **A bot holds items and feels them, and both halves are one line each in
+  `botworld.js`.** `use` sets `itemBoost`, `star` or `shield` on the bot's car
+  and `hit` gives it the shove - the same three fields and the same numbers
+  `game.js` sets on a person's, because it is the same `Car` running the same
+  `step`. A bot with its own boost would be a second set of physics to keep in
+  step with the first. `hit` exists at all because a bot has no browser: a
+  person's car is shoved by that person's own page, and without this a red
+  shell homed perfectly onto a bot and nothing happened. What the bot *decides*
+  is not here - when to press the button is `_tick_bot_items` in `app.py`, and
+  the whole account is in `docs/rooms-and-races.md`.

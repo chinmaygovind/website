@@ -1210,3 +1210,46 @@ def test_a_replay_keeps_the_cars_as_they_were_on_the_day(env):
         again = A.DriveRace.query.get(race.id)
         assert {c["pid"]: c for c in again.cars}[alice.pid]["livery"]["body"] \
             == "#17bfa8"
+
+
+# ---------------------------------------------------------------------------
+# Losing your socket mid-race is not losing the race
+# ---------------------------------------------------------------------------
+
+def test_a_reload_mid_race_keeps_your_place(env, monkeypatch):
+    """**The state this was written for**: start a race, reload the page, and
+    come back to a race you are no longer in, on a track full of cars you
+    cannot affect, with the results sheet up. A socket ends the same way
+    whether somebody quit or their page reloaded - and this game asks people to
+    reload, `DEAD_MS` does one by itself - so the DNF waits."""
+    A = env
+    r = _room(A)                                 # code TEST, phase racing
+    _add_car(A, r, "p1")
+    _add_car(A, r, "p2")
+    A._sid_room["sid-1"] = ("TEST", "p1")
+    monkeypatch.setattr(A.socketio, "emit", lambda *a, **k: None)
+    A._drop("sid-1", hard=False)
+    car = r["cars"]["p1"]
+    assert car["gone"] and not car["dnf"], "retired on the spot"
+    assert car["left_at"], "nothing says when it went"
+    # Back inside the grace: still racing.
+    A._tick_lost(r, A._now_ms() + A.LOST_GRACE_MS - 1000)
+    assert not car["dnf"]
+    car["gone"] = False
+    car.pop("left_at", None)
+    A._tick_lost(r, A._now_ms() + A.LOST_GRACE_MS + 5000)
+    assert not car["dnf"], "retired a car that came back"
+
+
+def test_a_car_that_never_comes_back_is_still_a_dnf(env, monkeypatch):
+    """Closing the tab still costs the race - it just costs it later, which is
+    what stops the cheapest way out of a bad result being a reload."""
+    A = env
+    r = _room(A)                                 # code TEST, phase racing
+    _add_car(A, r, "p1")
+    _add_car(A, r, "p2")
+    A._sid_room["sid-1"] = ("TEST", "p1")
+    monkeypatch.setattr(A.socketio, "emit", lambda *a, **k: None)
+    A._drop("sid-1", hard=False)
+    A._tick_lost(r, A._now_ms() + A.LOST_GRACE_MS + 1)
+    assert r["cars"]["p1"]["dnf"], "a car that walked away stayed in the race"

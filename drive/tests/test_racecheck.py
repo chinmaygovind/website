@@ -316,7 +316,8 @@ def test_the_flag_bits_match_the_js():
     want = dict((k, int(v)) for k, v in re.findall(r"(\w+):\s*(\d+)", decl))
     got = {"DRIFT": racecheck.FLAG_DRIFT, "AIR": racecheck.FLAG_AIR,
            "RESPAWN": racecheck.FLAG_RESPAWN, "BRAKE": racecheck.FLAG_BRAKE,
-           "SLIP": racecheck.FLAG_SLIP}
+           "SLIP": racecheck.FLAG_SLIP, "SHIELD": racecheck.FLAG_SHIELD,
+           "STAR": racecheck.FLAG_STAR}
     assert want == got
 
 

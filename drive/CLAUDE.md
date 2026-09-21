@@ -24,7 +24,7 @@ rest of the repo; any one of them is 11-28KB.
 | `docs/tracks-and-geometry.md` | `tracks/`, `trackmesh.js`, `course.js`, the collider, boost pads, a track's palette or sky |
 | `docs/runs-and-scoring.md` | `/api/run`, `/api/start`, `/api/activity`, `runcheck.py`, `verify.py`, `laptime.py`, `pending.js`, medals, ghost recording, the anti-cheat |
 | `docs/racing-physics.md` | car-to-car contact, the slipstream, catch-up, remote-car interpolation, rival sound |
-| `docs/rooms-and-races.md` | the room phase machine, qualifying, the grid, ELO, socket handlers, `racecheck.py`, the race recorder, `/race/<id>` |
+| `docs/rooms-and-races.md` | the room phase machine, qualifying, the grid, items, ELO, socket handlers, `racecheck.py`, the race recorder, `/race/<id>` |
 | `docs/bots.md` | `bot.js`, `botworld.js`, `botsim.py`, `bots.py`, the hot laps in each track folder, adding a bot to a room |
 | `docs/garage.md` | `garage.py`, `garage.js`, `CarView`, the car model, liveries, decals |
 | `docs/badges.md` | adding, changing or recolouring a badge |
@@ -576,7 +576,7 @@ than 15% or move a corner more than 8 degrees before refusing.
   on the nav's paper untiled, while the app icons are painted over `--paper`
   because iOS mattes a transparent apple-touch-icon onto black and Android crops
   a maskable icon to a circle.
-- Tests: `scripts/tests.sh drive` - 2,085 tests in about 23s, as **one pytest
+- Tests: `scripts/tests.sh drive` - 2,284 tests in about 23s, as **one pytest
   process per test file** rather than under xdist, which cannot work here at all
   (`eventlet.monkey_patch()` vs execnet's threads - see `docs/testing.md`). A
   third of that is the anti-cheat driving real laps and re-driving them, which is
@@ -637,6 +637,46 @@ instead, and the now-playing card in-game is the credit being shown.
   touched the music. If a track went silent, run it before reading any code.
 
 ## Deploy
+
+**Disconnections have had three causes and each one needed different
+evidence.** They are worth listing because none of them looks like itself from
+the seat - all three are "I was playing and then I was alone".
+1. **The OOM killer**, which took the whole unit down; fixed with
+   `OOMPolicy=continue` below. `journalctl -u drive | grep "OOM killer"`.
+2. **The deploy**, which restarts this service whenever anything under
+   `drive/` moves - a track edit included - and ends every live race. There is
+   nothing automatic about this: **`/api/live` says how many races are running
+   right now**, and it is worth a `curl` before pushing something that only
+   needed to go out eventually. Making the workflow wait on it was written and
+   then dropped on purpose - a deploy that can be held open by somebody
+   driving is a deploy that never lands, so the choice belongs to the person
+   pushing rather than to a loop in a shell script.
+3. **The event loop stalling**, which is the quiet one. Two players on
+   different networks lost their sockets within a second of each other, three
+   times in ten minutes, with the service up, nothing in the journal and no
+   verifier running - because a stall leaves no trace, it is the absence of
+   everything. `_hub_watchdog` asks for one second a second and logs when it
+   gets more (`grep "event loop stalled"`), and the ping settings on
+   `SocketIO(...)` (20s interval, 60s timeout) mean a stall has to last over a
+   minute before it costs anybody their seat. A backgrounded phone gets the
+   same grace, which is the other half of why they were set.
+
+**The box is 951MB across five services, and the OOM killer is Drive's most
+common cause of "everybody got disconnected".** Two things have to stay true or
+it comes back. `drive.service` carries **`OOMPolicy=continue`** (hand-set on the
+box, not in this repo): systemd's default is `stop`, which takes the *whole
+unit* down when the kernel kills any process in it - so a lap verifier being
+killed ended every live race, and `Restart=always` brought the service back
+three seconds later, which is why it read as a flaky connection rather than an
+outage. Nine times in two days before it was changed; the evidence is
+`journalctl -u drive | grep "OOM killer"`, and `systemctl show drive -p
+OOMPolicy` is the check. And **`MAX_VERIFIERS` is 1**, because the kernel's own
+report puts one verifier child at 206MB against about 170MB free - the old cap
+of two allowed a spike twice the size of the headroom. The child also sets its
+own `oom_score_adj` to 800 (`_prefer_to_be_killed`), so if something must die
+it is the lap check, which `_settle_checks` picks up again, rather than the
+worker holding every race. **A restart is not enough to notice any of this** -
+it looks like a network problem from every seat.
 
 **Drive deploy:** the usual Action also (when `drive/.env` exists) builds/updates
 `drive/venv` and `sudo systemctl restart drive`. **`quickjs` is in

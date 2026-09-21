@@ -77,6 +77,39 @@ class BotWorld {
     return null;
   }
 
+  /**
+   * A bot used a held item: the half of it that lives on the car.
+   *
+   * The same three fields and the same numbers `game.js` sets on a person's
+   * car, because it is the same `Car` running the same `step` - a bot with its
+   * own boost would be a second set of physics to keep in step with the first.
+   * A thrown item never reaches here; the room owns those.
+   */
+  use(pid, item) {
+    const b = this.get(pid);
+    if (!b) return;
+    // One tap's worth, the same 1.1s `ITEM_TIME` gives a person.
+    if (item === 'boost') b.car.itemBoost = 1.1;
+    else if (item === 'star') b.car.star = 10;
+    else if (item === 'shield') b.car.shield = 10;
+  }
+
+  /**
+   * An item landed on this bot: the same shove a browser gives itself in
+   * `item_hit`, and the same two answers to it. Kept beside the car rather
+   * than in the server, because the bot's car is the same `Car` a person
+   * drives and this is what one feels.
+   */
+  hit(pid) {
+    const b = this.get(pid);
+    if (!b) return;
+    if (b.car.star > 0) return;
+    if (b.car.shield > 0) { b.car.shield = 0; return; }
+    b.car.vel.addScaledVector(b.car.up, 16);
+    b.car._spin(b.car.right, 1.8);
+    b.car.bumpSlip = Math.max(b.car.bumpSlip, 0.9);
+  }
+
   /** Put one on its grid slot. The same arithmetic `placeOnGrid` does in game.js. */
   placeGrid(pid, slot) {
     const b = this.get(pid);

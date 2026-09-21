@@ -697,6 +697,188 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   track card there. That used to have to hide the track's one-line description as
   well, to make the room; the card is the name and the session type now, so there
   is nothing left up there to drop.
+- **The item slots are two icons above the minimap, and they are deliberately
+  not the same size.** The front one is 54px and is what `X` spends; the one
+  behind it is 34px and dimmer, because it is only "and then this". Rooms only,
+  and only while items are live - the same gate `contactOn` answers, so they
+  are simply not there during qualifying. What is *in* them is the server's
+  word (`docs/rooms-and-races.md`); this half only draws it.
+  - **The slot's picture is the item's own 3D model, photographed**
+    (`shootItem`): each kind is rendered once into a 96px canvas on a
+    throwaway WebGL context and kept as a data URL. It went words -> hand-drawn
+    SVG -> this, and each step was the same lesson: **the item on the road is
+    the one people learn**, so a second drawing of it in the HUD is a second
+    thing to keep in step and the one that will drift. A context that will not
+    come back is not an error - the slot is a plain coloured box and the game
+    is unaffected.
+  - **Every item is modelled, not only the ones that fly** (`buildShot`): a
+    squat dome with a pale underside for the shells (the same underside on all
+    three, because they are one object in three colours), a fat crescent with a
+    brown tip for the banana, and extruded outlines for the star, the shield
+    and the boost's two chevrons. Low-poly on purpose - they are seen at
+    140km/h from twenty units away *and* at 44px in a slot, and the silhouette
+    is the whole job at both.
+  - **The keys are named once, to somebody holding their first item**, and then
+    never again: `maybeHint` shows a pill beside the slots - `X to use`, or
+    `Hold X to boost` - behind `firstTime(SEEN_ITEM)`/`SEEN_BOOST`, the same
+    one-shot flags the goal line and the saves panel use. A permanent key cap
+    on the HUD is a thing you stop seeing by the second lap and keep paying for
+    on every one after it.
+  - **The boost is spammed, not pressed once**, and the slot says how long you
+    have left to spam it: the first `X` opens a seven-second window at the
+    server, every tap inside it is another 1.1s burst (`ITEM_TIME.itemBoost`),
+    and the item stays in the slot until the window closes. `updateItemRing`
+    draws what is left as a white line round the slot's own outline, shrinking
+    - the thing running out is the thing in the box, and a bar somewhere else
+    is a second place to look at exactly the moment there is no looking away
+    from the road. Its length comes from `getTotalLength()` on the path rather
+    than from arithmetic about corner radii. Hold-to-boost was tried first and
+    is not this: holding spends the item on a timer you cannot spend early,
+    where tapping is a decision per corner.
+  - **The boost's icon is two chevrons and deliberately not a lightning bolt**,
+    which is a different item in the game everybody has played.
+  - **A shield is a bubble on the car** (`CarView.setShield`), made on the
+    first one rather than in the constructor because most cars in most races
+    never hold one. It is drawn for every car, not just yours, off `FLAG.SHIELD`
+    in the pose byte through `lampsOf` - the point of a visible shield is the
+    driver behind deciding not to waste a shell on it.
+  - On a phone the button is in the **left** pad's utils row, beside where the
+    save-state buttons sit in solo, and for that row's stated reason: the right
+    pad is the one being used, both pedals are held, and the two buttons above
+    them are what you reach for having already fallen off. The slots stay
+    visible on touch - a button for something you cannot see is pressed blind.
+
+- **The boxes pop rather than blink.** `animateItemBoxes` has three states and
+  one number: gone, coming back, or there. Taken, a box bursts out over
+  `BOX_POP_MS`; returning, it springs past its own size and settles, because a
+  box that reappears at exactly full size reads as a rendering glitch and one
+  that springs reads as being given back. The box itself is three pieces - a
+  glassy shell, a bright wireframe edge and a spinning core - because one
+  translucent cube is a smudge at 140km/h against half the skies in the pool.
+  **`grabItemBoxes` hides it the moment you touch it**, without waiting for the
+  server: the claim is still the server's, but the one thing every driver does
+  next is aim at what is in front of them, and a box that is still standing for
+  another 80ms gets aimed at twice. Its reach is deliberately shorter than the
+  server's `BOX_REACH`, so a claim this browser thinks it has made is one the
+  server agrees with; the slack is the pose that was in flight.
+
+- **Every item has its own voice, and two of them share one.** `ITEM_SOUND`
+  maps the item to a method on `Sound`: the boost borrows the boost pad's,
+  which is what it is; the green and the red share `itemShell`, because they
+  *are* one object thrown two ways and the difference is who it goes after,
+  which a sound cannot say; the blue gets its own and is the one sound the
+  **whole room** hears, since it is already on its way to the leader and
+  nobody can do anything about it. An item you cannot tell apart by ear is one
+  you have to read the HUD to know you fired.
+  - **The rear view is on `Q` and on `/`, and the second one is about hardware.**
+  Looking behind while driving forward and holding an item is three keys at
+  once, and three keys in the same corner of a keyboard matrix is more than a
+  lot of keyboards will report - so `W` + `X` + `Q` arrived as `W` + `X` and
+  the camera never moved. Nothing in the code was blocking it and nothing in
+  the code could have fixed it. `/` sits beside the arrow keys, so a driver
+  holding the item with their left hand looks behind with their right.
+
+- **Tap to throw, hold to trail** (`itemDown`/`itemUp`): holding the use
+    button puts a banana, green or red *behind* the car instead of throwing it,
+    and letting go throws it - so a tap is exactly what a tap always was. The
+    boost is the exception and has to be, because it is spammed rather than
+    held. What is being trailed is drawn from the server's word (`setHeld`,
+    `moveHeld`), so what protects you and what everybody can see are the same
+    object.
+  - **The star sings for as long as it lasts** (`STAR_BAR_MS` in
+    `expireItems`): one fanfare at the start is a fanfare you have forgotten by
+    the second corner, and the point of the item is knowing - and everybody
+    else knowing - that right now you cannot be stopped. It is also *shorter*
+    than it was, six seconds rather than ten, because the jingle is what makes
+    the six feel like plenty.
+  - **Both bubbles shimmer** (`CarView.update`): opacity and size breathe
+    together and slightly out of phase, so it reads as a surface with something
+    moving over it rather than a light being turned up and down. The star's is
+    faster and brighter than the shield's - it is the louder item and should
+    look it.
+  - **Being hit is one function** (`hitByItem`), because from the seat a shell,
+    a bomb, a banana on the road and a starred car are the same thing
+    happening: the car is thrown and its tyres let go, the camera is knocked,
+    sparks come off it, and `Sound.itemHit` plays three layers - a low thump
+    for the impact, a bright metallic crack over it so it reads as being hit by
+    a *thing* rather than driving into scenery, and a note sliding away
+    underneath that says the next two seconds are not yours. A wall gets a
+    shorter, duller version of the first two, because one of them is your own
+    fault and the other is somebody's shell.
+  - **A bomb has two sounds and they are different jobs**: `itemBomb` is the
+    underarm thunk of throwing one, heard by the thrower, and `bombBlast` is
+    it going off, heard by everybody - with a camera kick that falls away with
+    distance, since a bomb ten units off is news whether it caught you or not.
+    `addBlast` draws the sphere at the size the server actually resolved, so
+    what caught you is a thing you saw.
+  - **`shellWarning` is the thing behind you getting louder**: the nearest shot
+    of any kind within `SHELL_EARSHOT` pings, and the *gap* between pings
+    closes as it comes. Deliberately not told who owns it - your own shell is
+    out of earshot within a tick, and a banana lying on the road ahead is worth
+    exactly as much warning as a shell is. It is measured in the time you have
+    to do something about it rather than in distance.
+
+- **The standings gap is a time, not a distance** (`gapLabel`). It read
+  `-500m`, which is a number you have to convert before it means anything:
+  five hundred metres is nothing down Big Red's descent and half a race on
+  Shroom Street. Seconds mean the same thing on every track, they are what
+  every timing screen in motorsport shows, and they are what you are actually
+  asking - how long it would take to get there. Divided by the pace of the car
+  it is *about*, so the number does not swing because *you* braked, and floored
+  at `GAP_FLOOR` so a car stopped on the grass is a big gap rather than an
+  infinite one. Hundredths under ten seconds, tenths above: at nine seconds the
+  hundredths are the difference between catching somebody and not, and at forty
+  they are noise on a number that already means "another lap".
+
+- **The minimap says which dot is you, and what is loose on the track.** Your
+  own has a white ring round it - in a field of eight coloured dots the
+  question the map is asked is *which one is me*, and colour alone does not
+  answer it at a glance on a 190px canvas. Bombs and blue shells are drawn
+  too, and deliberately nothing else: a bomb is a place you have to go round
+  and a blue shell is the one item whose whole interest is where it currently
+  is, while eight shells and a dozen bananas would turn the map into a list of
+  things rather than a picture of the race.
+
+- **The room drawer closes itself when you start driving.** You arrive in a
+  room with it open, which is right - the roster and the chat are what a lobby
+  is - but a third of the screen is a strange thing to be looking through once
+  the car is moving. It closes on the first movement of a run and on the green
+  light, and not on any later one, so a drawer opened deliberately mid-lap
+  stays open.
+
+- **The race position is an ordinal in a corner of its own.** It was a card in
+  the top-left column reading `3/4` over the word *Position* - a fraction, in
+  the corner that already holds the track name and the standings, so answering
+  "where am I" meant reading three things. It is `2nd` now, 3.4rem, bottom
+  right, opposite the clock, with `of 6` small underneath because the field
+  size is the context rather than the number; first place is gold, which is the
+  one position worth seeing without reading. **On a phone the bottom right is
+  the throttle**, so it moves under the button row at the top right - the only
+  other part of the screen nothing is ever held over.
+
+- **`#netLost` is the one pill for "you are not in the room everybody else is
+  in", and both things that say so also *do* something.** A socket that is
+  still down after `DEAD_MS` reloads the page: Socket.IO retries for ever, but
+  a session the server has forgotten - it restarted, or the box killed it -
+  comes back as a connection with no room behind it, and from the seat that is
+  a car driving alone on a track everybody else has left. And a `track_change`
+  that will not apply retries once and then reloads (`applyTrackChange`):
+  `switchTrack` toasts and returns false when the payload or the scenery does
+  not arrive, and the page then sits on the old track while the room races on
+  the new one - poses measured against a ribbon this car is not on, other cars
+  drawn where they are not. `S.switching` holds the poses back meanwhile,
+  because a pose from the old track is worse than no pose at all: the server
+  believes it. Both are pinned in `tests/test_rules_js.py`.
+- **`#netLost` says when the socket has gone, because nothing else does.** The
+  car is simulated locally, so a dropped connection changes nothing about
+  driving it: the lap goes on, the clock runs, and the only symptom is that
+  every other car stops where it was - which is the same picture as everybody
+  else being slow. The pill stays up for as long as it is true and comes down
+  on `connect`, which is also where `join_room_` puts the car back in the room.
+  It is worth having for a reason outside this repo: the box is small enough
+  that Drive gets OOM-killed, and a service that comes back three seconds later
+  looks exactly like a bad connection. See the deploy notes in `drive/CLAUDE.md`.
+
 - **Touch controls: four driving buttons and no handbrake button.** Steering left,
   throttle and brake right, checkpoint and restart small above the steering. There
   is deliberately no fifth button, because there is nowhere a thumb can reach one:

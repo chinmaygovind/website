@@ -59,10 +59,19 @@
       <div class="meter" id="meterFps"><span>FPS</span><b id="fpsVal">--</b></div>
       <div class="meter" id="meterPing"><span>PING</span><b id="pingVal">--</b></div>
     </div>
-    <div class="card" id="position" style="display:none">
-      <div class="position"><b id="posNum">-</b><span>/<span id="posTot">1</span></span></div>
-      <div class="sub">Position</div>
-    </div>
+  </div>
+
+  <!-- **Where you are, and nothing else.** It used to be a card in the
+       top-left column reading `3/4` over the word Position - a fraction, in
+       the corner with the track name and the standings, three things to read
+       to answer one question. It is an ordinal now, on its own, in the corner
+       your eye is nearest at speed: bottom right, opposite the clock. `of N`
+       is small under it because the field size is the context, not the number.
+       On a phone the bottom right is the throttle, so it moves under the row
+       of buttons at the top right, which is the only other place nothing is
+       ever held. -->
+  <div id="place" style="display:none">
+    <b id="placeNum">1st</b><span id="placeOf">of 1</span>
   </div>
 
   <!-- bottom left: the two session controls, then the minimap.
@@ -94,6 +103,16 @@
       </button>
       {% endif %}
     </div>
+    {% if mode == 'room' %}
+    <div class="item-hud" id="itemHud" aria-label="Items" style="display:none">
+      <div class="item-slot big" id="item0"><span class="item-art" id="item0art"></span>
+        <svg class="item-ring" id="itemRing" viewBox="0 0 54 54" aria-hidden="true">
+          <rect x="2" y="2" width="50" height="50" rx="13"/>
+        </svg>
+      </div><div class="item-slot" id="item1"><span class="item-art" id="item1art"></span></div>
+      <span class="item-hint" id="itemHint"></span>
+    </div>
+    {% endif %}
     <div class="card"><canvas id="minimap" width="190" height="150"></canvas></div>
   </div>
   </div><!-- /hud-l -->
@@ -263,6 +282,14 @@
 
   <div id="wrongWay" style="display:none">WRONG WAY</div>
   <div id="toast"></div>
+  {% if mode == 'room' %}
+  {# Up for as long as it is true, because what it is telling you is that the
+     race you are driving is no longer the race anybody else is in. A toast
+     says it for a second and a half and then leaves you looking at cars that
+     have stopped moving, which is the same picture as everyone else being
+     slow. #}
+  <div id="netLost" style="display:none">Disconnected - reconnecting&hellip;</div>
+  {% endif %}
   <div class="countdown" id="countdown" style="display:none">3</div>
   <!-- Shown once, on your first run of the session. It is an instruction for
        somebody who has never driven this, and by the second run it is a label
@@ -447,6 +474,11 @@
       <span class="switch"><i></i></span>
     </button>
     <div class="setting-note" id="qualNote"></div>
+    <button class="setting" id="optPowerups" role="switch" aria-checked="true">
+      <span class="setting-name">Powerups</span>
+      <span class="switch"><i></i></span>
+    </button>
+    <div class="setting-note" id="powerupsNote"></div>
   </div>
   <button class="btn ghost" id="btnLeave" style="border-color:#ff8a7a;color:#ff8a7a">Leave room</button>
   <!-- Chat last, and pinned to the floor of the drawer: it takes whatever
@@ -503,6 +535,18 @@
       </div>
     </div>
     {% endif %}
+    {% if mode == 'room' %}
+    {# **The left thumb, for the same reason the save buttons are on it.** The
+       right pad is the one being *used* - both pedals are held - and the two
+       buttons above them are what you reach for having already fallen off.
+       Firing a shell happens at speed, with the throttle down, so it has to be
+       on the hand that is only steering. #}
+    <div class="utils">
+      <div class="tbtn small" id="tItem" title="Use item">
+        <svg viewBox="0 0 24 24"><path d="m12 2 2.2 6.5L21 9l-5.2 4.2 1.7 6.8L12 16.3 6.5 20l1.7-6.8L3 9l6.8-.5z"/></svg>
+      </div>
+    </div>
+    {% endif %}
     <div class="steerpad">
       <div class="tbtn" id="tLeft" title="Steer left - double-tap and hold to drift">
         <svg viewBox="0 0 24 24"><path d="M15 4.5 8 12l7 7.5"/></svg>
@@ -541,6 +585,13 @@
   <div class="sheet wide tracks-sheet">
     <div class="sheet-head">
       <h2>Tracks</h2>
+      {# Up here rather than in the sort row, where it was a second thing
+         making that row wrap. It is not a sort anyway - it *picks* one - so
+         the head is the honest place for it: beside the title, away from the
+         seven buttons that answer one question between them. The answer comes
+         out of the tab you are looking at, and it is never the track you are
+         already on. #}
+      <button class="trandom" id="btnRandomTrack" title="Pick one for me">Random</button>
       <button class="sheet-x" id="btnTracksClose" title="Close" aria-label="Close">
         <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
       </button>
@@ -555,8 +606,12 @@
     <div class="ttabs" id="tTabs" role="tablist">
       <button class="ttab on" data-tab="sprint" role="tab">Sprints</button>
       <button class="ttab" data-tab="circuit" role="tab">Circuits</button>
-      <button class="ttab" data-tab="daily" role="tab">Dailies</button>
-      <button class="ttab" data-tab="community" role="tab">Community</button>
+      {# Hidden rather than deleted: neither has anything in it yet, and an
+         empty tab is a promise the game is not keeping. `hidden` is also what
+         `renderTrackTabs` reads to decide which tabs exist, so taking the
+         attribute off is the whole of turning one back on. #}
+      <button class="ttab" data-tab="daily" role="tab" hidden>Dailies</button>
+      <button class="ttab" data-tab="community" role="tab" hidden>Community</button>
     </div>
     <div class="tgrid" id="tGrid"></div>
     {# The sort, at the foot, because it is the thing you reach for second. Each
@@ -570,8 +625,8 @@
       <button class="tsort" data-sort="difficulty">Difficulty</button>
       <button class="tsort" data-sort="length">Length</button>
       <button class="tsort" data-sort="plays">Most played</button>
-      <button class="tsort" data-sort="rank">Your place</button>
-      <button class="tsort" data-sort="medal">Your medal</button>
+      <button class="tsort" data-sort="rank">Position</button>
+      <button class="tsort" data-sort="medal">Medal</button>
     </div>
   </div>
 </div>
@@ -666,23 +721,33 @@
      three things there are to do next. -->
 <div class="overlay" id="raceOver" style="display:none">
   <div class="sheet wide">
-    <h2 id="raceOverTitle">Race result</h2>
+    {# It closes with an X like every other sheet here, and Escape closes it
+       first - a result you have read is the innermost thing on the screen.
+       There used to be a `Practice` button doing this job under another name,
+       which made it one of five equal choices instead of the way out. #}
+    <div class="sheet-head">
+      <h2 id="raceOverTitle">Race result</h2>
+      <button class="sheet-x" id="btnRaceClose" title="Close (Esc)" aria-label="Close">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
     <div class="res-standings" id="raceStandings"></div>
     <!-- The two numbers in the points column, named by showing your own - the
          same job the rating line below does. The room's table is the sidebar's;
          this is what the race just did to your place in it. -->
     <div class="elo-line" id="racePoints" style="display:none"></div>
     <div class="elo-line" id="raceElo" style="display:none"></div>
-    <!-- What there is to do next, in the order you are likely to want it, and
-         all one size: these are five equal choices rather than one big one and
-         four small ones. Quit is last because leaving is the last thing you
-         want offered, and the two host-only buttons sit between - they are the
-         decisions the room is waiting on. -->
+    <!-- **Three things or four, and never five.** The host's row is the two
+         decisions the room is waiting on plus the replay and the way out; a
+         guest's is the one thing they can do to the track themselves - line up
+         again and practise it - plus the same two. Leaving is last because it
+         is the last thing anybody should be offered, and the first button is
+         the likely one, which is why it is the only coloured one. -->
     <div class="sheet-actions even">
-      <button class="btn dark" id="btnPractice">Practice</button>
-      <button class="btn secondary" id="btnWatchRace" style="display:none">Watch replay</button>
+      <button class="btn" id="btnRematch" style="display:none">Rematch</button>
       <button class="btn secondary" id="btnRaceTrack" style="display:none">Change track</button>
-      <button class="btn secondary" id="btnRematch" style="display:none">Rematch</button>
+      <button class="btn" id="btnPractice">Back to start</button>
+      <button class="btn secondary" id="btnWatchRace" style="display:none">Watch replay</button>
       <a class="btn secondary" id="btnRaceQuit" href="/lobbies">Quit</a>
     </div>
   </div>
@@ -986,7 +1051,7 @@
          like the three above them, and nothing about them opens a panel. There
          are no touch rows to match - a phone's four buttons are all the thumbs
          reach, and a view you could not let go of would be a fault. #}
-      <tr><td>Rear View</td><td>Q</td></tr>
+      <tr><td>Rear View</td><td>Q or /</td></tr>
       <tr><td>First Person View</td><td>F</td></tr>
       {# Twice mid-race and once everywhere else, which is worth the words: R is
          next to T, and T is the key you reach for when you have fallen off. The
@@ -1066,7 +1131,7 @@
       <tr><td>Choose Save State</td><td>1 - 9</td></tr>
       <tr><td>Manage Save States</td><td>J</td></tr>
       {% endif %}
-      <tr><td>Rear View</td><td>Q</td></tr>
+      <tr><td>Rear View</td><td>Q or /</td></tr>
       <tr><td>First Person View</td><td>F</td></tr>
       <tr><td>Change Track</td><td>P</td></tr>
       <tr><td>Settings</td><td>Esc / O</td></tr>

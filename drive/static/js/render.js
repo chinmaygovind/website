@@ -977,6 +977,9 @@ export class CarView {
 
     this._braking = false;
     this._ghostly = ghost;
+    this._shield = false;
+    this._bubbleHue = 0;
+    this._bubbleBase = 0.22;
 
     scene.add(this.group);
     this.scene = scene;
@@ -1035,6 +1038,56 @@ export class CarView {
       this._braking = braking;
       for (const m of this.brakeMats) m.color.setHex(braking ? BRAKE_ON : BRAKE_OFF);
     }
+    this.setShield(!!opts.shield, !!opts.star);
+    if (this.bubble && this.bubble.visible) {
+      // Turning slowly, so one on a car sitting still still reads as on - and
+      // **shimmering**, because a bubble at a constant 22% is a smudge on the
+      // paint. Opacity and size breathe together and slightly out of phase, so
+      // it reads as a surface with something moving over it rather than as a
+      // light being turned up and down. The star's is faster and brighter: it
+      // is the louder of the two items and should look it.
+      const star = this._bubbleHue === 0xffd23d;
+      const t = performance.now() * (star ? 0.009 : 0.005);
+      this.bubble.rotation.y += star ? 0.05 : 0.02;
+      this.bubble.material.opacity = this._bubbleBase * (1 + Math.sin(t) * 0.45);
+      const k = 1 + Math.sin(t * 0.8 + 1) * 0.06;
+      this.bubble.scale.setScalar(k);
+    }
+  }
+
+  /**
+   * The bubble, which is a fact about a car and so is drawn on the car.
+   *
+   * A shield you cannot see is a shield you forget you are holding, and - more
+   * to the point - one the driver behind cannot see either, which turns a
+   * wasted shell into a mystery. Made on the first one rather than in the
+   * constructor: most cars in most races never hold one, and this is a sphere
+   * per car that would otherwise exist for all eight for the whole race.
+   */
+  setShield(on, star) {
+    on = on || star;
+    // **The star wears the same bubble in gold**, which is the whole of what
+    // makes it visible: it is otherwise a car that is quick and cannot be
+    // stopped, and neither of those is a thing you can see from behind. One
+    // mesh for both, because a car can never have both at once - a star
+    // ignores the hit a shield exists to eat.
+    const hue = star ? 0xffd23d : 0x8fe0ff;
+    if (on === this._shield && hue === this._bubbleHue) return;
+    this._shield = on;
+    this._bubbleHue = hue;
+    if (!this.bubble) {
+      if (!on) return;
+      this.bubble = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(1.85, 1),
+        new THREE.MeshBasicMaterial({ color: 0x8fe0ff, transparent: true, opacity: 0.22,
+                                      side: THREE.DoubleSide, depthWrite: false }));
+      this.bubble.position.y = 0.55;
+      this.group.add(this.bubble);
+    }
+    this.bubble.material.color.setHex(hue);
+    this._bubbleBase = star ? 0.3 : 0.22;
+    this.bubble.material.opacity = this._bubbleBase;
+    this.bubble.visible = on;
   }
 
   /**
@@ -1200,9 +1253,19 @@ export class Draft {
      * be drawn or nobody could answer it, where a pad is a lit strip of road
      * everybody can already see. Nothing on the wire has to say what the track
      * is saying.
+     *
+     * **An item boost is in here for the first reason and not the second.** It
+     * is the same fact from inside the car, and it is the only one of the
+     * three with nothing else to show for it - a tow has a car in front of it
+     * and a pad is a lit strip of road, while a boost you tapped out of a box
+     * has no evidence anywhere but here. It is `1` while it lasts rather than
+     * a fraction of anything, because a tap is a tenth the length of a pad and
+     * fading it in over that is a fade nobody sees; the streaks in the air
+     * finish their run when it stops, the same way a pad's do.
      */
     const bf = Math.max(car.slipBoost > 0 ? Math.min(1, car.slipBoost / (T.SLIP_BOOST || 1.6)) : 0,
-                        car.padBoost > 0 ? Math.min(1, car.padBoost / (T.PAD_BOOST || 1.3)) : 0);
+                        car.padBoost > 0 ? Math.min(1, car.padBoost / (T.PAD_BOOST || 1.3)) : 0,
+                        car.itemBoost > 0 ? 1 : 0);
     const boosting = bf > 0;
     /*
      * One number drives the whole thing, and it is the bar this replaced:
@@ -2039,6 +2102,9 @@ export class Renderer {
     this.camera.updateProjectionMatrix();
   }
 
+  /** Whether this track's movers have a voice. See `_ghostsNear`. */
+  setMoverVoice(on) { this.moverVoice = !!on; }
+
   setTrack(built) {
     if (this.trackGroup) {
       this.scene.remove(this.trackGroup);
@@ -2216,7 +2282,7 @@ export class Renderer {
     // rather than a different number. A pad and a tow are worth the same kick
     // and never add up: two at once is one boost, not a fisheye.
     const fov = this.baseFov + Math.min(13, speed * 0.16)
-              + (car.slipBoost > 0 || car.padBoost > 0 ? 7 : 0);
+              + (car.slipBoost > 0 || car.padBoost > 0 || car.itemBoost > 0 ? 7 : 0);
     if (Math.abs(this.camera.fov - fov) > 0.05) {
       this.camera.fov += (fov - this.camera.fov) * (1 - Math.exp(-6 * dt));
       this.camera.updateProjectionMatrix();
@@ -2277,6 +2343,13 @@ export class Renderer {
   _ghostsNear(dt) {
     const list = this.movers && this.movers.list;
     if (!list || !list.length || !this.onGhostNear) return;
+    // **Only where the movers are ghosts.** A mover is a thing that walks
+    // across the road, and two tracks have some: a chapel full of Boos and a
+    // herd of hadrosaurs. The laugh belongs to one of them, and Dino Park's
+    // dinosaurs were doing it because this asked how *close* something was and
+    // never what it is. The track says so (`pal.moverVoice`); anything that
+    // does not say so crosses the road in silence.
+    if (!this.moverVoice) return;
     this.moverQuiet -= dt;
     const c = this.camera.position;
     for (let i = 0; i < list.length; i++) {

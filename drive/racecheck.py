@@ -67,6 +67,12 @@ FLAG_AIR = 2
 FLAG_RESPAWN = 4
 FLAG_BRAKE = 8
 FLAG_SLIP = 16
+# Not about the driving at all, and nothing here reads it: a shielded car is a
+# car with a bubble drawn on it. It is in the byte because the byte is what
+# every other screen already gets, and it is copied here because the test below
+# pins this list against the .js and an unlisted bit would fail it.
+FLAG_SHIELD = 32
+FLAG_STAR = 64
 
 
 # How many seconds of travel the budget may hold. Half a second: long enough

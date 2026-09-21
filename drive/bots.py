@@ -60,7 +60,16 @@ import tracks as tracks_mod                               # noqa: E402
 HOTLAP_FILE = "hotlap.json"
 
 LEVELS = ("easy", "medium", "hard", "max")
-DEFAULT_LEVEL = "medium"
+
+# What a seat gets when nothing chose for it: the dropdown's first reading, and
+# the level `_seat_bot` falls back to. **Max, not medium**, because of the
+# measurement below: easy and medium are calibrated against bronze and silver
+# and the medals have moved under them, so medium is up to eleven seconds off
+# the pace it is supposed to set - a bot you are not really racing. Max is 5.6%
+# under gold and beats it on fifteen of sixteen tracks, which is a race. A
+# mixed field is still one press per level away, which is the whole point of
+# the dropdown; this only decides what you get for not touching it.
+DEFAULT_LEVEL = "max"
 
 # The levels a room may actually pick. All four, and here is what each is worth,
 # measured rather than intended - because two of them do not hit their targets.

@@ -1823,3 +1823,25 @@ def test_every_mode_of_the_play_page_carries_the_settings(env):
     c.post("/api/prefs", json={"ghost": "off"})
     for url in ("/solo/sunrise", "/room/PREFS1", "/race/%d" % rid):
         assert '"ghost":"off"' in c.get(url).get_data(as_text=True), url
+
+
+def test_the_deploy_can_ask_whether_anybody_is_racing(env):
+    """`/api/live` is what stands between a track edit and everybody's race.
+
+    It has to be cheap, public and impossible to get wrong from a shell script:
+    the deploy reads it over SSH with `curl` and `grep`, and a request that
+    does not answer has to read as quiet rather than as a reason to stop.
+    """
+    A = env
+    c = A.app.test_client()
+    assert c.get("/api/live").get_json() == {"racing": 0, "players": 0}
+    r = A._room("LIVEX")
+    r["phase"] = "racing"
+    car = A._car(r, "p1")
+    car["ts"] = A._now_ms()
+    car["name"] = "someone"
+    got = c.get("/api/live").get_json()
+    assert got["racing"] == 1 and got["players"] == 1
+    r["phase"] = "results"                       # the sheet is not a race
+    assert c.get("/api/live").get_json()["racing"] == 0
+    A._rooms.clear()

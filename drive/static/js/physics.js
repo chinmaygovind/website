@@ -26,7 +26,8 @@ const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vect
 const _q1 = new THREE.Quaternion();
 const UP = new THREE.Vector3(0, 1, 0);
 
-export const FLAG = { DRIFT: 1, AIR: 2, RESPAWN: 4, BRAKE: 8, SLIP: 16 };
+export const FLAG = { DRIFT: 1, AIR: 2, RESPAWN: 4, BRAKE: 8, SLIP: 16, SHIELD: 32,
+                     STAR: 64 };
 
 export class Car {
   constructor(T, world) {
@@ -64,6 +65,9 @@ export class Car {
     this.slipCharge = 0;       // 0..1, how full the tow is
     this.slipBoost = 0;        // seconds of boost left
     this.padBoost = 0;         // seconds of boost-pad left
+    this.itemBoost = 0;        // seconds of held-item boost left
+    this.star = 0;             // seconds invulnerable left
+    this.shield = 0;           // seconds the one-hit shield waits to be used
     this.bounceLock = 0;       // seconds a cap stays spent after throwing us
     this.catchupBoost = 0;     // 0..1, how much help for being down the road
     this._bumpCooldown = new Map();
@@ -91,6 +95,9 @@ export class Car {
     // arriving at either with a second of engine left over from a pad you drove
     // over before you fell off is speed you were not going to keep.
     this.padBoost = 0;
+    this.itemBoost = 0;
+    this.star = 0;
+    this.shield = 0;
     // Nor does the help for being behind: a car being placed is a car on the
     // grid or one that has just been picked up, and neither is a moment to hand
     // out engine. It is derived from the gap every frame, so it is back inside
@@ -197,6 +204,9 @@ export class Car {
     // so a flag set at 1/120 and read at 1/60 loses every other one - and a pad
     // taken at speed can easily be wholly inside a single frame.
     this.padBoost = Math.max(0, this.padBoost - dt);
+    this.itemBoost = Math.max(0, this.itemBoost - dt);
+    this.star = Math.max(0, this.star - dt);
+    this.shield = Math.max(0, this.shield - dt);
     if (this.grounded && this.surface === KIND.BOOST) {
       if (this.padBoost <= 0) this.onBoostPad && this.onBoostPad();
       this.padBoost = T.PAD_BOOST;
@@ -306,7 +316,8 @@ export class Car {
         // drives over it, so stacking them would make a pad worth most to the
         // car that was already being helped. See tuning.py.
         const help = Math.max(this.slipBoost > 0 ? T.SLIP_ACCEL_MULT : 1,
-                              this.padBoost > 0 ? T.PAD_ACCEL_MULT : 1);
+                              (this.padBoost > 0 || this.itemBoost > 0 || this.star > 0)
+                                ? T.PAD_ACCEL_MULT : 1);
         let eng = T.ACCEL * help;
         if (this.catchupBoost > 0) {
           eng *= 1 + this.catchupBoost * (T.CATCHUP_ACCEL_MULT - 1);
@@ -324,6 +335,7 @@ export class Car {
 
       // --- grip ----------------------------------------------------------
       let grip = handbrake ? T.DRIFT_GRIP : T.GRIP;
+      if (this.itemBoost > 0 || this.star > 0) grip *= 1.25;
       // A hit lets the tyres go for a moment, and this is the only reason
       // contact moves a car at all: grip kills lateral velocity at
       // `1 - exp(-grip*dt)` per step, so a sideways impulse on full grip is
@@ -696,7 +708,8 @@ export class Car {
       respawnIn: this.respawnIn, tick: this.tick, _tick: this._tick,
       frozen: this.frozen, wheelSpin: this.wheelSpin, towed: this.towed,
       slipCharge: this.slipCharge, slipBoost: this.slipBoost,
-      padBoost: this.padBoost, bounceLock: this.bounceLock,
+      padBoost: this.padBoost, itemBoost: this.itemBoost, star: this.star,
+      shield: this.shield, bounceLock: this.bounceLock,
       catchupBoost: this.catchupBoost, _wallHit: this._wallHit,
       bumpCooldown: [...this._bumpCooldown],
       respawn: this._respawn ? { p: this._respawn.p.slice(), fwd: this._respawn.fwd.slice() } : null,
@@ -715,7 +728,9 @@ export class Car {
     this.respawnIn = s.respawnIn; this.tick = s.tick; this._tick = s._tick;
     this.frozen = s.frozen; this.wheelSpin = s.wheelSpin; this.towed = s.towed;
     this.slipCharge = s.slipCharge; this.slipBoost = s.slipBoost;
-    this.padBoost = s.padBoost; this.bounceLock = s.bounceLock;
+    this.padBoost = s.padBoost; this.itemBoost = s.itemBoost || 0;
+    this.star = s.star || 0; this.shield = s.shield || 0;
+    this.bounceLock = s.bounceLock;
     this.catchupBoost = s.catchupBoost; this._wallHit = s._wallHit;
     this._bumpCooldown = new Map(s.bumpCooldown || []);
     // Not carried across a restore: `lastBump` is a one-frame message to the
@@ -752,6 +767,12 @@ export class Car {
     if (this.respawnIn > 0) f |= FLAG.RESPAWN;
     if (this.braking) f |= FLAG.BRAKE;
     if (this.slipBoost > 0) f |= FLAG.SLIP;
+    // Not a fact about the driving, unlike the five above it - it is a fact
+    // about the car that every *other* screen has to know, because the bubble
+    // is drawn on the car and a rival deciding whether to spend a shell on you
+    // is the whole reason it is visible at all.
+    if (this.shield > 0) f |= FLAG.SHIELD;
+    if (this.star > 0) f |= FLAG.STAR;
     return f;
   }
 }

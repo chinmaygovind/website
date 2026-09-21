@@ -242,6 +242,9 @@ def test_a_jump_is_still_taken_whole(rt):
 
 ORDER_STUB = """
 var S = { order: [], remotes: new Map(), standings: [],
+          // The board reads a pace as well as a place now - the gap is shown
+          // in seconds, so every row carries what it is doing. See `gapLabel`.
+          car: { speed: 40 },
           run: { bestS: 0, state: 'running', time: 0 } };
 var CFG = { name: 'me', me: { pid: 'p1', color: '#fff' } };
 

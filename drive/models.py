@@ -826,6 +826,38 @@ class DriveUserTrack(db.Model):
 # somebody forgot the ALTER is not a feature that does not work, it is Drive
 # down. Idempotent, dialect-agnostic enough for the SQLite this actually runs
 # on, and it costs one ``PRAGMA`` at boot.
+class DriveItemStat(db.Model):
+    """How each item is doing, across every room, one row per item.
+
+    **Counted rather than logged.** The alternative is a row per shell thrown,
+    which on this box is a write every couple of seconds during a race, a table
+    that grows for ever and a question ("is the blue shell worth having?") that
+    then needs a GROUP BY over all of it. Four numbers per item answer that, and
+    they answer it at a glance:
+
+    * `given` - how often a box handed this out. Against the others, that is
+      whether the odds in `ITEM_ODDS` are doing what they were written to do.
+    * `used`  - how often somebody spent one. A gap between the two is an item
+      people are holding and not using, which is either a shield doing its job
+      or an item nobody wants.
+    * `hit`   - how often it landed on somebody. `used` minus `hit` for the
+      thrown items is how often they miss, which is the one number that says
+      whether a shell is aimable.
+    * `blocked` - how often it was eaten by a held item, which is the whole
+      argument for holding one.
+
+    Kept in the process and flushed every `ITEM_FLUSH_MS`, because a race is
+    thirty ticks a second and none of this is worth a transaction each.
+    """
+    __tablename__ = "drive_item_stats"
+
+    item    = db.Column(db.String(12), primary_key=True)
+    given   = db.Column(db.Integer, default=0)
+    used    = db.Column(db.Integer, default=0)
+    hit     = db.Column(db.Integer, default=0)
+    blocked = db.Column(db.Integer, default=0)
+
+
 _ADDED = {
     "drive_players": [
         ("is_bot", "BOOLEAN DEFAULT 0"),

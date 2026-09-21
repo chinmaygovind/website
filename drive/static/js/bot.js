@@ -149,6 +149,12 @@ const TAP_GAP = 0.22;
 // Recovery. All three are generous on purpose: a bot that respawns when it did
 // not need to has thrown the race away far more thoroughly than one that spent
 // an extra second in the gravel, and it looks broken while it does it.
+// How far back up its own line a bot is put when it gives up, in *points* -
+// the line is sampled densely, so this is a couple of car lengths rather than
+// a corner. Enough to be clear of what it hit; not enough to be a penalty.
+const RECOVER_BACK = 6;
+const _rv = [0, 0, 0];
+
 const STUCK_SPEED = 1.5;          // units/s of progress that still counts as moving
 const STUCK_NUDGE_S = 1.4;        // back up and try again
 const STUCK_GIVE_UP_S = 3.2;      // take the checkpoint
@@ -949,8 +955,19 @@ class Bot {
       this.gaveUp[why] = (this.gaveUp[why] || 0) + 1;
       this.lastGiveUp = { why: why, i: loc.i, d: loc.d, y: car.pos.y,
                           lineY: this.line.p[loc.i][1], speed: car.speed };
-      // `Run.update` keeps the car's respawn point on the last checkpoint
-      // reached, so this is the same thing a person pressing T gets.
+      // **Back onto the road where it went off, not back to the last gate.**
+      // `Run.update` keeps the car's respawn on the last checkpoint reached,
+      // which is the right answer for a person pressing T - they asked for it,
+      // and they know what they gave up. For a bot in a race it is a
+      // punishment far bigger than the mistake: forty seconds of road handed
+      // back for a wall it brushed, and on a track whose first hazard comes
+      // *before* the first checkpoint the last gate is the start line, so the
+      // car appears to restart the race. It goes back a few units up its own
+      // line instead - far enough to be clear of whatever it hit, near enough
+      // that it is still in the race it was in.
+      const back = this.line.p[Math.max(0, loc.i - RECOVER_BACK)];
+      const way = this.line.tangent(Math.max(0, loc.i - RECOVER_BACK), _rv);
+      car.setRespawn([back[0], back[1] + 0.4, back[2]], way);
       car.requestRespawn();
       this.stuck = this.wrongFor = this.lostFor = this.fellFor = 0;
       return NEUTRAL;

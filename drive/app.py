@@ -23,6 +23,7 @@ from sqlalchemy import func
 
 import models as models_mod
 from models import (db, User, DriveStats, DriveTime, DriveStart, DriveRunCheck,
+                    DriveItemStat,
                     DriveGame, DrivePlayer, DriveRace, DriveGarage, DrivePrefs,
                     DriveCheatFlag, DriveUserTrack, DriveSave)
 import portal as portal_mod
@@ -120,7 +121,17 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 # rather than waits.
 
 db.init_app(app)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
+# **The two ping numbers are about phones, not about the network.** A browser
+# throttles timers in a backgrounded tab - Chrome to about one a minute - so a
+# phone that locks for half a minute cannot answer a ping, and at the default
+# twenty-second timeout the server hung up on it. That is a disconnect nobody
+# caused and nothing can see coming: the player looks at their screen again and
+# is out of the room. Sixty seconds of grace covers a lock screen, a
+# notification, an answered message; the cost is that a genuinely dead client
+# holds its seat a little longer, which `POSE_STALE_MS` and the room's own idle
+# clock already deal with.
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet",
+                    ping_interval=20, ping_timeout=60)
 
 with app.app_context():
     db.create_all()  # creates drive_* tables; never touches the shared users table
@@ -1184,6 +1195,7 @@ def solo(slug):
         return redirect(url_for("solo_last"))
     return _play_solo(slug)
 
+
 def daily_slug(day=None):
     """The track that is today's daily, or None on a day nothing was scheduled.
 
@@ -1866,6 +1878,54 @@ def api_track(slug):
 
 
 
+@app.route("/api/item-stats")
+def api_item_stats():
+    """What every item has done, since the table was made.
+
+    Public and read-only, because there is nothing private in it - it is eight
+    rows of counters about the *items*, not about anybody's play - and because
+    the question it answers ("is the blue shell worth having, is the odds table
+    doing what it says") is one worth being able to ask from a phone.
+
+    The in-flight tally is added on top of what has been written, so the
+    numbers do not stand still for a minute at a time.
+    """
+    rows = {r.item: {"given": r.given or 0, "used": r.used or 0,
+                     "hit": r.hit or 0, "blocked": r.blocked or 0}
+            for r in DriveItemStat.query.all()}
+    for item, counts in _item_tally.items():
+        row = rows.setdefault(item, {"given": 0, "used": 0, "hit": 0, "blocked": 0})
+        for field, n in counts.items():
+            row[field] = row.get(field, 0) + n
+    # Ordered the way the pools are, so the eight read as a list of items
+    # rather than as whatever the database felt like.
+    order = [i for i in RACE_ITEMS if i in rows] + \
+            [i for i in rows if i not in RACE_ITEMS]
+    return jsonify({"items": [dict(item=i, **rows[i]) for i in order]})
+
+
+@app.route("/api/live")
+def api_live():
+    """Is anybody mid-race right now, and in how many rooms.
+
+    **This exists for the deploy, and it is a question rather than a gate.**
+    Restarting this service drops every live race - the rooms are in the
+    process, `-w 1`, by design - and the deploy restarts it whenever anything
+    under `drive/` moves, which includes a track edit. So before shipping
+    something that only needed to go out eventually, `curl` this.
+
+    Making the workflow *wait* on it was written and dropped: a deploy that can
+    be held open by somebody driving is a deploy that never lands, and the
+    judgement about whose evening matters more belongs to the person pushing.
+
+    Deliberately public and deliberately tiny - it says how many races, not who
+    is in them.
+    """
+    live = [code for code, r in _rooms.items() if r.get("phase") in LIVE_PHASES]
+    return jsonify({"racing": len(live), "players": sum(len(_humans(_rooms[c]))
+                                                        for c in live)})
+
+
 @app.route("/api/last-track", methods=["POST"])
 def api_last_track():
     """The switcher saying where you have moved to.
@@ -2139,11 +2199,20 @@ def _verify_payload(data):
 # done and none of the blocking.
 _children = []
 
-# How many checks may be in flight at once. Each child is up to ~110MB on the
-# longest track and the box has about a gigabyte across five services, so an
+# How many checks may be in flight at once. Each child is the fattest thing this
+# service ever holds and the box has about a gigabyte across five services, so an
 # unbounded fan-out was the one way a busy evening could have the kernel pick
-# something unrelated to kill - a live race in another room, or ERS. Two fits
-# alongside everything else; three does not.
+# something unrelated to kill - a live race in another room, or ERS.
+#
+# **One, and it used to be two on an estimate of ~110MB a child.** The estimate
+# was low: the kernel's own OOM report on 2026-09-19 has one of these at
+# **206MB** anon-rss, so the cap was allowing a 400MB spike on a box that runs
+# with about 170MB available. It killed Drive nine times in two days - and what
+# that cost was not the lap check, it was every live race, because systemd's
+# default `OOMPolicy=stop` takes the whole unit down when any process in it is
+# killed. The box is set to `continue` now, so the two changes together mean a
+# squeeze costs one lap check and nothing else. One at a time is ample: a check
+# is one to four seconds and only a top-three lap gets one.
 #
 # **A refused spawn does not lose the lap.** The row is already committed to
 # `drive_run_checks` and the client has already been told `pending`, so the lap
@@ -2151,7 +2220,7 @@ _children = []
 # hands anything still pending past `_CHECK_GRACE` to a fresh child, which
 # drains up to 50 rows in one runtime. The cost of being refused is that the lap
 # goes up later, not that it is dropped.
-MAX_VERIFIERS = int(os.environ.get("DRIVE_MAX_VERIFIERS", "2"))
+MAX_VERIFIERS = int(os.environ.get("DRIVE_MAX_VERIFIERS", "1"))
 
 
 def _spawn_verifier(*args):
@@ -2177,11 +2246,50 @@ def _spawn_verifier(*args):
                                           "verify.py")] + list(args) + ["--quiet"],
             cwd=os.path.dirname(os.path.abspath(__file__)),
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, start_new_session=True)
+            stderr=subprocess.DEVNULL, start_new_session=True,
+            preexec_fn=_stand_aside)
         _children.append(p)
         return True
     except Exception:
         return False
+
+
+def _stand_aside():
+    """Volunteer the child as the kernel's last for CPU and first for the axe.
+
+    **This box has one core.** A lap check is one to four seconds of flat-out
+    QuickJS, and while it runs it is competing with the single eventlet worker
+    that every live race's sockets go through - so a check landing mid-race is
+    a stall for everybody in it. `nice` does not make the check slower in any
+    way anybody notices (it still gets the core whenever the worker is idle,
+    which is most of every millisecond) and it makes it lose every contest it
+    has with a room full of people.
+
+    Runs in the child between fork and exec. This box is small and this process
+    is the biggest thing on it, so *something* is going to be picked - and the
+    right answer is always this one: a lap check that dies is a lap that goes
+    up a few minutes later (`_settle_checks` sweeps it up), while the worker
+    that dies takes every live race with it. Left to itself the kernel usually
+    picks the fattest process, which is normally this, but "usually" is not a
+    guarantee and the failure is somebody's race.
+
+    The memory half is the same idea: under pressure the kernel should pick
+    this, not the worker holding every race. A lap check that dies is a lap
+    that goes up a few minutes later (`_settle_checks` sweeps it up); a worker
+    that dies takes the races with it.
+
+    Best effort: both are Linux-only and neither may stop a check from
+    starting.
+    """
+    try:
+        os.nice(10)
+    except Exception:
+        pass
+    try:
+        with open("/proc/self/oom_score_adj", "w") as fh:
+            fh.write("800")
+    except Exception:
+        pass
 
 
 def _reap_verifiers():
@@ -2810,7 +2918,73 @@ LIVE_PHASES = ("qual_countdown", "qualifying", "countdown", "racing")
 # before anybody races, which is most of a race spent not racing, and a room of
 # people who have just found each other wants to be on the grid. The host turns
 # it on from the room drawer when the grid is worth two minutes.
-ROOM_DEFAULTS = {"qualifying": False}
+ROOM_DEFAULTS = {"qualifying": False, "powerups": True}
+
+# A room, rather than a browser, owns its item queue.  Poses are intentionally
+# client-authoritative for steering, but an item is a discrete shared event: if
+# two clients choose its result or consume it, they eventually disagree.
+POWERUP_CAP = 2
+# A box is the room's, so it is gone for everybody the moment anybody drives
+# through it, and back for everybody a second later.
+BOX_RESPAWN_MS = 1000
+# **How close a car must be for a claim to be one, and it has to allow for the
+# pose being old.** The browser asks when it is within `BOX_TOUCH` (3.2) of the
+# box it can see; the server checks against the last pose it was *sent*, which
+# at 30Hz is up to a tick behind (1.7 units at full speed) and then a whole
+# upstream leg behind that (another 3 at 60ms of ping). So a perfectly honest
+# claim from a quick car can be five or six units adrift of where the server
+# thinks the car is - and at 5.0 those were refused, silently, which from the
+# seat is driving through a box and getting nothing. Nine is generous about
+# lag and still nowhere near "some other part of the track".
+BOX_REACH = 9.0
+# **One row of boxes per this much of the ideal lap**, rather than one per
+# checkpoint. A checkpoint is where the *track* wants a gate - three of them on
+# a twenty-second lap and none at all on the long straight - so hanging items
+# off them made a short track a sweet shop and a long one a desert. Seventeen
+# nine seconds is a corner or two between items: often enough that being hit is
+# not the end of your race, rare enough that holding one is still a decision.
+BOX_SECONDS = 9.0
+# Where the row sits across the road, as fractions of the half width, so a
+# field of eight is not queueing for one box. Narrow roads get the middle one
+# only - three across a 4-unit shoulder is three boxes in the scenery.
+BOX_LANES = (-0.55, 0.0, 0.55)
+BOX_LANES_NARROW = (0.0,)
+BOX_HEIGHT = 1.7           # off the road, so the car drives *through* it
+# **Half again a flat-out car** (`MAX_SPEED` is 50), which is the whole point
+# of a shell: at 42 it was *slower* than the car it was chasing, so a red shell
+# fired at somebody driving well simply never arrived.
+SHOT_SPEED = 75.0
+# **The blue is quicker than the rest**, because of what it is for: it is sent
+# from the back of the field to the front, which on a long track is most of a
+# lap of road, and at a shell's pace it arrived so late that the race it was
+# meant to change had already been decided. It is also the one shot everybody
+# is watching rather than dodging.
+BLUE_SPEED = 115.0
+SHELL_MS = 5000           # a green that has hit nothing gives up
+# A homing shell gets longer, because it is not thrown at a place - it is sent
+# after a car, and following the road to one two corners ahead is most of that
+# time on a long track. It still ends the moment the road does.
+HOMING_MS = 9000
+BANANA_MS = 45000         # a banana waits, but not for the whole race
+SHOT_HIT_R2 = 16          # 4 units, squared
+# How quickly a homing shell can move across the road. It has to be able to
+# cross a full road in about the time it takes to close the gap, or it arrives
+# alongside its target and sails past - which is what "bad aim" was.
+SHOT_LEAN = 24.0
+# And how far past a target's own station it may get before it is a miss.
+PAST_STATIONS = 3
+SHOT_WALL = 0.6           # how far inside the kerb a bouncing shell turns
+SHOT_LIFT = 0.9           # how far off the road a shell rides
+# The bomb is the only item that is thrown at a *place* rather than at a car:
+# it is lobbed up the road, settles where it lands and then goes off, and what
+# it catches is whatever happens to be near it - **including whoever threw
+# it**, which is the whole of its character. A shell is aimed; a bomb is a bet.
+BOMB_SPEED = 38.0         # slower than a shell: it is lobbed, not fired
+BOMB_FLY_MS = 900         # how long it travels before it settles
+BOMB_FUSE_MS = 3000       # and how long after that until it goes off
+BOMB_BLAST = 16.0         # how far the blast reaches
+PRACTICE_ITEMS = ("boost", "green", "red", "banana", "shield", "bomb")
+RACE_ITEMS = PRACTICE_ITEMS + ("blue", "star")
 
 _rooms = {}       # code -> live room state
 _sid_room = {}    # socket id -> (code, pid)
@@ -2845,8 +3019,311 @@ def _room(code):
                             # Bumped by every race so a timer armed for one race
                             # can never close the next one.
                             "race_seq": 0, "hard_end": None,
-                            "settings": dict(ROOM_DEFAULTS)}
+                            "settings": dict(ROOM_DEFAULTS), "items": {}, "shots": []}
     return r
+
+
+# What every item has done since this worker started, waiting to be written.
+# `{item: {given, used, hit, blocked}}`, flushed by `_tick_item_stats`.
+_item_tally = {}
+ITEM_FLUSH_MS = 60000
+_item_flush_at = 0
+
+
+def _tally(item, field, n=1):
+    """One item did one thing. Costs a dict lookup; see `DriveItemStat`."""
+    if not item:
+        return
+    row = _item_tally.setdefault(item, {"given": 0, "used": 0, "hit": 0,
+                                        "blocked": 0})
+    row[field] = row.get(field, 0) + n
+
+
+def _tick_item_stats(now):
+    """Write the tally out, occasionally.
+
+    In the pump because that is the one thing that runs whether or not anybody
+    is doing anything, and *outside* the per-room work because the tally is the
+    whole service's rather than one room's. A worker that dies between flushes
+    loses up to a minute of counting, which for "is the blue shell worth
+    having" is not a number worth a transaction per shell.
+    """
+    global _item_flush_at
+    if not _item_tally or now < _item_flush_at:
+        return
+    _item_flush_at = now + ITEM_FLUSH_MS
+    pending = dict(_item_tally)
+    _item_tally.clear()
+    try:
+        with app.app_context():
+            for item, counts in pending.items():
+                row = DriveItemStat.query.get(item)
+                if row is None:
+                    row = DriveItemStat(item=item, given=0, used=0, hit=0,
+                                        blocked=0)
+                    db.session.add(row)
+                for field, n in counts.items():
+                    setattr(row, field, (getattr(row, field) or 0) + n)
+            db.session.commit()
+    except Exception:
+        # A counter is not worth a race. Put the numbers back and try again
+        # next minute rather than losing them to a locked database.
+        db.session.rollback()
+        for item, counts in pending.items():
+            for field, n in counts.items():
+                _tally(item, field, n)
+        app.logger.exception("could not write the item tally")
+
+
+def _boxes(r):
+    """Where this room's item boxes are, memoised. `[[x, y, z], ...]`.
+
+    Off the ribbon rather than off the gates: a station knows its own surface
+    normal and half width, so a row lies flat on a banked corner and inside the
+    road on a narrow one without any of that being special-cased. Dropped by
+    the one handler that can change the track, the same rule `_hot_track`
+    follows.
+    """
+    boxes = r.get("boxes")
+    if boxes is not None:
+        return boxes
+    track = _hot_track(r)
+    r["boxes"] = boxes = _boxes_for(track) if track else []
+    return boxes
+
+
+def _boxes_for(track):
+    line = track.get("line") or []
+    if not line:
+        return []
+    # At least one row, so the shortest tracks in the pool - twenty seconds
+    # end to end - still have somewhere to pick something up, and exactly one:
+    # two rows on a twenty-second lap is an item every ten seconds, which is
+    # not a decision about when to use one.
+    rows = max(1, int(round((track.get("ideal") or 30.0) / BOX_SECONDS)))
+    out = []
+    last = len(line) - 1
+    for k in range(rows):
+        # Offset by half a row, so the first one is not on the start line and
+        # the last is not on the flag.
+        st = line[int((k + 0.5) / rows * last)]
+        hw = st.get("hw") or 6.0
+        lanes = BOX_LANES if hw >= 5.0 else BOX_LANES_NARROW
+        for f in lanes:
+            out.append([st["p"][j] + st["lat"][j] * f * hw + st["n"][j] * BOX_HEIGHT
+                        for j in range(3)])
+    return out
+
+
+# **What a box gives depends on where you are, which is the whole reason a
+# field stays together.** The numbers are weights, per band, and the bands are
+# thirds of the running order. A leader who could draw a star has nothing to
+# fear and nothing to catch; a last place who draws a banana has been handed
+# the one item that only helps somebody being chased.
+ITEM_ODDS = {
+    # Out in front: things to defend with, and only the occasional red.
+    #
+    # **The shield is the rare one here even though defence is the theme**, and
+    # the difference is who has to do something. A banana or a green defends a
+    # place only if you put it somewhere useful, and you can be wrong about
+    # where; a shield defends it by existing, and at one box in four the leader
+    # simply has one nearly all the time, which takes the point out of hitting
+    # them at all.
+    "front": {"banana": 32, "green": 28, "red": 14, "boost": 16, "shield": 10},
+    # In the pack: everything, weighted toward what makes a move.
+    "mid": {"red": 22, "green": 18, "banana": 14, "boost": 16, "bomb": 12,
+            "shield": 12, "star": 4, "blue": 2},
+    # Down the back: the two items that exist to fix being there.
+    "back": {"star": 20, "blue": 12, "bomb": 16, "boost": 20, "red": 18,
+             "green": 14},
+}
+
+
+def _roll_item(r, pid):
+    """One item out of a box, weighted by this car's place in the race.
+
+    Practice is flat and deliberately has neither a star nor a blue shell: in
+    a session with no leader and no last place, one is a car going quicker for
+    no reason and the other has nobody to aim at.
+    """
+    if r["phase"] != "racing":
+        return random.choice(PRACTICE_ITEMS)
+    odds = ITEM_ODDS[_race_band(r, pid)]
+    items = list(odds)
+    return random.choices(items, weights=[odds[i] for i in items])[0]
+
+
+def _race_band(r, pid):
+    """`front`, `mid` or `back` - which third of the running order this car is
+    in. One car is its own leader, and a two-car race has no middle."""
+    live = [c for p, c in r["cars"].items() if not c.get("gone")]
+    if len(live) < 2:
+        return "mid"
+    mine = r["cars"].get(pid)
+    ahead = sum(1 for c in live if c is not mine and c["prog"] > (mine or {}).get("prog", 0))
+    place = ahead / float(len(live) - 1)        # 0 at the front, 1 at the back
+    if place <= 0.34:
+        return "front"
+    return "back" if place >= 0.67 else "mid"
+
+
+def _powerups_live(r):
+    """Whether this phase has items; qualifying is deliberately always clean."""
+    return bool(r["settings"].get("powerups")) and r["phase"] in ("free", "racing")
+
+
+def _item_queue(r, pid):
+    return r["items"].setdefault(pid, [])
+
+
+def _shell_target(r, owner, blue=False, behind=False):
+    """Who this shell is for: the nearest racer ahead, the nearest behind, or
+    the leader if it is a blue.
+
+    `behind` is the handbrake throw. A red put out of the back of the car is
+    still a red - it goes after whoever is back there, which is the whole
+    reason for throwing one that way, and is a different answer from the
+    nearest car *ahead* rather than no answer at all. A blue ignores it: the
+    blue shell is for the leader, and that is the whole of the item.
+    """
+    mine = r["cars"].get(owner)
+    if not mine:
+        return None
+    cars = [(pid, c) for pid, c in r["cars"].items()
+            if pid != owner and not c.get("gone")]
+    if blue:
+        return max(cars, key=lambda e: e[1]["prog"], default=(None, None))[0]
+    if behind:
+        back = [(pid, c) for pid, c in cars if c["prog"] < mine["prog"]]
+        return max(back, key=lambda e: e[1]["prog"], default=(None, None))[0]
+    ahead = [(pid, c) for pid, c in cars if c["prog"] > mine["prog"]]
+    return min(ahead, key=lambda e: e[1]["prog"], default=(None, None))[0]
+
+
+def _ribbon_at(track, p, hint=0):
+    """Where `p` is on the ribbon: `(station index, lateral offset, hint)`.
+
+    The inverse of the one line below it, and the pair is the whole of how a
+    shell follows the road: a point becomes a station and an offset across it,
+    and a station and an offset become a point again.
+    """
+    line = track.get("line") or []
+    if not line:
+        return None, 0.0, hint
+    _, i = runcheck.nearest_station(track, p, hint)
+    st = line[i]
+    lat = sum((p[j] - st["p"][j]) * st["lat"][j] for j in range(3))
+    return i, lat, i
+
+
+def _road_axes(track, i, f):
+    """A direction, as (along the road, across it), both normalised-ish.
+
+    The road's own forward is the step to the next station, which is the only
+    definition that stays right through a corner, a loop and a wall of death.
+    """
+    line = track["line"]
+    j = min(len(line) - 1, i + 1)
+    k = max(0, j - 1)
+    fwd = [line[j]["p"][n] - line[k]["p"][n] for n in range(3)]
+    d = max(1e-6, sum(x * x for x in fwd) ** 0.5)
+    fwd = [x / d for x in fwd]
+    lat = line[min(i, len(line) - 1)]["lat"]
+    return (sum(f[n] * fwd[n] for n in range(3)),
+            sum(f[n] * lat[n] for n in range(3)))
+
+
+def _ribbon_point(track, si, lat, lift):
+    """A station index (fractional) and an offset across it, back to a point."""
+    line = track["line"]
+    i = max(0, min(len(line) - 1, int(si)))
+    st = line[i]
+    return [st["p"][j] + st["lat"][j] * lat + st["n"][j] * lift for j in range(3)]
+
+
+def _fire(r, owner, item, target=None, back=False):
+    """Put one shell or banana into the room's list, in front of or behind the car.
+
+    A banana is the same object standing still: it is the shot list that makes
+    an item a room-owned thing rather than a browser's opinion, and a dropped
+    banana has to be hit by somebody else's car exactly the way a shell does.
+
+    `back` is **the handbrake held as you use it**, and it flips which way the
+    throw goes - so a shell goes out behind you at the car that is pressuring
+    you, and the banana, whose ordinary place is behind, is lobbed *ahead*
+    instead. One sign, not a second set of items.
+    """
+    c = _car(r, owner)
+    f = _forward(c["q"])
+    # A banana's ordinary direction is backwards, which `back` then flips.
+    behind = (item == "banana") != bool(back)
+    bomb = item == "bomb"
+    drop = item == "banana" and behind          # only a *dropped* banana sits
+    # **Out in front of the car, not out of its nose.** A shell that appears
+    # where the car already is spends its first tenth of a second inside your
+    # own bodywork, which is exactly when you are trying to see where you have
+    # aimed it. Five units is a car length clear.
+    reach, speed = ((-4.0, 0.0) if drop else
+                    (3.0, BOMB_SPEED) if bomb else (5.0, SHOT_SPEED))
+    if behind and not drop:
+        reach = -4.0
+    now = _now_ms()
+    # An id, so a browser can tell *this* shell from the one that arrived in
+    # the same packet - without one the client can only draw the list it was
+    # sent, and a list changes order as shots are added and taken away, which
+    # is what made them jump between positions instead of flying.
+    r["shot_seq"] = seq = r.get("shot_seq", 0) + 1
+    shot = {"id": seq, "item": item, "owner": owner, "target": target,
+            "p": [c["p"][i] + f[i] * reach for i in range(3)],
+            "v": [f[i] * (-speed if behind else speed) for i in range(3)],
+            "until": now + (BANANA_MS if back else
+                             BOMB_FLY_MS + BOMB_FUSE_MS if bomb else
+                             HOMING_MS if item in ("red", "blue") else SHELL_MS)}
+    if bomb:
+        shot["stop_at"] = now + BOMB_FLY_MS
+    # **A homing shell rides the ribbon rather than the straight line to its
+    # target.** Flying at the car directly is what made it disappear into the
+    # scenery on the first corner: the thing being chased is round a bend, and
+    # the road is the only path there. So a red or a blue is launched *onto the
+    # track* - a station index and an offset across it - and from then on it
+    # advances along the road, which is also why it takes the tunnel, the loop
+    # and the wall of death without any of them being a special case.
+    # **Everything with a shell in its name rides the road**, and the two kinds
+    # do different things with it: a red or a blue steers toward a car, a green
+    # holds its line and bounces off the walls. Both need the same two numbers
+    # - where along, and how far across - so both are put on the ribbon here.
+    track = _hot_track(r) if item in ("red", "blue", "green") else None
+    if track:
+        # **From the station this car is at, not from station zero.** The scan
+        # in `nearest_station` starts at its hint and only falls back to the
+        # whole ribbon when the cheap answer looks impossible - so a cold hint
+        # on a lap that passes near its own start (every closed circuit) put
+        # the shell on the road *at the start line*, and it then flew the whole
+        # track from there. The watcher already knows where this car is; it has
+        # been keeping that number for the anti-cheat every pose.
+        si, lat, hint = _ribbon_at(track, shot["p"], _watch(r, owner).hint)
+        if si is not None:
+            shot.update({"si": float(si), "lat": lat, "hint": hint})
+            # Which way up the road it is going, which for a homing shell is
+            # decided by the throw and not by where its target is: backwards
+            # means backwards even if the car behind you then overtakes.
+            shot["dir"] = -1.0 if (behind and item != "blue") else 1.0
+            if item == "green":
+                # A green keeps the heading it was thrown with, split into the
+                # two axes of the road: that is what makes aiming it across the
+                # track put it into the far wall and back out again.
+                along, across = _road_axes(track, int(si), f)
+                if behind:
+                    along, across = -along, -across
+                shot["along"] = along * SHOT_SPEED
+                shot["across"] = across * SHOT_SPEED
+    r["shots"].append(shot)
+
+
+def _forward(q):
+    x, y, z, w = q
+    return (-(2 * (x * z + w * y)), -(2 * (y * z - w * x)),
+            -(1 - 2 * (x * x + y * y)))
 
 
 def _hot_track(r):
@@ -2948,7 +3425,179 @@ def _snapshot(r):
                      round(c["v"][0], 2), round(c["v"][1], 2), round(c["v"][2], 2),
                      round(c["prog"], 1), c["cp"], c["flags"], max(0, now - c["ts"]),
                      round(c.get("sl", 0.0), 2), round(c["up"])]
-    return {"t": now, "cars": cars}
+    # Shells and bananas ride the pose channel rather than getting one of their
+    # own: they move every tick like a car does, and a client that misses one
+    # frame of them wants the next frame, not the one it missed.
+    shots = [[s["item"], round(s["p"][0], 2), round(s["p"][1], 2), round(s["p"][2], 2),
+              s.get("id", 0)] for s in r.get("shots", ())]
+    return {"t": now, "cars": cars, "shots": shots}
+
+
+def _tick_shots(r, now):
+    """Advance room-owned shells and announce the single car each one hits."""
+    last = r.get("shots_t") or now
+    r["shots_t"] = now
+    dt = min(.1, max(0, (now - last) / 1000.0))
+    keep = []
+    track = None
+    for s in r.get("shots", []):
+        if now >= s["until"]:
+            # Every other shot's life simply ends. A bomb's *is* the end.
+            if s["item"] == "bomb":
+                _blast(r, s, now)
+            continue
+        if s.get("stop_at") and now >= s["stop_at"]:
+            s["v"] = [0.0, 0.0, 0.0]        # landed: now it is a mine
+        # Asked for only when something is actually following the road: this
+        # runs at 30Hz per room and `_hot_track` is a memo over a query.
+        if "si" in s and track is None:
+            track = _hot_track(r) or False
+        if "si" in s and track:
+            fly = _bounce_along_road if s["item"] == "green" else _steer_along_road
+            if not fly(r, s, track, dt):
+                continue                      # ran out of road
+        else:
+            for i in range(3):
+                s["p"][i] += s["v"][i] * dt
+        # **Never the car that fired it.** A shell leaves the nose three units
+        # ahead and the hit radius is four, so without this every shot hit its
+        # own owner on the tick it armed - and a banana is dropped four units
+        # behind a car that has not moved yet, which is the same distance.
+        hit = next((pid for pid, c in r["cars"].items()
+                    if pid != s["owner"] and not c.get("gone") and
+                    sum((c["p"][i] - s["p"][i]) ** 2 for i in range(3)) < SHOT_HIT_R2), None)
+        if hit and s["item"] == "bomb":
+            _blast(r, s, now)
+            continue
+        if hit and _drop_held(r, hit):
+            # **The thing you were holding took it.** Not a hit at all: the
+            # shell is spent and the car is untouched, which is the whole of
+            # why anybody would give up a throw to trail a banana around.
+            continue
+        if hit:
+            # A person's own browser is what spins that person's car, so the
+            # hit is only announced. A bot has no browser, so the one it would
+            # have done is done here - without it a red shell homed perfectly
+            # onto a bot and nothing whatsoever happened.
+            if hit in _bot_pids(r):
+                w = _bot_world(r)
+                if w:
+                    try:
+                        w.hit(hit)
+                    except Exception:
+                        app.logger.exception("bot hit failed in room %s", r["code"])
+            _tally(s["item"], "hit")
+            socketio.emit("item_hit", {"item": s["item"], "pid": hit, "owner": s["owner"]},
+                          room="room:" + r["code"])
+        else:
+            keep.append(s)
+    r["shots"] = keep
+
+
+def _blast(r, s, now):
+    """A bomb goes off: everybody near it is hit, and everybody can see it.
+
+    **The owner is in the blast.** A bomb that could not catch the car that
+    threw it would just be a slow shell, and the reason it is worth having is
+    that lobbing one into a pack you are *in* is a decision.
+
+    Each victim is announced with the ordinary `item_hit`, so a shield still
+    eats it and a star still ignores it - one rule for being hit, wherever the
+    hit came from - and `item_blast` is the flash and the bang, which belong to
+    the place rather than to any car.
+    """
+    p = s["p"]
+    for pid, c in r["cars"].items():
+        if c.get("gone"):
+            continue
+        if sum((c["p"][i] - p[i]) ** 2 for i in range(3)) <= BOMB_BLAST ** 2:
+            if _drop_held(r, pid):
+                continue                      # it ate the blast instead
+            _tally("bomb", "hit")
+            socketio.emit("item_hit", {"item": "bomb", "pid": pid, "owner": s["owner"]},
+                          room="room:" + r["code"])
+            if pid in _bot_pids(r):
+                w = _bot_world(r)
+                if w:
+                    try:
+                        w.hit(pid)
+                    except Exception:
+                        app.logger.exception("bot blast failed in %s", r["code"])
+    socketio.emit("item_blast", {"p": [round(v, 2) for v in p], "r": BOMB_BLAST},
+                  room="room:" + r["code"])
+
+
+def _bounce_along_road(r, s, track, dt):
+    """Move a green a tick's worth, turning it at the kerbs.
+
+    The walls are the ribbon's own half width rather than the collider, which
+    is both cheaper and more useful: the collider knows about every rock and
+    tree, and what a shell wants to bounce off is *the road's edge*, on every
+    track, including the ones whose edge is a drop.
+    """
+    line = track["line"]
+    step = track.get("station") or 3.5
+    s["si"] += s["along"] * dt / step
+    if s["si"] < 0 or s["si"] >= len(line) - 1:
+        return False
+    s["lat"] += s["across"] * dt
+    hw = (line[max(0, min(len(line) - 1, int(s["si"])))].get("hw") or 6.0) - SHOT_WALL
+    if abs(s["lat"]) > hw:
+        s["lat"] = hw if s["lat"] > 0 else -hw
+        s["across"] = -s["across"]
+    s["p"] = _ribbon_point(track, s["si"], s["lat"], SHOT_LIFT)
+    return True
+
+
+def _steer_along_road(r, s, track, dt):
+    """Move one homing shell a tick's worth *along the ribbon*. False when it
+    has run off the end of the road, which is where a shell's life ends.
+
+    The chase is in two parts and they are different questions. Along the road
+    it simply advances, because the road is the only way to anything. Across
+    it, it leans toward whatever it is chasing at a bounded rate - `SHOT_LEAN`
+    is what stops it snapping into the target's lane the instant one is picked
+    and makes it look like it is *driving* at somebody.
+    """
+    line = track["line"]
+    step = track.get("station") or 3.5
+    blue = s["item"] == "blue"
+    target = _shell_target(r, s["owner"], blue, behind=s.get("dir", 1.0) < 0)
+    if target:
+        s["target"] = target
+        si, lat, s["hint"] = _ribbon_at(track, _car(r, target)["p"],
+                                        s.get("hint") or _watch(r, target).hint)
+        if si is not None:
+            s["tsi"] = si
+            move = max(-SHOT_LEAN * dt, min(SHOT_LEAN * dt, lat - s["lat"]))
+            s["lat"] += move
+    way = s.get("dir", 1.0)
+    s["si"] += way * (BLUE_SPEED if blue else SHOT_SPEED) * dt / step
+    # **A closed circuit's ribbon is a ring, so a shell runs round it.** Spa,
+    # Silverstone, Monaco and Monza all finish where they start, and the
+    # leader a blue shell is sent after is regularly "ahead" only by going the
+    # long way - so a shell that stopped at the end of the array simply died
+    # on the pit straight, every time, which from the seat is a blue shell
+    # that got stuck and never arrived.
+    if track.get("closed"):
+        n = len(line) - 1
+        s["si"] = s["si"] % n
+        if s["si"] < 0:
+            s["si"] += n
+    elif s["si"] <= 0 or s["si"] >= len(line) - 1:
+        return False
+    # **Past the car it was sent after, it is a miss.** Without this a shell
+    # that failed to line up simply carried on down the road, through everybody
+    # else and round the rest of the lap, which is how one shell came to look
+    # like it was hunting the entire field.
+    # Past its man is a miss - except on a ring, where "past" is a lap of
+    # arithmetic away from "not there yet". A shell on a closed circuit is
+    # bounded by its clock instead, which is what `HOMING_MS` is.
+    if target and s.get("tsi") is not None and not track.get("closed") and \
+            way * (s["si"] - s["tsi"]) > PAST_STATIONS:
+        return False
+    s["p"] = _ribbon_point(track, s["si"], s["lat"], SHOT_LIFT)
+    return True
 
 
 def _race_state(r):
@@ -3357,27 +4006,65 @@ def _pump(code):
         r = _rooms.get(code)
         if not r:
             return
-        _tick_bots(r)
-        snap = _snapshot(r)
-        _record_race(r)
-        # **Idle is measured on the people, not on the cars.** A room with bots
-        # in it never stops producing poses, so a pump that asked "did anybody
-        # report" would keep a deserted room and its whole bot world alive for
-        # ever - and the race in it could never end either.
-        if _humans(r):
-            idle = 0
-        else:
-            idle += 1
-            # An empty room in the middle of a race is a race that can never
-            # end by itself, and the room it strands is still there when
-            # somebody comes back to it. Let it go before the pump does.
-            if idle == TICK_HZ * 8 and r["phase"] in LIVE_PHASES:
-                _abort_race(code, "Everyone left.")
-            if idle > TICK_HZ * 20:      # nobody has sent a pose in 20s
-                r["loop"] = None
-                return
-        if snap["cars"]:
-            socketio.emit("poses", snap, room="room:" + code)
+        try:
+            idle = _tick(r, idle)
+        except Exception:
+            # **A tick that throws must not take the room with it**, and
+            # before this one did: the greenlet died, `r["loop"]` went on
+            # holding the dead thread so `_ensure_pump` never started another,
+            # and the room was frozen for the rest of its life - every socket
+            # still connected, every client still driving, and every car on
+            # every other screen stopped where it was. It is the exact picture
+            # of "the server dropped me", from a server that had dropped
+            # nobody. One tick is cheap; the room is not.
+            app.logger.exception("pump tick failed in room %s (phase %s)",
+                                 code, r.get("phase"))
+        # The whole service's numbers rather than this room's, so it is here
+        # rather than in `_tick` - and harmless to call from every room's pump,
+        # because it is a clock check until the minute is up.
+        _tick_item_stats(_now_ms())
+        if r.get("loop_stop"):
+            r["loop"] = None
+            return
+
+
+def _tick(r, idle):
+    """One pass of the pump. Returns the new idle count.
+
+    Split out of `_pump` so the loop above can be the error boundary and this
+    can be the work - and so a test can step a room without a greenlet.
+    """
+    code = r["code"]
+    _tick_bots(r)
+    now_ms = _now_ms()
+    _tick_bot_items(r, now_ms)
+    _tick_bot_boxes(r, now_ms)
+    _tick_items(r, now_ms)
+    _tick_held(r, now_ms)
+    _tick_lost(r, now_ms)
+    _tick_stars(r, now_ms)
+    _tick_shots(r, now_ms)
+    snap = _snapshot(r)
+    _record_race(r)
+    # **Idle is measured on the people, not on the cars.** A room with bots
+    # in it never stops producing poses, so a pump that asked "did anybody
+    # report" would keep a deserted room and its whole bot world alive for
+    # ever - and the race in it could never end either.
+    if _humans(r):
+        idle = 0
+    else:
+        idle += 1
+        # An empty room in the middle of a race is a race that can never
+        # end by itself, and the room it strands is still there when
+        # somebody comes back to it. Let it go before the pump does.
+        if idle == TICK_HZ * 8 and r["phase"] in LIVE_PHASES:
+            _abort_race(code, "Everyone left.")
+        if idle > TICK_HZ * 20:      # nobody has sent a pose in 20s
+            r["loop_stop"] = True
+            return idle
+    if snap["cars"]:
+        socketio.emit("poses", snap, room="room:" + code)
+    return idle
 
 
 def _record_race(r):
@@ -3461,6 +4148,7 @@ def _store_replay(r, game, standings, why):
 def _ensure_pump(code):
     r = _room(code)
     if r["loop"] is None:
+        r["loop_stop"] = False
         r["loop"] = eventlet.spawn(_pump, code)
 
 
@@ -3492,10 +4180,13 @@ def on_join_room(data=None):
     # than at join, so changing a livery and reloading is enough.
     seat = me.to_dict(_livery_for(me.linked_user, name=me.name))
     c["name"], c["color"], c["ts"] = me.name, seat["color"], _now_ms()
-    # Coming back clears the "left the room" mark but *not* a DNF: reconnecting
-    # mid-race puts you back on the road, it does not put you back in the race
-    # you dropped out of.
+    # Coming back clears the "left the room" mark but *not* a DNF: a car that
+    # has already been retired (`_tick_lost`, after `LOST_GRACE_MS`) stays
+    # retired, because by then the race has been run without it. Inside the
+    # grace it is still racing and this is the whole of rejoining - which is
+    # what makes a reload mid-race survivable.
     c["gone"] = False
+    c.pop("left_at", None)
     # Rebuild the bot world if the room state was swept while nobody was here.
     # Derived from the seats and single-writer, so a miss costs a rebuild and
     # can never contradict the roster - the `_hot_track` rule again.
@@ -3508,6 +4199,12 @@ def on_join_room(data=None):
                         "players": _roster(game),
                         "race": _race_state(r), "chat": r["chat"][-30:],
                         "settings": dict(r["settings"]),
+                        "items": list(_item_queue(r, me.pid)),
+                        "boxes": _boxes(r),
+                        # Who is trailing what. Walking in on a car holding a
+                        # banana and not seeing it is a shell thrown at
+                        # somebody who is already covered.
+                        "held": dict(r.get("held") or {}),
                         "server_ms": _now_ms()})
     _broadcast_roster(game)
 
@@ -3653,12 +4350,14 @@ def on_set_track(data=None):
         game.last_activity_at = datetime.utcnow()
         db.session.commit()
         r["trk"] = None                  # `_hot_track`'s memo; this is its writer
+        r["boxes"] = None                # and the boxes are off the same track
         _reset_race(r)
         # A new track is a new world: a different ribbon, a different collider
         # and a different fast line. `_sync_bots` notices the slug moved and
         # rebuilds, which is the same rule `_hot_track` follows one line up.
         _sync_bots(r, game)
-    socketio.emit("track_change", {"track": slug}, room="room:" + code)
+    socketio.emit("track_change", {"track": slug, "boxes": _boxes(r)},
+                  room="room:" + code)
     _broadcast_lobbies()
 
 
@@ -3816,6 +4515,13 @@ def _reset_race(r):
     r["rec"] = None
     r["grid"] = {}
     r["splits"] = {}
+    r["items"] = {}
+    r["box_until"] = {}
+    r["shots"] = []
+    r["bot_item_at"] = {}
+    r["boost_until"] = {}
+    r["held"] = {}
+    r["star_hits"] = {}
     for pid in list(r["cars"]):
         c = r["cars"][pid]
         if c["gone"]:
@@ -3877,6 +4583,13 @@ def _open_race(r):
     r["grid"] = {}
     r["splits"] = {}
     r["rec"] = None
+    r["items"] = {}
+    r["box_until"] = {}
+    r["shots"] = []
+    r["bot_item_at"] = {}
+    r["boost_until"] = {}
+    r["held"] = {}
+    r["star_hits"] = {}
     # Rematch can land inside the twelve seconds the results sheet is up,
     # before the tail of `_close_race` has tidied up, so the cars kept behind
     # to be DNFs in the last race are dropped here too.
@@ -4257,6 +4970,451 @@ def on_split(data=None):
     mine[cp] = ms
     socketio.emit("race_split", {"pid": pid, "cp": cp, "ms": ms},
                   room="room:" + code)
+
+
+@socketio.on("item_box")
+def on_item_box(data=None):
+    """Drive through box `i`. It is the room's box, not this browser's.
+
+    The client says which one it reached and the server decides, on two facts
+    it owns: where that box is, and where this car's last pose put it. So a
+    box taken is a box gone for everybody, and a claim from the other side of
+    the track is not a claim.
+    """
+    ent = _sid_room.get(request.sid)
+    if not ent:
+        return
+    code, pid = ent
+    r = _rooms.get(code)
+    if not r or not _powerups_live(r):
+        return
+    try:
+        i = int((data or {}).get("i"))
+    except (TypeError, ValueError):
+        return
+    item = _claim_box(r, pid, i)
+    if item is None:
+        # **Say no out loud.** The browser hides a box the moment you touch it,
+        # without waiting to be told - it has to, or the one thing every driver
+        # does next is aim at it again - so a refusal that went unanswered left
+        # a hole in the road and no item, which is indistinguishable from the
+        # game losing your box. The client puts it back when it hears this.
+        emit("item_box_miss", {"i": i, "why": _box_refusal(r, pid, i)})
+        return
+    emit("items", {"slots": _item_queue(r, pid)})
+
+
+def _box_refusal(r, pid, i):
+    """Why that claim was turned down, in one word, for the client to say."""
+    if len(_item_queue(r, pid)) >= POWERUP_CAP:
+        return "full"
+    if i < 0 or i >= len(_boxes(r)):
+        return "gone"
+    return "taken" if (r.get("box_until") or {}).get(i, 0) > _now_ms() else "far"
+
+
+def _claim_box(r, pid, i, now=None):
+    """Give this car the box at `i`, or None if it may not have it.
+
+    Four ways to be told no and only the first two are about cheating: no such
+    box, a car that is not near it, a box somebody has already driven through,
+    and a queue that is already full - the last of which is not an error, just
+    a box driven through with both hands occupied. **A full queue does not take
+    the box**, so it is still there for the car behind, which matters now that
+    it is everybody's box.
+
+    Broadcasts the take, because every screen has to lose the same box at the
+    same moment. Bots come through here too: the check is on a pose, and a
+    bot's pose is the server's own.
+    """
+    boxes = _boxes(r)
+    if i < 0 or i >= len(boxes):
+        return None
+    now = _now_ms() if now is None else now
+    if now < (r.get("box_until") or {}).get(i, 0):
+        return None
+    c = _car(r, pid)
+    p = boxes[i]
+    if sum((c["p"][j] - p[j]) ** 2 for j in range(3)) > BOX_REACH ** 2:
+        return None
+    q = _item_queue(r, pid)
+    if len(q) >= POWERUP_CAP:
+        return None
+    item = _roll_item(r, pid)
+    q.append(item)
+    _tally(item, "given")
+    until = now + BOX_RESPAWN_MS
+    r.setdefault("box_until", {})[i] = until
+    socketio.emit("item_box_taken", {"pid": pid, "i": i, "until": until},
+                  room="room:" + r["code"])
+    return item
+
+
+# The three you can hold out behind you instead of throwing. They are the ones
+# that are *objects* - a thing on the road that another car can run into - so
+# holding one is simply not having thrown it yet.
+HOLDABLE = ("banana", "green", "red")
+
+
+@socketio.on("hold_item")
+def on_hold_item(data=None):
+    """The use button held down rather than tapped: trail the item behind you.
+
+    It is a shield made of the thing you have not thrown yet, and it costs you
+    the throw for as long as you keep it - which is the trade. The server has
+    to own it for the same reason it owns the queue: what protects you has to
+    be the same object everybody else can see, or a shell hits a car that its
+    owner's browser thinks is covered.
+    """
+    ent = _sid_room.get(request.sid)
+    if not ent:
+        return
+    code, pid = ent
+    r = _rooms.get(code)
+    if not r or not _powerups_live(r):
+        return
+    held = r.setdefault("held", {})
+    q = _item_queue(r, pid)
+    on = bool((data or {}).get("on")) and bool(q) and q[0] in HOLDABLE
+    was = held.get(pid)
+    if on:
+        held[pid] = q[0]
+    else:
+        held.pop(pid, None)
+    if held.get(pid) != was:
+        socketio.emit("item_held", {"pid": pid, "item": held.get(pid)},
+                      room="room:" + code)
+
+
+def _drop_held(r, pid):
+    """Whatever this car was holding is gone: it took the hit instead.
+
+    Returns True if there was something, which is the caller's answer to
+    "was this car protected".
+    """
+    held = r.get("held") or {}
+    item = held.pop(pid, None)
+    if not item:
+        return False
+    q = _item_queue(r, pid)
+    if q and q[0] == item:
+        q.pop(0)
+    socketio.emit("item_held", {"pid": pid, "item": None}, room="room:" + r["code"])
+    _tally(item, "blocked")
+    socketio.emit("item_blocked", {"pid": pid, "item": item}, room="room:" + r["code"])
+    socketio.emit("items", {"pid": pid, "slots": list(q)}, room="room:" + r["code"])
+    return True
+
+
+@socketio.on("use_item")
+def on_use_item(data=None):
+    """Somebody pressed X. The spending itself is `_spend_item`, because a bot
+    does exactly the same thing and there must not be two versions of it."""
+    ent = _sid_room.get(request.sid)
+    if not ent:
+        return
+    code, pid = ent
+    r = _rooms.get(code)
+    if not r or not _powerups_live(r):
+        return
+    if _spend_item(r, pid, back=bool((data or {}).get("back"))) is not None:
+        emit("items", {"slots": _item_queue(r, pid)})
+
+
+# The boost is not one press, it is a **window**: the first press opens it, and
+# every press inside it is another short burst of engine, until it closes and
+# takes the item with it. So the slot is not emptied by using it, which is why
+# `_spend_item` has a branch - and it is the room that owns the clock, because
+# the slot it is holding open is the room's slot.
+BOOST_WINDOW_MS = 7000
+
+# The three that happen *to the car* rather than to the road.
+HELD_ITEMS = ("boost", "star", "shield")
+
+
+def _boost_window(r, pid):
+    """When this car's boost window ends, or None if it has none open."""
+    return (r.get("boost_until") or {}).get(pid)
+
+
+def _spend_item(r, pid, back=False):
+    """Press X: take the front slot and make it happen. Returns the item, or None.
+
+    A held item (boost, star, shield) is *announced* and applied by whoever
+    owns that car - the driver's own browser, or `BotWorld` for a bot, which
+    runs the same `Car` the browser does. A thrown one becomes a shot the room
+    owns.
+
+    **The boost is the one item a press does not spend.** The first press opens
+    its window and every press inside it is another burst; the slot empties
+    when the window closes, in `_tick_items`. Everything else is spent here.
+    """
+    q = _item_queue(r, pid)
+    if not q:
+        return None
+    item = q[0]
+    now = _now_ms()
+    if item == "boost":
+        ends = r.setdefault("boost_until", {})
+        until = ends.get(pid)
+        if not until or now >= until:
+            until = ends[pid] = now + BOOST_WINDOW_MS
+            # Counted on the tap that *opens* the window and not on each one
+            # inside it: it is one item out of one box, and how many times you
+            # tapped is how it is spent rather than how many you had.
+            _tally(item, "used")
+        _announce_use(r, pid, item, until=until)
+        return item
+    q.pop(0)
+    # Thrown is no longer held. The event goes out either way, because every
+    # other screen is drawing the thing that was behind this car.
+    if (r.get("held") or {}).pop(pid, None):
+        socketio.emit("item_held", {"pid": pid, "item": None}, room="room:" + r["code"])
+    # Thrown backwards, a red goes after whoever is *back there* - same item,
+    # other direction. A blue ignores which way it was thrown, because a blue
+    # shell is for the leader and that is the whole of the item.
+    target = (_shell_target(r, pid, item == "blue", behind=back)
+              if item in ("red", "blue") else None)
+    if item in ("green", "banana", "bomb") or target or back:
+        _fire(r, pid, item, target, back=back)
+    _tally(item, "used")
+    _announce_use(r, pid, item, target=target)
+    return item
+
+
+def _announce_use(r, pid, item, target=None, until=None):
+    """Tell the room, and tell a bot's own car, that this item just went off."""
+    if item in HELD_ITEMS and pid in _bot_pids(r):
+        _bot_item(r, pid, item)
+    msg = {"pid": pid, "item": item, "target": target}
+    if until is not None:
+        msg["until"] = until
+    socketio.emit("item_used", msg, room="room:" + r["code"])
+
+
+def _tick_bot_boxes(r, now):
+    """Bots drive through boxes, which for a bot means noticing that it has.
+
+    A person's browser watches for the box it is about to hit and asks; a bot
+    has no browser, so the same question is asked here against the pose the
+    server itself just wrote. `_claim_box` is the same function and the same
+    reach, so a bot cannot take a box from further away than you can.
+    """
+    if not r.get("bots") or not _powerups_live(r):
+        return
+    boxes = _boxes(r)
+    if not boxes:
+        return
+    taken = r.get("box_until") or {}
+    for pid in list(_bot_pids(r)):
+        c = r["cars"].get(pid)
+        if not c or c.get("gone") or len(_item_queue(r, pid)) >= POWERUP_CAP:
+            continue
+        for i, p in enumerate(boxes):
+            if now < taken.get(i, 0):
+                continue
+            if sum((c["p"][j] - p[j]) ** 2 for j in range(3)) <= BOX_REACH ** 2:
+                _claim_box(r, pid, i, now)
+                break
+
+
+# How close a starred car has to get to spin somebody out, and how long before
+# it can do it to the same car again.
+STAR_REACH = 4.2
+STAR_AGAIN_MS = 1500
+
+
+def _tick_stars(r, now):
+    """A starred car drives *through* people, and they come off worst.
+
+    The star already made you quick and unhittable; what it did not do was give
+    you anything to do with either. Contact is read off the pose flags rather
+    than from a second list, so it is true for bots and people on the same
+    terms and needs nothing new on the wire.
+    """
+    starred = [(pid, c) for pid, c in r["cars"].items()
+               if not c.get("gone") and (c.get("flags") or 0) & racecheck.FLAG_STAR]
+    if not starred:
+        return
+    seen = r.setdefault("star_hits", {})
+    for pid, c in starred:
+        for other, o in r["cars"].items():
+            if other == pid or o.get("gone"):
+                continue
+            if (o.get("flags") or 0) & racecheck.FLAG_STAR:
+                continue                      # two stars simply pass through
+            if sum((c["p"][i] - o["p"][i]) ** 2 for i in range(3)) > STAR_REACH ** 2:
+                continue
+            key = (pid, other)
+            if now < seen.get(key, 0):
+                continue
+            seen[key] = now + STAR_AGAIN_MS
+            if _drop_held(r, other):
+                continue
+            _tally("star", "hit")
+            socketio.emit("item_hit", {"item": "star", "pid": other, "owner": pid},
+                          room="room:" + r["code"])
+            if other in _bot_pids(r):
+                w = _bot_world(r)
+                if w:
+                    try:
+                        w.hit(other)
+                    except Exception:
+                        app.logger.exception("bot star hit failed in %s", r["code"])
+
+
+# Where a trailed item rides, and how close another car has to get to run into
+# it. The distance behind matches what `moveHeld` draws in `game.js`: what
+# protects you and what you can see have to be the same object, and so does
+# what somebody else can drive into.
+HELD_BACK = 3.4
+HELD_REACH = 2.6
+
+
+# How long a car that has lost its socket keeps its place in the race. Long
+# enough for a reload (a fresh page, a track build, a rejoin) and short enough
+# that a race is not held up by somebody who has gone for good.
+LOST_GRACE_MS = 25000
+
+
+def _tick_lost(r, now):
+    """Retire the cars that went away and did not come back.
+
+    The other half of `_drop`: it marks a car gone and leaves the DNF to this,
+    so a reload costs nothing and a quit still costs the race. Runs from the
+    pump, so it applies whether or not anybody else is doing anything.
+    """
+    if r["phase"] not in ("countdown", "racing"):
+        return
+    late = [pid for pid in r["grid"]
+            if r["cars"].get(pid) and r["cars"][pid].get("gone")
+            and not r["cars"][pid]["dnf"] and r["cars"][pid]["ms"] is None
+            and now - (r["cars"][pid].get("left_at") or now) > LOST_GRACE_MS]
+    if not late:
+        return
+    for pid in late:
+        r["cars"][pid]["dnf"] = True
+    socketio.emit("race_progress", _race_state(r), room="room:" + r["code"])
+    _maybe_close(r["code"])
+
+
+def _tick_held(r, now):
+    """Run into the thing somebody is trailing and it gets you.
+
+    **This is the other half of holding one.** A banana held behind the car was
+    a shield against shells and nothing at all to the driver right behind you,
+    who could sit in your bumper with no reason to back off - which is the
+    exact position the item exists to answer. Now it is a banana on the road
+    that happens to be moving: touch it and you spin, and it is gone, because
+    that is what touching a banana has always done.
+
+    The owner is not in this - it is behind them, and a car cannot run into
+    what it is towing.
+    """
+    held = r.get("held") or {}
+    if not held:
+        return
+    for pid, item in list(held.items()):
+        c = r["cars"].get(pid)
+        if not c or c.get("gone"):
+            continue
+        f = _forward(c["q"])
+        p = [c["p"][i] - f[i] * HELD_BACK for i in range(3)]
+        for other, o in r["cars"].items():
+            if other == pid or o.get("gone"):
+                continue
+            if sum((o["p"][i] - p[i]) ** 2 for i in range(3)) > HELD_REACH ** 2:
+                continue
+            # Whoever hit it wears it - unless *they* are holding something, in
+            # which case the two items take each other out, which is the answer
+            # a trailing banana deserves from another trailing banana.
+            if not _drop_held(r, other):
+                _tally(item, "hit")
+                socketio.emit("item_hit", {"item": item, "pid": other, "owner": pid},
+                              room="room:" + r["code"])
+                if other in _bot_pids(r):
+                    w = _bot_world(r)
+                    if w:
+                        try:
+                            w.hit(other)
+                        except Exception:
+                            app.logger.exception("bot held hit failed in %s", r["code"])
+            _drop_held(r, pid)
+            break
+
+
+def _tick_items(r, now):
+    """Close the boost windows that have run out, and empty their slots.
+
+    The slot has to be emptied from here rather than by the last press: the
+    whole point of the window is that you do not know which press was the last
+    one. `items` carries a `pid` because this goes out to the room - a pump has
+    no socket of its own to reply on.
+    """
+    ends = r.get("boost_until")
+    if not ends:
+        return
+    for pid in [p for p, until in ends.items() if now >= until]:
+        del ends[pid]
+        q = _item_queue(r, pid)
+        if q and q[0] == "boost":
+            q.pop(0)
+        socketio.emit("items", {"pid": pid, "slots": list(q)},
+                      room="room:" + r["code"])
+
+
+def _bot_item(r, pid, item):
+    """Hand a bot the half of an item its own car has to carry. See `BotWorld.use`."""
+    w = _bot_world(r)
+    if not w:
+        return
+    try:
+        w.use(pid, item)
+    except Exception:
+        app.logger.exception("bot item failed in room %s", r["code"])
+
+
+# How long a bot sits on an item before using it, in ms. A bot that fired the
+# instant it collected would make every box a shot from the same place on the
+# lap, and one that never fired would be carrying a shell round for show.
+BOT_ITEM_WAIT = (1200, 3200)
+# How often a bot taps X while its boost window is open. A little slower than a
+# person spamming it, which is the difference between a bot and a bot that is
+# better at pressing a button than you are.
+BOT_BOOST_TAP = 900
+
+
+def _tick_bot_items(r, now):
+    """Bots take their boxes at a checkpoint like anybody else; this is them
+    pressing X.
+
+    The one piece of judgement in it: a shell with nothing in front of it is
+    held rather than thrown away, which is also what a person does. Everything
+    else goes off on its own clock, so a field of bots does not fire in unison.
+    """
+    if not r.get("bots") or not _powerups_live(r):
+        return
+    due = r.setdefault("bot_item_at", {})
+    for pid in list(_bot_pids(r)):
+        q = _item_queue(r, pid)
+        if not q:
+            due.pop(pid, None)
+            continue
+        if pid not in due:
+            due[pid] = now + random.randint(*BOT_ITEM_WAIT)
+            continue
+        if now < due[pid]:
+            continue
+        if q[0] in ("red", "blue") and not _shell_target(r, pid, q[0] == "blue"):
+            continue                       # nothing to aim at yet: keep hold of it
+        _spend_item(r, pid)
+        # A boost is not spent by being used, so the bot stays on it: it taps
+        # again every `BOT_BOOST_TAP` until the window closes and takes the
+        # item, which is what a person does with the same item.
+        if _boost_window(r, pid):
+            due[pid] = now + BOT_BOOST_TAP
+        else:
+            due.pop(pid, None)
 
 
 # How far the clock may disagree. It is for the network and not for the driving:
@@ -4781,14 +5939,25 @@ def _drop(sid, hard):
     r = _rooms.get(code)
     if r:
         c = r["cars"].get(pid)
-        # Leaving mid-race is a DNF, not a disappearance. The car is marked
-        # gone (so it stops being drawn and stops holding the race open) but
-        # kept, so it is still in the standings and still rated. Otherwise the
-        # cheapest way to avoid losing rating is to close the tab.
+        # **Leaving mid-race is a DNF; *dropping* is not, and they look
+        # identical from here.** A socket ends the same way whether somebody
+        # closed the tab to dodge a rating or their wifi blinked - or, most
+        # often, whether they reloaded, which this game asks people to do: a
+        # reload is how you recover from a bad switch, and `DEAD_MS` does one
+        # by itself after twenty seconds without a connection.
+        #
+        # Retiring them on the spot made that unrecoverable. You came back to a
+        # race you were no longer in, on a track full of cars you could not
+        # affect, with the results sheet up - which is exactly the state this
+        # comment is being written about. So the car is marked gone, which
+        # stops it being drawn and stops it holding the race open, and the DNF
+        # is left for `_tick_lost` to apply if nobody comes back for it. The
+        # rating is still safe: closing the tab still costs the race, it just
+        # costs it `LOST_GRACE_MS` later.
         if c is not None and r["phase"] in ("countdown", "racing") \
                 and pid in r["grid"] and c["ms"] is None:
-            c["dnf"] = True
             c["gone"] = True
+            c["left_at"] = _now_ms()
         else:
             r["cars"].pop(pid, None)
     # Whoever just left may have been the last car still out there.
@@ -4925,6 +6094,11 @@ def _stale_cleanup():
             for code in list(_rooms):
                 if not DriveGame.query.filter_by(code=code).first():
                     _rooms.pop(code, None)
+                    # `_delete_game` drops the world for the rooms it ends;
+                    # this is for room state whose game row went some other
+                    # way, and a world nobody told is tens of megabytes of
+                    # built track kept alive by a room that no longer exists.
+                    botsim.drop(code)
             # Replays outlive the rooms they were driven in, on purpose - a link
             # to one has to keep working - but not for ever, at a couple of
             # hundred kilobytes each. The newest REPLAY_KEEP stay.
@@ -4959,7 +6133,49 @@ def _stale_cleanup():
 # test: no room outlives the process, and every test that wants it calls `_run`
 # itself. So it is opt-out rather than made conditional on `TESTING`, which is
 # set after the import and so too late to be read here.
+# How late the loop has to be before it is worth a line in the log. A tick is
+# 33ms and a GC pause is a few; anything over two seconds is the worker not
+# answering *anybody*, which is what a room full of people feels as everybody
+# freezing at once.
+STALL_LOG_S = 2.0
+
+
+def _hub_watchdog():
+    """Say so, in the log, whenever this worker stops answering.
+
+    **Written because of a disconnect nobody could see.** Two players in the
+    same room, on different networks, lost their sockets within a second of
+    each other, three times in ten minutes - with the service up, no OOM, no
+    restart, no verifier running and nothing in the journal. Simultaneous drops
+    on a healthy process mean one thing: the event loop was not running, so no
+    pings went out and every client timed the server out at once. There was no
+    way to tell *why* after the fact, because a stall leaves no trace - it is
+    the absence of everything.
+
+    So this greenlet asks for one second and reports how long it actually took.
+    It costs one wake-up a second and turns the quietest failure this service
+    has into a line with a timestamp, a duration and what the rooms were doing
+    at the time. See `docs/rooms-and-races.md`.
+    """
+    last = time.monotonic()
+    while True:
+        eventlet.sleep(1.0)
+        now = time.monotonic()
+        late = now - last - 1.0
+        last = now
+        if late < STALL_LOG_S:
+            continue
+        cars = sum(len(r.get("cars") or {}) for r in _rooms.values())
+        bots = sum(len(r.get("bots") or {}) for r in _rooms.values())
+        phases = ",".join(sorted({r.get("phase") or "?" for r in _rooms.values()})) or "-"
+        app.logger.warning(
+            "event loop stalled %.1fs (rooms=%d phases=%s cars=%d bots=%d "
+            "checks=%d) - every client saw this as silence",
+            late, len(_rooms), phases, cars, bots, len(_children))
+
+
 if os.environ.get("DRIVE_SWEEP") != "0":
+    eventlet.spawn(_hub_watchdog)
     eventlet.spawn(_stale_cleanup)
 
 

@@ -198,9 +198,11 @@ const S = {
   // Both readouts default off: a number over the road is asked for, not given.
   showFps: storedFlag('drive.fps', false),
   showPing: storedFlag('drive.ping', false),
-  // The slug the switcher is part-way through loading, or null. One at a time:
-  // a second click during the (network + several hundred ms of building) that a
-  // switch costs would race the first one into `loadTrack`.
+  // The slug being loaded right now, or null. One at a time: a second click
+  // during the (network + several hundred ms of building) that a switch costs
+  // would race the first one into `loadTrack`. In a room it is also what holds
+  // the poses back while this page is still on the track the room has left -
+  // see `applyTrackChange`.
   switching: null,
   board: null,             // the last board fetched, for the detail pane
   mySplits: [],            // your PB's splits, to compare somebody else's with
@@ -241,10 +243,27 @@ const S = {
   order: [],               // the running order, off the last snapshot: see
                            // `orderFromSnapshot`. Derived and single-writer, so
                            // a stale one is a miss and never a disagreement.
-  settings: { qualifying: false },  // rooms only: what the next race will be
-                                    // (the server's `room_settings` is the
-                                    // truth; this matches ROOM_DEFAULTS so the
-                                    // switch does not flash the wrong way)
+  settings: { qualifying: false, powerups: true },  // rooms only: what the next
+                                    // race will be (the server's `room_settings`
+                                    // is the truth; this matches ROOM_DEFAULTS so
+                                    // the switch does not flash the wrong way)
+  items: [],               // rooms only: the two item slots, server-owned
+  boxes: [],               // where the room's item boxes are, from the server
+  boxCooldown: 0,          // no second box for a moment after one: see `grabItemBoxes`
+  itemBoxes: null,         // those boxes as meshes, one group
+  shots: null,             // the shells and bananas off the pose snapshot
+  shotById: null,          // id -> mesh, so one shell keeps one mesh
+  held: null,              // pid -> the item that car is trailing
+  holdingAt: 0,            // when the use button went down, or 0
+  blasts: null,            // the bombs going off right now
+  mapBlasts: null,         // and their rings on the minimap
+  itemUntil: {},           // when each held-item timer must be gone by: see
+                           // `expireItems`
+  hinted: null,            // the item the one-time key hint was last shown for
+  shellPingAt: 0,          // when the last 'something is close' ping went out
+  netTimer: null,          // the dead-socket reload, armed on `disconnect`
+  netSay: null,            // and the wait before it is even mentioned
+  boostUntil: 0,           // server ms: when the open boost window closes
   lastPose: 0,
   socket: null,
   clockOffset: 0, bestRtt: Infinity,
@@ -539,8 +558,17 @@ function loadTrack(track, opts = {}) {
   if (S.sound.musicOn) showNowPlaying();
 
   S.built = buildTrack(track, T);
+  // Which of this track's movers, if any, are things that make a noise. Off
+  // the palette rather than off the slug, so a second haunted track needs one
+  // line in its own folder and nothing here. See `Renderer._ghostsNear`.
+  S.renderer.setMoverVoice((track.pal || {}).moverVoice === 'ghost');
   S.renderer.setTrack(S.built);
   S.course = new Course(S.built);
+  if (S.itemBoxes) S.renderer.scene.remove(S.itemBoxes);
+  if (S.shots) { S.renderer.scene.remove(S.shots); S.shots = null; S.shotById = null; }
+  if (S.blasts) { for (const m of S.blasts) S.renderer.scene.remove(m); S.blasts = null; }
+  S.itemBoxes = makeItemBoxes(S.boxes);
+  S.renderer.scene.add(S.itemBoxes);
   S.run = new Run(S.course, track);
   // A lap id belongs to the track it was set on - `?watch=` is scoped to the
   // track at the server, so a stale one survives the switch only to fail.
@@ -735,6 +763,10 @@ const SEEN_GOAL = 'drive.seen.goal';
 const SEEN_TOUR = 'drive.seen.tour';
 // The save states panel explains itself once. See `showSavesIntro`.
 const SEEN_SAVES = 'drive.seen.saves';
+// The items name their key once each: one for the five you throw and one for
+// the boost, which is held rather than pressed. See `maybeHint`.
+const SEEN_ITEM = 'drive.seen.item';
+const SEEN_BOOST = 'drive.seen.boost';
 
 function firstTime(key) {
   try {
@@ -1070,6 +1102,15 @@ const KEYMAP = {
   ArrowRight: 'right', KeyD: 'right',
   Space: 'drift', ShiftLeft: 'drift',
   KeyQ: 'rear', KeyF: 'first',
+  // **`/` is Q for the other hand, and it is here because of a keyboard.**
+  // Looking behind while driving forward *and* holding an item is three keys
+  // at once, and on plenty of keyboards three keys in the same corner of the
+  // matrix is more than the controller will report - so W + X + Q came back as
+  // W + X, and the rear view simply did not happen. Nothing in the code was
+  // blocking it and nothing in the code could fix it; a second key far from
+  // the first one can. `/` sits beside the arrows, so an arrow-driver holding
+  // X with the left hand looks behind with the right.
+  Slash: 'rear',
 };
 
 function bindInput() {
@@ -1155,6 +1196,7 @@ function bindInput() {
     // does is either a driving key or already opens something - but it sits with
     // K, L, O and P, which is where the panel keys live.
     if (e.code === 'KeyJ' && savesEnabled()) { e.preventDefault(); toggleSaves(); }
+    if (e.code === 'KeyX' && !e.repeat) { e.preventDefault(); itemDown(); }
     if (e.code === 'KeyK') setGhostMode(nextGhostMode());
     // G is the car. A toggle rather than a cycle, because there are two states
     // and landing on the one you wanted should not depend on where you started.
@@ -1163,6 +1205,7 @@ function bindInput() {
   window.addEventListener('keyup', (e) => {
     const k = KEYMAP[e.code];
     if (k) keys.delete(k);
+    if (e.code === 'KeyX') itemUp();
   });
   window.addEventListener('blur', () => {
     keys.clear();
@@ -1231,6 +1274,7 @@ function bindInput() {
   };
   const hold = (id) => tb(id, () => { touchDown.add(id); syncTouch(); },
                               () => { touchDown.delete(id); syncTouch(); });
+  tb('tItem', () => itemDown(), () => itemUp());
   for (const id of ['tGas', 'tBrake']) hold(id);
   // The throttle, dragged downwards, is the handbrake too - without ever coming
   // off the throttle, which is the whole reason this thumb can carry a gesture
@@ -1599,6 +1643,11 @@ function bindInput() {
       S.socket.emit('set_setting', { code: CFG.room, key: 'qualifying',
                                      value: !S.settings.qualifying });
     };
+    $('optPowerups').onclick = () => {
+      if (!S.isHost || !S.socket) return;
+      S.socket.emit('set_setting', { code: CFG.room, key: 'powerups',
+                                     value: !S.settings.powerups });
+    };
     // Escape gets you out of the message box and back to the car. It never
     // reaches the window handler - that one ignores anything typed into an
     // input, which is what keeps WASD from driving while you write - so the
@@ -1659,6 +1708,874 @@ function renderSettings() {
   $('qualNote').textContent = on
     ? 'Ninety seconds of practice first - your fastest lap sets the grid.'
     : 'No qualifying: the grid is the last race, reversed.';
+  const powerups = $('optPowerups');
+  const enabled = !!S.settings.powerups;
+  powerups.classList.toggle('on', enabled);
+  powerups.setAttribute('aria-checked', enabled ? 'true' : 'false');
+  powerups.disabled = !S.isHost || livePhase();
+  $('powerupsNote').textContent = enabled
+    ? 'Item boxes are active in practice and races; qualifying stays item-free.'
+    : 'No items in this room.';
+  renderItems();
+}
+
+const ITEM_LABEL = { boost: 'Boost', green: 'Green shell', red: 'Red shell',
+  blue: 'Blue shell', banana: 'Banana', shield: 'Shield', star: 'Star' };
+
+/**
+ * What each item looks like in a slot.
+ *
+ * Drawn here rather than written into the template because the slot's contents
+ * change every time one is taken or spent, and a picture is what a driver can
+ * read without taking their eyes off the road - the word "banana" at 9px was
+ * legible standing still and not at 140km/h. One path each, on a 24 box, in the
+ * item's own colour: three shells that differ only in colour, which is exactly
+ * how they differ in the game.
+ */
+/**
+ * The slot's picture of an item: the item's own 3D model, photographed once.
+ *
+ * It used to be a hand-drawn SVG per item, which is two drawings of every
+ * item to keep in step - and the one on the road is the one people actually
+ * learn, so the slot should be a picture of *that*. Each kind is rendered
+ * once into a 96px canvas on a throwaway WebGL context and kept as a data URL:
+ * a second renderer costs one context for a few milliseconds at boot, against
+ * a live one per slot for the whole race.
+ *
+ * A context that will not come (a locked-down browser, too many live ones) is
+ * not an error: `itemIcon` returns nothing, the slot is a coloured box, and
+ * the game is unaffected.
+ */
+const ITEM_ART = {};
+
+/** How each item stands for its photograph. See `shootItem`. */
+const ICON_POSE = {
+  round: new THREE.Euler(-0.42, 0.72, 0.08),
+  flat: new THREE.Euler(-0.16, 0.42, 0),
+  star: new THREE.Euler(-0.16, 0.42, 0),
+  shield: new THREE.Euler(-0.16, 0.42, 0),
+  boost: new THREE.Euler(-0.16, 0.42, 0),
+  banana: new THREE.Euler(-0.22, 0.5, 0),
+};
+
+function itemIcon(item) {
+  if (!item) return '';
+  if (!ITEM_ART[item]) {
+    const url = shootItem(item);
+    if (!url) return '';               // not cached: ask again next time
+    ITEM_ART[item] = url;
+  }
+  return '<img src="' + ITEM_ART[item] + '" alt="" draggable="false">';
+}
+
+/**
+ * Photograph one item with the *game's own* renderer, into a render target.
+ *
+ * A second `WebGLRenderer` was the obvious way and is the wrong one: a browser
+ * caps live contexts, and the one that refuses is somebody's laptop rather
+ * than this machine - which would leave the slots empty, on the one HUD
+ * element whose whole job is saying what you are holding. A render target on
+ * the context that is already drawing the game cannot fail without the game
+ * failing too.
+ *
+ * Read back once, flipped into a 2D canvas (GL's origin is bottom-left), and
+ * kept as a data URL. Nothing is cached until it has worked, so an item asked
+ * for before the renderer exists is simply asked for again next time.
+ */
+function shootItem(kind) {
+  const R = S.renderer && S.renderer.renderer;
+  if (!R) return '';
+  const size = 96;
+  try {
+    const scene = new THREE.Scene();
+    const model = buildShot(kind);
+    // **One camera for all of them, and the model turned to face it.** The
+    // camera, the lights and the framing never change, so the eight pictures
+    // sit together as a set; what changes is the pose, because the natural
+    // angle is not the same for a round thing and a flat one. The shells, the
+    // bomb and the peel get the game's own three-quarters-from-above, which is
+    // how you see them on the road. The star, the shield and the chevrons are
+    // *flat* - they are outlines with thickness - so they face the camera
+    // square with just enough tilt to show that they have a side.
+    model.rotation.copy(ICON_POSE[kind] || ICON_POSE.round);
+    scene.add(model);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x404050, 2.2));
+    const key = new THREE.DirectionalLight(0xffffff, 1.6);
+    key.position.set(2, 4, 3);
+    scene.add(key);
+    const cam = new THREE.OrthographicCamera(-1.3, 1.3, 1.3, -1.3, 0.1, 20);
+    cam.position.set(0, 0, 6);
+    const rt = new THREE.WebGLRenderTarget(size, size);
+    const was = R.getRenderTarget();
+    R.setRenderTarget(rt);
+    R.setClearColor(0x000000, 0);
+    R.clear();
+    R.render(scene, cam);
+    const buf = new Uint8Array(size * size * 4);
+    R.readRenderTargetPixels(rt, 0, 0, size, size, buf);
+    R.setRenderTarget(was);
+    rt.dispose();
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = size;
+    const g2 = cv.getContext('2d');
+    const img = g2.createImageData(size, size);
+    for (let y = 0; y < size; y++) {
+      const src = (size - 1 - y) * size * 4, dst = y * size * 4;
+      img.data.set(buf.subarray(src, src + size * 4), dst);
+    }
+    g2.putImageData(img, 0, 0);
+    return cv.toDataURL('image/png');
+  } catch (e) {
+    return '';
+  }
+}
+
+function renderItems() {
+  const hud = $('itemHud');
+  if (!hud) return;
+  const on = CFG.mode === 'room' && !!S.settings.powerups && contactOn();
+  hud.style.display = on ? '' : 'none';
+  for (let i = 0; i < 2; i++) {
+    $('item' + i + 'art').innerHTML = itemIcon(S.items[i]);
+    $('item' + i).title = ITEM_LABEL[S.items[i]] || '';
+  }
+  for (let i = 0; i < 2; i++) $('item' + i).classList.toggle('empty', !S.items[i]);
+  if (on) maybeHint(S.items[0]);
+}
+
+/**
+ * The one time the keys are named, and it is named for the item you are
+ * holding - because the two items that are held are used differently from the
+ * five that are thrown, and "press X" would be wrong for one of them.
+ */
+function maybeHint(item) {
+  if (!item || item === S.hinted) return;
+  S.hinted = item;
+  const boost = item === 'boost';
+  if (!firstTime(boost ? SEEN_BOOST : SEEN_ITEM)) return;
+  showHint(boost ? 'Tap X - keep tapping' : 'X to use');
+}
+
+function showHint(text) {
+  const el = $('itemHint');
+  if (!el) return;
+  el.textContent = text;
+  requestAnimationFrame(() => el.classList.add('show'));
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.remove('show'), 4000);
+}
+
+/**
+ * The room's item boxes, at the positions the *server* sent.
+ *
+ * Where they are is a fact about the room rather than about this browser: they
+ * are everybody's boxes, one car takes one and it is gone from every screen at
+ * once, so the list comes down the wire with the track (`room_hello`,
+ * `track_change`) rather than being worked out here. See `_boxes_for` in
+ * `app.py` for the rule - a row across the road every seventeen seconds of the
+ * ideal lap, off the ribbon so it lies flat on a banked corner.
+ */
+function makeItemBoxes(boxes) {
+  const group = new THREE.Group();
+  const shell = new THREE.BoxGeometry(2.3, 2.3, 2.3);
+  const mark = new THREE.BoxGeometry(2.34, 2.34, 2.34);
+  const marks = questionTexture();
+  for (const p of boxes || []) {
+    const box = new THREE.Group();
+    // Three pieces, because one translucent cube reads as a smudge at speed:
+    // a glassy shell to catch the light, a bright wireframe to give it an edge
+    // against any background, and a `?` on every face so it says what it is.
+    // The `?` is a *second, slightly larger cube* wearing a texture that is
+    // transparent everywhere else - one mesh per face would be six meshes and
+    // a decision about which way each one points.
+    const glass = new THREE.MeshBasicMaterial({
+      color: 0x38c6f4, transparent: true, opacity: 0.32,
+      side: THREE.DoubleSide, depthWrite: false });
+    const edge = new THREE.LineBasicMaterial({
+      color: 0xd8f6ff, transparent: true, opacity: 0.95 });
+    const face = new THREE.MeshBasicMaterial({
+      map: marks, transparent: true, opacity: 0.95, depthWrite: false });
+    box.add(new THREE.Mesh(shell, glass));
+    box.add(new THREE.LineSegments(new THREE.EdgesGeometry(shell), edge));
+    box.add(new THREE.Mesh(mark, face));
+    // Each remembers what it is worth at rest, because the burst fades all
+    // three together and they do not start from the same place.
+    for (const m of [glass, edge, face]) m.userData.base = m.opacity;
+    box.userData = { mats: [glass, edge, face], phase: Math.random() * Math.PI * 2,
+                     y: p[1], until: 0 };
+    box.position.set(p[0], p[1], p[2]);
+    group.add(box);
+  }
+  group.visible = false;
+  return group;
+}
+
+/** The `?`, drawn once and worn by every box. */
+let _qTex = null;
+function questionTexture() {
+  if (_qTex) return _qTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.font = 'bold 104px system-ui, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.lineWidth = 10;
+  g.strokeStyle = 'rgba(10, 40, 60, .85)';
+  g.strokeText('?', 64, 70);
+  g.fillStyle = '#fff6c9';
+  g.fillText('?', 64, 70);
+  _qTex = new THREE.CanvasTexture(c);
+  return _qTex;
+}
+
+/** The spring back in, and the burst on the way out. */
+const BOX_POP_MS = 320;
+const BOX_BURST_MS = 110;
+
+/**
+ * Take the room's box list and (re)build the meshes for it.
+ *
+ * Arrives with the track in `room_hello` and in `track_change`, and both can
+ * land before or after `loadTrack` has built the world - so the list is kept
+ * on `S` and the meshes are made from whichever of the two happens last.
+ */
+function setItemBoxes(boxes) {
+  if (!boxes) return;
+  S.boxes = boxes;
+  if (!S.renderer) return;
+  if (S.itemBoxes) S.renderer.scene.remove(S.itemBoxes);
+  S.itemBoxes = makeItemBoxes(boxes);
+  S.renderer.scene.add(S.itemBoxes);
+}
+
+/**
+ * Taken: gone here and now, without waiting for the server to say so.
+ *
+ * The claim is still the server's - it decides who got it and refuses a car
+ * that was never near it - but the box has to go on the frame you touched it
+ * or the one thing every driver does next, which is aim at it, happens twice.
+ * A refused claim costs a box that blinks; a late one costs a lap of doubt.
+ */
+function takeItemBox(i, until) {
+  const box = S.itemBoxes && S.itemBoxes.children[i];
+  if (!box) return;
+  box.userData.until = until || (serverNow() + 1000);
+  box.userData.gone = performance.now();
+}
+
+function animateItemBoxes(now) {
+  if (!S.itemBoxes) return;
+  S.itemBoxes.visible = CFG.mode === 'room' && !!S.settings.powerups && contactOn();
+  if (!S.itemBoxes.visible) return;
+  const server = serverNow();
+  for (const box of S.itemBoxes.children) {
+    const u = box.userData;
+    box.rotation.y = now * 0.0012 + u.phase;
+    box.position.y = u.y + Math.sin(now * 0.0028 + u.phase) * 0.18;
+    const left = u.until - server;
+    let k = 1, fade = 1;
+    if (left > 0) {
+      // **Taken: it bursts.** Out and gone in `BOX_BURST_MS`, growing while it
+      // fades, because the box is not shrinking away from you - you drove
+      // through it. A box that eased out over a third of a second read as a
+      // box you had *missed*, still sitting there as you went past.
+      const t = Math.min(1, (now - u.gone) / BOX_BURST_MS);
+      k = 1 + t * 0.9;
+      fade = 1 - t;
+    } else if (left > -BOX_POP_MS) {
+      // Coming back: a spring past its own size, because a box that returns at
+      // exactly full size reads as a rendering glitch and one that springs
+      // reads as being given back.
+      const t = 1 + left / BOX_POP_MS;
+      k = Math.max(0, t + Math.sin(t * Math.PI) * 0.35);
+    }
+    box.visible = fade > 0.02 && k > 0.02;
+    box.scale.setScalar(k);
+    for (const m of u.mats) m.opacity = m.userData.base * fade;
+  }
+}
+
+/**
+ * Ask for any box this car has just driven into.
+ *
+ * The reach here is deliberately shorter than the server's `BOX_REACH`, so a
+ * claim this browser thinks it has made is one the server agrees with; the
+ * slack between them is what absorbs the pose that was in flight at the time.
+ */
+const BOX_TOUCH = 3.2;
+
+function grabItemBoxes(now) {
+  if (!S.itemBoxes || !S.socket || !S.itemBoxes.visible) return;
+  if (S.items.length >= 2) return;             // both hands full: leave it up
+  if (now < S.boxCooldown) return;
+  const p = S.car.pos;
+  const kids = S.itemBoxes.children;
+  // **The nearest one, and then nothing for a moment.** A row is three boxes a
+  // few units apart and the reach has to be generous enough to catch a car at
+  // 140km/h between two frames, so threading the gap between two of them was
+  // taking both - one pass through a row is one box.
+  let best = -1, bestD = BOX_TOUCH;
+  for (let i = 0; i < kids.length; i++) {
+    if (!kids[i].visible || now < (kids[i].userData.asked || 0)) continue;
+    const d = kids[i].position.distanceTo(p);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  if (best < 0) return;
+  kids[best].userData.asked = now + 700;
+  S.boxCooldown = now + BOX_COOLDOWN;
+  S.socket.emit('item_box', { i: best });
+  takeItemBox(best);
+  S.sound.itemBox();
+}
+
+/** How long after taking one before this car can take another. */
+const BOX_COOLDOWN = 600;
+
+/** A flat outline, given thickness. Used by the three items that are shapes. */
+function extruded(shape, depth, color) {
+  const g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
+  g.center();
+  return new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color, flatShading: true }));
+}
+
+function starShape(outer, inner) {
+  const sh = new THREE.Shape();
+  for (let i = 0; i < 10; i++) {
+    const r = i % 2 ? inner : outer;
+    const a = -Math.PI / 2 + i * Math.PI / 5;
+    const x = Math.cos(a) * r, y = Math.sin(a) * r;
+    i ? sh.lineTo(x, y) : sh.moveTo(x, y);
+  }
+  sh.closePath();
+  return sh;
+}
+
+function chevronShape(w, h, t) {
+  const sh = new THREE.Shape();
+  sh.moveTo(-w, 0);
+  sh.lineTo(0, h);
+  sh.lineTo(w, 0);
+  sh.lineTo(w - t, 0);
+  sh.lineTo(0, h - t * 1.4);
+  sh.lineTo(-w + t, 0);
+  sh.closePath();
+  return sh;
+}
+
+function shieldShape(w, h) {
+  const sh = new THREE.Shape();
+  sh.moveTo(0, h);
+  sh.quadraticCurveTo(w, h * 0.8, w, h * 0.15);
+  sh.quadraticCurveTo(w, -h * 0.75, 0, -h);
+  sh.quadraticCurveTo(-w, -h * 0.75, -w, h * 0.15);
+  sh.quadraticCurveTo(-w, h * 0.8, 0, h);
+  return sh;
+}
+
+/**
+ * The item itself, in three dimensions - one per kind.
+ *
+ * Every item has one, not only the ones that end up on the road, because the
+ * slots in the HUD are photographs of these (`shootItem`): a drawn shell and a
+ * thrown shell are then the same object seen twice rather than two drawings to
+ * keep in step. Low-poly on purpose - a shell is seen at 140km/h from twenty
+ * units away *and* at 44px in a slot, and the silhouette is the whole job at
+ * both.
+ */
+function buildShot(kind) {
+  const g = new THREE.Group();
+  if (kind === 'star') {
+    g.add(extruded(starShape(0.95, 0.42), 0.34, 0xffd33d));
+    return g;
+  }
+  if (kind === 'shield') {
+    g.add(extruded(shieldShape(0.72, 0.95), 0.28, 0x7fd4ff));
+    return g;
+  }
+  if (kind === 'boost') {
+    for (const [y, c] of [[-0.42, 0xff9c2a], [0.34, 0xffd23d]]) {
+      const ch = extruded(chevronShape(0.85, 0.75, 0.3), 0.3, c);
+      ch.position.y = y;
+      g.add(ch);
+    }
+    return g;
+  }
+  if (kind === 'bomb') {
+    const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.78, 1),
+                                new THREE.MeshLambertMaterial({ color: 0x24262c, flatShading: true }));
+    g.add(body);
+    const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.42, 5),
+                                new THREE.MeshLambertMaterial({ color: 0x9a7a45, flatShading: true }));
+    fuse.position.set(0.2, 0.82, 0);
+    fuse.rotation.z = -0.5;
+    g.add(fuse);
+    const spark = new THREE.Mesh(new THREE.IcosahedronGeometry(0.17, 0),
+                                 new THREE.MeshBasicMaterial({ color: 0xffd23d }));
+    spark.position.set(0.36, 1.02, 0);
+    g.add(spark);
+    return g;
+  }
+  if (kind === 'banana') {
+    // **A peel, not a fruit.** What is lying on the road is the thing you slip
+    // on: a flattened crescent for the skin, three flaps splayed off one end,
+    // and the stalk standing up out of the middle of them. The flaps are the
+    // whole difference - a plain crescent reads as a banana you could eat.
+    const skin = new THREE.MeshLambertMaterial({ color: 0xffdc4a, flatShading: true });
+    const inner = new THREE.MeshLambertMaterial({ color: 0xfff0b8, flatShading: true });
+    // **Standing up, not lying down.** Flat on the road it was a yellow smear
+    // you could not read at any distance and could not tell from a boost pad;
+    // stood on its end it has a silhouette, which is the only thing that
+    // survives 140km/h and a 44px slot.
+    const body = new THREE.Mesh(new THREE.TorusGeometry(0.58, 0.22, 4, 9, Math.PI * 1.1), skin);
+    body.rotation.z = -Math.PI / 2.4;        // the curve of the peel, upright
+    g.add(body);
+    // **Split end down, stalk up.** A peel is standing on the parts that were
+    // opened; hanging them off the top made it read as a flower. The cones
+    // point down and outward from the base, which is also the shape that sits
+    // flat on the road.
+    for (const a of [-0.7, 0, 0.7]) {
+      const flap = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.85, 4), a ? skin : inner);
+      flap.position.set(Math.sin(a) * 0.3, -0.42, Math.cos(a) * 0.12 - 0.06);
+      flap.rotation.set(Math.PI - 0.22, 0, -a * 0.6);
+      g.add(flap);
+    }
+    const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.38, 4),
+                                 new THREE.MeshLambertMaterial({ color: 0x8a6a24, flatShading: true }));
+    stalk.position.set(0.16, 0.78, 0);
+    stalk.rotation.z = -0.3;
+    g.add(stalk);
+    // Flat things read small: a peel lying on the road is seen nearly
+    // edge-on, where a shell of the same size is a dome against the sky.
+    g.scale.setScalar(1.3);
+    return g;
+  }
+  const hue = { green: 0x2fbf52, red: 0xe8392a, blue: 0x2f7fe8 }[kind] || 0xffffff;
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.8, 9, 5, 0, Math.PI * 2, 0, Math.PI / 2),
+                              new THREE.MeshLambertMaterial({ color: hue, flatShading: true }));
+  dome.scale.y = 0.92;
+  g.add(dome);
+  // The pale underside is what tells a shell from a ball at any distance, and
+  // it is also what makes the three colours read as the same object.
+  const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.82, 0.74, 0.3, 9),
+                             new THREE.MeshLambertMaterial({ color: 0xf6efd8, flatShading: true }));
+  rim.position.y = -0.14;
+  g.add(rim);
+  return g;
+}
+
+/** One built model per kind, cloned for every shell of it in the air. */
+const SHOT_BODY = {};
+
+function shotMesh(kind) {
+  if (!SHOT_BODY[kind]) SHOT_BODY[kind] = buildShot(kind);
+  const m = SHOT_BODY[kind].clone();
+  // A shell spins, a banana lies where it was dropped.
+  m.userData.spin = (kind === 'banana' || kind === 'bomb') ? 0 : 7;
+  m.userData.kind = kind;                 // the minimap asks what it is
+  return m;
+}
+
+/**
+ * Take the shot list off a pose snapshot. Drawing it is `moveShots`.
+ *
+ * **Keyed by the shot's id, not by its place in the list.** A shell is one
+ * object flying down a road for several seconds, but the list it arrives in
+ * changes order every time one is fired or hits something - so binding a mesh
+ * to a list position made shells swap places with each other mid-flight, which
+ * is most of what "choppy" was. With an id, a mesh belongs to a shell for that
+ * shell's whole life, and the position that arrives at 30Hz is somewhere for
+ * it to be *going* rather than somewhere to be put.
+ */
+function renderShots(shots) {
+  const list = shots || [];
+  if (!S.shots) { S.shots = new THREE.Group(); S.shotById = new Map(); }
+  if (S.shots.parent !== S.renderer.scene) S.renderer.scene.add(S.shots);
+  const seen = new Set();
+  for (const sh of list) {
+    const id = sh[4] || 0;
+    seen.add(id);
+    let m = S.shotById.get(id);
+    if (!m) {
+      m = shotMesh(sh[0]);
+      m.position.set(sh[1], sh[2], sh[3]);     // born where it is, not at 0,0,0
+      S.shots.add(m);
+      S.shotById.set(id, m);
+    }
+    m.userData.to = m.userData.to || new THREE.Vector3();
+    m.userData.to.set(sh[1], sh[2], sh[3]);
+  }
+  for (const [id, m] of S.shotById) {
+    if (seen.has(id)) continue;
+    S.shots.remove(m);
+    S.shotById.delete(id);
+  }
+}
+
+/**
+ * Fly them, between the thirty snapshots a second that say where they are.
+ *
+ * The same problem every other car on the road has and the same shape of
+ * answer, one order of magnitude simpler: a shell has no input to predict and
+ * no collision to respect, so chasing the last known position at a fixed rate
+ * is enough. `SHOT_CHASE` is tuned so that at 30Hz the mesh is a couple of
+ * units behind the truth at most, which nobody can see, and never steps.
+ */
+const SHOT_CHASE = 16;
+
+/**
+ * Being hit: the whole of it, in one place.
+ *
+ * It used to be four lines inline in the socket handler, which was fine while
+ * a hit was a shove and a beep. It is a *moment* now - the car is thrown and
+ * let go of, the camera is knocked, sparks come off it and the sound is three
+ * layers - and every one of those is part of the same event rather than a
+ * decoration on it. One function so a hit from a shell, a bomb, a banana on
+ * the road and a star on legs all land identically, because from the seat they
+ * are the same thing happening.
+ */
+function hitByItem() {
+  S.sound.itemHit();
+  S.car.vel.addScaledVector(S.car.up, 16);
+  S.car._spin(S.car.right, 2.2);
+  S.car.bumpSlip = Math.max(S.car.bumpSlip, 1.1);
+  S.renderer.kick(1.15);
+  // Sparks off the car itself, so there is something to *see* at the moment of
+  // contact and not only afterwards in how the car is behaving. One call is a
+  // burst - `Renderer.smoke` fans five out of every 'spark' - and two calls
+  // with different throws make it look thrown rather than sprayed.
+  for (const up of [6, 3]) {
+    S.renderer.smoke(S.car.pos.clone().setY(S.car.pos.y + 0.5),
+                     new THREE.Vector3((Math.random() - 0.5) * 8, up,
+                                       (Math.random() - 0.5) * 8), 'spark');
+  }
+}
+
+/** How a hit reads when it was yours. The verb is the item's, not the car's. */
+const HIT_SAID = { green: 'Green shell hit', red: 'Red shell hit',
+                   blue: 'Blue shell hit', banana: 'Banana got',
+                   bomb: 'Bomb caught', star: 'Starred into' };
+
+/** A pid as a name, off the roster the room keeps. */
+function nameOf(pid) {
+  const p = (S.roster || []).find((e) => e.pid === pid);
+  return (p && p.name) || 'them';
+}
+
+/** Which voice each item speaks with. The two shells share one; see `Sound`. */
+const ITEM_SOUND = { boost: 'boostPad', green: 'itemShell', red: 'itemShell',
+                     blue: 'itemBlue', banana: 'itemBanana', shield: 'itemShield',
+                     star: 'itemStar', bomb: 'itemBomb' };
+
+// How close a shell has to be before you hear it coming, and how often it
+// pings at the two ends of that. A shell crosses 28 units in under half a
+// second, so this is a warning measured in the time you have to do something
+// about it rather than in distance.
+const SHELL_EARSHOT = 28;
+const SHELL_PING_FAR = 420, SHELL_PING_NEAR = 110;
+
+/**
+ * The thing behind you, getting louder.
+ *
+ * Deliberately not told who owns it: your own shell pulling away from you is
+ * out of earshot within a tick, and a banana lying on the road ahead is worth
+ * exactly as much of a warning as a shell is.
+ */
+function shellWarning(now) {
+  if (!S.shotById || !S.shotById.size) return;
+  let near = Infinity;
+  for (const m of S.shotById.values()) {
+    const d = m.position.distanceTo(S.car.pos);
+    if (d < near) near = d;
+  }
+  if (near > SHELL_EARSHOT) return;
+  const k = 1 - near / SHELL_EARSHOT;
+  const gap = SHELL_PING_FAR + (SHELL_PING_NEAR - SHELL_PING_FAR) * k;
+  if (now < (S.shellPingAt || 0) + gap) return;
+  S.shellPingAt = now;
+  S.sound.shellNear(k);
+}
+
+function moveShots(dt) {
+  if (S.shotById) {
+    const k = 1 - Math.exp(-SHOT_CHASE * dt);
+    for (const m of S.shotById.values()) {
+      if (m.userData.to) m.position.lerp(m.userData.to, k);
+      // **Stand on the road, not on the world.** A banana lying flat while the
+      // road banks away under it - Playground's walls, Spa's Eau Rouge, any
+      // loop - looks like a bug in a way a floating shell does not, because
+      // the thing it is lying on is right there. The collider knows which way
+      // is up here; ask it, and lean the mesh that way.
+      layOnRoad(m, dt);
+      m.rotateOnAxis(UP_LOCAL, (m.userData.spin || 0) * dt);
+    }
+  }
+  if (S.blasts) moveBlasts(dt);
+  moveHeld();
+}
+
+/**
+ * Draw what a car is trailing, or stop drawing it.
+ *
+ * The held item is the room's - see `on_hold_item` - so this only ever follows
+ * what the server says. It rides behind the car it belongs to, which is the
+ * position it will be hit in, so what protects you and what you can see are
+ * the same object.
+ */
+function setHeld(pid, item) {
+  S.held = S.held || new Map();
+  const had = S.held.get(pid);
+  if (had) { S.renderer.scene.remove(had); S.held.delete(pid); }
+  if (!item) return;
+  const m = shotMesh(item);
+  m.userData.spin = 0;
+  S.renderer.scene.add(m);
+  S.held.set(pid, m);
+}
+
+/** A box the server would not give us: back on the road, now, not in a second. */
+function putItemBoxBack(i) {
+  const box = S.itemBoxes && S.itemBoxes.children[i];
+  if (!box) return;
+  box.userData.until = 0;
+  box.userData.asked = 0;
+  box.visible = true;
+  box.scale.setScalar(1);
+  for (const m of box.userData.mats) m.opacity = m.userData.base;
+}
+
+/** Keep each one tucked in behind its car. */
+function moveHeld() {
+  if (!S.held || !S.held.size) return;
+  for (const [pid, m] of S.held) {
+    const car = (CFG.me && pid === CFG.me.pid) ? S.car : (S.remotes.get(pid) || null);
+    if (!car) { m.visible = false; continue; }
+    const p = car.pos || car;
+    const f = car.fwd || (car.rq ? new THREE.Vector3(0, 0, -1).applyQuaternion(car.rq) : null);
+    if (!f) { m.visible = false; continue; }
+    m.visible = true;
+    // Tucked in behind, and **wearing the car's own angle**: on a banked
+    // corner or upside down in a loop the car is not level, and an item that
+    // stayed level was a thing floating near a car rather than a thing the car
+    // was towing. The quaternion is the car's, so it leans, banks and inverts
+    // with it for free.
+    const rot = car.quat || car.rq;
+    if (rot) m.quaternion.copy(rot);
+    const up = car.up || UP_LOCAL;
+    m.position.set(p.x - f.x * 3.4 + up.x * 0.3,
+                   (p.y || 0) + up.y * 0.3,
+                   p.z - f.z * 3.4 + up.z * 0.3);
+  }
+}
+
+/** The local Y axis, for spinning a thing that has been tilted onto a bank. */
+const UP_LOCAL = new THREE.Vector3(0, 1, 0);
+const _lay = new THREE.Quaternion(), _layN = new THREE.Vector3();
+const _layUp = new THREE.Vector3();
+
+/**
+ * Sit one mesh on the surface under it, leaning as the road leans.
+ *
+ * The ground query is the same one `Car.step` makes - one ray, straight down
+ * the world - and its normal is the road's own. A miss (over a gap, off the
+ * edge, mid-flight) leaves the mesh as it was, which is upright, and that is
+ * the right answer for something in the air.
+ */
+function layOnRoad(m, dt) {
+  const col = S.built && S.built.collider;
+  if (!col) return;
+  // Probed along the mesh's *own* up rather than the world's, which is the
+  // same trick `Car.step` uses and the only reason this works at the top of a
+  // loop or half way up a wall of death: there, "under" points sideways or at
+  // the sky, and a query straight down the world finds the floor of the
+  // canyon instead of the road the shell is on.
+  const up = _layUp.set(0, 1, 0).applyQuaternion(m.quaternion);
+  const q = col.ground(m.position.x + up.x * 1.2, m.position.y + up.y * 1.2,
+                       m.position.z + up.z * 1.2, up.x, up.y, up.z, 4);
+  if (!q.hit) return;
+  _layN.set(q.nx, q.ny, q.nz);
+  _lay.setFromUnitVectors(UP_LOCAL, _layN);
+  // Eased rather than snapped: a shell crossing a ridge should roll onto it.
+  m.quaternion.slerp(_lay, 1 - Math.exp(-9 * dt));
+}
+
+/** How long a bomb's ring stays on the minimap, in ms. */
+const MAP_BLAST_MS = 1400;
+
+/** How long a blast is on the screen for, in seconds. */
+const BLAST_S = 0.65;
+
+/**
+ * The bomb going off, where it went off.
+ *
+ * A sphere the size of the blast the server just resolved, thrown open and
+ * faded out - so what caught you is a thing you saw rather than a hit out of
+ * nowhere, and standing next to one that catches somebody *else* is the other
+ * half of what makes the item worth throwing.
+ */
+function addBlast(p, radius) {
+  if (!S.renderer) return;
+  // Two shells: a white-hot core that goes first and an orange ball that
+  // outlives it, which is what makes it read as heat rather than as a balloon.
+  const g = new THREE.Group();
+  const ball = new THREE.Mesh(new THREE.IcosahedronGeometry(radius || 16, 2),
+                              new THREE.MeshBasicMaterial({ color: 0xff7a18, transparent: true,
+                                                            opacity: 0.6, depthWrite: false }));
+  const core = new THREE.Mesh(new THREE.IcosahedronGeometry((radius || 16) * 0.55, 1),
+                              new THREE.MeshBasicMaterial({ color: 0xfff0b0, transparent: true,
+                                                            opacity: 0.9, depthWrite: false }));
+  g.add(ball, core);
+  g.position.set(p[0], p[1], p[2]);
+  g.scale.setScalar(0.2);
+  g.userData = { t: 0, ball: ball.material, core: core.material };
+  S.renderer.scene.add(g);
+  (S.blasts = S.blasts || []).push(g);
+}
+
+function moveBlasts(dt) {
+  for (let i = S.blasts.length - 1; i >= 0; i--) {
+    const m = S.blasts[i];
+    const t = (m.userData.t += dt) / BLAST_S;
+    if (t >= 1) {
+      S.renderer.scene.remove(m);
+      for (const child of m.children) { child.geometry.dispose(); child.material.dispose(); }
+      S.blasts.splice(i, 1);
+      continue;
+    }
+    // Out fast and then slowing, the way a real one does: `1 - (1-t)^2`.
+    m.scale.setScalar(0.2 + (1 - (1 - t) * (1 - t)) * 1.0);
+    m.userData.ball.opacity = 0.6 * (1 - t);
+    m.userData.core.opacity = 0.9 * Math.max(0, 1 - t * 2.2);
+  }
+}
+
+/**
+ * How long each item that is *felt* rather than seen lasts, in seconds.
+ *
+ * **The boost is one short burst per press**, not one long one: the item is a
+ * window (`BOOST_WINDOW_MS` at the server) that you spend by tapping X as fast
+ * as you like until it closes. So this number is what *one tap* is worth, and
+ * a tap while the last one is still running simply restarts it.
+ *
+ * The timers themselves live on the car and are counted down by `physics.js`,
+ * which every browser reaches by a bare `import` with **no cache token on it**.
+ * So for the hour after a deploy a page can be running a `physics.js` that has
+ * never heard of `star` - it would set the field, nothing would ever decrement
+ * it, and a ten-second star would last the rest of the session. The deadline
+ * here is kept in `game.js`, which is tokened and therefore always fresh, and
+ * clearing the field against it costs three lines and removes the whole class.
+ * See the deploy notes in `drive/CLAUDE.md`.
+ */
+const ITEM_TIME = { itemBoost: 1.1, star: 6, shield: 10 };
+
+function holdItem(field, now) {
+  S.car[field] = ITEM_TIME[field];
+  S.itemUntil[field] = now + ITEM_TIME[field] * 1000;
+}
+
+function expireItems(now) {
+  for (const field in ITEM_TIME) {
+    if (S.car[field] > 0 && now >= (S.itemUntil[field] || 0)) S.car[field] = 0;
+  }
+  // **The star sings for as long as it lasts.** One fanfare at the start is a
+  // fanfare you have forgotten about by the second corner, and the whole point
+  // of the item is knowing - and everybody else knowing - that right now you
+  // cannot be stopped. The loop is here rather than in `Sound` because what it
+  // is following is a number on the car.
+  if (S.car.star > 0 && now >= (S.starSangAt || 0) + STAR_BAR_MS) {
+    S.starSangAt = now;
+    S.sound.itemStar();
+  }
+}
+
+/** How often the star's jingle comes round again. */
+const STAR_BAR_MS = 640;
+
+/**
+ * The white line round the front slot, shrinking as the boost window closes.
+ *
+ * Drawn on the slot's own outline because the thing running out *is* the thing
+ * in the box - a bar somewhere else would be a second place to look at exactly
+ * the moment there is no looking away from the road. The length comes from the
+ * path itself rather than from arithmetic about corner radii.
+ */
+function updateItemRing() {
+  const ring = $('itemRing');
+  if (!ring) return;
+  const left = S.boostUntil - serverNow();
+  if (left <= 0) { ring.style.display = 'none'; return; }
+  const path = ring.firstElementChild;
+  if (!ring._len) ring._len = path.getTotalLength();
+  ring.style.display = 'block';
+  path.style.strokeDasharray = ring._len;
+  path.style.strokeDashoffset = ring._len * (1 - Math.min(1, left / BOOST_WINDOW_MS));
+}
+
+// What the server's `BOOST_WINDOW_MS` is worth here. Only the ring reads it -
+// the server owns the clock and says when the slot empties - so a disagreement
+// costs a ring that is drawn slightly fast, not a boost that is not there.
+const BOOST_WINDOW_MS = 7000;
+
+/**
+ * The use button going down.
+ *
+ * **Holding it trails the item behind you instead of throwing it**, for the
+ * three that are objects - a banana, a green, a red - and that is a shield
+ * made of the thing you have not thrown yet. It costs you the throw for as
+ * long as you keep it, which is the trade. Letting go throws it (`itemUp`),
+ * so a tap is still exactly what a tap was.
+ *
+ * The boost is the exception and has to be: it is spammed, not held, so it
+ * goes off on the press like it always did.
+ */
+function itemDown() {
+  if (!canUseItem()) return;
+  if (HOLDABLE.includes(S.items[0])) {
+    S.holdingAt = performance.now();
+    S.socket.emit('hold_item', { on: true });
+    return;
+  }
+  useItem();
+}
+
+function itemUp() {
+  if (!S.holdingAt) return;
+  S.holdingAt = 0;
+  if (!canUseItem()) { S.socket && S.socket.emit('hold_item', { on: false }); return; }
+  useItem();
+}
+
+/** The three you can hold out behind you. Mirrors `HOLDABLE` in `app.py`. */
+const HOLDABLE = ['banana', 'green', 'red'];
+
+function canUseItem() {
+  return !!(S.socket && S.items.length && S.settings.powerups && contactOn());
+}
+
+function useItem() {
+  if (!canUseItem()) return;
+  // **The throttle is which way you are throwing it.** On the power, it goes
+  // out in front; off it, behind. The server decides what that means per item;
+  // a banana, whose ordinary place is behind, gets lobbed ahead instead.
+  S.socket.emit('use_item', { back: throwingBack() });
+}
+
+/**
+ * Which way this throw goes: backwards, unless you are on the power.
+ *
+ * **It was the handbrake and this is better.** The two things you are doing
+ * when you want to throw something *behind* you are defending a place and
+ * being caught, and in both of them you are hard on the throttle - so the
+ * handbrake version asked for a third finger at exactly the wrong moment, and
+ * it fought the drift, which is a thing you do *while* accelerating. Off the
+ * power is the honest signal: it is a decision you have already made with the
+ * hand that is already there, and it costs the speed it should.
+ *
+ * The same question `readInput` asks the physics, asked the same way - keys or
+ * thumbs - so it means the same thing on a phone.
+ */
+function throwingBack() {
+  return !(keys.has('up') || touchKeys.has('up'));
 }
 
 // ---------------------------------------------------------------------------
@@ -3242,8 +4159,29 @@ function visibleTrackCards() {
 }
 
 /** The tab strip: which one is on, and how many cards each holds. */
+/**
+ * The tabs this build actually offers, in the order they are written.
+ *
+ * `hidden` in the template is the switch - Dailies and Community are shelves
+ * nobody has filled yet, and an empty tab is a promise the game is not
+ * keeping. Reading it here rather than keeping a second list means turning one
+ * back on is deleting an attribute and nothing else.
+ */
+function liveTabs() {
+  return [...document.querySelectorAll('#tTabs .ttab')]
+    .filter(el => !el.hidden).map(el => el.dataset.tab);
+}
+
 function renderTrackTabs() {
   const all = CFG.cards || [];
+  // A tab that is no longer offered can still be in somebody's saved view -
+  // `TPREF` outlives any one build - and a remembered `daily` would show an
+  // empty grid under a tab strip with nothing selected.
+  const tabs = liveTabs();
+  if (tabs.length && !tabs.includes(TPREF.tab)) {
+    TPREF.tab = tabs[0];
+    TPREF.save();
+  }
   document.querySelectorAll('#tTabs .ttab').forEach(el => {
     const n = all.filter(c => (c.tab || 'sprint') === el.dataset.tab).length;
     el.classList.toggle('on', el.dataset.tab === TPREF.tab);
@@ -3256,7 +4194,7 @@ function renderTrackTabs() {
     if (!count) { count = document.createElement('i'); el.appendChild(count); }
     count.textContent = n || '';
   });
-  document.querySelectorAll('#tSorts .tsort').forEach(el => {
+  document.querySelectorAll('#tSorts .tsort[data-sort]').forEach(el => {
     const on = el.dataset.sort === TPREF.sort;
     el.classList.toggle('on', on);
     el.classList.toggle('desc', on && TPREF.desc);
@@ -3345,6 +4283,17 @@ function bindTrackControls() {
       renderTrackCards();
     };
   });
+  const rnd = $('btnRandomTrack');
+  if (rnd) {
+    rnd.onclick = () => {
+      // Out of the tab you are looking at, because that is the list you were
+      // choosing from - and never the one already under the car, which is the
+      // one answer that would look like the button is broken.
+      const pool = visibleTrackCards().filter(c => c.slug !== S.track.slug);
+      if (!pool.length) return;
+      pickTrack(pool[Math.floor(Math.random() * pool.length)].slug);
+    };
+  }
   document.querySelectorAll('#tSorts .tsort').forEach(el => {
     el.onclick = () => {
       // Clicking the sort already on reverses it. One control, two directions -
@@ -3658,11 +4607,31 @@ function restartRun() {
   // button and Retry), which is what stops the phone growing its own idea of
   // what restart means during a replay.
   if (S.watch) { watchSeek(0, { play: true }); return; }
-  if (!S.started) return;
+  if (!S.started || raceIsRun()) return;
   if (restartCostsARace() && !armRestart()) return;
   disarmRestart();
   resetToStart();
   toast('Restart');
+}
+
+/**
+ * Your race is over: R and T do nothing, and say nothing.
+ *
+ * Both keys are about the lap you are driving, and once you are across the
+ * line there is not one - the time is set, the replay is recorded and the
+ * standings have you where you finished. Restarting from there put a car back
+ * on the grid in the middle of somebody else's race and teleporting it to a
+ * checkpoint did the same thing more quietly; neither can change the result,
+ * so both are noise at best.
+ *
+ * **Silently**, because a refusal with a message is an instruction to try
+ * again: the only honest reply to "restart" from a driver who has finished is
+ * that the key is not for this any more, and a toast saying so is a toast
+ * every finisher reads once per race. Practice is untouched - there R is how
+ * you go again, which is the whole of practice.
+ */
+function raceIsRun() {
+  return !!(S.raceMode && S.raceDone);
 }
 
 /**
@@ -3728,7 +4697,7 @@ function backToCheckpoint() {
   // a seek rather than a respawn: same key, same button, same meaning - back to
   // the start of the bit you are trying to watch.
   if (S.watch) { watchLastCheckpoint(); return; }
-  if (!S.started) return;
+  if (!S.started || raceIsRun()) return;
   S.car.requestRespawn();
 }
 
@@ -4321,7 +5290,10 @@ function hostStart() {
  * screen looks like, top to bottom.
  */
 function onEscape() {
-  if ($('rateList') && $('rateList').style.display !== 'none') toggleRates(false);
+  // The result sheet first: it is over everything, and it is the thing you
+  // have just finished reading.
+  if ($('raceOver') && $('raceOver').style.display !== 'none') closeRaceOver();
+  else if ($('rateList') && $('rateList').style.display !== 'none') toggleRates(false);
   else if ($('boardOv').style.display !== 'none') toggleBoard(false);
   else if ($('tracksOv').style.display !== 'none') toggleTracks(false);
   else if ($('savesOv').style.display !== 'none') toggleSaves(false);
@@ -4443,6 +5415,12 @@ function frame(now) {
   // shot has no sound at all, so neither is a reason for the loop to stop.
   S.sound.musicTick();
 
+  // The held items expire on `game.js`'s own clock, not the car's: see
+  // `ITEM_TIME`.
+  expireItems(now);
+  updateItemRing();
+  grabItemBoxes(now);
+
   // Shot mode: hold the whole track in frame and render nothing else. This is
   // how the switcher's pictures are taken (tools/shoot_tracks.py), so the
   // preview of a track is always the track as it is now rather than a drawing
@@ -4540,6 +5518,13 @@ function frame(now) {
     clockStarting = true;
     noteStart();
     markHintSeen();
+    // **Driving closes the drawer.** You arrive in a room with it open, which
+    // is right - the roster and the chat are what a lobby is - but a third of
+    // the screen is a strange thing to be looking through once the car is
+    // moving, and reaching for the X with the car already going is a moment
+    // you did not need to spend. Only on the first move of a run, so somebody
+    // who opened it deliberately mid-lap keeps it.
+    if (document.body.classList.contains('side-open')) showSide(false);
     // `Run.start` is the one thing that lifts the taint, so it is one of the
     // three places the badge can change. The other two are a restore and a
     // reset; between them they are every transition it has.
@@ -4548,6 +5533,9 @@ function frame(now) {
   if (S.raceMode && S.racePhase === 'racing' && !S.started && S.raceT0 != null && now >= S.raceT0) {
     S.started = true;
     S.car.frozen = false;
+    // Same as the practice branch above: the lights have gone out, so the
+    // drawer is in the way rather than in use.
+    if (document.body.classList.contains('side-open')) showSide(false);
     // Reset for the same reason, but **no skipped frame**: the green light is
     // `raceT0`, which is already in the past by the time this runs, so the clock
     // is legitimately non-zero and the car is owed that motion. Everyone in the
@@ -4650,7 +5638,8 @@ function drive(inp) {
   // The tow's rushing air is the same air a pad's boost makes, so the band
   // opens for either - but only a tow has a charge to fill it with beforehand.
   S.sound.draft(car.slipCharge,
-                Math.max(car.slipBoost / T.SLIP_BOOST, car.padBoost / T.PAD_BOOST));
+                Math.max(car.slipBoost / T.SLIP_BOOST, car.padBoost / T.PAD_BOOST,
+                         car.itemBoost > 0 ? 1 : 0));
   // tyre smoke while sliding, dust when off the road
   const kind = smokeFor(car);
   if (kind) tyreSmoke(car, kind);
@@ -4680,6 +5669,9 @@ function tyreSmoke(car, kind) {
 
 function render(dt, now) {
   const car = S.car;
+  animateItemBoxes(now);
+  moveShots(dt);
+  shellWarning(now);
   S.renderer.follow(car, dt, viewKeys());
   // The ears ride the camera, so they are moved the moment it has been - and
   // the field is spatialised against where it has just gone rather than where
@@ -4902,13 +5894,14 @@ function hud(now) {
   if (!qualifying && (S.raceMode || S.remotes.size || S.previewOrder)) {
     const order = S.previewOrder || liveOrder();
     const me = order.findIndex(e => e.self) + 1;
-    $('position').style.display = '';
-    $('posNum').textContent = me || '-';
-    $('posTot').textContent = order.length;
+    $('place').style.display = me ? '' : 'none';
+    $('placeNum').textContent = me ? ordinal(me) : '-';
+    $('placeOf').textContent = 'of ' + order.length;
+    $('place').classList.toggle('lead', me === 1);
     renderStandings(order);
     $('standingsCard').style.display = '';
   } else {
-    $('position').style.display = 'none';
+    $('place').style.display = 'none';
     $('standings').innerHTML = '';
     // An empty card is just a dark smudge in the corner.
     $('standingsCard').style.display = 'none';
@@ -5071,11 +6064,15 @@ function liveOrder() {
   // what it needs is one clock, and being the only car on the board reading
   // its own live number is precisely what made the two boards disagree.
   const at = (pid, live) => (prog.has(pid) ? prog.get(pid) : live);
+  // The pace each row is doing, which is what turns a gap in metres into a gap
+  // in seconds - see `gapLabel`. Your own comes off the car, everybody else's
+  // off the velocity in their last pose, which is on the wire already.
   const out = [{ name: CFG.name, color: CFG.me ? CFG.me.color : '#e8453c', pid: mine,
-                 s: at(mine, S.run.bestS), self: true,
+                 s: at(mine, S.run.bestS), self: true, speed: S.car.speed,
                  ms: S.run.state === 'done' ? S.run.time : null }];
   for (const [pid, r] of S.remotes) {
     out.push({ name: r.name, color: r.color, s: at(pid, r.prog), self: false, pid,
+               speed: r.vel ? r.vel.length() : 0,
                ms: (S.standings.find(x => x.pid === pid) || {}).ms || null });
   }
   out.sort((a, b) => {
@@ -5095,20 +6092,57 @@ function liveOrder() {
 
 function renderStandings(order) {
   const el = $('standings');
-  el.innerHTML = order.map((e, i) => `
+  // **The interval, not the gap to the leader.** What you can do something
+  // about is the car immediately in front of you, and on a board where every
+  // row says "-8.20" behind a runaway leader nobody can read anything at all.
+  // Row by row, each number is the distance to the line above it, which is
+  // also why the column is tied together with a rule: it is a measurement
+  // *between* two rows rather than a property of one.
+  //
+  // Measured to the nearest car above that is **still driving**, because a
+  // finisher keeps rolling and its progress keeps climbing past the flag - so
+  // a finisher's row shows its time and is skipped as a reference. The leader
+  // on the road has nothing in front of it and says nothing.
+  let ahead = null;
+  el.innerHTML = order.map((e, i) => {
+    const cell = e.ms != null ? fmt(e.ms) : (ahead ? gapLabel(ahead, e) : '');
+    if (e.ms == null) ahead = e;
+    return `
     <div class="st-row${e.self ? ' me' : ''}">
       <span class="st-pos">${i + 1}</span>
       <span class="st-dot" style="background:${esc(e.color)}"></span>
       <span class="st-name">${esc(e.name)}</span>
-      <span class="st-gap">${e.ms != null ? fmt(e.ms) : gapLabel(order[0], e)}</span>
-    </div>`).join('');
+      <span class="st-gap">${cell}</span>
+    </div>`;
+  }).join('');
 }
+
+/**
+ * How far behind the leader this car is, **in seconds**.
+ *
+ * It was metres, and metres are the wrong unit for the question being asked.
+ * "-500m" is a number you have to convert before it means anything: five
+ * hundred metres is nothing at all down Big Red's descent and half a race on
+ * Shroom Street. A gap in seconds is the same number on every track, it is
+ * what every timing screen in motorsport shows, and it is what you are
+ * actually trying to know - how long it would take to get there.
+ *
+ * Divided by the pace of the car it is *about*, so a gap does not swing wildly
+ * because the person reading it braked - and floored at a walking pace, so a
+ * car stopped on the grass is a big number rather than an infinite one.
+ */
+const GAP_FLOOR = 12;                     // u/s: slower than this reads as this
 
 function gapLabel(leader, e) {
   if (e.self && leader.self) return '';
-  const gap = (leader.s - e.s);
+  const gap = leader.s - e.s;
   if (gap <= 0.5) return '';
-  return '-' + Math.round(gap) + 'm';
+  const pace = Math.max(GAP_FLOOR, e.speed || 0);
+  const secs = gap / pace;
+  // Two decimals under ten seconds, one above: at nine seconds the hundredths
+  // are the difference between catching somebody and not, and at forty they
+  // are noise in a number that is already "another lap".
+  return '-' + (secs < 10 ? secs.toFixed(2) : secs.toFixed(1));
 }
 
 function renderMedalTable() {
@@ -5215,7 +6249,72 @@ function drawMinimap() {
     return;
   }
   for (const r of S.remotes.values()) dot([r.pos.x, 0, r.pos.z], r.color, 3);
-  dot([S.car.pos.x, 0, S.car.pos.z], CFG.me ? CFG.me.color : '#fff', 4.2);
+  // **The two items worth knowing the position of.** A bomb is a place on the
+  // road you have to go round, and a blue shell is the one item whose whole
+  // interest is *where it currently is* - the leader wants to know it is
+  // coming and everybody else wants to watch. The rest are not here on
+  // purpose: eight shells and a dozen bananas would turn the map into a list
+  // of things rather than a picture of the race.
+  // **Neither of them is a circle**, because every car is one: a round mark on
+  // this canvas means a driver, and at 5px a dark circle among coloured
+  // circles is another driver in a colour you cannot make out. The bomb is a
+  // diamond and the blue shell is an arrowhead pointing the way it is going,
+  // which is also the one thing you want to know about it.
+  if (S.shotById) {
+    for (const m of S.shotById.values()) {
+      const kind = m.userData.kind;
+      if (kind !== 'bomb' && kind !== 'blue') continue;
+      const [x, y] = mm([m.position.x, 0, m.position.z]);
+      g.beginPath();
+      if (kind === 'bomb') {
+        g.moveTo(x, y - 5.4); g.lineTo(x + 5.4, y);
+        g.lineTo(x, y + 5.4); g.lineTo(x - 5.4, y);
+      } else {
+        // Pointed along its last step, which the mesh is already chasing.
+        const to = m.userData.to || m.position;
+        const a = Math.atan2(to.z - m.position.z, to.x - m.position.x) || 0;
+        [[6.4, 0], [-3.6, 4.2], [-3.6, -4.2]].forEach(([dx, dz], i) => {
+          const px = x + dx * Math.cos(a) - dz * Math.sin(a);
+          const py = y + dx * Math.sin(a) + dz * Math.cos(a);
+          i ? g.lineTo(px, py) : g.moveTo(px, py);
+        });
+      }
+      g.closePath();
+      g.fillStyle = kind === 'bomb' ? '#1e1e24' : '#4da3ff';
+      g.fill();
+      g.lineWidth = 1.6;
+      g.strokeStyle = '#fff';
+      g.stroke();
+    }
+  }
+  // A bomb going off, for as long as anybody could act on it: a ring at the
+  // real blast radius, fading. It is the one item whose *area* matters, and
+  // the map is where you find out whether the thing that just went bang was
+  // anywhere near you.
+  if (S.mapBlasts) {
+    const now = performance.now();
+    S.mapBlasts = S.mapBlasts.filter((b) => now - b.t < MAP_BLAST_MS);
+    for (const b of S.mapBlasts) {
+      const k = (now - b.t) / MAP_BLAST_MS;
+      const [x, y] = mm(b.p);
+      g.beginPath();
+      g.arc(x, y, Math.max(2, b.r * mmFit.sc) * (0.4 + k * 0.8), 0, 7);
+      g.lineWidth = 2;
+      g.strokeStyle = 'rgba(255,140,40,' + (1 - k).toFixed(2) + ')';
+      g.stroke();
+    }
+  }
+  // Your own dot, last and largest, with a white ring round it: in a field of
+  // eight coloured dots the question the map is asked is "which one is me",
+  // and colour alone does not answer it at a glance on a 190px canvas.
+  const [mx, my] = mm([S.car.pos.x, 0, S.car.pos.z]);
+  g.beginPath();
+  g.arc(mx, my, 4.4, 0, 7);
+  g.fillStyle = CFG.me ? CFG.me.color : '#fff';
+  g.fill();
+  g.lineWidth = 2;
+  g.strokeStyle = '#fff';
+  g.stroke();
 }
 
 // ---------------------------------------------------------------------------
@@ -5671,20 +6770,29 @@ async function onFinish() {
 }
 
 /**
- * The tail-lamp state packed into a recorded flag byte.
+ * What a flag byte says about how to *draw* the car: lamps, and the bubble.
  *
- * One place, because three different things read one: the ghost, a replay, and
- * a rival's pose. Laps recorded before flags existed hand in `undefined` here,
- * which is a car with its lamps off rather than an error.
+ * One place, because four different things read one: your own car, a rival's
+ * pose, a ghost and a replay. Laps recorded before flags existed hand in
+ * `undefined` here, which is a dark car with no shield rather than an error.
  *
- * Only braking. `FLAG.DRIFT` is in the byte and stays there, but the lamps are
- * red or dark and nothing else: the handbrake counts as braking, so an amber
- * drift state did not turn the lamps *on*, it changed the colour of lamps that
- * were already lit - and a car that goes yellow every time it steps out reads
- * as a fault rather than as a driver.
+ * Only braking, of the driving flags. `FLAG.DRIFT` is in the byte and stays
+ * there, but the lamps are red or dark and nothing else: the handbrake counts
+ * as braking, so an amber drift state did not turn the lamps *on*, it changed
+ * the colour of lamps that were already lit - and a car that goes yellow every
+ * time it steps out reads as a fault rather than as a driver.
+ *
+ * `FLAG.SHIELD` is the one thing in here that is not about the driving, and it
+ * is here because it travels the same way: the bubble has to be on every
+ * screen, not just its owner's, or the driver lining up a shell has no way of
+ * knowing it will be wasted. A cached `physics.js` from before the bit existed
+ * makes this `undefined`, which is `false`, which is no bubble - a car that
+ * looks unshielded for an hour after a deploy rather than a page that breaks.
  */
 function lampsOf(flags) {
-  return { braking: !!((flags | 0) & FLAG.BRAKE) };
+  return { braking: !!((flags | 0) & FLAG.BRAKE),
+           shield: !!((flags | 0) & FLAG.SHIELD),
+           star: !!((flags | 0) & FLAG.STAR) };
 }
 
 function medalFor(ms) {
@@ -5888,7 +6996,36 @@ function serverNow() { return Date.now() + S.clockOffset; }
 
 function connect() {
   const socket = S.socket = window.io();
+  // **Say so, and then do something about it.** The socket dropping does not
+  // stop the car - the physics is local and the lap goes on exactly as before
+  // - so without this the only symptom is everybody else freezing, which is
+  // indistinguishable from everybody else being slow. `join_room_` below is
+  // what puts the car back in the room when the connection returns.
+  socket.on('disconnect', () => {
+    // **Not immediately.** A socket that blinks and comes back on its own -
+    // which is what one does while the main thread is locked building a track
+    // - is not something to paint the screen red about; by the time anybody
+    // has read the word "disconnected" it has already reconnected, and the
+    // red pill ends up being a thing that happens *during track switches*.
+    // Only a drop that lasts says so.
+    clearTimeout(S.netSay);
+    S.netSay = setTimeout(() => say('Disconnected - reconnecting\u2026'), NET_QUIET);
+    // **And if it does not come back, reload.** Socket.IO retries for ever, but
+    // a session the server has forgotten - it restarted, or the box killed it -
+    // comes back as a connection with no room behind it, and the symptom from
+    // the seat is a car driving alone on a track everybody else has left. A
+    // reload is what somebody does by hand at that point; doing it here is the
+    // difference between a blip and being stranded.
+    clearTimeout(S.netTimer);
+    S.netTimer = setTimeout(() => {
+      if (!S.socket.connected && CFG.mode === 'room') location.reload();
+    }, DEAD_MS);
+  });
   socket.on('connect', () => {
+    clearTimeout(S.netTimer);
+    clearTimeout(S.netSay);
+    // Only worth saying if it was ever worth saying it had gone.
+    if (say()) { say(null); toast('Reconnected'); }
     socket.emit('join_room_', { code: CFG.room });
     for (let i = 0; i < 5; i++) {
       setTimeout(() => {
@@ -5913,6 +7050,10 @@ function connect() {
     renderRoster(d.players);
     if (d.settings) S.settings = d.settings;
     else if (d.race && d.race.settings) S.settings = d.race.settings;
+    S.items = d.items || [];
+    setItemBoxes(d.boxes);
+    if (S.held) for (const pid of [...S.held.keys()]) setHeld(pid, null);
+    for (const pid in (d.held || {})) setHeld(pid, d.held[pid]);
     S.racePhase = d.race ? d.race.phase : 'free';
     S.pole = (d.race && d.race.pole) || null;
     applyPhase();
@@ -5930,7 +7071,80 @@ function connect() {
     if (d.track && d.track !== S.track.slug) switchTrack(d.track);
   });
   socket.on('poses', onPoses);
-  socket.on('track_change', (d) => switchTrack(d.track));
+  socket.on('item_box_taken', (d) => { if (d) takeItemBox(d.i, d.until); });
+  socket.on('item_box_miss', (d) => {
+    if (!d) return;
+    // Put it back: this browser hid it on touch without waiting to be told,
+    // and the server has just said no. A box that stays hidden after a refusal
+    // is a hole in the road and no item, which reads as the game losing it.
+    if (d.why !== 'taken') putItemBoxBack(d.i);
+    if (d.why === 'full') toast('Both slots full');
+  });
+  socket.on('items', (d) => {
+    // Carries a `pid` when it comes from the pump closing a boost window,
+    // which goes to the room because a pump has no socket to reply on.
+    if (!d || (d.pid && CFG.me && d.pid !== CFG.me.pid)) return;
+    const had = S.items.length;
+    S.items = d.slots || [];
+    // What landed *in the slot*, which is not the same event as the box: a
+    // box you drive through with both hands full makes one sound and not two.
+    if (S.items.length > had) S.sound.itemGot();
+    if (!S.items.includes('boost')) S.boostUntil = 0;
+    renderItems();
+  });
+  socket.on('item_used', (d) => {
+    // A blue shell is the one item the whole room is entitled to hear: it is
+    // already on its way to the leader and there is nothing it can do about it.
+    if (d && d.item === 'blue' && CFG.me && d.pid !== CFG.me.pid) S.sound.itemBlue();
+    if (!d || !CFG.me || d.pid !== CFG.me.pid) return;
+    S.sound[ITEM_SOUND[d.item] || 'itemShell']();
+    const now = performance.now();
+    if (d.item === 'boost') {
+      holdItem('itemBoost', now);
+      S.boostUntil = d.until || 0;
+      // A pad's kick, because from the driver's seat it is a pad: something
+      // good just happened and the camera should not lurch for it. The air
+      // round the car and the FOV punch carry the rest, and both read
+      // `itemBoost` now. (The sound is `ITEM_SOUND`, which is the pad's.)
+      S.renderer.kick(0.3);
+    }
+    if (d.item === 'star') holdItem('star', now);
+    if (d.item === 'shield') holdItem('shield', now);
+    toast((ITEM_LABEL[d.item] || d.item) + '!');
+  });
+  socket.on('item_held', (d) => { if (d) setHeld(d.pid, d.item); });
+  socket.on('item_blocked', (d) => {
+    if (!d) return;
+    // The thing you were holding took it. Worth its own sound: from the seat
+    // this is a hit that did not happen, and silence would read as a miss.
+    S.sound.itemBlocked();
+    if (CFG.me && d.pid === CFG.me.pid) toast('Blocked!');
+  });
+  socket.on('item_blast', (d) => {
+    if (!d) return;
+    addBlast(d.p, d.r);
+    (S.mapBlasts = S.mapBlasts || []).push({ p: d.p, r: d.r || 16,
+                                             t: performance.now() });
+    // Heard and felt wherever you are: the flash is the place's, not a car's,
+    // and a bomb going off ten units away is news whether it caught you or not.
+    S.sound.bombBlast();
+    const far = S.car.pos.distanceTo(new THREE.Vector3(d.p[0], d.p[1], d.p[2]));
+    S.renderer.kick(Math.max(0, 0.8 - far / 40));
+  });
+  socket.on('item_hit', (d) => {
+    // **Your own hits, named.** A shell you threw ten seconds ago arriving
+    // round a corner is otherwise something that happens entirely off screen -
+    // you get no sound, no sight of it, and no idea whether it was worth
+    // throwing. The victim's half of this is the shove, below.
+    if (d && CFG.me && d.owner === CFG.me.pid && d.pid !== CFG.me.pid) {
+      toast((HIT_SAID[d.item] || 'Hit') + ' ' + nameOf(d.pid) + '!');
+    }
+    if (!d || !CFG.me || d.pid !== CFG.me.pid || S.car.star > 0) return;
+    // The shield is one hit, not a stretch of time: taking one is what ends it.
+    if (S.car.shield > 0) { S.car.shield = 0; S.sound.itemBlocked(); toast('Shield gone!'); return; }
+    hitByItem();
+  });
+  socket.on('track_change', (d) => { setItemBoxes(d.boxes); applyTrackChange(d.track); });
   socket.on('qual_countdown', onQualCountdown);
   socket.on('qual_start', onQualStart);
   socket.on('qual_progress', (d) => { if (S.racePhase === 'qualifying') renderQual(d.qual); });
@@ -6027,26 +7241,17 @@ function connect() {
     if (el) el.addEventListener('click', () => socket.emit('leave'));
   }
   // After a race: practise the track again, or go round again.
-  $('btnPractice').onclick = () => {
-    $('raceOver').style.display = 'none';
-    // The server drops the room back to free on its own a few seconds later;
-    // doing it here too means Practice is instant rather than "instant, then
-    // the ghost appears".
-    S.racePhase = 'free';
-    applyPhase();
-    resetToStart();
-  };
+  $('btnPractice').onclick = () => { closeRaceOver(); resetToStart(); };
+  $('btnRaceClose').onclick = () => closeRaceOver();
   $('btnRematch').onclick = () => {
-    $('raceOver').style.display = 'none';
+    closeRaceOver();
     socket.emit('start_race', { code: CFG.room });
   };
   // Somewhere else, chosen from the sheet that has just told you this race is
   // over. It is the same switcher as always - the host picks and everybody's
   // world changes - so this opens it rather than being a second way to choose.
   $('btnRaceTrack').onclick = () => {
-    $('raceOver').style.display = 'none';
-    S.racePhase = 'free';
-    applyPhase();
+    closeRaceOver();
     resetToStart();
     toggleTracks(true);
   };
@@ -6055,7 +7260,7 @@ function connect() {
   };
   // The level rides on the button, so building a mixed field is one press per
   // car rather than a trip through a dialog each time.
-  const botLevel = () => ($('botLevel') || {}).value || 'medium';
+  const botLevel = () => ($('botLevel') || {}).value || 'max';
   if ($('btnAddBot')) {
     $('btnAddBot').onclick = () =>
       socket.emit('add_bot', { code: CFG.room, level: botLevel() });
@@ -6117,6 +7322,8 @@ function connect() {
 
 function sendPose(now) {
   if (!S.socket || now - S.lastPose < 1000 / POSE_HZ) return;
+  // Mid-switch, this car is on a track the room has left. See `applyTrackChange`.
+  if (S.switching) return;
   S.lastPose = now;
   const c = S.car;
   S.socket.emit('pose', {
@@ -6139,6 +7346,7 @@ function onPoses(snap) {
   // worked out once when one arrives instead of once a frame off whichever one
   // happens to be current.
   S.order = orderFromSnapshot(snap);
+  renderShots(snap.shots);
   for (const pid in snap.cars) {
     if (CFG.me && pid === CFG.me.pid) continue;
     const a = snap.cars[pid];
@@ -6630,6 +7838,13 @@ const painted = () => new Promise((ok) =>
 async function switchTrack(slug, opts = {}) {
   const card = trackCard(slug);
   if (!opts.quiet) toast('Loading ' + (card ? card.name : 'track') + '...');
+  // **A failure that is about to be retried says nothing.** The caller that
+  // sets this is `applyTrackChange`, which tries twice and then reloads, so
+  // the first attempt failing is not news - and announcing it produced the
+  // worst possible order of words: "could not load that track", then
+  // "loading...", then the track. Complaining and then succeeding is worse
+  // than either.
+  const cry = (msg) => { if (!opts.hush) toast(msg); };
   try {
     // Together, not in sequence. A rejection here is a scenery we could not get,
     // and it lands in the catch below with everything else that means "no".
@@ -6637,13 +7852,13 @@ async function switchTrack(slug, opts = {}) {
       fetch('/api/track/' + slug).then((r) => r.json()),
       ensureScenery(slug),
     ]);
-    if (!t || t.error) { toast('Could not load that track'); return false; }
+    if (!t || t.error) { cry('Could not load that track'); return false; }
     // The guard that actually decides, because it reads the payload rather than
     // what this page knew about the pool when it booted. `ensureScenery` skips a
     // track its card says ships none; if that card is stale, this is what
     // catches it before the world is built wrong.
     if (t.scenery && !sceneryReady(slug)) {
-      toast('Could not load ' + t.name);
+      cry('Could not load ' + t.name);
       return false;
     }
     // Everything below is synchronous and the build is most of it - hundreds of
@@ -6677,7 +7892,66 @@ async function switchTrack(slug, opts = {}) {
       body: JSON.stringify({ track: slug }),
     }).catch(() => {});
     return true;
-  } catch (e) { toast('Could not load that track'); return false; }
+  } catch (e) { cry('Could not load that track'); return false; }
+}
+
+/** How long a dead socket is given before the page reloads itself. */
+const DEAD_MS = 20000;
+/** And how long before it is even mentioned. See the `disconnect` handler. */
+const NET_QUIET = 2500;
+
+/**
+ * The one pill that says what is wrong right now. `say()` reads it.
+ *
+ * Two things use it and they are the same kind of thing: something is stopping
+ * this browser from being in the room everybody else is in, and it is not
+ * something pressing a key will fix.
+ */
+function say(text) {
+  const el = $('netLost');
+  if (!el) return '';
+  if (text === undefined) return el.style.display === 'none' ? '' : el.textContent;
+  if (!text) { el.style.display = 'none'; return ''; }
+  el.textContent = text;
+  el.style.display = '';
+  return text;
+}
+
+/**
+ * The room moved to another track. Get there, whatever it takes.
+ *
+ * **A switch that quietly fails is the worst outcome of the three**, and it
+ * was the one that happened: `switchTrack` toasts and returns false if the
+ * payload or the scenery does not arrive, and the page then sits on the old
+ * track while the room races on the new one. From that seat everything looks
+ * broken and nothing says why - your poses are measured against a ribbon you
+ * are not on, so the other cars stop making sense and you stop appearing on
+ * theirs. The fetch that failed is nearly always a blink, so try again; and if
+ * the second one fails too, reload, which is what somebody does by hand and is
+ * guaranteed to arrive on whatever the room is on now.
+ *
+ * `S.switching` holds the poses back meanwhile: a pose from the old track is
+ * worse than no pose at all, because the server will believe it.
+ */
+async function applyTrackChange(slug, attempt = 0) {
+  if (!slug || slug === S.track.slug) { S.switching = null; return; }
+  S.switching = slug;
+  // Quiet on the way in, because there is another go coming; the second
+  // attempt is allowed to say so, since after that all it can do is reload.
+  // Hushed on every attempt: a room switch that fails is retried and then
+  // reloaded, and at no point in that is "could not load that track" news the
+  // driver can act on. What they get instead is one grey line saying what is
+  // being loaded, which is what the whole sequence amounts to.
+  if (await switchTrack(slug, { hush: true })) { S.switching = null; return; }
+  if (attempt < 1) {
+    setTimeout(() => applyTrackChange(slug, attempt + 1), 1200);
+    return;
+  }
+  // Grey, like every other word about loading a track: the red pill is for
+  // being disconnected and nothing else, and a switch that is taking a second
+  // attempt is not that.
+  toast('Loading the room\u2019s track\u2026');
+  setTimeout(() => location.reload(), 900);
 }
 
 function onRaceStart(d) {
@@ -6841,6 +8115,7 @@ function onRaceResult(d) {
   // leading to an empty one is worse than no button.
   S.lastRaceId = d.race || null;
   $('btnWatchRace').style.display = S.lastRaceId ? '' : 'none';
+  layoutRaceActions();
   $('raceOver').style.display = '';
   showHostOnly();
 }
@@ -6852,11 +8127,49 @@ function onRaceResult(d) {
  * can change mid-race if the old one leaves, so they are shown from the same
  * place everything else phase-dependent is.
  */
+/**
+ * Put the result sheet away.
+ *
+ * It also drops this page back to free practice, which the server does for the
+ * whole room a few seconds later anyway - doing it here as well is the
+ * difference between the car being drivable the moment the sheet closes and it
+ * being drivable "in a moment".
+ */
+function closeRaceOver() {
+  const el = $('raceOver');
+  if (el) el.style.display = 'none';
+  if (S.racePhase === 'results') {
+    S.racePhase = 'free';
+    applyPhase();
+  }
+}
+
 function showHostOnly() {
   for (const id of ['btnRematch', 'btnRaceTrack']) {
     const b = $(id);
     if (b) b.style.display = S.isHost ? '' : 'none';
   }
+  // **Four for the host, three for everybody else.** `Back to start` is the
+  // guest's own move - the host's equivalent is Rematch, and offering both to
+  // the host is the five-button row this replaced.
+  const practice = $('btnPractice');
+  if (practice) practice.style.display = S.isHost ? 'none' : '';
+  layoutRaceActions();
+}
+
+/**
+ * Tell the row how many buttons it has, because `auto-fit` cannot be told.
+ *
+ * Four buttons in a row that fits three is one button alone on a second line
+ * against the left edge, which is the layout this sheet was complained about
+ * for. Counting them is exact: three go across, four go two-by-two - the same
+ * arrangement the solo finish sheet settled on, and for the same reason.
+ */
+function layoutRaceActions() {
+  const row = document.querySelector('#raceOver .sheet-actions');
+  if (!row) return;
+  const shown = [...row.children].filter((b) => b.style.display !== 'none');
+  row.dataset.n = shown.length;
 }
 
 function addChat(m) {

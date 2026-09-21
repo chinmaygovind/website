@@ -41,9 +41,13 @@ GAME_JS = os.path.join(os.path.dirname(__file__), "..", "static", "js", "game.js
 
 
 def _fn(name):
-    """One top-level function from game.js, exactly as it ships."""
+    """One top-level function from game.js, exactly as it ships.
+
+    `async` counts as plain: QuickJS runs one, and the two that matter here
+    (`applyTrackChange`) await things this stub answers immediately.
+    """
     src = open(GAME_JS).read()
-    m = re.search(r"^function %s\(.*?^\}" % re.escape(name), src, re.S | re.M)
+    m = re.search(r"^(?:async )?function %s\(.*?^\}" % re.escape(name), src, re.S | re.M)
     assert m, "%s is gone from game.js, or is no longer a plain function" % name
     return m.group(0)
 
@@ -59,6 +63,9 @@ def _ctx(setup=""):
 
 RESTART_STUB = """
 var calls = [];
+// Nothing in these tests is a finished race - that is `FINISHED_STUB` below -
+// so the guard that keeps R and T off a car that is already home answers no.
+function raceIsRun() { return false; }
 var S = {started: false, car: {requestRespawn: () => calls.push('respawn')}};
 function resetToStart() { calls.push('reset'); }
 function toast(t) { calls.push('toast:' + t); }
@@ -211,20 +218,29 @@ def test_the_lamps_come_off_the_recorded_flags():
     """Red or dark, and nothing else. Drifting is in the byte and deliberately
     not on the lamps: the handbrake counts as braking, so an amber drift state
     changed the colour of lamps that were already lit rather than turning any
-    on, and a car that goes yellow whenever it steps out looks broken."""
+    on, and a car that goes yellow whenever it steps out looks broken.
+
+    The shield rides in the same answer, because the bubble is drawn from the
+    same byte on the same four paths - and a byte from before that bit existed
+    is a car with no bubble rather than an error."""
     import json
     ctx = _ctx()
-    ctx.eval("var FLAG = {DRIFT: 1, AIR: 2, RESPAWN: 4, BRAKE: 8, SLIP: 16};")
+    ctx.eval("var FLAG = {DRIFT: 1, AIR: 2, RESPAWN: 4, BRAKE: 8, SLIP: 16,"
+             " SHIELD: 32, STAR: 64};")
     ctx.eval(_fn("lampsOf"))
     out = json.loads(ctx.eval("JSON.stringify([lampsOf(0), lampsOf(8), lampsOf(1), "
-                              "lampsOf(9), lampsOf(undefined)])"))
-    dark, braking, drifting, both, old = out
-    assert dark == {"braking": False}
-    assert braking == {"braking": True}
-    assert drifting == {"braking": False}
-    assert both == {"braking": True}
+                              "lampsOf(9), lampsOf(undefined), lampsOf(32), lampsOf(40),"
+                              " lampsOf(64)])"))
+    dark, braking, drifting, both, old, shielded, both2, starred = out
+    assert dark == {"braking": False, "shield": False, "star": False}
+    assert braking == {"braking": True, "shield": False, "star": False}
+    assert drifting == {"braking": False, "shield": False, "star": False}
+    assert both == {"braking": True, "shield": False, "star": False}
     # A lap recorded before flags existed has none, which is lamps off.
-    assert old == {"braking": False}
+    assert old == {"braking": False, "shield": False, "star": False}
+    assert shielded == {"braking": False, "shield": True, "star": False}
+    assert both2 == {"braking": True, "shield": True, "star": False}
+    assert starred == {"braking": False, "shield": False, "star": True}
 
 
 # --- pole starts on the inside, every race, on every track ------------------
@@ -1163,3 +1179,164 @@ def test_holding_the_page_open_does_not_bank_a_running_lap():
                 "%s banks runs that may still be running" % ev
     # And the one that does report is still the one that means the page is going.
     assert re.search(r"addEventListener\('pagehide', \(\) => reportActivity", src)
+
+
+# --- a track switch that fails must not leave the page behind ---------------
+
+SWITCH_STUB = """
+var log = [];
+var CFG = {mode: 'room'};
+var S = {track: {slug: 'sunrise'}, switching: null};
+// No timers in QuickJS: record the callbacks and `fire()` runs them, which is
+// the clock running out - the whole point here is what happens *after* a
+// failure, and every step of that is on a timer.
+var timers = [];
+function setTimeout(fn, ms) { timers.push(fn); return timers.length; }
+function fire() { var t = timers.slice(); timers = []; t.forEach(f => f && f()); }
+function say(text) { log.push('say:' + text); return text; }
+// The give-up path talks in the ordinary grey toast now - the red pill is for
+// being disconnected and a retried track switch is not that.
+function toast(text) { log.push('toast:' + text); }
+var location = { reload: () => log.push('reload') };
+// The switch itself: fails as many times as the test says, then works. Plain
+// rather than async, because the `await` is stripped when the function is
+// lifted - what is under test is the recovery, not the promise.
+var fails = 0;
+function switchTrack(slug) {
+  log.push('try:' + slug);
+  if (fails > 0) { fails--; return false; }
+  S.track = {slug: slug};
+  return true;
+}
+"""
+
+
+def _switch_ctx(fails):
+    ctx = jsrt.quickjs.Context()
+    ctx.eval(SWITCH_STUB)
+    ctx.eval("fails = %d;" % fails)
+    ctx.eval(_fn("applyTrackChange").replace("async function", "function")
+             .replace("await ", ""))
+    return ctx
+
+
+def test_a_track_switch_that_blinks_is_tried_again():
+    """One failed fetch is a blink, and the room has already moved."""
+    ctx = _switch_ctx(1)
+    ctx.eval("applyTrackChange('spa');")
+    ctx.eval("fire();")                      # the retry's timer
+    assert json.loads(ctx.eval("JSON.stringify(log)")) == ["try:spa", "try:spa"]
+    assert ctx.eval("S.track.slug") == "spa"
+    assert ctx.eval("S.switching") is None, "the poses are still held back"
+
+
+def test_a_track_switch_that_will_not_come_reloads_the_page():
+    """**The worst outcome is sitting on the old track and saying nothing.**
+    That is what used to happen: the room races on a ribbon this page is not
+    on, every pose is measured against the wrong one, and the only way out was
+    somebody reloading by hand."""
+    ctx = _switch_ctx(9)
+    ctx.eval("applyTrackChange('spa');")
+    ctx.eval("fire();")                      # the retry
+    ctx.eval("fire();")                      # and the reload it gives up to
+    log = json.loads(ctx.eval("JSON.stringify(log)"))
+    assert log[:2] == ["try:spa", "try:spa"], log
+    assert "reload" in log, "gave up and left the page behind"
+    assert any(e.startswith("toast:") for e in log), "reloaded with no word why"
+    assert not [e for e in log if e.startswith("say:")], \
+        "used the disconnected pill to talk about a track"
+
+
+def test_a_track_change_to_the_track_you_are_on_does_nothing():
+    ctx = _switch_ctx(0)
+    ctx.eval("applyTrackChange('sunrise');")
+    assert json.loads(ctx.eval("JSON.stringify(log)")) == []
+    assert ctx.eval("S.switching") is None
+
+
+# --- the gap on the board is a time, not a distance -------------------------
+
+def test_the_standings_gap_is_read_in_seconds():
+    """Metres are the wrong unit for the question. Five hundred of them is
+    nothing down Big Red and half a race on Shroom Street; a second is a second
+    on every track, and it is what you are actually trying to know."""
+    ctx = _ctx()
+    ctx.eval("var GAP_FLOOR = 12;")
+    ctx.eval(_fn("gapLabel"))
+    leader = "{s: 1000, self: false, speed: 50}"
+    # 50 units back at 50 u/s is one second.
+    assert ctx.eval("gapLabel(%s, {s: 950, self: false, speed: 50})" % leader) == "-1.00"
+    # Under ten seconds keeps its hundredths; over it does not need them.
+    assert ctx.eval("gapLabel(%s, {s: 500, self: false, speed: 50})" % leader) == "-10.0"
+    # A car that has stopped reads off the floor rather than off infinity.
+    assert ctx.eval("gapLabel(%s, {s: 880, self: false, speed: 0})" % leader) == "-10.0"
+    # Level with the leader says nothing at all, and neither does leading.
+    assert ctx.eval("gapLabel(%s, {s: 1000, self: false, speed: 50})" % leader) == ""
+    assert ctx.eval("gapLabel({s: 10, self: true, speed: 9}, {s: 10, self: true, speed: 9})") == ""
+
+
+def test_a_finished_car_is_not_something_to_be_behind():
+    """After the flag a finisher keeps rolling and its `prog` keeps climbing,
+    so a gap measured to it grew a little every second - which is what made
+    the board look broken once the first car was home. Gaps are to the leader
+    still *on the road*, and when nobody is, there are none."""
+    ctx = _ctx()
+    ctx.eval("var GAP_FLOOR = 12;")
+    ctx.eval("function fmt(ms) { return 'T' + ms; }")
+    ctx.eval("function esc(s) { return s; }")
+    ctx.eval("var rows = []; var el = {set innerHTML(v) { rows.push(v); }};")
+    ctx.eval("function $(id) { return el; }")
+    ctx.eval(_fn("gapLabel"))
+    ctx.eval(_fn("renderStandings"))
+    ctx.eval("""renderStandings([
+      {name: 'done', color: '#fff', ms: 61000, s: 9999, speed: 0},
+      {name: 'lead', color: '#fff', ms: null, s: 1000, speed: 50},
+      {name: 'back', color: '#fff', ms: null, s: 900, speed: 50, self: true},
+    ]);""")
+    html = ctx.eval("rows[0]")
+    assert "T61000" in html, "the finisher lost its time"
+    assert "-2.00" in html, "the gap is not to the leader on the road"
+    ctx.eval("rows.length = 0;")
+    ctx.eval("""renderStandings([
+      {name: 'a', color: '#fff', ms: 61000, s: 1, speed: 0},
+      {name: 'b', color: '#fff', ms: 62000, s: 1, speed: 0},
+    ]);""")
+    assert "-" not in ctx.eval("rows[0]").replace("st-", ""), "gaps with nobody driving"
+
+
+# --- once you are across the line, R and T are not for you ------------------
+
+FINISHED_STUB = """
+var calls = [];
+var S = {started: true, watch: null, raceMode: true, raceDone: true,
+         saveActive: -1, car: {requestRespawn: () => calls.push('respawn')}};
+function resetToStart() { calls.push('reset'); }
+function toast(t) { calls.push('toast:' + t); }
+function restartCostsARace() { return false; }
+function armRestart() { return true; }
+function disarmRestart() {}
+function watchSeek() {}
+function watchLastCheckpoint() {}
+function savesEnabled() { return false; }
+"""
+
+
+def test_r_and_t_do_nothing_once_your_race_is_run():
+    """And say nothing: a refusal with a message is an instruction to try
+    again, and the honest reply to "restart" from a driver who has already
+    finished is that the key is not for this any more."""
+    ctx = jsrt.quickjs.Context()
+    ctx.eval(FINISHED_STUB)
+    for fn in ("raceIsRun", "restartRun", "backToCheckpoint"):
+        ctx.eval(_fn(fn))
+    ctx.eval("restartRun(); backToCheckpoint();")
+    assert json.loads(ctx.eval("JSON.stringify(calls)")) == []
+    # Still driving, in the same race: both work exactly as before.
+    ctx.eval("S.raceDone = false; restartRun(); backToCheckpoint();")
+    assert json.loads(ctx.eval("JSON.stringify(calls)")) == \
+        ["reset", "toast:Restart", "respawn"]
+    # And practice is untouched, which is where R is how you go again.
+    ctx.eval("calls.length = 0; S.raceMode = false; S.raceDone = true;")
+    ctx.eval("restartRun(); backToCheckpoint();")
+    assert json.loads(ctx.eval("JSON.stringify(calls)")) == \
+        ["reset", "toast:Restart", "respawn"]

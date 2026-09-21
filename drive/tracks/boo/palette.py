@@ -32,6 +32,11 @@ from .track import (AISLE_CEIL, AISLE_HW, BACK_X, COL_HW, CRYPT_Y, DOOR_H,
 MOON_AZ = 4.05
 
 PALETTE = {
+    # The movers here are Boos, and they laugh as you pass - `sound.ghost()`,
+    # armed by `Renderer._ghostsNear`. It is opt-in per track because a mover
+    # is only "a thing that walks across the road": Dino Park has a herd of
+    # them and a laughing hadrosaur is a different game.
+    "moverVoice": "ghost",
     # **Pale, and warmer than the rest of the world.** Worn limestone with the
     # damp in it. It has to survive being multiplied by a cold key light, which
     # is the opposite of the usual warning: the light here is blue, so a road

@@ -1,7 +1,15 @@
 # Drive: rooms, races and replays
 
 Read this before changing the room phase machine, qualifying, the grid,
-ELO, socket handlers, the race recorder or `/race/<id>`.
+items, ELO, socket handlers, the race recorder or `/race/<id>`.
+
+**If somebody says they were disconnected, read the deploy section of
+`drive/CLAUDE.md` first.** Three different things have caused it and none of
+them is visible from inside a room: the box OOM-killing the worker, a deploy
+restarting the service under a live race, and the event loop stalling long
+enough that every client timed the server out at once. The last one left no
+trace at all until `_hub_watchdog` was written; it logs `event loop stalled`
+with how late it was and what the rooms were doing.
 
 - **A room has its own anti-cheat, and it is a different question from the
   board's.** `racecheck.py`, and its preamble is the long version. The short
@@ -262,7 +270,8 @@ ELO, socket handlers, the race recorder or `/race/<id>`.
   *placed* for it, though: a session has no start line - everyone leaves when
   they like, on their own lap - so it counts down over wherever you are sitting.
 - **Qualifying is off by default, and then the grid is the last race
-  reversed.** It is the room's one setting so far (`ROOM_DEFAULTS`) and it lives
+  reversed.** It is one of the room's two settings (`ROOM_DEFAULTS`, the other being
+  **Powerups**) and it lives
   in the live room state rather than on `DriveGame`: it is
   about the next few minutes, and `create_all` makes tables and not columns, so
   a column would need a hand migration on the live database for something a room
@@ -281,6 +290,184 @@ ELO, socket handlers, the race recorder or `/race/<id>`.
   spending its first two minutes alone on the road; a host who wants the grid
   earned turns it on. The client's own `S.settings` starts off to match, so the
   switch is not drawn one way and corrected by the first `room_settings`.
+
+- **Every item is the room's, not the browser's.** A pose is one client's
+  opinion and is allowed to be wrong by a metre - that is the whole design of
+  the netcode - but an item is a *discrete shared event*, and two browsers each
+  rolling what came out of a box, or each deciding a shell hit, disagree
+  permanently and there is nothing to reconcile them with. So the queue, the
+  roll, the shells and the hits all live in `app.py`, and the browser's whole
+  job is to ask and then to be told. A client cannot write its own slots, and a
+  reconnect is handed the same two it had (`room_state` carries `items`).
+  - **On by default**, which is the opposite of qualifying's default and for the
+    same reason: qualifying costs a room two minutes before anybody races, and
+    items cost it nothing. The host turns them off from the drawer for a room
+    that wants a clean race, and the server refuses the change mid-session the
+    way it refuses the track.
+  - **`_powerups_live` is the gate, and it is `contactOn`'s rule twice over**:
+    free practice and the race, never qualifying. A blue shell during the ninety
+    seconds everybody is alone on their own lap against the clock would take away
+    the one thing the session is for - which is exactly the argument that keeps
+    contact and the slipstream out of it too.
+  - **A box is the room's, not yours.** One car drives through it and it is
+    gone from every screen at once, and back a second later
+    (`BOX_RESPAWN_MS`) - so there is something to race each other to, which is
+    the whole point of a box on a shared road. `on_item_box` says *which* box
+    and `_claim_box` decides, on two facts the server owns: where that box is
+    and where this car's last pose put it (`BOX_REACH`). A box already taken
+    pays nothing, and a full queue turns it away **without taking it**, so it
+    is still standing for the car behind. The pose is not a scoring authority
+    and is not being asked to be one; it is only being asked to bound what a
+    socket payload can say. Bots come through the same function from
+    `_tick_bot_boxes`, against poses the server itself wrote, so a bot cannot
+    take one from further away than you can.
+  - **Where the boxes are is off the ribbon, not off the checkpoints**
+    (`_boxes_for`). A checkpoint is where the *track* wants a gate - three on a
+    twenty-second lap, none down a long straight - so hanging items off them
+    made a short track a sweet shop and a long one a desert. Instead it is a
+    row across the road every `BOX_SECONDS` (9) of the track's own ideal lap,
+    at least one row, placed off a station's position, lateral and **surface
+    normal**, so a row lies flat on a banked corner and stays inside the road
+    on a narrow one without any of that being special-cased. A road under five
+    units of half width gets the middle box only - three across a narrow
+    shoulder is two boxes in the scenery. The list goes to the client with the
+    track (`room_hello`, `track_change`): one source of truth, and the server
+    needs it anyway to judge a claim.
+  - **What every item does is counted**, in `drive_item_stats`: `given`,
+    `used`, `hit` and `blocked`, one row per item. Four numbers rather than a
+    row per shell thrown, because the questions anybody actually asks - is the
+    odds table doing what it says, is an item being held and never used, does
+    a shell ever land, is holding one worth the throw - are all ratios between
+    those four, and a log of every event answers them with a GROUP BY over a
+    table that grows for ever. Tallied in the worker and flushed once a minute
+    (`_tick_item_stats`); a worker that dies loses up to a minute of counting,
+    which is the right trade for something that must never be a transaction in
+    the middle of a race. `/api/item-stats` is the read, and it adds the
+    unflushed tally on top so the numbers do not stand still for a minute at a
+    time. A boost counts once per *box*, on the tap that opens its window.
+  - **What a box gives depends on where you are** (`ITEM_ODDS`, `_roll_item`,
+    `_race_band`), which is the whole reason a field stays together. The bands
+    are thirds of the running order: out in front you draw things to *defend*
+    with - banana, shield, green, the occasional red - and **never a star or a
+    blue**, because a leader who could draw one has nothing to fear and nothing
+    to catch. Down the back is where those two live, along with the boost and
+    the bomb. Practice is flat and has neither of them for the same reason it
+    has no positions.
+  - **Two slots, and the front one is what `X` spends.** `PRACTICE_ITEMS` is the
+    practice pool; a race adds the blue shell and the star, which are the two
+    items that only mean anything when there is a leader and a last place.
+  - **The bomb is thrown at a *place*, which is what makes it different from
+    every other item here.** It is lobbed up the road at `BOMB_SPEED`, settles
+    where it lands after `BOMB_FLY_MS`, and goes off `BOMB_FUSE_MS` later or
+    the moment anybody touches it - and `_blast` catches **everybody** within
+    `BOMB_BLAST`, **including whoever threw it**. That last part is the item:
+    without it a bomb is just a slow shell, and with it, lobbing one into a
+    pack you are in is a decision. Each victim gets the ordinary `item_hit`, so
+    a shield still eats it and a star still ignores it - one rule for being
+    hit, wherever the hit came from - and `item_blast` carries the flash and
+    the bang, which belong to the place rather than to any car. It will not go
+    off on contact with the car that just threw it, which is the same clause
+    that stops a shell hitting its own nose.
+  - **Every shot carries an id**, because the list it travels in changes order
+    every time one is fired or hits something - a browser binding a mesh to a
+    *list position* had shells swapping places with each other mid-flight. With
+    an id a mesh belongs to one shell for its whole life, and the 30Hz position
+    becomes somewhere for it to be going rather than somewhere to be put
+    (`moveShots`). `SHOT_SPEED` is 75 against a `MAX_SPEED` of 50, and it used
+    to be 42: a shell slower than the car it is chasing never arrives.
+  - **A shell or a banana is a thing in the world, and it rides the pose
+    snapshot.** `_fire` puts it in `r["shots"]`, `_tick_shots` advances it from
+    `_pump` at the same 30Hz the poses go out at, and `_snapshot` carries the
+    list - a shell nobody can see is a hit out of nowhere. A banana is the same
+    object standing still, four units behind the car and lasting `BANANA_MS`
+    rather than `SHELL_MS`. **Nothing ever hits the car that let it go**: a shell
+    leaves three units off the nose against a four-unit hit radius, so without
+    that clause every shot hit its own owner on the first tick - which is what
+    `tests/test_powerups.py` pins.
+  - **A red shell takes the nearest car ahead on `prog` and a blue one takes the
+    leader**, re-aimed every tick, and a driver already in front has nothing to
+    aim at and fires nothing.
+  - **A shell runs round a closed circuit** (`track["closed"]`), because Spa,
+    Silverstone, Monaco and Monza finish where they start: the leader a blue is
+    sent after is regularly "ahead" only by going the long way, so a shell that
+    stopped at the end of the station array died on the pit straight every
+    time - a blue shell that got stuck and never arrived. On a ring the "past
+    its man is a miss" rule is off too, since *past* is a lap of arithmetic
+    away from *not there yet*; a shell's clock (`HOMING_MS`) bounds it instead.
+  - **The blue is the quick one** (`BLUE_SPEED`, 115 against a shell's 75 and a
+    car's 50). It is sent from the back of the field to the front, which on a
+    long track is most of a lap of road, and at a shell's pace it arrived after
+    the race it was meant to change had been decided.
+  - **A homing shell follows the road** (`_steer_along_road`), because the car
+    it is chasing is round a bend and the road is the only way there. Flying at
+    the target in a straight line put it into the scenery on the first corner.
+    So a red or a blue is launched *onto the ribbon* - `_ribbon_at` turns the
+    firing car's position into a station index and an offset across the road,
+    `_ribbon_point` turns those back into a point - and from then on it
+    advances along the road and leans across it toward whatever it is chasing
+    at `SHOT_LEAN`. It takes Monaco's tunnel, Rickety's cave and Playground's
+    walls of death with none of them being a special case, and its life ends
+    when the road does. A **green** deliberately still flies straight: it is
+    the difference between the two items, one is aimed by you and one is sent
+    after somebody. They also live for different lengths - `SHELL_MS` against
+    `HOMING_MS` - because a shell sent after a car two corners ahead spends
+    most of its life getting there.
+  - **Bots play with items too, and through the same two functions.** A bot
+    claims the box at a checkpoint from `_bot_events` (its `cp` event carries
+    `Run.nextCp`, which is exactly what a browser sends) and spends it in
+    `_tick_bot_items`, which is the whole of its judgement: it sits on an item
+    for a second or three so a field of them does not fire in unison, and it
+    **holds a shell it has nothing to aim at** rather than throwing it away -
+    which is what a person does with one too. Everything after that is
+    `_spend_item`, the same call the socket handler makes, because two versions
+    of "what this item does" is how a bot's blue shell comes to behave
+    differently from yours.
+  - **A hit is announced, not applied - except to a bot.** `item_hit` names one
+    car and that car's own browser gives itself the shove, because the browser is
+    what simulates that car in this game and always has been. A bot has no
+    browser, so the server does for it: `BotWorld.hit` is the same shove on the
+    same `Car`, and without it a red shell homed perfectly onto a bot and nothing
+    whatsoever happened.
+  - **The boost is a window, not a press, and the room owns the clock.** It is
+    the golden mushroom: the first `X` opens `BOOST_WINDOW_MS` (7s), every tap
+    inside it is another short burst of engine, and the *slot keeps the item*
+    until the window closes - which is why `_spend_item` has a branch and why
+    `_tick_items` is what finally pops it. The slot has to be emptied from the
+    clock rather than from the last press, because nobody knows which press was
+    the last one. That `items` message carries a `pid`: it goes out to the room
+    because the pump has no socket of its own to reply on, and every other
+    browser drops it. A bot on an open window taps again every `BOT_BOOST_TAP`,
+    a little slower than a person can, which is the difference between a bot
+    and a bot that is better at pressing a button than you are.
+  - **A starred car spins people out by touching them** (`_tick_stars`). The
+    star already made you quick and unhittable; what it did not do was give you
+    anything to *do* with either. Contact is read off `FLAG.STAR` in the pose
+    flags rather than from a second list, so bots and people are on the same
+    terms and nothing new goes on the wire; `STAR_AGAIN_MS` is what stops
+    driving alongside somebody being a machine gun, and two stars pass through
+    each other.
+  - **The star wears the shield's bubble in gold** (`CarView.setShield`), and
+    that is the whole of what makes it visible: it is otherwise a car that is
+    quick and cannot be stopped, neither of which can be seen from behind.
+    `FLAG.STAR` (bit 64) puts it on every screen the way `FLAG.SHIELD` does.
+    One mesh serves both, because a car can never have both at once - a star
+    ignores the hit a shield exists to eat.
+  - **The star and the shield are answered where they are held**, which is the
+    one place that knows: the star ignores a hit, and the shield spends itself on
+    the first one rather than waiting out its thirty seconds. The shell is gone
+    either way - the server has no idea it was wasted, and does not need one.
+  - **A shield is drawn on the car, on every screen**, which is what
+    `FLAG.SHIELD` (bit 32) is for: the pose byte already reaches everybody, so
+    the bubble costs nothing extra on the wire - and the point of a visible
+    shield is the driver *behind* you deciding not to waste a shell on it.
+    `racecheck.py` carries the bit in its copy of the byte and reads nothing
+    from it; `lampsOf` in `game.js` is where a byte becomes a bubble.
+  - **The three held timers are cleared by `game.js` against its own deadline**
+    (`ITEM_TIME`, `expireItems`), not only by `physics.js` counting them down.
+    `physics.js` is imported bare and carries no cache token, so for the hour
+    after a deploy a page can be running a copy that has never heard of `star` -
+    it would set the field, nothing would decrement it, and a ten-second star
+    would last the session. See the deploy notes in `drive/CLAUDE.md`.
 - **The grid is staggered and pole starts on the inside of the first corner.**
   Ordering alone does not fix a two-by-two grid: cars level with each other
   reach the first corner together and the one on the inside of it simply gets

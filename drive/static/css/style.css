@@ -534,6 +534,40 @@ body.playing { overflow: hidden; background: #9ed2f0; }
 #gl { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
 
 .hud { position: fixed; inset: 0; pointer-events: none; font-family: var(--sans); }
+/* The two slots are not equal and are not drawn as if they were: the front one
+   is what `X` spends and is read at a glance mid-corner, the one behind it is
+   only "and then this". Same shape, 54px against 34px, and the small one sits
+   on the baseline of the big one so the pair reads as one control. */
+.item-hud { display:flex; align-items:flex-end; gap:6px; margin-top:8px; color:#fff; }
+.item-slot { width:34px; height:34px; display:grid; place-items:center; flex:0 0 auto;
+  border:1px solid var(--hud-line); border-radius:10px; background:var(--hud);
+  backdrop-filter:blur(6px); opacity:.8; }
+.item-slot.big { width:54px; height:54px; border-radius:14px; opacity:1; }
+.item-slot { position:relative; }
+.item-art { display:grid; place-items:center; width:100%; height:100%; }
+.item-art img, .item-art svg { width:82%; height:82%; display:block; image-rendering:auto; }
+/* The boost is held for a *window*, not a press, so the slot has to say how
+   much of the window is left - it is the only thing that tells you whether
+   there is another tap in it. Drawn round the slot's own outline rather than
+   as a bar beside it: the thing running out is the thing in the box. */
+.item-ring { position:absolute; inset:0; width:100%; height:100%; fill:none;
+  stroke:#fff; stroke-width:2.5; display:none; }
+.item-ring rect { stroke-linejoin:round; }
+.item-slot.empty { opacity:.3; }
+/* Said once, to somebody who has just picked their first item up, and never
+   again - which is why it is a pill that fades rather than a label that lives
+   here. A permanent key cap on the HUD is a thing you stop seeing by the
+   second lap and keep paying for on every one after it. */
+.item-hint { font:600 11px/1 var(--sans); color:#fff; background:var(--hud);
+  border:1px solid var(--hud-line); border-radius:999px; padding:.3rem .55rem;
+  margin-bottom:6px; white-space:nowrap; backdrop-filter:blur(6px);
+  opacity:0; transition:opacity .35s ease; }
+.item-hint.show { opacity:1; }
+#netLost { position:fixed; left:50%; transform:translateX(-50%);
+  top:calc(70px + env(safe-area-inset-top, 0px)); z-index:40;
+  background:rgba(180, 40, 30, .92); color:#fff; border:1px solid rgba(255,255,255,.22);
+  border-radius:999px; padding:.4rem .9rem; font:600 .82rem var(--sans);
+  backdrop-filter:blur(6px); pointer-events:none; }
 .hud > * { pointer-events: auto; }
 
 /* Every anchor is measured from the safe area, so a notch or a home indicator
@@ -836,9 +870,34 @@ body.touch .mapbtns { display: none; }
 .st-elo.down { color: #ff8a7a; }
 .elo-line { margin-top: .4rem; font-size: .85rem; color: #cfd7e3; }
 
-.position { display: flex; align-items: baseline; gap: .15rem; }
-.position b { font-family: var(--mono); font-size: 2.2rem; line-height: 1; }
-.position span { font-size: .95rem; color: #b9c2d0; }
+/* The race position: one number, big, in a corner of its own. No card behind
+   it - a panel would make it a thing to read rather than a thing to glance at,
+   and at this size the drop shadow is enough to hold it against a bright sky. */
+#place {
+  position: absolute; right: calc(16px + env(safe-area-inset-right, 0px));
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  display: flex; flex-direction: column; align-items: flex-end;
+  pointer-events: none; color: #fff;
+}
+#place b {
+  font-family: var(--mono); font-size: 3.4rem; font-weight: 700; line-height: .95;
+  letter-spacing: -.03em; text-shadow: 0 3px 14px rgba(0, 0, 0, .75);
+}
+#place span {
+  font: 600 .72rem var(--sans); letter-spacing: .12em; text-transform: uppercase;
+  color: rgba(255, 255, 255, .72); text-shadow: 0 2px 8px rgba(0, 0, 0, .7);
+}
+/* First place gets the colour the medals use, because it is the one position
+   worth seeing without reading. */
+#place.lead b { color: #ffd76a; }
+/* On a phone the bottom right corner is the throttle. Under the button row at
+   the top right is the only other place on the screen that nothing is ever
+   held over, and it is still on the side your eye goes to for the mirrors. */
+body.touch #place {
+  bottom: auto; top: calc(62px + env(safe-area-inset-top, 0px));
+  right: calc(14px + env(safe-area-inset-right, 0px));
+}
+body.touch #place b { font-size: 2.4rem; }
 
 #wrongWay {
   position: absolute; top: 26%; left: 50%; transform: translateX(-50%);
@@ -1257,7 +1316,15 @@ body:not(.touch) .touch-only.watch-only { display: none; }
    `auto-fit` rather than a fixed count because two of the five are the host's:
    everybody else sees three, and three buttons should fill the row they are in
    rather than leaving two holes where somebody else's buttons would be. */
+/* The count is written on the element by `layoutRaceActions`, because
+   `auto-fit` cannot be told how many there are: four buttons in a row that
+   fits three leaves one alone on a second line against the left edge, which
+   is what this row used to do for a host. Three go across; four go two-by-two,
+   the same arrangement the solo finish sheet settled on. */
 .sheet-actions.even { grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); }
+.sheet-actions.even[data-n="2"] { grid-template-columns: repeat(2, 1fr); }
+.sheet-actions.even[data-n="3"] { grid-template-columns: repeat(3, 1fr); }
+.sheet-actions.even[data-n="4"] { grid-template-columns: repeat(2, 1fr); }
 .sheet-actions.even .btn { white-space: nowrap; }
 /* The solo finish sheet has four: Retry, Share, Leaderboard, Exit. Three
    columns leaves the fourth alone on a second row against the left edge, and
@@ -2270,11 +2337,20 @@ body.touch.side-open .hud-tr { transform: none; }
 /* --- adding bots ---------------------------------------------------------- */
 .bots { margin-top: .5rem; display: flex; flex-direction: column; gap: .35rem; }
 .bot-row { display: flex; gap: .4rem; align-items: center; }
+/* **`color-scheme` is what makes the open list readable, and without it the
+   options were white on white.** The closed control is styled here - white
+   text on the drawer's dark panel - but the list that drops out of it is drawn
+   by the browser, which paints it on a *light* system background while the
+   options still inherit this `color`. So the four levels were there, in white,
+   on white. `color-scheme: dark` asks for the dark popup that matches what the
+   rest of this drawer already is, and the explicit option colours cover the
+   platforms that paint the list from the page instead. */
 .bot-row select {
   flex: 1; min-width: 0; font-family: var(--sans); font-size: .82rem;
   padding: .3rem .4rem; color: #fff; background: rgba(255, 255, 255, .06);
-  border: 1px solid var(--hud-line); border-radius: 8px;
+  border: 1px solid var(--hud-line); border-radius: 8px; color-scheme: dark;
 }
+.bot-row select option { background: #1c1c22; color: #fff; }
 .bot-row .btn.small { width: auto; flex: 0 0 auto; }
 .bots .btn:disabled { opacity: .5; cursor: default; }
 /* "Fill the grid" is a `.btn.ghost`, which is transparent with `--ink` on it -
@@ -2806,8 +2882,26 @@ body.garage-page .nav { flex: none; }
    the site is - so the first pass here was white text on a near-white panel and
    the whole strip was invisible in the screenshot. Every colour below comes off
    the theme variables for that reason. */
+/* **The sheet is one size whatever tab is open.** Sprints has nineteen cards
+   and Circuits has four, so a grid that took the height of its contents made
+   the panel jump every time you changed tab - and the tab you were aiming at
+   moved under the cursor as it did. The grid gets a fixed height instead and
+   scrolls inside it: four cards leave space at the bottom, which is the right
+   cost. `vh` rather than a pixel count so it still fits a laptop and a phone;
+   the `min` keeps it from becoming a page on a tall monitor. */
 .tracks-sheet { display: flex; flex-direction: column; min-height: 0; }
-.tracks-sheet .tgrid { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.tracks-sheet .tgrid {
+  flex: 0 0 auto; height: min(56vh, 430px); min-height: 0; overflow-y: auto;
+  /* **`grid-auto-rows` is the load-bearing line and it is not obvious.** A
+     grid with a *definite* height sizes its auto rows to share that height -
+     so the moment the height above was added, twenty-one cards divided 430px
+     between them and every card came out 49px tall with a 101px picture
+     inside it. `max-content` pins each row to what is in it and lets the
+     container scroll instead, which is what a fixed-height list has to do.
+     `align-content: start` is not enough on its own: it says where the rows
+     sit, not how tall they are. */
+  grid-auto-rows: max-content; align-content: start;
+}
 
 .ttabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 0 0 12px;
          border-bottom: 2px solid var(--line); padding-bottom: 8px; }
@@ -2815,6 +2909,10 @@ body.garage-page .nav { flex: none; }
         font: inherit; font-weight: 700; color: var(--ink-soft);
         padding: 7px 13px; border-radius: 9px;
         display: inline-flex; align-items: baseline; gap: 6px; }
+/* `display` on the rule above beats the `hidden` attribute's own display:none,
+   which is why a hidden tab was still on the strip. `liveTabs` reads the
+   attribute, so this is the half that makes it visible - or not. */
+.ttab[hidden] { display: none; }
 .ttab:hover { color: var(--ink); background: rgba(29,29,31,.07); }
 .ttab.on { color: var(--paper); background: var(--ink); }
 /* The count, dimmer than the word, so the strip reads as four names and not as
@@ -2833,6 +2931,19 @@ body.garage-page .nav { flex: none; }
          padding: 5px 9px; border-radius: 7px; }
 .tsort:hover { color: var(--ink); background: rgba(29,29,31,.07); }
 .tsort.on { color: var(--paper); background: var(--ink); }
+/* Random sits in the sheet head, beside the title and left of the close X. It
+   is not a sort - it does something rather than changing how the grid is
+   ordered - and down in the sort row it was a second thing making that row
+   wrap on a narrow sheet. Outlined rather than filled, because it is a button
+   and not a state. `margin-left: auto` is what pushes it and the X to the far
+   end of a head that is otherwise one title. */
+.trandom {
+  appearance: none; cursor: pointer; background: none;
+  margin-left: auto; margin-right: .5rem;
+  border: 1px solid var(--line); border-radius: 8px; color: var(--ink);
+  font: 600 .82rem var(--sans); padding: .34rem .7rem;
+}
+.trandom:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 /* Which way the sort runs, on the button that is running it. An arrow rather
    than a word: the label is already the key, and "Difficulty (descending)" is a
    sentence where this is a glyph. */

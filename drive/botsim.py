@@ -223,6 +223,16 @@ class World:
             self._js("restart(%s, %d, %d)" % (json.dumps(pid), int(slot),
                                               int(now_ms)))
 
+    def hit(self, pid):
+        """An item landed on one of the bots. See `BotWorld.hit`."""
+        if pid in self.bots:
+            self._js("hit(%s)" % json.dumps(pid))
+
+    def use(self, pid, item):
+        """A bot spent a held item. See `BotWorld.use`."""
+        if pid in self.bots:
+            self._js("use(%s, %s)" % (json.dumps(pid), json.dumps(item)))
+
     def ghost_of(self, pid):
         """The replay of the lap this bot has just driven, packed like any other.
 

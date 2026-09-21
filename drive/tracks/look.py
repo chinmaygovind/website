@@ -50,6 +50,13 @@ KNOWN = REQUIRED + (
                       # at all. Its default is a cream, so the first dark track
                       # to use a `bounce` got a floating white lampshade over its
                       # churchyard and no way to say otherwise.
+    "moverVoice",     # whether this track's movers make a noise as you pass,
+                      # and which one ("ghost"). A mover is just "a thing that
+                      # walks across the road" - a chapel full of Boos and a
+                      # herd of hadrosaurs are both movers - so the sound has
+                      # to be the track's own statement rather than something
+                      # `Renderer._ghostsNear` infers from proximity. Without
+                      # it Dino Park's herd laughed like Boos.
     "rain",           # falling rain: the only animated scenery there is, so it
                       # lives in render.js and not in a track's scenery.js
     "storm",          # lightning: a flash on the scene's own two lights and a

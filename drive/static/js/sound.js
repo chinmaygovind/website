@@ -523,6 +523,120 @@ export class Sound {
     this._blip({ freq: 1320, type: 'square', dur: 0.12, gain: 0.16, delay: 0.07 });
   }
 
+  /**
+   * Driving through an item box: a bright rising pair, and it is the same
+   * shape as `checkpoint` on purpose - both are "you got the thing" - but a
+   * fifth up and softer, so hearing them together on a track where a box sits
+   * near a gate is two events rather than one loud one.
+   */
+  itemBox() {
+    this._blip({ freq: 720, to: 1080, type: 'triangle', dur: 0.09, gain: 0.16 });
+    this._blip({ freq: 1440, type: 'sine', dur: 0.14, gain: 0.1, delay: 0.05 });
+  }
+
+  /** The slot filling: one short note under the box's own, so a full queue is
+      audibly different from driving through with both hands occupied. */
+  itemGot() {
+    this._blip({ freq: 990, to: 1320, type: 'square', dur: 0.1, gain: 0.12 });
+  }
+
+  /**
+   * The items, one voice each, because an item you cannot tell apart by ear is
+   * an item you have to look at the HUD to know you fired.
+   *
+   * The two shells share theirs on purpose - they *are* the same object thrown
+   * two ways, and the difference between them is who it goes after, which the
+   * sound cannot say anyway. The blue gets its own because it is the one
+   * everybody in the room has an opinion about.
+   */
+  itemShell() {
+    this._blip({ freq: 520, to: 980, type: 'square', dur: 0.12, gain: 0.15 });
+    this._burst({ freq: 2400, q: 1.2, dur: 0.07, gain: 0.07 });
+  }
+
+  itemBlue() {
+    this._blip({ freq: 180, to: 520, type: 'sawtooth', dur: 0.5, gain: 0.16 });
+    this._blip({ freq: 90, to: 260, type: 'triangle', dur: 0.55, gain: 0.12, delay: 0.02 });
+  }
+
+  itemBanana() {
+    this._blip({ freq: 320, to: 180, type: 'sine', dur: 0.14, gain: 0.16 });
+    this._burst({ freq: 900, q: 0.7, dur: 0.06, gain: 0.05 });
+  }
+
+  itemShield() {
+    this._blip({ freq: 420, to: 840, type: 'sine', dur: 0.28, gain: 0.14 });
+    this._blip({ freq: 630, to: 1260, type: 'sine', dur: 0.32, gain: 0.08, delay: 0.06 });
+  }
+
+  /**
+   * The star, which is the only item that gets a *tune* rather than a noise -
+   * and it plays over and over for as long as the star lasts, so it has to be
+   * a bar rather than a flourish: eight notes, a run up and a skip back down,
+   * with a fifth under the first half to give it some weight. Loud on purpose.
+   * It is the one moment in this game where you are untouchable and everybody
+   * else can hear that you are.
+   */
+  itemStar() {
+    const bar = [[784, 0], [1047, 0.075], [1319, 0.15], [1568, 0.225],
+                 [1319, 0.3], [1568, 0.375], [2093, 0.45], [1568, 0.525]];
+    for (const [f, t] of bar) {
+      this._blip({ freq: f, type: 'square', dur: 0.1, gain: 0.2, delay: t });
+      if (t < 0.3) this._blip({ freq: f / 2, type: 'triangle', dur: 0.12,
+                                gain: 0.12, delay: t });
+    }
+  }
+
+  /** Lobbing a bomb: a heavy underarm thunk, nothing like a shell's snap. */
+  itemBomb() {
+    this._blip({ freq: 260, to: 150, type: 'triangle', dur: 0.18, gain: 0.17 });
+    this._burst({ freq: 700, q: 0.5, dur: 0.1, gain: 0.06 });
+  }
+
+  /** And it going off, which everybody in earshot hears. */
+  bombBlast() {
+    this._burst({ freq: 180, q: 0.3, dur: 0.45, gain: 0.32 });
+    this._burst({ freq: 900, q: 0.4, dur: 0.16, gain: 0.16 });
+    this._blip({ freq: 140, to: 40, type: 'sawtooth', dur: 0.5, gain: 0.2 });
+  }
+
+  /** A held item taking a hit for you: a solid knock, and then nothing. */
+  itemBlocked() {
+    this._burst({ freq: 520, q: 0.5, dur: 0.14, gain: 0.2 });
+    this._blip({ freq: 880, to: 620, type: 'square', dur: 0.1, gain: 0.1 });
+  }
+
+  /**
+   * Something hit you, in three layers, because one burst was a door closing.
+   *
+   * The impact itself is the low thump; over it a bright metallic crack, which
+   * is what makes it read as *hit by a thing* rather than as driving into
+   * scenery; and under both a note that slides down and away, which is the
+   * part that says the next two seconds are not yours. A wall gets a shorter,
+   * duller version of the first two - the difference has to be audible, since
+   * one of them is your own fault and the other is somebody's shell.
+   */
+  itemHit() {
+    this._burst({ freq: 190, q: 0.3, dur: 0.3, gain: 0.34 });
+    this._burst({ freq: 2600, q: 2.0, dur: 0.12, gain: 0.2 });
+    this._blip({ freq: 520, to: 70, type: 'sawtooth', dur: 0.45, gain: 0.2 });
+    this._blip({ freq: 260, to: 40, type: 'triangle', dur: 0.5, gain: 0.14,
+                 delay: 0.03 });
+  }
+
+  /**
+   * A shell is closing on you: one ping, pitched by how close it is.
+   *
+   * The *rate* is the caller's - see `shellWarning` in game.js - because what
+   * makes this readable is the gaps getting shorter, and only the caller knows
+   * how far away the thing is on any given frame.
+   */
+  shellNear(closeness) {
+    const k = Math.min(1, Math.max(0, closeness));
+    this._blip({ freq: 700 + k * 700, type: 'square', dur: 0.07,
+                 gain: 0.05 + k * 0.13 });
+  }
+
   missed() {
     this._blip({ freq: 300, to: 180, type: 'sawtooth', dur: 0.3, gain: 0.16 });
   }
