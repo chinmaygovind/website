@@ -1575,6 +1575,10 @@ function bindInput() {
   if (window.DRIVE_TOUCH) {
     S.touch = true;
     document.body.classList.add('touch');
+    // Here rather than in `boot`, because this is the line that decides there
+    // *is* a pad to move them to - and a phone that learns it is a phone after
+    // the slots have been placed is the whole class of bug this avoids.
+    moveItemsToPad();
   }
 
   $('btnSettings').onclick = () => toggleMenu();
@@ -2548,6 +2552,27 @@ function itemUp() {
   S.holdingAt = 0;
   if (!canUseItem()) { S.socket && S.socket.emit('hold_item', { on: false }); return; }
   useItem();
+}
+
+/**
+ * On a phone, the item slots belong in the row with the button that spends
+ * them - so move them there.
+ *
+ * The alternative is what this replaced: two elements positioned against the
+ * screen from opposite edges, with the sizes chosen so that they happen to
+ * meet in the middle. They agree at exactly one screen size. The touch
+ * buttons are sized off screen *height* and the slots are not, so a shorter
+ * phone drew a narrower steering pad under slots that had not moved, and the
+ * X ended up on top of them. In one flex row the question cannot be asked.
+ *
+ * Done once at boot, and only on touch: on a desktop the slots live in the
+ * HUD's left column, where there is no pad to belong to.
+ */
+function moveItemsToPad() {
+  const row = document.querySelector('.tpad.left .item-row');
+  const hud = $('itemHud');
+  if (!row || !hud || !document.body.classList.contains('touch')) return;
+  row.insertBefore(hud, row.firstChild);
 }
 
 /** The three you can hold out behind you. Mirrors `HOLDABLE` in `app.py`. */

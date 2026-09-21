@@ -643,17 +643,23 @@ body.touch #standingsCard .st-name { max-width: 14vw; }
    you read them with the thumb that is already there and press with the other.
    Bottom-anchored off the pad's own height so they clear the arrows on a phone
    and on a tablet, where the buttons are half again the size. */
-body.touch .item-hud {
-  position: fixed; z-index: 36;
-  left: calc(16px + env(safe-area-inset-left, 0px));
-  bottom: calc(16px + clamp(76px, 19.5vh, 124px) + clamp(10px, 2.4vh, 20px)
-               + env(safe-area-inset-bottom, 0px));
-  margin: 0;
-}
+/* **The slots and the button are laid out by the same flex row**, and that is
+   the whole of why they cannot overlap any more. They were positioned against
+   the screen instead - slots pinned to the left edge, button to the right of
+   the steering pad - and those two numbers agree only at one screen size: the
+   pad is sized off screen *height*, the slots are not, so a shorter phone
+   drew a narrower pad under slots that had not moved, and they sat on top of
+   each other. `moveItemsToPad` puts the slots inside the row on touch; here
+   they are simply a flex item, and the gap between them and the button is
+   whatever is left. */
+body.touch .item-hud { position: relative; margin: 0; }
+.tpad.left .item-row > .item-hud { flex: 0 1 auto; min-width: 0; }
 /* Bigger than the desktop pair: this is the thing you are checking mid-corner
    at arm's length, and it is the only place a phone says what you are holding. */
-body.touch .item-slot { width: 42px; height: 42px; }
-body.touch .item-slot.big { width: 60px; height: 60px; border-radius: 15px; }
+body.touch .item-slot { width: clamp(34px, 9vh, 46px); height: clamp(34px, 9vh, 46px); }
+body.touch .item-slot.big {
+  width: clamp(46px, 12vh, 62px); height: clamp(46px, 12vh, 62px); border-radius: 15px;
+}
 /* Over the slots rather than beside them: beside, it ran into the X sitting at
    the other end of the same line. */
 body.touch .item-hint {
@@ -944,19 +950,20 @@ body.touch .hud-tl > .card:first-child { width: 12rem; }
    track, and where am I in the race - belong together where the eye already
    goes. Left of centre, next to the map rather than over it, so neither has
    to be read past the other. */
-/* **Tucked under the map, on the map's own left edge**, so the two read as one
-   block rather than as a number floating in the middle of the windscreen -
-   which is what it was, sitting off the map's right-hand side with nothing
-   around it. One line instead of two, because the space between the map and
-   the item slots is about thirty pixels on a phone. */
+/* **Against the map's top corner**, reading across from it: the map's card
+   ends at 152px on a phone, so this starts at 160 and its cap line sits level
+   with the top of the card. Beside it rather than under it, because under it
+   is where the item slots come up from, and out in the open rather than
+   against it is the number floating in the middle of the windscreen that this
+   has twice been. Stacked, since there is depth here and not width. */
 body.touch #place {
   bottom: auto; right: auto;
-  top: calc(186px + env(safe-area-inset-top, 0px));
-  left: calc(20px + env(safe-area-inset-left, 0px));
-  flex-direction: row; align-items: baseline; gap: 6px;
+  top: calc(74px + env(safe-area-inset-top, 0px));
+  left: calc(160px + env(safe-area-inset-left, 0px));
+  align-items: flex-start; gap: 0;
 }
-body.touch #place b { font-size: 1.75rem; }
-body.touch #place span { font-size: .62rem; }
+body.touch #place b { font-size: 1.9rem; }
+body.touch #place span { font-size: .6rem; }
 
 #wrongWay {
   position: absolute; top: 26%; left: 50%; transform: translateX(-50%);
@@ -2536,7 +2543,9 @@ body.touch #touch { display: block; }
    arrow rather than wherever the row happens to end. The save-state buttons
    in solo use the same `.utils` and stay left, which is where the thumb rests
    between corners; this one is aimed at a specific button under it. */
-.tpad.left .utils.item-row { width: 100%; justify-content: flex-end; }
+.tpad.left .utils.item-row {
+  width: 100%; justify-content: space-between; align-items: center;
+}
 .tbtn.item-x {
   width: clamp(54px, 13vh, 84px); height: clamp(54px, 13vh, 84px);
   border-color: rgba(255, 210, 90, .85); color: #ffd96b;
@@ -2546,7 +2555,7 @@ body.touch #touch { display: block; }
 /* Drawn rather than typed: a letter X is whatever the font says it is - one
    stroke thin, one thick, the angles unequal - where two lines at 45 degrees
    are the same X at any size and match the other glyphs on these buttons. */
-.tbtn.item-x svg { width: 42%; height: 42%; stroke-width: 2.6; }
+.tbtn.item-x svg { width: 54%; height: 54%; stroke-width: 2.4; }
 #tGas { border-color: rgba(140, 240, 170, .6); }
 #tBrake { border-color: rgba(255, 150, 130, .6); }
 /* With the room drawer out you are reading, not driving - and the pedals would
