@@ -1044,7 +1044,15 @@ def test_the_leader_rarely_draws_a_shield(A):
     being a thing you can do. A banana only defends if you put it somewhere."""
     r = _room(A, "racing")
     pids = _field(A, r, [900.0, 600.0, 300.0, 10.0])
-    rolls = [A._roll_item(r, pids[0]) for _ in range(1000)]
+    # **Twenty thousand rolls, not a thousand, and the count is load bearing.**
+    # The leader's shield is 14 of 100 by weight, against a ceiling here of 16.
+    # At n=1000 the standard error is 0.011, so the true value sits 1.8 sd
+    # below the bound and this fails about one run in twenty-nine - which it
+    # duly did, in CI, on the commit that moved the weight from 10 to 14. At
+    # n=20000 the error is 0.0025 and 0.14 is eight sd clear, so the assertion
+    # tests the weights rather than the weather. Raise the ceiling only if the
+    # *weight* is meant to go up; it is cheap to sample instead.
+    rolls = [A._roll_item(r, pids[0]) for _ in range(20000)]
     share = rolls.count("shield") / float(len(rolls))
     assert 0.04 < share < 0.16, share
     assert rolls.count("banana") > rolls.count("shield") * 2
