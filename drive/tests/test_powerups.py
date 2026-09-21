@@ -197,14 +197,42 @@ def test_powerups_is_a_room_setting_the_host_can_set(A):
 # Shells and bananas
 # ---------------------------------------------------------------------------
 
-def test_a_shell_goes_out_in_front_and_a_banana_out_behind(A, bend):
+def test_everything_leaves_the_nose_and_backwards_is_the_only_exception(A, bend):
+    """One rule for every item: a press throws forwards, `back` throws behind.
+    The banana used to be the other way round on its own, which made the one
+    control on the pad mean the opposite of itself for one item."""
     r = _room(A)
     _car(A, r, "a")                      # identity quaternion: forward is -Z
     A._fire(r, "a", "green")
     A._fire(r, "a", "banana")
+    A._fire(r, "a", "bomb")
+    shell, banana, bomb = r["shots"]
+    assert shell["p"][2] < 0 and banana["p"][2] < 0 and bomb["p"][2] < 0
+    assert shell["v"][2] < 0 and banana["v"][2] < 0 and bomb["v"][2] < 0
+
+
+def test_a_banana_thrown_backwards_is_a_banana_dropped(A, bend):
+    """It is the one item whose backwards is *standing still*: dropping one on
+    the road behind you is the whole of what a banana is for."""
+    r = _room(A)
+    _car(A, r, "a")
+    A._fire(r, "a", "banana", back=True)
+    A._fire(r, "a", "green", back=True)
+    banana, shell = r["shots"]
+    assert banana["p"][2] > 0 and banana["v"] == [0.0, 0.0, 0.0]
+    assert shell["p"][2] > 0 and shell["v"][2] > 0, "a shell thrown back still flies"
+
+
+def test_a_shell_thrown_backwards_keeps_its_own_clock(A, bend):
+    """`until` asked `back`, which was the banana's flag by accident - so a
+    green thrown backwards lived BANANA_MS and bounced for forty-five
+    seconds."""
+    r = _room(A)
+    _car(A, r, "a")
+    A._fire(r, "a", "green", back=True)
+    A._fire(r, "a", "banana", back=True)
     shell, banana = r["shots"]
-    assert shell["p"][2] < 0 < banana["p"][2]
-    assert shell["v"][2] < 0 and banana["v"] == [0.0, 0.0, 0.0]
+    assert shell["until"] - banana["until"] == A.SHELL_MS - A.BANANA_MS
 
 
 def test_a_shell_hits_the_car_it_reaches(A, bend, monkeypatch):
@@ -277,7 +305,7 @@ def test_the_shots_ride_the_pose_snapshot(A, bend):
     because a browser has to tell this shell from the one beside it."""
     r = _room(A)
     _car(A, r, "a")
-    A._fire(r, "a", "banana")
+    A._fire(r, "a", "banana", back=True)          # dropped: it sits where it lands
     shots = A._snapshot(r)["shots"]
     assert shots == [["banana", 0.0, 0.0, 4.0, r["shots"][0]["id"]]]
     A._fire(r, "a", "green")
@@ -768,16 +796,17 @@ def test_the_handbrake_throws_it_out_behind_you(A, bend, monkeypatch, item):
     assert shot["target"] is None, "a shell thrown backwards still went hunting"
 
 
-def test_a_banana_thrown_with_the_handbrake_goes_the_other_way(A, monkeypatch):
-    """The one item whose ordinary direction is already backwards."""
+def test_a_banana_is_thrown_by_default_and_dropped_on_request(A, monkeypatch):
+    """The same sign as every other item, through the press rather than the
+    `_fire` call: holding the throttle throws it, letting go drops it."""
     r = _room(A)
     _car(A, r, "a")
     monkeypatch.setattr(A.socketio, "emit", lambda *a, **k: None)
     A._item_queue(r, "a").extend(["banana", "banana"])
-    A._spend_item(r, "a")                     # dropped behind
-    A._spend_item(r, "a", back=True)          # lobbed ahead
-    dropped, lobbed = r["shots"]
-    assert dropped["p"][2] > 0 and lobbed["p"][2] < 0
+    A._spend_item(r, "a")                     # lobbed ahead
+    A._spend_item(r, "a", back=True)          # dropped behind
+    lobbed, dropped = r["shots"]
+    assert lobbed["p"][2] < 0 and dropped["p"][2] > 0
     assert dropped["v"] == [0.0, 0.0, 0.0], "a dropped banana should sit still"
 
 

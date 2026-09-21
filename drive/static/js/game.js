@@ -2647,9 +2647,10 @@ function canUseItem() {
 
 function useItem() {
   if (!canUseItem()) return;
-  // **The throttle is which way you are throwing it.** On the power, it goes
-  // out in front; off it, behind. The server decides what that means per item;
-  // a banana, whose ordinary place is behind, gets lobbed ahead instead.
+  // **The throttle is which way you are throwing it.** On the power it goes out
+  // in front, off it behind - one rule, every item. A banana thrown behind is
+  // *dropped*, which is the only per-item difference left and is the thing
+  // anybody throwing a banana backwards meant.
   S.socket.emit('use_item', { back: throwingBack() });
 }
 

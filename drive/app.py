@@ -3248,15 +3248,21 @@ def _fire(r, owner, item, target=None, back=False):
     an item a room-owned thing rather than a browser's opinion, and a dropped
     banana has to be hit by somebody else's car exactly the way a shell does.
 
-    `back` is **the handbrake held as you use it**, and it flips which way the
-    throw goes - so a shell goes out behind you at the car that is pressuring
-    you, and the banana, whose ordinary place is behind, is lobbed *ahead*
-    instead. One sign, not a second set of items.
+    `back` is **the throttle released as you use it**, and it flips which way
+    the throw goes - so a shell goes out behind you at the car that is
+    pressuring you. One sign, not a second set of items.
+
+    **Every item leaves the nose by default, the banana included.** It used to
+    be the exception - its ordinary direction was backwards and `back` lobbed
+    it ahead - which made it the one item where the control meant the opposite
+    of what it means everywhere else, and there is no way to learn that except
+    by being surprised by it. Thrown backwards it is *dropped*, standing still
+    on the road behind you, which is the thing a banana is for and is what
+    anybody reaching for backwards wanted.
     """
     c = _car(r, owner)
     f = _forward(c["q"])
-    # A banana's ordinary direction is backwards, which `back` then flips.
-    behind = (item == "banana") != bool(back)
+    behind = bool(back)
     bomb = item == "bomb"
     drop = item == "banana" and behind          # only a *dropped* banana sits
     # **Out in front of the car, not out of its nose.** A shell that appears
@@ -3276,7 +3282,11 @@ def _fire(r, owner, item, target=None, back=False):
     shot = {"id": seq, "item": item, "owner": owner, "target": target,
             "p": [c["p"][i] + f[i] * reach for i in range(3)],
             "v": [f[i] * (-speed if behind else speed) for i in range(3)],
-            "until": now + (BANANA_MS if back else
+            # **The item's own clock, not the direction's.** This asked `back`,
+            # which was the banana's flag by accident of it being the only
+            # thing ever thrown that way - so a green thrown backwards lived
+            # BANANA_MS and bounced around the track for forty-five seconds.
+            "until": now + (BANANA_MS if item == "banana" else
                              BOMB_FLY_MS + BOMB_FUSE_MS if bomb else
                              HOMING_MS if item in ("red", "blue") else SHELL_MS)}
     if bomb:
@@ -5407,7 +5417,10 @@ def _tick_bot_items(r, now):
             continue
         if q[0] in ("red", "blue") and not _shell_target(r, pid, q[0] == "blue"):
             continue                       # nothing to aim at yet: keep hold of it
-        _spend_item(r, pid)
+        # A bot drops its bananas rather than lobbing them: it is defending a
+        # place, which is what the item is for, and forwards is a throw that
+        # needs a car in front to be worth anything.
+        _spend_item(r, pid, back=q[0] == "banana")
         # A boost is not spent by being used, so the bot stays on it: it taps
         # again every `BOT_BOOST_TAP` until the window closes and takes the
         # item, which is what a person does with the same item.

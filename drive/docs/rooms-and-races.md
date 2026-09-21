@@ -428,6 +428,18 @@ with how late it was and what the rooms were doing.
     browser, so the server does for it: `BotWorld.hit` is the same shove on the
     same `Car`, and without it a red shell homed perfectly onto a bot and nothing
     whatsoever happened.
+  - **One direction rule, for every item.** A press throws forwards and `back`
+    - the throttle released - throws behind, and `_fire` is that one sign. The
+    banana used to be the exception: its ordinary direction was backwards and
+    `back` lobbed it ahead, so the one control on the pad meant the opposite of
+    itself for one item and there was no way to learn that but to be surprised
+    by it. Thrown backwards it is now *dropped* - standing still on the road -
+    which is what a banana is for and what anybody reaching for backwards
+    wanted. A bot passes `back` for its own bananas, since it is defending a
+    place rather than aiming at one. The bug that hid inside the old rule: the
+    shot's `until` asked `back` rather than the item, so a green thrown
+    backwards lived `BANANA_MS` and bounced around the track for forty-five
+    seconds.
   - **And what the shove is, in one place: `hitByItem`.** A spin, not a flip.
     It throws none of the car's speed at the sky any more - it keeps 12% of the
     velocity and yaws through a full circle about the car's own *up* over 0.9s,
