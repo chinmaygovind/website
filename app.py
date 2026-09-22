@@ -602,6 +602,28 @@ def cobweb():
     return redirect("/ese2100/cobweb/", code=301)
 
 
+# `/ese5420` holds one file, the Midterm 1 formula sheet, and no index page, so
+# without this the bare directory is a 404 while the PDF beside it is a 200 -
+# which is the confusing half of the two, because the directory is the part
+# somebody types when they are guessing.
+#
+# **A 302 and not the 301 `/cobweb` uses.** That one points at an address that is
+# canonical and settled; this one points at the landing page only because there
+# is nothing better to point at yet. `/ese2100/` began the same way and grew a
+# real index once there was more than one page under it, and this will too if
+# there is ever a second ESE 5420 page - at which point a 301 sitting in the
+# caches of everyone who followed it could not be taken back. Same reasoning as
+# the directory-index branch, written down at the top of this file.
+#
+# Only the two bare spellings are registered, so `/ese5420/Midterm1_Formulas.pdf`
+# is untouched and still served by the catch-all.
+@app.route("/ese5420")
+@app.route("/ese5420/")
+def ese5420():
+    """A course directory with a file in it but no page of its own."""
+    return redirect("/", code=302)
+
+
 # **The fonts are the one thing here worth caching hard, and not caching them
 # was visible.** Flask's default for a static file is `Cache-Control: no-cache`,
 # which does not mean "do not store" - it means "revalidate every time" - so a
