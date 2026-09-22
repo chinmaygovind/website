@@ -262,6 +262,39 @@ are the ones that make the car go round a corner better - the handbrake above
 being the first of them - and the lines themselves on the tracks where the hot
 lap is still undrivable.
 
+## The path has an end, and on a circuit it must not
+
+**Everything the driver does is a walk along a recorded lap, and every one of
+those walks stopped dead at the last point of it.** That was invisible for as
+long as a bot only ever drove one lap: `restart` puts it back on the grid with
+the hint at zero, so the end of the path was the end of the job. A room racing
+three laps of a circuit drives past it, once a lap, for every bot on the grid.
+
+Three walks, and all three now wrap when `BotLine.closed` - which `bots.py` has
+always set and nothing ever read:
+
+- **`near`** is the hint. Clamped at `n`, it pinned on the last point while the
+  car drove away from it, and stayed pinned until the car was `RELOCK_DIST`
+  (30 units) off the line and the full rescan fired. Thirty units off the racing
+  line at the exit of a start-finish straight is, on most of these circuits, a
+  wall.
+- **`aheadOf`** is what the steering aims at. Pinned to the last point, the bot
+  steers at the line it has just crossed and holds that until the relock.
+- **`speedLimit`** is the braking horizon, and it is the quietest of the three:
+  a bot that cannot see the first corner of the next lap until it is in it
+  arrives at it flat, which from outside the car just looks like a bot that
+  cannot drive. It walks a *distance* now rather than up to an index.
+
+What it was worth, three laps with three levels on the grid, before and after:
+Spa 2 respawns to 0 and the slowest of the three 75 seconds quicker over the
+race, Suzuka 4.5s, Silverstone 2s. `tests/test_bots.py` pins the three walks
+against a synthetic ring, which is quick; the lap times are what says it matters.
+
+**`_curvature` still has the same edge** and is deliberately left: it skips
+`stride` points at each end, so the corner at the line reads as straight and the
+handbrake does not fire there. Every circuit in the pool starts on a straight,
+so there is nothing to measure yet.
+
 ## Things learned the hard way in the driver
 
 Each of these was a real failure and each is cheap to reintroduce.

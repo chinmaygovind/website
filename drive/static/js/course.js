@@ -191,6 +191,11 @@ export class Course {
   finishGate() { return this.gates.find(g => g.kind === 'finish') || null; }
 }
 
+// See `LAP_WRAP` in `racecheck.py`, which is the same number doing the same job
+// on the server's own projection. Both have to agree, or the standings the
+// server sorts and the gap this car measures are about different laps.
+const LAP_WRAP = 0.75;
+
 export class Run {
   /**
    * @param course Course
@@ -579,13 +584,20 @@ export class Run {
     // race it keeps climbing past the length of the ribbon - it is what the
     // standings are ordered by and what the catch-up boost measures a gap
     // with, and both of those have to put a car on lap three ahead of one on
-    // lap two. The wrap is found by the position jumping most of a lap, which
-    // is the same test the server's own projection uses (`sample_progress`),
-    // and it is signed so driving back over the line undoes it.
+    // lap two.
+    //
+    // **The wrap is nearly a whole lap, not half of one**, which is the same
+    // number and the same reason as `LAP_WRAP` in `racecheck.py` - keep the
+    // two together. Half a lap looks right and is wrong on Suzuka, whose
+    // crossover puts two pieces of road twelve units apart in space and 1727
+    // apart on a 3422-unit lap: a global re-locate between those two branches
+    // is not a lap, and crediting it as one hands the car the lead. Signed, so
+    // driving back over the line undoes it.
     const total = this.course.total;
     if (this._lastS != null && total) {
-      if (loc.s < this._lastS - total / 2) this.sLap++;
-      else if (loc.s > this._lastS + total / 2) this.sLap--;
+      const step = loc.s - this._lastS;
+      if (step < -total * LAP_WRAP) this.sLap++;
+      else if (step > total * LAP_WRAP) this.sLap--;
     }
     this._lastS = loc.s;
     const covered = loc.s + this.sLap * total;

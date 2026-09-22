@@ -132,6 +132,29 @@ LIVE_CORRIDOR = runcheck.CORRIDOR * 1.5
 # and this sits in it.
 STRIKE_LIMIT = 12
 
+# How much of a lap the ribbon arc has to move in one sample before it is read
+# as the car having crossed the start-finish line.
+#
+# **Not half a lap, and Suzuka is why.** The obvious test - "the arc fell by
+# more than half the lap, so it wrapped" - was wrong on the one track in the
+# pool that crosses over itself: the bridge carries the back straight twelve
+# units above the run down from Degner, and those two pieces of road are 1727
+# units apart on a 3422-unit lap. That is *sixteen units past half a lap*. So
+# when `nearest_station`'s global rescan snapped a respawning car from one
+# branch to the other - which is exactly what the rescan is for and exactly
+# what a figure-eight makes ambiguous - the car was credited with a whole lap
+# it had not driven. Measured on a real race: one bot led the standings for
+# seventy seconds from mid-field, the blue shells all went after it instead of
+# the actual leader, and the person who won it was shown second the whole way.
+#
+# A crossing moves the arc by nearly the *whole* lap, so that is what is asked.
+# Three quarters leaves room for a car whose poses dropped for a few seconds
+# over the line - 850 units of travel on Suzuka, seventeen seconds - while
+# putting every way two parts of a ribbon can be near each other comfortably
+# underneath it. Anything in between is not a lap and not ordinary driving: it
+# is a snap to somewhere else, and the honest thing to do with it is nothing.
+LAP_WRAP = 0.75
+
 
 def _dist(a, b):
     return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2) ** 0.5
@@ -298,10 +321,10 @@ def sample_progress(w, track, p, now_ms):
     lap the car is on, so a field spread over two laps would read as everybody
     bunched on one - the standings are ordered by this and a finish claim is
     measured against it, so both would be wrong in the same direction. The wrap
-    is found by the arc dropping most of a lap between two samples: at 5Hz a car
-    covers ten units, so nothing but crossing the line can move it that far, and
-    it is signed so a car that rolls back over the line gives the lap back
-    rather than banking one.
+    is found by the arc moving nearly the whole lap between two samples - see
+    `LAP_WRAP`, and read it before changing the number, because half a lap is
+    the obvious answer and it is wrong on Suzuka. It is signed, so a car that
+    rolls back over the line gives the lap back rather than banking one.
     """
     if not track or now_ms < w.next_prog_ms:
         return None
@@ -314,9 +337,10 @@ def sample_progress(w, track, p, now_ms):
     arc = station_arc(track, w.hint)
     length = station_arc(track, len(track.get("line") or []))
     if track.get("closed") and length:
-        if arc < w.arc - length / 2:
+        step = arc - w.arc
+        if step < -length * LAP_WRAP:
             w.lap += 1
-        elif arc > w.arc + length / 2:
+        elif step > length * LAP_WRAP:
             w.lap = max(0, w.lap - 1)
     w.arc = arc
     w.prog = max(w.prog, arc + w.lap * length)

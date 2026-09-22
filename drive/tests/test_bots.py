@@ -169,6 +169,101 @@ def test_a_bot_gets_round(slug, level):
     assert out["respawns"] <= 1, "%s fell off %s" % (level, slug)
 
 
+# ---------------------------------------------------------------------------
+# The path, at the join
+# ---------------------------------------------------------------------------
+# A bot follows a recorded lap by walking a hint forward along it, and until
+# rooms could race more than one lap of a circuit the hint never had to get past
+# the end of that recording. Racing three laps it does, once a lap, for every
+# bot - and every one of these three walks used to stop dead at the last point:
+# the hint pinned there while the car drove away from it, the aim point stopped
+# moving, and the braking horizon could not see the first corner of the next lap
+# until the car was in it. On a circuit with a wall on the outside of turn one
+# that is a bot driving into it, every lap, which is exactly what it looked like.
+
+import json                                                # noqa: E402
+import re                                                  # noqa: E402
+
+import jsrt                                                # noqa: E402
+
+BOT_JS = os.path.join(os.path.dirname(__file__), "..", "static", "js", "bot.js")
+
+# A ring, so "the end of the path" and "the start of it" are the same corner:
+# 120 points round a circle of radius 100, at a constant 40 units a second.
+RING = """
+var N = 120, R = 100, pts = [], vs = [];
+for (var i = 0; i < N; i++) {
+  var a = i * 2 * Math.PI / N;
+  pts.push([Math.cos(a) * R, 0, Math.sin(a) * R]);
+  vs.push(40);
+}
+function ring(closed) {
+  return new BotLine({p: pts, v: vs, closed: closed});
+}
+"""
+
+
+@needs_js
+def _bot_ctx():
+    ctx = jsrt.quickjs.Context()
+    src = open(BOT_JS).read()
+    ctx.eval(re.sub(r"^\s*(import\s+[^;]*;|export\s+)", "",
+                    src, flags=re.M).replace("export class", "class")
+             .replace("export function", "function")
+             .replace("export const", "const"))
+    ctx.eval(RING)
+    return ctx
+
+
+@needs_js
+def test_the_path_hint_walks_round_the_join_on_a_circuit():
+    """Just past the start-finish line, with the hint still behind it."""
+    ctx = _bot_ctx()
+    # A car two points past the join, asked with a hint from before it.
+    got = json.loads(ctx.eval(
+        "JSON.stringify({closed: ring(true).near(pts[2][0], 0, pts[2][2], N - 4),"
+        " open: ring(false).near(pts[2][0], 0, pts[2][2], N - 4)})"))
+    assert got["closed"]["i"] == 2, got
+    assert got["closed"]["d"] < 1e-6, got
+    # And a path that is not a ring must not wrap: a point-to-point track's last
+    # point really is the end of the road.
+    assert got["open"]["i"] == 119, got
+
+
+@needs_js
+def test_the_aim_point_carries_on_past_the_join():
+    """`aheadOf` is what the steering aims at, and on a ring it has to keep
+    moving across the line rather than sticking to the last point of the lap."""
+    ctx = _bot_ctx()
+    n = int(ctx.eval("N"))
+    j = int(ctx.eval("ring(true).aheadOf(N - 3, 40)"))
+    assert j < n // 4, "the aim point stuck at the end of the lap: %d" % j
+    assert int(ctx.eval("ring(false).aheadOf(N - 3, 40)")) == n - 1
+
+
+@needs_js
+def test_the_braking_horizon_sees_past_the_join():
+    """A corner just after the line has to slow a car that is still before it.
+
+    This is the half that is quietest: the steering being wrong looks wrong, and
+    arriving at turn one flat out just looks like a bot that cannot drive.
+    """
+    ctx = _bot_ctx()
+    ctx.eval("var line = ring(true);"
+             # a hairpin's worth of slow, just the other side of the line
+             "for (var i = 1; i < 6; i++) line.v[i] = 6;"
+             "var fake = {line: line, car: {speed: 60, T: {BRAKE: 30}},"
+             "            k: {brakePlan: 1}, pace: function () { return 1; }};")
+    before = ctx.eval("Bot.prototype.speedLimit.call(fake, N - 2)")
+    ctx.eval("fake.line = ring(false);"
+             "for (var i = 1; i < 6; i++) fake.line.v[i] = 6;")
+    unwrapped = ctx.eval("Bot.prototype.speedLimit.call(fake, N - 2)")
+    assert before < unwrapped, (
+        "the corner after the line did not slow the car before it (%.1f vs %.1f)"
+        % (before, unwrapped))
+    assert before < 40, before
+
+
 @needs_js
 @pytest.mark.parametrize("slug", DRIVEN)
 def test_the_levels_come_out_in_the_right_order(slug):

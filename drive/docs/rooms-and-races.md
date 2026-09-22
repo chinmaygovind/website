@@ -386,12 +386,27 @@ with how late it was and what the rooms were doing.
     cosmetic. The ribbon's arc is 0..length whichever lap the car is on, so a
     field spread over two would read as everybody bunched on one - and the
     standings are ordered by that number and a finish claim is measured against
-    it. `sample_progress` finds the wrap from the arc dropping most of a lap
-    between two samples (at 5Hz a car covers ten units, so nothing else can),
-    and **it is signed**: without the decrement, a car that crosses the line and
-    rolls back over it banks a full lap of progress and the lead with it. The
-    client's own `Run.bestS` does the same thing off `course.locate`, for the
-    catch-up gap and its own pose.
+    it. `sample_progress` finds the wrap from the arc moving nearly the whole
+    lap between two samples, and **it is signed**: without the decrement, a car
+    that crosses the line and rolls back over it banks a full lap of progress
+    and the lead with it. The client's own `Run.bestS` does the same thing off
+    `course.locate`, for the catch-up gap and its own pose.
+    - **The threshold is `LAP_WRAP` (three quarters), not half a lap, and
+      Suzuka is why.** Half is the obvious answer and it shipped, and it was
+      wrong on the one track in the pool that crosses over itself: the bridge
+      carries the back straight twelve units above the run down from Degner,
+      and those two pieces of road are **1727 units apart on a 3422-unit lap**,
+      sixteen units past half of it. A respawn there leaves the station hint on
+      one branch and `w.arc` on the other - the pose that lands off the road
+      returns early, after `nearest_station` has already moved the hint - and
+      the next honest pose read as a lap.
+      What that cost, measured off the replay of race 324: a mid-field bot led
+      the standings for seventy seconds, the person who won by eleven seconds
+      was shown second from half distance, the whole field's order was right
+      67% of the time, and every blue shell went after the wrong car. At three
+      quarters the same replay puts the standings in the finishing order from
+      half distance on. **The client's `LAP_WRAP` in `course.js` is the same
+      number for the same reason and the two have to move together.**
   - **The lap the *race* is on is a separate counter from the lap the
     *distance* is on**, and they must not be shared. `Run.lap` is scored - it
     only moves when the line is crossed with every checkpoint behind you, and
@@ -556,6 +571,16 @@ with how late it was and what the rooms were doing.
   - **A red shell takes the nearest car ahead on `prog` and a blue one takes the
     leader**, re-aimed every tick, and a driver already in front has nothing to
     aim at and fires nothing.
+  - **The blue's leader is the leader *on the road*, not the winner**, which is
+    the same rule `gapToLeader` follows for the catch-up boost and for the same
+    reason: a finisher keeps rolling and its `prog` keeps climbing past the
+    flag, so the moment anybody was home every blue in the room went after a car
+    parked on the far side of the line - most of a lap away, which `HOMING_MS`
+    runs out long before, and from the seat that is a blue that simply got lost.
+    A one-lap race hid it because the flag ended everything within seconds; a
+    three-lap race leaves thirty of them. Cars that are home or retired are
+    skipped, and if that leaves nobody it falls back to the whole field rather
+    than firing at nothing.
   - **A shell runs round a closed circuit** (`track["closed"]`), because Spa,
     Silverstone, Monaco and Monza finish where they start: the leader a blue is
     sent after is regularly "ahead" only by going the long way, so a shell that

@@ -3310,7 +3310,17 @@ def _shell_target(r, owner, blue=False, behind=False):
     cars = [(pid, c) for pid, c in r["cars"].items()
             if pid != owner and not c.get("gone")]
     if blue:
-        return max(cars, key=lambda e: e[1]["prog"], default=(None, None))[0]
+        # **The leader on the road, not the winner** - the same rule
+        # `gapToLeader` follows for the catch-up boost, and for the same
+        # reason. A car that is already home keeps rolling and its progress
+        # keeps climbing past the flag, so once anybody has finished, every
+        # blue in the room went after a car that was parked on the far side of
+        # the line - most of a lap away, which `HOMING_MS` runs out long
+        # before. From the seat that is a blue shell that simply got lost. On a
+        # multi-lap race that window is the last thirty seconds of it.
+        racing = [e for e in cars if e[1].get("ms") is None and not e[1].get("dnf")]
+        return max(racing or cars, key=lambda e: e[1]["prog"],
+                   default=(None, None))[0]
     if behind:
         back = [(pid, c) for pid, c in cars if c["prog"] < mine["prog"]]
         return max(back, key=lambda e: e[1]["prog"], default=(None, None))[0]

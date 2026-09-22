@@ -320,6 +320,29 @@ def test_a_blue_shell_goes_for_the_leader(A):
     assert A._shell_target(r, "a", blue=True) == "lead"
 
 
+def test_a_blue_shell_goes_for_the_leader_on_the_road_not_the_winner(A):
+    """A finisher keeps rolling and its progress keeps climbing past the flag.
+
+    So the moment anybody is home, every blue in the room went after a car that
+    was parked on the far side of the line - most of a lap away, which the
+    homing clock runs out long before, and from the seat that is a blue shell
+    that simply got lost. The same rule the catch-up boost already follows:
+    a car that is already home is not the one being chased.
+    """
+    r = _room(A)
+    _car(A, r, "a")["prog"] = 10.0
+    _car(A, r, "second")["prog"] = 500.0
+    home = _car(A, r, "winner")
+    home["prog"] = 3000.0
+    home["ms"] = 61000
+    assert A._shell_target(r, "a", blue=True) == "second"
+    # A retirement is not a target either, and with nobody left still racing it
+    # falls back rather than returning nothing - a blue has to go somewhere.
+    _car(A, r, "out")["prog"] = 4000.0
+    r["cars"]["out"]["dnf"] = True
+    assert A._shell_target(r, "a", blue=True) == "second"
+
+
 def test_out_in_front_there_is_nothing_to_aim_at(A):
     r = _room(A)
     _car(A, r, "a")["prog"] = 900.0

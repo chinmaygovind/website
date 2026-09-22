@@ -313,11 +313,22 @@ class BotLine {
    * somewhere and a global search snaps to the piece of road the car will reach
    * a minute later. The caller re-locks with a full scan when the answer stops
    * being credible, which is a respawn, a grid placement or a genuine crash.
+   *
+   * **On a ring the window wraps, and until multi-lap races existed nothing
+   * noticed that it did not.** A bot only ever drove one lap, so the hint never
+   * had to get past the end of the path. Racing three of them, it does - and a
+   * window clamped at `n` pinned the hint on the last point while the car drove
+   * away from it, so the bot aimed at the start-finish line it had just crossed
+   * and held that until it was `RELOCK_DIST` (30 units) off the road, which on
+   * most of these circuits is a wall. Once a lap, every bot, every lap.
    */
   near(x, y, z, hint) {
     let bi = hint, bd = Infinity;
-    const lo = Math.max(0, hint - 6), hi = Math.min(this.n, hint + 90);
-    for (let i = lo; i < hi; i++) {
+    const n = this.n;
+    for (let k = -6; k < 90; k++) {
+      let i = hint + k;
+      if (this.closed) i = ((i % n) + n) % n;
+      else if (i < 0 || i >= n) continue;
       const q = this.p[i];
       const dx = x - q[0], dy = y - q[1], dz = z - q[2];
       const d = dx * dx + dy * dy + dz * dz;
@@ -343,6 +354,15 @@ class BotLine {
     const want = this.s[i] + look;
     let j = i;
     while (j < this.n - 1 && this.s[j] < want) j++;
+    // Ran off the end of a ring: the road carries on from the start of the same
+    // path, so the aim point does too. Without this the last few hundred units
+    // of every lap are driven at a point that has stopped moving, which is a
+    // bot steering into the outside of turn one.
+    if (this.closed && this.s[j] < want) {
+      const rest = want - this.total;
+      j = 0;
+      while (j < this.n - 1 && this.s[j] < rest) j++;
+    }
     return j;
   }
 
@@ -768,9 +788,19 @@ class Bot {
     const decel = this.car.T.BRAKE * this.k.brakePlan;
     const s0 = line.s[i];
     let best = line.v[i] * pace;
-    const horizon = s0 + (this.car.speed * this.car.speed) / (2 * decel) + 12;
-    for (let j = i + 1; j < line.n && line.s[j] < horizon; j++) {
-      const d = line.s[j] - s0;
+    const horizon = (this.car.speed * this.car.speed) / (2 * decel) + 12;
+    // Walked as a distance rather than to an index, so a ring carries on round
+    // the join instead of stopping there. A braking horizon that ends at the
+    // finish line is a bot that cannot see the first corner of the next lap
+    // until it is in it - which on these circuits is arriving at turn one flat.
+    for (let k = 1; k < line.n; k++) {
+      let j = i + k;
+      if (j >= line.n) {
+        if (!line.closed) break;
+        j -= line.n;
+      }
+      const d = line.s[j] - s0 + (j <= i ? line.total : 0);
+      if (d > horizon) break;
       const target = line.v[j] * pace;
       const allowed = Math.sqrt(target * target + 2 * decel * d);
       if (allowed < best) best = allowed;

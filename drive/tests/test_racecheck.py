@@ -262,6 +262,55 @@ def test_progress_on_a_circuit_counts_the_laps():
     assert w.prog > 1.8 * length, (w.prog, length)
 
 
+def test_the_crossover_on_a_figure_eight_is_not_a_lap():
+    """Suzuka's bridge, which is the bug this rule was rewritten for.
+
+    The back straight passes twelve units over the run down from Degner, so the
+    two are next to each other in space and **1727 units apart on a 3422-unit
+    lap** - sixteen units past half of it. Under the old "more than half a lap"
+    test, a car whose station hint moved from one branch to the other was
+    credited with a whole lap it had not driven.
+
+    The hint moves like that after a **respawn**: the windowed walk fails, the
+    global rescan is a coin flip between two pieces of road twelve units apart,
+    and the pose that lands more than `LIVE_CORRIDOR` off the road returns
+    early - leaving the hint on the far branch and `w.arc` on the near one,
+    which is the state set up here. The next honest pose then reads as a lap.
+
+    Measured on a real race before it was fixed: a bot took the lead in the
+    standings from mid-field and held it for seventy seconds, every blue shell
+    in the room went after it instead of the actual leader, and the person who
+    won by eleven seconds was shown second from half distance to the flag.
+    """
+    ring = tracks_mod.get("suzuka")
+    line = ring["line"]
+    arcs = [racecheck.station_arc(ring, i) for i in range(len(line))]
+    length = arcs[-1]
+    # The two branches of the crossover: close in space, far apart on the lap.
+    pair = None
+    for i in range(len(line)):
+        for j in range(len(line)):
+            gap = arcs[j] - arcs[i]
+            if not (length * 0.45 < gap < length * 0.7):
+                continue
+            if racecheck._dist(line[i]["p"], line[j]["p"]) < 25:
+                pair = (i, j)
+                break
+        if pair:
+            break
+    assert pair, "suzuka no longer crosses over itself - has the track moved?"
+    near, far = pair
+    assert arcs[far] - arcs[near] > length / 2, (
+        "the crossover is no longer past half a lap, which is the whole point")
+
+    w = racecheck.Watcher()
+    w.hint, w.arc = near, arcs[far]      # what a respawn between them leaves
+    w.prog = arcs[far]
+    racecheck.sample_progress(w, ring, line[near]["p"], 10 ** 6)
+    assert w.lap == 0, "the crossover was read as a lap"
+    assert w.prog == pytest.approx(arcs[far]), w.prog
+
+
 def test_a_lap_is_given_back_by_driving_over_the_line_the_wrong_way():
     """The wrap is signed, or reversing over your own line is a free lap.
 
