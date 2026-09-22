@@ -1118,6 +1118,10 @@ def test_a_blue_shell_is_the_quick_one(A, bend, monkeypatch):
         r["shots"] = []
         r.pop("shots_t", None)
         A._fire(r, "a", item, "lead" if item == "blue" else None)
+        # Burn the arming ticks first, at no elapsed time, so this measures the
+        # flight and not the two ticks every shot now spends standing still.
+        for _ in range(A.SHOT_ARM_TICKS):
+            A._tick_shots(r, now)
         start = r["shots"][0]["si"]
         A._tick_shots(r, now)                 # the first tick has no interval
         A._tick_shots(r, now + 100)
@@ -1175,3 +1179,66 @@ def test_the_stats_endpoint_adds_what_has_not_been_written_yet(A, monkeypatch):
     got = A.app.test_client().get("/api/item-stats").get_json()["items"]
     red = [row for row in got if row["item"] == "red"]
     assert red and red[0]["used"] == 3
+
+
+# ---------------------------------------------------------------------------
+# Being able to see the thing that hits you
+# ---------------------------------------------------------------------------
+
+def _snapshots(A, r, ticks=4):
+    """What the room would have fanned out, tick by tick.
+
+    `_tick` does `_tick_shots` and then `_snapshot`, so this is that order.
+    """
+    out = []
+    now = A._now_ms()
+    for step in range(ticks):
+        A._tick_shots(r, now + step * 33)
+        out.append(A._snapshot(r)["shots"])
+    return out
+
+
+@pytest.mark.parametrize("item", ["green", "banana", "bomb"])
+def test_nothing_hits_a_car_that_was_never_sent_a_frame_of_it(A, item, bend, monkeypatch):
+    """The point-blank hit out of nowhere.
+
+    `_fire` runs in a socket handler; `_tick_shots` runs at the top of the next
+    tick and `_snapshot` at the bottom of it. So a shot thrown at somebody
+    inside about nine units - the five it leaves the nose at plus the four of
+    `SHOT_HIT_R2`, which is the range anybody actually throws one at - was
+    born, moved and spent before it had ever been in a snapshot. Nothing was
+    drawn, nothing appeared on the minimap and `shellWarning` never pinged:
+    from the seat it was being spun over by thin air.
+    """
+    r = _room(A)
+    _car(A, r, "a", at=(0.0, 0.0, 0.0))
+    _car(A, r, "b", at=(0.0, 0.0, -6.0))          # six units up the road
+    hits = []
+    monkeypatch.setattr(A.socketio, "emit",
+                        lambda ev, d=None, **kw: hits.append((ev, d)))
+    A._fire(r, "a", item)
+    snaps = _snapshots(A, r)
+    said = [d for ev, d in hits if ev == "item_hit"]
+    # A bomb catches whoever threw it too, which is the item; what has to be
+    # true for all three is that the car it was thrown at is still hit.
+    assert "b" in [d["pid"] for d in said], "the hit itself has to still land"
+    assert snaps[0], "the shot was spent before a single snapshot carried it"
+
+
+def test_an_arming_shot_does_not_wander_off_its_target(A, bend):
+    """Frozen for those two ticks, not merely forbidden to hit.
+
+    A shell allowed to fly for 66ms before it may do anything is five units
+    past a point-blank target by the time it arms - which would trade a hit
+    nobody saw for a shell that goes straight through somebody, and that is not
+    the better game. It stands still instead, so every hit that landed before
+    still lands.
+    """
+    r = _room(A)
+    _car(A, r, "a", at=(0.0, 0.0, 0.0))
+    A._fire(r, "a", "banana")
+    where = r["shots"][0]["p"][:]
+    now = A._now_ms()
+    for step in range(A.SHOT_ARM_TICKS):
+        A._tick_shots(r, now + step * 33)
+    assert r["shots"][0]["p"] == where

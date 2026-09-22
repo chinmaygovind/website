@@ -565,6 +565,11 @@ than 15% or move a corner more than 8 degrees before refusing.
   of the login one. **Outside a portal only** - in a portal there is no
   account of ours to make, so that link stays "Sign in" and the register form
   is not in the page at all. `tests/test_app.py` pins both.
+  **And signing up does not leave you a guest in the room you are sitting in.**
+  A login keeps `session_key`, which is what saves the seat - but the seat's
+  row went on saying guest, so the new account got no ELO, no win or podium
+  tally and its garage car back for the whole session. `_refresh_seat` is the
+  fix; `docs/rooms-and-races.md` has the whole of it.
 - **A ghost frame is nine values: a pose, the car's flag byte, and the driver's
   input byte.** The last two are different facts and neither implies the other -
   `FLAG.DRIFT` is a car that is *sliding*, and there is nothing in that byte

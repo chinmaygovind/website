@@ -185,14 +185,42 @@ WINDOW_S = runcheck.STEPS_PER_FRAME * T.FIXED_DT
 # there is one definition of what a byte means and the verifier cannot disagree
 # with the packer about which bit is the handbrake.
 HARNESS = """
-var _BUILT = {};
+/**
+ * The built collider for one track - and **only ever one**.
+ *
+ * This used to be a dictionary that kept every track it was asked for, on the
+ * grounds that building one is most of the cost of the first lap on it and
+ * none of the cost of the second. That is true, and it is still true here; what
+ * was wrong was the *scope* it was true over. A child is handed up to fifty
+ * pending rows, and on a busy afternoon those span the whole pool - so the
+ * cache grew a collider per distinct track and the process grew with it, about
+ * 12MB a track measured: 59MB empty, 209MB at twelve tracks. On a box with five
+ * services and a gigabyte between them, that is the child walking into the
+ * kernel's sights, and it did - thirty-three OOM kills in a week, every victim
+ * carrying `_stand_aside`'s `oom_score_adj` of 800. Each kill left its rows
+ * pending, so the next batch was bigger, which made the next child fatter: two
+ * laps took two hours and a half to clear, and the stall while they thrashed hit
+ * 95.7 seconds, which is past the 60s socket ping timeout and disconnected
+ * everybody who was driving.
+ *
+ * So one at a time. The saving it existed for is kept by `batch` handing the
+ * rows over **grouped by track**, which turns a cache that has to hold the pool
+ * into one that has to hold the track in front of it. Dropped before the new
+ * one is built rather than after, so the two are never both resident.
+ *
+ * It is not the whole answer on its own, because QuickJS keeps the pages it has
+ * stopped using - see `TRACKS_PER_CHILD`, which is what actually bounds a child.
+ */
+var _BUILT = null, _BUILT_SLUG = null;
 function built(slug) {
-  if (!_BUILT[slug]) {
+  if (_BUILT_SLUG !== slug) {
     const t = TRACKS.find(x => x.slug === slug);
     if (!t) throw new Error('no such track: ' + slug);
-    _BUILT[slug] = buildTrack(t, T);
+    _BUILT = null; _BUILT_SLUG = null;
+    _BUILT = buildTrack(t, T);
+    _BUILT_SLUG = slug;
   }
-  return _BUILT[slug];
+  return _BUILT;
 }
 
 /**
@@ -474,6 +502,64 @@ def run_check_row(row, tracks_mod, verifier=None):
     return res
 
 
+# How many distinct tracks one verifier child may build before it stops and
+# leaves the rest for the next sweep.
+#
+# **One, and that is not conservatism - it is the two outliers.** Measured, a
+# child costs 54MB before it builds anything and most tracks add 7-33MB on top:
+# sunrise 7, railway 17, bigred 25, costco 25, playground 27, pillars 28, cove
+# 33, monaco 50. **Spa adds 115 and Suzuka adds 111.** So a Spa lap is a 169MB
+# child on a box with about 175MB free, and two terrain tracks in one child is
+# worse than anything the old cache ever did - because QuickJS does not hand
+# freed pages back to the kernel, so evicting the first collider does not shrink
+# the process. A fresh process is the only thing that gives the memory back.
+#
+# **And it is the collider itself, which is the part that cannot be skipped.**
+# The first guess was the visual mesh - `buildTrack` fills three MeshBufs nobody
+# here is ever going to draw - and the numbers say no: collider triangles run
+# 598 on sunrise, 4,044 on the Costco, 33,034 on Monaco and 43,902 and 46,254 on
+# Spa and Suzuka, which is the same ordering as the memory and a 73x spread. At
+# 13 floats a triangle in plain JS arrays plus the spatial hash, 46,000
+# triangles *is* the hundred megabytes. The two terrain tracks are heavy because
+# `pal.terrain` collides a height field sampled off the ribbon (another 16,000
+# cells of `gridH`/`gridD` on top), and every one of those triangles is road the
+# lap is being judged against. A collider-only build would save nothing worth
+# having, so the bound has to be process-shaped rather than build-shaped.
+#
+# The cost is throughput - the rows left over wait for the next `_settle_checks`
+# sweep, which is a couple of minutes - and that is the right trade against a
+# lap that waited two hours and a half because its child kept being killed.
+TRACKS_PER_CHILD = 1
+
+
+def batch(rows):
+    """The rows one child should do: grouped by track, capped at one track.
+
+    **Grouped, and that is a memory decision rather than a tidy one.** `built`
+    holds one collider now (see the note on it), so a batch that hopped between
+    tracks would rebuild one per row - and a batch that does not hop builds each
+    exactly once, which is the whole of what the old dictionary bought. The rows
+    are *selected* oldest-first by the caller and only grouped here, so which
+    rows get looked at is still decided by how long they have waited; only the
+    order they are walked in changes.
+
+    **And then capped**, because grouping alone is not enough: QuickJS does not
+    hand freed pages back to the kernel, so evicting the first collider does not
+    shrink the process and a child that walks several tracks wears the
+    high-water mark of all of them. See `TRACKS_PER_CHILD`. What is left over is
+    picked up by the next `_settle_checks` sweep - the same path that already
+    recovers from a child the kernel killed.
+    """
+    out, seen = [], []
+    for row in sorted(rows, key=lambda r: (r.track or "", r.id)):
+        if row.track not in seen:
+            if len(seen) >= TRACKS_PER_CHILD:
+                break
+            seen.append(row.track)
+        out.append(row)
+    return out
+
+
 def main(argv):
     import argparse
     p = argparse.ArgumentParser(
@@ -510,6 +596,7 @@ def main(argv):
                      .order_by(models.DriveRunCheck.id.asc()).limit(50).all())
         if not rows:
             return 0
+        rows = batch(rows)
         try:
             v = Verifier()
         except Exception as e:

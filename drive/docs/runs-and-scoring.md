@@ -424,6 +424,46 @@ built thing would only have been a way to be told the wrong answer.)*
   of its own, so it is right on the first paint and follows the switcher. That
   helper returns a **copy** - the dicts in `tracks_mod` are module-level and
   shared by every request.
+**One child builds one track, and that is a memory bound rather than a tidy
+one.** `Verifier` holds a QuickJS runtime and `built(slug)` used to cache the
+collider of every track it was asked for, on the grounds that building one is
+most of the cost of the first lap on it and none of the cost of the second.
+That is true; the scope it was true over was not. A child is handed up to fifty
+pending rows, and on a busy day those span the pool - so the cache grew a
+collider per distinct track and the process grew with it.
+
+Measured, live RSS: 54MB before it builds anything, then sunrise +7, railway
++17, bigred +25, costco +25, playground +27, pillars +28, cove +33, monaco +50,
+and **Suzuka +111 and Spa +115**. Old behaviour reached 208MB at twelve tracks
+and then threw `out of memory` against `MEMORY_MB`'s 256 ceiling. On the live
+box that is a child walking into the kernel's sights, and it did: **33 OOM kills
+and 19 event-loop stalls in one week**, every victim carrying `_stand_aside`'s
+`oom_score_adj` of 800. Each kill left its rows `pending`, so the next batch was
+bigger and the next child fatter - two laps took 2h04m and 2h39m to clear, and
+the stall while they thrashed reached **95.7 seconds**, which is past the 60s
+socket ping timeout and so disconnected everybody who was driving.
+
+- **It is the collider, not the scenery.** The first guess was the three
+  MeshBufs `buildTrack` fills that nothing here will ever draw, and the numbers
+  refuse it: collider triangles are 598 on sunrise, 4,044 on the Costco, 33,034
+  on Monaco, 43,902 on Spa and 46,254 on Suzuka - the same ordering as the
+  memory, over a 73x spread. At thirteen floats a triangle in plain JS arrays
+  plus the spatial hash, 46,000 triangles *is* the hundred megabytes. The two
+  terrain tracks are heavy because `pal.terrain` collides a height field
+  sampled off the ribbon, another ~16,000 cells of `gridH`/`gridD` on top. Every
+  one of those triangles is road the lap is judged against, so a collider-only
+  build would save nothing worth having.
+- **So the bound is process-shaped.** `built` keeps one collider, `batch` groups
+  the rows by track so that one is built once, and `TRACKS_PER_CHILD` is **1**,
+  because QuickJS does not hand freed pages back to the kernel - evicting the
+  first collider does not shrink the process, so two terrain tracks in one child
+  would be worse than the bug this replaced. A fresh process is the only thing
+  that gives the memory back, and there is already a mechanism for starting one:
+  what a batch leaves behind is picked up by the next `_settle_checks` sweep,
+  the same path that already recovers from a child the kernel killed.
+- The cost is throughput - the leftovers wait a couple of minutes - which is the
+  right trade against a lap that waited two and a half hours.
+
 ## Ghosts
 
 - **The ghost is a practice tool, so in a room it belongs to the phases you drive

@@ -1253,3 +1253,145 @@ def test_a_car_that_never_comes_back_is_still_a_dnf(env, monkeypatch):
     A._drop("sid-1", hard=False)
     A._tick_lost(r, A._now_ms() + A.LOST_GRACE_MS + 1)
     assert r["cars"]["p1"]["dnf"], "a car that walked away stayed in the race"
+
+
+# ---------------------------------------------------------------------------
+# The janitor
+# ---------------------------------------------------------------------------
+
+def _aged(A, game, minutes):
+    from datetime import datetime, timedelta
+    game.last_activity_at = datetime.utcnow() - timedelta(minutes=minutes)
+    A.db.session.commit()
+
+
+def test_a_room_nobody_is_connected_to_goes_in_five_minutes(env, monkeypatch):
+    A = env
+    """A closed tab keeps its seat, which is what makes a reload survivable -
+    and what left rooms in the lobby list looking occupied for forty-five
+    minutes with nobody in them. The next person along joined one and was alone
+    with four names."""
+    monkeypatch.setattr(A.socketio, "emit", lambda *a, **k: None)
+    with A.app.app_context():
+        game = A.DriveGame(code="GONE01", track="sunrise")
+        A.db.session.add(game)
+        A.db.session.commit()
+        A.db.session.add(A.DrivePlayer(game_id=game.id, session_key="sk",
+                                       name="Dave", color="#fff", is_host=True))
+        A.db.session.commit()
+        _aged(A, game, 6)
+        A._sweep_once()
+        assert A.DriveGame.query.filter_by(code="GONE01").first() is None
+
+
+def test_a_room_somebody_still_holds_a_socket_on_is_left_alone(env, monkeypatch):
+    A = env
+    """The line is the socket, not the pose. `_humans` is a pose inside six
+    seconds, and a backgrounded phone stops sending those within a frame or two
+    of being put in a pocket - so sweeping on that would take the room out from
+    under a lobby that had merely gone quiet."""
+    monkeypatch.setattr(A.socketio, "emit", lambda *a, **k: None)
+    with A.app.app_context():
+        game = A.DriveGame(code="HELD01", track="sunrise")
+        A.db.session.add(game)
+        A.db.session.commit()
+        A.db.session.add(A.DrivePlayer(game_id=game.id, session_key="sk",
+                                       name="Dave", color="#fff", is_host=True))
+        A.db.session.commit()
+        _aged(A, game, 6)
+        A._sid_room["sid-1"] = ("HELD01", "p1")
+        try:
+            A._sweep_once()
+            assert A.DriveGame.query.filter_by(code="HELD01").first() is not None
+        finally:
+            A._sid_room.pop("sid-1", None)
+
+
+def test_a_pose_gap_is_not_leaving_the_race(env):
+    """The unfair DNF.
+
+    `_pending` used to filter on `_live`, which is a pose inside six seconds. A
+    car whose browser is still sitting there but whose last pose landed seven
+    seconds ago is not a car that has left the race - it is a car on a bad
+    connection, which at a venue is most of them. It dropped out of `_pending`,
+    `_maybe_close` read the road as empty and closed the race as "all in", and
+    `_close_race` wrote them down as a DNF while they were still driving, forty
+    five seconds before the grace they were owed.
+    """
+    A = env
+    r = _room(A, code="BLIP01", phase="racing")
+    now = A._now_ms()
+    for pid in ("winner", "blipped"):
+        c = A._car(r, pid)
+        c["ts"] = now
+    r["grid"] = {"winner": 0, "blipped": 1}
+    r["cars"]["winner"]["ms"] = 60000
+    r["cars"]["blipped"]["ts"] = now - (A.POSE_STALE_MS + 1000)
+
+    assert r["cars"]["blipped"]["gone"] is False, "the socket never went"
+    assert A._pending(r) == ["blipped"], "dropped from a race it was still in"
+
+
+def test_a_car_whose_socket_went_does_not_hold_the_race_open(env):
+    """The other half of the same rule: `gone` is what empties the road, and it
+    has to, or a closed tab would keep everybody on the results sheet until the
+    hard limit."""
+    A = env
+    r = _room(A, code="BLIP02", phase="racing")
+    now = A._now_ms()
+    for pid in ("winner", "left"):
+        A._car(r, pid)["ts"] = now
+    r["grid"] = {"winner": 0, "left": 1}
+    r["cars"]["winner"]["ms"] = 60000
+    r["cars"]["left"]["gone"] = True
+
+    assert A._pending(r) == []
+
+
+def test_the_lights_do_not_go_out_over_an_empty_road(env, monkeypatch):
+    """Resign or close the tab during the countdown and there was no race left,
+    but the room ran one anyway.
+
+    `_maybe_close` only acts while the phase is `racing`, which is correct - it
+    is asked from finish, resign, disconnect and kick, and none of those ends a
+    race that has not started. But the last two can both happen during the five
+    seconds of lights, so the call they made did nothing and the phase change
+    that followed had nobody left to notice. The room then sat in `racing` until
+    `hard_end` - 150s on the short tracks, 596s on Playground - with the host
+    unable to change track or start another, since `set_track` and `start_race`
+    both refuse mid-race.
+    """
+    A = env
+    closed = []
+    monkeypatch.setattr(A.socketio, "emit", lambda *a, **k: None)
+    monkeypatch.setattr(A, "_broadcast_lobbies", lambda *a, **k: None)
+    monkeypatch.setattr(A, "_close_race",
+                        lambda code, why, seq=None: closed.append((code, why)))
+    monkeypatch.setattr(A.eventlet, "spawn_after",
+                        lambda delay, fn, *a, **k: fn(*a, **k))
+    r = _room(A, code="LGHT01", phase="countdown")
+    A._car(r, "solo")["ts"] = A._now_ms()
+    r["grid"] = {"solo": 0}
+    r["t0"] = A._now_ms()
+    r["cars"]["solo"]["gone"] = True          # closed the tab during the lights
+
+    A._go_green("LGHT01", r["race_seq"])
+    assert closed, "the race ran with nobody in it"
+
+
+def test_the_race_grace_outlasts_the_clients_own_reload(env):
+    """`game.js` reloads the page at `DEAD_MS` when the socket is still dead,
+    so the grace has to cover that *plus* a page load, a track build and a
+    rejoin. At 25s against a 20s reload it covered five seconds of it, on the
+    two tracks with the biggest colliders, on venue wifi, with the un-tokened
+    modules cold because a deploy had just landed."""
+    A = env
+    import re
+    js = open(os.path.join(os.path.dirname(__file__), "..",
+                           "static", "js", "game.js")).read()
+    m = re.search(r"const DEAD_MS = (\d+)", js)
+    assert m, "DEAD_MS is not in game.js under that name any more"
+    dead = int(m.group(1))
+    assert A.LOST_GRACE_MS >= dead * 2, (
+        "a car is retired %dms after its socket went, and its own browser does "
+        "not even begin reloading until %dms" % (A.LOST_GRACE_MS, dead))

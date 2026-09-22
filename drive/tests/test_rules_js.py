@@ -1407,3 +1407,61 @@ def test_the_camera_is_handed_back_on_its_own():
 
 def test_a_respawn_hands_it_back_at_once():
     assert _hold(1, SMOKE_STUB.replace("respawnIn: 0", "respawnIn: 1.2")) == 0
+
+
+# --- coming back to a race that is still running ----------------------------
+
+RESUME_STUB = """
+var S = {raceMode: false, raceDone: true, raceT0: null, cdT0: null,
+         standings: null, clockOffset: 0};
+function serverNow() { return 1000000; }
+var performance = {now: () => 500};
+"""
+
+
+def _resume_ctx():
+    ctx = _ctx(RESUME_STUB)
+    ctx.eval(_fn("resumeRace"))
+    return ctx
+
+
+def test_a_reload_mid_race_comes_back_into_the_race():
+    """The whole server side exists to make a reload cost nothing - `_drop`
+    marks the car `gone` rather than deleting it, `LOST_GRACE_MS` holds its
+    place, `on_join_room` clears the mark - and the browser then came back with
+    `racePhase` 'racing' and `raceMode` false, which is the gap every rule that
+    reads both together fell into: no contact, no items, no lap clock and so no
+    finish, and `R` restarting on one press instead of asking twice."""
+    ctx = _resume_ctx()
+    assert ctx.eval(
+        "resumeRace({in_race: true, race: {phase: 'racing', t0: 1000000, "
+        "finish: [{pid: 'p1', ms: 60000}]}})") is True
+    assert ctx.eval("S.raceMode") is True
+    assert ctx.eval("S.raceDone") is False
+    assert ctx.eval("S.raceT0") is not None
+    assert ctx.eval("S.standings.length") == 1
+
+
+def test_the_restored_clock_is_the_green_light_and_not_now():
+    """The time this browser spent away belongs in the lap: what is lost is
+    lost, and what is not lost is the race. `t0` thirty seconds behind
+    `serverNow` has to land thirty seconds behind `performance.now`."""
+    ctx = _resume_ctx()
+    ctx.eval("resumeRace({in_race: true, race: {phase: 'racing', t0: 970000}})")
+    assert ctx.eval("S.raceT0") == 500 - 30000
+
+
+@pytest.mark.parametrize("payload", [
+    # Somebody who walked in after the lights: driving, but not in the race and
+    # not in the standings, so a race clock and a set of items would be a race
+    # they are not scored in.
+    "{in_race: false, race: {phase: 'racing', t0: 1000000}}",
+    # A room that is not racing at all.
+    "{in_race: false, race: {phase: 'free', t0: null}}",
+    # And a hello from a server too old to answer the question.
+    "{race: {phase: 'racing', t0: 1000000}}",
+])
+def test_nobody_else_is_handed_a_race(payload):
+    ctx = _resume_ctx()
+    assert ctx.eval("resumeRace(%s)" % payload) is False
+    assert ctx.eval("S.raceMode") is False

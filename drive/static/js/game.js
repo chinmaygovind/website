@@ -7166,6 +7166,16 @@ function connect() {
     if (rtt < S.bestRtt) { S.bestRtt = rtt; S.clockOffset = d.s + rtt / 2 - now; }
   });
   socket.on('room_hello', (d) => {
+    // **A clock to measure the green light against, before the pings land.**
+    // The five `clock` round trips are staggered 200ms apart and start on
+    // connect, so at this moment `clockOffset` is usually still zero - and the
+    // race resumption just below needs to turn a server timestamp into a local
+    // one. `server_ms` is this message's own stamp, so a one-way estimate is
+    // available immediately; it is out by the downstream leg, tens of
+    // milliseconds, and the pings refine it within the second. Only taken when
+    // nothing better has been measured, so a late `room_hello` can never walk
+    // a good offset backwards.
+    if (!isFinite(S.bestRtt) && d.server_ms) S.clockOffset = d.server_ms - Date.now();
     renderRoster(d.players);
     if (d.settings) S.settings = d.settings;
     else if (d.race && d.race.settings) S.settings = d.race.settings;
@@ -7175,6 +7185,7 @@ function connect() {
     for (const pid in (d.held || {})) setHeld(pid, d.held[pid]);
     S.racePhase = d.race ? d.race.phase : 'free';
     S.pole = (d.race && d.race.pole) || null;
+    resumeRace(d);
     applyPhase();
     // Walking in on a session already running: show it rather than pretending
     // the room is idle until the next message happens to arrive.
@@ -8091,6 +8102,49 @@ async function applyTrackChange(slug, attempt = 0) {
   toast('Loading the room\u2019s track\u2026');
   setTimeout(() => location.reload(), 900);
 }
+
+/**
+ * Pick the race back up after a reload. `d` is a `room_hello`.
+ *
+ * **Reloading mid-race used to put you back on the road as a bystander**, and
+ * the whole of the server side exists to stop that: `_drop` marks the car
+ * `gone` instead of deleting it, `LOST_GRACE_MS` holds its place, and
+ * `on_join_room` clears the mark on the way back in - all so that a reload
+ * costs nothing. It is what the game asks people to do when a track switch
+ * goes wrong, and what `DEAD_MS` does by itself after twenty seconds without a
+ * socket.
+ *
+ * But `raceMode` and `raceT0` are only ever set by `race_start` and
+ * `race_green`, and both of those fired while this page was somewhere else. So
+ * the browser came back with `racePhase` 'racing' and `raceMode` false, and
+ * every rule that reads the two together read the gap between them:
+ *
+ *   - `contactOn` was false, so no car touched another;
+ *   - `canUseItem` is gated on it, so items did nothing;
+ *   - the lap clock at `raceT0` never started, so there was no time to finish
+ *     with and `finish` was never emitted - which made the DNF at the flag a
+ *     certainty;
+ *   - and `restartCostsARace` was false, so `R` - the key next to `T`, which is
+ *     the one you reach for the instant you fall off - restarted with a single
+ *     press instead of asking twice.
+ *
+ * `in_race` is the server's own answer to "are you in the race that is
+ * running", asked of the grid rather than of the phase, so somebody who walked
+ * in after the lights - driving, but not scored - stays in practice as before.
+ *
+ * The elapsed clock is restored to the green light rather than to now, so the
+ * time this browser spent away is in the lap. That is the honest reading of it:
+ * what is lost is lost, and what is not lost is the race.
+ */
+function resumeRace(d) {
+  if (!d || !d.race || !d.in_race) return false;
+  S.raceMode = true;
+  S.raceDone = false;
+  if (d.race.t0) S.raceT0 = S.cdT0 = performance.now() + (d.race.t0 - serverNow());
+  S.standings = (d.race.finish || []).slice();
+  return true;
+}
+
 
 function onRaceStart(d) {
   S.raceMode = true;

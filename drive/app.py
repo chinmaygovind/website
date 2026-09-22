@@ -1568,7 +1568,9 @@ def room(code):
     game = DriveGame.query.filter_by(code=code.upper()).first()
     if not game:
         return redirect(url_for("lobbies"))
-    me = DrivePlayer.query.filter_by(game_id=game.id, session_key=get_session_key()).first()
+    me = _refresh_seat(
+        DrivePlayer.query.filter_by(game_id=game.id,
+                                    session_key=get_session_key()).first())
     if not me:
         return redirect(url_for("lobbies"))
     track = tracks_mod.get(game.track) or tracks_mod.TRACKS[0]
@@ -2704,11 +2706,47 @@ def _roster(game):
     return out
 
 
+def _refresh_seat(p):
+    """A seat remembers who you were when you took it. Signing in changes that.
+
+    **The session key survives a login** - `login`, `register` and
+    `portal_auth` pop `guest_name` and set `user_id`, and none of them touches
+    `session_key` - which is deliberate and is what lets a guest sign up
+    without losing the seat they are sitting in. What it also did was leave the
+    *row* saying guest: `user_id` null, the guest's typed name, the colour
+    hashed off it. Everything downstream reads the row, so for the rest of that
+    room's life the new account was a guest to `_rate_race` (no ELO, no win or
+    podium tally, invisible to everybody else's rating too), wore the hashed
+    colour instead of the car out of its garage, and raced under the name it
+    had just stopped using. A reload did not fix it, because a reload finds the
+    same row.
+
+    So the row is brought up to date wherever this browser's seat is looked up.
+    Compared on `user_id` rather than on the name, because that is the fact the
+    rating and the tallies turn on, and it covers the other direction too - an
+    account that logs out and carries on as a guest.
+
+    A bot's seat has nobody behind it and is never anybody's own, so it is left
+    alone.
+    """
+    if p is None or p.is_bot:
+        return p
+    user = get_current_user()
+    uid = user.id if user else None
+    if p.user_id == uid:
+        return p
+    p.user_id = uid
+    p.name = get_effective_name()
+    p.color = color_for(user.username if user else p.name)
+    db.session.commit()
+    return p
+
+
 def _add_player(game, host=False):
     sk = get_session_key()
     existing = DrivePlayer.query.filter_by(game_id=game.id, session_key=sk).first()
     if existing:
-        return existing
+        return _refresh_seat(existing)
     user = get_current_user()
     name = get_effective_name()
     # **You always drive the car you chose.**
@@ -2967,6 +3005,11 @@ SHELL_MS = 5000           # a green that has hit nothing gives up
 HOMING_MS = 9000
 BANANA_MS = 45000         # a banana waits, but not for the whole race
 SHOT_HIT_R2 = 16          # 4 units, squared
+# How many ticks a shot is on the wire before it is allowed to do anything.
+# Two, so it is in two snapshots - one is enough to be sent and two is enough
+# to survive a dropped frame - and at 30Hz that is 66ms, which nobody can feel
+# and every browser can draw. See `_tick_shots`.
+SHOT_ARM_TICKS = 2
 # How quickly a homing shell can move across the road. It has to be able to
 # cross a full road in about the time it takes to close the gap, or it arrives
 # alongside its target and sails past - which is what "bad aim" was.
@@ -3298,6 +3341,10 @@ def _fire(r, owner, item, target=None, back=False):
     # is what made them jump between positions instead of flying.
     r["shot_seq"] = seq = r.get("shot_seq", 0) + 1
     shot = {"id": seq, "item": item, "owner": owner, "target": target,
+            # Ticks to sit still for before it may move or hit anybody, so
+            # every shot is on at least one snapshot - and so on at least one
+            # screen - before it can spin somebody over. See `_tick_shots`.
+            "arm": SHOT_ARM_TICKS,
             "p": [c["p"][i] + f[i] * reach for i in range(3)],
             "v": [f[i] * (-speed if behind else speed) for i in range(3)],
             # **The item's own clock, not the direction's.** This asked `back`,
@@ -3473,6 +3520,28 @@ def _tick_shots(r, now):
             # Every other shot's life simply ends. A bomb's *is* the end.
             if s["item"] == "bomb":
                 _blast(r, s, now)
+            continue
+        if s.get("arm"):
+            # **Nothing may hit a car that has never been sent one frame of
+            # it.** `_fire` runs in a socket handler and this runs at the top
+            # of the tick, `_snapshot` at the bottom - so a shot fired at
+            # anybody inside about nine units (the five it leaves the nose at,
+            # plus the four of `SHOT_HIT_R2`, which is where a shell is
+            # actually thrown) was born, moved and hit before it had ever been
+            # in a snapshot. No mesh, no dot on the minimap, no `shellWarning`
+            # ping: from the seat, being spun over by nothing at all, with only
+            # the toast afterwards to say what it had been.
+            #
+            # So a shot sits still for its first two ticks. Still, rather than
+            # merely unarmed, because a shell that flew for 66ms without being
+            # allowed to hit would simply be 5 units past a point-blank target
+            # by the time it could - which trades an invisible hit for a
+            # point-blank shell passing through somebody, and that is not a
+            # better game. Frozen, it is in the same place when it arms, so
+            # every hit that landed before still lands; it lands 66ms later,
+            # having been drawn, mapped and heard first.
+            s["arm"] -= 1
+            keep.append(s)
             continue
         if s.get("stop_at") and now >= s["stop_at"]:
             s["v"] = [0.0, 0.0, 0.0]        # landed: now it is a mine
@@ -3654,11 +3723,28 @@ def _pending(r):
     Scoped to the grid, because the grid is exactly who started. Somebody who
     walks into the room while a race is on is driving, but they are not in it,
     and counting them here would mean a race could never reach "all in".
+
+    **Asked of the socket and not of the poses, which is the whole of the
+    difference.** This used to filter on `_live`, i.e. a pose inside
+    `POSE_STALE_MS` - six seconds. A car whose browser is still sitting there
+    but whose last pose landed seven seconds ago is not a car that has left the
+    race; it is a car on a bad connection, which at a venue is most of them. It
+    dropped out of this list, `_maybe_close` read the road as empty, and
+    `_close_race` wrote them down as a DNF - while they were still driving, and
+    forty-five seconds before the grace they were owed.
+    `gone` is the honest question: it is set by `_drop` when the socket ends, so
+    it means "this browser is not here any more" rather than "this browser was
+    quiet for a moment".
+    Nothing is lost by waiting: a race is still bounded by `FINISH_GRACE_MS`
+    from the first car home and by `_hard_race_ms` from the green light, so a
+    genuinely frozen tab holds nobody up for longer than the grace that exists
+    for exactly that.
+    `_live` keeps its own rule, because `_humans` measures whether a *room* is
+    alive and a hung tab must not make one immortal.
     """
-    live = set(_live(r))
     return [pid for pid in r["grid"]
-            if pid in live and r["cars"][pid]["ms"] is None
-            and not r["cars"][pid]["dnf"]]
+            if (c := r["cars"].get(pid)) is not None and not c["gone"]
+            and c["ms"] is None and not c["dnf"]]
 
 
 # ---------------------------------------------------------------------------
@@ -4192,8 +4278,9 @@ def on_join_room(data=None):
     game = DriveGame.query.filter_by(code=code).first()
     if not game:
         return
-    me = DrivePlayer.query.filter_by(game_id=game.id,
-                                     session_key=get_session_key()).first()
+    me = _refresh_seat(
+        DrivePlayer.query.filter_by(game_id=game.id,
+                                    session_key=get_session_key()).first())
     if not me:
         return
     join_room("room:" + code)
@@ -4233,6 +4320,21 @@ def on_join_room(data=None):
                         # banana and not seeing it is a shell thrown at
                         # somebody who is already covered.
                         "held": dict(r.get("held") or {}),
+                        # **Whether this seat is in the race that is running**,
+                        # which is what lets a browser coming back mid-race pick
+                        # the race up again rather than landing in practice with
+                        # the lights still on - see the `room_hello` handler in
+                        # `game.js`. It is not the same question as the phase:
+                        # somebody who walks into a room while a race is on is
+                        # driving but is not *in* it, and handing them a race
+                        # clock and a set of items would be a race they are not
+                        # scored in. So it is asked of the grid, which is
+                        # exactly who lined up, and of their own car.
+                        "in_race": bool(
+                            r["phase"] in ("countdown", "racing")
+                            and seat["pid"] in r["grid"]
+                            and (c := r["cars"].get(seat["pid"])) is not None
+                            and c["ms"] is None and not c["dnf"]),
                         "server_ms": _now_ms()})
     _broadcast_roster(game)
 
@@ -4956,6 +5058,21 @@ def _go_green(code, seq):
         # The backstop. Every other way a race ends depends on somebody doing
         # something; this one does not.
         eventlet.spawn_after(hard / 1000.0, _close_race, code, "time limit", seq)
+        # **And the road can already be empty at the green.** `_maybe_close`
+        # only acts while the phase is `racing`, which is right - it is asked
+        # from finish, resign, disconnect and kick, and none of those ends a
+        # race that has not started. But both of the last two can happen
+        # *during the five seconds of lights*: close the tab or press Resign
+        # while counting down and the car is `gone` or `dnf` before there is a
+        # race to close, so the call they make does nothing and the one that
+        # would have caught it has already been made. The lights then went out
+        # over nobody and the room sat in `racing` until `hard_end`, which is
+        # 150s on the short tracks and 596s on Playground - with the host
+        # unable to change track or start another, because `set_track` and
+        # `start_race` both refuse mid-race and are right to. So ask once more
+        # here, on the far side of the phase change. At an ordinary green every
+        # car is pending and this returns immediately.
+        _maybe_close(code, seq)
 
 
 @socketio.on("split")
@@ -5299,10 +5416,24 @@ HELD_BACK = 3.4
 HELD_REACH = 2.6
 
 
-# How long a car that has lost its socket keeps its place in the race. Long
-# enough for a reload (a fresh page, a track build, a rejoin) and short enough
-# that a race is not held up by somebody who has gone for good.
-LOST_GRACE_MS = 25000
+# How long a car that has lost its socket keeps its place in the race.
+#
+# **It has to be longer than the client takes to give up and come back, and at
+# 25s it was not.** `game.js` retries for as long as Socket.IO will, and if the
+# socket is still dead at `DEAD_MS` - twenty seconds - it reloads the page,
+# because a session the server has forgotten comes back as a connection with no
+# room behind it. So the reload does not *start* until 20s, and then has to
+# fetch the page, build the track and rejoin inside the remaining five - on Spa
+# or Suzuka, on venue wifi, with the un-tokened modules cold because a deploy
+# just landed. Miss it and you come back to a race you have been retired from.
+#
+# Forty-five, which leaves twenty-five seconds for the round trip the old number
+# gave five. **The second half of the old comment was simply wrong**: this has
+# never been what holds a race up. `_pending` excludes a `gone` car, so the road
+# empties and `_maybe_close` fires whatever this says - all `_tick_lost` decides
+# is when the DNF is written down, and `_close_race` writes it at the flag
+# regardless. Lengthening it costs nothing and buys back the reload.
+LOST_GRACE_MS = 45000
 
 
 def _tick_lost(r, now):
@@ -6102,50 +6233,82 @@ import maker            # noqa: E402,F401
 # Background sweep: reap dead rooms (mirrors ERS/KoT)
 # ---------------------------------------------------------------------------
 
+# How long a room with nobody driving in it gets before the janitor takes it.
+IDLE_LIMIT = timedelta(minutes=45)
+# **And how long a room nobody is even connected to gets.** A closed tab keeps
+# its seat on purpose - that is what makes a reload mid-race survivable - so a
+# room everybody walked away from sat in the lobby list looking occupied for the
+# whole forty-five minutes, and the next person along joined it and was alone
+# with four names. On an afternoon where thirty people are opening and
+# abandoning rooms, that is most of the list.
+#
+# It is a *different* question from idleness and it is answered on the sockets
+# rather than on the poses. `busy` is `_humans`, which is a pose inside six
+# seconds - a backgrounded phone stops sending those within a frame or two of
+# being put down, so sweeping on that would take the room out from under
+# everybody the moment the lobby went quiet. A socket survives a pocket and does
+# not survive a closed tab, which is exactly the line wanted.
+EMPTY_LIMIT = timedelta(minutes=5)
+
+
+def _sweep_once():
+    """One pass of the janitor: dead rooms, orphaned room state, old replays.
+
+    **Module level so a test can call it.** It used to be a closure inside
+    `_stale_cleanup`, whose other half is an infinite loop - so the only way to
+    reach any of this was to start that loop, and nothing ever did.
+    """
+    with app.app_context():
+        changed = False
+        now = datetime.utcnow()
+        cutoff = now - IDLE_LIMIT
+        empty_cutoff = now - EMPTY_LIMIT
+        held = {code for code, _ in _sid_room.values()}
+        for game in DriveGame.query.filter(DriveGame.status != "ended").all():
+            seen = game.last_activity_at or game.created_at
+            live = _rooms.get(game.code)
+            # Busy means *people*. Bots report a pose thirty times a second for
+            # as long as the pump runs, so asking `_live` here would make a
+            # deserted room with a bot in it immortal.
+            busy = bool(live and _humans(live))
+            humans = [p for p in game.players if not p.is_bot]
+            deserted = game.code not in held and seen and seen < empty_cutoff
+            if not humans or (not busy and (deserted or (seen and seen < cutoff))):
+                socketio.emit("room_closed", {"reason": "Room expired."},
+                              room="room:" + game.code)
+                _delete_game(game)
+                changed = True
+        for code in list(_rooms):
+            if not DriveGame.query.filter_by(code=code).first():
+                _rooms.pop(code, None)
+                # `_delete_game` drops the world for the rooms it ends; this is
+                # for room state whose game row went some other way, and a world
+                # nobody told is tens of megabytes of built track kept alive by a
+                # room that no longer exists.
+                botsim.drop(code)
+        # Replays outlive the rooms they were driven in, on purpose - a link to
+        # one has to keep working - but not for ever, at a couple of hundred
+        # kilobytes each. The newest REPLAY_KEEP stay.
+        old = (DriveRace.query.order_by(DriveRace.id.desc())
+               .offset(REPLAY_KEEP).all())
+        if old:
+            for race in old:
+                db.session.delete(race)
+            db.session.commit()
+        if changed:
+            _broadcast_lobbies()
+
+
 def _stale_cleanup():
-    IDLE_LIMIT = timedelta(minutes=45)
-
-    def _run():
-        with app.app_context():
-            changed = False
-            cutoff = datetime.utcnow() - IDLE_LIMIT
-            for game in DriveGame.query.filter(DriveGame.status != "ended").all():
-                seen = game.last_activity_at or game.created_at
-                live = _rooms.get(game.code)
-                # Busy means *people*. Bots report a pose thirty times a second
-                # for as long as the pump runs, so asking `_live` here would
-                # make a deserted room with a bot in it immortal.
-                busy = bool(live and _humans(live))
-                humans = [p for p in game.players if not p.is_bot]
-                if not humans or (not busy and seen and seen < cutoff):
-                    socketio.emit("room_closed", {"reason": "Room expired."},
-                                  room="room:" + game.code)
-                    _delete_game(game)
-                    changed = True
-            for code in list(_rooms):
-                if not DriveGame.query.filter_by(code=code).first():
-                    _rooms.pop(code, None)
-                    # `_delete_game` drops the world for the rooms it ends;
-                    # this is for room state whose game row went some other
-                    # way, and a world nobody told is tens of megabytes of
-                    # built track kept alive by a room that no longer exists.
-                    botsim.drop(code)
-            # Replays outlive the rooms they were driven in, on purpose - a link
-            # to one has to keep working - but not for ever, at a couple of
-            # hundred kilobytes each. The newest REPLAY_KEEP stay.
-            old = (DriveRace.query.order_by(DriveRace.id.desc())
-                   .offset(REPLAY_KEEP).all())
-            if old:
-                for race in old:
-                    db.session.delete(race)
-                db.session.commit()
-            if changed:
-                _broadcast_lobbies()
-
-    _run()
+    _sweep_once()
     while True:
-        eventlet.sleep(5 * 60)
-        _run()
+        # A minute rather than five. `EMPTY_LIMIT` is five, and a sweep that
+        # only looks every five turns that into anything up to ten - which on a
+        # busy afternoon is the whole of the lobby list. The pass is a handful
+        # of queries over a handful of rooms; it is the *closing* that costs
+        # anything, and that only happens when there is something to close.
+        eventlet.sleep(60)
+        _sweep_once()
 
 
 # **Not spawned under test, because it is spawned at import and the tests import

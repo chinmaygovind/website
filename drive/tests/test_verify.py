@@ -427,3 +427,50 @@ def test_the_recorder_writes_an_anchor_every_eighth_step(rt, honest):
     for i in range(1, n):
         gap = ev["anchors"][i][0] - ev["anchors"][i - 1][0]
         assert 0 <= gap < 200, "anchor %d is %.0fms after the one before" % (i, gap)
+
+
+# ---------------------------------------------------------------------------
+# How much one child is allowed to bite off
+# ---------------------------------------------------------------------------
+
+class _Row:
+    """Enough of a `DriveRunCheck` for `batch` to sort it."""
+    def __init__(self, id, track):
+        self.id, self.track = id, track
+
+    def __repr__(self):
+        return "%s#%d" % (self.track, self.id)
+
+
+def test_a_batch_is_one_track_and_the_rest_wait():
+    """The memory bug, in one assertion.
+
+    A child was handed up to fifty pending rows and `built` kept a collider for
+    every track among them - about 8-25MB each, and 111 and 115 for the two with
+    `pal.terrain`. Measured: 54MB before it builds anything, 208MB at twelve
+    tracks, and an outright `out of memory` at the 256MB ceiling across the
+    pool. Every OOM victim on the box carried `_stand_aside`'s score of 800, and
+    each kill left its rows pending, so the next batch was bigger and the next
+    child fatter - two laps took over two hours to clear that way.
+    """
+    rows = [_Row(1, "spa"), _Row(2, "suzuka"), _Row(3, "spa"), _Row(4, "monaco")]
+    got = verify.batch(rows)
+    assert len({r.track for r in got}) == verify.TRACKS_PER_CHILD
+    assert verify.TRACKS_PER_CHILD == 1, \
+        "two terrain tracks in one child is worse than the bug this replaced"
+
+
+def test_a_batch_groups_so_a_track_is_built_once():
+    """`built` holds one collider, so a batch that hopped between tracks would
+    rebuild one per row - which is the cost the old cache existed to avoid."""
+    rows = [_Row(1, "aaa"), _Row(2, "bbb"), _Row(3, "aaa")]
+    got = verify.batch(rows)
+    slugs = [r.track for r in got]
+    assert slugs == sorted(slugs), "a track is visited twice"
+
+
+def test_a_batch_still_takes_the_oldest_rows_of_the_track_it_picks():
+    """Grouping reorders the walk, not the queue: the caller selects
+    oldest-first and a row must not be overtaken within its own track."""
+    rows = [_Row(9, "aaa"), _Row(2, "aaa"), _Row(5, "aaa")]
+    assert [r.id for r in verify.batch(rows)] == [2, 5, 9]

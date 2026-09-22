@@ -161,6 +161,66 @@ with how late it was and what the rooms were doing.
   armed for**, so a timer from one race can never close the next - which is
   live, because Rematch can fire inside the twelve seconds the results sheet is
   up.
+- **Coming back mid-race is a client-side thing too, and for a long time only
+  the server did its half.** Everything about a reload surviving is on the
+  server - `_drop` marks the car `gone` rather than deleting it,
+  `LOST_GRACE_MS` holds its place, `on_join_room` clears the mark - and then
+  the browser arrived with `racePhase` 'racing' and `raceMode` **false**,
+  because `raceMode` and `raceT0` are only ever set by `race_start` and
+  `race_green` and both of those fired while the page was somewhere else. Every
+  rule that reads the two together read the gap: `contactOn` was false so no car
+  touched another, `canUseItem` is gated on it so items did nothing, the lap
+  clock at `raceT0` never started so there was no time to finish with and
+  `finish` was never emitted - making the DNF at the flag a certainty - and
+  `restartCostsARace` was false, so `R` restarted on one press instead of
+  asking twice. `resumeRace` is that half, off a new `in_race` in `room_hello`:
+  the server's own answer to "are you in the race that is running", asked of
+  the **grid** rather than of the phase, so somebody who walked in after the
+  lights is still driving and still not scored. The clock is restored to the
+  green light and not to now, so the time spent away is in the lap - what is
+  lost is lost, and what is not lost is the race. `room_hello` also seeds
+  `clockOffset` off its own `server_ms` when nothing better has been measured,
+  because the five `clock` round trips are staggered 200ms apart from connect
+  and the restored `t0` needs an offset before the first of them lands.
+- **Who is still out on the circuit is asked of the socket, not of the
+  poses.** `_pending` used to filter on `_live`, which is a pose inside
+  `POSE_STALE_MS` - six seconds. A car whose browser is still sitting there but
+  whose last pose landed seven seconds ago is not a car that has left the race;
+  it is a car on a bad connection, which at a venue is most of them. It dropped
+  out of `_pending`, `_maybe_close` read the road as empty and closed the race
+  as "all in", and `_close_race` wrote them down as a DNF - while they were
+  still driving, and forty-five seconds before the grace they were owed. `gone`
+  is the honest question: `_drop` sets it when the socket ends, so it means
+  "this browser is not here" rather than "this browser was quiet for a moment".
+  Nothing is lost by waiting, because a race is still bounded by
+  `FINISH_GRACE_MS` from the first car home and by `_hard_race_ms` from the
+  green. **`_live` keeps its own rule**, because `_humans` measures whether a
+  *room* is alive and a hung tab must not make one immortal.
+- **The lights can go out over an empty road, and `_maybe_close` is asked once
+  more at the green because of it.** That function only acts while the phase is
+  `racing`, which is correct - it is called from finish, resign, disconnect and
+  kick, and none of those ends a race that has not started. But the last two can
+  both happen *during the five seconds of lights*: close the tab or press Resign
+  while counting down and the car is `gone` or `dnf` before there is a race to
+  close, so the call they make does nothing and the phase change that follows
+  has nobody left to notice. The room then sat in `racing` until `hard_end` -
+  150s on the short tracks, **596s on Playground** - with the host unable to
+  change track or start another, because `set_track` and `start_race` both
+  refuse mid-race and are right to. `_go_green` now asks again on the far side
+  of the phase change; at an ordinary green every car is pending and it returns
+  at once.
+- **`LOST_GRACE_MS` has to outlast the client's own reload, and at 25s it did
+  not.** `game.js` retries for as long as Socket.IO will and then reloads the
+  page at `DEAD_MS` (twenty seconds), because a session the server has forgotten
+  comes back as a connection with no room behind it. So the reload does not
+  *begin* until 20s and then has to fetch the page, build the track and rejoin
+  inside the remaining five - on Spa or Suzuka, whose colliders are the two
+  biggest in the pool, on venue wifi, with the un-tokened modules cold because a
+  deploy has just landed. Miss it and you come back to a race you have been
+  retired from. It is 45s now. The old comment's second half was simply wrong:
+  this has never been what holds a race up, since `_pending` excludes a `gone`
+  car either way - all `_tick_lost` decides is when the DNF is written, and
+  `_close_race` writes it at the flag regardless.
 - **Leaving mid-race is a DNF, not a disappearance.** `_drop` used to delete
   the car, and with it the loss, so the cheapest way to protect a rating was to
   close the tab - the one thing a rating system must never make the smart move.
@@ -376,6 +436,23 @@ with how late it was and what the rooms were doing.
     the bang, which belong to the place rather than to any car. It will not go
     off on contact with the car that just threw it, which is the same clause
     that stops a shell hitting its own nose.
+  - **Nothing hits a car that has never been sent one frame of it.** `_fire`
+    runs in a socket handler; `_tick_shots` runs at the top of the next tick
+    and `_snapshot` at the bottom of the same one - so a shot thrown at
+    anybody inside about nine units (the five it leaves the nose at plus the
+    four of `SHOT_HIT_R2`) was born, moved and spent before it had ever been
+    in a snapshot. No mesh, no dot on the minimap, no `shellWarning` ping:
+    from the seat, being spun over by thin air, with only the toast afterwards
+    to say what it had been. And nine units is not an edge - it is the range
+    anybody actually throws one at. Every shot now sits still for
+    `SHOT_ARM_TICKS` (two, 66ms) before it may move or hit.
+    **Still, not merely unarmed**: a shell allowed to fly for those 66ms is
+    five units past a point-blank target by the time it arms, which trades an
+    invisible hit for a shell that goes through somebody, and that is not the
+    better game. Frozen, it is in the same place when it arms, so every hit
+    that landed before still lands - 66ms later, having been drawn, mapped and
+    heard first. The expiry check is *above* the arming branch, so a shot
+    whose clock has run out still dies rather than being kept alive by it.
   - **Every shot carries an id**, because the list it travels in changes order
     every time one is fired or hits something - a browser binding a mesh to a
     *list position* had shells swapping places with each other mid-flight. With
@@ -591,6 +668,23 @@ with how late it was and what the rooms were doing.
   drawer is most of the screen and hides the driving controls while it is
   open, so there is nothing left underneath to keep reachable, and sliding it
   only walked the icons into the top-centre buttons on the way past.
+- **A seat remembers who you were when you took it, and signing in changes
+  that.** `session_key` deliberately survives a login - `login`, `register` and
+  `portal_auth` pop `guest_name` and set `user_id` and touch nothing else -
+  which is what lets a guest sign up without losing the seat they are sitting
+  in. What it also did was leave the `drive_players` row saying guest: null
+  `user_id`, the guest's typed name, the colour hashed off it. Everything
+  downstream reads the row, so for the rest of that room's life the new account
+  was a guest to `_rate_race` (no ELO, no win or podium tally, and beating them
+  gained nobody anything either - see the bullet below), wore the hashed colour
+  instead of the car out of its garage, and raced under the name it had just
+  stopped using. A reload did not fix it, because a reload finds the same row.
+  `_refresh_seat` brings the row up to date wherever this browser's seat is
+  looked up - `_add_player`, the room page and `on_join_room`, which every way
+  into a room passes through. It compares on `user_id` rather than on the name,
+  because that is the fact the rating and the tallies turn on, and it covers
+  logging *out* and carrying on as a guest for the same reason. A bot's seat has
+  nobody behind it and is left alone.
 - **Guests are invisible to ELO.** They are in the room, on the grid and in the
   standings, but `_rate_race` ranks the logged-in players *among themselves*:
   beating a guest gains nothing, losing to one costs nothing. Anything else is

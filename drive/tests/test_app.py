@@ -1845,3 +1845,34 @@ def test_the_deploy_can_ask_whether_anybody_is_racing(env):
     r["phase"] = "results"                       # the sheet is not a race
     assert c.get("/api/live").get_json()["racing"] == 0
     A._rooms.clear()
+
+
+def test_a_guest_who_signs_up_stops_being_a_guest_in_the_room_they_are_sitting_in(env):
+    """The seat remembers who you were when you took it.
+
+    Signing in deliberately keeps `session_key` - `login` and `register` pop
+    `guest_name` and set `user_id` and touch nothing else - which is what lets
+    a guest sign up without losing the seat they are in. What it also did was
+    leave the `drive_players` row saying guest: null `user_id`, the guest's
+    typed name, the colour hashed off it. Everything downstream reads the row,
+    so for the rest of that room's life the new account was a guest to
+    `_rate_race` (no ELO, no win or podium tally, and beating them gained
+    nobody anything), wore the hashed colour rather than the car out of its
+    garage, and raced under the name it had just stopped using. Reloading did
+    not fix it, because a reload finds the same row.
+    """
+    c = env.app.test_client()
+    assert c.post("/guest", json={"name": "Dave"}).get_json()["ok"]
+    code = c.post("/create", json={"track": "sunrise"}).get_json()["code"]
+
+    assert c.post("/register", json={"username": "dave", "email": "d@e.com",
+                                     "password": "password123"}).get_json()["ok"]
+    assert c.get("/room/" + code).status_code == 200
+
+    with env.app.app_context():
+        game = env.DriveGame.query.filter_by(code=code).first()
+        seat = game.players[0]
+        user = env.User.query.filter_by(username="dave").first()
+        assert seat.user_id == user.id, "still rated, tallied and badged as a guest"
+        assert seat.name == "dave"
+        assert env._roster(game)[0]["guest"] is False
