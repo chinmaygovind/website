@@ -619,3 +619,92 @@ table.tbl { width:100%; border-collapse: collapse; color: var(--ink); }
   width: .6rem; height: .6rem; border-radius: 50%; flex: none;
   background: #1f7a4d; box-shadow: 0 0 0 3px rgba(31, 122, 77, .22);
 }
+
+/* --- install prompt ------------------------------------------------------ */
+#a2hs {
+  position: fixed; left: .7rem; right: .7rem; z-index: 60;
+  bottom: calc(.7rem + env(safe-area-inset-bottom));
+  display: grid; grid-template-columns: auto 1fr; gap: .55rem .7rem;
+  align-items: center; padding: .8rem .9rem;
+  background: linear-gradient(180deg, var(--cream), var(--parch)); color: var(--ink);
+  border: 1px solid #d9c9a5; border-radius: 16px;
+  box-shadow: 0 16px 44px var(--shadow), inset 0 1px 0 #fff;
+  transform: translateY(170%); opacity: 0;
+  transition: transform .3s cubic-bezier(.2, .8, .3, 1), opacity .3s;
+}
+#a2hs.in { transform: none; opacity: 1; }
+#a2hs .a2hs-ico { width: 40px; height: 40px; border-radius: 9px; }
+#a2hs .a2hs-txt { min-width: 0; line-height: 1.3; }
+#a2hs .a2hs-txt b {
+  display: block; font-family: "xkcd", var(--sans); font-size: 1rem; color: var(--ink);
+}
+#a2hs .a2hs-txt span { display: block; font-size: .8rem; color: var(--ink-soft); }
+#a2hs .btn { grid-column: 1 / -1; font-size: .95rem; padding: .55rem 1rem; }
+#a2hs .a2hs-x {
+  position: absolute; top: -12px; right: -10px; width: 30px; height: 30px;
+  display: grid; place-items: center; padding: 0; cursor: pointer;
+  border: 2px solid var(--gold-deep); border-radius: 50%;
+  background: linear-gradient(180deg, var(--cream), var(--parch)); color: var(--ink); font-size: 1.15rem; line-height: 1;
+  box-shadow: 0 4px 12px var(--shadow);
+}
+
+/* --- install instructions page ------------------------------------------ */
+.ins { max-width: 620px; }
+.ins-head { text-align: center; margin-bottom: 1.7rem; }
+.ins-head .ins-icon {
+  width: 84px; height: 84px; border-radius: 19px; padding: 7px;
+  background: linear-gradient(180deg, var(--cream), var(--parch)); border: 1px solid #d9c9a5;
+  box-shadow: 0 12px 30px var(--shadow);
+}
+.ins-head h1 { margin: .9rem 0 .4rem; }
+.ins-head .lede { margin: 0 auto; max-width: 46ch; color: rgba(247,239,221,.68); }
+.ins-seg {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 5px;
+  padding: 5px; margin-bottom: 1.4rem;
+  border: 1px solid rgba(242,201,76,.32); border-radius: 14px; background: rgba(255,255,255,.05);
+}
+.ins-tab {
+  font-family: "xkcd", var(--sans); font-size: .95rem;
+  padding: .55rem .4rem; border: 0; border-radius: 10px; cursor: pointer;
+  background: transparent; color: rgba(247,239,221,.68);
+}
+.ins-tab.on {
+  background: linear-gradient(180deg, var(--gold-soft), var(--gold) 55%, var(--gold-deep));
+  color: #3a2606;
+}
+.ins-live, .ins-steps li {
+  background: linear-gradient(180deg, var(--cream), var(--parch)); color: var(--ink);
+  border: 1px solid #d9c9a5; border-radius: 14px;
+  box-shadow: 0 12px 30px var(--shadow), inset 0 1px 0 #fff;
+}
+.ins-live { margin: 0 0 1.1rem; padding: 1.1rem; text-align: center; }
+.ins-live p { margin: 0 0 .8rem; font-size: .92rem; color: var(--ink-soft); }
+.ins-steps ol { list-style: none; margin: 0; padding: 0; display: grid; gap: .85rem; }
+.ins-steps li {
+  display: grid; grid-template-columns: auto 1fr; gap: .95rem;
+  padding: 1.05rem 1.15rem;
+}
+.ins-n {
+  width: 32px; height: 32px; display: grid; place-items: center;
+  border-radius: 50%; font-family: "xkcd", var(--sans); font-size: 1rem; color: #3a2606;
+  background: linear-gradient(180deg, var(--gold-soft), var(--gold) 55%, var(--gold-deep));
+  box-shadow: 0 2px 0 var(--gold-deep);
+}
+.ins-steps h3 { margin: .25rem 0 .35rem; font-size: 1.05rem; color: var(--ink); }
+.ins-steps p { margin: 0; font-size: .9rem; color: var(--ink-soft); }
+.ins-chip {
+  display: inline-flex; align-items: center; gap: .45rem; margin-top: .65rem;
+  padding: .38rem .65rem; font-size: .85rem;
+  border: 1px solid rgba(42,32,24,.22); border-radius: 9px; background: rgba(42,32,24,.06);
+  color: var(--ink);
+}
+.ins-chip svg { width: 17px; height: 17px; }
+.ins-open {
+  display: inline-flex; align-items: center; gap: .45rem; margin-top: .7rem;
+  font-size: .95rem; padding: .5rem 1rem; text-decoration: none;
+}
+.ins-open svg { width: 18px; height: 18px; }
+.ins .ins-done {
+  margin-top: 1.3rem; padding: 1rem; text-align: center; font-size: .9rem;
+  border: 1px dashed rgba(242,201,76,.32); border-radius: 14px; color: rgba(247,239,221,.68);
+}

@@ -469,6 +469,18 @@ def lobby(code):
                            name=get_effective_name())
 
 
+@app.route("/install")
+def install():
+    """How to put Rat Screw on a phone's home screen, for the prompt in `base.html`.
+
+    Both sets of steps are in the page and JS picks between them, so the route
+    never sniffs a User-Agent: a link to this page is right for whoever opens
+    it rather than for whoever was sent it. No login - the point of the page is
+    to be reachable by somebody who has only just arrived.
+    """
+    return render_template("install.html", user=get_current_user())
+
+
 @app.route("/leaderboard")
 @require_login
 def leaderboard():

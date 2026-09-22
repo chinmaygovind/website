@@ -3122,3 +3122,99 @@ body.garage-page .nav { flex: none; }
                     stroke-width: 3.4; stroke-linecap: round;
                     stroke-linejoin: round;
                     filter: drop-shadow(0 1px 2px rgba(0,0,0,.45)); }
+
+/* --- install prompt ------------------------------------------------------ */
+#a2hs {
+  position: fixed; left: .7rem; right: .7rem; z-index: 60;
+  bottom: calc(.7rem + env(safe-area-inset-bottom));
+  display: grid; grid-template-columns: auto 1fr; gap: .55rem .7rem;
+  align-items: center; padding: .75rem .85rem;
+  background: var(--paper); color: var(--ink);
+  border: 2px solid var(--line); border-radius: 14px;
+  box-shadow: 3px 3px 0 rgba(29, 29, 31, .25), 0 12px 34px rgba(29, 29, 31, .24);
+  transform: translateY(170%); opacity: 0;
+  transition: transform .3s cubic-bezier(.2, .8, .3, 1), opacity .3s;
+}
+#a2hs.in { transform: none; opacity: 1; }
+#a2hs .a2hs-ico { width: 40px; height: 40px; border-radius: 9px; }
+#a2hs .a2hs-txt { min-width: 0; line-height: 1.25; }
+#a2hs .a2hs-txt b {
+  display: block; font-family: var(--display); font-weight: 700; font-size: .97rem;
+}
+#a2hs .a2hs-txt span { display: block; font-size: .78rem; color: var(--ink-soft); }
+#a2hs .btn { grid-column: 1 / -1; font-size: .9rem; padding: .5rem .9rem; }
+#a2hs .a2hs-x {
+  position: absolute; top: -11px; right: -9px; width: 28px; height: 28px;
+  display: grid; place-items: center; padding: 0; cursor: pointer;
+  border: 2px solid var(--line); border-radius: 50%;
+  background: var(--paper); color: var(--ink);
+  font-size: 1.05rem; line-height: 1; font-family: var(--display);
+  box-shadow: 2px 2px 0 rgba(29, 29, 31, .25);
+}
+#a2hs .a2hs-x:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+
+/* --- install instructions page ------------------------------------------ */
+.ins { max-width: 620px; }
+.ins-head { text-align: center; margin-bottom: 1.6rem; }
+.ins-head .ins-icon {
+  width: 76px; height: 76px; border-radius: 17px;
+  border: 2px solid var(--line); background: #fff; padding: 6px;
+  box-shadow: 3px 3px 0 rgba(29, 29, 31, .25);
+}
+.ins-head h1 { margin: .8rem 0 .3rem; }
+.ins-head .lede { margin: 0 auto; max-width: 46ch; }
+.ins-seg {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+  padding: 4px; margin-bottom: 1.3rem;
+  border: 2px solid var(--line); border-radius: 12px; background: #fff;
+  box-shadow: 2px 2px 0 rgba(29, 29, 31, .25);
+}
+.ins-tab {
+  font-family: var(--display); font-size: .92rem; font-weight: 600;
+  padding: .5rem .4rem; border: 0; border-radius: 8px; cursor: pointer;
+  background: transparent; color: var(--ink-soft);
+}
+.ins-tab.on { background: var(--ink); color: var(--paper); }
+.ins-tab:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+.ins-note {
+  display: flex; gap: .55rem; align-items: flex-start;
+  margin: 0 0 1rem; padding: .7rem .85rem; font-size: .88rem;
+  border: 2px solid var(--line); border-left-width: 6px; border-radius: 10px;
+  background: #fffbe8;
+}
+.ins-note svg { width: 18px; height: 18px; flex: none; margin-top: .1rem; }
+.ins-live {
+  margin: 0 0 1.1rem; padding: 1rem; text-align: center;
+  border: 2px solid var(--line); border-radius: 12px; background: #fff;
+  box-shadow: 3px 3px 0 rgba(29, 29, 31, .25);
+}
+.ins-live p { margin: 0 0 .7rem; font-size: .9rem; }
+.ins-steps ol { list-style: none; margin: 0; padding: 0; display: grid; gap: .8rem; }
+.ins-steps li {
+  display: grid; grid-template-columns: auto 1fr; gap: .9rem;
+  padding: .95rem 1rem;
+  border: 2px solid var(--line); border-radius: 12px; background: #fff;
+  box-shadow: 3px 3px 0 rgba(29, 29, 31, .25);
+}
+.ins-n {
+  width: 30px; height: 30px; display: grid; place-items: center;
+  border-radius: 50%; background: var(--red); color: #fff;
+  font-family: var(--display); font-weight: 700; font-size: .95rem;
+}
+.ins-steps h3 { margin: .2rem 0 .3rem; font-size: 1.02rem; }
+.ins-steps p { margin: 0; font-size: .89rem; color: var(--ink-soft); }
+.ins-chip {
+  display: inline-flex; align-items: center; gap: .4rem; margin-top: .6rem;
+  padding: .35rem .6rem; font-size: .84rem; font-weight: 600;
+  border: 2px solid var(--line); border-radius: 8px; background: var(--paper);
+}
+.ins-chip svg { width: 17px; height: 17px; }
+.ins .ins-done {
+  margin-top: 1.2rem; padding: 1rem; text-align: center; font-size: .9rem;
+  border: 2px dashed var(--line); border-radius: 12px; color: var(--ink-soft);
+}
+.ins-open {
+  display: inline-flex; align-items: center; gap: .45rem; margin-top: .65rem;
+  font-size: .92rem; padding: .45rem .9rem;
+}
+.ins-open svg { width: 18px; height: 18px; }

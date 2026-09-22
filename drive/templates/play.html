@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ track.name }} | Drive{% endblock %}
 {% block bodyclass %}playing{% if mode == 'room' %} room{% endif %}{% endblock %}
+{% block install_prompt %}{% endblock %}
 
 {# The room to go back to when a replay is over - see `_seated_room`. Bound once
    here, and defaulted, because only the replay route sends it and the two

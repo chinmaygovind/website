@@ -1698,6 +1698,17 @@ def api_race(race_id):
                     "why": race.why, "cars": cars})
 
 
+@app.route("/install")
+def install():
+    """How to put Drive on a phone's home screen, for the prompt in `base.html`.
+
+    Both sets of steps are in the page and JS picks between them, so the route
+    never sniffs a User-Agent: a link to this page is right for whoever opens
+    it rather than for whoever was sent it.
+    """
+    return render_template("install.html", active_page="install")
+
+
 @app.route("/privacy")
 def privacy():
     """What is kept and why, in one page.
