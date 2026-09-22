@@ -25,7 +25,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SITE = os.path.join(ROOT, "site")
 ESE = os.path.join(SITE, "ese2100")
 
-PAGES = ["", "cobweb", "bifurcations"]
+PAGES = ["", "cobweb", "bifurcations", "review/quizzam1"]
 
 
 def pages_are_checked_out():

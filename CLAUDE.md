@@ -39,7 +39,7 @@ It has its own CI and is not tested from this repo.
   **`site/ese2100/` is what exercises the directory-index branch**, and for a
   year nothing did - `site/index.html` was the only `index.html` left, and the
   branch was kept anyway because it is ten lines and it is what makes the next
-  `site/foo/index.html` simply work. Three coursework pages later that is exactly
+  `site/foo/index.html` simply work. Four coursework pages later that is exactly
   what happened: they needed no server change at all. `site/CLAUDE.md` →
   **`/ese2100`**.
 - **`/cobweb` 301s to `/ese2100/cobweb/` and is the only redirect here that is

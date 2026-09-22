@@ -92,6 +92,10 @@ DRIVE_TRACKS = {
     "monaco": "Monaco",
     "dino": "Dino Park",
     "railway": "Rickety Rails",
+    "boo": "BOO!",
+    "monza": "Monza",
+    "playground": "Playground",
+    "suzuka": "Suzuka",
 }
 
 

@@ -284,7 +284,7 @@ lists the weeks, and it is **the URL that gets handed in** - the assignment asks
 for a link, so there has to be one address that keeps working as weeks are added.
 Newest week first; a new week is one `<a class="week">` and a directory.
 
-**All three pages are `noindex`, in no sitemap, and nothing on the landing page
+**All four pages are `noindex`, in no sitemap, and nothing on the landing page
 links to them.** They are pages you send someone the URL for. `tests/test_ese2100.py`
 pins the `noindex` on each, because nothing else in the suite would notice it
 going missing on the next edit.
@@ -308,7 +308,7 @@ A 301 rather than a 302 because this *is* the canonical address now.
 - **CI asks for `site/ese2100` by name in the sparse checkout.** Sparse mode is a
   cone, so the existing `site/assets/flags` pattern drags in `site/`'s own files
   but none of its subdirectories - without the extra pattern every test that
-  reads these pages would skip, which reads as a pass. They are three HTML files
+  reads these pages would skip, which reads as a pass. They are four HTML files
   and no media, so asking for them costs nothing.
 
 ### `/ese2100/cobweb` (week 2)
@@ -494,6 +494,56 @@ function names it only matches when the next character is not a letter.
   when the hoop is edge-on - cos&theta; is zero twice a turn and the angle would
   jump. The drag reads the raw `atan2` instead, as though you were looking at
   the hoop edge-on, which is a little wrong every frame and never surprising.
+
+### `/ese2100/review/quizzam1`
+
+A practice set for Quizzam 1, which covers weeks 1-4: 72 problems shuffled with
+no repeat until the bank is spent, answered by typing rather than clicking,
+because the point is recall speed and a mouse is slower than the hands already
+on the keyboard. **It is the first page here that is revision rather than a
+simulation**, which is why it sits under `review/` and its card on the index
+says `review` where the others say a week number. A second quizzam gets a
+sibling directory, not a rewrite of this one.
+
+**Forty of the seventy-two are five-option problems written in the exam's own
+register** - evaluate-the-student's-claim, which-must-be-true, read-this-figure -
+because the real thing is conceptual multiple choice and a drill made only of
+"classify this lambda" trains the wrong reflex. The other thirty-two are the
+fast typed rounds, kept because the classification itself still has to be
+automatic. Answer a multiple-choice question with a letter or its number; both
+parse.
+
+- **Wrong answers that the real exam would give partial credit for are marked
+  as such**, from a `p` list of option indices on the question. They score as
+  misses - this is practice, not the exam - but they read back as
+  `partial-credit answer` rather than as a plain cross, because "right family,
+  wrong sign" and "no idea" are different states and the feedback should not
+  flatten them. Most of them are the answer that would be correct in the other
+  time type, which is how the real paper builds its distractors.
+- **Typed answers go through a per-question alias table owned by the category**
+  (`STAB`, `BIF`, `COUPLE`, `NUM`, and `MC` for the letters), so `s` is *stable*
+  in a stability question and *sync* in a coupling one without either having to
+  know the other exists. The grey line under the input prints that category's
+  accepted set. **Every display name must also be an alias**: the feedback shows
+  "supercritical pitchfork", so typing that back has to work, and it did not
+  until a test drove all 72 questions through `render` then `submit` and found
+  three names the map did not accept.
+- **Typing `pf` where the answer is super- or subcritical does not count as
+  wrong.** It clears the box and asks which kind. Knowing it is a pitchfork and
+  not knowing the sign of the cubic are different gaps.
+- **The per-topic bars are the feature, not the score.** A single accuracy
+  number says nothing you can act on; seven bars say which chapter to reread,
+  and the thresholds (80 green, 55 amber) are set so a bar goes amber while
+  there is still time to do something about it.
+- Progress lives in `localStorage` under `cgovind:ese2100:quizzam1`, namespaced
+  the same way as `cgovind:settings` which the theme bootstrap reads.
+- **Figures are inline SVG with classed strokes, not hardcoded colours**, so the
+  five bifurcation diagrams and the two phase-diagram plots follow
+  `--ok`/`--bad`/`--orbit` into dark mode. The page adds those three tokens plus
+  `--warn` to the pair the other coursework pages define, in both themes.
+- **It asks for no font but the shared one.** Maths and the input use the system
+  mono stack the other pages already use for readouts, so the page is still one
+  request.
 
 ## The settings panel
 

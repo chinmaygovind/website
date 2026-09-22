@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quizzam 1 Drill</title>
+<meta name="description" content="Practice problems for ESE 2100 Quizzam 1, mostly five-option and written in the exam's own style: the stability criterion in both time types, cobwebs, periodic orbits, coupled oscillators, the four bifurcations, and 2-D linear systems. Answered by typing, with the reason on every one.">
+<meta name="robots" content="noindex">
+<link rel="preload" href="../../../fonts/xkcd-script.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face {
+  font-family: "xkcd Script";
+  src: url("../../../fonts/xkcd-script.woff2") format("woff2"),
+       url("../../../fonts/xkcd-script.woff") format("woff");
+  font-display: block;
+}
+:root{
+  color-scheme: light;
+  --bg:#ffffff; --fg:#000000; --panel:#ffffff;
+  --hair: rgba(0,0,0,0.12); --wash: rgba(0,0,0,0.02);
+  --faint: rgba(0,0,0,0.4);
+  --math:#1f7a4d; --accent: var(--math);
+  --ok:#1f7a4d; --bad:#b3261e; --warn:#9a6700; --orbit:#1a4fa0;
+}
+html[data-theme="dark"]{
+  color-scheme: dark;
+  --bg:#101114; --fg:#ececec; --panel:#191b20;
+  --hair: rgba(255,255,255,0.16); --wash: rgba(255,255,255,0.03);
+  --faint: rgba(255,255,255,0.42);
+  --math:#52d68a;
+  --ok:#52d68a; --bad:#ff7a6e; --warn:#f0b23c; --orbit:#6fb0ff;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--bg);color:var(--fg);
+  font-family:"xkcd Script",ui-rounded,"Comic Sans MS",system-ui,sans-serif;
+  font-size:17px;line-height:1.5;
+}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.wrap{max-width:680px;margin:0 auto;padding:2rem 1.1rem 4rem}
+a.back{color:var(--faint);text-decoration:none;font-size:1rem}
+a.back:hover{color:var(--accent)}
+h1{
+  margin:0.9rem 0 0.3rem;font-weight:bold;line-height:1.05;
+  font-size:clamp(2rem,5vw,3.1rem);color:var(--accent);
+}
+.sub{color:var(--faint);margin:0 0 1.6rem;font-size:clamp(1rem,1.8vw,1.2rem)}
+
+.stats{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:0.6rem;margin-bottom:1rem;
+}
+.stat{border:1px solid var(--hair);border-radius:10px;background:var(--wash);padding:0.5rem 0.7rem}
+.stat b{
+  display:block;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:1.3rem;font-weight:normal;font-variant-numeric:tabular-nums;line-height:1.2;
+}
+.stat span{display:block;font-size:0.72rem;color:var(--faint);margin-top:0.1rem}
+#sStreak b{color:var(--accent)}
+
+.card{
+  border:1px solid var(--hair);border-radius:14px;background:var(--panel);
+  padding:1.1rem 1.2rem 1rem;position:relative;
+}
+.card.hit{border-color:var(--ok)}
+.card.miss{border-color:var(--bad)}
+.topline{
+  display:flex;justify-content:space-between;gap:0.7rem;align-items:baseline;
+  font-size:0.8rem;margin-bottom:0.7rem;
+}
+.topic{color:var(--orbit)}
+.kind{color:var(--faint);text-align:right}
+.prompt{margin:0;font-size:1.1rem;line-height:1.45;text-wrap:pretty}
+.math{
+  margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:1.15rem;color:var(--fg);
+}
+.subq{margin:0.5rem 0 0;color:var(--faint);font-size:0.9rem}
+figure{margin:0;display:flex;justify-content:center}
+svg{max-width:100%;height:auto}
+svg .ln{fill:none;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
+svg .s{stroke:var(--ok)}
+svg .u{stroke:var(--bad);stroke-dasharray:5 4}
+svg .o{stroke:var(--orbit)}
+svg .ax{stroke:var(--hair);stroke-width:1.2}
+svg text{fill:var(--faint);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+svg .dot{fill:var(--fg)}
+svg .fx{stroke:var(--fg);stroke-width:2.4}
+.mcq{margin:0.9rem 0 0;color:var(--faint);font-size:0.95rem}
+ol.opts{list-style:none;margin:0.9rem 0 0;padding:0;display:flex;flex-direction:column;gap:0.4rem}
+ol.opts li{display:grid;grid-template-columns:2.1rem 1fr;gap:0.4rem;align-items:baseline;line-height:1.4}
+ol.opts .lab{color:var(--accent);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:0.9rem}
+
+.entry{display:flex;align-items:center;gap:0.6rem;margin-top:1rem}
+.caret{color:var(--accent);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+input{
+  flex:1;min-width:0;background:var(--bg);color:var(--fg);
+  border:1px solid var(--hair);border-radius:8px;padding:0.55rem 0.7rem;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:1rem;
+}
+input::placeholder{color:var(--faint)}
+input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
+.hint{
+  margin-top:0.45rem;font-size:0.8rem;color:var(--faint);
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+.fb{margin-top:0.8rem;min-height:3rem;font-size:0.95rem}
+.fb .verdict{font-size:1.05rem}
+.fb .why{color:var(--faint);margin-top:0.2rem;line-height:1.45}
+.ok{color:var(--ok)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+code{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:0.85em;
+  background:var(--wash);border:1px solid var(--hair);border-radius:5px;padding:0.05rem 0.3rem;
+}
+.sechead{
+  font-size:0.85rem;color:var(--faint);margin:2rem 0 0.7rem;font-weight:normal;
+  border-top:1px solid var(--hair);padding-top:1rem;
+}
+.bars{display:flex;flex-direction:column;gap:0.45rem}
+.bar{display:grid;grid-template-columns:7.5rem 1fr 3.6rem;gap:0.6rem;align-items:center}
+.bar .nm{font-size:0.85rem;color:var(--faint)}
+.track{height:7px;background:var(--wash);border:1px solid var(--hair);border-radius:99px;overflow:hidden}
+.fill{height:100%;border-radius:99px;transition:width .25s ease}
+.bar .pc{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:0.8rem;
+  color:var(--faint);text-align:right;font-variant-numeric:tabular-nums;
+}
+.foot{display:flex;gap:1rem;flex-wrap:wrap;align-items:center;color:var(--faint);font-size:0.85rem}
+button.pillbtn{
+  background:var(--bg);border:1px solid var(--hair);border-radius:99px;color:var(--faint);
+  font-family:inherit;font-size:0.85rem;padding:0.3rem 0.8rem;cursor:pointer;
+}
+button.pillbtn:hover{border-color:var(--accent);color:var(--accent)}
+button.pillbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (max-width:430px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .bar{grid-template-columns:6rem 1fr 3.2rem}
+  .topline{flex-direction:column;gap:0.15rem}
+  .kind{text-align:left}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<script>
+(function(){
+  var d=document.documentElement,s={};
+  try{ s=JSON.parse(localStorage.getItem("cgovind:settings"))||{}; }catch(e){}
+  var dark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;
+  d.dataset.theme=s.theme||(dark?"dark":"light");
+})();
+</script>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="/ese2100/">&#8592; ESE 2100</a>
+  <h1>Quizzam 1 Drill</h1>
+  <p class="sub">Weeks 1&ndash;4, shuffled. Mostly five-option problems in the quizzam's own style &mdash; type a letter, press Enter, press Enter again for the next one. Every answer comes back with the reason, and the near-miss options are marked as such.</p>
+
+  <div class="stats">
+    <div class="stat" id="sStreak"><b id="vStreak">0</b><span>streak</span></div>
+    <div class="stat"><b id="vBest">0</b><span>best</span></div>
+    <div class="stat"><b id="vAcc">&mdash;</b><span>accuracy</span></div>
+    <div class="stat"><b id="vSeen">0</b><span>answered</span></div>
+  </div>
+
+  <div class="card" id="card">
+    <div class="topline"><span class="topic" id="topic">&mdash;</span><span class="kind" id="kind">&mdash;</span></div>
+    <div id="qbody"></div>
+    <div class="entry">
+      <span class="caret" aria-hidden="true">&gt;</span>
+      <input id="ans" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Your answer">
+    </div>
+    <div class="hint" id="hint"></div>
+    <div class="fb" id="fb"></div>
+  </div>
+
+  <section id="weak" hidden>
+    <h2 class="sechead">accuracy by topic</h2>
+    <div class="bars" id="bars"></div>
+  </section>
+
+  <h2 class="sechead">how it works</h2>
+  <div class="foot">
+    <span>the grey line under the box says what that question accepts</span>
+    <button class="pillbtn" id="reset" type="button">reset stats</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  function M(t,s){return {math:t,sub:s||""};}
+  function T(t){return {text:t};}
+  function B(k){return {svg:k};}
+  function G(k){return {fn:k};}
+  var Q=[
+  /* ================= MULTIPLE CHOICE ================= */
+  {t:"Ch 1–2",k:"state variables",c:"MC",q:T("Which of the following is NOT naturally a discrete-time dynamical system?"),
+   o:["The closing price of a stock on each trading day.",
+      "The charge on a capacitor in an RC circuit.",
+      "The amount owed on a car loan after each monthly payment.",
+      "The number of rabbits recorded in an annual census.",
+      "The reading of a thermometer logged once an hour."],
+   a:1,w:"Charge on a capacitor evolves continuously; the others are all sampled at events or at fixed intervals. Logging a continuous quantity hourly still gives a discrete-time system — the state is the sequence of readings."},
+
+  {t:"Ch 1–2",k:"Exponential Lemma",c:"MC",q:T("A student says: “E = eᴰ, so the discrete system Ex = λx is the sampled version of ẋ = λx.” Which best evaluates this claim?"),
+   o:["Correct: both are stable exactly when λ < 0.",
+      "Incorrect: the sampled version is Ex = e^λ x, and its stability needs |e^λ| < 1.",
+      "Incorrect: E = eᴰ relates operators to each other and says nothing about systems.",
+      "Correct, provided λ > 0.",
+      "Incorrect: the sampled version is Ex = ln(λ)·x."],
+   a:1,p:[0],w:"Sampling ẋ = λx at unit intervals multiplies by e^λ each step, so the multiplier is e^λ, not λ. (A) reaches a true statement — |e^λ| < 1 really is λ < 0 — by the wrong route, which is why it is the near miss."},
+
+  {t:"Ch 1–2",k:"Exponential Lemma",c:"MC",q:T("Why is there no continuous-time analogue of the period-doubling bifurcation?"),
+   o:["Continuous-time systems cannot oscillate at all.",
+      "Because e^λ is never negative, so no sampled continuous system has multiplier −1.",
+      "Because a continuous system has no fixed points of period two.",
+      "Because the continuous criterion uses |λ| rather than λ.",
+      "There is one; it is called the Hopf bifurcation."],
+   a:1,w:"The discrete criterion fails two ways, at λ = +1 and λ = −1. Exponentiating the continuous criterion can only ever reach positive multipliers, so λ = −1 has no continuous counterpart. In 1-D continuous time the criterion fails exactly one way."},
+
+  {t:"Ch 1–2",k:"Taylor",c:"MC",q:M("ẋ = sin 2x − μx e^(−x²)","expanding about x = 0 gives (2 − μ)x + c·x³ + O(x⁵). What is c?"),
+   o:["μ − 4/3","μ + 4/3","−4/3","2 − μ","μ/6 − 4/3"],
+   a:0,w:"sin 2x = 2x − (4/3)x³ and μx e^(−x²) = μx − μx³, so subtracting gives (2−μ)x + (μ − 4/3)x³. At μ* = 2 that coefficient is +2/3 > 0 — a subcritical pitchfork."},
+
+  {t:"Ch 3",k:"the classic slip",c:"MC",q:T("A student writes: “For the discrete system Ex = x² − 4x + 3, the equilibria are x = 1 and x = 3.” What is wrong?"),
+   o:["Nothing; those are the equilibria.",
+      "Those solve f(x) = 0, but a discrete equilibrium solves f(x) = x.",
+      "The equilibria are complex.",
+      "A quadratic map has no equilibria.",
+      "The equilibria are right but both are stable, not unstable."],
+   a:1,w:"f(x) = x gives x² − 5x + 3 = 0, i.e. x = (5 ± √13)/2 ≈ 4.30 and 0.70 — not 1 and 3. Last year's official solutions made exactly this slip on this exact problem, and another problem on the same exam tested it."},
+
+  {t:"Ch 3",k:"degenerate",c:"MC",q:T("At an equilibrium a of ẋ = f(x), you compute f′(a) = 0. Which statement must be true?"),
+   o:["a is stable.","a is unstable.",
+      "a is degenerate — the Stability Criterion returns no verdict.",
+      "a is a periodic orbit.","f has no other equilibria."],
+   a:2,w:"λ = 0 is the third bullet of the criterion. Higher-order terms decide what actually happens, but the criterion itself is silent, and “degenerate” is the answer the exam wants."},
+
+  {t:"Ch 3",k:"must be true",c:"MC",q:M("ẋ = sin(x) − x","which statement must be true?"),
+   o:["There are infinitely many equilibria, because sin is periodic.",
+      "x = 0 is the unique equilibrium, and it is degenerate.",
+      "x = 0 is the unique equilibrium, and it is unstable.",
+      "Every equilibrium is stable, because |sin x| ≤ 1 while x grows without bound.",
+      "The equilibria cannot be located without numerical work."],
+   a:1,w:"|sin x| < |x| for every x ≠ 0, so the only crossing is the origin. There cos(0) − 1 = 0, so the criterion fails and it is degenerate — not stable, not unstable."},
+
+  {t:"Ch 3",k:"superstable",c:"MC",q:T("A discrete map has a fixed point a with f′(a) = 0. What is the strongest correct statement?"),
+   o:["a is unstable.","a is degenerate.",
+      "a is stable, and convergence is faster than exponential.",
+      "a is stable, and convergence is exponential at rate zero.",
+      "Nothing can be concluded."],
+   a:2,p:[3],w:"|0| < 1 so it is stable, and it is SUPERSTABLE: writing x = a + h, the error map is h ↦ O(h²), so the error squares each step. That is quadratic, i.e. faster than any exponential. (D) gets the stability right and the rate wrong."},
+
+  {t:"Ch 3",k:"Newton's map",c:"MC",q:M("xₙ₊₁ = 2xₙ − xₙ²","which statement is correct?"),
+   o:["x = 0 is stable and x = 1 is unstable.",
+      "x = 0 is unstable and x = 1 is superstable.",
+      "Both fixed points are unstable.",
+      "The only fixed point is x = 0.",
+      "There are no fixed points in [0, 2]."],
+   a:1,w:"f(x) = x gives x − x² = 0, so x = 0 and x = 1. f′ = 2 − 2x, giving λ = 2 at the origin (unstable) and λ = 0 at x = 1 (superstable). This is Newton's iteration for 1/a with a = 1."},
+
+  {t:"Ch 3",k:"logistic",c:"MC",q:M("xₙ₊₁ = r·xₙ(1 − xₙ),  r = 3","the multiplier at the nonzero fixed point is:"),
+   o:["0","−1","+1","2","3"],
+   a:1,w:"x* = 1 − 1/r and λ = r(1 − 2x*) = 2 − r, so λ = −1 at r = 3. |λ| = 1, so it is degenerate — and λ = −1 specifically means this is the period-doubling point."},
+
+  {t:"Ch 3",k:"comparing criteria",c:"MC",q:T("A student claims: “Continuous equilibria are stable when the slope is negative; discrete ones are stable when the slope is positive but small.” Which best evaluates this?"),
+   o:["Correct as stated.",
+      "Partly correct: continuous depends on sign, but discrete needs the slope strictly between −1 and 1.",
+      "False: in both cases only the sign of the slope matters.",
+      "Incomplete: discrete stability can also happen at slope exactly zero.",
+      "Ill-defined: “slope” means nothing here."],
+   a:1,p:[0,3],w:"The discrete condition is |λ| < 1, which includes negative slopes down to −1 — those converge with alternation. The student's “positive but small” wrongly excludes half the stable range."},
+
+  {t:"Ch 4",k:"read the figure",c:"MC",q:G("cubic"),
+   o:["Three equilibria: stable, unstable, stable, reading left to right.",
+      "Three equilibria: unstable, stable, unstable.",
+      "Three equilibria, all stable.",
+      "One equilibrium, which is degenerate.",
+      "Not enough information to decide stability."],
+   a:0,w:"The graph is ẋ = f(x). It crosses downward at the outer two (f goes + → −, flow inward, stable) and upward in the middle (unstable). Stability always alternates."},
+
+  {t:"Ch 4",k:"read the figure",c:"MC",q:G("tangent"),
+   o:["A stable equilibrium.","An unstable equilibrium.",
+      "A degenerate equilibrium.","Two equilibria very close together.",
+      "No equilibrium at all."],
+   a:2,w:"The curve touches the axis without crossing, so f = 0 and f′ = 0 there. The criterion fails ⇒ degenerate. Flow is rightward on both sides, so it attracts from the left and repels to the right."},
+
+  {t:"Ch 4",k:"cobweb",c:"MC",q:T("On a cobweb, iterates near a fixed point land alternately on either side of it, each time closer. What does this say about the fixed point?"),
+   o:["It is unstable, since the orbit never settles on one side.",
+      "It is stable, with −1 < f′ < 0.",
+      "It is degenerate, because the orbit alternates forever.",
+      "It is a period-2 orbit.",
+      "Stability cannot be determined from the description."],
+   a:1,p:[3],w:"Alternation means f′ < 0; converging means |f′| < 1. Together: −1 < f′ < 0, stable. Alternation is not instability, and an orbit that gets closer every step is not a 2-cycle."},
+
+  {t:"Ch 4",k:"the wrong condition",c:"MC",q:T("For a discrete system Ex = f(x), you are told the graph of f crosses the HORIZONTAL AXIS exactly three times, and that the middle crossing has positive slope. What follows about the equilibria?"),
+   o:["All three are stable.","All three are unstable.",
+      "One unstable and two stable.","One stable and two unstable.",
+      "Nothing — that is not the condition for a discrete equilibrium."],
+   a:4,p:[2],w:"Discrete equilibria live where f crosses the DIAGONAL f(x) = x, not the axis. You have been handed a fact about the wrong curve. (C) is what you would answer if you read the system as continuous."},
+
+  {t:"Ch 4",k:"continuation",c:"MC",q:T("Continuous time. f crosses the axis at x₁ < x₂ < x₃, and f < 0 for x well to the left of x₁. What are the stabilities?"),
+   o:["x₁ and x₃ stable; x₂ unstable.",
+      "x₁ and x₃ unstable; x₂ stable.",
+      "All three stable.","All three unstable.",
+      "One or more may be degenerate, so it cannot be decided."],
+   a:1,w:"One evaluated sign propagates: f is − below x₁, so it goes − → + through x₁ (unstable), + → − through x₂ (stable), − → + through x₃ (unstable). No derivatives needed."},
+
+  {t:"Ch 5",k:"evaluate the claim",c:"MC",q:T("A student claims: “A 1-D continuous system on ℝ has no periodic orbits, so every trajectory must converge to an equilibrium.” Which best evaluates this?"),
+   o:["Correct: with no periodic orbits there is nowhere else to go.",
+      "Incorrect: some trajectories may diverge to ±∞.",
+      "Incorrect: 1-D continuous systems can have periodic orbits.",
+      "Correct, provided at least one equilibrium exists.",
+      "Incorrect: chaos is possible even without periodic orbits."],
+   a:1,p:[0],w:"Monotone between equilibria still allows running off to infinity — ẋ = x has an equilibrium and almost every trajectory diverges, which also kills (D)."},
+
+  {t:"Ch 5",k:"on the circle",c:"MC",q:T("A continuous system on the circle, dθ/dt = f(θ), with f continuous. Which statement must be true?"),
+   o:["There is at least one stable equilibrium.",
+      "If there is a stable equilibrium, there must also be an unstable one.",
+      "There are no equilibria.",
+      "Every orbit is periodic.",
+      "The number of equilibria is odd."],
+   a:1,w:"A stable equilibrium is a simple zero, so f changes sign; continuity around a closed loop forces it to change back, producing another root. (A) fails for f ≡ 1, which just rotates forever."},
+
+  {t:"Ch 5",k:"rotations",c:"MC",q:M("θₙ₊₁ = θₙ + ω   (mod 2π)","which statement is correct?"),
+   o:["If ω/2π is rational every orbit is periodic; if irrational every orbit is dense.",
+      "Every orbit is periodic, whatever ω is.",
+      "Every orbit is dense, whatever ω is.",
+      "Orbits are periodic exactly when ω itself is rational.",
+      "The map has a stable fixed point for small ω."],
+   a:0,p:[3],w:"It is the ratio ω/2π that matters, not ω. ω = 1 is rational but 1/2π is not, so that orbit is dense — which is exactly what (D) gets wrong."},
+
+  {t:"Ch 6",k:"locking threshold",c:"MC",q:M("Dφ = Δω − 2ε sin φ,   ε > 0","which statement is most accurate?"),
+   o:["Phase locking occurs if and only if |Δω| ≤ 2ε.",
+      "Phase locking occurs if and only if |Δω| ≤ ε.",
+      "Phase locking occurs for every Δω ≠ 0.",
+      "Phase locking is impossible unless Δω = 0.",
+      "None of the above."],
+   a:0,p:[1],w:"An equilibrium needs sin φ* = Δω/2ε to be solvable, so |Δω/2ε| ≤ 1. At equality the two equilibria merge at φ = ±π/2 — a saddle-node — and beyond it the phase drifts forever."},
+
+  {t:"Ch 6",k:"evaluate the claim",c:"MC",q:T("A student claims: “The coupling function is odd, so the two spinners must synchronize.” Which best evaluates this?"),
+   o:["Correct: odd coupling always drives φ to zero.",
+      "Incorrect: odd makes φ = 0 an equilibrium, but it can be unstable, with φ = π the attractor instead.",
+      "Incorrect: odd functions are not admissible coupling functions on the circle.",
+      "Correct, provided ε > 0.",
+      "Incorrect: synchronization also requires Δω = 0 and an even coupling function."],
+   a:1,w:"Oddness puts a zero at φ = 0; the SIGN of the coupling decides whether it attracts. Your arms swing anti-phase for exactly this reason — repulsive coupling makes φ = π the stable state."},
+
+  {t:"Ch 6",k:"the discrete twist",c:"MC",q:M("Eφ = φ − 2ε sin φ,   ε = 1.5","what happens at φ = 0?"),
+   o:["Stable, exactly as in continuous time.",
+      "Unstable: g′(0) = 1 − 2ε = −2 and |−2| > 1.",
+      "Degenerate.","It is not an equilibrium.",
+      "Stable, but approached with alternation."],
+   a:1,p:[0],w:"g′(0) = 1 − 2ε, so sync is stable only for 0 < ε < 1. Couple too hard in discrete time and the step overshoots. The continuous version is stable for every ε > 0 — a real difference between the time types."},
+
+  {t:"Ch 6",k:"gaits",c:"MC",q:T("A walking robot's two legs are coupled oscillators whose phase difference converges to a stable φ* ≠ 0. Which statement is best?"),
+   o:["The legs are phase-locked, and that is good — if the only stable state were φ = 0 it could not walk.",
+      "The legs are synchronized; making them phase-locked instead would improve stability.",
+      "Neither concept applies; walking is too complex for this model.",
+      "Only φ* = ±π would give a stable walking gait.",
+      "It cannot walk properly, since φ* ≠ 0."],
+   a:0,p:[3],w:"φ* ≠ 0 is phase locking and is exactly what a gait is. φ* = 0 would move both legs together. (D) is too strict — π is one useful lock, not the only one."},
+
+  {t:"Ch 7–8",k:"which is which",c:"MC",q:T("What actually distinguishes a saddle-node from a pitchfork?"),
+   o:["A saddle-node changes the number of equilibria by two and a pitchfork does not.",
+      "In a saddle-node no branch exists on both sides; in a pitchfork one branch passes through and flips stability.",
+      "A saddle-node requires a symmetry and a pitchfork does not.",
+      "A pitchfork occurs only in discrete time.",
+      "They are the same bifurcation in different coordinates."],
+   a:1,p:[0],w:"BOTH change the count by two — 0→2 for the saddle-node, 1→3 for the pitchfork — so (A) is a real trap. What separates them is survival: a pitchfork always keeps one branch running straight through the point."},
+
+  {t:"Ch 7–8",k:"identify",c:"MC",q:M("ẋ = μx − x³","a diagram of equilibria against μ best illustrates which change at x = μ = 0?"),
+   o:["Two equilibria cross through each other and exchange stability.",
+      "One equilibrium loses stability and gives birth to two stable symmetric equilibria.",
+      "One equilibrium loses stability while two unstable equilibria disappear.",
+      "One equilibrium loses stability and a stable period-2 orbit emerges.",
+      "Two equilibria appear or vanish suddenly."],
+   a:1,p:[2],w:"c = −1 < 0, so supercritical. x = 0 is stable for μ < 0 and hands its stability to the pair ±√μ that appears after. (C) describes the SUBcritical pitchfork — the right family, the wrong sign."},
+
+  {t:"Ch 7–8",k:"identify",c:"MC",q:M("ẋ = μx + x³ − x⁵","as μ increases slowly through 0, what does the state do?"),
+   o:["Nothing; x = 0 stays stable.",
+      "It grows continuously from zero, and retraces on the way back.",
+      "It jumps to a distant branch, and coming back down it does not return at μ = 0.",
+      "It begins alternating between two values.",
+      "Two new equilibria appear either side, both stable."],
+   a:2,w:"The cubic is positive, so this is SUBcritical: nothing catches the state nearby and it jumps to the far branch that the −x⁵ term creates. Coming back it stays there until that branch folds, at a lower μ. That gap is hysteresis."},
+
+  {t:"Ch 7–8",k:"hysteresis",c:"MC",q:T("Which of the following is NOT a feature of a system showing hysteresis?"),
+   o:["Two stable states coexisting over a range of the parameter.",
+      "A jump at one parameter value going up and a different one coming down.",
+      "Saddle-node folds in the curve of equilibria.",
+      "A supercritical pitchfork.",
+      "A state that depends on the history of the parameter, not just its value."],
+   a:3,w:"A supercritical pitchfork has no folds, no bistability and no jumps — you ride one continuous curve out and back. Hysteresis needs folds, and folds are saddle-nodes."},
+
+  {t:"Ch 7–8",k:"from derivative data",c:"MC",q:M("∂²f/∂x² ≠ 0,   ∂f/∂μ ≠ 0,   ∂²f/∂μ∂x = 0","at a degenerate equilibrium of Dx = f(x, μ). Which bifurcation?"),
+   o:["Transcritical.","Supercritical pitchfork.","Saddle-node.",
+      "Subcritical pitchfork.","Not enough information."],
+   a:2,p:[0,4],w:"Build the polynomial from what survives: a term in μ alone (∂f/∂μ ≠ 0) and an x² term, with no μx term because the mixed partial vanishes. That is μ + cx²."},
+
+  {t:"Ch 7–8",k:"physical",c:"MC",q:T("Loading a beam past its critical load, the deflection grows continuously from zero; unloading it, the beam returns smoothly to straight. Which is the best characterisation?"),
+   o:["Supercritical pitchfork — safer, because the transition is gradual and reversible.",
+      "Subcritical pitchfork — safer, because stable branches exist before the bifurcation.",
+      "Supercritical pitchfork — more dangerous, because new equilibria appear suddenly.",
+      "Subcritical pitchfork — dangerous, because the system is not reversible.",
+      "None of the above is entirely accurate."],
+   a:0,p:[3],w:"“Continuously from zero” and “returns smoothly” are the definition of supercritical. (D) is an internally consistent description of a SUBcritical pitchfork — correct about a different system."},
+
+  {t:"Ch 7–8",k:"physical",c:"MC",q:T("A fishery is harvested at a constant number of tons per year. As the quota is raised the stock looks healthy, then at a threshold it collapses to zero with no warning. Which bifurcation?"),
+   o:["Transcritical.","Saddle-node.","Supercritical pitchfork.",
+      "Period-doubling.","Subcritical pitchfork."],
+   a:1,w:"Constant harvest H acts even at N = 0, so zero is not an equilibrium and there is no pinned branch. The stable stock and the threshold collide at N = K/2 when H = rK/4 and annihilate. Harvesting a fixed FRACTION instead would make it transcritical."},
+
+  {t:"Ch 7–8",k:"read the diagram",c:"MC",q:B("PFB"),
+   o:["Supercritical pitchfork; the new branches are stable.",
+      "Subcritical pitchfork; the new branches are unstable and exist before the bifurcation.",
+      "Transcritical; two branches exchange stability.",
+      "Saddle-node; a pair of equilibria is created.",
+      "Period-doubling; the outer branches form a 2-cycle."],
+   a:1,w:"One branch runs straight through and flips — that is a pitchfork. The prongs are on the μ < 0 side and dashed (unstable), so it is subcritical."},
+
+  {t:"Ch 7–8",k:"read the diagram",c:"MC",q:B("SN"),
+   o:["Transcritical.","Supercritical pitchfork.","Saddle-node.",
+      "Subcritical pitchfork.","Period-doubling."],
+   a:2,w:"The branch folds back on itself and nothing continues through the point — the signature of a saddle-node. A pitchfork would leave a straight branch running through."},
+
+  {t:"Ch 7–8",k:"read the diagram",c:"MC",q:B("PD"),
+   o:["Supercritical pitchfork.","Subcritical pitchfork.",
+      "Period-doubling: the two outer branches are one orbit of period two.",
+      "Transcritical.","Saddle-node."],
+   a:2,p:[1],w:"It is trident-shaped, but the outer curves are drawn as an orbit, not as equilibria, and this is a discrete system with λ = −1. The difference from a pitchfork is two equilibria versus one orbit visiting two points."},
+
+  {t:"Ch 7–8",k:"robustness",c:"MC",q:T("Which bifurcation survives an arbitrary small perturbation of the system — you cannot destroy it, only move it?"),
+   o:["Transcritical.","Pitchfork.","Saddle-node.",
+      "Period-doubling in continuous time.","All of them, equally."],
+   a:2,w:"A transcritical needs an equilibrium pinned at the origin and a pitchfork needs odd symmetry; add a small constant or break the symmetry and each one splits apart. A saddle-node needs nothing, so it is structurally stable."},
+
+  {t:"Ch 7–8",k:"prerequisite",c:"MC",q:T("An equilibrium of Dx = f(x, μ) is non-degenerate at μ₀. A student argues that nudging μ could still flip it from stable to unstable. Which best evaluates this?"),
+   o:["Correct: stability depends on μ, so it can change at any time.",
+      "Incorrect: by the Implicit Function Theorem the equilibrium persists with the same type; changing stability requires a bifurcation.",
+      "Correct, but only if f is not smooth.",
+      "Incorrect: the stability of an equilibrium never depends on μ.",
+      "It cannot be decided without knowing f."],
+   a:1,w:"This is the lemma that opens Ch 7, and it is what makes bifurcation theory worth having: if a system's behaviour really does change character, you are claiming a bifurcation happened."},
+
+  {t:"Week 4",k:"long-run behaviour",c:"MC",q:M("xₙ₊₁ = A xₙ,  A = [[2, 6],[0, −1]],  x₀ = (1, −1)","what happens as n → ∞?"),
+   o:["It converges to the origin.",
+      "|xₙ| grows without bound, aligning with the eigenvector for λ = 2.",
+      "It oscillates with bounded amplitude.",
+      "It converges to (−2, 1).",
+      "It alternates between two fixed points."],
+   a:1,w:"Triangular, so λ = 2 and −1. In discrete time the largest MAGNITUDE dominates: |2| > |−1|, so the 2ⁿ term wins and the trajectory lines up with its eigenvector (1, 0). The −1 component just flips sign forever without growing."},
+
+  {t:"Week 4",k:"matrix exponential",c:"MC",q:M("A = [[−1, 1],[0, −1]]","which is e^(At)?"),
+   o:["[[e^(−t), 0],[0, e^(−t)]]",
+      "[[e^(−t), t·e^(−t)],[0, e^(−t)]]",
+      "[[e^(−t), e^(−t)],[0, e^(−t)]]",
+      "[[e^(−t), 1],[0, e^(−t)]]",
+      "It is undefined, because A is not diagonalizable."],
+   a:1,p:[4],w:"A = −I + N with N² = 0, so e^(At) = e^(−t)(I + Nt). The t in the corner is the signature of a repeated eigenvalue with only one eigenvector. Non-diagonalizable does not mean the exponential fails to exist — that is what the Jordan form is for."},
+
+  {t:"Week 4",k:"evaluate the claim",c:"MC",q:T("A student claims: “A repeated eigenvalue always means the matrix cannot be diagonalized.” Which best evaluates this?"),
+   o:["Correct.",
+      "Incorrect: a repeated eigenvalue may still have two independent eigenvectors — λI is the example.",
+      "Incorrect: a 2×2 matrix cannot have a repeated eigenvalue.",
+      "Correct, and the solution therefore always contains a t·e^(λt) term.",
+      "Incorrect: repeated eigenvalues are always complex."],
+   a:1,p:[3],w:"λI has λ twice and every vector is an eigenvector. You only need a generalized eigenvector — and only then does t·e^(λt) appear — when the repeated eigenvalue is short of eigenvectors."},
+
+  {t:"Week 4",k:"damped oscillator",c:"MC",q:M("ẍ + a·ẋ + b·x = 0,   a > 0,  b > 0","which behaviour is IMPOSSIBLE?"),
+   o:["Two distinct negative real eigenvalues.",
+      "A repeated negative real eigenvalue.",
+      "A complex pair with negative real part.",
+      "A saddle: one positive and one negative real eigenvalue.",
+      "Decaying oscillation."],
+   a:3,w:"The characteristic polynomial λ² + aλ + b has root sum −a < 0 and root product b > 0. A saddle needs the product to be negative. With a, b > 0 every case decays — overdamped, critically damped or underdamped."},
+
+  {t:"Week 4",k:"dominance",c:"MC",q:M("continuous time,  eigenvalues −1 and −4","after a long time the trajectory lines up with:"),
+   o:["the eigenvector for −4.","the eigenvector for −1.",
+      "neither; it goes straight to the origin.",
+      "both equally.","whichever eigenvector the initial condition was closer to."],
+   a:1,p:[0],w:"Both decay, but e^(−4t) dies far faster, so what is LEFT after a long time is the slow one. In continuous time the dominant eigenvalue is the one with the largest real part — here −1."},
+
+  /* ================= FAST TYPED ROUNDS ================= */
+  {t:"Ch 3",k:"criterion",c:"STAB",a:"S",q:M("continuous,  λ = −3"),w:"λ < 0 ⇒ stable."},
+  {t:"Ch 3",k:"criterion",c:"STAB",a:"U",q:M("continuous,  λ = +0.2"),w:"λ > 0 ⇒ unstable, however small."},
+  {t:"Ch 3",k:"criterion",c:"STAB",a:"D",q:M("continuous,  λ = 0"),w:"Criterion fails ⇒ degenerate."},
+  {t:"Ch 3",k:"criterion",c:"STAB",a:"S",q:M("discrete,  λ = −0.5"),w:"|−0.5| < 1 ⇒ stable, with alternation."},
+  {t:"Ch 3",k:"criterion",c:"STAB",a:"U",q:M("discrete,  λ = −2"),w:"|−2| > 1 ⇒ unstable. Magnitude, not sign."},
+  {t:"Ch 3",k:"criterion",c:"STAB",a:"D",q:M("discrete,  λ = −1"),w:"|λ| = 1 ⇒ degenerate — the period-doubling boundary."},
+  {t:"Ch 3",k:"criterion",c:"STAB",a:"D",q:M("discrete,  λ = +1"),w:"|λ| = 1 ⇒ degenerate — the SN/TC/PF boundary."},
+  {t:"Ch 3",k:"classify",c:"STAB",a:"U",q:M("ẋ = x² − 4,  at x = 2"),w:"f′ = 2x = 4 > 0 ⇒ unstable."},
+  {t:"Ch 3",k:"classify",c:"STAB",a:"S",q:M("ẋ = sin x,  at x = π"),w:"f′ = cos π = −1 < 0 ⇒ stable."},
+  {t:"Ch 3",k:"classify",c:"STAB",a:"U",q:M("ẋ = sin x,  at x = 0"),w:"f′ = cos 0 = +1 > 0 ⇒ unstable."},
+  {t:"Ch 3",k:"classify · discrete",c:"STAB",a:"U",q:M("Ex = x² − 2,  at x = 2"),w:"2 is a fixed point; f′ = 4, |4| > 1 ⇒ unstable. Not degenerate."},
+  {t:"Ch 4",k:"cobweb",c:"STAB",a:"S",q:T("Discrete map crossing the DIAGONAL with slope −0.5."),w:"|−0.5| < 1 ⇒ stable."},
+  {t:"Ch 4",k:"cobweb",c:"STAB",a:"U",q:T("Discrete map crossing the diagonal with slope −1.5."),w:"|−1.5| > 1 ⇒ unstable, growing alternation."},
+  {t:"Ch 4",k:"read the graph",c:"STAB",a:"D",q:T("Continuous time: the graph of f is tangent to the x-axis."),w:"f = f′ = 0 ⇒ degenerate."},
+  {t:"Ch 6",k:"outcome",c:"COUPLE",a:"SY",q:T("Stable equilibrium of the reduced system at φ* = 0."),w:"Synchronization."},
+  {t:"Ch 6",k:"outcome",c:"COUPLE",a:"AN",q:T("Your two arms while walking freely."),w:"Anti-phase locked, φ* ≈ π."},
+  {t:"Ch 6",k:"outcome",c:"COUPLE",a:"DR",q:M("Dφ = Δω − 2ε sin φ,  |Δω| > 2ε"),w:"No equilibrium ⇒ the phase runs away. Drift."},
+  {t:"Ch 7–8",k:"normal form",c:"BIF",a:"SN",q:M("ẋ = μ − x²"),w:"Constant in μ plus a quadratic ⇒ saddle-node."},
+  {t:"Ch 7–8",k:"normal form",c:"BIF",a:"TC",q:M("ẋ = μx − x²"),w:"μx plus a quadratic ⇒ transcritical."},
+  {t:"Ch 7–8",k:"normal form",c:"BIF",a:"PFS",q:M("ẋ = μx − 7x³"),w:"Cubic with c < 0 ⇒ supercritical."},
+  {t:"Ch 7–8",k:"normal form",c:"BIF",a:"PFB",q:M("ẋ = μx + 2x³"),w:"Cubic with c > 0 ⇒ subcritical."},
+  {t:"Ch 7–8",k:"normal form",c:"BIF",a:"PD",q:M("Ex = (−1 + μ)x + x³"),w:"λ = −1 ⇒ period-doubling, discrete only."},
+  {t:"Ch 7–8",k:"Taylor",c:"BIF",a:"PFB",q:M("f = (2 − μ)x + (μ − 4/3)x³","evaluate c AT μ*"),w:"μ* = 2, c = +2/3 > 0 ⇒ subcritical."},
+  {t:"Ch 7–8",k:"shortcut",c:"BIF",a:"PF",q:T("f is odd in x, so every even power vanishes. Which family?"),w:"Odd ⇒ no x² ⇒ pitchfork."},
+  {t:"Week 4",k:"eigenvalues",c:"STAB",a:"U",q:M("continuous,  λ = 2 ± 3i"),w:"Re λ = +2 > 0 ⇒ unstable."},
+  {t:"Week 4",k:"eigenvalues",c:"STAB",a:"S",q:M("continuous,  λ = −1 ± 5i"),w:"Re λ = −1 < 0 ⇒ stable spiral."},
+  {t:"Week 4",k:"eigenvalues",c:"STAB",a:"U",q:M("discrete,  λ = −1.2 and 0.3"),w:"|−1.2| > 1 ⇒ unstable."},
+  {t:"Week 4",k:"triangular",c:"NUM",a:"-2",q:M("A = [[3, 5],[0, −2]].  The eigenvalues are 3 and ?"),w:"Triangular ⇒ read the diagonal."},
+  {t:"Week 4",k:"recurrence",c:"NUM",a:"4",q:M("xₙ₊₂ = 6xₙ₊₁ − 8xₙ.  The dominant root is ?"),w:"λ² − 6λ + 8 = 0 ⇒ 2 and 4; largest magnitude wins."},
+  {t:"Ch 1–2",k:"Taylor",c:"NUM",a:"4/3",q:M("sinh(2x) = 2x + ? · x³ + O(x⁵)"),w:"sinh u = u + u³/6 with u = 2x."},
+  {t:"Ch 6",k:"threshold",c:"NUM",a:"2",q:M("Dφ = Δω − 2ε sin φ.  Locking needs |Δω| ≤ ? · ε"),w:"|sin| ≤ 1, so |Δω| ≤ 2ε."},
+  {t:"Ch 5",k:"circle",c:"NUM",a:"0",q:M("dθ/dt = ω on the circle, ω ≠ 0.  How many equilibria?"),w:"None — nothing ever stops."}
+  ];
+
+  function P(mu,x){ return (120+28*mu).toFixed(1)+","+(80-38*x).toFixed(1); }
+  function samp(f,t0,t1){var p=[],n=44,i,t;for(i=0;i<=n;i++){t=t0+(t1-t0)*i/n;p.push(P(f(t)[0],f(t)[1]));}return p.join(" ");}
+  function poly(pts,cls){return '<polyline class="ln '+cls+'" points="'+pts+'"/>';}
+  function diagram(kind){
+    var s='<svg viewBox="0 0 240 160" role="img" aria-label="bifurcation diagram">'+
+      '<line class="ax" x1="18" y1="80" x2="226" y2="80"/>'+
+      '<line class="ax" x1="120" y1="12" x2="120" y2="150"/>'+
+      '<text x="228" y="90" font-size="10">μ</text><text x="108" y="16" font-size="10">x</text>';
+    var zL=P(-3.3,0)+" "+P(0,0), zR=P(0,0)+" "+P(3.3,0);
+    if(kind==="SN"){s+=poly(samp(function(t){return[t*t,t];},0,1.55),"s")+poly(samp(function(t){return[t*t,-t];},0,1.55),"u");}
+    else if(kind==="TC"){s+=poly(zL,"s")+poly(zR,"u")+poly(P(-1.6,-1.6)+" "+P(0,0),"u")+poly(P(0,0)+" "+P(1.6,1.6),"s");}
+    else if(kind==="PFS"){s+=poly(zL,"s")+poly(zR,"u")+poly(samp(function(t){return[t*t,t];},0,1.5),"s")+poly(samp(function(t){return[t*t,-t];},0,1.5),"s");}
+    else if(kind==="PFB"){s+=poly(zL,"s")+poly(zR,"u")+poly(samp(function(t){return[-t*t,t];},0,1.5),"u")+poly(samp(function(t){return[-t*t,-t];},0,1.5),"u");}
+    else if(kind==="PD"){s+=poly(P(-3.3,0)+" "+P(0,0),"u")+poly(P(0,0)+" "+P(3.3,0),"s")+poly(samp(function(t){return[-t*t,t];},0,1.5),"o")+poly(samp(function(t){return[-t*t,-t];},0,1.5),"o");}
+    return s+'<circle class="dot" cx="120" cy="80" r="3.1"/></svg>';
+  }
+  var GRAPHS={
+    cubic:{f:function(x){return x-x*x*x;},x0:-1.8,x1:1.8,y0:-2.2,y1:2.2},
+    tangent:{f:function(x){return (x-1)*(x-1);},x0:-0.6,x1:2.6,y0:-0.8,y1:2.6}
+  };
+  function graph(kind){
+    var g=GRAPHS[kind],i,x,y,pts=[];
+    function PX(x){return (20+(x-g.x0)/(g.x1-g.x0)*200).toFixed(1);}
+    function PY(y){return (150-(y-g.y0)/(g.y1-g.y0)*135).toFixed(1);}
+    for(i=0;i<=160;i++){ x=g.x0+(g.x1-g.x0)*i/160; y=g.f(x);
+      if(y>=g.y0&&y<=g.y1) pts.push(PX(x)+","+PY(y)); }
+    return '<svg viewBox="0 0 240 160" role="img" aria-label="graph of f against x">'+
+      '<line class="ax" x1="14" y1="'+PY(0)+'" x2="230" y2="'+PY(0)+'"/>'+
+      '<line class="ax" x1="'+PX(0)+'" y1="10" x2="'+PX(0)+'" y2="154"/>'+
+      '<text x="232" y="'+(+PY(0)+4)+'" font-size="10">x</text>'+
+      '<text x="'+(+PX(0)-16)+'" y="14" font-size="10">ẋ</text>'+
+      '<polyline class="ln fx" points="'+pts.join(" ")+'"/></svg>';
+  }
+
+  var CATS={
+    STAB:{hint:"stable / unstable / degenerate",names:{S:"stable",U:"unstable",D:"degenerate"},
+      map:{s:"S",st:"S",stab:"S",stable:"S",attracting:"S",u:"U",un:"U",unstab:"U",unstable:"U",
+           repelling:"U",d:"D",deg:"D",degen:"D",degenerate:"D",inconclusive:"D",neither:"D"}},
+    BIF:{hint:"sn / tc / super / sub / pd",names:{SN:"saddle-node",TC:"transcritical",
+      PFS:"supercritical pitchfork",PFB:"subcritical pitchfork",PD:"period-doubling",PF:"pitchfork"},
+      map:{sn:"SN",saddle:"SN",saddlenode:"SN",node:"SN",tc:"TC",trans:"TC",transcrit:"TC",
+           transcritical:"TC",pd:"PD",period:"PD",perioddoubling:"PD",doubling:"PD",
+           pfs:"PFS",spf:"PFS",super:"PFS",supercrit:"PFS",supercritical:"PFS",pfsuper:"PFS",
+           supercriticalpitchfork:"PFS",
+           pfb:"PFB",bpf:"PFB",sub:"PFB",subcrit:"PFB",subcritical:"PFB",pfsub:"PFB",
+           subcriticalpitchfork:"PFB",
+           pf:"PF",pitchfork:"PF",fork:"PF"}},
+    COUPLE:{hint:"sync / lock / antiphase / drift",names:{SY:"synchronization",LK:"phase locking",
+      AN:"anti-phase locking",DR:"drift"},
+      map:{s:"SY",sync:"SY",synch:"SY",synchronize:"SY",synchronized:"SY",synchronization:"SY",
+           inphase:"SY",l:"LK",lock:"LK",locked:"LK",locking:"LK",phaselock:"LK",phaselocked:"LK",
+           a:"AN",anti:"AN",antiphase:"AN",outofphase:"AN",antiphaselocking:"AN",antiphaselocked:"AN",
+           dr:"DR",drift:"DR",drifting:"DR",drifts:"DR",slip:"DR",unlocked:"DR"}}
+  };
+  var LET="ABCDE";
+  function norm(s){ return s.trim().toLowerCase().replace(/[^a-z0-9]/g,""); }
+  function numOf(s){
+    var t=s.trim().replace(/[−–—]/g,"-").replace(/[^0-9./-]/g,"");
+    var m=t.match(/^(-?\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)$/);
+    if(m) return parseFloat(m[1])/parseFloat(m[2]);
+    var v=parseFloat(t); return isNaN(v)?null:v;
+  }
+  function pickOf(s){
+    var t=norm(s); if(!t) return -1;
+    var i=LET.indexOf(t.charAt(0).toUpperCase());
+    if(i>=0&&t.length===1) return i;
+    var n=parseInt(t,10);
+    if(n>=1&&n<=5&&String(n)===t) return n-1;
+    return -1;
+  }
+
+  var KEY="cgovind:ese2100:quizzam1";
+  var S={streak:0,best:0,right:0,seen:0,per:{}};
+  try{var r0=localStorage.getItem(KEY);
+    if(r0){var o=JSON.parse(r0); if(o&&typeof o==="object"){
+      S.best=o.best||0;S.right=o.right||0;S.seen=o.seen||0;S.per=o.per||{};}}}catch(e){}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(
+    {best:S.best,right:S.right,seen:S.seen,per:S.per}));}catch(e){}}
+
+  var order=[],idx=0,cur=null,awaiting=false;
+  function reshuffle(){
+    order=Q.map(function(_,i){return i;});
+    for(var i=order.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)),t=order[i];order[i]=order[j];order[j]=t;}
+    idx=0;
+  }
+  var $=function(id){return document.getElementById(id);};
+  var elBody,elAns,elFb,elCard,elHint;
+
+  function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;");}
+  function render(){
+    elCard.className="card"; elFb.innerHTML="";
+    elAns.value=""; elAns.disabled=false;
+    if(idx>=order.length) reshuffle();
+    cur=Q[order[idx]];
+    $("topic").textContent=cur.t; $("kind").textContent=cur.k;
+    var q=cur.q,h="";
+    if(q.svg) h='<figure>'+diagram(q.svg)+'</figure>';
+    else if(q.fn) h='<figure>'+graph(q.fn)+'</figure>';
+    else if(q.math){ h='<p class="math">'+q.math+'</p>'; if(q.sub) h+='<p class="subq">'+q.sub+'</p>'; }
+    else h='<p class="prompt">'+q.text+'</p>';
+    if(cur.c==="MC"){
+      if(q.svg||q.fn) h+='<p class="prompt mcq">Which statement is correct?</p>';
+      h+='<ol class="opts">';
+      for(var i=0;i<cur.o.length;i++)
+        h+='<li><span class="lab">('+LET.charAt(i)+')</span><span>'+cur.o[i]+'</span></li>';
+      h+='</ol>';
+    }
+    elBody.innerHTML=h;
+    var hint = cur.c==="MC" ? "a / b / c / d / e" : (cur.c==="NUM" ? "a number" : CATS[cur.c].hint);
+    elHint.innerHTML="answer: <code>"+hint+"</code>";
+    elAns.placeholder=hint;
+    elAns.focus();
+  }
+
+  var TOPICS=["Ch 1–2","Ch 3","Ch 4","Ch 5","Ch 6","Ch 7–8","Week 4"];
+  function stats(){
+    $("vStreak").textContent=S.streak; $("vBest").textContent=S.best;
+    $("vSeen").textContent=S.seen;
+    $("vAcc").textContent=S.seen?Math.round(100*S.right/S.seen)+"%":"—";
+    var html="",any=false;
+    TOPICS.forEach(function(t){
+      var p=S.per[t]; if(!p||!p.n) return; any=true;
+      var pc=Math.round(100*p.r/p.n);
+      var col=pc>=80?"var(--ok)":(pc>=55?"var(--warn)":"var(--bad)");
+      html+='<div class="bar"><span class="nm">'+t+'</span><span class="track">'+
+        '<span class="fill" style="width:'+pc+'%;background:'+col+'"></span></span>'+
+        '<span class="pc">'+pc+'%</span></div>';
+    });
+    $("bars").innerHTML=html; $("weak").hidden=!any;
+  }
+
+  function submit(){
+    var raw=elAns.value, correct=false, partial=false, said="";
+    if(cur.c==="MC"){
+      var pk=pickOf(raw);
+      if(pk<0||pk>=cur.o.length){
+        elFb.innerHTML='<div class="warn">Pick a letter — <code>a</code> to <code>e</code>.</div>'; return;
+      }
+      correct = pk===cur.a;
+      partial = !correct && !!cur.p && cur.p.indexOf(pk)>=0;
+      said="("+LET.charAt(pk)+")";
+    } else if(cur.c==="NUM"){
+      var v=numOf(raw);
+      if(v===null){ elFb.innerHTML='<div class="warn">Give me a number.</div>'; return; }
+      correct=Math.abs(v-numOf(cur.a))<1e-9; said=raw.trim();
+    } else {
+      var got=CATS[cur.c].map[norm(raw)]||null;
+      if(!got){ elFb.innerHTML='<div class="warn">Didn’t catch that — try <code>'+
+        CATS[cur.c].hint+'</code>.</div>'; return; }
+      if(cur.c==="BIF"&&got==="PF"&&(cur.a==="PFS"||cur.a==="PFB")){
+        elFb.innerHTML='<div class="warn">Pitchfork is right — but which kind? <code>super</code> or <code>sub</code>.</div>';
+        elAns.value=""; elAns.focus(); return;
+      }
+      correct=(got===cur.a)||(cur.a==="PF"&&(got==="PFS"||got==="PFB"));
+      said=CATS[cur.c].names[got];
+    }
+    var right = cur.c==="MC" ? "("+LET.charAt(cur.a)+") "+cur.o[cur.a]
+              : (cur.c==="NUM" ? cur.a : CATS[cur.c].names[cur.a]);
+    if(!S.per[cur.t]) S.per[cur.t]={n:0,r:0};
+    S.per[cur.t].n++; if(correct) S.per[cur.t].r++;
+    S.seen++;
+    if(correct){
+      S.right++; S.streak++; if(S.streak>S.best) S.best=S.streak;
+      elCard.className="card hit";
+      elFb.innerHTML='<div class="verdict ok">✓ '+right+'</div><div class="why">'+cur.w+'</div>';
+    }else{
+      S.streak=0; elCard.className="card miss";
+      elFb.innerHTML='<div class="verdict '+(partial?"warn":"bad")+'">'+
+        (partial?"△ "+said+" is the partial-credit answer — ":"✗ "+said+" — ")+
+        'it’s <b>'+right+'</b></div><div class="why">'+cur.w+'</div>';
+    }
+    save(); stats(); awaiting=true; idx++;
+    elAns.disabled=true; setTimeout(function(){elAns.disabled=false;elAns.focus();},0);
+  }
+
+  function boot(){
+    elBody=$("qbody");elAns=$("ans");elFb=$("fb");elCard=$("card");elHint=$("hint");
+    elAns.addEventListener("keydown",function(ev){
+      if(ev.key!=="Enter") return;
+      ev.preventDefault();
+      if(awaiting){ awaiting=false; render(); }
+      else if(elAns.value.trim()) submit();
+    });
+    $("reset").addEventListener("click",function(){
+      S={streak:0,best:0,right:0,seen:0,per:{}}; save(); stats(); reshuffle(); render();
+    });
+    reshuffle(); stats(); render();
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
