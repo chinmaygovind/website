@@ -243,7 +243,7 @@ const S = {
   order: [],               // the running order, off the last snapshot: see
                            // `orderFromSnapshot`. Derived and single-writer, so
                            // a stale one is a miss and never a disagreement.
-  settings: { qualifying: false, powerups: true },  // rooms only: what the next
+  settings: { qualifying: false, powerups: true, laps: 3 },  // rooms only: what the next
                                     // race will be (the server's `room_settings`
                                     // is the truth; this matches ROOM_DEFAULTS so
                                     // the switch does not flash the wrong way)
@@ -269,6 +269,9 @@ const S = {
   clockOffset: 0, bestRtt: Infinity,
   finishedPayload: null,
   hudTick: 0,
+  resumeAt: null,          // rooms only: the lap and checkpoint a reload came
+                           // back on, until the race run has started to put
+                           // them on - see `resumeRace` and `Run.resumeAt`
   bestTime: CFG.pbMs || null,
   touch: false,
 };
@@ -1657,6 +1660,18 @@ function bindInput() {
       S.socket.emit('set_setting', { code: CFG.room, key: 'powerups',
                                      value: !S.settings.powerups });
     };
+    // Nothing is drawn from the press: the value shown is the server's, which
+    // arrives a moment later as `room_settings`. Same rule as the switches, and
+    // it is what stops two hosts' presses crossing and leaving one of them
+    // looking at a number the room is not on.
+    const stepLaps = (by) => {
+      if (!S.isHost || !S.socket) return;
+      const want = Math.max(1, Math.min(LAPS_MAX, raceLaps() + by));
+      if (want === raceLaps()) return;
+      S.socket.emit('set_setting', { code: CFG.room, key: 'laps', value: want });
+    };
+    $('btnLapsDown').onclick = () => stepLaps(-1);
+    $('btnLapsUp').onclick = () => stepLaps(1);
     // Escape gets you out of the message box and back to the car. It never
     // reaches the window handler - that one ignores anything typed into an
     // input, which is what keeps WASD from driving while you write - so the
@@ -1725,6 +1740,22 @@ function renderSettings() {
   $('powerupsNote').textContent = enabled
     ? 'Item boxes are active in practice and races; qualifying stays item-free.'
     : 'No items in this room.';
+  // **Only on a circuit.** Twenty-one of the twenty-six tracks start and finish
+  // in different places, so there is no lap to do again and the control would
+  // be one that did nothing - hidden rather than disabled, because a greyed-out
+  // stepper is a thing to wonder about and this one has nothing to say.
+  const laps = raceLaps(), circuit = !!(S.track && S.track.closed);
+  $('optLaps').style.display = circuit ? '' : 'none';
+  $('lapsNote').style.display = circuit ? '' : 'none';
+  if (circuit) {
+    $('lapsVal').textContent = laps;
+    const locked = !S.isHost || livePhase();
+    $('btnLapsDown').disabled = locked || laps <= 1;
+    $('btnLapsUp').disabled = locked || laps >= LAPS_MAX;
+    $('lapsNote').textContent = laps > 1
+      ? laps + ' laps of the circuit - the flag is the last time past the line.'
+      : 'One lap: the race is over the first time anyone crosses the line.';
+  }
   renderItems();
 }
 
@@ -4505,11 +4536,34 @@ function livePhase() {
  * with the assigning version and the room offers you a race that has already
  * started.
  */
+const LAPS_MAX = 10;             // and `LAPS_MAX` in app.py, which enforces it
+
+/**
+ * How many laps a race in this room would be, right now.
+ *
+ * The host's setting, but only where it means anything: a point-to-point track
+ * has no lap to do twice, so it is one there whatever the drawer says - the
+ * same answer `_race_laps` gives on the server, and the two have to agree or
+ * the HUD counts to a number the finish never arrives at.
+ */
+function raceLaps() {
+  if (!S.track || !S.track.closed) return 1;
+  const n = parseInt(S.settings.laps, 10);
+  return isFinite(n) ? Math.max(1, Math.min(LAPS_MAX, n)) : 1;
+}
+
 function applyPhase() {
   // The bot controls are disabled while a session is live, so they follow the
   // phase as well as the roster.
   renderBotControls(S.roster || []);
   if (CFG.mode !== 'room') return;
+  // The run's own lap count, set from the phase rather than at the lights.
+  // Every way into a race goes through here - the countdown, the green light,
+  // a reload landing mid-race - and every way out of one does too, so there is
+  // no path that leaves a practice lap thinking it is three laps long. Only a
+  // race you are actually in: somebody who walked in after the lights is
+  // practising on the same road and drives one lap like anyone else.
+  S.run.laps = (S.raceMode && S.racePhase === 'racing') ? raceLaps() : 1;
   const p = S.previewPhase || S.racePhase;      // `?panel=qual|racing`
   const [text, racing] = PHASE_LABEL[p] || PHASE_LABEL.free;
   setMode(text, racing);
@@ -5661,6 +5715,11 @@ function frame(now) {
     noteStart();
     markHintSeen();
     updatePracticeTag();
+    // A browser that reloaded mid-race picks its lap and its checkpoints back
+    // up here, on the far side of the `start` that would otherwise have wiped
+    // them. Once: it describes the moment this page came back, and a later
+    // restart is a car going round again from nothing.
+    if (S.resumeAt) { S.run.resumeAt(S.resumeAt.lap, S.resumeAt.cp); S.resumeAt = null; }
   }
 
   // `?draft=charge|boost` pins the tow, for the same reason `?panel=` and
@@ -5727,10 +5786,23 @@ function frame(now) {
       // all lap: a number that only moves when something happened is a number
       // you read. What it is measured against is the whole question, and the
       // answer is different in each of the three sessions - see splitRef.
-      const ref = splitRef(S.run.nextCp, S.run.s);
+      const ref = splitRef(S.run.cpIndex(), S.run.s);
       if (ref != null) showDelta(S.run.time - ref);
     }
     if (e === 'missed') { S.sound.missed(); toast('Missed a checkpoint!'); }
+    // A lap of a multi-lap race. The checkpoint chime rather than the finish
+    // one: nothing has finished, and the fanfare belongs to the flag.
+    if (e === 'lap') {
+      S.sound.checkpoint();
+      toast('Lap ' + S.run.lap + '/' + S.run.laps + '  ' + fmt(S.run.time));
+      // Reported to the room like any other gate, which is two things at once:
+      // the delta is your lap against the leader's, and it is what a reload is
+      // rebuilt from - without it the room cannot tell a car that has just
+      // crossed the line from one sitting on the last checkpoint before it.
+      const ref = splitRef(S.run.cpIndex(), S.run.s);
+      if (ref != null) showDelta(S.run.time - ref);
+      hud(now);
+    }
     if (e === 'finish') onFinish();
   }
 
@@ -6000,6 +6072,11 @@ function hudFast() {
 function hud(now) {
   const run = S.run;
   $('cpCount').textContent = run.nextCp + '/' + run.cps.length;
+  // Right under the position, and only when there is more than one of them -
+  // see the note on the element. `lap` is 0-based and the driver is on the one
+  // after it, which is what a lap board says.
+  $('lapNum').style.display = run.laps > 1 ? '' : 'none';
+  if (run.laps > 1) $('lapNum').textContent = 'LAP ' + (run.lap + 1) + '/' + run.laps;
   $('wrongWay').style.display = run.wrongWay ? '' : 'none';
 
   // Race positions - but not during qualifying, which is not a race: running
@@ -7287,7 +7364,14 @@ function connect() {
     toast('Hit by ' + by + what + '!');
     hitByItem();
   });
-  socket.on('track_change', (d) => { setItemBoxes(d.boxes); applyTrackChange(d.track); });
+  socket.on('track_change', (d) => {
+    setItemBoxes(d.boxes);
+    // A circuit and a point-to-point track are the difference between the lap
+    // control meaning something and not existing - so the drawer is redrawn
+    // *after* the switch rather than with it, or it would be drawn for the
+    // track being left.
+    applyTrackChange(d.track).then(() => renderSettings());
+  });
   socket.on('qual_countdown', onQualCountdown);
   socket.on('qual_start', onQualStart);
   socket.on('qual_progress', (d) => { if (S.racePhase === 'qualifying') renderQual(d.qual); });
@@ -7344,9 +7428,12 @@ function connect() {
   // The host moved a switch. Said out loud as well as drawn, because the
   // drawer is usually shut and this changes what everybody is about to do.
   socket.on('room_settings', (d) => {
-    const was = S.settings.qualifying;
+    const was = S.settings.qualifying, wasLaps = raceLaps();
     S.settings = d || S.settings;
     renderSettings();
+    if (raceLaps() !== wasLaps) {
+      toast(raceLaps() === 1 ? 'One lap' : raceLaps() + '-lap race');
+    }
     if (!!S.settings.qualifying !== !!was) {
       toast(S.settings.qualifying ? 'Qualifying on - a lap sets the grid'
                                   : 'Qualifying off - last race, reversed');
@@ -8140,6 +8227,10 @@ function resumeRace(d) {
   if (!d || !d.race || !d.in_race) return false;
   S.raceMode = true;
   S.raceDone = false;
+  // Where the room says this car had got to. Kept rather than applied: the run
+  // has not started yet, and `Run.start` - which is a frame away, off `raceT0`
+  // being in the past - clears exactly these two. See `Run.resumeAt`.
+  S.resumeAt = d.lap_at || null;
   if (d.race.t0) S.raceT0 = S.cdT0 = performance.now() + (d.race.t0 - serverNow());
   S.standings = (d.race.finish || []).slice();
   return true;

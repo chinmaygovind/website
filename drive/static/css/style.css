@@ -949,6 +949,16 @@ body.touch .hud-tl > .card:first-child { width: 12rem; }
    before a word does. Lightened from `--gold`/`--silver`/`--bronze` for the
    reason `.res-next b` gives in reverse: those are backgrounds with dark ink
    over them, and as 3.4rem of type over a moving track they are too dark. */
+/* The lap under it, small and quiet. It is context rather than a readout: the
+   position is what you glance at, and a line the same weight below it would
+   make two things to read where there was one. Tabular so 9/10 does not shift
+   under 1/10 on the last lap. */
+#lapNum {
+  font-family: var(--mono); font-size: .8rem; font-weight: 700;
+  letter-spacing: .08em; color: rgba(255, 255, 255, .82);
+  text-shadow: 0 2px 8px rgba(0, 0, 0, .8); margin-top: -.1rem;
+  font-variant-numeric: tabular-nums;
+}
 #place.p1 b { color: #ffd76a; }
 #place.p2 b { color: #d8dde6; }
 #place.p3 b { color: #e0a06a; }
@@ -966,6 +976,10 @@ body.touch #place {
   position: static; align-items: flex-start; gap: 0; padding-top: 2px;
 }
 body.touch #place b { font-size: 1.9rem; }
+/* On a phone it stays exactly where it is - directly under the ordinal, in the
+   map's row - which is the whole of what was asked of it. Only the size comes
+   down, with the number it sits under. */
+body.touch #lapNum { font-size: .7rem; }
 
 #wrongWay {
   position: absolute; top: 26%; left: 50%; transform: translateX(-50%);
@@ -2470,6 +2484,20 @@ body.touch.side-open .hud-tr { transform: none; }
 .setting.on .switch { background: #55e08a; }
 .setting.on .switch i { transform: translateX(17px); }
 .setting:disabled { cursor: default; opacity: .75; }
+/* The one setting that is a count. It is a div rather than a button - the row
+   itself does nothing, the two ends of it do - so it opts out of the pointer
+   the switches carry, and the number between them is the same monospace
+   everything countable on this page is set in so the row does not jump between
+   one digit and two. */
+.setting.laps { cursor: default; }
+.setting.laps b { font-family: var(--mono); min-width: 1.4rem; text-align: center; }
+.lapbtn {
+  flex: none; width: 26px; height: 26px; border-radius: 7px; cursor: pointer;
+  background: rgba(255, 255, 255, .1); border: 1px solid var(--hud-line);
+  color: inherit; font-size: 1rem; line-height: 1; font-family: var(--sans);
+}
+.lapbtn:hover:not(:disabled) { background: rgba(255, 255, 255, .2); }
+.lapbtn:disabled { cursor: default; opacity: .4; }
 .setting-note { font-size: .76rem; color: #b9c2d0; line-height: 1.35; }
 /* Chat is the last block in the drawer and takes whatever height is left, so
    the box you type into is on the floor of the panel however many players are

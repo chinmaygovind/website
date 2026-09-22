@@ -242,6 +242,45 @@ def test_progress_only_goes_up():
     assert w.prog == peak
 
 
+def test_progress_on_a_circuit_counts_the_laps():
+    """A room races several laps of a ring, so progress has to pass the length.
+
+    The standings are ordered by this and a finish claim is measured against it,
+    so a field spread over two laps must not read as everybody bunched on one.
+    The wrap is found by the ribbon arc dropping most of a lap between samples,
+    which nothing but crossing the line can do at 5Hz.
+    """
+    import laptime
+    ring = tracks_mod.get("silverstone")
+    length = laptime.line_length(ring)
+    poses = _walk(ring, tuning.MAX_SPEED, 30)
+    w = racecheck.Watcher()
+    _drive(w, poses, track=ring)
+    one = w.prog
+    assert one > 0.9 * length
+    _drive(w, poses, track=ring, t0=10 ** 6)
+    assert w.prog > 1.8 * length, (w.prog, length)
+
+
+def test_a_lap_is_given_back_by_driving_over_the_line_the_wrong_way():
+    """The wrap is signed, or reversing over your own line is a free lap.
+
+    This is the mistake the whole thing is guarding: a car that crosses and
+    rolls back would otherwise bank a full lap of progress and the lead with it.
+    `prog` is still monotone - it is the *lap* that is given back, so the peak
+    stands and nothing new is credited.
+    """
+    ring = tracks_mod.get("silverstone")
+    poses = _walk(ring, tuning.MAX_SPEED, 30)
+    w = racecheck.Watcher()
+    _drive(w, poses, track=ring)
+    _drive(w, poses[:60], track=ring, t0=10 ** 6)     # over the line: lap two
+    peak = w.prog
+    # ...and now back over it the other way, onto the old end of the ribbon.
+    _drive(w, list(reversed(poses[-60:])), track=ring, t0=2 * 10 ** 6)
+    assert w.prog == peak, (w.prog, peak)
+
+
 def test_nonsense_never_becomes_a_pose():
     """JSON has `NaN` and `Infinity` and Python parses both, so `float(x)` is
     not the guard it looks like - and a pose is fanned straight back out to

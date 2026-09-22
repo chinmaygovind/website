@@ -872,6 +872,31 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   one position worth seeing without reading. **On a phone the bottom right is
   the throttle**, so it moves under the button row at the top right - the only
   other part of the screen nothing is ever held over.
+  - **It lives outside `.hud-l`, and that is load-bearing.** The left-hand
+    column is `position: absolute`, so anything absolutely positioned *inside*
+    it is anchored to the column rather than to the screen - which put this
+    card, with its `bottom`/`right`, in the bottom-left corner underneath the
+    minimap, painted over and invisible on every desktop screen. It is a
+    sibling of the column now. On touch `movePlaceByMap` still appends it into
+    `.hud-bl`, which is the one layout where it does belong in there.
+  - **`LAP 2/3` sits directly under it**, small and quiet, and only when the
+    race has more than one lap - see `_race_laps` in `docs/rooms-and-races.md`.
+    They are the two halves of one question, where am I and how much is left,
+    so they are read in one glance; anywhere else would make that two. It is
+    the same element in both layouts, which is why it is a child of the card
+    rather than positioned of its own accord - the phone move carries it along
+    for free. Hidden at one lap and on the twenty-one point-to-point tracks,
+    where `LAP 1/1` is a line that never changes, and tabular so `9/10` does
+    not shift under `1/10` on the last lap. Crossing the line mid-race gets the
+    checkpoint chime and a toast rather than the finish fanfare: nothing has
+    finished.
+  - **Up during the race and at no other time.** It is driven off `Run.laps`,
+    which `applyPhase` sets to the race's count while `S.raceMode &&
+    S.racePhase === 'racing'` and to **one** everywhere else - so it is not up
+    over the five seconds of lights, in free practice, in qualifying or on the
+    results sheet, and it is not up for somebody who walked in after the lights,
+    who is practising on the same road. At one lap it is simply not there, which
+    is the HUD every point-to-point track has always had.
 
 - **`#netLost` is the one pill for "you are not in the room everybody else is
   in", and both things that say so also *do* something.** A socket that is

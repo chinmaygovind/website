@@ -61,19 +61,6 @@
     </div>
   </div>
 
-  <!-- **Where you are, and nothing else.** It used to be a card in the
-       top-left column reading `3/4` over the word Position - a fraction, in
-       the corner with the track name and the standings, three things to read
-       to answer one question. It is an ordinal now, on its own, in the corner
-       your eye is nearest at speed: bottom right, opposite the clock. `of N`
-       is small under it because the field size is the context, not the number.
-       On a phone the bottom right is the throttle, so it moves under the row
-       of buttons at the top right, which is the only other place nothing is
-       ever held. -->
-  <div id="place" style="display:none">
-    <b id="placeNum">1st</b>
-  </div>
-
   <!-- bottom left: the two session controls, then the minimap.
        These are the same pair as the touch buttons and they do the same two
        things, because falling off is common and recovering from it must not
@@ -116,6 +103,34 @@
     <div class="card"><canvas id="minimap" width="190" height="150"></canvas></div>
   </div>
   </div><!-- /hud-l -->
+
+  <!-- **Where you are, and nothing else.** It used to be a card in the
+       top-left column reading `3/4` over the word Position - a fraction, in
+       the corner with the track name and the standings, three things to read
+       to answer one question. It is an ordinal now, on its own, in the corner
+       your eye is nearest at speed: bottom right, opposite the clock. `of N`
+       is small under it because the field size is the context, not the number.
+       On a phone the bottom right is the throttle, so it moves under the row
+       of buttons at the top right, which is the only other place nothing is
+       ever held.
+       **Outside `.hud-l`, and that is load-bearing.** That column is
+       `position: absolute`, so anything absolutely positioned inside it is
+       anchored to the column rather than to the screen - which put this card,
+       with its `bottom`/`right`, in the bottom-left corner *underneath the
+       minimap*, where it was painted over and invisible on every desktop
+       screen. On touch `movePlaceByMap` still appends it into `.hud-bl`, which
+       is the one layout where it does belong in that column. -->
+  <div id="place" style="display:none">
+    <b id="placeNum">1st</b>
+    <!-- The lap, directly under the position and deliberately small. They are
+         the two halves of one question - where am I, and how much is left -
+         so they are read in one glance, and putting the lap anywhere else
+         would make that two. Hidden outside a multi-lap race: on the twenty-one
+         point-to-point tracks, and on a circuit the host has left at one lap,
+         "LAP 1/1" is a line that never changes. -->
+    <span id="lapNum" style="display:none">LAP 1/3</span>
+  </div>
+
 
   <!-- top right: the three things you can open -->
   <div class="hud-tr">
@@ -479,6 +494,17 @@
       <span class="switch"><i></i></span>
     </button>
     <div class="setting-note" id="powerupsNote"></div>
+    <!-- Laps, and only on a circuit - see `renderSettings`. A stepper rather
+         than a switch because the answer is a number, and the number is small
+         enough that - and + are fewer presses than a field you have to select
+         and type into with a car on the road behind you. -->
+    <div class="setting laps" id="optLaps">
+      <span class="setting-name">Laps</span>
+      <button class="lapbtn" id="btnLapsDown" aria-label="One lap fewer">&minus;</button>
+      <b id="lapsVal">3</b>
+      <button class="lapbtn" id="btnLapsUp" aria-label="One lap more">+</button>
+    </div>
+    <div class="setting-note" id="lapsNote"></div>
   </div>
   <button class="btn ghost" id="btnLeave" style="border-color:#ff8a7a;color:#ff8a7a">Leave room</button>
   <!-- Chat last, and pinned to the floor of the drawer: it takes whatever

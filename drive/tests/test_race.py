@@ -866,6 +866,120 @@ def test_the_qualifying_switch_is_the_hosts_and_only_between_races(live):
     assert r["settings"]["qualifying"] is True, "changed under a live session"
 
 
+# ---------------------------------------------------------------------------
+# Laps
+# ---------------------------------------------------------------------------
+# A room on a closed circuit races several laps of it. The setting is one
+# number in the room state like the two switches beside it, but unlike them it
+# means nothing on twenty-one of the twenty-six tracks - so `_race_laps` is the
+# one place the setting becomes an answer, and everything that has to agree
+# about how long the race is (the finish check, the backstop, the bots) asks it.
+
+
+def test_the_lap_count_is_the_setting_on_a_circuit_and_one_anywhere_else(env):
+    A = env
+    r = A._room("LAPS")
+    circuit = A.tracks_mod.get("silverstone")
+    sprint = A.tracks_mod.get("sunrise")
+    assert circuit["closed"] and not sprint.get("closed")
+    assert A._race_laps(r, circuit) == A.ROOM_DEFAULTS["laps"] == 3
+    # The host may well have left it at three on the circuit they came from.
+    assert A._race_laps(r, sprint) == 1
+    r["settings"]["laps"] = 7
+    assert A._race_laps(r, circuit) == 7
+    # Whatever is in there, the answer is one the - and + could have produced.
+    for bad, want in ((0, 1), (-4, 1), (999, A.LAPS_MAX), ("x", 1), (None, 1)):
+        r["settings"]["laps"] = bad
+        assert A._race_laps(r, circuit) == want, bad
+
+
+def test_the_lap_count_is_the_hosts_and_only_between_races(live):
+    """The same rule the two switches follow, through the same handler - which
+    has to take a number where they take a bool."""
+    A, r, pids, sent, fired = live
+    with A.app.test_request_context():
+        from flask import session
+        session["session_key"] = "sk-other"
+        A.on_set_setting({"code": "LIVE", "key": "laps", "value": 5})
+    assert r["settings"]["laps"] == 3, "anybody could change it"
+    _as_host(A, A.on_set_setting, {"code": "LIVE", "key": "laps", "value": 5})
+    assert r["settings"]["laps"] == 5
+    # Clamped rather than refused: nothing the buttons can send is out of range.
+    _as_host(A, A.on_set_setting, {"code": "LIVE", "key": "laps", "value": 400})
+    assert r["settings"]["laps"] == A.LAPS_MAX
+    _as_host(A, A.on_set_setting, {"code": "LIVE", "key": "laps", "value": 0})
+    assert r["settings"]["laps"] == 1
+    _as_host(A, A.on_start_race, {"code": "LIVE"})
+    _as_host(A, A.on_set_setting, {"code": "LIVE", "key": "laps", "value": 6})
+    assert r["settings"]["laps"] == 1, "changed under a live session"
+
+
+def test_a_reload_comes_back_on_the_lap_it_left(env, monkeypatch):
+    """`_lap_progress` is rebuilt from the splits the room already keeps.
+
+    Nothing is stored for it, so what has to hold is the arithmetic: the index
+    a gate is reported by (`Run.cpIndex`, stride `checkpoints + 1`) divides back
+    into the lap and the checkpoint it came from. The spare slot per lap is the
+    whole reason the stride is not the checkpoint count - without it the line
+    crossing that opens lap two and the last checkpoint of lap one are the same
+    number, and this cannot tell a car that has just come round from one sitting
+    on the gate before the line.
+    """
+    A = env
+    r = _room(A, code="RLD", phase="racing")
+    ring = A.tracks_mod.get("silverstone")
+    monkeypatch.setattr(A, "_hot_track", lambda room: ring)
+    n = ring["checkpoints"]
+    stride = n + 1
+    assert A._lap_progress(r, "p1") is None, "a car that has taken no gate"
+    cases = [
+        (1, 0, 1),                      # first checkpoint of the first lap
+        (n, 0, n),                      # its last one: the line is next
+        (stride, 1, 0),                 # over the line, lap two, nothing taken
+        (stride + 1, 1, 1),
+        (2 * stride + n, 2, n),         # last gate of the third lap
+    ]
+    for idx, lap, cp in cases:
+        r["splits"]["p1"] = {k: 1000 * k for k in range(1, idx + 1)}
+        assert A._lap_progress(r, "p1") == {"lap": lap, "cp": cp}, idx
+    # And it is the furthest gate, not the count of them: a car that went back
+    # for one it skipped has not lost the lap it is on.
+    r["splits"]["p1"] = {1: 1000, 2 * stride + 2: 9000}
+    assert A._lap_progress(r, "p1") == {"lap": 2, "cp": 2}
+
+
+def test_a_multi_lap_race_gets_a_multi_lap_time_limit(env):
+    """`_hard_race_ms` is the backstop that rescues a stranded room, and on a
+    three-lap race it would otherwise fall a third of the way in."""
+    A = env
+    one = A._hard_race_ms("silverstone", 1)
+    assert A._hard_race_ms("silverstone", 3) == min(A.HARD_RACE_MAX_MS, one * 3)
+
+
+def test_a_finish_claim_is_measured_over_the_whole_race(env, monkeypatch):
+    """The floor under a finish is the road that had to be covered, so three
+    laps of it is three times as much - otherwise one lap of a three-lap race
+    is a quick enough time to claim the win with."""
+    A = env
+    r = _room(A, code="FIN", phase="racing")
+    r["t0"] = A._now_ms() - 600000
+    c = _add_car(A, r, "p1")
+    ring = A.tracks_mod.get("silverstone")
+    monkeypatch.setattr(A, "_room_track", lambda code: ring)
+    monkeypatch.setattr(A, "_hot_track", lambda room: ring)
+
+    class W:
+        prog = 10 ** 9          # the server saw it go round, and round again
+
+    one_lap_ms = int(A.laptime.line_length(ring)
+                     / (A.tuning.MAX_SPEED * 1.7) * 1000.0) + 50
+    r["settings"]["laps"] = 1
+    assert A._finish_is_possible(r, c, one_lap_ms, W())
+    r["settings"]["laps"] = 3
+    assert not A._finish_is_possible(r, c, one_lap_ms, W())
+    assert A._finish_is_possible(r, c, one_lap_ms * 3, W())
+
+
 def test_a_qualifying_lap_puts_its_replay_on_pole(live):
     """The lap that is provisionally on pole is the one ghost worth having in a
     session that exists to set it, so it comes up with the time."""

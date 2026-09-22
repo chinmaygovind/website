@@ -2956,7 +2956,19 @@ LIVE_PHASES = ("qual_countdown", "qualifying", "countdown", "racing")
 # before anybody races, which is most of a race spent not racing, and a room of
 # people who have just found each other wants to be on the grid. The host turns
 # it on from the room drawer when the grid is worth two minutes.
-ROOM_DEFAULTS = {"qualifying": False, "powerups": True}
+# `laps` is the third and the only one that is not a switch. It applies to a
+# closed circuit and nothing else - a point-to-point track's finish line is not
+# its start line, so "go round again" has no meaning on twenty-one of the
+# twenty-six - and on one it defaults to three, because a lap of these five is
+# about a minute and one of them is a procession from whatever the grid was. A
+# host who wants the old single-lap race sets it to 1; that is what the bottom
+# of the range is for.
+ROOM_DEFAULTS = {"qualifying": False, "powerups": True, "laps": 3}
+
+# What the - and + in the room drawer may reach. Ten laps of Spa is the better
+# part of twelve minutes, which is already longer than anybody sits still for,
+# and the ceiling is also what keeps `_hard_race_ms` honest.
+LAPS_MAX = 10
 
 # A room, rather than a browser, owns its item queue.  Poses are intentionally
 # client-authoritative for steering, but an item is a discrete shared event: if
@@ -3218,6 +3230,59 @@ def _race_band(r, pid):
     if place <= 0.34:
         return "front"
     return "back" if place >= 0.67 else "mid"
+
+
+def _race_laps(r, track=None):
+    """How many laps a race in this room is, given the track it is on.
+
+    One on a point-to-point track whatever the setting says, because the
+    setting is meaningless there and the host may well have left it at three
+    from the last circuit they were on. Asked here rather than remembered on
+    the room so there is one answer: the finish check, the race's own time
+    limit and the bots all have to agree about it or a race ends in an
+    argument.
+    """
+    if track is None:
+        track = _hot_track(r)
+    if not (track or {}).get("closed"):
+        return 1
+    try:
+        laps = int(r["settings"].get("laps", ROOM_DEFAULTS["laps"]))
+    except (TypeError, ValueError):
+        return 1
+    return max(1, min(LAPS_MAX, laps))
+
+
+def _lap_progress(r, pid):
+    """How far round this car had got, for a browser that has just come back.
+
+    **Rebuilt from `r["splits"]`, which the room already keeps**, rather than
+    from anything new: every gate a car takes during a race is reported to
+    `on_split` by `Run.cpIndex`, which numbers them over the whole race with a
+    stride of one more than the checkpoint count - so the largest index this
+    car has reported *is* where it had got to, and it divides straight back
+    into a lap and a checkpoint. Nothing is written for this and nothing has to
+    be kept in step with it.
+
+    `None` when there is nothing to say (no track, no gates, a car that has
+    taken none), and the client then starts where it always did.
+
+    What it does not cover, said plainly: the gate the car was *between* when
+    the browser went away is lost, so a reload puts you back at the last gate
+    you actually crossed. That is the honest answer - the alternative is
+    trusting the client's own count, which is the number the whole of
+    `racecheck` exists not to trust.
+    """
+    taken = (r.get("splits") or {}).get(pid) or {}
+    if not taken:
+        return None
+    track = _hot_track(r)
+    ncps = int((track or {}).get("checkpoints") or 0)
+    if not ncps:
+        return None
+    m = max(int(k) for k in taken)
+    stride = ncps + 1
+    return {"lap": m // stride, "cp": m % stride}
 
 
 def _powerups_live(r):
@@ -4042,16 +4107,19 @@ def _sync_bots(r, game):
     r["bot_slot"] = {p.pid: i for i, p in enumerate(seats)}
 
 
-def _hard_race_ms(slug):
+def _hard_race_ms(slug, laps=1):
     """The longest a race on this track may possibly last.
 
     Eight times a gold lap is far beyond any honest attempt while still being
     short enough that a stranded room recovers on its own rather than needing
-    the host to notice.
+    the host to notice - and **times the laps**, or a three-lap race would be
+    guillotined a third of the way in by the backstop that exists to rescue it.
+    `HARD_RACE_MAX_MS` still caps the lot.
     """
     t = tracks_mod.get(slug) or {}
     gold = (t.get("medals") or {}).get("gold") or 60.0
-    return int(max(HARD_RACE_MIN_MS, min(HARD_RACE_MAX_MS, gold * 8000)))
+    return int(max(HARD_RACE_MIN_MS,
+                   min(HARD_RACE_MAX_MS, gold * 8000 * max(1, laps))))
 
 
 def _qual_state(r):
@@ -4330,6 +4398,12 @@ def on_join_room(data=None):
                         # clock and a set of items would be a race they are not
                         # scored in. So it is asked of the grid, which is
                         # exactly who lined up, and of their own car.
+                        # **And where it had got to**, so a reload does not
+                        # put a car back on lap one with every checkpoint to
+                        # take again. Derived rather than stored - see
+                        # `_lap_progress` - and sent only to the browser it is
+                        # about, which is what `room_hello` is.
+                        "lap_at": _lap_progress(r, seat["pid"]),
                         "in_race": bool(
                             r["phase"] in ("countdown", "racing")
                             and seat["pid"] in r["grid"]
@@ -4517,7 +4591,18 @@ def on_set_setting(data=None):
         if r["phase"] in LIVE_PHASES:
             emit("room_error", {"error": "Can't change the settings mid-race."})
             return
-        r["settings"][key] = bool((data or {}).get("value"))
+        # Two shapes, because the third setting is a count rather than a
+        # switch. Clamped rather than refused: the - and + cannot send anything
+        # out of range, so anything that arrives out of it is not a host
+        # pressing a button and there is nothing to tell them about.
+        want = (data or {}).get("value")
+        if key == "laps":
+            try:
+                r["settings"][key] = max(1, min(LAPS_MAX, int(want)))
+            except (TypeError, ValueError):
+                return
+        else:
+            r["settings"][key] = bool(want)
         out = dict(r["settings"])
     socketio.emit("room_settings", out, room="room:" + code)
 
@@ -5021,7 +5106,8 @@ def _go_green(code, seq):
                 return
             r["phase"] = "racing"
             game = DriveGame.query.filter_by(code=code).first()
-            hard = _hard_race_ms(game.track if game else "")
+            laps = _race_laps(r, tracks_mod.get(game.track) if game else None)
+            hard = _hard_race_ms(game.track if game else "", laps)
             r["hard_end"] = _now_ms() + hard
             t0 = r["t0"]
             # Start recording from the green light, so frame 0 of every car is
@@ -5053,7 +5139,7 @@ def _go_green(code, seq):
             # timed on at the same instant everybody else does.
             world = _bot_world(r)
             if world is not None:
-                world.green(t0)
+                world.green(t0, laps)
         socketio.emit("race_green", {"t0": t0}, room="room:" + code)
         # The backstop. Every other way a race ends depends on somebody doing
         # something; this one does not.
@@ -5648,7 +5734,11 @@ def _finish_is_possible(r, c, ms, w=None):
     # costs somebody a race they actually drove, which is the worse mistake.
     track = _room_track(r["code"])
     if track:
-        length = laptime.line_length(track)
+        # The whole race, not one lap of it: both bounds below are statements
+        # about the road that had to be covered, and on a three-lap race that
+        # is three times as much of it.
+        laps = _race_laps(r, track)
+        length = laptime.line_length(track) * laps
         if ms < length / (tuning.MAX_SPEED * 1.7) * 1000.0:
             return False
         # The server's projection, falling back to the car's own number only

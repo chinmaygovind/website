@@ -229,6 +229,8 @@ class Watcher:
         self.bucket = BUCKET_MAX_S * runcheck.SPEED_CEIL
         self.hint = 0            # last ribbon station, so the walk stays local
         self.prog = 0.0          # what the server thinks this car has covered
+        self.arc = 0.0           # and where round the lap that put it, last time
+        self.lap = 0             # how many times it has been seen to come round
         self.next_prog_ms = 0
         self.strikes = 0
         self.reasons = {}        # reason -> how many times, for the record
@@ -290,6 +292,16 @@ def sample_progress(w, track, p, now_ms):
     `w.prog` only ever goes up. It is progress, and the alternative - letting it
     fall when a car spins or reverses - would mean a car that crossed the line
     having its finish refused because it rolled backwards over it.
+
+    **And on a closed circuit it goes up past the length of the lap**, because a
+    room can race several of them. The ribbon's own arc is 0..length whichever
+    lap the car is on, so a field spread over two laps would read as everybody
+    bunched on one - the standings are ordered by this and a finish claim is
+    measured against it, so both would be wrong in the same direction. The wrap
+    is found by the arc dropping most of a lap between two samples: at 5Hz a car
+    covers ten units, so nothing but crossing the line can move it that far, and
+    it is signed so a car that rolls back over the line gives the lap back
+    rather than banking one.
     """
     if not track or now_ms < w.next_prog_ms:
         return None
@@ -299,7 +311,15 @@ def sample_progress(w, track, p, now_ms):
         return None
     if best > LIVE_CORRIDOR * LIVE_CORRIDOR:
         return w.strike("%.0f units off the course" % (best ** 0.5))
-    w.prog = max(w.prog, station_arc(track, w.hint))
+    arc = station_arc(track, w.hint)
+    length = station_arc(track, len(track.get("line") or []))
+    if track.get("closed") and length:
+        if arc < w.arc - length / 2:
+            w.lap += 1
+        elif arc > w.arc + length / 2:
+            w.lap = max(0, w.lap - 1)
+    w.arc = arc
+    w.prog = max(w.prog, arc + w.lap * length)
     return None
 
 

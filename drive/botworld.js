@@ -154,6 +154,7 @@ class BotWorld {
   release() {
     for (const b of this.bots) {
       b.car.frozen = false;
+      b.run.laps = 1;
       b.run.reset();
       b.started = false;
       b.finished = null;
@@ -277,7 +278,12 @@ class BotWorld {
     for (const b of this.bots) {
       const events = b.run.update(b.car, nowMs);
       for (const e of events) {
-        if (e === 'cp') b.events.push(['cp', b.run.nextCp, Math.round(b.run.time)]);
+        // The line is a gate like any other here - same reason as in `game.js`:
+        // a bot's splits have to be comparable with a person's, and they are
+        // only comparable if both number the same gates the same way.
+        if (e === 'cp' || e === 'lap') {
+          b.events.push(['cp', b.run.cpIndex(), Math.round(b.run.time)]);
+        }
         if (e === 'finish' && b.finished == null) {
           b.finished = Math.round(b.run.time);
           b.events.push(['finish', b.finished, 0]);
@@ -304,10 +310,16 @@ class BotWorld {
     return out;
   }
 
-  /** Start a timed lap for everybody, on the shared clock the room hands out. */
-  green(nowMs) {
+  /**
+   * Start the race for everybody, on the shared clock the room hands out.
+   *
+   * `laps` is the room's, so a bot drives the same number of them the people do
+   * - set before `start`, since that is what clears the lap counter.
+   */
+  green(nowMs, laps) {
     for (const b of this.bots) {
       b.car.frozen = false;
+      b.run.laps = Math.max(1, laps | 0) || 1;
       b.run.start(nowMs);
       b.started = true;
       b.finished = null;

@@ -209,6 +209,12 @@ export class Run {
     // A ring's finish gate *is* its start gate, so the line is the first thing
     // you cross rather than the last - see `finish_at_start` in tracks.py.
     this.closed = !!(track && track.closed);
+    // How many times round the line has to be crossed before the run is done.
+    // One for everything except a room race on a closed circuit, where the host
+    // sets it - so it is the caller's to write and `reset` deliberately leaves
+    // it alone: a run is restarted a dozen times a session and the race it is
+    // part of is still the same length.
+    this.laps = 1;
     this.reset();
   }
 
@@ -233,6 +239,15 @@ export class Run {
     this.respawnGate = this.course.startGate();
     this.wrongWay = false;
     this.bestS = 0;
+    // Which lap is being driven (0-based), and the *separate* lap count the
+    // cumulative distance is built from. They are not the same question and
+    // must not share a counter: `lap` is scored - it only moves when the line
+    // is crossed with every checkpoint behind you - while `sLap` is geometry,
+    // detected from the ribbon position wrapping, so a car that crosses the
+    // line and rolls back over it does not gain a lap's worth of progress.
+    this.lap = 0;
+    this.sLap = 0;
+    this._lastS = null;
     // Steps that happened before the recording arrays were last cleared. Zero
     // for every ordinary run; see `stepIndex` and `restore`.
     this.stepBase = 0;
@@ -260,6 +275,9 @@ export class Run {
     this.time = 0;
     this.splits = [];
     this.nextCp = 0;
+    this.lap = 0;
+    this.sLap = 0;
+    this._lastS = null;
     this.missed = false;
     this.distance = 0;
     this.ghost = [];
@@ -396,6 +414,7 @@ export class Run {
       time: this.time, splits: this.splits.slice(), nextCp: this.nextCp,
       missed: this.missed, distance: this.distance, wrongWay: this.wrongWay,
       bestS: this.bestS, hint: this.course.hint,
+      lap: this.lap, sLap: this.sLap, lastS: this._lastS,
       respawnGate: gi(this.respawnGate),
       lastPos: this._lastPos ? this._lastPos.slice() : null,
       sides: [...this._sides].map(([g, side]) => [gi(g), side]),
@@ -421,6 +440,9 @@ export class Run {
     this.distance = s.distance;
     this.wrongWay = s.wrongWay;
     this.bestS = s.bestS;
+    this.lap = s.lap | 0;
+    this.sLap = s.sLap | 0;
+    this._lastS = s.lastS == null ? null : s.lastS;
     this.course.resetHint(s.hint | 0);
     this.respawnGate = s.respawnGate >= 0 ? gates[s.respawnGate] : null;
     this._lastPos = s.lastPos ? s.lastPos.slice() : null;
@@ -553,7 +575,21 @@ export class Run {
 
     const loc = this.course.locate(pos);
     this.s = loc.s;
-    if (loc.s > this.bestS) this.bestS = loc.s;
+    // `bestS` is the distance covered over the whole run, so on a multi-lap
+    // race it keeps climbing past the length of the ribbon - it is what the
+    // standings are ordered by and what the catch-up boost measures a gap
+    // with, and both of those have to put a car on lap three ahead of one on
+    // lap two. The wrap is found by the position jumping most of a lap, which
+    // is the same test the server's own projection uses (`sample_progress`),
+    // and it is signed so driving back over the line undoes it.
+    const total = this.course.total;
+    if (this._lastS != null && total) {
+      if (loc.s < this._lastS - total / 2) this.sLap++;
+      else if (loc.s > this._lastS + total / 2) this.sLap--;
+    }
+    this._lastS = loc.s;
+    const covered = loc.s + this.sLap * total;
+    if (covered > this.bestS) this.bestS = covered;
 
     // wrong way: are we pointing against the road?
     const t = this.course.tangent(loc.idx);
@@ -608,9 +644,22 @@ export class Run {
       if (this.finish) {
         check(this.finish, () => {
           if (this.nextCp >= this.cps.length) {
-            this.state = 'done';
-            this.time = Math.round(nowMs - this.startedAt);
-            events.push('finish');
+            if (this.lap + 1 < this.laps) {
+              // Another lap to go. The checkpoints all have to be taken again,
+              // so the counter goes back to zero and the remembered sides go
+              // with it - a gate whose side was last recorded a lap ago would
+              // produce no sign change on the way past it this time, which is
+              // exactly how a checkpoint goes silently missing.
+              this.lap++;
+              this.nextCp = 0;
+              this._sides.clear();
+              this.respawnGate = this.finish;
+              events.push('lap');
+            } else {
+              this.state = 'done';
+              this.time = Math.round(nowMs - this.startedAt);
+              events.push('finish');
+            }
           } else if (this.closed && this.nextCp === 0) {
             // Leaving the grid, not skipping anything. On a ring the finish
             // gate is the start gate, so the first thing every lap does is
@@ -637,6 +686,45 @@ export class Run {
       car.setRespawn([g.p[0], g.p[1] + 0.4, g.p[2]], g.f);
     }
     return events;
+  }
+
+  /**
+   * The gate just taken, counted over the whole run rather than the lap.
+   *
+   * A split is reported to the room by this number and looked up by it again to
+   * find what the leader did there, so on a multi-lap race it has to tell lap
+   * two's first checkpoint from lap one's - otherwise the second one is dropped
+   * by the server (`on_split` keeps the first time for a given index) and every
+   * delta after the first lap is measured against the wrong gate.
+   *
+   * **The stride is one more than the number of checkpoints**, because the
+   * start-finish line is reported as a gate too (`nextCp === 0`, the moment a
+   * lap is completed). At a stride of `cps.length` the line crossing that opens
+   * lap two and the last checkpoint of lap one are the same number, and the
+   * room's own record of where a car got to - which is what a reload is
+   * rebuilt from, see `_lap_progress` - cannot tell those two apart. One spare
+   * slot per lap, and every gate on the track has its own index for ever.
+   */
+  cpIndex() {
+    return this.lap * (this.cps.length + 1) + this.nextCp;
+  }
+
+  /**
+   * Put the lap counter back where the room says this car had got to.
+   *
+   * For a browser that reloaded mid-race. `start` clears both of these - it is
+   * the one place a run begins and a new run has taken no gates - so this is
+   * applied *after* it rather than instead of it, from the one place that
+   * starts a race run. `sLap` goes with them: it is the lap the *distance* is
+   * on, and leaving it at zero would report a car most of a lap back and hand
+   * it the catch-up boost for a gap it does not have.
+   */
+  resumeAt(lap, nextCp) {
+    this.lap = Math.max(0, lap | 0);
+    this.nextCp = Math.max(0, Math.min(this.cps.length, nextCp | 0));
+    this.sLap = this.lap;
+    this.respawnGate = this.nextCp > 0 ? this.cps[this.nextCp - 1]
+                                       : this.course.startGate();
   }
 
   progress01() {

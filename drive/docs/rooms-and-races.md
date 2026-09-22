@@ -330,8 +330,8 @@ with how late it was and what the rooms were doing.
   *placed* for it, though: a session has no start line - everyone leaves when
   they like, on their own lap - so it counts down over wherever you are sitting.
 - **Qualifying is off by default, and then the grid is the last race
-  reversed.** It is one of the room's two settings (`ROOM_DEFAULTS`, the other being
-  **Powerups**) and it lives
+  reversed.** It is one of the room's three settings (`ROOM_DEFAULTS`, the others
+  being **Powerups** and **Laps**) and it lives
   in the live room state rather than on `DriveGame`: it is
   about the next few minutes, and `create_all` makes tables and not columns, so
   a column would need a hand migration on the live database for something a room
@@ -350,6 +350,90 @@ with how late it was and what the rooms were doing.
   spending its first two minutes alone on the road; a host who wants the grid
   earned turns it on. The client's own `S.settings` starts off to match, so the
   switch is not drawn one way and corrected by the first `room_settings`.
+
+- **A race on a closed circuit is three laps by default, and `_race_laps` is
+  the one place the setting becomes an answer.** It is the third of
+  `ROOM_DEFAULTS` and the only one that is not a switch - a count, stepped
+  1..`LAPS_MAX` (10) by a - and + in the room drawer, so `on_set_setting` grew a
+  second shape and clamps rather than refuses: nothing the buttons can send is
+  out of range, so anything that arrives out of it is not a host pressing a
+  button and there is nothing to tell them about.
+  - **It means nothing on twenty-one of the twenty-six tracks**, whose finish
+    line is not their start line, so `_race_laps` answers 1 for any track that
+    is not `closed` whatever the setting says - the host may well have left it
+    at three on the circuit they came from. The stepper is *hidden* rather than
+    disabled there, because a greyed-out control is a thing to wonder about and
+    this one has nothing to say.
+  - **Everything that has to agree about how long the race is asks that one
+    function**, because a race whose halves disagree is a race that does not
+    end: the two track-shaped bounds in `_finish_is_possible` (both are
+    statements about the road that had to be covered, so on three laps it is
+    three times as much of it), `_hard_race_ms` (eight times a gold lap *times
+    the laps*, or the backstop that exists to rescue a stranded room would
+    guillotine a three-lap race a third of the way in), and the bots, which are
+    handed it by `world.green(t0, laps)`.
+  - **The browser is told by the settings and by nothing else.** `raceLaps()`
+    in `game.js` is the same two questions in the same order - is this track
+    closed, and what does the host's setting say - off `S.settings`, which
+    `room_hello`, `room_settings` and `_race_state` all carry. There is
+    deliberately no lap count on `race_green`: a second statement of the same
+    fact is a second thing to be wrong, and the interesting question would
+    become which to believe. `applyPhase` is where it reaches the car
+    (`S.run.laps`), because every way into a race and out of one already goes
+    through it - and only for a race you are *in*, since somebody who walked in
+    after the lights is practising on the same road and drives one lap.
+  - **`Watcher.prog` counts the laps too**, which is the part that is not
+    cosmetic. The ribbon's arc is 0..length whichever lap the car is on, so a
+    field spread over two would read as everybody bunched on one - and the
+    standings are ordered by that number and a finish claim is measured against
+    it. `sample_progress` finds the wrap from the arc dropping most of a lap
+    between two samples (at 5Hz a car covers ten units, so nothing else can),
+    and **it is signed**: without the decrement, a car that crosses the line and
+    rolls back over it banks a full lap of progress and the lead with it. The
+    client's own `Run.bestS` does the same thing off `course.locate`, for the
+    catch-up gap and its own pose.
+  - **The lap the *race* is on is a separate counter from the lap the
+    *distance* is on**, and they must not be shared. `Run.lap` is scored - it
+    only moves when the line is crossed with every checkpoint behind you, and
+    crossing it resets `nextCp` and clears the remembered gate sides, or a gate
+    whose side was last recorded a lap ago produces no sign change on the way
+    past it and goes silently missing. `Run.sLap` is geometry. `Run.cpIndex()`
+    is what a split is reported by, counted over the whole race rather than the
+    lap, or `on_split` keeps lap one's time for lap two's gate and every delta
+    after the first lap is measured against the wrong one.
+  - **A reload comes back on the lap it left, and `_lap_progress` is rebuilt
+    from what the room already keeps.** `resumeRace` restored the clock and the
+    seat and never restored `nextCp`, so a reload had always meant re-crossing
+    every checkpoint - which on three laps is two laps' worth of driving instead
+    of part of one, and a lap counter back at 1/3 with the field on its last.
+    Nothing new is stored for it: every gate a car takes during a race is
+    already reported to `on_split`, so the largest index this car has reported
+    *is* where it had got to, and it divides straight back into a lap and a
+    checkpoint.
+    - **The stride is `checkpoints + 1`, and the spare slot is the line.** At a
+      stride of the checkpoint count, the crossing that opens lap two and the
+      last checkpoint of lap one are the same number and this cannot tell them
+      apart - so the line is reported as a gate like any other (`nextCp === 0`),
+      which is also why a lap now gets a delta against the leader's lap. Bots
+      report it through the same `cpIndex`, or their splits and a person's are
+      not comparable.
+    - **It is applied after `Run.start`, not instead of it.** A mid-race reload
+      lands with `raceT0` in the past, so the race branch of the frame loop
+      starts the run on the very next frame - and `start` is the one place a run
+      begins, so it clears exactly the two counters this is putting back.
+      `resumeRace` therefore only *keeps* the answer (`S.resumeAt`) and
+      `Run.resumeAt` is called on the far side of that start, once.
+    - `sLap` comes back with them, because it is the lap the *distance* is on:
+      left at zero, the car reports itself most of a lap down and is handed the
+      catch-up boost for a gap it does not have.
+    - **The gate the car was between is still lost**: you come back at the last
+      gate you actually crossed, never further on. The alternative is trusting
+      the client's own count, which is the number the whole of `racecheck`
+      exists not to trust, and the cost of the honest answer is at most one
+      sector.
+  - Nothing about the leaderboard changes, because nothing from a room ever
+    reached it (`countsForTheBoard`). A three-lap time is not a lap time and is
+    not offered as one: no medal, no PB, no ghost.
 
 - **Every item is the room's, not the browser's.** A pose is one client's
   opinion and is allowed to be wrong by a metre - that is the whole design of

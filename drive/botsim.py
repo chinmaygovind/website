@@ -248,8 +248,8 @@ class World:
     def release(self):
         self._js("release()")
 
-    def green(self, now_ms):
-        self._js("green(%d)" % int(now_ms))
+    def green(self, now_ms, laps=1):
+        self._js("green(%d, %d)" % (int(now_ms), max(1, int(laps))))
 
     def tick(self, dt, humans, now_ms, phase="free", since=None):
         """Advance every bot and hand back their poses and whatever happened.

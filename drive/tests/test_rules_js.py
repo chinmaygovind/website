@@ -1465,3 +1465,92 @@ def test_nobody_else_is_handed_a_race(payload):
     ctx = _resume_ctx()
     assert ctx.eval("resumeRace(%s)" % payload) is False
     assert ctx.eval("S.raceMode") is False
+
+
+# --- the lap readout: when it is up, and what it says ------------------------
+# Three rules, and the last two are what was asked for: it is the race's lap
+# count or nothing, it is not up on a one-lap race (which is then the HUD every
+# point-to-point track has always had), and it is not up outside the race
+# itself - not the lights, not practice, not the results sheet.
+
+HUD_STUB = """
+var wrote = {}, els = {};
+function $(id) {
+  return els[id] || (els[id] = {id: id, style: {}, textContent: '', className: '',
+                                classList: {toggle: function () {}},
+                                innerHTML: ''});
+}
+function renderStandings() {}
+function drawMinimap() {}
+function ordinal(n) { return n + 'th'; }
+function liveOrder() { return [{self: true}]; }
+var S = {run: {nextCp: 1, cps: [1, 2, 3], laps: 1, lap: 0, wrongWay: false},
+         raceMode: true, racePhase: 'racing', remotes: {size: 0},
+         previewOrder: null, previewPhase: null, standings: []};
+"""
+
+
+def _lap_readout(laps, lap=0, phase="racing"):
+    ctx = jsrt.quickjs.Context()
+    ctx.eval(HUD_STUB)
+    ctx.eval(_fn("hud"))
+    ctx.eval("S.run.laps = %d; S.run.lap = %d; S.racePhase = %s; hud(0);"
+             % (laps, lap, json.dumps(phase)))
+    return (ctx.eval("$('lapNum').style.display"),
+            ctx.eval("$('lapNum').textContent"))
+
+
+def test_one_lap_is_the_hud_every_other_track_has():
+    """Set the stepper to 1 and there is nothing extra on the screen at all.
+
+    A `LAP 1/1` that never changes is a line to read for no reason, and the
+    whole of what a one-lap race is is the race Drive has always had.
+    """
+    assert _lap_readout(1)[0] == "none"
+
+
+def test_the_lap_readout_counts_from_one():
+    """`Run.lap` is 0-based and the driver is on the one after it, which is what
+    a lap board says."""
+    assert _lap_readout(3, lap=0) == ("", "LAP 1/3")
+    assert _lap_readout(3, lap=2) == ("", "LAP 3/3")
+
+
+def test_the_lap_readout_is_only_up_during_the_race():
+    """It is driven off `Run.laps`, which `applyPhase` sets to the race's count
+    while the race is running and to one everywhere else - so the counter is not
+    up over the lights, in practice, in qualifying or on the results sheet."""
+    src = open(GAME_JS).read()
+    m = re.search(r"S\.run\.laps = .*?;", src)
+    assert m, "applyPhase no longer decides the run's lap count"
+    line = m.group(0)
+    assert "S.raceMode" in line and "S.racePhase === 'racing'" in line, line
+    assert ": 1" in line, "it has to fall back to one lap, or practice counts laps"
+
+
+LAPS_STUB = """
+var LAPS_MAX = 10;
+var S = {track: {closed: true}, settings: {laps: 3}};
+"""
+
+
+def _race_laps(closed=True, laps=3):
+    ctx = jsrt.quickjs.Context()
+    ctx.eval(LAPS_STUB)
+    ctx.eval(_fn("raceLaps"))
+    ctx.eval("S.track.closed = %s; S.settings.laps = %s;"
+             % (json.dumps(closed), json.dumps(laps)))
+    return ctx.eval("raceLaps()")
+
+
+def test_the_lap_count_is_one_on_a_track_that_is_not_a_circuit():
+    """The same two questions in the same order as `_race_laps` on the server,
+    which they have to agree about or the HUD counts to a number the finish
+    never arrives at. A point-to-point track has no lap to do twice, and the
+    host may well have left the stepper at three on the circuit they came from.
+    """
+    assert _race_laps(closed=False, laps=5) == 1
+    assert _race_laps(closed=True, laps=5) == 5
+    for bad in (0, -3, 999, "x", None):
+        got = _race_laps(closed=True, laps=bad)
+        assert 1 <= got <= 10, (bad, got)
