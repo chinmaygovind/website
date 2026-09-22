@@ -160,6 +160,16 @@ const STUCK_NUDGE_S = 1.4;        // back up and try again
 const STUCK_GIVE_UP_S = 3.2;      // take the checkpoint
 const WRONG_WAY_DOT = -0.4;
 const WRONG_WAY_GIVE_UP_S = 3.0;
+// How much road a car takes to merge onto the racing line from where it was
+// put down. A grid slot is `2.1` units either side of the line and the
+// look-ahead at a standstill is six, so "aim at the line" off the lights is a
+// **sixteen-degree** demand, which at `steer: 6.0` is full lock before the car
+// has moved - and then an overshoot, and a second of snaking, for every bot on
+// the grid at once. A driver does not do that: they leave their slot straight
+// and rejoin over the next few car lengths. Sixty units is about two seconds of
+// a standing start, and it decays with distance rather than time so a slow car
+// and a quick one merge over the same road.
+const MERGE_DIST = 60.0;
 const LOST_DIST = 15.0;           // this far off the line is not a wide moment
 const LOST_GIVE_UP_S = 2.5;
 // **Beside the road is a wide moment; under it is a fall.**
@@ -210,12 +220,15 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
  */
 class BotLine {
   constructor(data) {
-    this.p = data.p;
+    // Copied at the outer level because the join below replaces a few points,
+    // and the same line object is handed to every bot on this level.
+    this.p = data.p.slice();
     this.v = data.v;
     this.air = data.air || null;
     this.vmin = data.vmin || null;
     this.closed = !!data.closed;
     this.n = this.p.length;
+    this._join();
     this._unLaunch();
     // Cumulative arc length, so "12 units further on" is a lookup rather than a
     // walk with a running total in it.
@@ -238,6 +251,57 @@ class BotLine {
     // What gave it away was an A/B of four drift thresholds - including one set
     // impossibly high to mean *off* - coming back identical to the digit.
     this._curvature();
+  }
+
+  /**
+   * Make a circuit's path an actual ring: drop the run-up, close the ends.
+   *
+   * **A recorded lap on a circuit is not one to begin with.** It starts on the
+   * *grid*, four to eight units behind the line, and ends crossing it - so
+   * walking off the end and carrying on from `p[0]` steps the aim point
+   * *backwards* by that much, which is a sixty-degree demand and full lock,
+   * once a lap, for the two levels that drive a recorded lap. The relaxed
+   * centreline is already a ring (p[0] on p[n-1] to the millimetre) and comes
+   * through here untouched.
+   *
+   * So the run-up is thrown away. It is not part of the lap in any sense the
+   * driver uses: a bot leaves the grid by merging onto the line (see
+   * `mergeLeft`), which is the same thing it does every other lap, and keeping
+   * the run-up only gives the first lap a different path from the rest.
+   *
+   * What is left still does not quite meet, because a standing lap leaves the
+   * line from somewhere different across the road from where a flying one
+   * crosses it - two to four units. Left as a step, the aim point teleports
+   * sideways every time the look-ahead lands the other side of the join, which
+   * at speed is several times a second. So the first stretch is slid onto the
+   * end and faded back over about forty points: what a driver does coming out
+   * of the last corner, done once here rather than fought every frame.
+   */
+  _join() {
+    if (!this.closed) return;
+    const e = this.p[this.n - 1];
+    let bd = Infinity, join = 0;
+    const lim = Math.max(2, Math.floor(this.n * 0.15));
+    for (let i = 0; i < lim; i++) {
+      const q = this.p[i];
+      const d = (q[0] - e[0]) ** 2 + (q[1] - e[1]) ** 2 + (q[2] - e[2]) ** 2;
+      if (d < bd) { bd = d; join = i; }
+    }
+    if (join > 0) {
+      this.p = this.p.slice(join);
+      this.v = this.v.slice(join);
+      if (this.air) this.air = this.air.slice(join);
+      if (this.vmin) this.vmin = this.vmin.slice(join);
+      this.n = this.p.length;
+    }
+    const q = this.p[0];
+    const dx = e[0] - q[0], dy = e[1] - q[1], dz = e[2] - q[2];
+    if (Math.hypot(dx, dy, dz) < 1e-3) return;        // already meets
+    const span = Math.min(40, Math.floor(this.n / 4));
+    for (let k = 0; k <= span; k++) {
+      const w = 1 - k / (span + 1), o = this.p[k];
+      this.p[k] = [o[0] + dx * w, o[1] + dy * w, o[2] + dz * w];
+    }
   }
 
   /**
@@ -324,17 +388,30 @@ class BotLine {
    */
   near(x, y, z, hint) {
     let bi = hint, bd = Infinity;
-    const n = this.n;
     for (let k = -6; k < 90; k++) {
-      let i = hint + k;
-      if (this.closed) i = ((i % n) + n) % n;
-      else if (i < 0 || i >= n) continue;
+      const i = this.step(hint, k);
+      if (i < 0) continue;
       const q = this.p[i];
       const dx = x - q[0], dy = y - q[1], dz = z - q[2];
       const d = dx * dx + dy * dy + dz * dz;
       if (d < bd) { bd = d; bi = i; }
     }
     return { i: bi, d: Math.sqrt(bd) };
+  }
+
+  /**
+   * `k` points along the path from `i`, over the join on a ring.
+   *
+   * `-1` where a point-to-point path has run out, which every caller reads as
+   * "there is no such point" rather than as the end of the road.
+   */
+  step(i, k) {
+    const n = this.n;
+    let j = i + k;
+    if (!this.closed) return (j < 0 || j >= n) ? -1 : j;
+    while (j >= n) j -= n;
+    while (j < 0) j += n;
+    return j;
   }
 
   /** The same thing over the whole path, for when the hint has gone bad. */
@@ -354,10 +431,10 @@ class BotLine {
     const want = this.s[i] + look;
     let j = i;
     while (j < this.n - 1 && this.s[j] < want) j++;
-    // Ran off the end of a ring: the road carries on from the start of the same
-    // path, so the aim point does too. Without this the last few hundred units
-    // of every lap are driven at a point that has stopped moving, which is a
-    // bot steering into the outside of turn one.
+    // Ran off the end of a ring: the road carries on from the join, so the aim
+    // point does too. Without this the last few hundred units of every lap are
+    // driven at a point that has stopped moving, which is a bot steering into
+    // the outside of turn one.
     if (this.closed && this.s[j] < want) {
       const rest = want - this.total;
       j = 0;
@@ -423,6 +500,10 @@ class Bot {
     this.lapseIn = 1 + this.rnd() * 6;
     this.lastS = 0;
     this.launched = false;
+    // Where this car was put down, across the line, and how much road it has
+    // covered since - see `slotBias`.
+    this.slot = 0;
+    this.slotRun = 0;
     // Scratch, so the hot path allocates nothing.
     this._t = [0, 0, 0];
     this._l = [0, 0, 0];
@@ -437,6 +518,39 @@ class Bot {
     this.drifting = false;
     this.lastS = this.line.s[this.hint];
     this.launched = false;
+    // Where it has been put down, across its own line. A grid slot is the case
+    // that matters; a respawn lands on the line and measures ~0, which costs
+    // nothing. Signed the way `aimAt` reads a bias: positive is to the right of
+    // travel.
+    const q = this.line.p[this.hint];
+    const tan = this.line.tangent(this.hint, this._t);
+    const u = this.car.up;
+    const rx = tan[1] * u.z - tan[2] * u.y;
+    const ry = tan[2] * u.x - tan[0] * u.z;
+    const rz = tan[0] * u.y - tan[1] * u.x;
+    const m = Math.hypot(rx, ry, rz);
+    this.slot = m > 1e-4
+      ? ((p.x - q[0]) * rx + (p.y - q[1]) * ry + (p.z - q[2]) * rz) / m : 0;
+    this.slotRun = 0;
+  }
+
+  /**
+   * How much of the launch is left: 1 where the car was put down, 0 once it has
+   * covered `MERGE_DIST` of road, and 0 for the whole of the rest of the lap.
+   *
+   * It crossfades the one thing the steering is asked for. Off the lights that
+   * is **hold your slot**: the aim point sits where the car already is, so the
+   * wheel asks for nothing. By the end of the merge it is **race**: the line,
+   * the wander and the cars around you, exactly as before.
+   */
+  mergeLeft() {
+    if (!this.slot) return 0;
+    const left = 1 - this.slotRun / MERGE_DIST;
+    if (left <= 0) {
+      this.slot = 0;            // done: this costs nothing for the rest of the lap
+      return 0;
+    }
+    return left;
   }
 
   /**
@@ -460,6 +574,7 @@ class Bot {
     if (this.pendingReset) { this.pendingReset = false; this.reset(); }
     if (car.frozen) return NEUTRAL;
     this.t += dt;
+    if (this.slot) this.slotRun += car.speed * dt;
 
     // Nobody's foot is down at exactly zero. A reaction time is also what stops
     // a grid of bots leaving the line as one machine.
@@ -499,7 +614,17 @@ class Bot {
     const look = clamp(this.k.lookBase + car.speed * this.k.lookPer,
                        this.k.lookMin, this.k.lookMax);
     const j = line.aheadOf(loc.i, look);
-    const bias = (this.aiming ? 0 : this.wander()) + this.racecraft(loc, ctx);
+    // **Everything lateral is one crossfade off the grid.** Holding the slot is
+    // only half of it: `racecraft` reads the car alongside - four units away,
+    // stationary, and deliberately parked there - as somebody crowding it, and
+    // returns as much lateral bias as the slot offset in the opposite
+    // direction. Two abreast, both swerving, at the lights. The wander goes the
+    // same way for the same reason: an imperfect driver is imperfect through a
+    // corner, not while launching in a straight line.
+    const merge = this.mergeLeft();
+    const bias = this.slot * merge +
+                 ((this.aiming ? 0 : this.wander()) +
+                  this.racecraft(loc, ctx)) * (1 - merge);
     const steer = this.steerOnPath(loc, bias, j);
 
     // How fast to be going. `vmin` is a floor the pace is not allowed to scale -
@@ -794,11 +919,8 @@ class Bot {
     // finish line is a bot that cannot see the first corner of the next lap
     // until it is in it - which on these circuits is arriving at turn one flat.
     for (let k = 1; k < line.n; k++) {
-      let j = i + k;
-      if (j >= line.n) {
-        if (!line.closed) break;
-        j -= line.n;
-      }
+      const j = line.step(i, k);
+      if (j < 0) break;
       const d = line.s[j] - s0 + (j <= i ? line.total : 0);
       if (d > horizon) break;
       const target = line.v[j] * pace;

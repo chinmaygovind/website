@@ -7821,12 +7821,18 @@ function rivalSound() {
  * on their out-lap would take away the one thing the session is for, and a tow
  * off a car you are not racing would hand out a grid slot nobody drove for. So
  * for those ninety seconds the rivals are still drawn - you want to know where
- * they are - and you go straight through them. Countdown and the results sheet
- * are outside it for the same reason there is nothing to race there.
+ * they are - and you go straight through them. The results sheet is outside it
+ * for the same reason: there is nothing to race there.
+ *
+ * **The countdown is inside it**, which it was not. The cars are already in the
+ * slots they will race from by then, and a field you can drive through for the
+ * five seconds before the lights is a field that is interpenetrating when they
+ * go out - so the first thing the race does is shove everybody apart.
  */
 function contactOn() {
   if (CFG.mode !== 'room') return false;
-  return S.racePhase === 'free' || (S.raceMode && S.racePhase === 'racing');
+  return S.racePhase === 'free' || S.racePhase === 'countdown'
+      || (S.raceMode && S.racePhase === 'racing');
 }
 
 /**
@@ -8081,6 +8087,7 @@ async function switchTrack(slug, opts = {}) {
   // "loading...", then the track. Complaining and then succeeding is worse
   // than either.
   const cry = (msg) => { if (!opts.hush) toast(msg); };
+  const phaseWas = S.racePhase;
   try {
     // Together, not in sequence. A rejection here is a scenery we could not get,
     // and it lands in the catch below with everything else that means "no".
@@ -8104,7 +8111,14 @@ async function switchTrack(slug, opts = {}) {
     // usually enough on its own; this is what makes it always enough.
     await painted();
     if (S.watch) stopWatching();
-    S.raceMode = false; S.racePhase = 'free'; S.raceT0 = null;
+    // Only if the room has not started something while this was loading. A
+    // track is hundreds of milliseconds of fetch and build, and `race_start`
+    // landing inside that window used to be undone here a moment later: the
+    // lights went out, everybody else drove away, and this car sat frozen on
+    // the grid with `raceMode` false and no clock. See `onRaceGreen`.
+    if (S.racePhase === phaseWas) {
+      S.raceMode = false; S.racePhase = 'free'; S.raceT0 = null;
+    }
     if ($('raceOver')) $('raceOver').style.display = 'none';
     loadTrack(t, { switched: true });
     toast('Track: ' + t.name);
@@ -8339,7 +8353,25 @@ function countdownLoop() {
   tick();
 }
 
+/**
+ * The lights are out.
+ *
+ * **It also has to be able to start a race this browser never heard begin.**
+ * `race_start` is one message and there are several ways to be somewhere else
+ * when it arrives - a track still loading, a socket that blinked over the five
+ * seconds of lights, an exception anywhere in `onRaceStart`. Every one of them
+ * left `raceMode` false with the phase saying `racing`, which is the state
+ * where the car is frozen or in practice, the lap clock never starts, `finish`
+ * is never emitted and the flag writes a DNF - while every other car on the
+ * screen drives away. So the green light carries the grid as well as the
+ * clock, and a car that is on it and has not been placed is placed now: it has
+ * missed the countdown, which is the honest cost, and it has not missed the
+ * race.
+ */
 function onRaceGreen(d) {
+  if (!S.raceMode && d && d.grid && CFG.me && d.grid[CFG.me.pid] != null) {
+    onRaceStart(d);
+  }
   S.racePhase = 'racing';
   applyPhase();
   if (d && d.t0) S.raceT0 = performance.now() + (d.t0 - serverNow());

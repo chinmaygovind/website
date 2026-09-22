@@ -34,6 +34,8 @@ import re
 import pytest
 
 import jsrt
+import tracks as tracks_mod
+import tuning as T
 
 pytestmark = pytest.mark.skipif(not jsrt.HAVE_QUICKJS,
                                 reason="needs the optional quickjs package")
@@ -485,7 +487,7 @@ def _rivals(setup="", phase="free", race="false", mode="room"):
     ("room", "free", "false", True),        # cars you are driving among
     ("room", "racing", "true", True),
     ("room", "qualifying", "false", False), # everybody alone on their own lap
-    ("room", "countdown", "true", False),
+    ("room", "countdown", "true", True),    # solid on the grid, so audible on it
     ("room", "results", "false", False),
     ("solo", "free", "false", False),       # nobody out there at all
 ])
@@ -1554,3 +1556,47 @@ def test_the_lap_count_is_one_on_a_track_that_is_not_a_circuit():
     for bad in (0, -3, 999, "x", None):
         got = _race_laps(closed=True, laps=bad)
         assert 1 <= got <= 10, (bad, got)
+
+
+# --- the grid has road under it ---------------------------------------------
+
+#: The field this pool is built to line up. Bigger than `MAX_ROOM` (8) on
+#: purpose: the room's ceiling is a decision about a room and the road is poured
+#: once, so the cheap thing is to pour enough that raising the ceiling is a
+#: one-line change rather than a re-survey of twenty-one tracks.
+GRID_CARS = 12
+
+
+def _grid_depth(cars=GRID_CARS):
+    """How far behind the start gate the back of the field sits, per game.js.
+
+    Asked of `placeOnGrid` rather than restated here, because the whole point is
+    that the road and the layout cannot drift apart: the stagger is four numbers
+    in one expression and the day one of them moves, this has to move with it.
+    """
+    return max(-_place(-1, slot, others=cars)[2] for slot in range(cars))
+
+
+@pytest.mark.parametrize("slug", [t["slug"] for t in tracks_mod.TRACKS])
+def test_the_grid_has_road_under_every_car(slug):
+    """A full field lines up *behind* the line, so there has to be road there.
+
+    `Builder.start` used to lay `STATION * 2` twice over - fourteen units -
+    behind the start gate, and the fourth row of the grid is already past that:
+    every car from row four back was placed in mid-air, fell, and respawned
+    into the race it was supposed to be starting. A closed circuit has a whole
+    lap behind its line and needs nothing; a point-to-point track has whatever
+    `start` laid for it.
+    """
+    track = tracks_mod.get(slug)
+    line = track["line"]
+    gate = next(g for g in track["gates"] if g["kind"] == "start")
+    have = sum(math.dist(line[i]["p"], line[i + 1]["p"])
+               for i in range(gate["si"]))
+    if track["closed"]:
+        return                      # its grid is the road it finishes on
+    # Plus the car itself: the slot is where the middle of it goes.
+    want = _grid_depth() + T.CAR_LEN / 2
+    assert have >= want, (
+        "%s: %.1f units of road behind the start line, and a grid of %d cars "
+        "needs %.1f. Lengthen `pre` in Builder.start." % (slug, have, GRID_CARS, want))

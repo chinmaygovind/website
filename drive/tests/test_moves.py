@@ -53,6 +53,7 @@ def _authored(mod):
     d = _decl(mod)
     o = d["origin"]
     b = Builder(o[0], o[1], o[2], yaw=o[3], width=d["width"], rails=d["rails"])
+    b.closed = d["closed"]
     return ((mod.build(b) or b)).build()
 
 

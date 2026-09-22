@@ -189,16 +189,31 @@ import jsrt                                                # noqa: E402
 BOT_JS = os.path.join(os.path.dirname(__file__), "..", "static", "js", "bot.js")
 
 # A ring, so "the end of the path" and "the start of it" are the same corner:
-# 120 points round a circle of radius 100, at a constant 40 units a second.
+# a circle of radius 100 at a constant 40 units a second, with the last point
+# landing back on the first - which is what a relaxed centreline is, to the
+# millimetre. `runUp` is the other shape a closed path arrives in: a recorded
+# lap, which starts on the *grid* a few units before the line and ends crossing
+# it, and so has to be trimmed and closed - see `BotLine._join`.
 RING = """
-var N = 120, R = 100, pts = [], vs = [];
+var N = 121, R = 100, pts = [], vs = [];
 for (var i = 0; i < N; i++) {
-  var a = i * 2 * Math.PI / N;
+  var a = i * 2 * Math.PI / (N - 1);
   pts.push([Math.cos(a) * R, 0, Math.sin(a) * R]);
   vs.push(40);
 }
 function ring(closed) {
   return new BotLine({p: pts, v: vs, closed: closed});
+}
+function runUp() {
+  // Six points before the line, a couple of units wide of it, then the lap.
+  var p = [], v = [];
+  for (var k = 6; k > 0; k--) {
+    var a = -k * 2 * Math.PI / (N - 1);
+    p.push([Math.cos(a) * (R + 2), 0, Math.sin(a) * (R + 2)]);
+    v.push(5);
+  }
+  for (var i = 0; i < N; i++) { p.push(pts[i].slice()); v.push(vs[i]); }
+  return new BotLine({p: p, v: v, closed: true});
 }
 """
 
@@ -227,7 +242,7 @@ def test_the_path_hint_walks_round_the_join_on_a_circuit():
     assert got["closed"]["d"] < 1e-6, got
     # And a path that is not a ring must not wrap: a point-to-point track's last
     # point really is the end of the road.
-    assert got["open"]["i"] == 119, got
+    assert got["open"]["i"] == 120, got
 
 
 @needs_js
@@ -239,6 +254,32 @@ def test_the_aim_point_carries_on_past_the_join():
     j = int(ctx.eval("ring(true).aheadOf(N - 3, 40)"))
     assert j < n // 4, "the aim point stuck at the end of the lap: %d" % j
     assert int(ctx.eval("ring(false).aheadOf(N - 3, 40)")) == n - 1
+
+
+@needs_js
+def test_a_recorded_lap_is_trimmed_to_the_ring_it_is():
+    """The run-up is not part of the lap, and the ends have to meet.
+
+    A recorded lap begins on the grid, several units behind the line, so walking
+    off the end and carrying on from its first point steps the aim point
+    *backwards* - which measured sixty degrees of demand and full lock, once a
+    lap, for the two levels that drive one. The run-up goes, and what is left is
+    slid onto the end so the aim point does not teleport across the join every
+    time the look-ahead lands the other side of it.
+    """
+    ctx = _bot_ctx()
+    got = json.loads(ctx.eval("""JSON.stringify((function () {
+      var l = runUp(), e = l.p[l.n - 1], q = l.p[0];
+      return {n: l.n, gap: Math.hypot(e[0] - q[0], e[1] - q[1], e[2] - q[2]),
+              plain: ring(true).n};
+    })())"""))
+    assert got["n"] == got["plain"], "the run-up was not trimmed: %r" % got
+    assert got["gap"] < 1e-6, "the ends of the ring do not meet: %r" % got
+    # A path that is already a ring is left exactly alone.
+    same = ctx.eval("(function(){var a=ring(true),d=0;"
+                    "for(var i=0;i<a.n;i++)d+=Math.abs(a.p[i][0]-pts[i][0]);"
+                    "return d;})()")
+    assert same < 1e-9, same
 
 
 @needs_js

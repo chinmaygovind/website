@@ -190,7 +190,7 @@ def _contact_on_src():
     ("room", "free", False, True),          # practice: cars are cars
     ("room", "racing", True, True),         # the race itself
     ("room", "qualifying", False, False),   # everybody alone against the clock
-    ("room", "countdown", True, False),
+    ("room", "countdown", True, True),   # already in the slots they race from
     ("room", "results", False, False),
     ("solo", "free", False, False),         # nobody to hit or to tow off
 ])

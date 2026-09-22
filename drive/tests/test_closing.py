@@ -27,7 +27,13 @@ from tracks.builder import FREE, Builder
 
 
 def fresh(width=12.0):
-    return lambda: Builder(0, 0, 0, yaw=0, width=width)
+    def make():
+        b = Builder(0, 0, 0, yaw=0, width=width)
+        # Everything here is a lap being closed, and a circuit lays no grid
+        # behind its start line: the origin is what the solver closes onto.
+        b.closed = True
+        return b
+    return make
 
 
 def seam(b):

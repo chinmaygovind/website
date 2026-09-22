@@ -17,6 +17,16 @@
    "pace": 0.8766
   }
  },
+ "boo": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 1.18
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 1.18
+  }
+ },
  "chicane": {
   "easy": {
    "line": "relaxed",
@@ -69,6 +79,24 @@
   "medium": {
    "line": "relaxed",
    "pace": 0.9174
+  }
+ },
+ "dino": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 1.0856
+  },
+  "hard": {
+   "line": "relaxed",
+   "pace": 1.18
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.0142
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 1.0856
   }
  },
  "eight": {
@@ -143,6 +171,42 @@
    "pace": 0.8933
   }
  },
+ "monaco": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.8475
+  },
+  "hard": {
+   "line": "relaxed",
+   "pace": 1.18
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.02
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.929
+  }
+ },
+ "monza": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.8498
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.95
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.0145
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.9157
+  }
+ },
  "mountjoy": {
   "easy": {
    "line": "relaxed",
@@ -179,6 +243,42 @@
    "pace": 0.9346
   }
  },
+ "playground": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 1.18
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.93
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 0.93
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 1.18
+  }
+ },
+ "railway": {
+  "easy": {
+   "line": "hotlap",
+   "pace": 0.816
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.95
+  },
+  "max": {
+   "line": "relaxed",
+   "pace": 0.92
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.9
+  }
+ },
  "rainbow": {
   "easy": {
    "line": "relaxed",
@@ -213,6 +313,24 @@
   "medium": {
    "line": "hotlap",
    "pace": 0.9495
+  }
+ },
+ "silverstone": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.8427
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.95
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.0
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.9151
   }
  },
  "skyline": {
@@ -285,6 +403,24 @@
   "medium": {
    "line": "relaxed",
    "pace": 0.8861
+  }
+ },
+ "suzuka": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.8455
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.95
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.0
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.9185
   }
  },
  "tokyo": {

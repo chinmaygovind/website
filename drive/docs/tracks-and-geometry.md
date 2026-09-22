@@ -649,6 +649,38 @@ wants a building as the thing that will find the bugs.
   corner radius and road width are free parameters, a gap is just stations flagged
   `air`, a barrier is a `wl`/`wr` flag on an edge, and a loop is a station list whose
   normal rotates.
+- **Every point-to-point track has 40 units of road behind its start line, and
+  26 of them are the grid.** `placeOnGrid` in `game.js` lines a field up at
+  `4 + row * 5.5` units back, so twelve cars reach 34 units behind the gate -
+  and what `Builder.start` used to lay behind it was `STATION * 2` twice over,
+  fourteen. Every car from the fourth row back was placed past the end of the
+  ribbon, fell, and respawned into the race it was meant to be starting; which
+  slot you got is shuffled for anyone who was not in the last race, so it
+  presented as "sometimes the race doesn't start for me". `start(pre=...)` lays
+  it, and `test_the_grid_has_road_under_every_car` asks `placeOnGrid` itself how
+  deep the field is rather than restating the number.
+  - **It is laid backwards, which is the whole reason it was safe to do to
+    twenty-one tracks with records on them.** The turtle walks back `pre` units,
+    lays the road, and has its position restored to the exact floats it arrived
+    with - so the spawn, every gate and every station of the lap are at the
+    coordinates they have always been at, to the bit. A lap is timed from the
+    first input at the spawn and driven on the road in front of it, so every
+    record and every stored ghost still describes this track. The snapshot and
+    `test_scenery`'s collider counts were re-recorded; `ideal`, the medals, the
+    gates and the spawn are all byte-identical and were checked to be.
+  - **The grid is not part of the lap, and `laptime` is told so.** Its stations
+    carry `grid`, and `speed_profile` starts the standing start after them -
+    without which the ideal lap grows by the second it takes to accelerate over
+    road nobody drives, and on the two tracks whose medals are *derived* from
+    the ideal rather than cut from the board (Dino Park, Boo Boulevard) that is
+    half a second off gold. It pads its returned arrays back out to station
+    indices, because the gap test, the bots and `jsrt` all read `pts[i]` against
+    `track["line"][i]`.
+  - **A closed circuit gets none of it.** Its grid is the road it finishes on,
+    and `solver.py` closes the ribbon onto the origin - so moving the origin
+    would move the circuit. The Builder is told by `tracks._one`, by
+    `moves.builder_for` for a stored document, and by hand in the two test
+    fixtures that build a lap for the solver.
 - **A station can also carry a cross-section, and that is how half-pipes work.**
   `pf` is a list of `[u, rise]` samples across the road - `u` from -1 to +1 as a
   fraction of `hw`, `rise` along that station's own normal - and the road there
@@ -701,6 +733,28 @@ wants a building as the thing that will find the bugs.
   `(drop + length * rise / kick) / pi` - removes the kink and lets the model
   see the same climb-then-fall arc the car actually flies. Big Red's main jump
   is the one in the pool that needs this.
+  - **It is a bug you find in the bots, not in the driving**, and Playground is
+    the case that proves it. Its Mushroom is a boost pad, a lip, and a 24-unit
+    fall onto a cap, and the fall's `gap` was authored without a bow - so the
+    default four units against a 24-unit drop left an eleven-degree kink at the
+    lip, and the model braked the line from 62 to 48 over the last ten units
+    before the edge. **Nobody driving it would ever notice**: a person carries
+    whatever speed they like over a lip, and the record does it at 62. The bots
+    drive the model, so all four levels arrived at the cap at 47, came off it
+    with 43 forward against the ~62 the landing deck is sized for, missed the
+    deck and fell into the void - every lap, at every pace, on both lines.
+    `easy` and `medium` were logged as "could not get round on either line",
+    which reads as a track too hard for them rather than as one number.
+    - **Fixing it moves no solid geometry, and that is what makes it safe on a
+      track with a board.** `gap` sets its landing point from `length` and
+      `drop` alone; the bow only shapes the stations between, and those are
+      `air` - nothing is built on them and nothing collides with them. All 988
+      solid stations, every gate, the spawn and the medals came out identical.
+      What moves is `ideal` (87.319 -> 87.124) and therefore the snapshot, and
+      on a track whose medals are *derived* rather than authored it would move
+      those too - Playground's are authored.
+    - The bow with no kink is `drop / pi`, which is the formula above with no
+      kicker to match.
 - **A jump's hang time has a real ceiling, and it is not about the ballistics.**
   `AIR_PITCH` pitches the car's nose down at a constant *rate* for as long as
   the throttle is held in the air, which is how every jump in the pool is

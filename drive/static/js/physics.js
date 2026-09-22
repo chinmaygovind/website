@@ -288,6 +288,13 @@ export class Car {
       const sp = this.vel.length();
       let yaw = this.steerRate(sp) * this.steer;
       if (handbrake) yaw *= T.DRIFT_STEER_BONUS;
+      // **A hit takes the steering away with the grip, and this is the half
+      // that was missing.** Yaw here turns the *body* and grip decides whether
+      // the velocity follows, so with the tyres let go the car was free to spin
+      // on the spot - held lock through one shell measured 114 degrees of
+      // heading change, which is what "I got redirected ninety degrees and
+      // drove sideways" is. See KNOCK_STEER.
+      if (this.bumpSlip > 0) yaw *= T.KNOCK_STEER;
       // Ease off when nearly stopped so the car cannot pirouette on the spot.
       yaw *= Math.min(1, sp / 3.5);
       this._spin(n, -yaw * dt);
@@ -376,7 +383,8 @@ export class Car {
       this.slip = 0;
       // Yaw with steering, pitch with the pedals - Trackmania's air control,
       // which is what makes a long jump something you can actually aim.
-      this._spin(this.up, -this.steerRate(this.vel.length()) * T.AIR_STEER * this.steer * dt);
+      const air = T.AIR_STEER * (this.bumpSlip > 0 ? T.KNOCK_STEER : 1);
+      this._spin(this.up, -this.steerRate(this.vel.length()) * air * this.steer * dt);
       const pitch = (brake > 0 ? 1 : 0) - (throttle > 0 ? 1 : 0);
       if (pitch) this._spin(this.right, pitch * T.AIR_PITCH * dt);
       else this._alignUp(UP, T.ALIGN_AIR, dt);

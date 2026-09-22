@@ -461,8 +461,13 @@ assert set(_APPLY) == set(SPEC), "every move needs an adapter"
 def builder_for(doc):
     """A fresh `Builder` positioned as the document says."""
     x, y, z, yaw = (list(doc.get("origin") or (0.0, 0.0, 0.0, 0.0)) + [0.0] * 4)[:4]
-    return Builder(x, y, z, yaw=yaw, width=float(doc.get("width", ROAD_W)),
-                   rails=bool(doc.get("rails")))
+    b = Builder(x, y, z, yaw=yaw, width=float(doc.get("width", ROAD_W)),
+                rails=bool(doc.get("rails")))
+    # `start` lays a grid behind the line on a point-to-point track and must not
+    # on a circuit, whose origin the solver closes the ribbon onto - so a
+    # document has to carry the answer the same way a folder does.
+    b.closed = bool(doc.get("closed"))
+    return b
 
 
 def build(doc, spans=None):

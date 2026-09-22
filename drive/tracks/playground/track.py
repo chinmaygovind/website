@@ -374,7 +374,22 @@ def build(b):
     b.boost(30)
     b.width(CAP_W)
     b.straight(14)
-    b.gap(58.0, drop=24.0)
+    # **The fall needs an explicit bow, and leaving it off cost the bots this
+    # whole track.** `gap`'s default is `min(4, length * 0.12)` - four units of
+    # arc against a twenty-four unit drop - so the path leaves the lip at an
+    # eleven degree kink, and `speed_profile`'s curvature cap reads that kink as
+    # a corner and brakes for it: the relaxed line went 62 -> 48 in the last ten
+    # units before the edge. That is not a number anybody drives, it is a number
+    # the *model* invented, and the bots drive the model. Arriving at the cap at
+    # 47 instead of 62 they came off it with 43 forward, missed the deck by a
+    # few units and fell, every lap, on every level.
+    #
+    # `drop / pi` is the bow whose initial slope is zero, which is the same
+    # formula `docs/tracks-and-geometry.md` gives for a kicker with no rise. It
+    # moves no solid geometry whatsoever: `gap` sets the landing point from
+    # `length` and `drop` alone, and the stations the bow shapes are `air` -
+    # nothing is built on them and nothing is collided against them.
+    b.gap(58.0, drop=24.0, bow=24.0 / _math.pi)
     b.bounce(CAP_LEN)
     # And the flight. Both gaps here are authored well short of what the car
     # actually carries, which is Shroom Street's rule and it bites twice.

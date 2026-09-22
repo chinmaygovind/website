@@ -442,7 +442,11 @@ def _one(e):
 
     def fresh():
         x, y, z, yaw = e["origin"]
-        return Builder(x, y, z, yaw=yaw, width=e["width"], rails=e["rails"])
+        b = Builder(x, y, z, yaw=yaw, width=e["width"], rails=e["rails"])
+        # `start` lays a grid behind the line on a point-to-point track and must
+        # not on a circuit, whose origin the solver closes the ribbon onto.
+        b.closed = e["closed"]
+        return b
 
     b = fresh()
     built = e["build"](b)

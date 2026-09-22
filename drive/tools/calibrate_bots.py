@@ -68,10 +68,32 @@ def _ceiling(level, line):
     return bots.PROFILES[level].get("paceMax", HOTLAP_PACE_MAX)
 
 
+#: What a lap that never came back looks like to the search.
+#:
+#: **A `botLap` is one `eval` with a wall-clock limit on it**, and a bot that is
+#: stuck drives the full `maxT` of game time - 240 seconds at 60fps is 14,400
+#: ticks of physics, which on a busy machine is exactly the run that trips that
+#: limit. QuickJS raises, and the raise used to come all the way out of `main`
+#: and end the job: boo died on its last scan and took the seven tracks solved
+#: before it with it, because nothing was written until the end.
+#:
+#: It is the same event the search already knows what to do with. A lap that
+#: could not be got round in the time allowed is a lap that was not got round.
+_DNF = {"finished": False, "time": 0, "respawns": 0, "splits": [],
+        "progress": 0.0, "wall": 0.0, "gaveUp": None, "lastGiveUp": None}
+
+
 def drive(slug, level, pace=None, tune=None, seed=1, line=None):
     """One lap, with an optional gain override for `--sweep`."""
     if tune is None:
-        return botsim.solo_lap(slug, level, pace=pace, seed=seed, line=line)
+        try:
+            return botsim.solo_lap(slug, level, pace=pace, seed=seed, line=line)
+        except Exception as e:                   # noqa: BLE001 - see `_DNF`
+            print("      (the lap did not come back: %s)" % e)
+            out = dict(_DNF)
+            out["source"] = line or bots.PROFILES[level]["line"]
+            out["pace"] = pace or bots.PROFILES[level]["pace"]
+            return out
     # The sweep path needs to put `tune` inside the profile, which `solo_lap`
     # builds itself - so it is done here rather than widening that signature for
     # a case only this tool has.
@@ -385,11 +407,17 @@ def main(argv=None):
         for level, best in solved.items():
             table.setdefault(slug, {})[level] = {"pace": best["pace"],
                                                  "line": best["line"]}
+        # **After every track, not once at the end.** This is a twenty-minute
+        # job over a pool of twenty-six, the answers are independent, and the
+        # file is small and complete after every write - so a failure on the
+        # last track has no business throwing away the first twenty-five, which
+        # is exactly what happened the day boo's last scan timed out.
+        if not args.dry_run:
+            with open(bots.PACE_FILE, "w") as f:
+                json.dump(table, f, indent=1, sort_keys=True)
     if args.dry_run:
         print("\n(dry run; %s not written)" % bots.PACE_FILE)
         return 0
-    with open(bots.PACE_FILE, "w") as f:
-        json.dump(table, f, indent=1, sort_keys=True)
     print("\nwrote %s in %.0fs" % (bots.PACE_FILE, time.time() - t0))
     return 0
 

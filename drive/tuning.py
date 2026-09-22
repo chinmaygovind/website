@@ -64,6 +64,24 @@ AIR_GRIP = 0.6             # a little sideways damping in the air, mostly none
 # --- air / gravity ---------------------------------------------------------
 GRAVITY = 30.0
 AIR_STEER = 0.62           # fraction of normal yaw authority while airborne
+# And what is left of the steering, in the air and on the ground both, while
+# the tyres are still let go from a hit.
+#
+# **A shell is what redirects you, not the lock you happened to be holding.**
+# Steering here yaws the *body* and grip decides whether the velocity follows -
+# so a hit, which takes the grip away for `BUMP_SLIP_TIME`, leaves the car free
+# to spin on the spot while nothing is holding it. Held lock through one hit
+# measured **114 degrees** of heading change, and the flip the hit applies makes
+# no difference to that number whatsoever: the car span itself round, for a
+# second, while nobody was really driving it. At 0.15 the same second is under
+# twenty degrees - a knock, rather than a change of direction.
+#
+# It rides on `bumpSlip`, which is already "seconds of let-go tyres left after a
+# hit" and is already what the grip is scaled by - so a car-to-car bump gets it
+# too, for the same reason and on the same clock, and there is no new state to
+# keep in step. Items never happen in a solo lap and neither does contact, so
+# `verify.py` re-drives every leaderboard lap with this at 1 either way.
+KNOCK_STEER = 0.15
 # Pitch authority and self-levelling in the air are both deliberately lazy. Both
 # of them nose the car down: holding the throttle pitches it down directly, and
 # levelling toward world up noses a car that took off from an uphill ramp down
@@ -366,7 +384,8 @@ _EXPORT = [
     "MAX_SPEED", "ACCEL", "BRAKE", "COAST", "DRAG", "REVERSE_MAX",
     "REVERSE_ACCEL", "STEER_RATE_LOW", "STEER_RATE_HIGH", "STEER_SMOOTH",
     "STEER_RETURN", "DRIFT_STEER_BONUS", "GRIP", "DRIFT_GRIP", "AIR_GRIP",
-    "GRAVITY", "AIR_STEER", "AIR_PITCH", "AIR_ROLL", "ALIGN_GROUND",
+    "GRAVITY", "AIR_STEER", "KNOCK_STEER", "AIR_PITCH", "AIR_ROLL",
+    "ALIGN_GROUND",
     "ALIGN_AIR", "COYOTE", "STICK_TILT", "STICK_SPEED", "STICK_FORCE",
     "SNAP", "SUSP", "OFFROAD_DRAG", "OFFROAD_GRIP", "WALL_BOUNCE", "WALL_SCRUB",
     "PROBE", "CAR_RADIUS", "CAR_PUSH", "CAR_BUMP_SCRUB", "CAR_REST",

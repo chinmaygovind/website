@@ -5150,7 +5150,18 @@ def _go_green(code, seq):
             world = _bot_world(r)
             if world is not None:
                 world.green(t0, laps)
-        socketio.emit("race_green", {"t0": t0}, room="room:" + code)
+            grid = dict(r["grid"])
+        # **The grid rides along with the green light**, which is the one place
+        # this file states the same fact twice on purpose. `race_start` is a
+        # single message and there are several ways for a browser to be
+        # somewhere else when it arrives - a track still loading, a socket that
+        # blinked over the five seconds of lights. Every one of them left that
+        # client with the phase saying `racing` and no race: frozen car, no lap
+        # clock, no `finish`, a DNF at the flag, and the rest of the field
+        # driving away in front of it. So the client is given what it needs to
+        # start the race late rather than sit it out - see `onRaceGreen`.
+        socketio.emit("race_green", {"t0": t0, "grid": grid},
+                      room="room:" + code)
         # The backstop. Every other way a race ends depends on somebody doing
         # something; this one does not.
         eventlet.spawn_after(hard / 1000.0, _close_race, code, "time limit", seq)

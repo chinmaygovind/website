@@ -143,6 +143,32 @@ with how late it was and what the rooms were doing.
   button are three doors into one rule and only one of them is under a cursor -
   but both buttons show it, since on a phone the pulse is the only thing that
   says the first tap landed once the toast has gone.
+- **`race_green` carries the grid, and that is the one fact the room states
+  twice on purpose.** `race_start` is a single message, and a browser that is
+  somewhere else when it lands sits the whole race out: `raceMode` stays false
+  with the phase saying `racing`, so the car is frozen or in practice, the lap
+  clock at `raceT0` never starts, `finish` is never emitted and the flag writes
+  a DNF - while every other car on the screen drives away. Three ways to be
+  somewhere else, all seen: a track still building (see below), a socket that
+  blinked across the five seconds of lights, and an exception anywhere in
+  `onRaceStart`. So `onRaceGreen` places a car that is on the grid and has not
+  been placed. It has missed the countdown, which is the honest cost, and it
+  has not missed the race. The usual answer here - "a second statement of the
+  same fact is a second thing to be wrong" (see the lap count) - does not apply,
+  because this one is a *repair*: it is read only when the first statement
+  demonstrably never arrived.
+  - **The track switch was the way in that had no excuse.** `switchTrack`
+    cleared `raceMode`/`racePhase`/`raceT0` on the far side of its `await`,
+    which is right for a switch and wrong for anything the room did while the
+    fetch and the build were in flight - hundreds of milliseconds on the big
+    tracks. A `race_start` inside that window was undone a moment later. It
+    only clears the phase it went in on now.
+- **Cars are solid through the countdown, not just after it.** `contactOn`'s
+  list used to be free practice and `racing`. The field is already standing in
+  the slots it will race from during the lights, so five seconds of driving
+  through each other meant a grid that was interpenetrating at the green and a
+  race whose first event was everybody being shoved apart. Qualifying and the
+  results sheet stay outside it for the reasons in `game.js`.
 - **A room is a phase machine, and every way out of a phase is guarded.** The
   phases are `free` -> `qual_countdown` (5s) -> `qualifying` (90s) ->
   `countdown` (5s) -> `racing` -> `results` -> `free`, with the two qualifying

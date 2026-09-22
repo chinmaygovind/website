@@ -48,33 +48,44 @@ TRACKS_DIR = os.path.join(os.path.dirname(__file__), "..", "tracks")
 #
 # A change here is not automatically wrong, but it is never incidental. If you
 # meant it, re-record it in the same commit and say what moved.
+#
+# **Re-recorded in Sep 2026 when `Builder.start` began laying a grid.** Every
+# point-to-point track gained 26 units of road *behind* its start line so that a
+# full field has somewhere to line up (see `Builder.start`), which is +14 road
+# triangles per track - +112 on Rainbow Road, whose road is profiled and so is
+# eight quads wide - plus the rails over it where a track has them, plus the
+# apron and height field that follow the road on the terrain tracks. The lap
+# itself did not move a hundredth of a unit: the grid is laid backwards from the
+# origin and the spawn, every gate and every station after it are at the exact
+# coordinates they were driven on. Costco loses 10 wall triangles because the
+# new road is road, so the props that decline to stand on one stood aside.
 EXPECTED = {
-    "sunrise":   {"total":    598, "road":   496, "wall":   100, "off":     2, "boost":  0},
-    "chicane":   {"total":    534, "road":   432, "wall":   100, "off":     2, "boost":  0},
-    "skyline":   {"total":   1620, "road":   500, "wall":  1120, "off":     0, "boost":  0},
+    "sunrise":   {"total":    612, "road":   510, "wall":   100, "off":     2, "boost":  0},
+    "chicane":   {"total":    548, "road":   446, "wall":   100, "off":     2, "boost":  0},
+    "skyline":   {"total":   1662, "road":   514, "wall":  1148, "off":     0, "boost":  0},
     # 1876 -> 1852 when the opening straight went back to 56 units. It had been
     # 70 since `7bff299`, a one-line edit that rode in with the Costco and moved
     # every station, gate and loop 14 units downstream - so the nine laps on the
     # board from before it played back off the road, the record among them. The
     # revert puts those nine back on the geometry they were driven on and leaves
     # the four set since to be re-driven.
-    "twist":     {"total":   1852, "road":   584, "wall":  1268, "off":     0, "boost":  0},
-    "heights":   {"total":   1680, "road":   520, "wall":  1160, "off":     0, "boost":  0},
-    "jumpcity":  {"total":   1638, "road":   506, "wall":  1132, "off":     0, "boost":  0},
-    "spiral":    {"total":   1890, "road":   590, "wall":  1300, "off":     0, "boost":  0},
-    "eight":     {"total":    592, "road":   490, "wall":   100, "off":     2, "boost":  0},
-    "gauntlet":  {"total":   2940, "road":   920, "wall":  2020, "off":     0, "boost":  0},
-    "cove":      {"total":   1930, "road":  1542, "wall":   240, "off":   148, "boost":  0},
-    "pillars":   {"total":   1878, "road":  1398, "wall":   480, "off":     0, "boost":  0},
-    "rainbow":   {"total":  13188, "road": 12608, "wall":   580, "off":     0, "boost":  0},
+    "twist":     {"total":   1894, "road":   598, "wall":  1296, "off":     0, "boost":  0},
+    "heights":   {"total":   1722, "road":   534, "wall":  1188, "off":     0, "boost":  0},
+    "jumpcity":  {"total":   1680, "road":   520, "wall":  1160, "off":     0, "boost":  0},
+    "spiral":    {"total":   1932, "road":   604, "wall":  1328, "off":     0, "boost":  0},
+    "eight":     {"total":    606, "road":   504, "wall":   100, "off":     2, "boost":  0},
+    "gauntlet":  {"total":   2982, "road":   934, "wall":  2048, "off":     0, "boost":  0},
+    "cove":      {"total":   1948, "road":  1556, "wall":   240, "off":   152, "boost":  0},
+    "pillars":   {"total":   1892, "road":  1412, "wall":   480, "off":     0, "boost":  0},
+    "rainbow":   {"total":  13300, "road": 12720, "wall":   580, "off":     0, "boost":  0},
     "spa":       {"total":  43902, "road":  1810, "wall":  3878, "off": 38214, "boost":  0},
-    "costco":    {"total":   4044, "road":  1188, "wall":  2834, "off":     2, "boost": 20},
-    "bigred":    {"total":   2848, "road":  1582, "wall":  1188, "off":     0, "boost": 78},
+    "costco":    {"total":   4048, "road":  1202, "wall":  2824, "off":     2, "boost": 20},
+    "bigred":    {"total":   2862, "road":  1596, "wall":  1188, "off":     0, "boost": 78},
     # Recorded when the track was added rather than off an earlier tree, since
     # there was no earlier tree. Nearly all of the `off` is the mountain: the
     # snow in `tracks/mountjoy/scenery.js` is a collidable height field, which
     # is what makes running wide a scramble across a hillside instead of a fall.
-    "mountjoy":  {"total":  17420, "road":  1970, "wall":   588, "off": 14744, "boost": 118},
+    "mountjoy":  {"total":  17628, "road":  1984, "wall":   588, "off": 14938, "boost": 118},
     # Recorded when the track was added, like Mount Joy's. Most of the `off` is the
     # height field and the swept run-off, the same as Spa's - it is a smaller
     # circuit with a narrower apron, hence 26210 against Spa's 38214. Of the
@@ -82,7 +93,7 @@ EXPECTED = {
     # hangars and **252 of the barriers on the inside of the arena and Luffield**,
     # which are the only scenery in the pool that exists to stop a shortcut. If that
     # number drops, the corners you could skip are skippable again.
-    "silverstone": {"total": 31228, "road": 1552, "wall":  3458, "off": 26218, "boost": 0},
+    "silverstone": {"total":  31228, "road":  1552, "wall":  3458, "off": 26218, "boost":  0},
     # Recorded when the track was added. **Worth having for a reason the others
     # are not**: Rickety Rails' cave - the floor, the roof, the trestle bents,
     # the crystals - is mesh only, and `docs/track-defects.md` says a scenery
@@ -95,7 +106,7 @@ EXPECTED = {
     # 1448 -> 1432 when the `flat()` gate landed: two lamp posts were being
     # stood on loop stations, where `lat` has rotated with the surface, so their
     # collidable uprights were sticking out into the middle of the loop.
-    "railway":   {"total":   4318, "road":  2856, "wall":  1432, "off":     0, "boost": 30},
+    "railway":   {"total":   4364, "road":  2870, "wall":  1464, "off":     0, "boost": 30},
     # Recorded when the track was added, and here for Rickety Rails' reason
     # exactly: Playground is `exposed`, floats in empty sky, and the edge beam in
     # `tracks/playground/scenery.js` is the only thing at the edge of it. The
@@ -110,7 +121,7 @@ EXPECTED = {
     # by eight, which is what stopped them being bumpy to drive - see
     # `Builder.wall`. Nearly all of it is `road`; the `wall` count fell by two
     # poles, which now decline to stand on a profiled station.
-    "playground": {"total":   9888, "road":  4216, "wall":  5490, "off":     0, "boost": 182},
+    "playground": {"total":   9958, "road":  4230, "wall":  5546, "off":     0, "boost": 182},
 }
 
 COUNTER = """

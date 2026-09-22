@@ -203,8 +203,21 @@ def _boost_window(line, ds, v):
 
 
 def speed_profile(track):
-    """Return (points, speeds, ideal_time) for the track's racing line."""
-    line = track["line"]
+    """Return (points, speeds, ideal_time) for the track's racing line.
+
+    **The grid is not part of the lap.** `Builder.start` lays road behind the
+    start line for a field to line up on, and it is flagged `grid`; a lap is
+    driven from the spawn, which sits in front of it. Counting that road here
+    would add the time it takes to accelerate over it to every point-to-point
+    track's ideal - and on the tracks whose medals are *derived* from the ideal
+    rather than cut from the board, that is half a second off gold for road
+    nobody drives.
+    """
+    full = track["line"]
+    k = 0
+    while k < len(full) and full[k].get("grid"):
+        k += 1
+    line = full[k:] if k else full
     pts = racing_line(line)
     n = len(pts)
     if n < 3:
@@ -322,6 +335,14 @@ def speed_profile(track):
         if ds[i] < 1e-6:
             continue
         total += ds[i] / max(0.5, (v[i] + v[i + 1]) / 2)
+    # **Indexed by station, so the grid goes back on the front.** Callers read
+    # `pts[i]` and `v[i]` against `track["line"][i]` - the gap test, the bots,
+    # `jsrt` - and a silently offset array is a wrong answer rather than an
+    # error. The grid keeps its own centreline and a speed of zero: it is
+    # stationary road behind the line, which is exactly what it is.
+    if k:
+        pts = [list(e["p"]) for e in full[:k]] + pts
+        v = [0.0] * k + v
     return pts, v, total
 
 

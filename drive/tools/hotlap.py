@@ -25,6 +25,13 @@ Only the two quick levels use it. Easy and medium drive `laptime.py`'s relaxed
 line, deliberately: a record's line crosses gaps that need the speed the record
 carried, and a bronze-pace car sent down it lands in the scenery.
 
+**A record is not automatically a line a bot can copy**, and the board is walked
+for that as well as for the cuts: each candidate is driven by the two levels that
+would use it, down the same pace ladder the calibrator uses, and a lap none of
+them can get round on is passed over for the next one down. Railway's record was
+exactly that - hard and max both died at 28% of it at every pace - and the lap
+two rows down is three seconds slower and gets round. See `drivable`.
+
 Re-run it when records fall, the way `shoot_tracks.py` is re-run when geometry
 moves - a stale hot lap is not an error, just a bot driving last month's record.
 `test_hotlaps.py` is what notices a missing or unusable one.
@@ -33,6 +40,7 @@ moves - a stale hot lap is not an error, just a bot driving last month's record.
     python tools/hotlap.py sunrise gauntlet   # just these
     python tools/hotlap.py --site http://localhost:5005
     python tools/hotlap.py --dry-run          # report, write nothing
+    python tools/hotlap.py --no-drive         # skip the drivability gate
 """
 
 import argparse
@@ -83,6 +91,19 @@ CUT_POLICY = {
 
 # How far down a board to look before giving up and taking the record anyway.
 BOARD_DEPTH = 8
+
+# **The levels that actually drive this line**, so "can a bot use this lap" is
+# asked of the bots that would. Easy and medium are on the relaxed line and
+# have no opinion about it.
+DRIVE_LEVELS = ("hard", "max")
+
+# How many times a candidate is allowed to back its pace off before it counts as
+# undrivable. The same ladder `_solve_on` climbs down in the calibrator, for the
+# same reason: a DNF means the pace asked for something the car could not hold,
+# and the honest question is whether *any* pace gets round - not whether the
+# level's default one does.
+DRIVE_TRIES = 3
+DRIVE_BACKOFF = 0.92
 
 # The file each track folder gets. Named for what it is rather than for where it
 # came from: a hot lap is a hot lap whether it was fetched off the live board or
@@ -137,20 +158,72 @@ def board(site, slug, timeout=30):
     return [x for x in rows if x.get("has_ghost")]
 
 
-def choose(site, slug, track, policy):
+def drivable(slug, track, data):
+    """Can the quick levels get round on this lap's line? `(ok, why_not)`.
+
+    **A record is somebody's lap, and not every lap is one a bot can copy.** The
+    driver in `bot.js` follows a path and holds a speed; a person corrects with
+    their eyes, and the places where they were doing that are exactly the places
+    the follower goes off - so a record can be perfectly honest and still be a
+    line that puts every quick bot in the scenery at the same corner, every
+    race. Railway's was: hard and max both died at 28% of the lap, at any pace.
+
+    So the board is walked for *this* too, not only for the cuts. The next lap
+    down is two or three seconds slower and was driven by somebody with less of
+    a margin, which is usually the difference.
+
+    Asked at the level's own pace and then down the same backoff ladder
+    `_solve_on` uses, because a DNF at the default pace is not the same
+    statement as "no pace gets round here" - and the second one is the one that
+    should cost a lap its place on the board.
+
+    Answers yes without checking when there is no JS runtime to check with: this
+    is a gate on a fetch, and a machine without quickjs should still be able to
+    refresh the hot laps.
+    """
+    import bots                                            # noqa: E402
+    import botsim                                          # noqa: E402
+    if not botsim.available():
+        return True, ""
+    line = {"p": data["p"], "v": data["v"], "air": data.get("air"),
+            "vmin": data.get("vmin"), "closed": bool(track.get("closed"))}
+    rt = botsim.runtime()
+    botsim.build(rt, slug)
+    for level in DRIVE_LEVELS:
+        pace = bots.PROFILES[level]["pace"]
+        for _ in range(DRIVE_TRIES):
+            try:
+                rt.ctx.set_time_limit(180)
+                out = rt.call(
+                    "botLap(TRACKS.find(t => t.slug === %s), T, %s, %s, %s)"
+                    % (json.dumps(slug), json.dumps(line),
+                       json.dumps(bots.profile(slug, level, seed=1, pace=pace)),
+                       json.dumps({"fps": 60, "maxT": 180})))
+            finally:
+                rt.ctx.set_time_limit(botsim.EVAL_LIMIT_S)
+            if out["finished"]:
+                break
+            pace = round(pace * DRIVE_BACKOFF, 4)
+        else:
+            return False, "%s falls off at %.0f%%" % (level, 100 * out["progress"])
+    return True, ""
+
+
+def choose(site, slug, track, policy, drive=True):
     """The fastest lap on this track the bots are allowed to copy.
 
-    Walks the board from the record down until it finds one whose cuts are all
-    inside `limit`. Returns `(ghost, data, why)`.
+    Walks the board from the record down until it finds one that passes both
+    gates: its cuts are all inside `limit`, and the quick levels can actually
+    get round on it (`drivable`). Returns `(ghost, data, why)`.
 
-    With no limit the first row is taken immediately and this costs one extra
-    request, which is the ordinary case for fourteen of the sixteen tracks.
+    With no limit and a drivable record the first row is taken immediately,
+    which is the ordinary case for most of the pool.
     """
     limit = None if not policy or policy["mode"] != "board" else policy["limit"]
     rows = board(site, slug)[:BOARD_DEPTH]
     if not rows:
         return None, None, "no lap with a replay"
-    skipped = []
+    skipped, undriven = [], []
     for row in rows:
         ghost = fetch(site, slug, who=str(row["id"]))
         if not ghost.get("ghost"):
@@ -158,19 +231,31 @@ def choose(site, slug, track, policy):
         data = build(ghost, track)
         cuts = describe_cuts(data, track)
         worst = max([c["gained"] for c in cuts], default=0.0)
-        if limit is None or worst <= limit:
-            why = ("record" if row is rows[0] else
-                   "board #%d; %s skipped for cutting %.0f units"
-                   % (rows.index(row) + 1, "the record" if len(skipped) == 1
-                      else "%d laps" % len(skipped), skipped[0]))
-            return ghost, data, why
-        skipped.append(worst)
-    # Nothing on the board respects the limit. Take the record rather than
-    # leaving the quick levels with no line at all - they fall back to the
-    # relaxed one, which is slower than a lap with a trick in it is unfair.
+        if limit is not None and worst > limit:
+            skipped.append(worst)
+            continue
+        if drive:
+            ok, why_not = drivable(slug, track, data)
+            if not ok:
+                undriven.append("#%d (%s)" % (rows.index(row) + 1, why_not))
+                continue
+        if row is rows[0]:
+            why = "record"
+        else:
+            was = (["%d cutting %.0f units" % (len(skipped), skipped[0])]
+                   if skipped else [])
+            was += (["%d undrivable: %s" % (len(undriven), undriven[0])]
+                    if undriven else [])
+            why = "board #%d; skipped %s" % (rows.index(row) + 1, ", ".join(was))
+        return ghost, data, why
+    # Nothing on the board passed. Take the record rather than leaving the quick
+    # levels with no line at all - they fall back to the relaxed one, which is
+    # slower than a lap with a trick in it is unfair, and which the calibrator
+    # will choose for them anyway if this one really cannot be held.
     ghost = fetch(site, slug, who="wr")
-    return ghost, (build(ghost, track) if ghost.get("ghost") else None), \
-        "no lap on the board is inside the %.0f-unit limit; using the record" % limit
+    why = "no lap on the board is usable (%s); using the record" % (
+        "%d cut too far, %d undrivable" % (len(skipped), len(undriven)))
+    return ghost, (build(ghost, track) if ghost.get("ghost") else None), why
 
 
 def speeds_from(frames, hz):
@@ -447,6 +532,8 @@ def main(argv=None):
     ap.add_argument("slugs", nargs="*", help="tracks to do; default all of them")
     ap.add_argument("--site", default=LIVE, help="where the records live")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--no-drive", action="store_true",
+                    help="skip the drivability gate (faster; see `drivable`)")
     args = ap.parse_args(argv)
 
     slugs = args.slugs or [t["slug"] for t in tracks_mod.TRACKS]
@@ -459,7 +546,8 @@ def main(argv=None):
             continue
         policy = CUT_POLICY.get(slug)
         try:
-            ghost, data, why = choose(args.site, slug, track, policy)
+            ghost, data, why = choose(args.site, slug, track, policy,
+                                      drive=not args.no_drive)
         except (urllib.error.URLError, OSError, ValueError) as e:
             print("%-10s could not fetch: %s" % (slug, e))
             bad += 1

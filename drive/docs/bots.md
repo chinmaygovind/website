@@ -369,6 +369,48 @@ a new record, **or when the medals are re-cut**, which is the one nobody thought
 of. Nothing detects a stale table, exactly like the track previews; what a stale
 one costs is a level being a second off the medal it is named for.
 
+### A record is not automatically a line a bot can copy
+
+`tools/hotlap.py` walks the board for **two** things now, not one. The old gate
+was `CUT_POLICY` - is this lap's shortcut one we want the bots doing - and the
+new one is simply: can they get round on it at all. Each candidate is driven by
+the two levels that would use it (`hard` and `max`) down the same pace-backoff
+ladder `_solve_on` climbs, and a lap none of them can finish is passed over for
+the next one down the board.
+
+**The reason is that the driver follows a path and a person does not.** A record
+is honest and still a line that puts a follower in the scenery at the same
+corner every lap: the places a person was correcting with their eyes are exactly
+the places `bot.js` goes off. Rickety Rails' record killed `hard` at 12% of the
+lap at every pace; Playground's killed it at 73% and `max` at 7%; Jump City's at
+82%. All three now sit on a lap two to four seconds slower that the bots can
+actually hold, and the file says which board row and why:
+
+    playground  71.017s by tonyjosephboyle  board #5; skipped 4 undrivable: #1 (hard falls off at 73%)
+    railway     56.999s by chinmay          board #5; skipped 4 undrivable: #1 (hard falls off at 12%)
+    jumpcity    20.646s by Maxwell938       board #3; skipped 2 undrivable: #1 (hard falls off at 82%)
+
+The gate answers yes without checking when there is no JS runtime, because this
+is a gate on a *fetch* and a machine with no quickjs should still be able to
+refresh the hot laps; `--no-drive` turns it off deliberately. It costs two
+simulated laps per candidate, which on a pool whose records are mostly drivable
+is a couple of minutes.
+
+**What it cannot help with is `easy` and `medium`**, which drive `laptime.py`'s
+relaxed centreline. There is only ever one of those, so a track they cannot get
+round is a track that needs the line fixed rather than replaced - Playground's
+was, and `docs/tracks-and-geometry.md` has that one under `gap` and `bow`.
+
+### The calibrator writes after every track
+
+It used to write `bots_pace.json` once, at the end of a twenty-minute job. A
+`botLap` is one `eval` with a wall-clock limit on it and a stuck bot drives the
+full `maxT` - 240 seconds of game time is 14,400 ticks of physics - so on a busy
+machine it trips that limit and QuickJS raises. The raise came out of `main` and
+ended the run: boo's last scan took the seven tracks solved before it with it,
+and nothing was on disk. Two lines fix both halves - the table is written after
+each track, and a lap that does not come back is scored as the DNF it is.
+
 ### The table is stale right now, and it is the medals that did it
 
 Measured Aug 2026 with `--report` over the whole pool. Easy and medium are

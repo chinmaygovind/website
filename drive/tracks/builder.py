@@ -57,6 +57,10 @@ from tuning import CELL, LEVEL, ROAD_W    # noqa: F401
 # which is a few thousand triangles and a JSON payload measured in tens of KB.
 STATION = 3.5
 
+# How much road a point-to-point track lays behind its start line, so that a
+# full grid has somewhere to stand. See `Builder.start`.
+GRID_RUN = 26.0
+
 # Lateral profile
 # ---------------
 # A station is normally a flat strip, and the road is the quad between one
@@ -228,6 +232,10 @@ class Builder:
         self.hw = width / 2.0
         self._roll = 0.0
         self.rails = rails
+        # Whether this ribbon will be closed into a circuit. Only `start` reads
+        # it, to decide whether laying a grid behind the line is safe - see
+        # there. Set by `tracks._one`; a Builder made by hand is point-to-point.
+        self.closed = False
         self.wl = rails
         self.wr = rails
         self.nodes = []
@@ -258,6 +266,11 @@ class Builder:
         # Same again for a mushroom cap. See `bounce`.
         self._cap = False
         self._skin = False       # this road is the back of something; see `skin`
+        # The stations being laid are the grid, i.e. road behind the start
+        # line. Flagged so `laptime` can leave them out of the ideal lap: they
+        # are not part of it, and counting them would move every derived medal
+        # on every track. See `start`.
+        self._grid = False
 
     # -- internals ---------------------------------------------------------
     def _pf(self):
@@ -307,6 +320,8 @@ class Builder:
         # This stretch of road is not a road; see `skin` below.
         if self._skin and not air:
             e["skin"] = 1
+        if self._grid:
+            e["grid"] = 1
         if (self.wl if wl is None else wl) and not air:
             e["wl"] = 1
         if (self.wr if wr is None else wr) and not air:
@@ -877,14 +892,50 @@ class Builder:
                            "si": len(self.nodes) - 1})
         return self
 
-    def start(self, run=14.0):
-        # Lay the first station *at* the turtle before moving, then put the spawn
-        # a couple of stations in. Every primitive emits stations 1..n and takes
-        # station 0 from whatever came before it, so without this the ribbon has
-        # no surface at its own origin - and the car spawned into thin air and
-        # fell through the world before it had moved.
+    def start(self, run=14.0, pre=None):
+        """The road under the start line, and the road behind it.
+
+        ``pre`` is the grid: how much road is laid *before* the turtle's own
+        origin. A room lines up to twelve cars behind the line at
+        ``4 + row * 5.5`` units back (`placeOnGrid` in game.js), which is 34
+        units for the last row plus its own length, and what ``start`` used to
+        lay behind the line was ``STATION * 2`` twice over - fourteen. Every
+        row past the third was parked off the end of the world.
+
+        **It is laid backwards, and that is the whole of why this is safe.**
+        The turtle is walked back ``pre`` units, the extra road is laid, and
+        then its position is restored to the exact floats it arrived with - so
+        the spawn, the start gate and every station of the lap after it are at
+        the coordinates they have always been at, to the bit. A lap is timed
+        from the first input at the spawn and driven on the road in front of
+        it; neither has moved, so every record and every stored ghost still
+        describes this track. What changed is only what is behind the car.
+
+        **A closed circuit gets none of it** (``pre`` is zero there): its grid
+        already has a whole lap of road behind the line, and the solver closes
+        the ribbon onto the origin - moving the origin would move the circuit.
+        """
+        if pre is None:
+            pre = 0.0 if self.closed else GRID_RUN
+        # Captured before the walk back and restored after it: `a - b + b` is
+        # not `a` in floating point, and everything downstream of here has to
+        # be bit-identical to what it was.
+        ox, oy, oz = self.x, self.y, self.z
         f, r, up = _frame(self.yaw, 0.0, self._roll)
-        self._emit(self.pos, up, r)
+        if pre > 0:
+            self.x, self.z = ox - f[0] * pre, oz - f[2] * pre
+            self._grid = True
+            self._emit(self.pos, up, r)
+            self.straight(pre)
+            self._grid = False
+            self.x, self.y, self.z = ox, oy, oz
+            # The last station of the walk back *is* the track's own origin -
+            # the station this ribbon used to begin at - so it keeps its exact
+            # coordinates and is not part of the grid.
+            self.nodes[-1]["p"] = [round(v, 2) for v in (ox, oy, oz)]
+            self.nodes[-1].pop("grid", None)
+        else:
+            self._emit(self.pos, up, r)
         self.straight(STATION * 2)
         f, _, _ = _frame(self.yaw, 0.0, 0.0)
         self.spawn = {"p": self.pos, "fwd": [round(v, 4) for v in f]}

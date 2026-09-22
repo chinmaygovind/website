@@ -181,6 +181,27 @@ def track_folders():
 # It lives here rather than in either test file because both need it and this
 # repo would rather have one copy than two that agree.
 
+def lap_points(track):
+    """The centreline a lap is actually driven along.
+
+    Two ends to trim. The **grid** at the front - `Builder.start` lays road
+    behind the start line for a field to line up on, and a lap starts on the
+    line, so a replay beginning at the back of the grid is one `runcheck`
+    rightly refuses for not starting on it. And the ribbon's own run-off at the
+    back, which carries on past the flag - except on a closed track, where the
+    flag is the start line and the whole ribbon is the lap.
+    """
+    line = track["line"]
+    k = 0
+    while k < len(line) and line[k].get("grid"):
+        k += 1
+    pts = [st["p"] for st in line[k:]]
+    fin = next((g for g in track["gates"] if g["kind"] == "finish"), None)
+    if fin is not None and not track.get("closed"):
+        pts = pts[:fin["si"] + 1 - k]
+    return pts
+
+
 def lap_frames(track, seconds=None, hz=None):
     """Down the middle of the ribbon at a constant speed, start gate to finish."""
     import bisect
@@ -190,12 +211,7 @@ def lap_frames(track, seconds=None, hz=None):
 
     hz = hz or runcheck.GHOST_HZ
     seconds = seconds or track["ideal"]
-    pts = [st["p"] for st in track["line"]]
-    fin = next((g for g in track["gates"] if g["kind"] == "finish"), None)
-    # Stop at the flag; the ribbon runs past it. On a closed track the flag is
-    # the start line and the whole ribbon is the lap, so there is nothing to cut.
-    if fin is not None and not track.get("closed"):
-        pts = pts[:fin["si"] + 1]
+    pts = lap_points(track)
     cum = [0.0]
     for a, b in zip(pts, pts[1:]):
         cum.append(cum[-1] + math.dist(a, b))
