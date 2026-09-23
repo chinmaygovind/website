@@ -611,7 +611,7 @@ def test_the_editor_draws_a_control_for_every_palette_key():
     editor. A palette carrying them keeps them untouched through a borrow.
     """
     SCENERY = {"terrain", "furniture", "building", "shore",
-               "rainbow", "rainbowLanes", "props", "below", "rain",
+               "rainbow", "rainbowLanes", "props", "below", "rain", "gate",
                # `lamps` is here for `rain`'s reason rather than as an
                # exception: it is not colour, it is a list of placements
                # derived off the ribbon - a fraction of the lap and an offset

@@ -28,6 +28,8 @@ PALETTE = {
 # much further than a green one, so the same number of trees reads as more.
 "prop": 0xf4b2cd, "prop2": 0x4f7d3c,
 "deco": 0xe8b93c,
+# Every checkpoint is a torii; see `torii` in trackmesh.js.
+"gate": "torii",
 "gravel": 0xbdb4a4,
 # A height field rather than one flat plate, for Spa's reason: this road falls
 # 27 units from Dunlop to the hairpin, and a plate at `track.ground` would be a

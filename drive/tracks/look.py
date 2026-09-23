@@ -70,6 +70,7 @@ KNOWN = REQUIRED + (
                       # not baked into the track's buffer, so the switcher has
                       # to be able to tear it down. Visual only and never in the
                       # collider, so no lap and no medal moves.
+    "gate",           # "torii" draws each checkpoint as a torii (Suzuka)
     "prop2",          # second structural colour: trestles, columns
     "legs",           # how often a trestle leg pair goes under a floating
                       # road, in units; 0 for none (default 26)

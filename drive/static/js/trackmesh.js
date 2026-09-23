@@ -1046,6 +1046,7 @@ export function buildTrack(track, T) {
     const st = line[g.si] || { n: [0, 1, 0] };
     const n = st.n;
     gates.push({ kind: g.kind, gi: g.gi, p: g.p, f: g.f, r: g.r, hw: g.hw, y: g.p[1] });
+    if (g.kind === 'cp' && pal.gate === 'torii') { torii(g, n); continue; }
     // The posts are solid, so clipping a checkpoint on the way through costs you
     // the same as clipping a barrier. They sit just *outside* the kerb rather
     // than on it, so the full width of the road is still yours to use.
@@ -1070,6 +1071,46 @@ export function buildTrack(track, T) {
                           p[2] + g.f[2] * w + n[2] * 0.06];
       bright.quad(back(L), back(R), fwd(R), fwd(L), color);
     }
+  }
+
+  // A checkpoint as a torii (`pal.gate`). Posts are solid like the plain gate's;
+  // the beams are all well over the car and drawn only. Both windings on every
+  // face, because (r, n, f) is not guaranteed to be right-handed.
+  function torii(g, n) {
+    const at = (u, h, v) => [0, 1, 2].map((k) => g.p[k] + g.r[k] * u + n[k] * h + g.f[k] * v);
+    const RED = 0xe00a02, INK = 0x24211f, GOLD = 0xd9a93a;
+    const face = (a, b, c, d, color) => { solid.quad(a, b, c, d, color); solid.quad(a, d, c, b, color); };
+    const box = (u, h, hu, hh, hv, color, hit) => {
+      const P = (a, b, c) => at(u + a * hu, h + b * hh, c * hv);
+      const v = [P(-1, -1, -1), P(1, -1, -1), P(1, -1, 1), P(-1, -1, 1),
+                 P(-1, 1, -1), P(1, 1, -1), P(1, 1, 1), P(-1, 1, 1)];
+      const quads = [[4, 7, 6, 5], [0, 1, 2, 3], [0, 4, 5, 1], [1, 5, 6, 2], [2, 6, 7, 3], [3, 7, 4, 0]];
+      for (const [a, b, c, d] of quads) {
+        face(v[a], v[b], v[c], v[d], color);
+        if (hit) col.addQuad(v[a], v[b], v[c], v[d], KIND.WALL);
+      }
+    };
+    const po = g.hw + 0.65;                        // post centre, clear of the kerb
+    for (const s of [-1, 1]) {
+      box(s * po, 3.2, 0.5, 4.4, 0.5, RED, true);   // hashira, into the run-off
+      box(s * po, -0.2, 0.62, 1.0, 0.62, INK);      // kamaki, the black foot
+    }
+    box(0, 5.6, po + 1.3, 0.3, 0.3, RED);          // nuki, through the posts
+    box(0, 6.55, 0.95, 0.72, 0.12, GOLD);          // gakuzuka, the plaque
+    box(0, 6.55, 0.8, 0.56, 0.18, INK);
+    box(0, 7.45, po + 1.9, 0.25, 0.42, RED);       // shimaki
+    // kasagi: the black top lintel, swept so its ends turn up
+    const L = po + 2.7, N = 16, HH = 0.36, HV = 0.6;
+    const ring = [];
+    for (let i = 0; i <= N; i++) {
+      const u = -L + 2 * L * i / N, h = 8.06 + 0.95 * Math.pow(Math.abs(u) / L, 2.4);
+      ring.push([at(u, h - HH, -HV), at(u, h - HH, HV), at(u, h + HH, HV), at(u, h + HH, -HV)]);
+    }
+    for (let i = 0; i < N; i++) {
+      const a = ring[i], b = ring[i + 1];
+      for (let k = 0; k < 4; k++) face(a[k], b[k], b[(k + 1) % 4], a[(k + 1) % 4], INK);
+    }
+    for (const e of [ring[0], ring[N]]) face(e[0], e[1], e[2], e[3], INK);
   }
 
   // --- ground / void -------------------------------------------------------
