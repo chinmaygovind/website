@@ -530,14 +530,24 @@ export class Sound {
    * near a gate is two events rather than one loud one.
    */
   itemBox() {
+    // The box breaking: a bright crack of noise under the rising pair.
+    this._burst({ freq: 3200, q: 0.8, dur: 0.12, gain: 0.22 });
     this._blip({ freq: 720, to: 1080, type: 'triangle', dur: 0.09, gain: 0.16 });
     this._blip({ freq: 1440, type: 'sine', dur: 0.14, gain: 0.1, delay: 0.05 });
   }
 
-  /** The slot filling: one short note under the box's own, so a full queue is
-      audibly different from driving through with both hands occupied. */
+  /** One click of the roulette going round. Short and dry, because it repeats
+      a dozen times in a second and anything with a tail turns into a drone. */
+  itemTick() {
+    this._blip({ freq: 1800, type: 'square', dur: 0.025, gain: 0.07 });
+  }
+
+  /** The roulette stopping on what you got: a three-note arpeggio up, so it
+      is unmistakably an arrival and not one more click. */
   itemGot() {
-    this._blip({ freq: 990, to: 1320, type: 'square', dur: 0.1, gain: 0.12 });
+    this._blip({ freq: 784, type: 'square', dur: 0.08, gain: 0.13 });
+    this._blip({ freq: 988, type: 'square', dur: 0.08, gain: 0.13, delay: 0.07 });
+    this._blip({ freq: 1568, type: 'square', dur: 0.16, gain: 0.14, delay: 0.14 });
   }
 
   /**

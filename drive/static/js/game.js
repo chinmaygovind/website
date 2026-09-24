@@ -1871,6 +1871,58 @@ function shootItem(kind) {
   }
 }
 
+/**
+ * The room has just emptied everybody's slots, so empty ours to match.
+ *
+ * `_open_race` and `_reset_race` wipe the server's queues and boxes without
+ * telling anybody, and a browser still showing last session's two items was a
+ * car that would not pick up a box (both hands "full") and could not spend
+ * what it showed (the server's queue was empty). Called on every phase that
+ * begins one of those.
+ */
+function clearItems() {
+  S.items = [];
+  S.spin = null;
+  S.boostUntil = 0;
+  for (const f in ITEM_TIME) S.car[f] = 0;
+  if (S.held) for (const pid of [...S.held.keys()]) setHeld(pid, null);
+  if (S.itemBoxes) for (const b of S.itemBoxes.children) b.userData.until = 0;
+  renderItems();
+}
+
+/**
+ * The roulette: a slot that has just been filled cycles through every item,
+ * slowing down, before it settles on what the server actually rolled. The roll
+ * is already decided and already ours - this is only the reveal - so it is
+ * the browser's alone, and the one rule it adds is that an item still spinning
+ * in the front slot cannot be spent.
+ */
+const ROULETTE_MS = 1100;
+const ROULETTE_ITEMS = Object.keys(ITEM_LABEL);
+
+function spinItem(slot, now) {
+  S.spin = { slot, until: now + ROULETTE_MS, next: 0, k: 0,
+             icon: ROULETTE_ITEMS[0] };
+}
+
+function spinItems(now) {
+  const sp = S.spin;
+  if (!sp) return;
+  if (now >= sp.until) {
+    S.spin = null;
+    S.sound.itemGot();
+    renderItems();
+    return;
+  }
+  if (now < sp.next) return;
+  const t = 1 - (sp.until - now) / ROULETTE_MS;
+  sp.next = now + 45 + 170 * t * t;            // slows down as it settles
+  sp.icon = ROULETTE_ITEMS[++sp.k % ROULETTE_ITEMS.length];
+  if (sp.icon === S.items[sp.slot]) sp.icon = ROULETTE_ITEMS[++sp.k % ROULETTE_ITEMS.length];
+  if (S.sound.itemTick) S.sound.itemTick();    // a cached sound.js lacks it
+  renderItems();
+}
+
 function renderItems() {
   const hud = $('itemHud');
   if (!hud) return;
@@ -1883,7 +1935,9 @@ function renderItems() {
   const on = CFG.mode === 'room' && !!S.settings.powerups;
   hud.style.display = on ? '' : 'none';
   for (let i = 0; i < 2; i++) {
-    $('item' + i + 'art').innerHTML = itemIcon(S.items[i]);
+    const spinning = S.spin && S.spin.slot === i;
+    $('item' + i + 'art').innerHTML = itemIcon(spinning ? S.spin.icon : S.items[i]);
+    $('item' + i).classList.toggle('spinning', !!spinning);
     $('item' + i).title = ITEM_LABEL[S.items[i]] || '';
   }
   for (let i = 0; i < 2; i++) $('item' + i).classList.toggle('empty', !S.items[i]);
@@ -2683,7 +2737,8 @@ function movePlaceByMap() {
 const HOLDABLE = ['banana', 'green', 'red'];
 
 function canUseItem() {
-  return !!(S.socket && S.items.length && S.settings.powerups && contactOn());
+  return !!(S.socket && S.items.length && S.settings.powerups && contactOn() &&
+            !(S.spin && S.spin.slot === 0));
 }
 
 function useItem() {
@@ -4714,6 +4769,7 @@ function onQualCountdown(d) {
   showSide(false);
   $('raceOver').style.display = 'none';
   hideResults();
+  clearItems();
   applyPhase();
   resetToStart();
   S.car.frozen = true;
@@ -5587,6 +5643,7 @@ function frame(now) {
   // The held items expire on `game.js`'s own clock, not the car's: see
   // `ITEM_TIME`.
   expireItems(now);
+  spinItems(now);
   updateItemRing();
   grabItemBoxes(now);
 
@@ -7295,7 +7352,13 @@ function connect() {
     S.items = d.slots || [];
     // What landed *in the slot*, which is not the same event as the box: a
     // box you drive through with both hands full makes one sound and not two.
-    if (S.items.length > had) S.sound.itemGot();
+    // It lands spinning, and `spinItems` makes the sound when it settles.
+    if (S.spin) {
+      // Spending the front one moves a spinning back one forward with it.
+      S.spin.slot -= Math.max(0, had - S.items.length);
+      if (S.spin.slot < 0) S.spin = null;
+    }
+    if (S.items.length > had) spinItem(S.items.length - 1, performance.now());
     if (!S.items.includes('boost')) S.boostUntil = 0;
     renderItems();
   });
@@ -7399,6 +7462,7 @@ function connect() {
     S.raceMode = false; S.racePhase = 'free'; S.raceT0 = null;
     S.raceDone = false;
     S.standings = [];
+    clearItems();
     applyPhase();
     $('countdown').style.display = 'none';
   });
@@ -7410,6 +7474,7 @@ function connect() {
     S.raceDone = false;
     S.standings = [];
     S.car.frozen = false;
+    clearItems();
     applyPhase();
     $('countdown').style.display = 'none';
     $('raceOver').style.display = 'none';
@@ -8257,6 +8322,7 @@ function onRaceStart(d) {
   S.raceDone = false;
   S.standings = [];
   S.raceSplits = {};        // this race's checkpoint times, nobody else's
+  clearItems();
   stopQualClock();
   // Qualifying is over, so the lap that was on provisional pole is not
   // provisional or pole any more - it is the grid. Keeping it loaded would put

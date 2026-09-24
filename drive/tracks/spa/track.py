@@ -6,7 +6,7 @@ The Ardennes circuit, compressed. Wide, fast, and a full closed lap.
 from tracks.builder import FREE
 
 slug = "spa"
-name = "Spa-Francorchamps"
+name = "Spa"
 difficulty = 3
 medals = (63.5, 66.7, 70.1)
 ground = -1.2

@@ -546,6 +546,15 @@ with how late it was and what the rooms were doing.
     *for*: bananas and a shield in front, a red in the pack, and a star, a
     boost or a bomb at the back, which is the only place the odds can make
     catching up possible.
+  - **The browser empties its slots whenever the room does** (`clearItems`, on
+    `qual_countdown`, `race_start`, `race_reset`, `race_abort`). `_open_race`
+    and `_reset_race` wipe every queue without a message, and a browser still
+    showing practice's two items would not take a box (both hands "full") and
+    spent nothing, because the server's queue was empty.
+  - **A new item lands spinning** (`spinItem`/`spinItems`, `ROULETTE_MS`): the
+    slot cycles through every item, clicking (`itemTick`), and settles with
+    `itemGot`. The roll is already the server's; this is only the reveal, and
+    a front slot still spinning cannot be spent.
   - **Two slots, and the front one is what `X` spends.** `PRACTICE_ITEMS` is the
     practice pool; a race adds the blue shell and the star, which are the two
     items that only mean anything when there is a leader and a last place.

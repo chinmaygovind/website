@@ -1265,3 +1265,17 @@ def test_an_arming_shot_does_not_wander_off_its_target(A, bend):
     for step in range(A.SHOT_ARM_TICKS):
         A._tick_shots(r, now + step * 33)
     assert r["shots"][0]["p"] == where
+
+
+def test_the_browser_empties_its_slots_whenever_the_room_does():
+    """`_open_race` and `_reset_race` wipe every queue without a message, so a
+    browser that kept last session's items would refuse boxes ("both full") and
+    spend nothing. Each phase that follows one of them must call `clearItems`."""
+    import re
+    js = open(os.path.join(os.path.dirname(__file__), "..", "static/js/game.js")).read()
+    for start in ("function onQualCountdown(", "function onRaceStart(",
+                  "socket.on('race_reset'", "socket.on('race_abort'"):
+        i = js.index(start)
+        body = js[i:i + 1500]
+        end = re.search(r"\n\}|\n  \}\);", body).start()
+        assert "clearItems()" in body[:end], start

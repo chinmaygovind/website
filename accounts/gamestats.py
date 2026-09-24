@@ -82,7 +82,7 @@ DRIVE_TRACKS = {
     "cove": "Sandy Cove",
     "pillars": "Cloudbreak",
     "rainbow": "Rainbow Road",
-    "spa": "Spa-Francorchamps",
+    "spa": "Spa",
     "costco": "Costco Wholesale",
     "bigred": "Big Red",
     "mountjoy": "Mount Joy",

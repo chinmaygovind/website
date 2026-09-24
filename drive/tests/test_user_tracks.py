@@ -56,7 +56,7 @@ def test_the_pool_is_untouched_by_the_hook(resolved):
     from conftest import track_folders
     assert len(tracks_mod.TRACKS) == 19 or \
         len(tracks_mod.TRACKS) == len(track_folders())
-    assert tracks_mod.get("spa")["name"] == "Spa-Francorchamps"
+    assert tracks_mod.get("spa")["name"] == "Spa"
 
 
 def test_a_slug_in_neither_place_is_none(resolved):
@@ -83,7 +83,7 @@ def test_the_pool_wins_a_collision(resolved):
     at somebody's draft.
     """
     resolved["spa"] = to_moves.document("chicane")[0]
-    assert tracks_mod.get("spa")["name"] == "Spa-Francorchamps"
+    assert tracks_mod.get("spa")["name"] == "Spa"
 
 
 @pytest.mark.parametrize("src", sorted(SHAPES), ids=[SHAPES[s] for s in sorted(SHAPES)])
