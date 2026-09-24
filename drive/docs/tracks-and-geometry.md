@@ -676,6 +676,16 @@ wants a building as the thing that will find the bugs.
     half a second off gold. It pads its returned arrays back out to station
     indices, because the gap test, the bots and `jsrt` all read `pts[i]` against
     `track["line"][i]`.
+  - **The scenery is not told about it either: it is handed the ribbon without
+    the grid.** `buildTrack` slices the `grid` stations off `track.line` before
+    `addScenery`, `sceneryContext`, placements, `props` and `movers` see it.
+    Scenery places things by station *index* and by *fraction of `line.length`*
+    - Rickety's roof heights and shaft, every portal frame and lamp every N
+    stations, every seeded scatter draw - so seven extra stations at the front
+    moved all of it. The road was bit-identical and Rickety Rails was visibly a
+    different mine, with its timber posts (collider walls) in new places, until
+    this went in. `test_scenery`'s wall counts are back to their pre-grid
+    values; only road and off-road triangles under the grid are new.
   - **A closed circuit gets none of it.** Its grid is the road it finishes on,
     and `solver.py` closes the ribbon onto the origin - so moving the origin
     would move the circuit. The Builder is told by `tracks._one`, by

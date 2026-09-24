@@ -79,7 +79,7 @@ EXPECTED = {
     "pillars":   {"total":   1892, "road":  1412, "wall":   480, "off":     0, "boost":  0},
     "rainbow":   {"total":  13300, "road": 12720, "wall":   580, "off":     0, "boost":  0},
     "spa":       {"total":  43902, "road":  1810, "wall":  3878, "off": 38214, "boost":  0},
-    "costco":    {"total":   4048, "road":  1202, "wall":  2824, "off":     2, "boost": 20},
+    "costco":    {"total":   4058, "road":  1202, "wall":  2834, "off":     2, "boost": 20},
     "bigred":    {"total":   2862, "road":  1596, "wall":  1188, "off":     0, "boost": 78},
     # Recorded when the track was added rather than off an earlier tree, since
     # there was no earlier tree. Nearly all of the `off` is the mountain: the
@@ -106,7 +106,7 @@ EXPECTED = {
     # 1448 -> 1432 when the `flat()` gate landed: two lamp posts were being
     # stood on loop stations, where `lat` has rotated with the surface, so their
     # collidable uprights were sticking out into the middle of the loop.
-    "railway":   {"total":   4364, "road":  2870, "wall":  1464, "off":     0, "boost": 30},
+    "railway":   {"total":   4332, "road":  2870, "wall":  1432, "off":     0, "boost": 30},
     # Recorded when the track was added, and here for Rickety Rails' reason
     # exactly: Playground is `exposed`, floats in empty sky, and the edge beam in
     # `tracks/playground/scenery.js` is the only thing at the edge of it. The
@@ -121,7 +121,7 @@ EXPECTED = {
     # by eight, which is what stopped them being bumpy to drive - see
     # `Builder.wall`. Nearly all of it is `road`; the `wall` count fell by two
     # poles, which now decline to stand on a profiled station.
-    "playground": {"total":   9958, "road":  4230, "wall":  5546, "off":     0, "boost": 182},
+    "playground": {"total":   9902, "road":  4230, "wall":  5490, "off":     0, "boost": 182},
 }
 
 COUNTER = """

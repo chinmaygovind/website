@@ -1214,7 +1214,9 @@ export function buildTrack(track, T) {
   }
 
   // --- scenery (procedural, seeded, deterministic) -------------------------
-  addScenery(solid, track, pal, bbox, CELL, terrain);
+  const gridStations = track.line.findIndex((e) => !e.grid);
+  const scenic = gridStations > 0 ? { ...track, line: track.line.slice(gridStations) } : track;
+  addScenery(solid, scenic, pal, bbox, CELL, terrain);
   // Whatever this track brought of its own. A sibling of the scatter rather than
   // of Spa's furniture, which is reachable only from the terrain branch above.
   //
@@ -1230,7 +1232,7 @@ export function buildTrack(track, T) {
   // and because each local copy is an independent chance to get `face`'s double
   // winding wrong - the trap that made Spa's pit building an invisible shed with
   // a roof floating in the sky, and both of Silverstone's hangars blank walls.
-  const sctx = sceneryContext(solid, track, pal, terrain, groundY, GRASS_DROP);
+  const sctx = sceneryContext(solid, scenic, pal, terrain, groundY, GRASS_DROP);
   let sceneryProblems = [];
   // A placement list, drawn by the engine. This is the declarative half of
   // scenery and it runs *here*, in `buildTrack`, which is what makes it reach
@@ -1239,7 +1241,7 @@ export function buildTrack(track, T) {
   // palette does, so there is no per-path copy of the interpreter to miss and
   // no path where a player's barrier is absent from the collider.
   const sctxFull = Object.assign({
-    solid, bright, soft, signs, col, track, pal, bbox, CELL, terrain,
+    solid, bright, soft, signs, col, track: scenic, pal, bbox, CELL, terrain,
     groundY, minY, maxY, KIND, shade, hsl, mulberry, inside, plate, sheet,
     solid_plate,
   }, sctx);
@@ -1252,7 +1254,7 @@ export function buildTrack(track, T) {
   const sc = sceneryFor(track.slug);
   if (sc && sc.props) {
     sc.props({
-      solid, bright, soft, signs, col, track, pal, bbox, CELL, terrain,
+      solid, bright, soft, signs, col, track: scenic, pal, bbox, CELL, terrain,
       groundY, minY, maxY,
       cfg: pal.building || pal.furniture || null,
       KIND, shade, hsl, mulberry, inside, plate, sheet, solid_plate,
