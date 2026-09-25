@@ -602,8 +602,9 @@ def cobweb():
     return redirect("/ese2100/cobweb/", code=301)
 
 
-# `/ese5420` holds one file, the Midterm 1 formula sheet, and no index page, so
-# without this the bare directory is a 404 while the PDF beside it is a 200 -
+# `/ese5420` holds the Midterm 1 formula sheet and the exam-room timer at
+# `/ese5420/midterm1/`, but no index page of its own, so without this the bare
+# directory is a 404 while what sits beside it is a 200 -
 # which is the confusing half of the two, because the directory is the part
 # somebody types when they are guessing.
 #
