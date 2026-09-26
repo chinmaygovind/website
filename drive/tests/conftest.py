@@ -404,7 +404,7 @@ NO_CUT_MEDALS_YET = {"silverstone", "monaco", "dino", "monza", "boo", "suzuka"}
 # shows up as tests that pass alone and fail together, or worse, pass wrongly.
 # Popping a module that was never imported is a no-op, so there is no cost to
 # naming one here early.
-RELOADED = ("app", "maker", "models", "portal", "backfill_race_activity")
+RELOADED = ("app", "maker", "dashboard", "models", "portal", "backfill_race_activity")
 
 
 def boot_app(verify=None, **environ):

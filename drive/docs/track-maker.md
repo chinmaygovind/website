@@ -358,9 +358,17 @@ the live database. Approving a generated row in `/admin/tracks` claims the next
 free `daily_on` (`maker._next_free_daily`) and renames it `Daily #N` at
 `daily-N` (`maker._number_daily`, one past the highest `daily-N` slug ever, so a
 deleted daily's number is never reused). The generator's own names are only
-labels for the queue. `/daily` serves today's. The
-queue is at `/admin` (the nav shows an Admin tab to admins only), with the
-generated tracks in their own "Dailies to review" list. A day runs midnight to
+labels for the queue. `/daily` serves today's. **Reviewing is a loop on the play page**: `/admin/review` opens the next
+queued generated track (oldest first, `?after=<id>` to move on, wrapping) with
+a review card in the HUD - Approve, Send back (needs a note) or Skip - and every
+press lands on the next track. Send back sets `status = "needs_fix"` with the
+note in `review_note`. **Reworking is `tools/daily_fixes.py` on the box**:
+`list` the notes, `show` a document, then `put` a reworked one or `regen` a
+fresh track in its place; both go through `gen_daily.judge` and back into the
+queue. The server never calls a model to do this (see the root CLAUDE.md on
+model APIs) - Claude does it in a session when asked. `/admin` itself is the
+dashboard (`dashboard.py`); the full queue is `/admin/tracks`. Generated
+tracks are kept out of the author's own Builder list. A day runs midnight to
 midnight **Eastern** (`app.daily_date`), not UTC. Nobody has driven
 these before review, which is why the review is a lap and not a glance.
 Tests: `test_generate.py`.

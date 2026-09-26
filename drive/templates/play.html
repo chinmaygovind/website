@@ -30,7 +30,7 @@
   <div class="hud-tl">
     <div class="card">
       <div class="trackname" id="trackName">{{ track.name }}</div>
-      <div class="mode" id="modeLabel">{% if mode == 'room' %}Free practice{% elif mode == 'replay' %}Race replay{% elif draft_token %}Draft &mdash; nothing here is saved{% else %}Solo time trial{% endif %}</div>
+      <div class="mode" id="modeLabel">{% if mode == 'room' %}Free practice{% elif mode == 'replay' %}Race replay{% elif review %}Reviewing a daily &middot; {{ review.left }} in the queue{% elif draft_token %}Draft &mdash; nothing here is saved{% else %}Solo time trial{% endif %}</div>
     </div>
     {# The way back out of a draft, and it is a button on the screen rather than
        a line in the settings sheet. Driving a draft is a full page navigation,
@@ -39,7 +39,35 @@
        wrong price for the most common thing they do. Points at the token, not
        at history.back(), which would reload the starting shape and throw away
        every change they made. #}
-    {% if draft_token %}
+    {# Reviewing a generated daily: drive it, then one press decides it and
+       lands on the next one. The note goes to `needs_fix` for Claude to rework
+       (tools/daily_fixes.py). The game ignores keys typed in a textarea. #}
+    {% if review %}
+    <form class="card review-card" method="post" action="/admin/review/{{ review.slug }}">
+      <textarea name="note" rows="3" maxlength="1000"
+        placeholder="What's wrong with it? Sent back to be fixed."></textarea>
+      <div class="review-btns">
+        <button name="action" value="approve" class="rv-go">Approve</button>
+        <button name="action" value="fix" class="rv-fix">Send back</button>
+        <button name="action" value="skip" class="rv-skip" formnovalidate>Skip &rarr;</button>
+      </div>
+    </form>
+    <script>
+      (function () {
+        var f = document.querySelector('.review-card'), t = f.querySelector('textarea');
+        f.addEventListener('submit', function (e) {
+          if (e.submitter && e.submitter.value === 'fix' && !t.value.trim()) {
+            e.preventDefault(); t.focus(); t.placeholder = 'Say what to fix first.';
+          }
+        });
+        t.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault(); f.querySelector('.rv-fix').click();
+          }
+        });
+      })();
+    </script>
+    {% elif draft_token %}
     <a class="card draft-back" href="{{ url_for('make_edit', token=draft_token) }}">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none"
            stroke="currentColor" stroke-width="2.1" stroke-linecap="round"

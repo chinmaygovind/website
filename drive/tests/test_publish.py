@@ -842,8 +842,8 @@ def test_the_admin_tab_and_the_dailies_queue_are_the_admins_alone(env):
         row.doc_json = json.dumps(dict(row.doc, generated=True))
         A.db.session.commit()
     _login(c, _user(A, "chinmay"))
-    page = c.get("/admin").data.decode()
-    assert 'href="/admin"' in page
+    assert 'href="/admin"' in c.get("/admin").data.decode()
+    page = c.get("/admin/tracks").data.decode()
     daily_part = page.split("Dailies to review")[1].split("Player submissions")[0]
     assert slug in daily_part
     c.post("/admin/tracks/%s/approve" % slug)
@@ -851,5 +851,5 @@ def test_the_admin_tab_and_the_dailies_queue_are_the_admins_alone(env):
     row = _row(A, "daily-1")
     assert row.name == "Daily #1" and row.daily_on is not None
     assert row.doc["name"] == "Daily #1" and row.doc["slug"] == "daily-1"
-    assert "Scheduled dailies (1)" in c.get("/admin").data.decode()
+    assert "Scheduled dailies (1)" in c.get("/admin/tracks").data.decode()
     assert c.get("/solo/daily-1").status_code == 200

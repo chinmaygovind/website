@@ -43,7 +43,8 @@
 
   <h2>Dailies to review ({{ dailies|length }})</h2>
   {% if not dailies %}<p class="empty">No generated tracks waiting. Run <code>tools/gen_daily.py</code> on the box.</p>
-  {% elif next_daily %}<p class="empty">The next one you approve becomes the daily for {{ next_daily.strftime('%a %-d %b') }}.</p>{% endif %}
+  {% elif next_daily %}<p class="empty">The next one you approve becomes the daily for {{ next_daily.strftime('%a %-d %b') }}.
+    <a class="btn go" href="/admin/review">Review them in order &rarr;</a></p>{% endif %}
   {% for r in dailies %}
   <div class="row">
     <div class="who">
@@ -113,7 +114,8 @@
     <div class="who">
       <b>{{ r.name }}</b>
       <small>{{ r.status }} &middot;
-        {{ r.author.display if r.author else 'nobody' }} &middot; /{{ r.slug }}</small>
+        {{ r.author.display if r.author else 'nobody' }} &middot; /{{ r.slug }}
+        {% if r.review_note %}&middot; &ldquo;{{ r.review_note }}&rdquo;{% endif %}</small>
     </div>
     <a class="btn drive" href="/admin/tracks/{{ r.slug }}/drive">&#9654; Drive</a>
     {% if r.status == 'hidden' %}

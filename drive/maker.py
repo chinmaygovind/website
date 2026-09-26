@@ -127,8 +127,11 @@ def _render_editor(doc, shape):
     user = get_current_user()
     mine = []
     if user and shape is None:
+        # Not the generated dailies, which carry the admin as their author
+        # and would bury the admin's own tracks under fifty of them.
         mine = (DriveUserTrack.query.filter_by(author_id=user.id)
-                .filter(DriveUserTrack.status != "deleted")
+                .filter(DriveUserTrack.status != "deleted",
+                        DriveUserTrack.doc_json.notlike('%"generated"%'))
                 .order_by(DriveUserTrack.updated_at.desc()).all())
     return render_template(
         "make.html", user=user, name=get_effective_name(), mine=mine,
@@ -329,6 +332,8 @@ def _sweep_drafts():
     # A cap as well as a clock, because the clock only helps once time passes.
     while len(_DRAFTS) > _DRAFT_MAX:
         _DRAFTS.pop(next(iter(_DRAFTS)), None)
+    for k in [k for k in _REVIEWS if k not in _DRAFTS]:
+        _REVIEWS.pop(k, None)
 
 
 @app.route("/api/make/draft", methods=["POST"])
@@ -409,8 +414,11 @@ def make_drive(token):
     # would keep a save state valid across a wall being dragged into the road.
     track["stamp"] = tracks_mod.stamp(track, doc.get("scenery"))
     user = get_current_user()
+    review = None
+    if _REVIEWS.get(token) and _is_admin(user):
+        review = {"slug": _REVIEWS[token], "left": len(_review_queue())}
     return render_template(
-        "play.html", mode="solo", track=track, draft_token=token,
+        "play.html", mode="solo", track=track, draft_token=token, review=review,
         og_image=None, og_title="%s | Drive" % track["name"],
         track_json=script_json(track), track_scenery=None,
         tuning_json=tuning.as_json(), room=None, me_json="null",
@@ -1013,7 +1021,6 @@ def _admin_nav():
     return {"is_admin": _is_admin(get_current_user()) and not _make_forbidden()}
 
 
-@app.route("/admin")
 @app.route("/admin/tracks")
 def admin_tracks():
     """The queue. 404s for anybody who is not Chinmay, logged in or not.
@@ -1059,16 +1066,7 @@ def admin_track_action(slug, action):
         abort(404)
     note = (request.form.get("note") or "").strip()[:500]
     if action == "approve":
-        row.status = "live"
-        row.published_at = row.published_at or datetime.utcnow()
-        # A generated track takes the next free day on the way in. Approving is
-        # the only moment anybody has actually *judged* one, so it is the only
-        # honest place to schedule it - and it means a sitting of fifty is fifty
-        # days of dailies, in the order they were approved, with no second
-        # screen and nothing to remember.
-        if row.doc.get("generated") and row.daily_on is None:
-            row.daily_on = _next_free_daily()
-            _number_daily(row)
+        _approve(row)
     elif action == "hide":
         row.status = "hidden"
     elif action == "unhide":
@@ -1083,6 +1081,77 @@ def admin_track_action(slug, action):
     db.session.commit()
     _forget_track(slug)
     return redirect(url_for("admin_tracks"))
+
+
+def _approve(row):
+    row.status = "live"
+    row.published_at = row.published_at or datetime.utcnow()
+    # A generated track takes the next free day on the way in. Approving is
+    # the only moment anybody has actually *judged* one, so it is the only
+    # honest place to schedule it - and it means a sitting of fifty is fifty
+    # days of dailies, in the order they were approved, with no second screen
+    # and nothing to remember.
+    if row.doc.get("generated") and row.daily_on is None:
+        row.daily_on = _next_free_daily()
+        _number_daily(row)
+
+
+# ---- reviewing the dailies ------------------------------------------------
+#
+# One lap per track and no clicking about: `/admin/review` opens the next
+# queued generated track on the play page with a review card on it - Approve,
+# Send back with a note, or Skip - and every one of those lands on the next
+# track. A note sends the track to `needs_fix`, which is out of the queue until
+# `tools/daily_fixes.py` puts a reworked document back (see
+# docs/track-maker.md, "The dailies").
+
+# Draft token -> the slug under review. In-process like `_DRAFTS`, whose
+# tokens these are, so both expire together.
+_REVIEWS = {}
+
+
+def _review_queue():
+    """Queued generated tracks, oldest first."""
+    return [r for r in (DriveUserTrack.query.filter_by(status="queued")
+                        .order_by(DriveUserTrack.id).all())
+            if r.doc.get("generated")]
+
+
+@app.route("/admin/review")
+def admin_review():
+    """Open the next daily to review: the first queued one after `?after=`,
+    wrapping round, or the dashboard when there are none."""
+    if not _is_admin(get_current_user()) or _make_forbidden():
+        abort(404)
+    q = _review_queue()
+    if not q:
+        return redirect(url_for("admin_home"))
+    after = request.args.get("after", type=int) or 0
+    nxt = next((r for r in q if r.id > after), q[0])
+    return redirect(url_for("admin_track_drive", slug=nxt.slug, review=1))
+
+
+@app.route("/admin/review/<slug>", methods=["POST"])
+def admin_review_act(slug):
+    """approve, fix (needs a note) or skip - then straight on to the next."""
+    if not _is_admin(get_current_user()) or _make_forbidden():
+        abort(404)
+    row = _user_track_row(slug)
+    if row is None or row.status != "queued":
+        return redirect(url_for("admin_review"))
+    action = request.form.get("action")
+    note = (request.form.get("note") or "").strip()[:1000]
+    if action == "approve":
+        _approve(row)
+    elif action == "fix" and note:
+        row.status = "needs_fix"
+        row.review_note = note
+        row.queued_at = None
+    elif action != "skip":
+        abort(400)
+    db.session.commit()
+    _forget_track(slug)
+    return redirect(url_for("admin_review", after=row.id))
 
 
 def _number_daily(row):
@@ -1159,7 +1228,10 @@ def admin_track_drive(slug):
     doc = dict(row.doc)
     doc.pop("slug", None)
     doc["name"] = row.name
-    return redirect(url_for("make_drive", token=_stash_draft(doc)))
+    token = _stash_draft(doc)
+    if request.args.get("review") and row.status == "queued":
+        _REVIEWS[token] = row.slug
+    return redirect(url_for("make_drive", token=token))
 
 @app.route("/api/make/look", methods=["POST"])
 def api_make_look():

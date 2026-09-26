@@ -3304,3 +3304,15 @@ body.garage-page .nav { flex: none; }
   #lb-day:focus-visible ~ .lb-bar label[for="lb-day"] {
     outline: 2px solid var(--blue); outline-offset: 2px; }
 }
+
+.review-card { display: flex; flex-direction: column; gap: 7px; width: 290px;
+               pointer-events: auto; }
+.review-card textarea { font: inherit; font-size: .85rem; resize: vertical;
+                        border-radius: 6px; border: 1px solid rgba(255,255,255,.25);
+                        background: rgba(0,0,0,.35); color: #fff; padding: 7px 8px; }
+.review-btns { display: flex; gap: 6px; }
+.review-btns button { flex: 1; font: inherit; font-size: .8rem; font-weight: 700;
+                      padding: 7px 0; border-radius: 6px; border: 0; cursor: pointer; }
+.review-btns .rv-go { background: #1f7a4d; color: #fff; }
+.review-btns .rv-fix { background: var(--red); color: #fff; }
+.review-btns .rv-skip { background: rgba(255,255,255,.18); color: #fff; }

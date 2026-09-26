@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% block title %}Admin | Drive{% endblock %}
+{% set active_page = 'admin' %}
+{% macro num(n) %}{{ '{:,}'.format(n) if n is not none else '—' }}{% endmacro %}
+
+{% block head %}
+<style>
+  .dash { max-width: 1480px; margin: 0 auto; padding: 18px 20px 28px; }
+  .dash-head { display: flex; align-items: baseline; gap: 14px; margin: 0 0 14px; }
+  .dash-head h1 { font-family: var(--display); font-size: 30px; margin: 0; }
+  .dash-head span { color: var(--ink-soft); font-size: 13px; }
+  .dash-head a { margin-left: auto; font-size: 13px; }
+  .tiles { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+  .tile { background: #fff; border: 2px solid var(--line); border-radius: 10px; padding: 10px 14px;
+          box-shadow: 3px 3px 0 rgba(29,29,31,.08); }
+  .tile b { display: block; font-family: var(--display); font-size: 28px; line-height: 1.1; }
+  .tile span { font-size: 12px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .06em; }
+  .tile small { display: block; font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(4, minmax(0, 1fr));
+          grid-template-rows: 230px minmax(320px, calc(100vh - 560px)); }
+  .dcard { color: var(--ink); background: #fff; border: 2px solid var(--line); border-radius: 10px; padding: 12px 14px;
+          box-shadow: 3px 3px 0 rgba(29,29,31,.08); min-width: 0; display: flex; flex-direction: column;
+          overflow: hidden; }
+  .dcard h2 { font-family: var(--mono); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase;
+             color: var(--ink-soft); margin: 0 0 8px; display: flex; gap: 8px; align-items: baseline; }
+  .dcard h2 a { margin-left: auto; letter-spacing: 0; text-transform: none; font-family: var(--sans); font-size: 12px; }
+  .span2 { grid-column: span 2; }
+  .scroll { overflow: auto; flex: 1; min-height: 0; }
+  .chart svg { width: 100%; flex: 1; min-height: 0; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink-soft); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .sw-p { background: #3d8bfd; } .sw-l { background: var(--red); }
+  .online ul, .rules { list-style: none; margin: 0; padding: 0; }
+  .online li { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid #eee; font-size: 14px; }
+  .online li small { color: var(--ink-soft); margin-left: auto; font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #1f9d55; display: inline-block; flex: none; }
+  .big { font-family: var(--display); font-size: 22px; }
+  .muted { color: var(--ink-soft); font-size: 13px; }
+  .dbtn { display: inline-block; font-family: var(--sans); font-weight: 700; font-size: 14px; text-decoration: none;
+         padding: 9px 14px; border-radius: 8px; background: var(--red); color: #fff; text-align: center; }
+  .dbtn.ghost { background: none; color: var(--ink); border: 1.5px solid var(--line); }
+  .kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; font-size: 14px; margin: 6px 0 10px; }
+  .kv b { font-family: var(--mono); font-weight: 600; text-align: right; }
+  .funnel .step { margin: 0 0 7px; font-size: 13px; }
+  .funnel .bar, .trk .bar { height: 8px; border-radius: 4px; background: #eef1f5; margin-top: 3px; overflow: hidden; }
+  .funnel .bar i, .trk .bar i { display: block; height: 100%; background: #3d8bfd; border-radius: 4px; }
+  .funnel .step b, .trk b { float: right; font-family: var(--mono); font-weight: 600; }
+  .trk { font-size: 13px; margin: 0 0 6px; }
+  .trk .bar i { background: #1f7a4d; }
+  .sub { font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+         color: var(--ink-soft); margin: 10px 0 6px; }
+  table.sess { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.sess th { position: sticky; top: 0; background: #fff; text-align: left; font-weight: 600;
+                  color: var(--ink-soft); padding: 4px 6px; border-bottom: 1px solid #ddd; }
+  table.sess td { padding: 4px 6px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
+  table.sess td.n { text-align: right; font-family: var(--mono); }
+  table.sess th.n { text-align: right; }
+  table.sess tr.played td { background: #f6fbf7; }
+  .spark { display: flex; align-items: flex-end; gap: 3px; height: 52px; margin: 4px 0 8px; }
+  .spark i { flex: 1; background: #bb6bd9; border-radius: 2px 2px 0 0; min-height: 2px; }
+  .rules li { display: flex; font-size: 13px; padding: 3px 0; border-bottom: 1px solid #f0f0f0; }
+  .rules li b { margin-left: auto; font-family: var(--mono); }
+  @media (max-width: 1100px) {
+    .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid { grid-template-columns: 1fr 1fr; grid-template-rows: none; }
+    .grid .dcard { max-height: 420px; }
+  }
+  @media (max-width: 640px) {
+    .tiles { grid-template-columns: 1fr 1fr; }
+    .grid { grid-template-columns: 1fr; }
+    .span2 { grid-column: auto; }
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+{% include "_nav.html" %}
+<div class="dash">
+  <div class="dash-head">
+    <h1>Drive</h1>
+    <span>last 30 days, scanner traffic excluded</span>
+    <a href="{{ site_url }}/admin">Site-wide console &rarr;</a>
+  </div>
+
+  {% set P = players %}
+  <div class="tiles">
+    <div class="tile"><span>Players today</span><b>{{ num(P.day if P) }}</b><small>last 24 hours</small></div>
+    <div class="tile"><span>This week</span><b>{{ num(P.week if P) }}</b><small>{{ num(P.signed_in if P) }} signed in</small></div>
+    <div class="tile"><span>30 days</span><b>{{ num(P.month if P) }}</b><small>unique browsers</small></div>
+    <div class="tile"><span>Returning</span><b>{{ P.returning_pct if P else '—' }}%</b><small>of this week's players</small></div>
+    <div class="tile"><span>New accounts</span><b>{{ num(P.new_accounts if P) }}</b><small>this week</small></div>
+    <div class="tile"><span>Laps this week</span><b>{{ num(P.laps if P) }}</b><small>{{ '%.0f'|format(P.hours) if P else '—' }} hours driven, all time</small></div>
+  </div>
+
+  <div class="grid">
+    <section class="dcard chart span2">
+      <h2>Players and laps, per day
+        <span class="legend"><span><i class="sw-p"></i>players</span><span><i class="sw-l"></i>laps</span></span></h2>
+      {% if series %}
+      {% set w = 600 / series|length %}
+      <svg viewBox="0 0 600 190" preserveAspectRatio="none" role="img" aria-label="Players and laps per day, 30 days">
+        {% for s in series %}
+        <rect x="{{ loop.index0 * w + 1.5 }}" width="{{ w - 3 }}"
+              y="{{ 170 - 160 * s.players / series_peak }}" height="{{ 160 * s.players / series_peak }}"
+              fill="#3d8bfd" rx="2"><title>{{ s.day }}: {{ s.players }} players, {{ s.laps }} laps</title></rect>
+        {% endfor %}
+        <polyline fill="none" stroke="#c0182b" stroke-width="2" vector-effect="non-scaling-stroke"
+          points="{% for s in series %}{{ loop.index0 * w + w / 2 }},{{ 170 - 160 * s.laps / laps_peak }} {% endfor %}"/>
+        <text x="2" y="186" font-size="10" fill="#6b6b73">{{ series[0].day[5:] }}</text>
+        <text x="598" y="186" font-size="10" fill="#6b6b73" text-anchor="end">today</text>
+      </svg>
+      <div class="muted">peak {{ series_peak }} players, {{ laps_peak }} laps in a day</div>
+      {% endif %}
+    </section>
+
+    <section class="dcard online">
+      <h2>Online now</h2>
+      {% if online %}
+      <div class="kv">
+        <span>Racing in rooms</span><b>{{ online.racers }} in {{ online.races }}</b>
+        <span>Guests</span><b>{{ online.guests }}</b>
+      </div>
+      <ul class="scroll">
+        {% for name, detail in online.people %}
+        <li><span class="dot"></span><a href="/account/{{ name }}">{{ name }}</a><small>{{ detail or '' }}</small></li>
+        {% else %}
+        <li class="muted">Nobody signed in right now.</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+
+    <section class="dcard">
+      <h2>Dailies <a href="/admin/tracks">full queue</a></h2>
+      {% set D = dailies %}
+      {% if D %}
+      <div class="kv">
+        <span>Today</span><b>{% if D.today %}<a href="/solo/{{ D.today.slug }}">{{ D.today.name }}</a>{% else %}none{% endif %}</b>
+        <span>Drivers today</span><b>{{ D.today_drivers }}</b>
+        <span>Scheduled ahead</span><b>{{ D.ahead }} days</b>
+        <span>Waiting for review</span><b>{{ D.queue }}</b>
+        <span>Sent back, being fixed</span><b>{{ D.needs_fix }}</b>
+      </div>
+      {% if D.queue %}
+      <a class="dbtn" href="/admin/review">Start reviewing &rarr;</a>
+      <p class="muted">Next approval becomes the daily for {{ D.next_day.strftime('%a %-d %b') if D.next_day else '—' }}.</p>
+      {% else %}
+      <p class="muted">Queue is empty. Ask Claude to run <code>gen_daily.py</code>.</p>
+      {% endif %}
+      {% endif %}
+    </section>
+
+    <section class="dcard span2">
+      <h2>Recent sessions <a href="{{ site_url }}/admin/sessions">all sessions</a></h2>
+      <div class="scroll">
+        <table class="sess">
+          <tr><th>Started (UTC)</th><th>Who</th><th class="n">Mins</th><th class="n">Pages</th>
+              <th class="n">Starts</th><th class="n">Laps</th><th>From</th></tr>
+          {% for s in sessions %}
+          <tr {% if s.laps %}class="played"{% endif %}>
+            <td><a href="{{ s.href }}">{{ s.at[5:] }}</a></td>
+            <td>{% if s.who %}<a href="/account/{{ s.who }}">{{ s.who }}</a>{% else %}<span class="muted">guest</span>{% endif %}</td>
+            <td class="n">{{ s.mins }}</td><td class="n">{{ s.reqs }}</td>
+            <td class="n">{{ s.starts }}</td><td class="n">{{ s.laps }}</td>
+            <td class="muted">{{ s.from }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="muted">No sessions this week.</td></tr>
+          {% endfor %}
+        </table>
+      </div>
+    </section>
+
+    <section class="dcard">
+      <h2>This week's funnel</h2>
+      <div class="scroll">
+      {% if funnel %}
+      <div class="funnel">
+        {% for s in funnel.steps %}
+        <div class="step">{{ s.label }} <b>{{ num(s.n) }}</b>
+          <div class="bar"><i style="width: {{ s.pct }}%"></i></div></div>
+        {% endfor %}
+        <div class="muted">{{ funnel.laps_per }} laps per player who finished one</div>
+      </div>
+      {% endif %}
+      {% if tracks %}
+      <div class="sub">Most driven, all time</div>
+      {% for t in tracks.top %}
+      <div class="trk"><a href="/track/{{ t.slug }}">{{ t.name }}</a> <b>{{ num(t.starts) }}</b>
+        <div class="bar"><i style="width: {{ t.pct }}%"></i></div></div>
+      {% endfor %}
+      <div class="sub">Least driven</div>
+      {% for t in tracks.bottom %}
+      <div class="trk"><a href="/track/{{ t.slug }}">{{ t.name }}</a> <b>{{ num(t.starts) }}</b></div>
+      {% endfor %}
+      {% endif %}
+      </div>
+    </section>
+
+    <section class="dcard">
+      <h2>Multiplayer and anti-cheat</h2>
+      <div class="scroll">
+      {% if mp %}
+      <div class="kv">
+        <span>Races, 30 days</span><b>{{ mp.total }}</b>
+        <span>Cars per race</span><b>{{ mp.field }}</b>
+        <span>Humans per race</span><b>{{ mp.humans if mp.humans is not none else '—' }}</b>
+      </div>
+      <div class="sub">Races per day, 14 days</div>
+      <div class="spark">{% for n in mp.series %}<i style="height: {{ (100 * n / mp.peak)|round }}%" title="{{ n }}"></i>{% endfor %}</div>
+      {% endif %}
+      {% if integrity %}
+      <div class="sub">Fast laps re-driven, 30 days</div>
+      <div class="kv">
+        {% for k in ('pass', 'fail', 'pending', 'error') %}
+        <span>{{ k }}</span><b>{{ integrity.checks.get(k, 0) }}</b>
+        {% endfor %}
+      </div>
+      <div class="sub">Room flags by rule</div>
+      <ul class="rules">
+        {% for k, n in integrity.rules %}<li>{{ k }}<b>{{ n }}</b></li>
+        {% else %}<li class="muted">None.</li>{% endfor %}
+      </ul>
+      {% endif %}
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

@@ -4435,6 +4435,7 @@ def _store_replay(r, game, standings, why):
     leaders = garage_mod.time_trial_leaders()
     livery_by_pid = {pl.pid: _livery_for(pl.linked_user, holders, pl.name, leaders)
                      for pl in game.players}
+    bots = {pl.pid for pl in game.players if pl.is_bot}
     cars = []
     for pid, frames in rec["cars"].items():
         if len(frames) < 2:
@@ -4444,6 +4445,7 @@ def _store_replay(r, game, standings, why):
                      "color": c.get("color") or "#8899aa",
                      "livery": livery_by_pid.get(pid),
                      "ms": c.get("ms"), "dnf": bool(c.get("dnf")),
+                     "bot": pid in bots,
                      "ghost": runcheck.pack_ghost(frames)})
     if not cars:
         return None
@@ -6459,6 +6461,7 @@ def on_kick(data=None):
 # of a 5,700-line file. Keep it that way - if something here needs a name from
 # `maker.py`, that name probably belongs on this side of the line.
 import maker            # noqa: E402,F401
+import dashboard        # noqa: E402,F401  (the same arrangement, for /admin)
 
 
 # ---------------------------------------------------------------------------
