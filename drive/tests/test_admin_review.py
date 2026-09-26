@@ -168,3 +168,14 @@ def test_the_fix_tool_puts_a_reworked_track_back_in_the_queue(env, capsys, tmp_p
     row = _row(A, a)
     assert row.status == "queued" and row.review_note == "regenerated: boring"
     assert row.doc["generated"]["seed"] != 1
+
+
+def test_a_generated_track_is_stored_with_no_name_of_its_own(env):
+    A = env
+    _user(A, "chinmay")
+    import gen_daily
+    kept = gen_daily.propose(1, 395874002, verbose=False)
+    slug, = gen_daily.store(kept)
+    row = _row(A, slug)
+    assert slug == "daily-draft-395874002"
+    assert row.name == row.doc["name"] == "Daily (in review)"

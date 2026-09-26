@@ -46,6 +46,11 @@ from tracks import checks, generate, moves as moves_mod        # noqa: E402
 # which cannot be published.
 DAILY_USER = "chinmay"
 
+# What a generated track is called until it is approved and becomes `Daily #N`
+# (`maker._number_daily`). The generator's own names were not wanted anywhere,
+# so this is all a queued one is ever shown as; the seed makes its slug unique.
+QUEUE_NAME = "Daily (in review)"
+
 
 def pool_looks():
     """The palettes worth borrowing: grounded, and not tied to their own layout.
@@ -144,9 +149,8 @@ def propose(n, first_seed=0, verbose=True):
         if not why:
             kept.append((seed, doc, track))
             if verbose:
-                print("  keep  seed %-6d %5.1fs  %-26s (look: %s)"
-                      % (seed, track["ideal"], doc["name"],
-                         doc["generated"]["look"]))
+                print("  keep  seed %-6d %5.1fs  (look: %s)"
+                      % (seed, track["ideal"], doc["generated"]["look"]))
         elif verbose and tried <= 8:
             print("  drop  seed %-6d %s" % (seed, "; ".join(why)))
         seed += 1
@@ -176,11 +180,11 @@ def store(kept):
                              % DAILY_USER)
         made = []
         for seed, doc, track in kept:
-            slug = maker._free_slug(doc["name"])
+            slug = maker._free_slug("daily draft %d" % seed)
             if slug is None:
-                print("  ! no free slug for %r, skipped" % doc["name"])
+                print("  ! no free slug for seed %d, skipped" % seed)
                 continue
-            doc = dict(doc, slug=slug)
+            doc = dict(doc, slug=slug, name=QUEUE_NAME)
             row = DriveUserTrack(
                 slug=slug, author_id=author.id, status="queued",
                 name=doc["name"], difficulty=doc["difficulty"],

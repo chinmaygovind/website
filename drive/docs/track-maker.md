@@ -357,8 +357,10 @@ second copy. Run it on the box, with the `.env` sourced, so the rows land in
 the live database. Approving a generated row in `/admin/tracks` claims the next
 free `daily_on` (`maker._next_free_daily`) and renames it `Daily #N` at
 `daily-N` (`maker._number_daily`, one past the highest `daily-N` slug ever, so a
-deleted daily's number is never reused). The generator's own names are only
-labels for the queue. `/daily` serves today's. **Reviewing is a loop on the play page**: `/admin/review` opens the next
+deleted daily's number is never reused). A queued one has no name of its own: it is
+stored as "Daily (in review)" at `daily-draft-<seed>` (`gen_daily.QUEUE_NAME`).
+An approved daily does not resolve before its day (`_resolve_user_track`), so
+`/solo/daily-N` cannot be driven early. `/daily` serves today's. **Reviewing is a loop on the play page**: `/admin/review` opens the next
 queued generated track (oldest first, `?after=<id>` to move on, wrapping) with
 a review card in the HUD - Approve, Send back (needs a note) or Skip - and every
 press lands on the next track. Send back sets `status = "needs_fix"` with the

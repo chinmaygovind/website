@@ -27,7 +27,8 @@ from tracks import moves as moves_mod, plan as plan_mod       # noqa: E402
 
 
 def _requeue(row, doc, track, what):
-    row.doc_json = json.dumps(dict(doc, slug=row.slug), separators=(",", ":"))
+    doc = dict(doc, slug=row.slug, name=gen_daily.QUEUE_NAME)
+    row.doc_json = json.dumps(doc, separators=(",", ":"))
     row.name = doc["name"]
     row.difficulty = doc["difficulty"]
     row.geom_hash = moves_mod.fingerprint(track, None)

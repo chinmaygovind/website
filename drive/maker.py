@@ -505,6 +505,11 @@ def _resolve_user_track(slug):
         row = _user_track_row(slug)
         if row is None or row.status != "live":
             return None
+        # An approved daily is live from the moment it is approved but is not
+        # out until its day: without this, `/solo/daily-7` could be driven a
+        # week early by anybody who counted.
+        if row.daily_on and row.daily_on > daily_date():
+            return None
         return _track_from_row(row)
     except Exception:
         # The whole lookup, not just the query: reading `row.author` needs a
