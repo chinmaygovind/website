@@ -18,7 +18,7 @@ simply lowers the accept rate, and nothing gets into the queue that the editor
 would have refused from a person.
 
 What comes out is an ordinary **queued** `drive_user_tracks` row - the same thing
-a player submitting from `/make` produces - owned by the `daily` account. So
+a player submitting from `/make` produces - owned by Chinmay's account. So
 `/admin/tracks` already reviews them, the Drive button already drives them, and
 approving one is the same click. Nothing here is a second publishing path.
 
@@ -40,11 +40,11 @@ sys.path.insert(0, ROOT)
 import tracks as tracks_mod                                    # noqa: E402
 from tracks import checks, generate, moves as moves_mod        # noqa: E402
 
-# The account every generated track belongs to. A real row in `users` rather
-# than a null author, because `author_id` is what `_may_edit` and the gallery
-# card read, and a track with no author reads as one of the editor's starter
-# shapes - which cannot be published.
-DAILY_USER = "daily"
+# The account every generated track belongs to: Chinmay's own, so a daily's
+# card says "by Chinmay". A real row in `users` rather than a null author,
+# because a track with no author reads as one of the editor's starter shapes -
+# which cannot be published.
+DAILY_USER = "chinmay"
 
 
 def pool_looks():
@@ -169,11 +169,11 @@ def store(kept):
     from tracks import plan as plan_mod
 
     with app.app.app_context():
-        author = User.query.filter_by(username=DAILY_USER).first()
+        author = User.query.filter(
+            db.func.lower(User.username) == DAILY_USER).first()
         if author is None:
-            raise SystemExit(
-                "there is no `%s` account - make one first, because a track "
-                "with no author cannot be published" % DAILY_USER)
+            raise SystemExit("there is no `%s` account to author the dailies"
+                             % DAILY_USER)
         made = []
         for seed, doc, track in kept:
             slug = maker._free_slug(doc["name"])

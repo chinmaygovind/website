@@ -826,3 +826,26 @@ def test_the_two_admin_gates_parse_the_variable_the_same_way():
         "drive's gate is now the stricter of the two")
     assert ".lower() in admin_names()" in src, (
         "accounts/admin.py no longer lowercases the username")
+
+
+def test_the_admin_tab_and_the_dailies_queue_are_the_admins_alone(env):
+    """The nav's Admin tab shows for the admin and nobody else, /admin is the
+    queue, and a generated track waits under Dailies and is scheduled on approval."""
+    A = env
+    c = A.app.test_client()
+    _login(c, _user(A, "ada"))
+    assert b'href="/admin"' not in c.get("/garage").data
+    assert c.get("/admin").status_code == 404
+    slug = _publish(A, c)
+    with A.app.app_context():
+        row = A.DriveUserTrack.query.filter_by(slug=slug).first()
+        row.doc_json = json.dumps(dict(row.doc, generated=True))
+        A.db.session.commit()
+    _login(c, _user(A, "chinmay"))
+    page = c.get("/admin").data.decode()
+    assert 'href="/admin"' in page
+    daily_part = page.split("Dailies to review")[1].split("Player submissions")[0]
+    assert slug in daily_part
+    c.post("/admin/tracks/%s/approve" % slug)
+    assert _row(A, slug).daily_on is not None
+    assert "Scheduled dailies (1)" in c.get("/admin").data.decode()

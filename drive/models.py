@@ -806,6 +806,26 @@ class DriveUserTrack(db.Model):
         return self.status == "live"
 
 
+class DriveDailyTime(db.Model):
+    """Each driver's best lap on a daily, set *on its day* (Eastern).
+
+    `drive_times` cannot answer this: it keeps one row per driver per track and
+    a later, better lap overwrites it - and a daily stays drivable after its
+    day. So the day's result is written here as the lap lands, and once the day
+    is over nothing can write to it again, which is what freezes the points
+    without a timer. Written from `_note_daily` in app.py.
+    """
+    __tablename__ = "drive_daily_times"
+
+    day     = db.Column(db.Date, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), primary_key=True)
+    track   = db.Column(db.String(32), nullable=False)
+    time_ms = db.Column(db.Integer, nullable=False)
+    set_at  = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship("User", lazy="joined")
+
+
 # ---------------------------------------------------------------------------
 # The one migration
 # ---------------------------------------------------------------------------

@@ -3219,3 +3219,88 @@ body.garage-page .nav { flex: none; }
   font-size: .92rem; padding: .45rem .9rem;
 }
 .ins-open svg { width: 18px; height: 18px; }
+
+.lb-wrap { max-width: 1480px; }
+.lb > input[type="radio"], .lb-sub > input[type="radio"] {
+  position: absolute; opacity: 0; pointer-events: none; }
+.lb-bar { display: none; }
+.lb {
+  display: grid; gap: 1.1rem 1.4rem; align-items: stretch;
+  grid-template-columns: minmax(0, .8fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas: "rec tt mp" "rec pts day";
+}
+.lb-rec { grid-area: rec; }
+.lb-tt  { grid-area: tt; }
+.lb-mp  { grid-area: mp; }
+.lb-pts { grid-area: pts; }
+.lb-day { grid-area: day; }
+.lb section { display: flex; flex-direction: column; min-width: 0; }
+.lb section h2 { margin-top: 0; }
+.lb-panel { flex: 1; display: flex; flex-direction: column; min-height: 0;
+            padding: .7rem .8rem; }
+.lb-scroll { max-height: 26.6rem; overflow: auto; }
+.lb time { white-space: nowrap; }
+.lb-scroll table.board th { position: sticky; top: 0; background: #fff; z-index: 1; }
+.lb-rec .lb-panel { position: relative; }
+.lb-rec .lb-sub { position: absolute; inset: .7rem .8rem;
+                  display: flex; flex-direction: column; }
+.lb-rec .lb-scroll { max-height: none; flex: 1; min-height: 0; }
+.lb-rec table.board td small { display: block; }
+
+.lb-subbar { display: flex; gap: 4px; align-items: center; margin: 0 0 .5rem; }
+.lb-subbar label { cursor: pointer; font-weight: 600; font-size: .88rem;
+                   padding: 4px 11px; border-radius: 8px; color: var(--ink-soft); }
+.lb-subbar label:hover { background: rgba(127,127,127,.10); }
+.lb-subnote { margin-left: auto; font-size: .85rem; color: var(--ink-soft); }
+.lb-sub > .lb-scroll { display: none; }
+#rt-sprint:checked ~ .lb-subbar label[for="rt-sprint"],
+#rt-circuit:checked ~ .lb-subbar label[for="rt-circuit"],
+#rt-daily:checked ~ .lb-subbar label[for="rt-daily"],
+#pt-all:checked ~ .lb-subbar label[for="pt-all"],
+#pt-week:checked ~ .lb-subbar label[for="pt-week"] {
+  background: var(--ink); color: var(--paper); }
+#rt-sprint:checked ~ #rt-sprint-p,
+#rt-circuit:checked ~ #rt-circuit-p,
+#rt-daily:checked ~ #rt-daily-p,
+#pt-all:checked ~ #pt-all-p,
+#pt-week:checked ~ #pt-week-p { display: block; }
+.lb-sub > input:focus-visible ~ .lb-subbar label { outline: none; }
+#rt-sprint:focus-visible ~ .lb-subbar label[for="rt-sprint"],
+#rt-circuit:focus-visible ~ .lb-subbar label[for="rt-circuit"],
+#rt-daily:focus-visible ~ .lb-subbar label[for="rt-daily"],
+#pt-all:focus-visible ~ .lb-subbar label[for="pt-all"],
+#pt-week:focus-visible ~ .lb-subbar label[for="pt-week"] {
+  outline: 2px solid var(--blue); outline-offset: 2px; }
+
+.dday[hidden] { display: none; }
+.dday-head { display: flex; align-items: center; gap: .6rem; margin: 0 0 .5rem; }
+.dday-title { flex: 1; min-width: 0; text-align: center; }
+.dday-title b { font-family: var(--display); font-size: 1.1rem; }
+.dday-title small { display: block; color: var(--ink-soft); font-family: var(--mono); font-size: .8rem; }
+.dday-nav { font-size: 1.5rem; line-height: 1; width: 2.2rem; height: 2.2rem;
+            border: 2px solid var(--line); border-radius: 8px; background: #fff;
+            cursor: pointer; color: var(--ink); }
+.dday-nav:disabled { opacity: .25; cursor: default; }
+
+@media (max-width: 900px) {
+  .lb { display: block; }
+  .lb-bar { display: flex; }
+  .lb section { display: none; }
+  .lb-rec .lb-sub { position: static; }
+  .lb-rec .lb-scroll { max-height: 70vh; }
+  #lb-rec:checked ~ .lb-bar label[for="lb-rec"],
+  #lb-tt:checked ~ .lb-bar label[for="lb-tt"],
+  #lb-mp:checked ~ .lb-bar label[for="lb-mp"],
+  #lb-pts:checked ~ .lb-bar label[for="lb-pts"],
+  #lb-day:checked ~ .lb-bar label[for="lb-day"] {
+    background: var(--ink); color: var(--paper); }
+  #lb-rec:checked ~ .lb-rec, #lb-tt:checked ~ .lb-tt, #lb-mp:checked ~ .lb-mp,
+  #lb-pts:checked ~ .lb-pts, #lb-day:checked ~ .lb-day { display: flex; }
+  .lb > input:focus-visible ~ .lb-bar label { outline: none; }
+  #lb-rec:focus-visible ~ .lb-bar label[for="lb-rec"],
+  #lb-tt:focus-visible ~ .lb-bar label[for="lb-tt"],
+  #lb-mp:focus-visible ~ .lb-bar label[for="lb-mp"],
+  #lb-pts:focus-visible ~ .lb-bar label[for="lb-pts"],
+  #lb-day:focus-visible ~ .lb-bar label[for="lb-day"] {
+    outline: 2px solid var(--blue); outline-offset: 2px; }
+}

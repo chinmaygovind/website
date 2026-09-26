@@ -50,13 +50,14 @@ from tracks import solver as solver_mod
 from tracks import starters
 import tuning
 
-# The nine names this module needs from `app.py`. `app` itself is the Flask
+# The ten names this module needs from `app.py`. `app` itself is the Flask
 # object every route below decorates; the rest are shared helpers, except
 # `DATABASE_URL`, which is read at import time to decide whether to register the
 # user-track resolver at all. See the docstring on why this import is safe
 # despite `app.py` importing this file.
 from app import (app, DATABASE_URL, get_current_user, get_effective_name,
-                 portal_mode, script_json, _car_livery, _my_pb_map, _prefs_for)
+                 portal_mode, script_json, _car_livery, _my_pb_map, _prefs_for,
+                 daily_date)
 
 
 # What a document may contain. Bounds rather than taste: a track over these is
@@ -1006,6 +1007,13 @@ def _user_cards(rows):
 # POST from wherever you happen to be.
 
 
+@app.context_processor
+def _admin_nav():
+    """`is_admin` for the nav's Admin tab, on the same rule as the routes."""
+    return {"is_admin": _is_admin(get_current_user()) and not _make_forbidden()}
+
+
+@app.route("/admin")
 @app.route("/admin/tracks")
 def admin_tracks():
     """The queue. 404s for anybody who is not Chinmay, logged in or not.
@@ -1019,9 +1027,15 @@ def admin_tracks():
     q = (DriveUserTrack.query
          .order_by(DriveUserTrack.queued_at.desc().nullslast(),
                    DriveUserTrack.updated_at.desc()).all())
+    queued = [r for r in q if r.status == "queued"]
     return render_template("admin_tracks.html", user=user,
-                           name=get_effective_name(),
-                           queued=[r for r in q if r.status == "queued"],
+                           name=get_effective_name(), active_page="admin",
+                           dailies=[r for r in queued if r.doc.get("generated")],
+                           queued=[r for r in queued
+                                   if not r.doc.get("generated")],
+                           next_daily=_next_free_daily(),
+                           scheduled=sorted((r for r in q if r.daily_on),
+                                            key=lambda r: r.daily_on),
                            live=[r for r in q if r.status == "live"],
                            other=[r for r in q if r.status
                                   not in ("queued", "live")])
@@ -1085,7 +1099,7 @@ def _next_free_daily():
     """
     taken = {d for (d,) in db.session.query(DriveUserTrack.daily_on)
              .filter(DriveUserTrack.daily_on.isnot(None)).all()}
-    day = date.today()
+    day = daily_date()
     for _ in range(3650):
         if day not in taken:
             return day

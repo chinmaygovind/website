@@ -2,108 +2,255 @@
 {% import "_player.html" as p with context %}
 {% block title %}Records | Drive{% endblock %}
 {% set active_page = 'leaderboard' %}
+{% macro board_time(ms) %}{{ '%d:%06.3f'|format((ms // 60000), (ms % 60000) / 1000) }}{% endmacro %}
+{% macro record_rows(list) %}
+  <table class="board">
+    {# The gold time used to sit here. It is a property of the track rather than
+       of the record; when the record went in is what this table can say that
+       nothing else does. #}
+    <tr><th>Track</th><th>Holder</th><th class="num">Time</th><th class="num">Date</th></tr>
+    {% for t in list %}
+    {% set rec = records.get(t.slug) %}
+    <tr>
+      <td><a href="/track/{{ t.slug }}">{{ t.name }}</a></td>
+      <td>{{ p.player(rec[1]) if rec else '—' }}</td>
+      <td class="num">{{ board_time(rec[0]) if rec else '—' }}</td>
+      {# Stored UTC and served as UTC so it is right with no JS; the script at
+         the foot rewrites it into the reader's timezone. #}
+      <td class="num">{% if rec and rec[2] %}<time datetime="{{ rec[2].isoformat() }}Z"
+        >{{ rec[2].strftime('%-d %b %Y, %H:%M:%S') }} UTC</time>{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+{% endmacro %}
+{% macro points_rows(list) %}
+  {% if list %}
+  <table class="board">
+    <tr><th>#</th><th>Driver</th><th class="num">Points</th><th class="num">Wins</th><th class="num">Days</th></tr>
+    {% for r in list %}
+    <tr {% if user and r.user.id == user.id %}class="me"{% endif %}>
+      <td>{{ r.pos }}</td>
+      <td>{{ p.player(r.user) }}</td>
+      <td class="num">{{ r.points }}</td>
+      <td class="num">{{ r.wins }}</td>
+      <td class="num">{{ r.played }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">No finished dailies yet. Points go on the board at midnight Eastern.</p>
+  {% endif %}
+{% endmacro %}
+
 {% block body %}
 {% include "_nav.html" %}
-<div class="wrap">
+<div class="wrap lb-wrap">
   <h1>Records</h1>
+  {# Five boards laid out | : : on a desktop - track records down the left, the
+     four ranked boards in a two-by-two grid - and one at a time behind a tab
+     bar on a phone. The tabs are a radio group as on the home page, so the
+     inputs must precede everything they select. #}
+  <div class="lb">
+    <input type="radio" name="lbtab" id="lb-rec" checked>
+    <input type="radio" name="lbtab" id="lb-tt">
+    <input type="radio" name="lbtab" id="lb-mp">
+    <input type="radio" name="lbtab" id="lb-pts">
+    <input type="radio" name="lbtab" id="lb-day">
+    <div class="htabs-bar lb-bar" role="tablist">
+      <label for="lb-rec">Records</label>
+      <label for="lb-tt">Time Trials</label>
+      <label for="lb-mp">Multiplayer</label>
+      <label for="lb-pts">Daily Points</label>
+      <label for="lb-day">Today</label>
+    </div>
 
-  <h2>Track Records</h2>
-  <div class="panel">
-    <table class="board">
-      {# The gold time used to sit here. It is a property of the track rather
-         than of the record, it is already on the track page and in the game,
-         and next to somebody's name it read as though they had won a gold
-         rather than set the fastest lap on the site. When the record went in
-         is the thing this table could say and nothing else does. #}
-      <tr><th>Track</th><th>Holder</th><th class="num">Time</th><th class="num">Date</th></tr>
-      {% for t in tracks %}
-      {% set rec = records.get(t.slug) %}
-      <tr>
-        <td><a href="/track/{{ t.slug }}">{{ t.name }}</a></td>
-        <td>{{ p.player(rec[1]) if rec else '—' }}</td>
-        <td class="num">{{ '%d:%06.3f'|format((rec[0] // 60000), (rec[0] % 60000) / 1000) if rec else '—' }}</td>
-        {# Stored UTC. Rendered as UTC so it is right with no JS, then rewritten
-           into the reader's own timezone by the script below - a lap time is
-           the same number everywhere, but the moment it was set is not. #}
-        <td class="num">{% if rec and rec[2] %}<time datetime="{{ rec[2].isoformat() }}Z"
-          >{{ rec[2].strftime('%-d %b %Y, %H:%M:%S') }} UTC</time>{% else %}—{% endif %}</td>
-      </tr>
-      {% endfor %}
-    </table>
-  </div>
+    <section class="lb-rec">
+      <h2>Track Records</h2>
+      <div class="panel lb-panel">
+        <div class="lb-sub">
+          <input type="radio" name="rtab" id="rt-sprint" checked>
+          <input type="radio" name="rtab" id="rt-circuit">
+          <input type="radio" name="rtab" id="rt-daily">
+          <div class="lb-subbar">
+            <label for="rt-sprint">Sprints</label>
+            <label for="rt-circuit">Circuits</label>
+            <label for="rt-daily">Dailies</label>
+          </div>
+          <div class="lb-scroll" id="rt-sprint-p">{{ record_rows(tracks|rejectattr('closed')|list) }}</div>
+          <div class="lb-scroll" id="rt-circuit-p">{{ record_rows(tracks|selectattr('closed')|list) }}</div>
+          <div class="lb-scroll" id="rt-daily-p">
+            {% if days %}
+            <table class="board">
+              {# That day's winner, from the day's own results - not the
+                 all-time record on the track, which can be set after its day. #}
+              <tr><th>Day</th><th>Winner</th><th class="num">Time</th></tr>
+              {% for d in days %}
+              <tr>
+                <td><a href="/solo/{{ d.slug }}">{{ d.name }}</a>
+                  <small class="muted">{% if d.today %}today, so far{% else %}{{ d.day.strftime('%-d %b') }}{% endif %}</small></td>
+                <td>{{ p.player(d.rows[0].user) if d.rows else '—' }}</td>
+                <td class="num">{{ board_time(d.rows[0].time_ms) if d.rows else '—' }}</td>
+              </tr>
+              {% endfor %}
+            </table>
+            {% else %}
+            <p class="muted">No dailies yet.</p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </section>
 
-  {# Golf scoring: a driver's placing on each track in the pool, added up, so
-     low is good and a clean sweep is one per track. A track never driven counts as one
-     worse than last on it - see `_time_trial_board`, which is where all of the
-     reasoning lives, including why the score is derived on every render rather
-     than kept in a column. Deliberately no line of explanation under the
-     heading: the three boards on this page are a set, and only one of them had
-     one. #}
-  <h2>Time Trials Leaderboard</h2>
-  <div class="panel">
-    {% if tt %}
-    <table class="board">
-      {# The one heading on the page that is not self-explanatory, so it carries
-         the mark that says there is something to hover. A `title` and not a
-         styled tooltip because that is how every other hover on Drive works,
-         from the HUD buttons to the record dates - one convention, no script. #}
-      <tr><th>#</th><th>Driver</th>
-        <th class="num"><span class="whatsthis"
-          title="Time Trial Score is the sum of your best lap's rank on each track"
-          >Score<span class="q">?</span></span></th>
-        <th class="num">Tracks</th><th class="num">Best</th></tr>
-      {% for r in tt %}
-      <tr {% if user and r.user.id == user.id %}class="me"{% endif %}>
-        {# `r.pos` and not `loop.index`: an equal score is an equal place, the
-           same rule that decides a placing on one track. #}
-        <td>{{ r.pos }}</td>
-        <td>{{ p.player(r.user) }}</td>
-        <td class="num">{{ r.score }}</td>
-        <td class="num">{{ r.driven }}/{{ r.of }}</td>
-        <td class="num">{{ r.best }}</td>
-      </tr>
-      {% endfor %}
-    </table>
-    {% else %}
-    <p class="muted">No times set yet. <a href="/solo">Drive one.</a></p>
-    {% endif %}
-  </div>
+    {# Golf scoring: see `garage.time_trial_board` for the reasoning. #}
+    <section class="lb-tt">
+      <h2>Time Trials Leaderboard</h2>
+      <div class="panel lb-panel"><div class="lb-scroll">
+        {% if tt %}
+        <table class="board">
+          <tr><th>#</th><th>Driver</th>
+            <th class="num"><span class="whatsthis"
+              title="Time Trial Score is the sum of your best lap's rank on each track"
+              >Score<span class="q">?</span></span></th>
+            <th class="num">Tracks</th><th class="num">Best</th></tr>
+          {% for r in tt %}
+          <tr {% if user and r.user.id == user.id %}class="me"{% endif %}>
+            <td>{{ r.pos }}</td>
+            <td>{{ p.player(r.user) }}</td>
+            <td class="num">{{ r.score }}</td>
+            <td class="num">{{ r.driven }}/{{ r.of }}</td>
+            <td class="num">{{ r.best }}</td>
+          </tr>
+          {% endfor %}
+        </table>
+        {% else %}
+        <p class="muted">No times set yet. <a href="/solo">Drive one.</a></p>
+        {% endif %}
+      </div></div>
+    </section>
 
-  <h2>Multiplayer Leaderboard</h2>
-  <div class="panel">
-    {% if stats %}
-    <table class="board">
-      <tr><th>#</th><th>Driver</th><th class="num">Rating</th><th>Tier</th><th class="num">Races</th><th class="num">Wins</th><th class="num">Win %</th></tr>
-      {% for s in stats %}
-      <tr {% if user and s.user_id == user.id %}class="me"{% endif %}>
-        <td>{{ loop.index }}</td>
-        <td>{{ p.player(s.user) }}</td>
-        <td class="num">{{ s.elo }}</td>
-        <td>{{ s.elo_tier }}</td>
-        <td class="num">{{ s.races }}</td>
-        <td class="num">{{ s.wins }}</td>
-        <td class="num">{{ s.win_rate }}%</td>
-      </tr>
-      {% endfor %}
-    </table>
-    {% else %}
-    <p class="muted">No races finished yet. <a href="/lobbies">Start one.</a></p>
-    {% endif %}
+    <section class="lb-mp">
+      <h2>Multiplayer Leaderboard</h2>
+      <div class="panel lb-panel"><div class="lb-scroll">
+        {% if stats %}
+        <table class="board">
+          <tr><th>#</th><th>Driver</th><th class="num">Rating</th><th>Tier</th><th class="num">Races</th><th class="num">Wins</th><th class="num">Win %</th></tr>
+          {% for s in stats %}
+          <tr {% if user and s.user_id == user.id %}class="me"{% endif %}>
+            <td>{{ loop.index }}</td>
+            <td>{{ p.player(s.user) }}</td>
+            <td class="num">{{ s.elo }}</td>
+            <td>{{ s.elo_tier }}</td>
+            <td class="num">{{ s.races }}</td>
+            <td class="num">{{ s.wins }}</td>
+            <td class="num">{{ s.win_rate }}%</td>
+          </tr>
+          {% endfor %}
+        </table>
+        {% else %}
+        <p class="muted">No races finished yet. <a href="/lobbies">Start one.</a></p>
+        {% endif %}
+      </div></div>
+    </section>
+
+    {# 15-12-10-8-6-5-4-3-2-1 for places on each finished daily, added up.
+       `_daily_points` in app.py. #}
+    <section class="lb-pts">
+      <h2>Daily Tracks Leaderboard</h2>
+      <div class="panel lb-panel">
+        <div class="lb-sub">
+          <input type="radio" name="ptab" id="pt-all" checked>
+          <input type="radio" name="ptab" id="pt-week">
+          <div class="lb-subbar">
+            <label for="pt-all">All time</label>
+            <label for="pt-week">This week</label>
+            <span class="whatsthis lb-subnote"
+              title="Each finished daily scores 15, 12, 10, 8, 6, 5, 4, 3, 2 and 1 for 1st to 10th"
+              >Points<span class="q">?</span></span>
+          </div>
+          <div class="lb-scroll" id="pt-all-p">{{ points_rows(points_all) }}</div>
+          <div class="lb-scroll" id="pt-week-p">{{ points_rows(points_week) }}</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="lb-day">
+      <h2>Today's Daily</h2>
+      <div class="panel lb-panel">
+        {% if days %}
+        {% for d in days %}
+        <div class="dday" data-day="{{ loop.index0 }}" {% if not loop.first %}hidden{% endif %}>
+          <div class="dday-head">
+            <button type="button" class="dday-nav" data-go="1" aria-label="Previous daily"
+              {% if loop.last %}disabled{% endif %}>&#8249;</button>
+            <div class="dday-title">
+              <a href="/solo/{{ d.slug }}"><b>{{ d.name }}</b></a>
+              <small>
+                {% if d.today %}<span class="dday-clock" data-ends="{{ daily_ends.isoformat() }}">ends at midnight ET</span>
+                {% else %}{{ d.day.strftime('%a %-d %b %Y') }} &middot; final{% endif %}
+              </small>
+            </div>
+            <button type="button" class="dday-nav" data-go="-1" aria-label="Next daily"
+              {% if loop.first %}disabled{% endif %}>&#8250;</button>
+          </div>
+          {% if loop.first and not d.today %}
+          <p class="muted">No daily today. This is the last one.</p>
+          {% endif %}
+          <div class="lb-scroll">
+            {% if d.rows %}
+            <table class="board">
+              <tr><th>#</th><th>Driver</th><th class="num">Time</th>
+                <th class="num">{% if d.today %}<span class="whatsthis" title="The points each place would score if the day ended now">Projected<span class="q">?</span></span>{% else %}Points{% endif %}</th></tr>
+              {% for r in d.rows %}
+              <tr {% if user and r.user.id == user.id %}class="me"{% endif %}>
+                <td>{{ r.pos }}</td>
+                <td>{{ p.player(r.user) }}</td>
+                <td class="num">{{ board_time(r.time_ms) }}</td>
+                <td class="num">{{ ('+%d'|format(r.points)) if r.points else '0' }}</td>
+              </tr>
+              {% endfor %}
+            </table>
+            {% else %}
+            <p class="muted">Nobody has set a time{% if d.today %} yet. <a href="/solo/{{ d.slug }}">Be first.</a>{% else %} on this one.{% endif %}</p>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <p class="muted">No daily has been set yet.</p>
+        {% endif %}
+      </div>
+    </section>
   </div>
 </div>
-
 <script>
-// Every record date is stored and rendered in UTC, which is correct and reads
-// like somebody else's clock. Rewrite it into the reader's own - and only if
-// the date parses, so a browser that cannot do it keeps the UTC it was served.
 document.querySelectorAll('time[datetime]').forEach(function (el) {
   var d = new Date(el.getAttribute('datetime'));
   if (isNaN(d.getTime())) return;
-  el.textContent = d.toLocaleString([], {
-    day: 'numeric', month: 'short', year: 'numeric',
-    hour: 'numeric', minute: '2-digit', second: '2-digit',
-  });
+  el.textContent = d.toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
   el.title = d.toString();
 });
+
+document.querySelectorAll('.dday-nav').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var cur = b.closest('.dday');
+    var next = document.querySelector('.dday[data-day="' + (+cur.dataset.day + +b.dataset.go) + '"]');
+    if (!next) return;
+    cur.hidden = true;
+    next.hidden = false;
+  });
+});
+
+var clock = document.querySelector('.dday-clock');
+if (clock) {
+  var ends = new Date(clock.dataset.ends).getTime();
+  var tick = function () {
+    var s = Math.max(0, Math.round((ends - Date.now()) / 1000));
+    if (!s) { clock.textContent = 'Finished. Reload for the new one.'; return; }
+    var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), r = s % 60;
+    clock.textContent = h + 'h ' + (m < 10 ? '0' : '') + m + 'm ' + (r < 10 ? '0' : '') + r + 's left';
+    setTimeout(tick, 1000);
+  };
+  tick();
+}
 </script>
 {% endblock %}

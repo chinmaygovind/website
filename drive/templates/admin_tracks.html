@@ -32,6 +32,7 @@
 {% endblock %}
 
 {% block body %}
+{% include "_nav.html" %}
 <div class="wrap">
   <h1>Tracks</h1>
   {# The review is a lap, not a form. The only question worth asking about
@@ -40,7 +41,37 @@
   <p class="sub">Drive it, then decide. Everything here has already passed the
     structural checks and its author has set a clean lap on it.</p>
 
-  <h2>Waiting for you ({{ queued|length }})</h2>
+  <h2>Dailies to review ({{ dailies|length }})</h2>
+  {% if not dailies %}<p class="empty">No generated tracks waiting. Run <code>tools/gen_daily.py</code> on the box.</p>
+  {% elif next_daily %}<p class="empty">The next one you approve becomes the daily for {{ next_daily.strftime('%a %-d %b') }}.</p>{% endif %}
+  {% for r in dailies %}
+  <div class="row">
+    <div class="who">
+      <b>{{ r.name }}</b>
+      <small><span class="pips">{% for i in range(5) %}<i class="{{ 'on' if i < r.difficulty }}"></i>{% endfor %}</span>
+        &middot; /{{ r.slug }}</small>
+    </div>
+    <a class="btn drive" href="/admin/tracks/{{ r.slug }}/drive">&#9654; Drive</a>
+    <form method="post" action="/admin/tracks/{{ r.slug }}/approve">
+      <button class="btn go" type="submit">Approve</button></form>
+    <form method="post" action="/admin/tracks/{{ r.slug }}/reject">
+      <button class="btn" type="submit">Discard</button></form>
+  </div>
+  {% endfor %}
+
+  <h2>Scheduled dailies ({{ scheduled|length }})</h2>
+  {% if not scheduled %}<p class="empty">Nothing scheduled.</p>{% endif %}
+  {% for r in scheduled %}
+  <div class="row">
+    <div class="who">
+      <b>{{ r.daily_on.strftime('%a %-d %b') }} &middot; {{ r.name }}</b>
+      <small>{{ r.status }} &middot; /{{ r.slug }}</small>
+    </div>
+    <a class="btn drive" href="/admin/tracks/{{ r.slug }}/drive">&#9654; Drive</a>
+  </div>
+  {% endfor %}
+
+  <h2>Player submissions ({{ queued|length }})</h2>
   {% if not queued %}<p class="empty">Nothing in the queue.</p>{% endif %}
   {% for r in queued %}
   <div class="row">

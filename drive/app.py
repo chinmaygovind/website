@@ -10,7 +10,8 @@ import uuid
 import random
 import string
 from functools import wraps
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from urllib import parse as urlparse
 
 from dotenv import load_dotenv
@@ -25,7 +26,8 @@ import models as models_mod
 from models import (db, User, DriveStats, DriveTime, DriveStart, DriveRunCheck,
                     DriveItemStat,
                     DriveGame, DrivePlayer, DriveRace, DriveGarage, DrivePrefs,
-                    DriveCheatFlag, DriveUserTrack, DriveSave)
+                    DriveCheatFlag, DriveUserTrack, DriveSave,
+                    DriveDailyTime)
 import portal as portal_mod
 import tracks as tracks_mod
 import tuning
@@ -967,6 +969,65 @@ def _time_trial_board():
             for r in garage_mod.time_trial_board()]
 
 
+def _daily_days():
+    """Every daily up to today, newest first, each with its board.
+
+    [{day, today, slug, name, rows: [{pos, user, time_ms, points}]}]. Today's
+    points are what the places would score if the day ended now. Ties share a
+    place and its points. Bots and deleted accounts are left out.
+    """
+    today = daily_date()
+    tracks = (DriveUserTrack.query
+              .filter(DriveUserTrack.status == "live",
+                      DriveUserTrack.daily_on.isnot(None),
+                      DriveUserTrack.daily_on <= today)
+              .order_by(DriveUserTrack.daily_on.desc()).all())
+    if not tracks:
+        return []
+    times = {}
+    for t in (DriveDailyTime.query.join(User)
+              .filter(User.is_bot.isnot(True),
+                      DriveDailyTime.day >= tracks[-1].daily_on)
+              .order_by(DriveDailyTime.time_ms, DriveDailyTime.set_at)):
+        times.setdefault(t.day, []).append(t)
+    out = []
+    for tr in tracks:
+        rows = []
+        for i, t in enumerate(times.get(tr.daily_on, [])):
+            pos = i + 1 if not rows or t.time_ms > rows[-1]["time_ms"] \
+                else rows[-1]["pos"]
+            rows.append({"pos": pos, "user": t.user, "time_ms": t.time_ms,
+                         "points": DAILY_POINTS[pos - 1]
+                         if pos <= len(DAILY_POINTS) else 0})
+        out.append({"day": tr.daily_on, "today": tr.daily_on == today,
+                    "slug": tr.slug, "name": tr.name, "rows": rows})
+    return out
+
+
+def _daily_points(days, since=None):
+    """Points per driver over the *finished* days in `days`, best first.
+
+    [{pos, user, points, wins, played}]. Today is left out: its points are a
+    projection until midnight. `since` limits it to days on or after a date.
+    """
+    total = {}
+    for d in days:
+        if d["today"] or (since and d["day"] < since):
+            continue
+        for r in d["rows"]:
+            e = total.setdefault(r["user"].id, {"user": r["user"], "points": 0,
+                                                "wins": 0, "played": 0})
+            e["points"] += r["points"]
+            e["wins"] += r["pos"] == 1
+            e["played"] += 1
+    ranked = sorted(total.values(), key=lambda e: (-e["points"], -e["wins"]))
+    for i, e in enumerate(ranked):
+        same = i and (e["points"], e["wins"]) == (ranked[i - 1]["points"],
+                                                  ranked[i - 1]["wins"])
+        e["pos"] = ranked[i - 1]["pos"] if same else i + 1
+    return ranked
+
+
 # The track you were last on, so that "Solo" is a door back into the game rather
 # than a menu. Kept in the session (not localStorage) because the /solo route has
 # to know it server-side to render the right track on the first paint.
@@ -1017,14 +1078,14 @@ def _daily_cards():
         rows = (DriveUserTrack.query
                 .filter(DriveUserTrack.status == "live",
                         DriveUserTrack.daily_on.isnot(None),
-                        DriveUserTrack.daily_on <= date.today())
+                        DriveUserTrack.daily_on <= daily_date())
                 .order_by(DriveUserTrack.daily_on.desc())
                 .limit(DAILY_SHELF).all())
     except Exception:
         return []
     return [{"slug": r.slug, "name": r.name, "difficulty": r.difficulty,
              "daily_on": r.daily_on, "plan": r.plan_path,
-             "today": r.daily_on == date.today()} for r in rows]
+             "today": r.daily_on == daily_date()} for r in rows]
 
 
 def _next_slug(slug):
@@ -1134,7 +1195,7 @@ def _community_cards(pbs, ranks):
                            # date, and `tracks.get` resolves anything live - so
                            # without this the switcher would list the next fifty
                            # days of dailies and today's would mean nothing.
-                           DriveUserTrack.daily_on <= date.today())
+                           DriveUserTrack.daily_on <= daily_date())
                    .order_by(DriveUserTrack.daily_on.desc())
                    .limit(DAILY_SHELF).all())
         community = (DriveUserTrack.query
@@ -1172,7 +1233,7 @@ def _community_cards(pbs, ranks):
             # is *today's* is `daily_slug()`, and the switcher marks it.
             "tab": "daily" if r.daily_on else "community",
             "daily_on": r.daily_on.isoformat() if r.daily_on else None,
-            "today": bool(r.daily_on and r.daily_on == date.today()),
+            "today": bool(r.daily_on and r.daily_on == daily_date()),
         })
     return out
 
@@ -1196,18 +1257,44 @@ def solo(slug):
     return _play_solo(slug)
 
 
+# A daily runs midnight to midnight Eastern, not UTC: the box is on UTC, and a
+# UTC day ends at 8pm for nearly everybody who plays.
+DAILY_TZ = ZoneInfo("America/New_York")
+
+# Points for a finishing place on a finished daily, 1st to 10th. Ties share a
+# place and so share its points.
+DAILY_POINTS = (15, 12, 10, 8, 6, 5, 4, 3, 2, 1)
+
+# How many days the leaderboard page carries for its arrows. The points boards
+# still add up every day there has ever been.
+DAILY_HISTORY = 30
+
+
+def daily_date(at=None):
+    """The daily's date for a naive-UTC moment (default: now)."""
+    at = (at or datetime.utcnow()).replace(tzinfo=timezone.utc)
+    return at.astimezone(DAILY_TZ).date()
+
+
+def daily_ends_at():
+    """When today's daily ends, as an aware UTC datetime (for the countdown)."""
+    tomorrow = daily_date() + timedelta(days=1)
+    return datetime(tomorrow.year, tomorrow.month, tomorrow.day,
+                    tzinfo=DAILY_TZ).astimezone(timezone.utc)
+
+
 def daily_slug(day=None):
     """The track that is today's daily, or None on a day nothing was scheduled.
 
     One indexed query. Deliberately *not* cached for the process: the answer
-    changes at midnight UTC and a worker that has been up for a week would
+    changes at midnight Eastern and a worker that has been up for a week would
     otherwise still be serving Tuesday's.
     """
     if not DATABASE_URL:
         return None
     try:
         row = (DriveUserTrack.query
-               .filter_by(daily_on=(day or date.today()), status="live")
+               .filter_by(daily_on=(day or daily_date()), status="live")
                .first())
     except Exception:
         return None
@@ -1218,20 +1305,11 @@ def daily_slug(day=None):
 def daily():
     """Today's track.
 
-    **There is no daily leaderboard in here, and there does not need to be one.**
-    Every day is its own track with its own slug, so the board that track already
-    has *is* that day's board - one row per player, the same anti-cheat, the same
-    ghosts, the same everything. A `WHERE date(created_at) = today` board over a
-    shared track would have been a second scoring path to keep honest, and
-    `drive_times` could not have backed it anyway: it keeps one row per player
-    per track and a better run overwrites it, so "your best today" is not a
-    question it can answer.
-
-    What "only valid for the day" means is therefore about the *page* and not
-    about the data: tomorrow this URL is somewhere else, and today's board stops
-    being the thing on the front page. Nothing is deleted, and yesterday's track
-    stays at `/solo/<slug>` with its board intact - which is what makes a record
-    on it worth having.
+    Every day is its own track with its own slug and its own ordinary board,
+    which stays drivable at `/solo/<slug>` after its day. What the day itself
+    decided - the points on `/leaderboard` - is `drive_daily_times`, written
+    by `_note_daily` as laps land, since `drive_times` keeps only a driver's
+    all-time best and cannot say what they had set by midnight.
     """
     slug = daily_slug()
     if not slug:
@@ -1755,9 +1833,16 @@ def leaderboard():
     top = (DriveStats.query.join(User)
            .filter(DriveStats.races > 0, User.is_bot.isnot(True))
            .order_by(DriveStats.elo.desc()).limit(100).all())
+    days = _daily_days() if DATABASE_URL else []
+    today = daily_date()
     return render_template("leaderboard.html", stats=top,
                            tracks=tracks_mod.summaries(), records=_records(),
                            tt=_time_trial_board(),
+                           days=days[:DAILY_HISTORY],
+                           points_all=_daily_points(days),
+                           points_week=_daily_points(
+                               days, today - timedelta(days=today.weekday())),
+                           daily_ends=daily_ends_at(),
                            user=get_current_user(), name=get_effective_name())
 
 
@@ -2364,6 +2449,30 @@ def _apply_check(c):
         row.updated_at = datetime.utcnow()
         _count_medal(st, medal)
     c.drive_time_id = row.id
+    # When it was driven, not when it was judged: a lap at 11:59pm checked at
+    # 12:01am belongs to the day it was driven on.
+    _note_daily(c.user_id, c.track, c.time_ms, c.queued_at)
+
+
+def _note_daily(user_id, slug, time_ms, at=None):
+    """Keep a lap as the driver's result on a daily, if it was driven on its day.
+
+    The caller commits. Anything else - a pool track, a daily driven before or
+    after its day - writes nothing, which is what freezes a finished day.
+    """
+    if slug in tracks_mod.BY_SLUG:
+        return
+    day = daily_date(at)
+    if not DriveUserTrack.query.filter_by(slug=slug, daily_on=day,
+                                          status="live").first():
+        return
+    row = db.session.get(DriveDailyTime, (day, user_id))
+    if row is None:
+        db.session.add(DriveDailyTime(day=day, user_id=user_id, track=slug,
+                                      time_ms=time_ms))
+    elif time_ms < row.time_ms:
+        row.time_ms = time_ms
+        row.set_at = datetime.utcnow()
 
 
 def _settle_checks(user_id=None):
@@ -2528,6 +2637,7 @@ def api_run():
     if improved:
         _count_medal(st, medal)
     _floor_starts(user.id, track["slug"], row.runs or 0)
+    _note_daily(user.id, track["slug"], time_ms)
     db.session.commit()
 
     # Re-read the record: this run may have just become it.

@@ -168,7 +168,7 @@ the track cards, `/account`, `/leaderboard`, the nav, or the in-game board panel
   set, since a better run replaces the row wholesale and stamps it). It is stored and
   rendered as UTC so the page is right with no JS, then rewritten into the reader's
   own timezone by the script at the foot of the template.
-- **`/leaderboard` is three boards, named for what they rank**: **Track Records**,
+- **The boards are named for what they rank**: **Track Records**,
   **Time Trials Leaderboard**, **Multiplayer Leaderboard**. The last was "Race
   ratings" and was the only heading on the page carrying a line of explanation
   under it; three boards on one page are a set, and one of them dressed
@@ -179,6 +179,23 @@ the track cards, `/account`, `/leaderboard`, the nav, or the in-game board panel
   from another table. The cells keep mono, where it does the work - figures line
   up under each other. `.acct-tracks` had already undone this for itself; that
   override is gone, since the fix is now in the one rule.
+- **`/leaderboard` is five boards laid out `| : :`** since Sep 2026: Track
+  Records down the left (subtabs Sprints / Circuits / Dailies, where Dailies is
+  each day's *winner* rather than the all-time record on that track), then Time
+  Trials and Multiplayer on top and the two daily boards below. Each right-hand
+  board is about ten rows tall and scrolls inside itself. Under 900px it is one
+  board at a time behind a radio-group tab bar, the home page's pattern.
+- **Daily points come from `drive_daily_times`, not `drive_times`.** A daily
+  stays drivable after its day and `drive_times` keeps only an all-time best, so
+  it cannot say what somebody had set by midnight. `_note_daily` writes the
+  day's best as each lap lands, from both write paths (`/api/run` and
+  `_apply_check`, which uses the check's `queued_at` so a lap driven at 11:59pm
+  counts for its day). A lap on a daily outside its day writes nothing, and that
+  is the whole freeze: no timer, no snapshot. Places score `DAILY_POINTS`
+  (15-12-10-8-6-5-4-3-2-1), ties share, and the points boards (all time, this
+  week from Monday) add up finished days only. **Today's Daily** shows the
+  projection, a countdown to midnight Eastern, and arrows back through the last
+  `DAILY_HISTORY` days. `tests/test_daily_board.py`.
 - **The Time Trial Score is golf scoring: your placing on every track in the
   pool, added up**, so low is good and a clean sweep scores one per track -
   fourteen today. Eleven firsts and two thirds is 17. Three rules make the sum well defined, all of them

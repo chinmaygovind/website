@@ -348,15 +348,17 @@ code. The row is left alone; the pool wins once the folder ships, because
 ## The dailies
 
 `tools/gen_daily.py N` puts N generated tracks into the ordinary review queue,
-owned by the `daily` user. `tracks/generate.py` lays a seeded random walk over
+owned by Chinmay's account (so the cards say "by Chinmay"). `tracks/generate.py` lays a seeded random walk over
 `moves.SPEC`, and the tool keeps a candidate only if it passes the same
 `from_document` build and checks battery as the editor, with a `laptime` of
 30-40s. Roughly a quarter to a half survive. Rejecting rather than steering is
 deliberate: a new check lowers the accept rate instead of drifting from a
 second copy. Run it on the box, with the `.env` sourced, so the rows land in
 the live database. Approving a generated row in `/admin/tracks` claims the next
-free `daily_on` (`maker._next_free_daily`), and `/daily` serves today's. Each
-day is its own track, so its own board is that day's board. Nobody has driven
+free `daily_on` (`maker._next_free_daily`), and `/daily` serves today's. The
+queue is at `/admin` (the nav shows an Admin tab to admins only), with the
+generated tracks in their own "Dailies to review" list. A day runs midnight to
+midnight **Eastern** (`app.daily_date`), not UTC. Nobody has driven
 these before review, which is why the review is a lap and not a glance.
 Tests: `test_generate.py`.
 
