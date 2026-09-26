@@ -241,6 +241,35 @@ def _dailies():
     }
 
 
+def _ticks(peak, n=4):
+    """Round axis ticks from 0 that reach at least `peak`: 0, 50, 100, 150..."""
+    raw = max(peak, 1) / n
+    mag = 10 ** (len(str(int(raw))) - 1)
+    step = next(m * mag for m in (1, 2, 2.5, 5, 10) if m * mag >= raw)
+    step = int(step) if step >= 1 else 1
+    return [i * step for i in range(n + 1)]
+
+
+def _chart(series):
+    """Everything the SVG needs, in viewBox units, so the template only draws."""
+    L, R, T, B = 44, 596, 10, 170            # plot area inside a 640 x 196 box
+    py = _ticks(max([s["players"] for s in series] or [0]))
+    ly = _ticks(max([s["laps"] for s in series] or [0]))
+    w = (R - L) / max(len(series), 1)
+    y = lambda v, top: B - (B - T) * v / top
+    return {
+        "L": L, "R": R, "T": T, "B": B,
+        "bars": [{"x": L + i * w + 1.5, "w": w - 3, "y": y(s["players"], py[-1]),
+                  "h": B - y(s["players"], py[-1]), "s": s} for i, s in enumerate(series)],
+        "line": " ".join("%.1f,%.1f" % (L + i * w + w / 2, y(s["laps"], ly[-1]))
+                         for i, s in enumerate(series)),
+        "grid": [{"y": y(v, py[-1]), "p": v, "l": lv} for v, lv in zip(py, ly)],
+        "dates": [{"x": L + i * w + w / 2,
+                   "t": datetime.strptime(s["day"], "%Y-%m-%d").strftime("%-d %b")}
+                  for i, s in enumerate(series) if (len(series) - 1 - i) % 7 == 0],
+    }
+
+
 def _safely(fn, *a):
     """One failed panel is a blank panel, never a 500 on the whole console."""
     try:
@@ -263,9 +292,7 @@ def admin_home():
         "admin_home.html", user=user, name=get_effective_name(),
         active_page="admin",
         players=_safely(_players, where, params),
-        series=series,
-        series_peak=max([s["players"] for s in series] or [1]) or 1,
-        laps_peak=max([s["laps"] for s in series] or [1]) or 1,
+        chart=_chart(series) if series else None,
         funnel=_safely(_funnel, where, params),
         tracks=_safely(_tracks),
         sessions=_safely(_sessions, where, params) or [],

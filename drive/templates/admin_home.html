@@ -96,20 +96,25 @@
     <section class="dcard chart span2">
       <h2>Players and laps, per day
         <span class="legend"><span><i class="sw-p"></i>players</span><span><i class="sw-l"></i>laps</span></span></h2>
-      {% if series %}
-      {% set w = 600 / series|length %}
-      <svg viewBox="0 0 600 190" preserveAspectRatio="none" role="img" aria-label="Players and laps per day, 30 days">
-        {% for s in series %}
-        <rect x="{{ loop.index0 * w + 1.5 }}" width="{{ w - 3 }}"
-              y="{{ 170 - 160 * s.players / series_peak }}" height="{{ 160 * s.players / series_peak }}"
-              fill="#3d8bfd" rx="2"><title>{{ s.day }}: {{ s.players }} players, {{ s.laps }} laps</title></rect>
+      {% if chart %}{% set C = chart %}
+      <svg viewBox="0 0 640 196" preserveAspectRatio="xMidYMid meet" role="img"
+           aria-label="Players and laps per day, last 30 days" font-size="10" style="font-family: var(--mono)">
+        {% for g in C.grid %}
+        <line x1="{{ C.L }}" x2="{{ C.R }}" y1="{{ g.y }}" y2="{{ g.y }}" stroke="{{ '#1d1d1f' if loop.first else '#e6e4df' }}" stroke-width="1"/>
+        <text x="{{ C.L - 6 }}" y="{{ g.y + 3.5 }}" text-anchor="end" fill="#3d8bfd">{{ g.p }}</text>
+        <text x="{{ C.R + 6 }}" y="{{ g.y + 3.5 }}" fill="#c0182b">{{ g.l }}</text>
         {% endfor %}
-        <polyline fill="none" stroke="#c0182b" stroke-width="2" vector-effect="non-scaling-stroke"
-          points="{% for s in series %}{{ loop.index0 * w + w / 2 }},{{ 170 - 160 * s.laps / laps_peak }} {% endfor %}"/>
-        <text x="2" y="186" font-size="10" fill="#6b6b73">{{ series[0].day[5:] }}</text>
-        <text x="598" y="186" font-size="10" fill="#6b6b73" text-anchor="end">today</text>
+        {% for b in C.bars %}
+        <rect x="{{ b.x }}" width="{{ b.w }}" y="{{ b.y }}" height="{{ b.h }}" fill="#3d8bfd" rx="1.5"><title>{{ b.s.day }}: {{ b.s.players }} players, {{ b.s.laps }} laps</title></rect>
+        {% endfor %}
+        <polyline fill="none" stroke="#c0182b" stroke-width="2" stroke-linejoin="round" points="{{ C.line }}"/>
+        {% for d in C.dates %}
+        <line x1="{{ d.x }}" x2="{{ d.x }}" y1="{{ C.B }}" y2="{{ C.B + 4 }}" stroke="#1d1d1f"/>
+        <text x="{{ d.x }}" y="{{ C.B + 15 }}" text-anchor="middle" fill="#6b6b73">{{ d.t }}</text>
+        {% endfor %}
+        <text x="0" y="6" fill="#3d8bfd" font-size="9">players</text>
+        <text x="640" y="6" text-anchor="end" fill="#c0182b" font-size="9">laps</text>
       </svg>
-      <div class="muted">peak {{ series_peak }} players, {{ laps_peak }} laps in a day</div>
       {% endif %}
     </section>
 
