@@ -97,6 +97,19 @@ def make(shape=None):
     return _render_editor(starters.document(shape) if shape else None, shape)
 
 
+@app.route("/make/track/<slug>")
+def make_saved(slug):
+    """Reopen one of your saved tracks, carrying its slug so Save overwrites it."""
+    if _make_forbidden():
+        abort(404)
+    row = _user_track_row(slug)
+    if row is None or not _may_edit(row, get_current_user()):
+        abort(404)
+    doc = dict(row.doc)
+    doc["slug"] = row.slug
+    return _render_editor(doc, doc.get("from_shape") or "blank")
+
+
 def _render_editor(doc, shape):
     """The editor page, for a starting shape or for a draft being reopened.
 
@@ -110,8 +123,14 @@ def _render_editor(doc, shape):
         # Untimed: the ribbon is 4ms and the lap-time model is 550ms, and the
         # page wants the road now. The lap estimate arrives from its own call.
         track, _err = _draft_track(doc)
+    user = get_current_user()
+    mine = []
+    if user and shape is None:
+        mine = (DriveUserTrack.query.filter_by(author_id=user.id)
+                .filter(DriveUserTrack.status != "deleted")
+                .order_by(DriveUserTrack.updated_at.desc()).all())
     return render_template(
-        "make.html", user=get_current_user(), name=get_effective_name(),
+        "make.html", user=user, name=get_effective_name(), mine=mine,
         shape=shape, shapes_json=script_json(starters.summaries()),
         doc_json=script_json(doc), track_json=script_json(track),
         tuning_json=tuning.as_json(), looks_json=script_json(_pool_looks()),
@@ -524,8 +543,10 @@ ADMIN_NAMES = frozenset(
 
 
 def _may_edit(row, user):
-    """The author, or Chinmay. Nobody else, at any status."""
-    return bool(user) and (row.author_id == user.id or _is_admin(user))
+    """The author, or Chinmay. Nobody else, at any status - and nobody at all
+    once it is deleted, which is what keeps a deleted track deleted."""
+    return (bool(user) and row.status != "deleted"
+            and (row.author_id == user.id or _is_admin(user)))
 
 
 # ---- saving ---------------------------------------------------------------
@@ -610,6 +631,50 @@ def api_make_save():
                     "look_changed": reskinned,
                     # The one the author cares about: whether their board went.
                     "board_kept": not moved})
+
+
+@app.route("/api/make/rename/<slug>", methods=["POST"])
+def api_make_rename(slug):
+    """A new name, same address. A name is cosmetic, so it saves onto a live
+    track without going back to the queue - the same rule `api_make_save` applies."""
+    if _make_forbidden():
+        abort(404)
+    row = _user_track_row(slug)
+    if row is None or not _may_edit(row, get_current_user()):
+        abort(404)
+    name = str((request.get_json(silent=True) or {}).get("name") or "").strip()[:60]
+    if not name:
+        return jsonify({"error": "A track needs a name."}), 400
+    doc = row.doc
+    doc["name"] = name
+    row.name = name
+    row.doc_json = json_mod.dumps(doc, separators=(",", ":"))
+    row.updated_at = datetime.utcnow()
+    db.session.commit()
+    _forget_track(row.slug)
+    return jsonify({"slug": row.slug, "name": name})
+
+
+@app.route("/api/make/delete/<slug>", methods=["POST"])
+def api_make_delete(slug):
+    """Delete a track by tombstoning its row.
+
+    Not a real DELETE, because every time, start, save and race is keyed on the
+    slug: freeing it would let the next track with that name inherit a dead
+    track's board. `status = "deleted"` is invisible everywhere that filters on
+    `live`, and `_may_edit` refuses it, so nothing can reopen it either.
+    """
+    if _make_forbidden():
+        abort(404)
+    row = _user_track_row(slug)
+    if row is None or not _may_edit(row, get_current_user()):
+        abort(404)
+    row.status = "deleted"
+    row.daily_on = None
+    row.updated_at = datetime.utcnow()
+    db.session.commit()
+    _forget_track(row.slug)
+    return jsonify({"ok": True})
 
 
 def _free_slug(name):
@@ -905,7 +970,7 @@ def community_tracks():
     user = get_current_user()
     if user:
         mine = (DriveUserTrack.query.filter_by(author_id=user.id)
-                .filter(DriveUserTrack.status != "live")
+                .filter(DriveUserTrack.status.notin_(("live", "deleted")))
                 .order_by(DriveUserTrack.updated_at.desc()).all())
     return render_template("community.html", user=user,
                            name=get_effective_name(), rows=rows, mine=mine,

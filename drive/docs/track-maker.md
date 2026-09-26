@@ -254,6 +254,22 @@ only in `test_tracks.py` is now in `_run_checks`, and the drivability floors
 
 ## Lifecycle
 
+`/make` lists the signed-in author's own rows above the starting shapes, and
+`/make/track/<slug>` reopens one with its slug in the document, which is what
+makes the next Save overwrite that row instead of minting a new one. It 404s
+for anybody `_may_edit` refuses.
+
+**Delete is a tombstone**, `status = "deleted"`, never a real row delete: every
+time, start, save and race is keyed on the slug, so freeing one would hand a dead
+track's board to the next track with that name. `_may_edit` refuses a deleted
+row outright, which is the single guard that stops reopening, saving, submitting
+and forking it. Rename changes the name and never the slug.
+
+**Unsaved work lives in the browser**, in one `localStorage` slot
+(`drive.make.unsaved`), written by a 2s poll only when the doc differs from what
+was opened or last saved, and cleared on a successful save. The picker offers it
+back through `/api/make/draft`, the same token route the drive round trip uses.
+
 Four states — `draft`, `queued`, `live`, `hidden` — and one rule that keeps a
 leaderboard meaning something: **what you approved is what is live.**
 

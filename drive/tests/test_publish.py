@@ -437,6 +437,66 @@ def test_the_gallery_lists_what_is_live_and_your_own_drafts(env):
     assert "Published One" in body and "Still Mine" not in body
 
 
+def test_your_saved_tracks_are_listed_in_the_builder_and_reopen_there(env):
+    """`/make` lists your saved tracks; opening one carries its slug, so the
+    next Save overwrites it rather than making a copy - and nobody else can."""
+    A = env
+    uid = _user(A)
+    c = A.app.test_client()
+    _login(c, uid)
+    slug = c.post("/api/make/save",
+                  json={"doc": _doc(name="Half Done")}).get_json()["slug"]
+    body = c.get("/make").data.decode()
+    assert "Your tracks" in body and "/make/track/" + slug in body
+    page = c.get("/make/track/" + slug)
+    assert page.status_code == 200
+    assert '"slug":"%s"' % slug in page.data.decode().replace(" ", "")
+    _login(c, _user(A, "bob"))
+    assert c.get("/make/track/" + slug).status_code == 404
+    assert "Your tracks" not in c.get("/make").data.decode()
+
+
+def test_renaming_keeps_the_address_and_only_the_author_can(env):
+    A = env
+    uid = _user(A)
+    c = A.app.test_client()
+    _login(c, uid)
+    slug = c.post("/api/make/save",
+                  json={"doc": _doc(name="Old Name")}).get_json()["slug"]
+    assert c.post("/api/make/rename/" + slug, json={"name": " "}).status_code == 400
+    got = c.post("/api/make/rename/" + slug, json={"name": "New Name"}).get_json()
+    assert got == {"slug": slug, "name": "New Name"}
+    row = _row(A, slug)
+    assert row.name == "New Name" and row.doc["name"] == "New Name"
+    _login(c, _user(A, "bob"))
+    assert c.post("/api/make/rename/" + slug,
+                  json={"name": "Mine Now"}).status_code == 404
+
+
+def test_a_deleted_track_is_gone_but_its_address_is_never_reused(env):
+    """Every time and race is keyed on the slug, so a freed slug would hand a
+    dead track's board to the next track that took the name."""
+    A = env
+    uid = _user(A)
+    c = A.app.test_client()
+    _login(c, uid)
+    slug = c.post("/api/make/save",
+                  json={"doc": _doc(name="Doomed")}).get_json()["slug"]
+    _login(c, _user(A, "bob"))
+    assert c.post("/api/make/delete/" + slug).status_code == 404
+    _login(c, uid)
+    assert c.post("/api/make/delete/" + slug).status_code == 200
+    assert _row(A, slug).status == "deleted"
+    assert "Doomed" not in c.get("/make").data.decode()
+    assert "Doomed" not in c.get("/tracks").data.decode()
+    assert c.get("/make/track/" + slug).status_code == 404
+    assert c.post("/api/make/save", json={"doc": _doc(name="Doomed"),
+                                          "slug": slug}).status_code == 403
+    again = c.post("/api/make/save",
+                   json={"doc": _doc(name="Doomed")}).get_json()["slug"]
+    assert again != slug
+
+
 # ------------------------------------------------------- the shelf and the UI
 
 def test_the_switcher_shelves_community_tracks_under_the_pool(env):

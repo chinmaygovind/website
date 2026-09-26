@@ -30,7 +30,77 @@ const $ = (id) => document.getElementById(id);
 /* ------------------------------------------------------------------ *
  *  Screen one: pick a shape
  * ------------------------------------------------------------------ */
+/* The one unsaved draft, kept in this browser so leaving the editor does not
+ * lose it. One slot: whatever you were last changing and had not saved. */
+const UNSAVED = 'drive.make.unsaved';
+function readUnsaved() {
+  try { return JSON.parse(localStorage.getItem(UNSAVED)) || null; }
+  catch (e) { return null; }
+}
+function writeUnsaved(v) {
+  try {
+    if (v) localStorage.setItem(UNSAVED, JSON.stringify(v));
+    else localStorage.removeItem(UNSAVED);
+  } catch (e) { /* storage blocked: the draft just is not kept */ }
+}
+
+async function postJSON(url, body) {
+  const r = await fetch(url, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  });
+  return { ok: r.ok, j: await r.json().catch(() => ({})) };
+}
+
+function renderUnsaved() {
+  const u = readUnsaved();
+  if (!u || !u.doc || !$('unsaved')) return;
+  $('unsaved').hidden = false;
+  $('unsavedName').textContent = u.doc.name || 'Untitled';
+  $('unsavedWhen').textContent = 'changed ' + new Date(u.at).toLocaleString();
+  $('unsavedGo').addEventListener('click', async (ev) => {
+    ev.preventDefault();
+    // Through the same draft token the drive round trip uses, so there is one
+    // way a document gets back into the editor.
+    const { ok, j } = await postJSON('/api/make/draft', u.doc);
+    if (ok) location.href = '/make/edit/' + j.token;
+    else alert(j.error || 'That draft no longer builds.');
+  });
+  $('unsavedDrop').addEventListener('click', () => {
+    if (!confirm('Throw away this unsaved draft?')) return;
+    writeUnsaved(null);
+    $('unsaved').hidden = true;
+  });
+}
+
+function wireMine() {
+  for (const card of document.querySelectorAll('.shape[data-slug]')) {
+    const slug = card.dataset.slug;
+    const name = card.querySelector('b');
+    card.querySelector('[data-act=rename]').addEventListener('click', async () => {
+      const to = (prompt('Rename track', name.textContent) || '').trim();
+      if (!to || to === name.textContent) return;
+      const { ok, j } = await postJSON('/api/make/rename/' + slug, { name: to });
+      if (ok) name.textContent = j.name;
+      else alert(j.error || 'Could not rename that.');
+    });
+    card.querySelector('[data-act=delete]').addEventListener('click', async () => {
+      if (!confirm('Delete "' + name.textContent + '"? This cannot be undone.')) return;
+      const { ok, j } = await postJSON('/api/make/delete/' + slug);
+      if (!ok) { alert(j.error || 'Could not delete that.'); return; }
+      card.remove();
+      const u = readUnsaved();
+      if (u && u.doc && u.doc.slug === slug) {
+        writeUnsaved(null);
+        $('unsaved').hidden = true;
+      }
+    });
+  }
+}
+
 function renderPick() {
+  renderUnsaved();
+  wireMine();
   const host = $('shapes');
   if (!host) return;
   for (const s of M.shapes || []) {
@@ -2800,6 +2870,19 @@ function startEditor() {
    */
   let saved = { slug: state.doc.slug || null, status: null };
 
+  // Keep what has changed since it was opened (or last saved), so leaving the
+  // page does not lose it. Only a *changed* doc is written: opening a shape to
+  // look at it must not overwrite the draft you actually care about.
+  // ponytail: a 2s poll rather than a hook on every edit path; hook it if the
+  // stringify ever shows up in a profile.
+  let baseline = JSON.stringify(state.doc);
+  setInterval(() => {
+    const now = JSON.stringify(state.doc);
+    if (now === baseline) return;
+    baseline = now;
+    writeUnsaved({ doc: state.doc, at: Date.now() });
+  }, 2000);
+
   function openPublish() {
     $('pubPane').hidden = false;
     $('pubName').value = state.doc.name || '';
@@ -2910,6 +2993,8 @@ function startEditor() {
     }
     saved = { slug: j.slug, status: j.status };
     state.doc.slug = j.slug;
+    baseline = JSON.stringify(state.doc);
+    writeUnsaved(null);
     $('save').textContent = 'Saved';
     setTimeout(() => { $('save').textContent = 'Save'; }, 1800);
     pubMsg(!j.requeued ? 'Saved as /' + j.slug + '.'
