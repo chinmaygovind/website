@@ -3220,13 +3220,13 @@ body.garage-page .nav { flex: none; }
 }
 .ins-open svg { width: 18px; height: 18px; }
 
-.lb-wrap { max-width: 1480px; }
+.lb-wrap { max-width: 1880px; }
 .lb > input[type="radio"], .lb-sub > input[type="radio"] {
   position: absolute; opacity: 0; pointer-events: none; }
 .lb-bar { display: none; }
 .lb {
   display: grid; gap: 1.1rem 1.4rem; align-items: stretch;
-  grid-template-columns: minmax(0, .8fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
   grid-template-areas: "rec tt mp" "rec pts day";
 }
 .lb-rec { grid-area: rec; }
@@ -3238,13 +3238,17 @@ body.garage-page .nav { flex: none; }
 .lb section h2 { margin-top: 0; }
 .lb-panel { flex: 1; display: flex; flex-direction: column; min-height: 0;
             padding: .7rem .8rem; }
-.lb-scroll { max-height: 26.6rem; overflow: auto; }
-.lb time { white-space: nowrap; }
+.lb-scroll { flex: 1; min-height: 0; overflow: auto; }
+.lb-tt .lb-panel, .lb-mp .lb-panel { flex: none; height: 28rem; }
+.lb-pts .lb-panel, .lb-day .lb-panel { flex: none; height: 34rem; }
+.lb-panel > .lb-sub { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.dday:not([hidden]) { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.lb time, .lb table.board th { white-space: nowrap; }
 .lb-scroll table.board th { position: sticky; top: 0; background: #fff; z-index: 1; }
 .lb-rec .lb-panel { position: relative; }
 .lb-rec .lb-sub { position: absolute; inset: .7rem .8rem;
                   display: flex; flex-direction: column; }
-.lb-rec .lb-scroll { max-height: none; flex: 1; min-height: 0; }
+.lb-rec .lb-panel { flex: 1; }
 .lb-rec table.board td small { display: block; }
 
 .lb-subbar { display: flex; gap: 4px; align-items: center; margin: 0 0 .5rem; }
@@ -3287,7 +3291,7 @@ body.garage-page .nav { flex: none; }
   .lb-bar { display: flex; }
   .lb section { display: none; }
   .lb-rec .lb-sub { position: static; }
-  .lb-rec .lb-scroll { max-height: 70vh; }
+  .lb .lb-panel { height: 72vh; }
   #lb-rec:checked ~ .lb-bar label[for="lb-rec"],
   #lb-tt:checked ~ .lb-bar label[for="lb-tt"],
   #lb-mp:checked ~ .lb-bar label[for="lb-mp"],

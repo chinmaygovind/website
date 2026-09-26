@@ -1178,6 +1178,11 @@ def _number_daily(row):
                                   separators=(",", ":"))
 
 
+# The first day there is a daily at all. Chinmay launched them on the 27th, so
+# an approval on the 26th must not fill the 26th. Inert once that day is past.
+DAILIES_START = date(2026, 9, 27)
+
+
 def _next_free_daily():
     """The first day from today that no track has claimed.
 
@@ -1193,7 +1198,7 @@ def _next_free_daily():
     """
     taken = {d for (d,) in db.session.query(DriveUserTrack.daily_on)
              .filter(DriveUserTrack.daily_on.isnot(None)).all()}
-    day = daily_date()
+    day = max(daily_date(), DAILIES_START)
     for _ in range(3650):
         if day not in taken:
             return day

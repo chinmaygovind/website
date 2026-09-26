@@ -852,4 +852,7 @@ def test_the_admin_tab_and_the_dailies_queue_are_the_admins_alone(env):
     assert row.name == "Daily #1" and row.daily_on is not None
     assert row.doc["name"] == "Daily #1" and row.doc["slug"] == "daily-1"
     assert "Scheduled dailies (1)" in c.get("/admin/tracks").data.decode()
+    with A.app.app_context():
+        A.DriveUserTrack.query.filter_by(slug="daily-1").first().daily_on = A.daily_date()
+        A.db.session.commit()
     assert c.get("/solo/daily-1").status_code == 200

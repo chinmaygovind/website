@@ -64,8 +64,7 @@ def test_a_day_is_an_eastern_day():
 
 def test_a_lap_on_todays_daily_is_that_days_result(env):
     A = env
-    slug = _daily(A, "Foggy Ridge")
-    assert _row(A, slug).daily_on == A.daily_date()
+    slug = _daily(A, "Foggy Ridge", day=A.daily_date())
     c = A.app.test_client()
     _login(c, _user(A, "ada"))
     with A.app.app_context():
@@ -74,6 +73,12 @@ def test_a_lap_on_todays_daily_is_that_days_result(env):
     with A.app.app_context():
         got = A.DriveDailyTime.query.all()
         assert [(g.track, g.time_ms) for g in got] == [(slug, payload["time_ms"])]
+
+
+def test_nothing_is_scheduled_before_the_launch_day(env):
+    A = env
+    _daily(A, "Foggy Ridge")
+    assert _row(A, "daily-1").daily_on >= A.maker.DAILIES_START
 
 
 def test_approved_dailies_are_numbered_in_order_and_never_reuse_one(env):
