@@ -1068,6 +1068,7 @@ def admin_track_action(slug, action):
         # screen and nothing to remember.
         if row.doc.get("generated") and row.daily_on is None:
             row.daily_on = _next_free_daily()
+            _number_daily(row)
     elif action == "hide":
         row.status = "hidden"
     elif action == "unhide":
@@ -1082,6 +1083,25 @@ def admin_track_action(slug, action):
     db.session.commit()
     _forget_track(slug)
     return redirect(url_for("admin_tracks"))
+
+
+def _number_daily(row):
+    """Rename a generated track to `Daily #N` at `daily-N`, the next number.
+
+    A generated track's own name is only a label for the queue. Numbered from
+    the highest `daily-N` slug there has ever been rather than by counting, so
+    a deleted daily (which keeps its slug as a tombstone) never lets a number
+    be handed out twice. Safe to re-slug here because nothing has been driven
+    on it yet: the review drives it under the draft slug.
+    """
+    got = [int(s[6:]) for (s,) in db.session.query(DriveUserTrack.slug)
+           .filter(DriveUserTrack.slug.like("daily-%")) if s[6:].isdigit()]
+    n = max(got, default=0) + 1
+    _forget_track(row.slug)
+    row.slug = "daily-%d" % n
+    row.name = "Daily #%d" % n
+    row.doc_json = json_mod.dumps(dict(row.doc, slug=row.slug, name=row.name),
+                                  separators=(",", ":"))
 
 
 def _next_free_daily():

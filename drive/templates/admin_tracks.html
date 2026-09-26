@@ -47,7 +47,7 @@
   {% for r in dailies %}
   <div class="row">
     <div class="who">
-      <b>{{ r.name }}</b>
+      <b>Unscheduled daily</b>
       <small><span class="pips">{% for i in range(5) %}<i class="{{ 'on' if i < r.difficulty }}"></i>{% endfor %}</span>
         &middot; /{{ r.slug }}</small>
     </div>

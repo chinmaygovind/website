@@ -36,6 +36,9 @@ def _daily(A, name, day=None):
         A.db.session.commit()
     _login(c, _admin(A))
     c.post("/admin/tracks/%s/approve" % slug)
+    with A.app.app_context():
+        slug = (A.DriveUserTrack.query
+                .order_by(A.DriveUserTrack.published_at.desc()).first().slug)
     if day is not None:
         with A.app.app_context():
             row = A.DriveUserTrack.query.filter_by(slug=slug).first()
@@ -71,6 +74,17 @@ def test_a_lap_on_todays_daily_is_that_days_result(env):
     with A.app.app_context():
         got = A.DriveDailyTime.query.all()
         assert [(g.track, g.time_ms) for g in got] == [(slug, payload["time_ms"])]
+
+
+def test_approved_dailies_are_numbered_in_order_and_never_reuse_one(env):
+    A = env
+    assert _daily(A, "Foggy Ridge") == "daily-1"
+    assert _daily(A, "Misty Gap") == "daily-2"
+    with A.app.app_context():
+        A.DriveUserTrack.query.filter_by(slug="daily-2").first().status = "deleted"
+        A.db.session.commit()
+    assert _daily(A, "Stony Bend") == "daily-3"
+    assert _row(A, "daily-3").name == "Daily #3"
 
 
 def test_only_the_days_own_track_on_its_own_day_counts(env):

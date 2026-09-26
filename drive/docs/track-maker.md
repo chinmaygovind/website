@@ -355,7 +355,10 @@ owned by Chinmay's account (so the cards say "by Chinmay"). `tracks/generate.py`
 deliberate: a new check lowers the accept rate instead of drifting from a
 second copy. Run it on the box, with the `.env` sourced, so the rows land in
 the live database. Approving a generated row in `/admin/tracks` claims the next
-free `daily_on` (`maker._next_free_daily`), and `/daily` serves today's. The
+free `daily_on` (`maker._next_free_daily`) and renames it `Daily #N` at
+`daily-N` (`maker._number_daily`, one past the highest `daily-N` slug ever, so a
+deleted daily's number is never reused). The generator's own names are only
+labels for the queue. `/daily` serves today's. The
 queue is at `/admin` (the nav shows an Admin tab to admins only), with the
 generated tracks in their own "Dailies to review" list. A day runs midnight to
 midnight **Eastern** (`app.daily_date`), not UTC. Nobody has driven
