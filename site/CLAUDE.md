@@ -545,6 +545,62 @@ parse.
   mono stack the other pages already use for readouts, so the page is still one
   request.
 
+## `/intro-to-vibecoding`
+
+Chinmay's slide deck for the Penn AI Lunch & Learn (Sep 25 2026): how he builds
+things with Claude. One `index.html` plus its own pictures, `noindex`, linked
+from nothing - a URL handed to a room. `tests/test_intro_to_vibecoding.py` pins
+the `noindex` and resolves every relative `src`/`href`, and CI asks for the
+directory by name in the sparse checkout, as it does for `/ese2100`.
+
+**The speaker notes ship in the page.** Each slide's `<aside class="notes">` is
+what the P window shows, and it is in view-source for anyone. **Shopify
+specifics are under NDA** - the internal agent's connections, the review bot's
+details, anything about how search relevance is judged - so they go in neither
+the slides nor the notes. Chinmay says them out loud.
+
+- **A slide is a `<section class="slide">` and everything it does is a `data-`
+  attribute on it.** `data-scene` picks the 3D world, `data-cam`/`data-look` are
+  where the camera sits and looks in that world, `data-path="milestones"` asks
+  the world for a camera spot per click instead (the history flight),
+  `data-chase="0"` follows car 0 round the track, and `data-play` makes clicks
+  hit asteroids rather than advance. `.step` elements are revealed one per click
+  with a stamp and a shake; `.pop` elements animate in on arrival.
+- **Two scripts, and the split is what keeps the talk alive if the CDN is
+  not.** The classic script is the whole deck: navigation, steps, the presenter
+  window (P, synced by `BroadcastChannel`, so same browser only), the ink wipe,
+  the typed terminal replay, videos. The module is decoration: it imports three.js
+  from jsDelivr and draws the worlds on a canvas under the slides. If that
+  import fails, every slide still works on its painted CSS sky.
+- **Ten worlds, each a `build*()` returning `{ scene, update }`.** Only the
+  current one renders. The rest are built lazily, and pre-built one every 350ms
+  after load so a scene change mid-talk does not hitch. A scene change triggers
+  `#wipe` (yellow then halftone ink, 0.6s) and the swap happens at 290ms, while
+  it is covered; slides that share a world only move the camera.
+  `sceneWanted` exists because mashing arrow keys during a wipe otherwise lets a
+  stale timer land the wrong world.
+- **The comic look is one trick: `inked()`.** Every mesh gets a black back-face
+  hull scaled by an *absolute* thickness per axis, so a 34-unit building and a
+  1-unit wheel get the same line. Toon materials with a three-step ramp do the
+  rest. `part()` is the one constructor that does both.
+- **L is lite mode** (no 3D, skies stay), F fullscreen, and the stage is a fixed
+  1600x900 scaled to the window, so a projector at any resolution sees the same
+  layout.
+- **`me-1600.webp` is a cutout of Chinmay in the CIS 1600 bear shirt**, from
+  the original of the About collage's `photo-05` (`IMG_0628` in
+  `~/GDrive/Z Malarkey/Website Photos/converted/`). `rembg`'s
+  `u2net_human_seg`, largest connected component kept, the bottom-right corner
+  cleared first because the Ferris wheel's window frame touches the elbow and
+  segments as body, then a 14px white and 5px black sticker outline. It
+  replaced a touch-grass-hat cutout Chinmay did not want. The sim-racing photo
+  was tried and did not cut cleanly; it is a polaroid instead.
+- **Every number on a slide came from somewhere.** The r/WebGames funnel (29 /
+  21 / 3 / 1) is from the launch memory note, the commit counts from `git log`
+  counting `Co-Authored-By: Claude`, the test counts from the root `CLAUDE.md`.
+  They will drift; re-count before reusing the deck.
+- The Conductor slide deliberately shows no screenshot of the game: the one in
+  `assets/ttr/` predates the rename and has a crude bot name in its chat.
+
 ## The settings panel
 
 The settings tile used to open a placeholder. It is now a device settings screen

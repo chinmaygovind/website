@@ -33,6 +33,7 @@ anywhere in here — only a different way of storing one.
 | the code sandbox | `static/js/scenery_{host,worker}.js` |
 | saving, the gate, the queue | `maker.py` |
 | promoting one into the pool | `tools/adopt_track.py` |
+| generating the dailies | `tracks/generate.py`, `tools/gen_daily.py` |
 
 Tests: `test_moves.py`, `test_make.py`, `test_user_tracks.py`,
 `test_scenery_code.py`, `test_scenery_kit.py`, `test_publish.py`,
@@ -343,6 +344,21 @@ Placements survive adoption because a track module may declare `placed = [...]`,
 read by `tracks._one` and drawn by the same `placeAll` — nothing is rewritten as
 code. The row is left alone; the pool wins once the folder ships, because
 `tracks.get` checks `BY_SLUG` before it asks the resolver.
+
+## The dailies
+
+`tools/gen_daily.py N` puts N generated tracks into the ordinary review queue,
+owned by the `daily` user. `tracks/generate.py` lays a seeded random walk over
+`moves.SPEC`, and the tool keeps a candidate only if it passes the same
+`from_document` build and checks battery as the editor, with a `laptime` of
+30-40s. Roughly a quarter to a half survive. Rejecting rather than steering is
+deliberate: a new check lowers the accept rate instead of drifting from a
+second copy. Run it on the box, with the `.env` sourced, so the rows land in
+the live database. Approving a generated row in `/admin/tracks` claims the next
+free `daily_on` (`maker._next_free_daily`), and `/daily` serves today's. Each
+day is its own track, so its own board is that day's board. Nobody has driven
+these before review, which is why the review is a lap and not a glance.
+Tests: `test_generate.py`.
 
 ## Traps
 
