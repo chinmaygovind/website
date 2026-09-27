@@ -480,6 +480,26 @@ def _bind():
     return a, models
 
 
+def install_user_tracks(models, tracks_mod):
+    """Let `tracks.get` find a live player-made track - a daily - in here too.
+
+    `app.py` installs this lookup through `maker.py`, which this process never
+    imports, so without it every lap on a user track came back "no such track"
+    and nothing on a daily ever reached its board. Built from the stored
+    document exactly as `maker._track_from_row` does; nothing else about the
+    row matters to a re-drive.
+    """
+    def resolve(slug):
+        row = models.DriveUserTrack.query.filter_by(slug=slug).first()
+        if row is None or row.status != "live":
+            return None
+        try:
+            return tracks_mod.from_document(slug, row.doc, timed=True)
+        except Exception:
+            return None
+    tracks_mod.set_resolver(resolve)
+
+
 def run_check_row(row, tracks_mod, verifier=None):
     """Judge one queued row and write the verdict into it. -> the verdict dict."""
     from datetime import datetime
@@ -587,6 +607,7 @@ def main(argv):
     import tracks
     app, models = _bind()
     with app.app_context():
+        install_user_tracks(models, tracks)
         q = models.DriveRunCheck.query
         if args.check:
             rows = q.filter(models.DriveRunCheck.id.in_(args.check)).all()

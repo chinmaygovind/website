@@ -180,3 +180,22 @@ def test_an_approved_daily_is_not_out_before_its_day(env):
     c = A.app.test_client()
     assert c.get("/solo/%s" % now).status_code == 200
     assert c.get("/solo/%s" % later).status_code != 200, "tomorrow's daily is not drivable today"
+
+
+def test_the_lap_checker_can_find_a_daily(env):
+    """The re-drive runs in its own process without `maker.py`, so it has to be
+    taught about player-made tracks itself. It was not, and every quick lap on a
+    daily failed "no such track" and never reached the board."""
+    A = env
+    slug = _daily(A, "Foggy Ridge", day=A.daily_date())
+    import verify
+    import models
+    with A.app.app_context():
+        tracks_mod.set_resolver(None)                 # what the checker starts with
+        assert tracks_mod.get(slug) is None
+        verify.install_user_tracks(models, tracks_mod)
+        assert tracks_mod.get(slug) is not None
+        row = A.DriveRunCheck(user_id=_user(A, "ada"), track=slug, time_ms=30000,
+                              splits_json="[]", ghost=None, evidence=None)
+        verify.run_check_row(row, tracks_mod)
+        assert row.reason != "no such track"
