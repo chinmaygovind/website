@@ -292,6 +292,19 @@ class Verifier:
                      json.dumps([runcheck.input_fields(b) for b in range(256)]))
         self.rt.eval(HARNESS)
 
+    def ensure(self, track):
+        """Hand the runtime a track it was not started with - a daily.
+
+        `load_tuning_and_tracks` pushes the pool, and `built` looks a slug up
+        in that list, so a player-made track has to be added before it can be
+        walked. Replaces any stale copy under the same slug.
+        """
+        slug = track["slug"]
+        if any(t["slug"] == slug for t in __import__("tracks").TRACKS):
+            return
+        self.rt.eval("TRACKS = TRACKS.filter(x => x.slug !== %s).concat([%s]);"
+                     % (json.dumps(slug), json.dumps(track)))
+
     def walk(self, slug, anchors, inputs, resp_ix, gates):
         self.rt.eval("var _A = %s, _IN = %s, _R = %s, _G = %s;" % (
             json.dumps(anchors), json.dumps(inputs),
@@ -394,6 +407,7 @@ def check(track, time_ms, splits, frames, blob, verifier=None):
     # --- and could the car have driven it? -----------------------------------
     v = verifier or Verifier()
     gates, resp = _respawn_points(track, splits, anchors)
+    v.ensure(track)
     out = v.walk(track["slug"], anchors, inputs[:need], resp, gates)
     err = out["err"]
     slip = sum(max(0.0, e - SLIP_TOL) for e in err)

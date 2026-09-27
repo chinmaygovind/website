@@ -199,3 +199,9 @@ def test_the_lap_checker_can_find_a_daily(env):
                               splits_json="[]", ghost=None, evidence=None)
         verify.run_check_row(row, tracks_mod)
         assert row.reason != "no such track"
+        # And the JavaScript half, which has its own list of tracks.
+        import jsrt
+        if jsrt.HAVE_QUICKJS:
+            v = verify.Verifier()
+            v.ensure(tracks_mod.get(slug))
+            v.rt.eval("built(%s);" % json.dumps(slug))   # throws "no such track" if not
