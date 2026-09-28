@@ -360,8 +360,11 @@ of drifting from a second copy.
 **Two kinds, and the look decides.** Every pool track's look is on offer: a
 grounded one makes a *circuit* on a ground plane (corners, hills, jumps, crests,
 banked sweepers, walled chicanes, the odd half-pipe or loop), and one with a
-`below` (void, lava, desert, downtown, pillars) makes a walled *stunt track*
-from Playground's vocabulary - loops, walls of death, gaps, drops, half-pipes.
+`below` (void, lava, desert, downtown, pillars) makes an open-edged
+(`exposed`) *stunt track* from Playground's vocabulary - loops, walls of death,
+gaps, drops, half-pipes. **Neither has barriers by default**: they go round
+loops, through chicanes, and wherever a shortcut is closed, and nowhere else -
+a daily walled end to end was no fun to drive.
 `look_order` hands the looks out so every one is used before any repeats,
 neighbours in the queue differ, and the first few avoid `--avoid` (the looks of
 the dailies already scheduled - "same theme as daily #1" was a review note).
@@ -370,8 +373,9 @@ the dailies already scheduled - "same theme as daily #1" was a review note).
 car can leave and rejoin further on with no checkpoint between: across the
 grass on a circuit, or through the air off a higher stretch onto a lower one,
 which is how every top Playground time skips the Climb. `gen_daily.repair`
-walls both stretches of a grass cut and puts a checkpoint between take-off and
-landing of a drop, then the track is re-judged. Walls of death only ever climb,
+walls both stretches of a grass cut, walls the take-off of a drop (or, if it is
+already walled, puts a checkpoint between take-off and landing), then the
+track is re-judged. Walls of death only ever climb,
 and every loop and wall is followed by a checkpoint, for the same reason.
 
 **Generate on a laptop, queue on the box**: the bot laps are QuickJS and the box

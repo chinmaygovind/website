@@ -18,8 +18,11 @@ Two kinds of daily, and the look decides which
   pad, now and then a half-pipe or a loop. Tight chicanes get barriers, because
   a chicane you can drive straight through on the grass is not a chicane.
 * **A stunt track** floats under one of the pool's void looks (void, lava,
-  desert, downtown, pillars), walled on both edges, and is built from
-  Playground's vocabulary: loops, walls of death, gaps, drops, half-pipes.
+  desert, downtown, pillars), open-edged like Playground (`exposed`), and is
+  built from its vocabulary: loops, walls of death, gaps, drops, half-pipes.
+
+Neither kind has barriers by default. They go round loops, through chicanes,
+and wherever a shortcut has to be closed - nowhere else.
 
 **Walls of death only ever climb.** One that descends puts its own exit under
 its wrap, so dropping off the top lands on it and the whole corner is optional -
@@ -218,7 +221,9 @@ def _trick(rng, kind, turn, radii, stunt):
                 + inner + [{"t": "flat"}, {"t": "straight", "len": 16.0}],
                 0.0, turn)
     if kind == "loop":
-        extra = {} if stunt else {"rail": "lr"}
+        # Walled round the loop itself and nowhere else: coming off the inside
+        # of a loop is falling, not driving.
+        extra = {"rail": "lr"}
         return ([{"t": "boost", "len": 14.0},
                  {"t": "straight", "len": round(rng.uniform(30.0, 44.0), 1)},
                  dict({"t": "loop", "rad": round(rng.uniform(20.0, 25.0), 1),
@@ -263,7 +268,12 @@ def generate(seed, looks, secs=None, look=None):
     stunt = is_void(look)
     pal = borrow(rng, look)
     width = rng.choice((12.0, 13.0, 14.0) if stunt else (10.0, 11.0, 11.0, 12.0, 13.0))
-    rails = True if stunt else rng.random() < 0.35
+    # **No barriers by default, on either kind.** An edge you can go off is
+    # what makes a stunt track a stunt track - Playground, Rainbow Road and
+    # Cloudbreak are all `exposed` - and a circuit has grass to run onto.
+    # Barriers go only where they do a job: round a loop, through a chicane,
+    # and wherever `gen_daily.repair` closes a shortcut.
+    rails = False
 
     # Four to six of the eight radii, so the spread check is met by
     # construction and the track still has a character.
@@ -353,9 +363,10 @@ def generate(seed, looks, secs=None, look=None):
         "name": name_for(rng),
         "moves": moves,
         "width": width,
-        # A stunt track floats and is walled; a circuit sits on a ground plane
+        # A stunt track floats, open-edged; a circuit sits on a ground plane
         # whose height `settle_ground` fixes once the ribbon exists.
         "ground": None if stunt else 0.0,
+        "exposed": stunt,
         "rails": rails,
         "difficulty": (4 if stunt else (2 if max(radii) >= 40 else 3)),
         "pal": pal,

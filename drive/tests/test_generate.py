@@ -143,15 +143,22 @@ def test_the_shortcut_check_sees_playgrounds_drops():
     assert checks.shortcuts(tracks_mod.get("sunrise")) == []
 
 
-def test_a_drop_is_closed_with_a_checkpoint_between():
-    """`repair` puts a gate between take-off and landing, which kills the drop
-    because a lap that misses a gate is not a lap."""
+def test_a_drop_is_walled_then_given_a_checkpoint_between():
+    """`repair` first walls the stretch a drop leaves from - barriers only
+    where they do a job - and, once that is already walled, puts a gate
+    between take-off and landing, which kills the drop because a lap that
+    misses a gate is not a lap."""
     looks = gen_daily.pool_looks()
     doc = generate.generate(3, looks)
     n = len(doc["moves"])
     track = tracks_mod.from_document("daily-x", doc, timed=False)
     i, j = 40, len(track["line"]) - 60
-    assert gen_daily.repair(doc, {"kind": "drop", "i": i, "j": j, "gain": 99})
+    cut = {"kind": "drop", "i": i, "j": j, "gain": 99}
+    assert gen_daily.repair(doc, cut)
+    assert len(doc["moves"]) == n
+    walled = tracks_mod.from_document("daily-x", doc, timed=False)["line"][i]
+    assert walled.get("wl") and walled.get("wr")
+    assert gen_daily.repair(doc, cut)
     assert len(doc["moves"]) == n + 1
     after = tracks_mod.from_document("daily-x", doc, timed=False)
     assert any(i < g["si"] <= j for g in after["gates"] if g["kind"] == "cp")
@@ -178,3 +185,14 @@ def test_neighbouring_days_get_different_looks():
     assert all(a != b for a, b in zip(order, order[1:]))
     assert "tokyo" not in order[:5] and "suzuka" not in order[:5]
     assert set(order[:len(looks)]) == {l["slug"] for l in looks}
+
+
+def test_dailies_have_barriers_only_where_they_do_a_job():
+    """A daily walled end to end was no fun to drive. Neither kind is walled
+    by default; a stunt track is `exposed`, like Playground."""
+    looks = gen_daily.pool_looks()
+    for seed in range(20):
+        doc = generate.generate(seed, looks)
+        assert doc["rails"] is False
+        assert doc["exposed"] is generate.is_void(
+            next(l for l in looks if l["slug"] == doc["generated"]["look"]))

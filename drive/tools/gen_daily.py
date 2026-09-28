@@ -119,10 +119,14 @@ def repair(doc, cut):
     """Close one shortcut from `checks.shortcuts`, in place. False if it cannot.
 
     A cut across the grass gets barriers on the two stretches it joins. A drop
-    gets a checkpoint between take-off and landing - which is how Rickety Rails'
-    loop was closed - placed two-thirds of the way along so it is nearer the
-    landing than the take-off and not under it. The document is re-judged after
-    either, so a repair that made something else wrong is caught.
+    gets barriers on the stretch it leaves from, and if that is already walled
+    - a kicker or a wall of death can still throw a car over - a checkpoint
+    between take-off and landing, which is how Rickety Rails' loop was closed,
+    placed two-thirds of the way along so it is nearer the landing than the
+    take-off and not under it. Barriers are only ever added here, so a track
+    ends up walled exactly where leaving the road would pay. The document is
+    re-judged after either, so a repair that made something else wrong is
+    caught.
     """
     if cut["kind"] == "grass":
         a, b = _move_at(doc, cut["i"]), _move_at(doc, cut["j"])
@@ -130,6 +134,9 @@ def repair(doc, cut):
             return False
         done = _wall_move(doc, b)
         return _wall_move(doc, a) or done
+    off = _move_at(doc, cut["i"])
+    if off is not None and _wall_move(doc, off):
+        return True
     at = _move_at(doc, cut["i"] + (cut["j"] - cut["i"]) * 2 // 3)
     if at is None or at + 1 >= len(doc["moves"]) - 1:
         return False
@@ -178,8 +185,8 @@ def judge(doc, bot=True):
     slug = "daily-cand-%s" % (doc.get("generated") or {}).get("seed", 0)
     try:
         # Shortcuts first, on the untimed ribbon, because closing one moves the
-        # road: up to four repairs, and a track that still has one is dropped.
-        for _ in range(5):
+        # road: up to eight repairs, and a track that still has one is dropped.
+        for _ in range(9):
             rough = tracks_mod.from_document(slug, doc, timed=False)
             cuts = checks.shortcuts(rough)
             if not cuts:
@@ -188,7 +195,7 @@ def judge(doc, bot=True):
                 return None, ["a %s shortcut worth %.0f units that could not "
                               "be closed" % (cuts[0]["kind"], cuts[0]["gain"])]
         else:
-            return None, ["still a shortcut after four repairs"]
+            return None, ["still a shortcut after eight repairs"]
         generate.settle_ground(doc, rough)
         track = tracks_mod.from_document(slug, doc, timed=True)
     except Exception as e:
@@ -239,8 +246,9 @@ def judge(doc, bot=True):
     med = track.get("medals")
     if not med or not (med["gold"] < med["silver"] < med["bronze"]):
         why.append("medals out of order")
-    if doc.get("ground") is None and not doc.get("rails"):
-        why.append("floats with no barriers")
+    if (doc.get("ground") is None and not doc.get("exposed")
+            and not doc.get("rails")):
+        why.append("floats with no barriers and is not exposed")
     if not why and bot:
         stuck = bot_laps(track)
         if stuck:
