@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>REV12 VI-grade Sim Architecture</title>
+<meta name="description" content="Penn Electric Racing REV12: how the VI-grade transient sim, Simulink controls and SuboptimumG fit together.">
+<link rel="icon" href="../../favicon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none!important}
+/* Layout: single reading column, full-width diagram band, tables scroll in their own box */
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --fg:#17202b; --muted:#5a6675; --line:#d7dde5;
+  --accent:#0b5fae; --warn:#9a5b00; --warn-bg:#fff4e0;
+  --have:#2f7d4f; --vg:#0b5fae; --build:#c46a12; --check:#8a4fc0; --hover:#eaf2fb;
+  --display:"Barlow Condensed","Arial Narrow",sans-serif;
+  --body:"Barlow",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#10151c; --panel:#18202a; --fg:#e4e9ef; --muted:#9aa6b4; --line:#2c3845;
+  --accent:#6cb2f5; --warn:#f0b35a; --warn-bg:#2b2215;
+  --have:#5fc28a; --vg:#6cb2f5; --build:#f0a04b; --check:#c49af0; --hover:#1f2c3b;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#10151c; --panel:#18202a; --fg:#e4e9ef; --muted:#9aa6b4; --line:#2c3845;
+  --accent:#6cb2f5; --warn:#f0b35a; --warn-bg:#2b2215;
+  --have:#5fc28a; --vg:#6cb2f5; --build:#f0a04b; --check:#c49af0; --hover:#1f2c3b;
+  color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:16px/1.55 var(--body);padding-inline:16px;padding-block:32px 64px}
+main{max-width:1040px;margin:0 auto;display:grid;gap:40px}
+h1,h2{font-family:var(--display);text-wrap:balance;margin:0;letter-spacing:.01em}
+h1{font-size:2.4rem;line-height:1.05}
+h2{font-size:1.5rem;margin-bottom:12px}
+p{margin:0 0 10px;max-width:68ch}
+.eyebrow{font:500 .75rem var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--accent)}
+.lede{color:var(--muted);font-size:1.05rem}
+.diagram{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px;overflow-x:auto;margin:0}
+.diagram svg{display:block;width:100%;min-width:880px;height:auto;color:var(--muted)}
+.diagram figcaption{font-size:.9rem;color:var(--muted);margin-top:8px;max-width:none}
+.diagram .box{fill:var(--bg);stroke:var(--muted);stroke-width:1}
+.diagram .strong{stroke:var(--fg);stroke-width:1.5}
+.diagram .accent{stroke:var(--accent);stroke-width:2}
+.diagram .st-check .box{stroke-dasharray:5 3}
+.diagram .grp{fill:none;stroke:var(--line);stroke-width:1.5}
+.diagram .t{fill:var(--fg);font:600 14px var(--body)}
+.diagram .s{fill:var(--muted);font:12px var(--body)}
+.diagram .lb{fill:var(--muted);font:12px var(--body)}
+.diagram .em{fill:var(--accent);font-weight:600}
+.diagram .lane{fill:var(--accent);font:500 11.5px var(--mono);letter-spacing:.08em}
+.diagram .ln{fill:none;stroke:currentColor;stroke-width:1.4}
+.diagram .dash{stroke-dasharray:5 4}
+.diagram .fb{stroke:var(--warn)}
+.diagram .fbt{fill:var(--warn);font-weight:600}
+.node{cursor:pointer;outline:none}
+.node:hover .box,.node:focus-visible .box{fill:var(--hover);stroke:var(--accent);stroke-width:2}
+.node.sel .box{fill:var(--hover);stroke:var(--accent);stroke-width:2.5}
+.st-have .dot,.ldot.st-have{fill:var(--have);background:var(--have)}
+.st-vg .dot,.ldot.st-vg{fill:var(--vg);background:var(--vg)}
+.st-build .dot,.ldot.st-build{fill:var(--build);background:var(--build)}
+.st-check .dot,.ldot.st-check{fill:var(--check);background:var(--check)}
+.hint{color:var(--muted);font-size:.95rem}
+.legend{list-style:none;padding:0;margin:0 0 12px;display:flex;flex-wrap:wrap;gap:6px 18px;font-size:.88rem;color:var(--muted)}
+.legend li{display:flex;align-items:center;gap:6px}
+.ldot{width:10px;height:10px;border-radius:50%;display:inline-block}
+#panel{position:fixed;top:0;right:0;bottom:0;width:min(440px,100%);background:var(--panel);border-left:1px solid var(--line);box-shadow:-8px 0 24px rgba(0,0,0,.12);overflow-y:auto;padding:calc(20px + env(safe-area-inset-top,0px)) 22px calc(28px + env(safe-area-inset-bottom,0px));z-index:10;transform:translateX(0);transition:transform .2s ease}
+#panel h2{font-size:1.7rem;margin:6px 0 2px}
+#panel .sub{color:var(--muted);margin-bottom:12px}
+#panel h3{font:600 .72rem var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:16px 0 4px}
+#panel p{font-size:.95rem;margin:0}
+#panel ul{padding-left:18px;margin:4px 0 0;font-size:.93rem}
+#panel li{margin-bottom:8px}
+#p-links{list-style:none;padding:0}
+#p-links li{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:baseline}
+.kind{font:500 .66rem var(--mono);text-transform:uppercase;letter-spacing:.05em;padding:2px 6px;border-radius:3px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.k-pdf,.k-local{color:var(--accent);border-color:var(--accent)}
+#panel .pill{display:inline-flex;align-items:center;gap:6px;font:500 .78rem var(--mono);padding:3px 10px;border-radius:99px;background:var(--bg);border:1px solid var(--line)}
+#close{position:absolute;top:calc(14px + env(safe-area-inset-top,0px));right:14px;margin:0;font-size:1.1rem;line-height:1;padding:6px 10px}
+@media (prefers-reduced-motion: reduce){#panel{transition:none}}
+.layers{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px}
+.layer{min-width:0;border-top:2px solid var(--accent);padding-top:10px}
+.layer h3{font:600 1rem var(--body);margin:0 0 6px}
+.layer p,.layer li{font-size:.94rem}
+.layer ul{margin:0;padding-left:18px}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:6px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;min-width:680px;font-size:.93rem}
+th,td{text-align:left;vertical-align:top;padding:9px 12px;border-bottom:1px solid var(--line)}
+thead th{font:600 .75rem var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+tbody th{font-weight:600;white-space:nowrap}
+tr:last-child td,tr:last-child th{border-bottom:0}
+code{font:.86em var(--mono)}
+.quote{border-left:2px solid var(--line);padding-left:14px;margin:0 0 14px}
+.quote p{font-size:.95rem}
+.quote cite{font:500 .78rem var(--mono);color:var(--muted);font-style:normal}
+.decisions{display:grid;gap:10px;padding:0;margin:0;list-style:none}
+.decisions li{background:var(--warn-bg);border-radius:6px;padding:10px 14px;font-size:.95rem}
+.decisions b{color:var(--warn)}
+details{border:1px solid var(--line);border-radius:6px;background:var(--panel);padding:10px 14px}
+summary{cursor:pointer;font-weight:600}
+details pre{overflow-x:auto;font:.8rem/1.45 var(--mono);margin:10px 0 0}
+button{font:500 .85rem var(--body);border:1px solid var(--accent);color:var(--accent);background:transparent;border-radius:4px;padding:5px 12px;cursor:pointer;margin-top:8px}
+button:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sources li{font-size:.9rem;color:var(--muted)}
+a{color:var(--accent)}
+</style>
+
+</head>
+<body>
+<main>
+<header>
+  <div class="eyebrow">PER · REV12 · Controls / VD sim</div>
+  <h1>REV12 VI-grade Sim Architecture</h1>
+  <p class="lede">How the VI-grade transient model gets built, how the torque vectoring, launch control and traction control (TV/LC/TC) controllers plug into it, and where it sits next to SuboptimumG. Draft for the 9/26 Controls to-do: "concrete architecture/system design diagram".</p>
+</header>
+
+<section>
+  <h2>System diagram</h2>
+<p class="hint">Click any box for what it is, what we have today, and links to read up on it. The dot shows whether the box exists yet.</p>
+<ul class="legend">
+<li><span class="ldot st-have"></span>Have at PER</li>
+<li><span class="ldot st-vg"></span>VI-grade product (needs license)</li>
+<li><span class="ldot st-build"></span>We build it</li>
+<li><span class="ldot st-check"></span>Unconfirmed / hardware or license to get</li>
+</ul>
+<figure class="diagram">
+<svg viewBox="0 0 1060 800" role="img" aria-label="VI-grade sim architecture. Subteam data builds one VI-CarRealTime model; the solver runs with VI-Road and VI-Driver and exchanges sensors and torque commands with Simulink controllers; it runs offline, driver-in-loop, and MIL, then unit-tested C++, to the car; car logs are overlaid on sim traces to re-tune the model, and SuboptimumG cross-checks lap time. Each box opens a details panel.">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+<marker id="arS" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M10,0 L0,5 L10,10 z" fill="currentColor"/></marker></defs>
+<text class="lane" x="60" y="46">1 · SOURCE DATA (each subteam owns one)</text>
+<g class="node st-have" data-id="cad" tabindex="0" role="button" aria-label="CAD: details">
+<rect class="box" x="60" y="58" width="176" height="56" rx="4"/>
+<circle class="dot" cx="71" cy="69" r="4.5"/>
+<text class="t" x="148.0" y="83.0" text-anchor="middle">CAD</text>
+<text class="s" x="148.0" y="99.0" text-anchor="middle">mass, inertia, hardpoints</text>
+</g>
+<g class="node st-have" data-id="ttc" tabindex="0" role="button" aria-label="TTC tire data: details">
+<rect class="box" x="256" y="58" width="176" height="56" rx="4"/>
+<circle class="dot" cx="267" cy="69" r="4.5"/>
+<text class="t" x="344.0" y="83.0" text-anchor="middle">TTC tire data</text>
+<text class="s" x="344.0" y="99.0" text-anchor="middle">force &amp; moment data</text>
+</g>
+<g class="node st-have" data-id="aero" tabindex="0" role="button" aria-label="Aero CFD: details">
+<rect class="box" x="452" y="58" width="176" height="56" rx="4"/>
+<circle class="dot" cx="463" cy="69" r="4.5"/>
+<text class="t" x="540.0" y="83.0" text-anchor="middle">Aero CFD</text>
+<text class="s" x="540.0" y="99.0" text-anchor="middle">aeromap vs ride height</text>
+</g>
+<g class="node st-check" data-id="chassis" tabindex="0" role="button" aria-label="Chassis: details">
+<rect class="box" x="648" y="58" width="176" height="56" rx="4"/>
+<circle class="dot" cx="659" cy="69" r="4.5"/>
+<text class="t" x="736.0" y="83.0" text-anchor="middle">Chassis</text>
+<text class="s" x="736.0" y="99.0" text-anchor="middle">torsion test / FEM</text>
+</g>
+<g class="node st-have" data-id="dti" tabindex="0" role="button" aria-label="DTI powertrain: details">
+<rect class="box" x="844" y="58" width="176" height="56" rx="4"/>
+<circle class="dot" cx="855" cy="69" r="4.5"/>
+<text class="t" x="932.0" y="83.0" text-anchor="middle">DTI powertrain</text>
+<text class="s" x="932.0" y="99.0" text-anchor="middle">motor maps, 80 kW limit</text>
+</g>
+<text class="lane" x="162" y="158">2 · MODEL BUILD</text>
+<g class="node st-vg" data-id="sg" tabindex="0" role="button" aria-label="VI-SuspensionGen: details">
+<rect class="box" x="60" y="170" width="176" height="50" rx="4"/>
+<circle class="dot" cx="71" cy="181" r="4.5"/>
+<text class="t" x="148.0" y="192.0" text-anchor="middle">VI-SuspensionGen</text>
+<text class="s" x="148.0" y="208.0" text-anchor="middle">→ K&amp;C curves</text>
+</g>
+<g class="node st-build" data-id="mf" tabindex="0" role="button" aria-label="Pacejka MF fit: details">
+<rect class="box" x="256" y="170" width="176" height="50" rx="4"/>
+<circle class="dot" cx="267" cy="181" r="4.5"/>
+<text class="t" x="344.0" y="192.0" text-anchor="middle">Pacejka MF fit</text>
+<text class="s" x="344.0" y="208.0" text-anchor="middle">.tir → VI-Tire</text>
+</g>
+<polyline class="ln" points="148,114 148,168" marker-end="url(#ar)"/>
+<polyline class="ln" points="344,114 344,168" marker-end="url(#ar)"/>
+<polyline class="ln" points="148,220 148,268" marker-end="url(#ar)"/>
+<text class="lb" x="154" y="248" text-anchor="start">K&amp;C curves</text>
+<polyline class="ln" points="344,220 344,268" marker-end="url(#ar)"/>
+<text class="lb" x="350" y="248" text-anchor="start">tire model</text>
+<polyline class="ln" points="540,114 540,268" marker-end="url(#ar)"/>
+<text class="lb" x="546" y="200" text-anchor="start">aeromap</text>
+<polyline class="ln" points="736,114 736,268" marker-end="url(#ar)"/>
+<text class="lb" x="742" y="200" text-anchor="start">stiffness</text>
+<polyline class="ln" points="932,114 932,268" marker-end="url(#ar)"/>
+<text class="lb" x="938" y="200" text-anchor="start">torque maps</text>
+<g class="node st-vg" data-id="veh" tabindex="0" role="button" aria-label="VI-CarRealTime vehicle model: details">
+<rect class="box strong" x="60" y="270" width="960" height="46" rx="4"/>
+<circle class="dot" cx="71" cy="281" r="4.5"/>
+<text class="t" x="540.0" y="290.0" text-anchor="middle">VI-CarRealTime vehicle model</text>
+<text class="s" x="540.0" y="306.0" text-anchor="middle">one model, 4 independent motors</text>
+</g>
+<rect class="grp" x="60" y="356" width="570" height="146" rx="6"/>
+<text class="lane" x="74" y="376">3 · VI-MOTORSPORT RUNTIME</text>
+<g class="node st-vg" data-id="road" tabindex="0" role="button" aria-label="VI-Road: details">
+<rect class="box" x="80" y="392" width="200" height="38" rx="4"/>
+<circle class="dot" cx="91" cy="403" r="4.5"/>
+<text class="t" x="180.0" y="408.0" text-anchor="middle">VI-Road</text>
+<text class="s" x="180.0" y="424.0" text-anchor="middle">tracks from GPS laps</text>
+</g>
+<g class="node st-vg" data-id="drv" tabindex="0" role="button" aria-label="VI-Driver: details">
+<rect class="box" x="80" y="446" width="200" height="38" rx="4"/>
+<circle class="dot" cx="91" cy="457" r="4.5"/>
+<text class="t" x="180.0" y="462.0" text-anchor="middle">VI-Driver</text>
+<text class="s" x="180.0" y="478.0" text-anchor="middle">MaxPerformance model</text>
+</g>
+<g class="node st-vg" data-id="solver" tabindex="0" role="button" aria-label="VI-CarRealTime: details">
+<rect class="box accent" x="440" y="392" width="170" height="92" rx="4"/>
+<circle class="dot" cx="451" cy="403" r="4.5"/>
+<text class="t" x="525.0" y="435.0" text-anchor="middle">VI-CarRealTime</text>
+<text class="s" x="525.0" y="451.0" text-anchor="middle">solver</text>
+</g>
+<polyline class="ln" points="525,316 525,390" marker-end="url(#ar)"/>
+<polyline class="ln" points="280,411 438,411" marker-end="url(#ar)"/>
+<text class="lb" x="359" y="404" text-anchor="middle">track surface</text>
+<polyline class="ln" points="280,465 438,465" marker-end="url(#ar)" marker-start="url(#arS)"/>
+<text class="lb" x="359" y="458" text-anchor="middle">steer / pedals</text>
+<rect class="grp" x="760" y="356" width="260" height="146" rx="6"/>
+<text class="lane" x="774" y="376">4 · CONTROLS (SIMULINK)</text>
+<g class="node st-build" data-id="est" tabindex="0" role="button" aria-label="State estimator: details">
+<rect class="box" x="775" y="392" width="230" height="38" rx="4"/>
+<circle class="dot" cx="786" cy="403" r="4.5"/>
+<text class="t" x="890.0" y="408.0" text-anchor="middle">State estimator</text>
+<text class="s" x="890.0" y="424.0" text-anchor="middle">vx, sideslip, slip ratio</text>
+</g>
+<g class="node st-build" data-id="lctc" tabindex="0" role="button" aria-label="LC / TC: details">
+<rect class="box" x="775" y="448" width="110" height="38" rx="4"/>
+<circle class="dot" cx="786" cy="459" r="4.5"/>
+<text class="t" x="830.0" y="472" text-anchor="middle">LC / TC</text>
+</g>
+<g class="node st-build" data-id="tv" tabindex="0" role="button" aria-label="Torque vectoring: details">
+<rect class="box" x="895" y="448" width="110" height="38" rx="4"/>
+<circle class="dot" cx="906" cy="459" r="4.5"/>
+<text class="t" x="950.0" y="472" text-anchor="middle">Torque vectoring</text>
+</g>
+<polyline class="ln" points="830,430 830,446" marker-end="url(#ar)"/>
+<polyline class="ln" points="950,430 950,446" marker-end="url(#ar)"/>
+<polyline class="ln" points="610,411 773,411" marker-end="url(#ar)"/>
+<text class="lb" x="692" y="403" text-anchor="middle">wheel speed, IMU, steer</text>
+<polyline class="ln" points="773,467 612,467" marker-end="url(#ar)"/>
+<text class="lb" x="692" y="483" text-anchor="middle">4 torque commands</text>
+<text class="lb em" x="692" y="440" text-anchor="middle">S-function link</text>
+<text class="lane" x="164" y="548">5 · RUN MODES</text>
+<g class="node st-vg" data-id="off" tabindex="0" role="button" aria-label="Offline sweeps: details">
+<rect class="box" x="60" y="560" width="180" height="50" rx="4"/>
+<circle class="dot" cx="71" cy="571" r="4.5"/>
+<text class="t" x="150.0" y="582.0" text-anchor="middle">Offline sweeps</text>
+<text class="s" x="150.0" y="598.0" text-anchor="middle">setup, aero, suspension</text>
+</g>
+<g class="node st-check" data-id="dil" tabindex="0" role="button" aria-label="Driver-in-loop: details">
+<rect class="box" x="260" y="560" width="180" height="50" rx="4"/>
+<circle class="dot" cx="271" cy="571" r="4.5"/>
+<text class="t" x="350.0" y="582.0" text-anchor="middle">Driver-in-loop</text>
+<text class="s" x="350.0" y="598.0" text-anchor="middle">VI-DriveSim + wheel rig</text>
+</g>
+<polyline class="ln" points="150,502 150,558" marker-end="url(#ar)"/>
+<text class="lb" x="156" y="522" text-anchor="start">batch, API</text>
+<polyline class="ln" points="350,502 350,558" marker-end="url(#ar)"/>
+<text class="lb" x="356" y="522" text-anchor="start">real time</text>
+<g class="node st-build" data-id="mil" tabindex="0" role="button" aria-label="MIL: details">
+<rect class="box" x="520" y="560" width="140" height="50" rx="4"/>
+<circle class="dot" cx="531" cy="571" r="4.5"/>
+<text class="t" x="590.0" y="582.0" text-anchor="middle">MIL</text>
+<text class="s" x="590.0" y="598.0" text-anchor="middle">Simulink model</text>
+</g>
+<g class="node st-build" data-id="sil" tabindex="0" role="button" aria-label="Unit tests: details">
+<rect class="box" x="690" y="560" width="170" height="50" rx="4"/>
+<circle class="dot" cx="701" cy="571" r="4.5"/>
+<text class="t" x="775.0" y="582.0" text-anchor="middle">Unit tests</text>
+<text class="s" x="775.0" y="598.0" text-anchor="middle">C++ · GoogleTest</text>
+</g>
+<g class="node st-have" data-id="car" tabindex="0" role="button" aria-label="REV12 car: details">
+<rect class="box strong" x="890" y="560" width="130" height="50" rx="4"/>
+<circle class="dot" cx="901" cy="571" r="4.5"/>
+<text class="t" x="955.0" y="582.0" text-anchor="middle">REV12 car</text>
+<text class="s" x="955.0" y="598.0" text-anchor="middle">PCM firmware</text>
+</g>
+<polyline class="ln" points="660,585 688,585" marker-end="url(#ar)"/>
+<polyline class="ln" points="860,585 888,585" marker-end="url(#ar)"/>
+<polyline class="ln" points="890,502 890,530 590,530 590,558" marker-end="url(#ar)"/>
+<text class="lb" x="740" y="524" text-anchor="middle">same controller, promoted step by step</text>
+<text class="lb em" x="775" y="628" text-anchor="middle">test cases from MIL runs</text>
+<text class="lane" x="60" y="678">6 · VALIDATION</text>
+<g class="node st-have" data-id="sog" tabindex="0" role="button" aria-label="SuboptimumG: details">
+<rect class="box" x="60" y="690" width="300" height="52" rx="4"/>
+<circle class="dot" cx="71" cy="701" r="4.5"/>
+<text class="t" x="210.0" y="713.0" text-anchor="middle">SuboptimumG</text>
+<text class="s" x="210.0" y="729.0" text-anchor="middle">quasi-static lap sim (Python)</text>
+</g>
+<g class="node st-build" data-id="ovl" tabindex="0" role="button" aria-label="Sim vs log overlay: details">
+<rect class="box accent" x="440" y="690" width="300" height="52" rx="4"/>
+<circle class="dot" cx="451" cy="701" r="4.5"/>
+<text class="t" x="590.0" y="713.0" text-anchor="middle">Sim vs log overlay</text>
+<text class="s" x="590.0" y="729.0" text-anchor="middle">yaw rate, lateral accel, sideslip, slip</text>
+</g>
+<g class="node st-have" data-id="logs" tabindex="0" role="button" aria-label="Car logs: details">
+<rect class="box" x="800" y="690" width="220" height="52" rx="4"/>
+<circle class="dot" cx="811" cy="701" r="4.5"/>
+<text class="t" x="910.0" y="713.0" text-anchor="middle">Car logs</text>
+<text class="s" x="910.0" y="729.0" text-anchor="middle">CAN → dataserver → PERDA</text>
+</g>
+<polyline class="ln" points="968,610 968,688" marker-end="url(#ar)"/>
+<text class="lb" x="962" y="655" text-anchor="end">logged CAN</text>
+<polyline class="ln" points="470,484 470,688" marker-end="url(#ar)"/>
+<text class="lb" x="476" y="660" text-anchor="start">sim traces</text>
+<polyline class="ln" points="798,716 742,716" marker-end="url(#ar)"/>
+<polyline class="ln dash" points="362,716 438,716" marker-end="url(#ar)" marker-start="url(#arS)"/>
+<text class="lb" x="400" y="708" text-anchor="middle">lap-time</text>
+<text class="lb" x="400" y="734" text-anchor="middle">cross-check</text>
+<polyline class="ln fb dash" points="590,742 590,772 30,772 30,293 58,293" marker-end="url(#ar)"/>
+<text class="lb fbt" x="310" y="788" text-anchor="middle">mismatch → re-tune the vehicle model (never the controller)</text>
+</svg>
+<figcaption>Read top to bottom. Subteam data builds one vehicle model, and the solver runs it with a track and a driver. Simulink controllers close the loop through the S-function link, and the controller is tuned in MIL, ported to C++ and unit-tested, then goes on the car. Car logs come back and re-tune the model. Solid lines are data flow; dashed lines are comparison or feedback.</figcaption>
+</figure>
+</section>
+
+<section>
+  <h2>What we program, and in what</h2>
+  <p>Most of the VI-grade side is configuration in VI-grade's GUI, not code. What the team actually writes:</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>What</th><th>Language</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><th>LC/TC, torque vectoring, state estimator</th><td>Simulink (block diagrams + MATLAB Function blocks)</td><td>Direction agreed 9/22 (VI-grade + MATLAB/Simulink)</td></tr>
+      <tr><th>Unit tests for the C++ controllers</th><td>C++ with GoogleTest (monorepo/embedded/unit-tests)</td><td>Framework exists (pcm-unit-tests); tests to write</td></tr>
+      <tr><th>PCM firmware</th><td>C++ on STM32, in the monorepo</td><td>Exists; TC/TV get hand-ported from Simulink into a hardware-free module</td></tr>
+      <tr><th>Pacejka tire fit → .tir</th><td>MATLAB (MFeval) or Python (scipy)</td><td>Open</td></tr>
+      <tr><th>Offline sweep scripts</th><td>MATLAB or Python, through VI-grade's API</td><td>Open (the minutes say to explore Python)</td></tr>
+      <tr><th>Data converters: CFD → .aer, DTI → motor files, GPS → .rdf</th><td>Python</td><td>Proposed; fits next to PERDA</td></tr>
+      <tr><th>Sim-vs-log overlay</th><td>Python (PERDA + numpy + plotting)</td><td>Proposed</td></tr>
+      <tr><th>SuboptimumG</th><td>Python 3 (Pydantic, numpy)</td><td>Exists</td></tr>
+    </tbody>
+  </table></div>
+  <p style="margin-top:12px">The split that falls out: <b>controls tuned in Simulink, hand-ported to C++ on the car, with unit tests checking the port</b>, and <b>data plumbing and analysis in Python</b>, where PERDA and SuboptimumG already live. The one real language choice left is MATLAB vs Python for the tire fit and offline sweeps.</p>
+</section>
+
+
+<section>
+  <h2>Layer by layer</h2>
+  <div class="layers">
+    <div class="layer"><h3>1 · Source data</h3>
+      <p>Each subteam owns an input. PoliTO says the model is only as good as these: mass and inertias, chassis torsional stiffness from a torsion test or FEM, suspension hardpoints, a tire model you trust, and a 2D aeromap indexed by front and rear ride height.</p></div>
+    <div class="layer"><h3>2 · Model build</h3>
+      <ul>
+        <li><b>VI-SuspensionGen</b> turns hardpoints into kinematics and compliance (K&amp;C) curves.</li>
+        <li><b>VI-Tire</b> takes a Pacejka MF <code>.tir</code> fitted from TTC data. VI-grade needs this from us.</li>
+        <li><b>VI-Road</b> tracks come from VectorNav GPS laps and FSAE layouts.</li>
+        <li><b>Powertrain</b>: 4 independent DTI motors, 12.5:1 reduction, 80 kW pack limit.</li>
+      </ul></div>
+    <div class="layer"><h3>3 · VI-Motorsport runtime</h3>
+      <p>VI-CarRealTime is the solver. VI-Driver MaxPerformance closes the loop on a track for lap-time runs, and VI-Animator plays results back. Per the 9/22 minutes, this stack alone gives an offline transient sim without MATLAB.</p></div>
+    <div class="layer"><h3>4 · Controls in Simulink</h3>
+      <p>VI-CarRealTime ships as a Simulink blockset (S-function, also FMU), so LC/TC and TV run as Simulink models wired to the vehicle's wheel speeds, IMU and steer signals. The controllers send back four torque commands. The state estimator (vx, sideslip, slip ratios) sits here too, since TC depends on ground-speed accuracy.</p></div>
+    <div class="layer"><h3>5 · Run modes</h3>
+      <ul>
+        <li><b>Offline:</b> setup, aero and suspension sweeps through the MATLAB or Python API.</li>
+        <li><b>MIL → unit tests:</b> the controller is tuned as a Simulink model, then its C++ port in the PCM firmware is checked with GoogleTest unit tests built from MIL traces. SIL and HIL are out of scope for REV12.</li>
+        <li><b>DIL:</b> VI-DriveSim on the 1 sim license, used for driver training and to check how the controls feel.</li>
+      </ul></div>
+    <div class="layer"><h3>6 · Validation loop</h3>
+      <p>REV12 logs go through the dataserver and PERDA and are overlaid on sim runs (yaw rate, a<sub>y</sub>, sideslip, wheel slip). Mismatches tune the model, not the controller. SuboptimumG's <code>log_analysis</code> (understeer, yaw fit) already does part of this.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>SuboptimumG vs VI-grade</h2>
+  <p>These don't compete. SuboptimumG answers "which car should we build" quickly. VI-grade answers "how does this car behave through a transient, and do our controllers work on it".</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th></th><th>SuboptimumG (today)</th><th>VI-grade (REV12)</th></tr></thead>
+    <tbody>
+      <tr><th>Sim type</th><td>Quasi-static lap sim: v<sub>max</sub> profile from corner radius, then forward/backward passes</td><td>Transient multibody-style solver, real-time capable</td></tr>
+      <tr><th>Tire</th><td>Friction ellipse: quadratic load-sensitive μ<sub>lat</sub> fit from TTC plus a fixed long/lat ratio</td><td>Full Pacejka MF with slip angle, slip ratio and combined slip</td></tr>
+      <tr><th>Suspension</th><td>Lumped roll stiffness and roll-center heights</td><td>K&amp;C curves from SuspensionGen, plus chassis compliance</td></tr>
+      <tr><th>4WD</th><td><code>FOUR_WHEEL_DRIVE</code> setup, energy-equivalent</td><td>Per-wheel torque inputs, which TV needs</td></tr>
+      <tr><th>Controls</th><td>None; assumes an ideal traction limit</td><td>Simulink closed loop, then unit-tested C++</td></tr>
+      <tr><th>Driver</th><td>Implicit (the speed profile)</td><td>VI-Driver model or a human in DIL</td></tr>
+      <tr><th>Speed</th><td>Thousands of runs in multiprocessing sweeps</td><td>Slower per run; sweeps are batch jobs</td></tr>
+      <tr><th>Stack</th><td>Python + Pydantic YAMLs, open, in our repo</td><td>Closed source, licensed; C/Java/MATLAB/Python APIs</td></tr>
+      <tr><th>Keep using for</th><td>Concept trades, motor/gear sweeps, endurance energy, points estimates</td><td>Controls dev, setup, driver training, transient validation</td></tr>
+    </tbody>
+  </table></div>
+  <p style="margin-top:12px"><b>Glue between them:</b> use one tire fit and one K&amp;C run as the source for both. Derive SuboptimumG's <code>mu_lat_zero_load</code>, roll stiffness and roll-center heights from the MF fit and the SuspensionGen output instead of hand-entering them. Then run VI-grade's quasi-static lap mode against SuboptimumG on the same track, as the minutes suggest. If lap times disagree, one of the two models is wrong.</p>
+</section>
+
+<section>
+  <h2>What other VI-grade teams told us</h2>
+  <div class="quote"><p>Build the model from measured mass and inertia, a chassis torsion test or FEM, SuspensionGen hardpoints, a trusted tire model and a 2D aeromap. Fit a ground speed sensor to validate sideslip. Controls come in from Simulink, and analysis scripts live in MATLAB. VI-grade is the last step to verify design choices. The learning curve is steep, so put at least one member on it full time. Support answers software problems, not modelling problems. Their rig: a workstation with 128 GB RAM and a Fanatec Podium DD1.</p><cite>Tommaso, VD &amp; Control Systems lead, Squadra Corse PoliTO</cite></div>
+  <div class="quote"><p>They dropped VI-grade in 2024 for a fully MATLAB/Simulink simulator. The old DiL ran on an i7-7400 with 16 GB RAM and a GTX 1070. They use the sim for early-design KPIs, then driver training, controls testing and setup optimization, with 2 to 3 sessions a day, each with one driver and one engineer.</p><cite>Federico, former co-head of VD, Dynamis PRC</cite></div>
+</section>
+
+<section>
+  <h2>Decisions still open</h2>
+  <ul class="decisions">
+    <li><b>Licenses.</b> The minutes found no proof that the 5 VI-Motorsport + 1 VI-DriveSim sponsorship is active, so we are reapplying. Svitlana Saraieva (VI-grade application engineer) is the contact from the 9/22 email.</li>
+    <li><b>How TC/TV reach the PCM.</b> Tune in Simulink, hand-port to a hardware-free C++ module in the PCM firmware, and unit-test the port with GoogleTest using input/output traces saved from MIL. Without that trace step, the tests only prove the C++ does what its author thought, not what the tuned Simulink model does.</li>
+    <li><b>MATLAB or Python for the offline layer.</b> Our analysis stack (PERDA, SuboptimumG) is Python, while VI-grade's own examples and the teams above use MATLAB. The minutes say to explore Python options.</li>
+    <li><b>Ground truth for sideslip.</b> Validating TC/TV needs a trusted v<sub>x</sub>/v<sub>y</sub>. Both teams point to a ground speed sensor, and the VN-300 vs VN-310 question from July is still open.</li>
+    <li><b>Owner.</b> Both teams say VI-grade needs a dedicated person, not a rotating task.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Sources</h2>
+  <ul class="sources">
+    <li>#sof_research: Owen's transient sim platform comparison (7/30), "VI grade users" thread (9/28)</li>
+    <li>Controls Weekly Meeting Minutes, 9/22/26</li>
+    <li>VI-grade email thread (9/22), handed off to application engineer</li>
+    <li><a href="https://www.vi-grade.com/en/products/vi-motorsport/">VI-Motorsport</a>, <a href="https://www.vi-grade.com/en/products/vi-carrealtime/">VI-CarRealTime</a>, <a href="https://www.vi-grade.com/en/products/vi-drivesim/">VI-DriveSim</a>, <a href="https://www.mathworks.com/products/connections/product_detail/vi-automotive-vi-aircraft-vi-rail.html">MathWorks connection page</a></li>
+    <li>SuboptimumG: <code>compsim/lap.py</code>, <code>vehicle/suspension/tire.py</code>, <code>parameters/dti_car.yaml</code></li>
+  </ul>
+</section>
+</main>
+<aside id="panel" hidden aria-labelledby="p-title">
+<button type="button" id="close" aria-label="Close details">✕</button>
+<span class="pill" id="p-status"></span>
+<h2 id="p-title"></h2>
+<div class="sub" id="p-sub"></div>
+<h3>What it is</h3><p id="p-what"></p>
+<h3>Role in the architecture</h3><p id="p-role"></p>
+<h3>What we have today</h3><p id="p-today"></p>
+<h3>Language / how it's built</h3><p id="p-lang"></p>
+<h3>Gaps / open questions</h3><p id="p-gap"></p>
+<h3>Manuals, datasheets &amp; reading</h3><ul id="p-links"></ul>
+</aside>
+<script>
+const BOXES = {"cad": {"t": "CAD", "s": "mass, inertia, hardpoints", "st": "have", "what": "The mechanical CAD model of the car: suspension hardpoints, plus mass, CG and inertia estimates from part masses.", "role": "Hardpoints go into VI-SuspensionGen. Mass, CG and inertias go straight into the VI-CarRealTime vehicle model.", "today": "CAD exists (mech team). SuboptimumG's dti_car.yaml already carries lumped values: 263 kg, CG height 0.283 m, wheelbase 1.53 m.", "gap": "PoliTO says to measure mass and inertias on the real car and not trust CAD alone. Yaw inertia is rarely in CAD at useful accuracy. Virtual Formula accepts CAD, calculations or measured data for weight, CG and inertia as long as it is documented (Rules §2.2.4).", "links": [{"n": "VI-grade Virtual Formula 2022 Rules: the model-input spec for FSAE cars in VI-CarRealTime", "k": "pdf", "u": "https://www.vi-grade.com/en/reserved_area/general_download/start_download/1695/VI-grade_Virtual_Formula_2022_Rules.pdf"}, {"n": "#sof_research: PoliTO + Dynamis replies", "k": "web", "u": "https://pennelectricracing.slack.com/archives/C0BF5KC9KJN/p1790626785302479"}], "lang": "No code. Mass properties and hardpoints are exported from CAD and typed into VI-grade."}, "ttc": {"t": "TTC tire data", "s": "force & moment data", "st": "have", "what": "Flat-belt tire test data from the FSAE Tire Test Consortium, run at Calspan: lateral and longitudinal force and aligning moment versus slip, load, camber and pressure.", "role": "Raw material for the Pacejka fit that VI-Tire needs.", "today": "PER has TTC data. SuboptimumG's tire.py fits a quadratic to it, and Jeffrey offered in #sof_research to collect TTC data in one place.", "gap": "Confirm which tire and round matches the REV12 tire and rim.", "links": [{"n": "FSAE TTC Round 5 test contents (Milliken Research)", "k": "pdf", "u": "https://www.millikenresearch.com/Contents_Round5.pdf"}, {"n": "VI-grade Virtual Formula 2022 Rules: the model-input spec for FSAE cars in VI-CarRealTime", "k": "pdf", "u": "https://www.vi-grade.com/en/reserved_area/general_download/start_download/1695/VI-grade_Virtual_Formula_2022_Rules.pdf"}, {"n": "FSAE Tire Test Consortium (Calspan)", "k": "web", "u": "https://calspan.com/automotive/fsae-ttc"}], "lang": "Data, not code. TTC ships test runs as data files. Processing happens in the MF fit step (MATLAB or Python)."}, "aero": {"t": "Aero CFD", "s": "aeromap vs ride height", "st": "have", "what": "CFD downforce, drag and aero balance as a table over front and rear ride height, not single Cl/Cd numbers.", "role": "VI-CarRealTime looks up aero forces from the car's ride height at every time step, so pitch under braking shifts the aero balance.", "today": "The REV11 Aero design binder already describes an automated aero map generation pipeline, plus a QSS aero map integration study. SuboptimumG itself still uses constants (cl 3.20, cd 1.68, CoP 0.51).", "gap": "Export REV12 CFD in VI-CarRealTime's standard .aer format: three tables (front downforce, rear downforce, drag), each vs front and rear ride height, at a 60 kph reference speed (Virtual Formula Rules §2.2.5).", "links": [{"n": "VI-grade Virtual Formula 2022 Rules: the model-input spec for FSAE cars in VI-CarRealTime", "k": "pdf", "u": "https://www.vi-grade.com/en/reserved_area/general_download/start_download/1695/VI-grade_Virtual_Formula_2022_Rules.pdf"}], "lang": "Converter script to write: Python, reading the CFD results and writing VI-CarRealTime's .aer text tables."}, "chassis": {"t": "Chassis", "s": "torsion test / FEM", "st": "check", "what": "Torsional stiffness of the frame (Nm/deg), from a physical torsion test or a validated FEM model.", "role": "Lets VI-CarRealTime model chassis twist, which changes load transfer between the axles.", "today": "The REV11 overall design binder sets a target of more than 1500 Nm/deg. I found no record of a measured test.", "gap": "PoliTO calls this highly suggested, because drivers can feel the difference between a rigid and a real chassis in DIL. Ask mech whether a torsion rig or FEM result exists.", "links": [{"n": "#sof_research: PoliTO + Dynamis replies", "k": "web", "u": "https://pennelectricracing.slack.com/archives/C0BF5KC9KJN/p1790626785302479"}], "lang": "No code. It's a physical test or an FEA result, entered as one stiffness number."}, "dti": {"t": "DTI powertrain", "s": "motor maps, 80 kW limit", "st": "have", "what": "Torque-speed envelope and efficiency or loss data for the DTI F-MOT motors and F-SIC inverters, plus the 80 kW accumulator power limit.", "role": "Defines what each of the 4 wheel motors can deliver in the sim, which caps what TC and TV can ask for.", "today": "DTI's motor spec, application manual and F-MOT power-loss sheet are in the team's datasheet folder. The 12.5:1 ratio and the 80 kW limit are in SuboptimumG's dti_car.yaml.", "gap": "Convert the DTI curves into VI-CarRealTime's motor format. EV models must also fill in the Battery section under Driveline Layout (Virtual Formula Rules §2.2.3).", "links": [{"n": "VI-grade Virtual Formula 2022 Rules: the model-input spec for FSAE cars in VI-CarRealTime", "k": "pdf", "u": "https://www.vi-grade.com/en/reserved_area/general_download/start_download/1695/VI-grade_Virtual_Formula_2022_Rules.pdf"}], "lang": "Converter script to write: Python, turning the DTI torque/loss data into VI-CarRealTime motor property files."}, "sg": {"t": "VI-SuspensionGen", "s": "→ K&C curves", "st": "vg", "what": "VI-grade's suspension kinematics tool (based on Lotus). You enter hardpoints and it computes kinematics and compliance curves: camber gain, toe, roll centre migration, motion ratios.", "role": "Produces the suspension description VI-CarRealTime runs on. This replaces SuboptimumG's single roll stiffness and roll-centre numbers.", "today": "Part of the VI-Motorsport package. It has no standalone product page.", "gap": "PoliTO warns that VI-grade support won't debug kinematics modelling mistakes, because those are model problems, not software problems.", "links": [{"n": "VI-grade Virtual Formula 2022 Rules: the model-input spec for FSAE cars in VI-CarRealTime", "k": "pdf", "u": "https://www.vi-grade.com/en/reserved_area/general_download/start_download/1695/VI-grade_Virtual_Formula_2022_Rules.pdf"}, {"n": "VI-CarRealTime 20.1 Release Notes", "k": "pdf", "u": "https://www.vi-grade.com/attachments/Oggetto/Database.Products/Allegati/ReleaseNotes/___d123af0b05394bac8770921e78fdf078_/VI_Crt_20_1_Release_Notes.pdf"}, {"n": "VI-Motorsport product page", "k": "web", "u": "https://www.vi-grade.com/en/products/vi-motorsport/"}], "lang": "No code. Built in VI-grade's GUI; the output is property files."}, "mf": {"t": "Pacejka MF fit", "s": ".tir → VI-Tire", "st": "build", "what": "A Magic Formula tire model fitted to the TTC data and saved as a .tir property file.", "role": "VI-Tire reads the .tir. The 9/22 minutes list it as the first thing VI-grade needs from us.", "today": "Doesn't exist yet. SuboptimumG uses a simpler friction-ellipse fit: a quadratic load-sensitive μ plus a fixed long/lat ratio. VI-CarRealTime takes PAC2002 or MF-Tyre 6.2 fits made from TTC data (Virtual Formula Rules §2.2.1). That competition also scales peak μ to 1.4 at Fz = 200 N, because TTC belt grip is higher than a real road surface.", "gap": "Fit it once and derive SuboptimumG's mu_lat_zero_load from the same fit, so the two sims agree on grip.", "links": [{"n": "Simcenter Tire MF-Tyre/MF-Swift User Manual (MF 6.2, .tir format)", "k": "pdf", "u": "https://2022.help.altair.com/2022.3/hwdesktop/mv/topics/motionview/MFTyre-MFSwift_Help.pdf"}, {"n": "Adams Tire User's Guide (PAC2002 model and .tir files)", "k": "pdf", "u": "https://help-be.hexagonmi.com/bundle/Adams_2021.0.2_Adams_Tire_User_Guide/raw/resource/enus/Adams_2021.0.2_Adams_Tire_User_Guide.pdf"}, {"n": "VI-grade Virtual Formula 2022 Rules: the model-input spec for FSAE cars in VI-CarRealTime", "k": "pdf", "u": "https://www.vi-grade.com/en/reserved_area/general_download/start_download/1695/VI-grade_Virtual_Formula_2022_Rules.pdf"}, {"n": "MFeval: open-source MF .tir evaluator (MATLAB)", "k": "code", "u": "https://www.mathworks.com/matlabcentral/fileexchange/63618-mfeval"}], "lang": "To write: MATLAB (MFeval or Optimization Toolbox) or Python (scipy). Not decided. Either way the output is a plain-text .tir file."}, "veh": {"t": "VI-CarRealTime vehicle model", "s": "one model, 4 independent motors", "st": "vg", "what": "The single vehicle definition that every run mode uses. It combines body, suspension, tires, aero and powertrain.", "role": "The hub of the architecture. Offline, DIL and MIL all run this same model, so a fix made here reaches every mode.", "today": "Confirmed to fit a 4WD EV: the MDPI torque vectoring study linked in the 9/22 minutes built a 4 in-wheel-motor car in VI-CarRealTime 2022 (5 rigid bodies, 14 degrees of freedom, MF combined-slip tires). VI-grade's Virtual Formula package also ships an example EV model (VI_Racer_E) and a one-motor-per-wheel, no-differential driveline layout.", "gap": "Needs an owner. Both teams said one person should work on VI-grade full time.", "links": [{"n": "VI-grade Virtual Formula 2022 Getting Started (loading the VI_Racer model)", "k": "pdf", "u": "https://www.vi-grade.com/en/reserved_area/general_download/start_download/1711/VI-grade_Virtual_Formula_2022_Getting_Started.pdf"}, {"n": "VI-grade Virtual Formula 2022 Rules: the model-input spec for FSAE cars in VI-CarRealTime", "k": "pdf", "u": "https://www.vi-grade.com/en/reserved_area/general_download/start_download/1695/VI-grade_Virtual_Formula_2022_Rules.pdf"}, {"n": "VI-CarRealTime 20.1 Release Notes", "k": "pdf", "u": "https://www.vi-grade.com/attachments/Oggetto/Database.Products/Allegati/ReleaseNotes/___d123af0b05394bac8770921e78fdf078_/VI_Crt_20_1_Release_Notes.pdf"}, {"n": "On Torque Vectoring Control: review and comparison (MDPI 2024, VI-CarRealTime 4-motor model)", "k": "paper", "u": "https://www.mdpi.com/2075-1702/12/3/160"}], "lang": "No code. Assembled in the VI-CarRealTime GUI and stored as XML + property files (the Virtual Formula example loads VI_Racer_E.xml from a .cdb database)."}, "road": {"t": "VI-Road", "s": "tracks from GPS laps", "st": "vg", "what": "VI-grade's road and track description: centreline, width, elevation and surface.", "role": "Supplies the track the driver model or human drives. Recreating a real test day lets sim and car logs be compared on the same line.", "today": "The product is in VI-Motorsport. REV12 already routes a VectorNav to both PCM and DASH, which gives us GPS laps to build tracks from.", "gap": "VI-Road tracks are a .rdf road data file plus an .obj graphic (the Virtual Formula rules ship skidpad as VF2022_Skidpad.rdf). Converting our GPS laps to .rdf is ours to build.", "links": [{"n": "VI-grade Virtual Formula 2022 Rules: the model-input spec for FSAE cars in VI-CarRealTime", "k": "pdf", "u": "https://www.vi-grade.com/en/reserved_area/general_download/start_download/1695/VI-grade_Virtual_Formula_2022_Rules.pdf"}, {"n": "VI-Road product page", "k": "web", "u": "https://www.vi-grade.com/en/products/vi-road/"}], "lang": "Converter to write: Python, taking GPS laps from PERDA and writing .rdf road files."}, "drv": {"t": "VI-Driver", "s": "MaxPerformance model", "st": "vg", "what": "A virtual driver that follows a racing line at the limit and adapts speed to what the car can do.", "role": "Closes the loop for offline lap-time and setup runs without a human.", "today": "In the VI-Motorsport package per the 9/22 minutes.", "gap": "None known.", "links": [{"n": "VI-grade Virtual Formula 2022 Rules: the model-input spec for FSAE cars in VI-CarRealTime", "k": "pdf", "u": "https://www.vi-grade.com/en/reserved_area/general_download/start_download/1695/VI-grade_Virtual_Formula_2022_Rules.pdf"}, {"n": "VI-Driver product page", "k": "web", "u": "https://www.vi-grade.com/en/products/vi-driver/"}], "lang": "No code. Configured in the VI-CarRealTime GUI."}, "solver": {"t": "VI-CarRealTime", "s": "solver", "st": "vg", "what": "The real-time vehicle dynamics solver that integrates the vehicle model forward in time.", "role": "Runs standalone for offline work, in VI-DriveSim for DIL, and as a Simulink block (S-function or FMU) for the controls work.", "today": "Documented by VI-grade and MathWorks as a Simulink blockset for MIL, SIL and HIL.", "gap": "The 9/22 minutes found no proof the license sponsorship (5 VI-Motorsport + 1 VI-DriveSim) is active, so it is being reapplied for.", "links": [{"n": "VI-CarRealTime 20.1 Release Notes", "k": "pdf", "u": "https://www.vi-grade.com/attachments/Oggetto/Database.Products/Allegati/ReleaseNotes/___d123af0b05394bac8770921e78fdf078_/VI_Crt_20_1_Release_Notes.pdf"}, {"n": "Simulink: Developing S-Functions", "k": "pdf", "u": "https://www.mathworks.com/help/pdf_doc/simulink/sfun.pdf"}, {"n": "VI-grade ↔ MATLAB/Simulink integration (MathWorks)", "k": "web", "u": "https://www.mathworks.com/products/connections/product_detail/vi-automotive-vi-aircraft-vi-rail.html"}, {"n": "VI-CarRealTime product page", "k": "web", "u": "https://www.vi-grade.com/en/products/vi-carrealtime/"}], "lang": "No code on our side. VI-grade's compiled solver, which appears in Simulink as an S-function block."}, "est": {"t": "State estimator", "s": "vx, sideslip, slip ratio", "st": "build", "what": "Estimates the car's true ground speed, sideslip angle and each wheel's slip ratio from wheel speeds, IMU and GNSS.", "role": "TC needs slip ratio, and slip ratio needs true ground speed. Arjun flagged ground speed as the main hardware and software problem.", "today": "Not built. REV12 has a VectorNav routed to the PCM over RS-422. The VN-300 vs VN-310 question from July is still open.", "gap": "Both other teams stressed a ground speed sensor to validate sideslip. In sim, compare the estimator against VI-CarRealTime's true states for free.", "links": [{"n": "MIT 2019: launch control models", "k": "paper", "u": "https://dspace.mit.edu/entities/publication/2011c917-56f9-4748-8d73-ed8391ac79e2"}], "lang": "To write: Simulink (block diagrams plus MATLAB Function blocks). Reaches the car as generated C, or as a C++ port."}, "lctc": {"t": "LC / TC", "s": "launch + traction control", "st": "build", "what": "Launch control and traction control: cap each wheel's torque so its slip stays near the peak of the tire curve.", "role": "First controller to develop. Arjun's plan puts LC/TC ahead of TV.", "today": "R&D stage in #sof_research.", "gap": "Pick the algorithm, then tune it against the MF tire model. VI-CarRealTime has its own built-in TC and ABS. Don't use them: the point is testing ours, and Virtual Formula bans them for the same reason.", "links": [{"n": "Bakker (TU/e): traction control", "k": "paper", "u": "https://assets.w3.tue.nl/w/fileadmin/content/faculteiten/wtb/Onderzoek/Onderzoeksgroepen/Dynamics_and_Control/BEP_reports/Bakker_DC_2017.027.pdf"}, {"n": "MIT 2019: launch control models", "k": "paper", "u": "https://dspace.mit.edu/entities/publication/2011c917-56f9-4748-8d73-ed8391ac79e2"}, {"n": "VI-grade Virtual Formula 2022 Rules: the model-input spec for FSAE cars in VI-CarRealTime", "k": "pdf", "u": "https://www.vi-grade.com/en/reserved_area/general_download/start_download/1695/VI-grade_Virtual_Formula_2022_Rules.pdf"}], "lang": "To write: Simulink (block diagrams plus MATLAB Function blocks). Reaches the car as generated C, or as a C++ port."}, "tv": {"t": "Torque vectoring", "s": "4-wheel torque allocation", "st": "build", "what": "Splits torque unevenly left and right (and front and rear) to generate a yaw moment and follow a target yaw rate.", "role": "The REV12 headline controller. The team's plan is for it to land in the PCM firmware.", "today": "Planned but secondary. Arjun's plan: only after LC/TC is solid.", "gap": "This is where VI-grade matters most, because TV can't be judged in a quasi-static sim.", "links": [{"n": "On Torque Vectoring Control: review and comparison (MDPI 2024, VI-CarRealTime 4-motor model)", "k": "paper", "u": "https://www.mdpi.com/2075-1702/12/3/160"}, {"n": "arXiv 2211.10476: torque vectoring", "k": "paper", "u": "https://arxiv.org/abs/2211.10476"}, {"n": "PoliMi torque vectoring thesis", "k": "paper", "u": "https://www.politesi.polimi.it/retrieve/a81cb05c-3009-616b-e053-1605fe0a889a/thesis_empty.pdf"}, {"n": "PoliTO thesis: VI-grade + Simulink controls development", "k": "paper", "u": "https://webthesis.biblio.polito.it/31777/1/tesi.pdf"}], "lang": "To write: Simulink (block diagrams plus MATLAB Function blocks). Reaches the car as generated C, or as a C++ port."}, "off": {"t": "Offline sweeps", "s": "setup, aero, suspension", "st": "vg", "what": "Batch runs with no human: setup sweeps, aero and suspension variants, lap-time studies.", "role": "The design tool part of VI-grade. It overlaps SuboptimumG, but it can study transients.", "today": "Owen's 7/30 comparison says VI-grade documents C, Java, MATLAB/Simulink and Python APIs.", "gap": "MATLAB or Python? The minutes say to explore Python options. PERDA and SuboptimumG are Python.", "links": [{"n": "VI-grade Virtual Formula 2022 Getting Started (loading the VI_Racer model)", "k": "pdf", "u": "https://www.vi-grade.com/en/reserved_area/general_download/start_download/1711/VI-grade_Virtual_Formula_2022_Getting_Started.pdf"}, {"n": "VI-grade ↔ MATLAB/Simulink integration (MathWorks)", "k": "web", "u": "https://www.mathworks.com/products/connections/product_detail/vi-automotive-vi-aircraft-vi-rail.html"}], "lang": "To write: MATLAB or Python scripts driving VI-grade's API. Owen's comparison says C, Java, MATLAB and Python are documented. Not decided."}, "dil": {"t": "Driver-in-loop", "s": "VI-DriveSim + wheel rig", "st": "check", "what": "A human drives the VI-CarRealTime model in real time on a screen with a wheel and pedals.", "role": "Driver training and feeling out controllers and setups before the car runs. PoliTO used it mostly for this last year.", "today": "The software is VI-DriveSim, but our one DriveSim license is unconfirmed. We own no rig.", "gap": "Hardware to source. PoliTO uses a 128 GB RAM workstation and a Fanatec Podium DD1. Dynamis ran DiL on an i7-7400, 16 GB RAM and a GTX 1070.", "links": [{"n": "VI-grade Virtual Formula 2022 Rules: the model-input spec for FSAE cars in VI-CarRealTime", "k": "pdf", "u": "https://www.vi-grade.com/en/reserved_area/general_download/start_download/1695/VI-grade_Virtual_Formula_2022_Rules.pdf"}, {"n": "VI-DriveSim product page", "k": "web", "u": "https://www.vi-grade.com/en/products/vi-drivesim/"}, {"n": "#sof_research: PoliTO + Dynamis replies", "k": "web", "u": "https://pennelectricracing.slack.com/archives/C0BF5KC9KJN/p1790626785302479"}], "lang": "No code. VI-DriveSim configuration plus wheel/pedal hardware."}, "mil": {"t": "MIL", "s": "Simulink model", "st": "build", "what": "Model-in-the-loop: the controller as a Simulink model, wired to the VI-CarRealTime block, all running on a laptop.", "role": "Where algorithms get designed and tuned fastest.", "today": "Not set up.", "gap": "Needs the VI-CarRealTime Simulink blockset installed with the license. Save the input/output traces of key scenarios: they become the unit-test cases for the C++ port.", "links": [{"n": "Simulink: Developing S-Functions", "k": "pdf", "u": "https://www.mathworks.com/help/pdf_doc/simulink/sfun.pdf"}, {"n": "PoliTO thesis: VI-grade + Simulink controls development", "k": "paper", "u": "https://webthesis.biblio.polito.it/31777/1/tesi.pdf"}], "lang": "Simulink: a harness model with our controller blocks wired to the VI-CarRealTime block."}, "sil": {"t": "Unit tests", "s": "C++ · GoogleTest", "st": "build", "what": "GoogleTest unit tests for the PCM's C++ controller code (estimator, LC/TC, TV), run on a laptop or in CI with no car and no sim.", "role": "Replaces SIL. After a controller is tuned in Simulink (MIL) and hand-ported to C++, the unit tests check the port: known inputs in, expected torques out.", "today": "The framework exists: the monorepo already builds a pcm-unit-tests target with GoogleTest (embedded/unit-tests/PCMUnitTests.cpp), plus tests for the PDU, MOC types and SVM. Jeffrey started an embedded unit-test thread in #sof_research on 9/22.", "lang": "C++ with GoogleTest, in monorepo/embedded/unit-tests, built with CMake.", "gap": "Where do the expected values come from? The cheap trick: log a few MIL scenarios (a launch, a skidpad lap, a low-grip patch) as input/output tables from Simulink, and replay them as test cases. That gives most of what SIL would, without linking the C++ into Simulink. The controller also needs to be a pure function (no STM32 calls inside) to be testable at all.", "links": [{"n": "GoogleTest User's Guide", "k": "web", "u": "https://google.github.io/googletest/"}, {"n": "Penn-Electric-Racing monorepo (embedded/unit-tests)", "k": "code", "u": "https://github.com/Penn-Electric-Racing/Penn-Electric-Racing"}, {"n": "Simulink: log signals to the workspace for test vectors (To Workspace block)", "k": "web", "u": "https://www.mathworks.com/help/simulink/slref/toworkspace.html"}]}, "car": {"t": "REV12 car", "s": "PCM firmware", "st": "have", "what": "The PCM (powertrain control module) firmware, C++ on STM32 in the monorepo, which sends torque commands to the 4 DTI inverters.", "role": "Where LC/TC/TV finally run, after MIL tuning and unit tests. Its CAN logs close the validation loop.", "today": "The firmware exists for REV11. The REV12 DTI CAN work is in progress.", "gap": "Keep the TC/TV logic as a hardware-free C++ module inside the PCM firmware so the unit tests can run it on a laptop.", "links": [{"n": "Penn-Electric-Racing monorepo (PCM firmware)", "k": "code", "u": "https://github.com/Penn-Electric-Racing/Penn-Electric-Racing"}, {"n": "REV12 CAN software design (Notion)", "k": "web", "u": "https://app.notion.com/p/3b5560bcc03980359894f884560d0fbe"}], "lang": "C++ on STM32 (monorepo/embedded/boards/powertrain-control-module). CAN IDs come from codegen off CanDefines.xml."}, "sog": {"t": "SuboptimumG", "s": "quasi-static lap sim (Python)", "st": "have", "what": "VD's in-house quasi-static lap sim. It builds a speed profile from corner radius with forward and backward passes.", "role": "Stays the fast concept and sweep tool. Cross-checking against VI-grade's lap mode catches errors in either model.", "today": "Mature Python + Pydantic codebase with multiprocessing sweeps and FOUR_WHEEL_DRIVE support.", "gap": "Feed it parameters derived from the same MF fit and K&C curves so the two sims disagree only because of the physics.", "links": [{"n": "SuboptimumG repo (docs/ + notebooks/)", "k": "code", "u": "https://github.com/Penn-Electric-Racing/SuboptimumG"}], "lang": "Python 3 (Pydantic, numpy). Exists."}, "ovl": {"t": "Sim vs log overlay", "s": "yaw rate, lateral accel, sideslip, slip", "st": "build", "what": "A tool that lines up a sim run and a logged run by track distance and plots the channels on top of each other.", "role": "The only way to know the model is right. Mismatches re-tune the vehicle model (dashed orange loop), not the controller.", "today": "Partly there: SuboptimumG's log_analysis already does understeer and yaw fits from PERDA data.", "gap": "Needs a VI-CarRealTime results reader. Python fits alongside PERDA.", "links": [{"n": "PERDA repo", "k": "code", "u": "https://github.com/Penn-Electric-Racing/PER-Data-Analyzer"}], "lang": "To write: Python, next to PERDA (numpy + plotting), plus a reader for VI-CarRealTime result files."}, "logs": {"t": "Car logs", "s": "CAN → dataserver → PERDA", "st": "have", "what": "Logged CAN data from the car, browsed on the data server and analysed in Python with PERDA.", "role": "Ground truth for validation.", "today": "Pipeline exists and runs today.", "gap": "Sideslip ground truth depends on the VectorNav setup (see State estimator).", "links": [{"n": "car-data-server repo", "k": "code", "u": "https://github.com/Penn-Electric-Racing/car-data-server"}, {"n": "PERDA repo", "k": "code", "u": "https://github.com/Penn-Electric-Racing/PER-Data-Analyzer"}], "lang": "Exists. The data server is Python (gateway, workers) and Rust (boomerang, studio); PERDA is Python."}};
+const STATUS = {have:"Have at PER", vg:"VI-grade product", build:"We build it", check:"Unconfirmed / to get"};
+const KIND = {pdf:'PDF', web:'web', paper:'paper', code:'code'};
+const panel = document.getElementById('panel');
+let lastNode = null;
+function openBox(id, node){
+  const b = BOXES[id]; if(!b) return;
+  document.querySelectorAll('.node.sel').forEach(n => n.classList.remove('sel'));
+  node.classList.add('sel'); lastNode = node;
+  const pill = document.getElementById('p-status');
+  pill.innerHTML = ''; const d = document.createElement('span'); d.className = 'ldot st-' + b.st; pill.append(d, STATUS[b.st]);
+  for (const k of ['title','sub','what','role','today','lang','gap']) document.getElementById('p-' + k).textContent = b[k === 'title' ? 't' : k === 'sub' ? 's' : k];
+  const ul = document.getElementById('p-links'); ul.innerHTML = '';
+  for (const l of b.links){ const li = document.createElement('li'), a = document.createElement('a'), t = document.createElement('span'); t.className = 'kind k-' + l.k; t.textContent = KIND[l.k]; a.href = l.u; a.target = '_blank'; a.rel = 'noopener'; a.textContent = l.n; li.append(t, a); ul.append(li); }
+  panel.hidden = false; panel.scrollTop = 0; document.getElementById('close').focus({preventScroll:true});
+}
+function closeBox(){ panel.hidden = true; document.querySelectorAll('.node.sel').forEach(n => n.classList.remove('sel')); if(lastNode) lastNode.focus({preventScroll:true}); }
+document.querySelectorAll('.node').forEach(n => {
+  n.addEventListener('click', () => openBox(n.dataset.id, n));
+  n.addEventListener('keydown', ev => { if(ev.key === 'Enter' || ev.key === ' '){ ev.preventDefault(); openBox(n.dataset.id, n); } });
+});
+document.getElementById('close').addEventListener("click", closeBox);
+document.addEventListener('keydown', ev => { if(ev.key === 'Escape' && !panel.hidden) closeBox(); });
+</script>
+</body>
+</html>

@@ -103,7 +103,7 @@ jobs:
       # that read them would skip - which reads as a pass. They are three HTML
       # files and no media, so asking for them costs nothing.
       # `site/intro-to-vibecoding` is the same case: one page and under 1MB of
-      # its own pictures.
+      # its own pictures. So is `site/random`: single self-contained pages.
       - uses: actions/checkout@v4
         with:
           sparse-checkout: |
@@ -113,6 +113,7 @@ jobs:
             ${{ matrix.module == 'site' && 'site/assets/flags' || '' }}
             ${{ matrix.module == 'site' && 'site/ese2100' || '' }}
             ${{ matrix.module == 'site' && 'site/intro-to-vibecoding' || '' }}
+            ${{ matrix.module == 'site' && 'site/random' || '' }}
 
       - uses: actions/setup-python@v5
         with:

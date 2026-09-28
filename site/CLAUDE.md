@@ -601,6 +601,22 @@ the slides nor the notes. Chinmay says them out loud.
 - The Conductor slide deliberately shows no screenshot of the game: the one in
   `assets/ttr/` predates the rename and has a crude bot name in its chat.
 
+## `/random/vi-grade-architecture`
+
+Chinmay's Penn Electric Racing REV12 VI-grade sim architecture: one
+self-contained `index.html`, `noindex`, linked from nothing - a URL handed to
+the team. It is exported from a private claude.ai artifact of the same page.
+`tests/test_random_vi_grade_architecture.py` pins the `noindex`, and CI asks
+for `site/random` by name in the sparse checkout, as it does for `/ese2100`.
+
+- **The private artifact bundled nine PDFs that this copy does not**: DTI's
+  motor, inverter and CAN manuals (vendor material, possibly under NDA), the
+  VN-300 manual, and the REV11 design binders. The test also fails if a `docs/`
+  link or directory comes back.
+- The diagram is one inline SVG; each box is a `<g class="node" data-id>`
+  whose sidebar text and reading links come from the `BOXES` object in the
+  page's script.
+
 ## The settings panel
 
 The settings tile used to open a placeholder. It is now a device settings screen
