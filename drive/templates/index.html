@@ -119,8 +119,6 @@
     </div>
 
     <div class="htabs-panel" id="panel-circuit">
-      <p class="tabnote">Four real circuits, and the only tracks here that
-        start and finish on the same line.</p>
       <div class="tracks">
         {% for t in circuits %}{{ tcard(t, pbs, ranks, records) }}{% endfor %}
       </div>
@@ -128,8 +126,6 @@
 
     <div class="htabs-panel" id="panel-daily">
       {% if dailies %}
-      <p class="tabnote">A new track every day. Today's board is today's -
-        tomorrow the daily moves on and this one keeps its times for good.</p>
       <div class="tracks">
         {% for d in dailies %}
         {% set pb = pbs.get(d.slug) %}
