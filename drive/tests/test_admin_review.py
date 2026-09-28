@@ -150,6 +150,10 @@ def test_the_dashboard_counts_players_and_ignores_a_scanner(env):
     assert stranger.get("/admin").status_code == 404
 
 
+# `regen` proposes a fresh track, and every candidate that passes the checks is
+# driven by two bots in QuickJS before it is kept - the proof a daily nobody has
+# driven can be finished. That is ~15s of real work, and the point of the test.
+@pytest.mark.slow
 def test_the_fix_tool_puts_a_reworked_track_back_in_the_queue(env, capsys, tmp_path):
     A = env
     c, (a, _, _) = _setup(A)
