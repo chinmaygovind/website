@@ -14,9 +14,11 @@ had driven through; `crossings` because the piers under a raised road have to
 know what is above them.
 """
 
+import bisect
 import math
 
 from tracks.builder import STATION
+from tuning import GRAVITY, MAX_SPEED
 
 # A road surface may not come within this of another part of the track unless it
 # is a deliberate crossing, in which case it must clear it by CROSS_CLEAR.
@@ -50,6 +52,19 @@ RADII_SPREAD = 1.8         # widest over tightest: below this every corner is
                            # started the rewrite - the grid version could only
                            # make one shape, a 90 on a four-unit radius.
 MIN_CHECKPOINTS = 2
+
+# Shortcuts - see `shortcuts`. Speeds are the game's: `MAX_SPEED` on the road and
+# the hard velocity clamp (`MAX_SPEED * 1.7`) through the air, since a car
+# leaving a ramp can be carrying a boost.
+CUT_ROAD_SPEED = MAX_SPEED
+CUT_AIR_SPEED = MAX_SPEED * 1.7
+CUT_GRAVITY = GRAVITY
+CUT_LAUNCH = 10.0          # extra fall height a car thrown up off a ramp gets
+CUT_LANDING = 1.0          # seconds a landing costs before the car is quick again
+CUT_GRASS = 2.0            # grass is about half road speed
+CUT_LEVEL = 6.0            # a chord within this height is driven, not flown
+CUT_MIN_ROAD = 60.0        # less road than this is a corner's own apex
+CUT_MIN_GAIN = 30.0        # road units saved before a shortcut counts
 
 
 def self_proximity(track, clearance=None):
@@ -200,3 +215,89 @@ def crossings(track):
                 out.append((i, j))
     return out
 
+
+
+def _can_leave(line, i):
+    """Can a car get off the road here? Not over a barrier on both edges -
+    unless the road is a wall of death (its low edge is open), a kicker, or runs
+    out into a gap, which is how Playground's record laps leave the Climb."""
+    a = line[i]
+    if not (a.get("wl") and a.get("wr")):
+        return True
+    if a.get("wrad") or a.get("kick"):
+        return True
+    return any(e.get("air") for e in line[i + 1:i + 8])
+
+
+def _walled_towards(a, b):
+    """Is there a barrier on the edge of `a` that faces `b`? `wl` is on the
+    -lat edge and `wr` on the +lat edge (`edge(a, -1)` in trackmesh.js)."""
+    side = ((b["p"][0] - a["p"][0]) * a["lat"][0]
+            + (b["p"][2] - a["p"][2]) * a["lat"][2])
+    return bool(a.get("wr") if side > 0 else a.get("wl"))
+
+
+def shortcuts(track, min_gain=CUT_MIN_GAIN):
+    """Road a car can leave and rejoin further on, with no checkpoint between.
+
+    A lap is credited for passing every checkpoint in order and for nothing
+    else, so any way from station `i` to a later station `j` that skips road
+    and no gate is a legal lap. There are two ways to make that trip:
+
+      * **across the ground**, at road level, on a track that has any. It pays
+        when the road skipped is over `CUT_GRASS` times the chord, and a
+        barrier on the edge facing the other stretch stops it. This is the
+        screen `tools/cut_check.py` runs over the pool, without the collider.
+      * **through the air**, off a higher piece of road onto a lower one. The
+        car falls `dy` (plus `CUT_LAUNCH` for being thrown up off a ramp) at the
+        air speed limit, so it reaches anything within `CUT_AIR_SPEED * t` in
+        plan. This is how every top Playground time skips the Climb: off the top
+        at y 194 onto the road 367 units further on, 243 units away in plan.
+
+    Returns `[{"i", "j", "kind", "gain"}]`, worst first. Deliberately
+    generous - it is a screen for a generator that can throw a candidate away,
+    not a verdict on a hand-made track.
+    """
+    line = track["line"]
+    n = len(line)
+    along = [0.0] * n
+    for k in range(1, n):
+        along[k] = along[k - 1] + math.dist(line[k]["p"], line[k - 1]["p"])
+    gates = sorted(g["si"] for g in track.get("gates") or ()
+                   if g.get("kind") != "start")
+    grounded = track.get("ground") is not None
+    out = []
+    for i in range(n):
+        a = line[i]
+        if a.get("air") or not _can_leave(line, i):
+            continue
+        g = bisect.bisect_right(gates, i)
+        stop = gates[g] if g < len(gates) else n
+        ax, ay, az = a["p"]
+        for j in range(i + 1, stop):
+            road = along[j] - along[i]
+            if road < CUT_MIN_ROAD:
+                continue
+            b = line[j]
+            if b.get("air"):
+                continue
+            bx, by, bz = b["p"]
+            plan = math.hypot(ax - bx, az - bz)
+            dy = ay - by
+            if dy > CUT_LEVEL:
+                t = math.sqrt(2.0 * (dy + CUT_LAUNCH) / CUT_GRAVITY)
+                if plan > CUT_AIR_SPEED * t + a["hw"] + b["hw"]:
+                    continue
+                gain = road - CUT_ROAD_SPEED * (t + CUT_LANDING)
+                kind = "drop"
+            elif grounded and abs(dy) <= CUT_LEVEL:
+                if _walled_towards(a, b) or _walled_towards(b, a):
+                    continue
+                gain = road - CUT_GRASS * plan
+                kind = "grass"
+            else:
+                continue
+            if gain >= min_gain:
+                out.append({"i": i, "j": j, "kind": kind, "gain": round(gain, 1)})
+    out.sort(key=lambda c: -c["gain"])
+    return out

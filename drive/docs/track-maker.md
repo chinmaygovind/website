@@ -351,10 +351,34 @@ code. The row is left alone; the pool wins once the folder ships, because
 owned by Chinmay's account (so the cards say "by Chinmay"). `tracks/generate.py` lays a seeded random walk over
 `moves.SPEC`, and the tool keeps a candidate only if it passes the same
 `from_document` build and checks battery as the editor, with a `laptime` of
-30-40s. Roughly a quarter to a half survive. Rejecting rather than steering is
-deliberate: a new check lowers the accept rate instead of drifting from a
-second copy. Run it on the box, with the `.env` sourced, so the rows land in
-the live database. Approving a generated row in `/admin/tracks` claims the next
+30-40s, **no shortcut** (`checks.shortcuts`) and **a bot lap at max and easy
+pace** (`botsim.solo_lap`, the calibrator's harness - the only proof a stunt
+track nobody has driven can be finished). About a quarter survive. Rejecting
+rather than steering is deliberate: a new check lowers the accept rate instead
+of drifting from a second copy.
+
+**Two kinds, and the look decides.** Every pool track's look is on offer: a
+grounded one makes a *circuit* on a ground plane (corners, hills, jumps, crests,
+banked sweepers, walled chicanes, the odd half-pipe or loop), and one with a
+`below` (void, lava, desert, downtown, pillars) makes a walled *stunt track*
+from Playground's vocabulary - loops, walls of death, gaps, drops, half-pipes.
+`look_order` hands the looks out so every one is used before any repeats,
+neighbours in the queue differ, and the first few avoid `--avoid` (the looks of
+the dailies already scheduled - "same theme as daily #1" was a review note).
+
+**Shortcuts are closed or the seed is dropped.** `checks.shortcuts` finds road a
+car can leave and rejoin further on with no checkpoint between: across the
+grass on a circuit, or through the air off a higher stretch onto a lower one,
+which is how every top Playground time skips the Climb. `gen_daily.repair`
+walls both stretches of a grass cut and puts a checkpoint between take-off and
+landing of a drop, then the track is re-judged. Walls of death only ever climb,
+and every loop and wall is followed by a checkpoint, for the same reason.
+
+**Generate on a laptop, queue on the box**: the bot laps are QuickJS and the box
+is memory-tight, so `--save dailies.json` locally, copy it up, and
+`--load dailies.json` there (with `--replace-queue` to tombstone every generated
+track still queued or sent back). Loading only builds each document once to
+store its plan; nothing is judged again. Approving a generated row in `/admin/tracks` claims the next
 free `daily_on` (`maker._next_free_daily`) and renames it `Daily #N` at
 `daily-N` (`maker._number_daily`, one past the highest `daily-N` slug ever, so a
 deleted daily's number is never reused). A queued one has no name of its own: it is

@@ -24,7 +24,7 @@ for p in (ROOT, os.path.join(ROOT, "tools")):
         sys.path.insert(0, p)
 
 import tracks as tracks_mod                                     # noqa: E402
-from tracks import generate                                     # noqa: E402
+from tracks import checks, generate                             # noqa: E402
 
 import gen_daily                                                # noqa: E402
 
@@ -67,6 +67,8 @@ def test_no_keeper_is_buried_in_its_own_ground(kept):
     they are not folders.
     """
     for seed, _doc, track in kept:
+        if track["ground"] is None:
+            continue                      # a stunt track floats
         low = min(e["p"][1] for e in track["line"])
         assert low >= track["ground"] - 0.01, (
             "seed %d drops %.1f below its ground plane" % (seed, track["ground"] - low))
@@ -85,6 +87,8 @@ def test_a_keeper_rebuilds_from_its_document(kept):
         again = tracks_mod.from_document(doc.get("slug") or "daily-x", doc,
                                          timed=False)
         assert again["ground"] == track["ground"]
+        if again["ground"] is None:
+            continue
         low = min(e["p"][1] for e in again["line"])
         assert low >= again["ground"] - 0.01, \
             "seed %d rebuilds buried: the stored document is not the settled one" % seed
@@ -118,3 +122,59 @@ def test_the_palette_is_borrowed_whole():
                 continue
             assert src.get(k) == v, \
                 "seed %d altered %r, which borrowing must not do" % (seed, k)
+
+
+def test_no_keeper_has_a_shortcut(kept):
+    """Nothing reaches the queue with road a car can leave and rejoin further
+    on without passing a checkpoint - across the grass or off a higher stretch
+    onto a lower one. `judge` repairs what it can and drops the rest."""
+    for seed, _doc, track in kept:
+        assert checks.shortcuts(track) == [], "seed %d has a shortcut" % seed
+
+
+def test_the_shortcut_check_sees_playgrounds_drops():
+    """Every top Playground time goes through the checkpoint at station 746,
+    high on the Climb, leaves the road just after it and lands on the road
+    past station 840 - a flight of over a hundred units in plan, not a fall. If
+    the check cannot see that, it cannot see the thing it was written for."""
+    cuts = checks.shortcuts(tracks_mod.get("playground"))
+    assert any(c["kind"] == "drop" and 746 < c["i"] <= 800 and 830 <= c["j"] <= 880
+               for c in cuts)
+    assert checks.shortcuts(tracks_mod.get("sunrise")) == []
+
+
+def test_a_drop_is_closed_with_a_checkpoint_between():
+    """`repair` puts a gate between take-off and landing, which kills the drop
+    because a lap that misses a gate is not a lap."""
+    looks = gen_daily.pool_looks()
+    doc = generate.generate(3, looks)
+    n = len(doc["moves"])
+    track = tracks_mod.from_document("daily-x", doc, timed=False)
+    i, j = 40, len(track["line"]) - 60
+    assert gen_daily.repair(doc, {"kind": "drop", "i": i, "j": j, "gain": 99})
+    assert len(doc["moves"]) == n + 1
+    after = tracks_mod.from_document("daily-x", doc, timed=False)
+    assert any(i < g["si"] <= j for g in after["gates"] if g["kind"] == "cp")
+
+
+def test_walls_of_death_only_climb():
+    """A wall that descends puts its own exit under its wrap, so the whole
+    corner can be dropped off - one of the two places every top Playground time
+    skips. The generator never lays one."""
+    looks = gen_daily.pool_looks()
+    void = [l for l in looks if generate.is_void(l)]
+    walls = [m for seed in range(60)
+             for m in generate.generate(seed, looks, look=void[seed % len(void)])["moves"]
+             if m["t"] == "wall"]
+    assert walls and all(m["rise"] > 0 for m in walls)
+
+
+def test_neighbouring_days_get_different_looks():
+    """The queue is approved in order into consecutive days, and "same theme as
+    daily #1" was a review note - so no two neighbours share a look, and the
+    first few avoid the ones already scheduled."""
+    looks = gen_daily.pool_looks()
+    order = [l["slug"] for l in gen_daily.look_order(looks, 60, avoid=["tokyo", "suzuka"])]
+    assert all(a != b for a, b in zip(order, order[1:]))
+    assert "tokyo" not in order[:5] and "suzuka" not in order[:5]
+    assert set(order[:len(looks)]) == {l["slug"] for l in looks}

@@ -53,24 +53,116 @@ QUEUE_NAME = "Daily (in review)"
 
 
 def pool_looks():
-    """The palettes worth borrowing: grounded, and not tied to their own layout.
+    """Every look in the pool. A void one makes a stunt track and a grounded one
+    a circuit (`generate.is_void`); keys tied to one track's own layout are
+    stripped by `generate.borrow`."""
+    return [{"slug": t["slug"], "name": t["name"], "pal": t.get("pal") or {}}
+            for t in tracks_mod.TRACKS
+            if t.get("pal") and t["slug"] not in INDOOR_LOOKS]
 
-    A void track's look has a `below` and no ground under it, and lifting one
-    onto a track that *has* ground gives a world with two floors. The four
-    tracks that sculpt their own terrain are excluded by `generate.borrow`
-    stripping the keys rather than here, since what is wrong is the key and not
-    the track.
+
+# Looks that are a building rather than a place: without its warehouse the
+# Costco's palette is a flat grey plain, and "make the theme more interesting"
+# was the review note on the one daily that had it.
+INDOOR_LOOKS = ("costco",)
+
+
+def look_order(looks, n, avoid=(), seed=0):
+    """Which look each of `n` dailies gets, in queue order.
+
+    The queue is approved oldest first and each approval takes the next free
+    day, so queue order is day order: neighbours must differ, and the first few
+    must differ from the dailies already scheduled (`avoid`) - "same theme as
+    daily #1" was a review note. Every look is used once before any is used
+    twice.
     """
+    import random
+    rng = random.Random(seed)
+    avoid = list(avoid)
     out = []
-    for t in tracks_mod.TRACKS:
-        pal = t.get("pal") or {}
-        if not pal or pal.get("below"):
-            continue
-        out.append({"slug": t["slug"], "name": t["name"], "pal": pal})
-    return out
+    while len(out) < n:
+        deck = looks[:]
+        rng.shuffle(deck)
+        recent = (avoid + [l["slug"] for l in out])[-min(8, len(looks) - 1):]
+        deck.sort(key=lambda l: l["slug"] in recent)
+        out += deck
+    return out[:n]
 
 
-def judge(doc):
+def _move_at(doc, station):
+    """Index of the move that laid this station, off the builder's own spans."""
+    spans = []
+    moves_mod.build(doc, spans=spans)
+    for k, (a, b) in enumerate(spans):
+        if a <= station <= b:
+            return k
+    return None
+
+
+def _wall_move(doc, k):
+    """Barriers on both edges of move `k` and nowhere else: `rail` is sticky, so
+    the move after it is handed back whatever was in force before."""
+    ms = doc["moves"]
+    cur = "lr" if doc.get("rails") else ""
+    for m in ms[:k + 1]:
+        if "rail" in m:
+            cur = m["rail"]
+    if ms[k]["t"] not in moves_mod.LAYS_ROAD or cur == "lr":
+        return False
+    ms[k]["rail"] = "lr"
+    if k + 1 < len(ms) and "rail" not in ms[k + 1]:
+        ms[k + 1]["rail"] = cur
+    return True
+
+
+def repair(doc, cut):
+    """Close one shortcut from `checks.shortcuts`, in place. False if it cannot.
+
+    A cut across the grass gets barriers on the two stretches it joins. A drop
+    gets a checkpoint between take-off and landing - which is how Rickety Rails'
+    loop was closed - placed two-thirds of the way along so it is nearer the
+    landing than the take-off and not under it. The document is re-judged after
+    either, so a repair that made something else wrong is caught.
+    """
+    if cut["kind"] == "grass":
+        a, b = _move_at(doc, cut["i"]), _move_at(doc, cut["j"])
+        if a is None or b is None:
+            return False
+        done = _wall_move(doc, b)
+        return _wall_move(doc, a) or done
+    at = _move_at(doc, cut["i"] + (cut["j"] - cut["i"]) * 2 // 3)
+    if at is None or at + 1 >= len(doc["moves"]) - 1:
+        return False
+    if doc["moves"][at + 1]["t"] == "cp":
+        return False
+    doc["moves"].insert(at + 1, {"t": "cp"})
+    return True
+
+
+def bot_laps(track, levels=("max", "easy"), max_t=None):
+    """Send bots round it. A daily nobody has driven is only proved finishable
+    by something driving it, and the room bots are the game's own physics -
+    `botsim.solo_lap`, the calibrator's harness. `None` if every level got
+    round, else what went wrong."""
+    import json as json_mod
+    import botsim
+    slug = track["slug"]
+    tracks_mod.set_resolver(lambda s: track if s == slug else None)
+    rt = botsim.runtime()
+    rt.ctx.eval("TRACKS = TRACKS.filter(t => !t.slug.startsWith('daily-cand'));"
+                "TRACKS.push(%s);" % json_mod.dumps(track))
+    try:
+        for lvl in levels:
+            out = botsim.solo_lap(slug, lvl, max_t=max_t or track["ideal"] * 2.5)
+            if not out.get("finished"):
+                return "%s bot stuck at %.0f%%" % (lvl, 100 * out.get("progress", 0))
+    finally:
+        rt.ctx.eval("delete BUILT[%s];" % json_mod.dumps(slug))
+        tracks_mod.set_resolver(None)
+    return None
+
+
+def judge(doc, bot=True):
     """Build it, check it, price it. Returns `(track, why_not)`.
 
     `why_not` is a list of short reasons, empty when the candidate is good. It
@@ -83,10 +175,22 @@ def judge(doc):
     # ribbon is ~5ms where `laptime.ideal_lap` is ~550ms, so paying for a second
     # one is cheaper than the alternative, which is a ground plane guessed in
     # advance and drawn straight through the tarmac.
+    slug = "daily-cand-%s" % (doc.get("generated") or {}).get("seed", 0)
     try:
-        rough = tracks_mod.from_document("daily-candidate", doc, timed=False)
+        # Shortcuts first, on the untimed ribbon, because closing one moves the
+        # road: up to four repairs, and a track that still has one is dropped.
+        for _ in range(5):
+            rough = tracks_mod.from_document(slug, doc, timed=False)
+            cuts = checks.shortcuts(rough)
+            if not cuts:
+                break
+            if not repair(doc, cuts[0]):
+                return None, ["a %s shortcut worth %.0f units that could not "
+                              "be closed" % (cuts[0]["kind"], cuts[0]["gain"])]
+        else:
+            return None, ["still a shortcut after four repairs"]
         generate.settle_ground(doc, rough)
-        track = tracks_mod.from_document("daily-candidate", doc, timed=True)
+        track = tracks_mod.from_document(slug, doc, timed=True)
     except Exception as e:
         return None, ["%s: %s" % (type(e).__name__, str(e)[:60])]
 
@@ -135,31 +239,39 @@ def judge(doc):
     med = track.get("medals")
     if not med or not (med["gold"] < med["silver"] < med["bronze"]):
         why.append("medals out of order")
+    if doc.get("ground") is None and not doc.get("rails"):
+        why.append("floats with no barriers")
+    if not why and bot:
+        stuck = bot_laps(track)
+        if stuck:
+            why.append(stuck)
     return track, why
 
 
-def propose(n, first_seed=0, verbose=True):
-    """`n` documents that pass everything, and the seeds they came from."""
+def propose(n, first_seed=0, verbose=True, avoid=(), per_look=80):
+    """`n` documents that pass everything, one per look in `look_order`."""
     looks = pool_looks()
     kept, seed, tried = [], first_seed, 0
-    while len(kept) < n:
-        tried += 1
-        doc = generate.generate(seed, looks)
-        track, why = judge(doc)
-        if not why:
-            kept.append((seed, doc, track))
-            if verbose:
-                print("  keep  seed %-6d %5.1fs  (look: %s)"
-                      % (seed, track["ideal"], doc["generated"]["look"]))
-        elif verbose and tried <= 8:
-            print("  drop  seed %-6d %s" % (seed, "; ".join(why)))
-        seed += 1
-        if tried > n * 40:
-            raise SystemExit(
-                "gave up after %d candidates for %d keepers - the generator or "
-                "a check has moved" % (tried, n))
+    for look in look_order(looks, n, avoid, seed=first_seed):
+        for _ in range(per_look):
+            tried += 1
+            doc = generate.generate(seed, looks, look=look)
+            track, why = judge(doc)
+            seed += 1
+            if not why:
+                kept.append((seed - 1, doc, track))
+                if verbose:
+                    print("  keep  seed %-8d %5.1fs  %-7s %s"
+                          % (seed - 1, track["ideal"], doc["generated"]["kind"],
+                             look["slug"]), flush=True)
+                break
+            if verbose and tried <= 12:
+                print("  drop  seed %-8d %s" % (seed - 1, "; ".join(why)), flush=True)
+        else:
+            print("  ! nothing kept for %s in %d tries" % (look["slug"], per_look))
     if verbose:
-        print("kept %d of %d candidates (%.0f%%)" % (n, tried, 100.0 * n / tried))
+        print("kept %d of %d candidates (%.0f%%)"
+              % (len(kept), tried, 100.0 * len(kept) / max(1, tried)))
     return kept
 
 
@@ -180,6 +292,8 @@ def store(kept):
                              % DAILY_USER)
         made = []
         for seed, doc, track in kept:
+            if track is None:
+                track = tracks_mod.from_document("daily-candidate", doc, timed=True)
             slug = maker._free_slug("daily draft %d" % seed)
             if slug is None:
                 print("  ! no free slug for seed %d, skipped" % seed)
@@ -199,6 +313,22 @@ def store(kept):
         return made
 
 
+def clear_queue():
+    """Tombstone every generated track still queued or sent back, as the admin
+    queue's Delete does: `status = "deleted"`, the row kept so its slug is never
+    handed out again. Live dailies are not touched."""
+    import app                                                  # noqa: E402
+    from models import DriveUserTrack, db                       # noqa: E402
+    with app.app.app_context():
+        rows = [r for r in DriveUserTrack.query.filter(
+                    DriveUserTrack.status.in_(("queued", "needs_fix"))).all()
+                if r.doc.get("generated")]
+        for r in rows:
+            r.status = "deleted"
+        db.session.commit()
+        return len(rows)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("count", type=int, nargs="?", default=10,
@@ -208,16 +338,39 @@ def main(argv=None):
                          "do not propose the same tracks)")
     ap.add_argument("--dry-run", action="store_true",
                     help="propose and print, write nothing")
+    ap.add_argument("--avoid", default="",
+                    help="comma-separated looks the first few must not use: "
+                         "the ones on the dailies already scheduled")
+    ap.add_argument("--save", help="write the keepers to this JSON file instead "
+                                   "of the database (generate on a laptop)")
+    ap.add_argument("--load", help="queue the keepers from a --save file (on "
+                                   "the box) instead of generating any")
+    ap.add_argument("--replace-queue", action="store_true",
+                    help="first tombstone every generated track still in the "
+                         "queue or sent back")
     a = ap.parse_args(argv)
 
-    seed = a.seed
-    if seed is None:
-        import time
-        seed = int(time.time()) % 1_000_000 * 1000
-    kept = propose(a.count, seed)
+    import json as json_mod
+    if a.load:
+        with open(a.load) as f:
+            kept = [(k["seed"], k["doc"], None) for k in json_mod.load(f)]
+    else:
+        seed = a.seed
+        if seed is None:
+            import time
+            seed = int(time.time()) % 1_000_000 * 1000
+        kept = propose(a.count, seed,
+                       avoid=[x for x in a.avoid.split(",") if x])
+    if a.save:
+        with open(a.save, "w") as f:
+            json_mod.dump([{"seed": sd, "doc": doc} for sd, doc, _ in kept], f)
+        print("\nsaved %d to %s" % (len(kept), a.save))
+        return 0
     if a.dry_run:
         print("\n--dry-run: nothing written")
         return 0
+    if a.replace_queue:
+        print("tombstoned %d queued or sent-back generated tracks" % clear_queue())
     made = store(kept)
     print("\nqueued %d for review: %s" % (len(made), ", ".join(made)))
     print("review them at /admin/tracks")

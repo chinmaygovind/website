@@ -1,32 +1,35 @@
 """A track, made up by a number.
 
-`generate(seed)` returns a **document** - the same move-list-and-palette a
+`generate(seed, looks)` returns a **document** - the same move-list-and-palette a
 person builds in `/make` - so nothing downstream knows or cares that a machine
 wrote it. It is replayed by `moves.replay` through the same `Builder` that
 builds Spa, and it is judged by the same `checks` the editor's gate runs. There
 is no second idea of what a track is in here.
 
 The whole method is **propose and throw away**. A seeded walk lays a plausible
-road; the caller builds it and runs the battery; anything that fails, or that
-prices outside the length it was asked for, is discarded and the next seed is
-tried. That is why this file has no cleverness about avoiding a crossing or
-hitting a lap time: it does not need any. `tools/gen_daily.py` is the loop, and
-at the numbers below it keeps roughly one candidate in four, which is nothing -
-a candidate costs about 5ms to build and a few hundred more to price.
+road; the caller builds it, runs the battery, sends a bot round it and prices
+it; anything that fails is discarded and the next seed is tried.
+`tools/gen_daily.py` is the loop.
 
-Rejection is also what keeps this honest. The alternative - a generator that
-guarantees its output - is a second, weaker copy of `checks.py` that would drift
-the day somebody adds a check. Here a new check simply lowers the accept rate.
+Two kinds of daily, and the look decides which
+----------------------------------------------
+* **A circuit** sits on a ground plane under one of the pool's grounded looks:
+  corners, hills, and a few tricks - jumps, crests, banked sweepers, a boost
+  pad, now and then a half-pipe or a loop. Tight chicanes get barriers, because
+  a chicane you can drive straight through on the grass is not a chicane.
+* **A stunt track** floats under one of the pool's void looks (void, lava,
+  desert, downtown, pillars), walled on both edges, and is built from
+  Playground's vocabulary: loops, walls of death, gaps, drops, half-pipes.
 
-What it deliberately will not make
-----------------------------------
-Void tracks, loops, walls of death, pipes, tunnels, anything with scenery of its
-own. A daily is a **road**: corners, hills, a jump or two, over ground you can
-run off onto. The pool is where the ideas live; this is where the practice laps
-come from, and a practice lap nobody can finish is worth nothing. The palette is
-borrowed whole from a real track rather than invented, for the same reason.
+**Walls of death only ever climb.** One that descends puts its own exit under
+its wrap, so dropping off the top lands on it and the whole corner is optional -
+the Playground wall that does that is one of the two places every top time
+there skips. And every loop and wall is followed by a checkpoint, which kills
+any drop that would land past it. `checks.shortcuts` is what is asked
+afterwards, and `gen_daily.repair` fixes what it finds or the seed is dropped.
 """
 
+import math
 import random
 
 from tracks import look
@@ -68,182 +71,296 @@ def name_for(rng):
     return "%s %s" % (rng.choice(FIRST), rng.choice(SECOND))
 
 
-def borrow(rng, looks):
-    """A palette off a real track, whole, with the slug it came from.
+# Keys that belong to one track's own layout, and are dropped from a borrowed
+# look: a height field, a waterline, grandstands, a warehouse, lamps and
+# lightning placed at that track's own points, a herd's voice.
+LAYOUT_KEYS = ("terrain", "shore", "furniture", "building", "rainbow",
+               "rainbowLanes", "snow", "lamps", "storm", "moverVoice")
 
-    **Borrowed verbatim rather than varied, and that was measured.** The first
-    version rotated every colour round the wheel by one angle, on the reasoning
-    that what makes a palette work is the *relations* between its colours and a
-    single rotation preserves all of them. The relations do survive; the result
-    still does not. Figure Eight's snow came out lavender under a green sun -
-    every rule in `docs/track-defects.md` kept and the track ugly anyway,
-    because a palette is a picture of a place and a rotated one is a picture of
-    nowhere. Ten real palettes reused across fifty dailies beats fifty invented
-    ones, and the variety a daily actually needs is in its road.
 
-    `looks` is `[{"slug", "name", "pal"}]` - what `maker._pool_looks` already
-    hands the editor's borrow-a-look list. Only grounded palettes are offered
-    here; a void track's look has a `below` and no ground worth standing on.
+def is_void(look):
+    return bool((look.get("pal") or {}).get("below"))
+
+
+def borrow(rng, look):
+    """A palette off a real track, whole.
+
+    **Borrowed verbatim rather than varied, and that was measured.** Rotating
+    every colour round the wheel by one angle keeps the relations between the
+    colours and still gives a picture of nowhere - Figure Eight's snow came out
+    lavender under a green sun. The variety is in *which* of the pool's
+    twenty-six worlds a daily gets, and in the road.
+
+    **The scatter density is overridden**, because it is per unit of area: a
+    palette cut for Figure Eight's small footprint carpets a track three times
+    the size.
     """
-    src = rng.choice(looks)
-    pal = dict(src["pal"] or {})
-    pal.pop("terrain", None)      # a height field belongs to its own layout
-    pal.pop("shore", None)        # so does a waterline
-    pal.pop("furniture", None)    # Spa's grandstands stand where Spa's road is
-    pal.pop("building", None)     # so does the Costco
-    pal.pop("rainbow", None)
-    pal.pop("rainbowLanes", None)
-    # **The scatter density is overridden and not borrowed**, and it is the one
-    # number here that has to be. Density is per unit of area, so a palette cut
-    # for Figure Eight's small footprint carpets a track three times the size -
-    # the pool runs 0 to 0.34 with a *median of 0.05*, and a borrowed 0.26 drew
-    # the "scatter has become a junkyard" defect exactly as `docs/track-defects.md`
-    # describes it. Nothing else in a palette scales with the layout, which is
-    # why nothing else is touched.
+    pal = dict(look["pal"] or {})
+    for k in LAYOUT_KEYS:
+        pal.pop(k, None)
     if pal.get("density"):
         pal["density"] = round(rng.uniform(0.03, 0.10), 3)
-    return pal, src["slug"]
+    return pal
 
 
-def generate(seed, looks, secs=None):
-    """A document, from a number. Same seed, same track, forever.
+def _arc(rng, turn, radii, first=False, deg=None):
+    rad = rng.choice(radii)
+    deg = deg or (rng.uniform(45.0, 150.0) if first else rng.uniform(28.0, 165.0))
+    # A hairpin needs a small radius and a fast sweep a big one; the other two
+    # combinations are a corner nobody can see the end of and a kink.
+    if deg > 110.0:
+        rad = min(rad, 26.0)
+    if deg < 45.0:
+        rad = max(rad, 26.0)
+    return {"t": "arc", "deg": round(deg * turn, 1), "rad": rad, "rise": 0.0}
 
-    `looks` is the borrow list (see `borrow`). `secs` is the ideal lap this is
-    aiming at; the caller still has to *check* it, because length is only a
-    proxy - a road full of hairpins prices slower per unit than a fast one.
+
+def _length(m):
+    """Roughly how much road a move lays, for aiming the walk at a lap time."""
+    t = m["t"]
+    if t in ("straight", "boost", "bounce"):
+        return m.get("len", 12.0)
+    if t in ("arc", "wall"):
+        return abs(m["deg"]) * math.pi / 180.0 * m["rad"]
+    if t in ("crest", "hump"):
+        return m["len"]
+    if t == "jump":
+        return 8.0 + m["gap"] + m.get("land", 14.0)
+    if t == "gap":
+        return m["len"]
+    if t == "loop":
+        return 2 * math.pi * m.get("rad", 20.0)
+    if t == "cp":
+        return 34.0
+    return 0.0
+
+
+# What each kind of daily may throw in down a straight, by weight. A stunt
+# track is mostly set pieces; a circuit is mostly road with a few.
+CIRCUIT_TRICKS = (("jump", 3), ("crest", 3), ("hump", 2), ("boost", 2),
+                  ("sweeper", 3), ("pipe", 1), ("loop", 1), ("chicane", 3))
+STUNT_TRICKS = (("loop", 3), ("wall", 3), ("jump", 3), ("gap", 3),
+                ("pipe", 2), ("dive", 2), ("sweeper", 2), ("boost", 1))
+
+
+def _pick(rng, table):
+    total = sum(w for _, w in table)
+    r = rng.uniform(0, total)
+    for name, w in table:
+        r -= w
+        if r <= 0:
+            return name
+    return table[-1][0]
+
+
+def _trick(rng, kind, turn, radii, stunt):
+    """The moves for one set piece. Returns `(moves, height_change, turn)`."""
+    if kind == "jump":
+        drop = round(rng.uniform(0.0, 8.0 if stunt else 4.0), 1)
+        out = []
+        if rng.random() < 0.5:
+            out += [{"t": "boost", "len": 12.0},
+                    {"t": "straight", "len": round(rng.uniform(24.0, 40.0), 1)}]
+        out.append({"t": "jump", "rise": round(rng.uniform(3.0, 5.5), 1),
+                    "gap": round(rng.uniform(14.0, 26.0 if stunt else 20.0), 1),
+                    "drop": drop})
+        return out, -drop, turn
+    if kind == "gap":
+        drop = round(rng.uniform(2.0, 14.0), 1)
+        return ([{"t": "boost", "len": 14.0},
+                 {"t": "straight", "len": round(rng.uniform(30.0, 46.0), 1)},
+                 {"t": "gap", "len": round(rng.uniform(14.0, 28.0), 1),
+                  "drop": drop},
+                 {"t": "straight", "len": 24.0}], -drop, turn)
+    if kind == "crest":
+        rise = round(rng.uniform(4.0, 7.0), 1)
+        return ([{"t": "crest", "rise": rise,
+                  "len": round(rng.uniform(22.0, 30.0), 1)},
+                 {"t": "straight", "len": round(rng.uniform(34.0, 56.0), 1),
+                  "rise": -rise}], 0.0, turn)
+    if kind == "hump":
+        return ([{"t": "hump", "rise": round(rng.uniform(3.0, 4.6), 1),
+                  "len": round(rng.uniform(26.0, 34.0), 1)}], 0.0, turn)
+    if kind == "boost":
+        return ([{"t": "boost", "len": 12.0},
+                 {"t": "straight", "len": round(rng.uniform(40.0, 70.0), 1)}],
+                0.0, turn)
+    if kind == "sweeper":
+        turn = -turn if rng.random() < 0.7 else turn
+        deg = rng.uniform(70.0, 160.0)
+        rad = rng.choice([r for r in radii if r >= 26.0] or [32.0])
+        return ([{"t": "arc", "deg": round(deg * turn, 1), "rad": rad,
+                  "rise": 0.0, "bank": round(rng.uniform(12.0, 26.0) * turn, 1)}],
+                0.0, turn)
+    if kind == "chicane":
+        # Two tight corners of opposite hand, walled - see the module docstring.
+        tight = [r for r in radii if r <= 26.0] or [21.0]
+        a = {"t": "arc", "deg": round(rng.uniform(40.0, 75.0) * turn, 1),
+             "rad": rng.choice(tight), "rise": 0.0, "rail": "lr"}
+        link = {"t": "straight", "len": round(rng.uniform(6.0, 16.0), 1),
+                "rail": "lr"}
+        b = {"t": "arc", "deg": round(-rng.uniform(40.0, 75.0) * turn, 1),
+             "rad": rng.choice(tight), "rise": 0.0, "rail": "lr"}
+        return [a, link, b, {"t": "straight", "len": 12.0, "rail": None}], 0.0, -turn
+    if kind == "pipe":
+        turn = -turn
+        inner = [{"t": "arc", "deg": round(rng.uniform(60.0, 140.0) * turn, 1),
+                  "rad": rng.choice([r for r in radii if r >= 21.0] or [26.0]),
+                  "rise": 0.0}]
+        if rng.random() < 0.5:
+            turn = -turn
+            inner.append({"t": "arc",
+                          "deg": round(rng.uniform(50.0, 110.0) * turn, 1),
+                          "rad": rng.choice([r for r in radii if r >= 21.0] or [26.0]),
+                          "rise": 0.0})
+        return ([{"t": "pipe", "depth": round(rng.uniform(3.5, 6.0), 1),
+                  "floor": round(rng.uniform(0.25, 0.4), 2), "side": "lr"}]
+                + inner + [{"t": "flat"}, {"t": "straight", "len": 16.0}],
+                0.0, turn)
+    if kind == "loop":
+        extra = {} if stunt else {"rail": "lr"}
+        return ([{"t": "boost", "len": 14.0},
+                 {"t": "straight", "len": round(rng.uniform(30.0, 44.0), 1)},
+                 dict({"t": "loop", "rad": round(rng.uniform(20.0, 25.0), 1),
+                       "dir": rng.choice(("l", "r"))}, **extra),
+                 dict({"t": "straight", "len": 20.0}, **extra),
+                 {"t": "cp", "rail": None}], 0.0, turn)
+    if kind == "wall":
+        turn = -turn if rng.random() < 0.6 else turn
+        rise = round(rng.uniform(8.0, 18.0), 1)
+        # `Builder.wall` needs twice the ramp in arc, and a ramp under about
+        # eighty units rolls the road out from under the car before it is
+        # tilted far enough to stick - so the arc is sized to the ramp.
+        deg = rng.uniform(250.0, 320.0)
+        rad = rng.uniform(38.0, 44.0)
+        ramp = min(90.0, deg * math.pi / 180.0 * rad / 2.0 - 1.0)
+        return ([{"t": "boost", "len": 16.0},
+                 {"t": "straight", "len": round(rng.uniform(34.0, 46.0), 1)},
+                 {"t": "wall", "deg": round(deg * turn, 1), "rad": round(rad, 1),
+                  "bank": round(rng.uniform(80.0, 88.0), 1),
+                  "ramp": round(ramp, 1), "rise": rise, "w": 21.0},
+                 {"t": "straight", "len": 26.0, "w": None},
+                 {"t": "cp"}], rise, turn)
+    if kind == "dive":
+        drop = round(rng.uniform(12.0, 24.0), 1)
+        return ([{"t": "straight", "len": round(rng.uniform(50.0, 80.0), 1),
+                  "rise": -drop}], -drop, turn)
+    raise ValueError(kind)
+
+
+def generate(seed, looks, secs=None, look=None):
+    """A document, from a number. Same seed and look, same track, forever.
+
+    `looks` is `[{"slug", "name", "pal"}]` - every pool track's look. `look`
+    pins which one (the caller rotates them so neighbouring days differ);
+    otherwise one is drawn. A look with a `below` makes a stunt track over the
+    void, and one without makes a circuit on the ground.
     """
     rng = random.Random(seed)
-    secs = secs or rng.uniform(TARGET_LOW + 2.0, TARGET_HIGH - 3.0)
+    secs = secs or rng.uniform(TARGET_LOW + 1.0, TARGET_HIGH - 4.0)
     want = secs * UNITS_PER_SEC
+    look = look or rng.choice(looks)
+    stunt = is_void(look)
+    pal = borrow(rng, look)
+    width = rng.choice((12.0, 13.0, 14.0) if stunt else (10.0, 11.0, 11.0, 12.0, 13.0))
+    rails = True if stunt else rng.random() < 0.35
 
-    pal, from_slug = borrow(rng, looks)
-    width = rng.choice((10.0, 11.0, 11.0, 12.0, 13.0))
-
-    # Radii for this track: four to six of the eight, so the spread check is
-    # met by construction and the track still has a character - a set drawn
-    # from the tight end is a twisty one, from the wide end a fast one.
+    # Four to six of the eight radii, so the spread check is met by
+    # construction and the track still has a character.
     radii = rng.sample(RADII, rng.randint(4, 6))
 
     moves = [{"t": "start", "run": round(rng.uniform(38.0, 64.0), 1)}]
     laid = moves[0]["run"]
-    # Corner one has to turn far enough for `checks.pole_side` to know which
-    # side of the road the grid goes on. FIRST_TURN_DEG is 25; 45 is clear of it
-    # with room for the walk to wander.
     turn = rng.choice((-1, 1))
     first = True
     # How much height is in hand. A track that only ever climbs ends in orbit,
     # so the walk is pulled back towards zero rather than being free.
     y = 0.0
-    feature_budget = rng.randint(1, 3)
+    table = STUNT_TRICKS if stunt else CIRCUIT_TRICKS
+    tricks = rng.randint(5, 7) if stunt else rng.randint(3, 4)
+    gap_after = 1 if stunt else 2
+    since = 0
 
     while laid < want:
         left = want - laid
-
-        # A corner. The sign is mostly alternating - a road that turns the same
-        # way ten times is a spiral, and a spiral is the fastest way to trip
-        # `self_proximity`.
+        # Corner one has to turn far enough for `checks.pole_side` to know
+        # which side of the road the grid goes on.
         if rng.random() < 0.72:
             turn = -turn
-        rad = rng.choice(radii)
-        deg = rng.uniform(45.0, 150.0) if first else rng.uniform(28.0, 165.0)
-        # A hairpin needs a small radius and a fast sweep a big one; the other
-        # two combinations are a corner nobody can see the end of and a kink.
-        if deg > 110.0:
-            rad = min(rad, 26.0)
-        if deg < 45.0:
-            rad = max(rad, 26.0)
-        rise = 0.0
+        arc = _arc(rng, turn, radii, first=first)
         if rng.random() < 0.3:
-            rise = round(rng.uniform(-7.0, 7.0) - y * 0.18, 1)
-        arc = {"t": "arc", "deg": round(deg * turn, 1), "rad": rad, "rise": rise}
+            arc["rise"] = round(rng.uniform(-7.0, 7.0) - y * 0.18, 1)
         if rng.random() < 0.22:
-            arc["bank"] = round(rng.uniform(4.0, 11.0) * (1 if turn > 0 else -1), 1)
+            arc["bank"] = round(rng.uniform(4.0, 11.0) * turn, 1)
         moves.append(arc)
-        laid += abs(arc["deg"]) * 3.14159 / 180.0 * rad
-        y += rise
+        laid += _length(arc)
+        y += arc["rise"]
         first = False
+        since += 1
 
-        # Then something to do down the straight that follows it.
-        roll = rng.random()
-        if feature_budget and roll < 0.16 and left > 220.0:
-            feature_budget -= 1
-            kind = rng.choice(("hump", "crest", "boost", "jump"))
-            if kind == "hump":
-                moves.append({"t": "hump", "rise": round(rng.uniform(3.0, 4.6), 1),
-                              "len": round(rng.uniform(26.0, 34.0), 1)})
-                laid += 30.0
-            elif kind == "crest":
-                # A crease rather than a hill: `ease` off is what launches the
-                # car, and the drop after it is what makes that worth doing.
-                rise = round(rng.uniform(4.0, 7.0), 1)
-                moves.append({"t": "crest", "rise": rise,
-                              "len": round(rng.uniform(22.0, 30.0), 1)})
-                moves.append({"t": "straight", "len": round(rng.uniform(34.0, 56.0), 1),
-                              "rise": -rise})
-                laid += 80.0
-            elif kind == "boost":
-                moves.append({"t": "boost", "len": 12.0})
-                moves.append({"t": "straight", "len": round(rng.uniform(40.0, 70.0), 1)})
-                laid += 65.0
-            else:
-                drop = round(rng.uniform(0.0, 5.0), 1)
-                moves.append({"t": "jump", "rise": round(rng.uniform(3.0, 5.5), 1),
-                              "gap": round(rng.uniform(12.0, 22.0), 1), "drop": drop})
-                laid += 40.0
-                y -= drop
+        # A set piece, spread over the lap rather than bunched: never two in a
+        # row, and more likely the longer it has been since the last.
+        if (tricks and since >= gap_after and left > 140.0
+                and rng.random() < (0.55 if stunt else 0.3) + 0.12 * since):
+            kind = _pick(rng, table)
+            got, dy, turn = _trick(rng, kind, turn, radii, stunt)
+            moves += got
+            laid += sum(_length(m) for m in got)
+            y += dy
+            tricks -= 1
+            since = 0
+            continue
 
         # **Two draws and not one**, because the pool's median straight is 17
-        # units and a uniform range cannot produce that without also giving up
-        # the long ones. A real track is mostly short connectors between
-        # corners with a few proper straights among them; one uniform draw is a
-        # track of nothing but half-straights, which measured 41 against a pool
-        # that tops out at 33.7. Three short to one long lands on the median.
+        # units: a real track is mostly short connectors with a few proper
+        # straights among them.
         run = (rng.uniform(12.0, 26.0) if rng.random() < 0.72
                else rng.uniform(42.0, 88.0))
         run = min(run, max(18.0, left))
         rise = 0.0
-        if rng.random() < 0.34:
-            rise = round(rng.uniform(-9.0, 9.0) - y * 0.22, 1)
+        if rng.random() < (0.45 if stunt else 0.34):
+            span = 14.0 if stunt else 9.0
+            rise = round(rng.uniform(-span, span) - y * 0.22, 1)
         moves.append({"t": "straight", "len": round(run, 1), "rise": rise})
         laid += run
         y += rise
 
-    # Checkpoints, spread over the moves that were laid rather than over the
-    # metres, because a `cp` between two corners is a checkpoint on a corner.
-    # Three is what the pool uses; `checks.MIN_CHECKPOINTS` is two.
-    spots = [i for i, m in enumerate(moves) if m["t"] == "straight"]
-    n_cp = 3 if len(spots) >= 6 else 2
-    if len(spots) >= n_cp:
+    # Checkpoints, spread over the straights, on top of the ones the set pieces
+    # brought with them. Three is what the pool uses.
+    have = sum(1 for m in moves if m["t"] == "cp")
+    spots = [i for i, m in enumerate(moves)
+             if m["t"] == "straight" and moves[min(i + 1, len(moves) - 1)]["t"] != "cp"]
+    n_cp = max(0, (3 if len(spots) >= 6 else 2) - have)
+    if n_cp and len(spots) >= n_cp:
         picks = sorted(spots[int(len(spots) * (k + 1) / (n_cp + 1))] for k in range(n_cp))
         for at in reversed(sorted(set(picks))):
             moves.insert(at + 1, {"t": "cp"})
 
-    # End level and end straight: the flag on a corner is a lottery, and the
-    # last thing a walk that has been pulled towards zero all lap needs is a
-    # final climb.
+    # End level and on a straight: the flag on a corner is a lottery.
     moves.append({"t": "straight", "len": round(rng.uniform(40.0, 70.0), 1),
                   "rise": round(-y, 1)})
     moves.append({"t": "finish"})
+
+    # Width and barriers are sticky from the move that sets them, so a set
+    # piece that changes either hands back `None`, meaning "the track's own".
+    for m in moves:
+        if "w" in m and m["w"] is None:
+            m["w"] = width
+        if "rail" in m and m["rail"] is None:
+            m["rail"] = "lr" if rails else ""
 
     return {
         "name": name_for(rng),
         "moves": moves,
         "width": width,
-        # Always grounded. A void daily is a daily most people cannot finish,
-        # and `checks` wants ground or barriers anyway.
-        #
-        # **A placeholder, and `settle_ground` replaces it once the ribbon
-        # exists.** It cannot be right here: the walk climbs and falls, and how
-        # far down it ends up is not known until the road has been laid. A fixed
-        # value guessed in advance produced exactly the defect
-        # `test_the_road_is_never_buried_in_its_own_ground` names - a flat quad
-        # drawn straight through the tarmac, with only the three stretches that
-        # happened to stay above it visible from the air.
-        "ground": 0.0,
-        "rails": rng.random() < 0.45,
-        "difficulty": 2 if max(radii) >= 40 else 3,
+        # A stunt track floats and is walled; a circuit sits on a ground plane
+        # whose height `settle_ground` fixes once the ribbon exists.
+        "ground": None if stunt else 0.0,
+        "rails": rails,
+        "difficulty": (4 if stunt else (2 if max(radii) >= 40 else 3)),
         "pal": pal,
-        "generated": {"seed": seed, "look": from_slug},
+        "generated": {"seed": seed, "look": look["slug"],
+                      "kind": "stunt" if stunt else "circuit"},
     }
 
 
@@ -260,6 +377,8 @@ def settle_ground(doc, track):
     an untimed build is ~5ms against the ~550ms `laptime.ideal_lap` costs, which
     is why the generator builds twice and prices once.
     """
+    if doc.get("ground") is None:
+        return doc
     low = min(e["p"][1] for e in track["line"])
     # Far enough under that the kerbs sit proud of it rather than flush, which
     # is what every ground track in the pool looks like.
