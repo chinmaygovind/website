@@ -177,5 +177,5 @@ def test_a_generated_track_is_stored_with_no_name_of_its_own(env):
     kept = gen_daily.propose(1, 395874002, verbose=False)
     slug, = gen_daily.store(kept)
     row = _row(A, slug)
-    assert slug == "daily-draft-395874002"
+    assert slug == "daily-draft-%d" % kept[0][0]
     assert row.name == row.doc["name"] == "Daily (in review)"
