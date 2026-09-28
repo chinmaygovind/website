@@ -169,6 +169,12 @@ def bot_laps(track, levels=("max", "easy"), max_t=None):
     return None
 
 
+# A daily walled end to end is no fun to drive, and one that needed barriers
+# over most of its lap to close its shortcuts is a layout that doubles back on
+# itself too much - better dropped than fenced.
+MAX_WALLED = 0.4
+
+
 def judge(doc, bot=True):
     """Build it, check it, price it. Returns `(track, why_not)`.
 
@@ -246,6 +252,10 @@ def judge(doc, bot=True):
     med = track.get("medals")
     if not med or not (med["gold"] < med["silver"] < med["bronze"]):
         why.append("medals out of order")
+    road = [e for e in line if not e.get("air")]
+    walled = sum(1 for e in road if e.get("wl") or e.get("wr")) / max(1, len(road))
+    if walled > MAX_WALLED:
+        why.append("%.0f%% walled after closing its shortcuts" % (100 * walled))
     if (doc.get("ground") is None and not doc.get("exposed")
             and not doc.get("rails")):
         why.append("floats with no barriers and is not exposed")
