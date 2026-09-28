@@ -62,6 +62,7 @@
         color-scheme: light;
         --charcoal: #333333;
         --poker: #16295c;
+        --projects: #e8590c;
         --whale: #1565c0;
         --racing: #c0182b;
         --ttr: #6b4226;
@@ -100,6 +101,7 @@
         color-scheme: dark;
         --charcoal: #d8d8d8;
         --poker: #7f9ae8;
+        --projects: #ff9a52;
         --whale: #5aa9f0;
         --racing: #ff6b7a;
         --ttr: #c69a72;
@@ -327,6 +329,7 @@
       .modal-resume { --accent: var(--charcoal); }
       .modal-about { --accent: var(--about); }
       .modal-poker { --accent: var(--poker); }
+      .modal-projects { --accent: var(--projects); }
       .modal-whale { --accent: var(--whale); }
       .modal-racing { --accent: var(--racing); }
       .modal-drive { --accent: var(--drive); }
@@ -431,6 +434,77 @@
         object-fit: contain;
       }
       .modal-poker .pane-right { justify-content: center; }
+
+      .tile-pending {
+        width: 70%;
+        aspect-ratio: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 3px dashed var(--projects);
+        border-radius: 12px;
+        color: var(--projects);
+        font-size: clamp(2rem, 5vw, 4rem);
+      }
+      .proj-list {
+        margin: 1rem 0 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+      }
+      .proj-pick {
+        font: inherit;
+        font-size: clamp(1.1rem, 1.9vw, 1.5rem);
+        color: inherit;
+        background: none;
+        border: 0;
+        padding: 0.15rem 0 0.15rem 1.2rem;
+        cursor: pointer;
+        text-align: left;
+        position: relative;
+      }
+      .proj-pick::before {
+        content: "\25B8";
+        position: absolute;
+        left: 0;
+        color: var(--accent);
+        opacity: 0;
+      }
+      .proj-pick:hover { color: var(--accent); }
+      .proj-pick[aria-selected="true"] { color: var(--accent); }
+      .proj-pick[aria-selected="true"]::before { opacity: 1; }
+      .proj { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 0.7rem; }
+      .proj[hidden] { display: none; }
+      .proj-name {
+        margin: 0;
+        font-size: clamp(1.3rem, 2.2vw, 1.9rem);
+        color: var(--accent);
+      }
+      .modal-projects .pane-right { overflow-y: auto; }
+      .proj-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 1rem;
+      }
+      .proj-head .proj-name { flex: none; }
+      .proj-made {
+        margin: 0;
+        text-align: right;
+        line-height: 1.25;
+        font-size: clamp(0.95rem, 1.4vw, 1.15rem);
+        color: var(--faint);
+      }
+      .proj .media-frame { flex: 1 0 45%; }
+      .proj:not([hidden]) { animation: proj-in 0.3s ease both; }
+      @keyframes proj-in {
+        from { opacity: 0; transform: translateY(10px); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .proj:not([hidden]) { animation: none; }
+      }
 
       .exp-heading {
         margin: 0 0 1.2rem;
@@ -1663,17 +1737,11 @@
         <span class="tile-label">RESUME</span>
       </button>
 
-      <button class="tile" data-modal="modal-poker">
+      <button class="tile" data-modal="modal-projects">
         <span class="tile-art">
-          <img
-            class="tile-img"
-            src="assets/icons/poker.png"
-            data-still="assets/icons/poker.png"
-            data-anim="assets/icons/poker.gif"
-            alt="Poker"
-          />
+          <span class="tile-pending" aria-hidden="true">?</span>
         </span>
-        <span class="tile-label">POKER</span>
+        <span class="tile-label">PROJECTS</span>
       </button>
 
       <button class="tile" data-modal="modal-whale">
@@ -1781,6 +1849,19 @@
           />
         </span>
         <span class="tile-label">KING OF TOKYO</span>
+      </button>
+
+      <button class="tile" data-modal="modal-poker">
+        <span class="tile-art">
+          <img
+            class="tile-img"
+            src="assets/icons/poker.png"
+            data-still="assets/icons/poker.png"
+            data-anim="assets/icons/poker.gif"
+            alt="Poker"
+          />
+        </span>
+        <span class="tile-label">POKER</span>
       </button>
       </section>
     </main>
@@ -1908,6 +1989,7 @@
             <img class="modal-icon" src="assets/icons/poker.gif" alt="" aria-hidden="true" />
             <h2 class="pane-title">poker</h2>
             <p class="pane-text">I like to play cards. I may not be the best, but I do get pretty lucky.</p>
+            <p class="pane-text">I also built a poker trainer where you can play hands against bots and see how close you are to game theory optimal. Go to <a class="here-link" href="https://gto.cgovind.com" target="_blank" rel="noopener">gto.cgovind.com</a> to play!</p>
             <p class="pane-text">Here are some resources I used when I first started to play poker. I'm still not very good, but they helped me learn the basics.</p>
             <ul class="link-list">
               <li>
@@ -1922,6 +2004,14 @@
             </ul>
           </div>
           <div class="pane pane-right">
+            <div class="media">
+              <div class="media-frame">
+                <a href="https://gto.cgovind.com" target="_blank" rel="noopener">
+                  <img class="media-img" src="assets/poker/gto-trainer.jpg" alt="A hand at the GTO trainer's table, against five bots" loading="lazy" />
+                </a>
+              </div>
+              <p class="pane-caption">click <a class="here-link" href="https://gto.cgovind.com" target="_blank" rel="noopener">here</a> to play the poker trainer</p>
+            </div>
             <div class="video-wrap">
               <iframe
                 class="video-frame"
@@ -1932,6 +2022,139 @@
               ></iframe>
             </div>
             <p class="pane-caption">check out this stream of me playing in Susquehanna's tournament!</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" data-nosnippet id="modal-projects" hidden>
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-box modal-projects" role="dialog" aria-modal="true" aria-label="Projects">
+        <button class="modal-close" data-close aria-label="Close">&times;</button>
+        <div class="modal-body">
+          <div class="pane pane-left">
+            <h2 class="pane-title">projects</h2>
+            <p class="pane-text">Some other things I've built.</p>
+            <ul class="proj-list" role="tablist">
+              <li><button class="proj-pick" type="button" role="tab" aria-selected="true" aria-controls="proj-telemetry">Car Telemetry Server</button></li>
+              <li><button class="proj-pick" type="button" role="tab" aria-selected="false" aria-controls="proj-quickcal">QuickCal</button></li>
+              <li><button class="proj-pick" type="button" role="tab" aria-selected="false" aria-controls="proj-slackbot">CIS 1600 Automations</button></li>
+              <li><button class="proj-pick" type="button" role="tab" aria-selected="false" aria-controls="proj-linkedin">LinkedIn Games Solver</button></li>
+              <li><button class="proj-pick" type="button" role="tab" aria-selected="false" aria-controls="proj-sustainaview">SustainaView</button></li>
+              <li><button class="proj-pick" type="button" role="tab" aria-selected="false" aria-controls="proj-synth">Todd the Synth</button></li>
+              <li><button class="proj-pick" type="button" role="tab" aria-selected="false" aria-controls="proj-nfl">NFL Predictor</button></li>
+              <li><button class="proj-pick" type="button" role="tab" aria-selected="false" aria-controls="proj-robottour">Scioly Robot Tour</button></li>
+              <li><button class="proj-pick" type="button" role="tab" aria-selected="false" aria-controls="proj-iat">Scioly It's About Time</button></li>
+              <li><button class="proj-pick" type="button" role="tab" aria-selected="false" aria-controls="proj-codebusters">Scioly Codebusters</button></li>
+              <li><button class="proj-pick" type="button" role="tab" aria-selected="false" aria-controls="proj-astronomy">Scioly Astronomy</button></li>
+              <li><button class="proj-pick" type="button" role="tab" aria-selected="false" aria-controls="proj-euler">Project Euler</button></li>
+            </ul>
+          </div>
+          <div class="pane pane-right">
+            <article class="proj" id="proj-telemetry" role="tabpanel">
+              <div class="media-frame"><img class="media-img" src="assets/projects/telemetry.jpg" alt="The data server's Log Browser, showing a drive day's logs and the GPS trace of one run" loading="lazy" /></div>
+              <div class="proj-head">
+                <h3 class="proj-name">Car Telemetry Server</h3>
+                <p class="proj-made">Rust, Python, Docker, WebSockets</p>
+              </div>
+              <p class="pane-text">A live data server for the Penn Electric Racing car. It takes in 200+ sensors at 1kHz and streams them to the pits in real time, so the team can see what the car is doing while it's still on track instead of pulling logs off it afterwards. Getting data off the car went from minutes to milliseconds.</p>
+            </article>
+            <article class="proj" id="proj-quickcal" role="tabpanel" hidden>
+              <div class="media-frame"><img class="media-img" src="assets/projects/quickcal.jpg" alt="QuickCal turning a highlighted event page into a calendar event" loading="lazy" /></div>
+              <div class="proj-head">
+                <h3 class="proj-name">QuickCal</h3>
+                <p class="proj-made">JavaScript, AWS Lambda, Gemini</p>
+              </div>
+              <p class="pane-text">A Chrome extension that turns any text into a calendar event. Highlight an email that says "meeting next Tuesday at 3 in Levine", click the button, and Gemini figures out the rest. I moved the backend to AWS Lambda so it works instantly with no setup.</p>
+              <p class="pane-caption">see it on <a class="here-link" href="https://github.com/chinmaygovind/QuickCal" target="_blank" rel="noopener">github</a></p>
+            </article>
+            <article class="proj" id="proj-slackbot" role="tabpanel" hidden>
+              <div class="placeholder">picture coming soon</div>
+              <div class="proj-head">
+                <h3 class="proj-name">CIS 1600 Automations</h3>
+                <p class="proj-made">Python, Slack API, Ed API, Overleaf</p>
+              </div>
+              <p class="pane-text">Tools I built for the CIS 1600 course staff. A Slack bot watches Ed for new student questions, works out which homework problem each one is about (I tuned it against 118 real posts), and replies in the TA Slack with that problem and its solution pulled straight from the homework source. An Ed dashboard tracks how fast each TA answers, which powered an incentive program: merch at 100 answers, a trophy for the most, and a clause involving a pie. The bot also nags everyone to log their hours and remembers TA birthdays.</p>
+              <p class="pane-caption">see it on <a class="here-link" href="https://github.com/chinmaygovind/CIS1600-Slack-Bot" target="_blank" rel="noopener">github</a></p>
+            </article>
+            <article class="proj" id="proj-linkedin" role="tabpanel" hidden>
+              <div class="media-frame"><img class="media-img" src="assets/projects/linkedin.jpg" alt="The LinkedIn Games Solver menu: Mini Sudoku, Queens, Tango and Zip" loading="lazy" /></div>
+              <div class="proj-head">
+                <h3 class="proj-name">LinkedIn Games Solver</h3>
+                <p class="proj-made">Python, SAT solvers, OR&#8209;Tools</p>
+              </div>
+              <p class="pane-text">Solves LinkedIn's daily puzzles (Queens, Tango, Zip and Mini Sudoku) by turning each one into a SAT problem and letting a solver do the thinking. Built with Nicholas Tarsis for CIS 1921.</p>
+              <p class="pane-caption">see it on <a class="here-link" href="https://github.com/chinmaygovind/CIS-1921-Final-Project" target="_blank" rel="noopener">github</a></p>
+            </article>
+            <article class="proj" id="proj-sustainaview" role="tabpanel" hidden>
+              <div class="media-frame"><img class="media-img" src="assets/projects/sustainaview.jpg" alt="Three SustainaView screens: taking a photo, the sustainability score, and the redesigned room" loading="lazy" /></div>
+              <div class="proj-head">
+                <h3 class="proj-name">SustainaView</h3>
+                <p class="proj-made">React Native, Gemini, MongoDB</p>
+              </div>
+              <p class="pane-text">Our PennApps XXVI hackathon project, with Akash Sarode and Arjun Suryawanshi. Take a photo of any room and it gives you a sustainability score, suggests greener furniture and tech (including local and second-hand places to buy them), and generates a picture of what your room would look like with them.</p>
+            </article>
+            <article class="proj" id="proj-synth" role="tabpanel" hidden>
+              <div class="media-frame"><img class="media-img" src="assets/projects/synth.jpg" alt="Todd the Synth held up in a stairwell, with TODD engraved on its side" loading="lazy" /></div>
+              <div class="proj-head">
+                <h3 class="proj-name">Todd the Synth</h3>
+                <p class="proj-made">Altium, SolidWorks, laser cutting</p>
+              </div>
+              <p class="pane-text">A synthesizer I designed from scratch for ESE 2920: schematic and PCB in Altium, case in SolidWorks, laser-cut and soldered by hand. It's inspired by Toad from Super Mario Bros, and one day I will paint it red and white like him.</p>
+            </article>
+            <article class="proj" id="proj-nfl" role="tabpanel" hidden>
+              <div class="media-frame"><img class="media-img" src="assets/projects/nfl.jpg" alt="The NFL Predictor picking the Lions over the Chiefs 13 to 11, under a disclaimer that the model is terrible" loading="lazy" /></div>
+              <div class="proj-head">
+                <h3 class="proj-name">NFL Predictor</h3>
+                <p class="proj-made">Python</p>
+              </div>
+              <p class="pane-text">I built this one hour before the first 2025 NFL playoff game to enter a bracket prediction contest. It is really bad and heavily favors the home team, but it is pretty funny.</p>
+              <p class="pane-caption">see it on <a class="here-link" href="https://github.com/chinmaygovind/NFL-Predictor" target="_blank" rel="noopener">github</a></p>
+            </article>
+            <article class="proj" id="proj-robottour" role="tabpanel" hidden>
+              <div class="media-frame"><img class="media-img" src="assets/projects/robottour.jpg" alt="The Robot Tour robot on a taped practice course" loading="lazy" /></div>
+              <div class="proj-head">
+                <h3 class="proj-name">Scioly Robot Tour</h3>
+                <p class="proj-made">Arduino, C++</p>
+              </div>
+              <p class="pane-text">A robot for Science Olympiad's Robot Tour event, built with Reuben James. It drives a course using wheel encoders for distance and a gyroscope for heading. It got us 2nd place at the PA State Finals!</p>
+              <p class="pane-caption">see it on <a class="here-link" href="https://github.com/chinmaygovind/robot-tour" target="_blank" rel="noopener">github</a></p>
+            </article>
+            <article class="proj" id="proj-iat" role="tabpanel" hidden>
+              <div class="media-frame"><img class="media-img" src="assets/projects/iat.jpg" alt="The It's About Time clock, with the escape wheel, pallet, pendulum and falling mass labelled" loading="lazy" /></div>
+              <div class="proj-head">
+                <h3 class="proj-name">Scioly It's About Time</h3>
+                <p class="proj-made">3D printing, Fusion 360, Legos</p>
+              </div>
+              <p class="pane-text">A mechanical timer for Science Olympiad's It's About Time event, built with Akash Sarode. The rule is that it can't use electricity, so it's a pendulum clock with a 3D-printed escapement: a weight falls at a steady speed, a cart passes Lego blockers spaced for the target times, and a pointer clicks at each one. The pendulum is a BBQ skewer and the counterweight is a Lego Han Solo. Our first version was a water clock and it was really bad.</p>
+            </article>
+            <article class="proj" id="proj-codebusters" role="tabpanel" hidden>
+              <div class="media-frame"><img class="media-img" src="assets/projects/codebusters.jpg" alt="The Pattern Trainer halfway through BDPNN, with three words still to find" loading="lazy" /></div>
+              <div class="proj-head">
+                <h3 class="proj-name">Scioly Codebusters</h3>
+                <p class="proj-made">HTML, JavaScript</p>
+              </div>
+              <p class="pane-text">Practice tools for Codebusters, the Science Olympiad event where you crack ciphers by hand against the clock. The main one is a pattern trainer: it shows you an enciphered word, and you have to name every common English word with the same letter pattern, which is how you break into an aristocrat fast. They helped us win first at states.</p>
+              <p class="pane-caption">see it on <a class="here-link" href="https://chinmaygovind.github.io/wii/channels/codebusters/pattern.html" target="_blank" rel="noopener">the pattern trainer</a></p>
+            </article>
+            <article class="proj" id="proj-astronomy" role="tabpanel" hidden>
+              <div class="media-frame"><img class="media-img" src="assets/projects/astronomy.jpg" alt="AstroGPT matching an uploaded picture to NGC 1333" loading="lazy" /></div>
+              <div class="proj-head">
+                <h3 class="proj-name">Scioly Astronomy</h3>
+                <p class="proj-made">Python, OpenCV, Flask, Excel</p>
+              </div>
+              <p class="pane-text">Tools I built for the Science Olympiad Astronomy event. Chinmay's Mega Astro Calculator of Doom is a spreadsheet that does every formula on the test for you, and AstroGPT is an image search: upload a picture of a deep-space object and it uses OpenCV feature matching to tell you which one it is.</p>
+              <p class="pane-caption">see it on <a class="here-link" href="https://github.com/chinmaygovind/AstroGPT" target="_blank" rel="noopener">github</a></p>
+            </article>
+            <article class="proj" id="proj-euler" role="tabpanel" hidden>
+              <div class="media-frame"><img class="media-img" src="assets/projects/euler.jpg" alt="Problem 768, the hardest one I have solved, with my Project Euler badge" loading="lazy" /></div>
+              <div class="proj-head">
+                <h3 class="proj-name">Project Euler</h3>
+                <p class="proj-made">Java</p>
+              </div>
+              <p class="pane-text">My solutions to Project Euler, a set of math problems you have to write code to solve. I've solved 225 of 957, and the hardest one I've done is rated 95% difficulty (Problem 768).</p>
+              <p class="pane-caption">see it on <a class="here-link" href="https://github.com/chinmaygovind/Project-Euler" target="_blank" rel="noopener">github</a></p>
+            </article>
           </div>
         </div>
       </div>
@@ -2236,6 +2459,19 @@
       document.querySelectorAll("[data-modal]").forEach(function (opener) {
         opener.addEventListener("click", function () {
           openModal(opener.dataset.modal);
+        });
+      });
+
+      document.querySelectorAll(".proj-pick").forEach(function (pick, _, picks) {
+        pick.addEventListener("click", function () {
+          picks.forEach(function (p) {
+            var on = p === pick;
+            p.setAttribute("aria-selected", on);
+            document.getElementById(p.getAttribute("aria-controls")).hidden = !on;
+          });
+          if (window.matchMedia("(max-width: 760px)").matches) {
+            document.getElementById(pick.getAttribute("aria-controls")).scrollIntoView({ behavior: "smooth", block: "start" });
+          }
         });
       });
 
