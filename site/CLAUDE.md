@@ -20,8 +20,8 @@ below.
   (`site/fonts/xkcd-script.woff2`, from ipython/xkcd-font — see **The font** below).
   Below it are **two
   labelled tile rows** — `<section class="tilerow">` each holding an
-  `<h2 class="rowlabel">` and its tiles, `ABOUT ME` over resume, whales,
-  racing, music, projects, settings and `GAMES` over drive, ttr, ers, kot, poker. Each row is its
+  `<h2 class="rowlabel">` and its tiles, `ABOUT ME` over resume, poker, whales,
+  racing, music, settings and `GAMES` over drive, ttr, ers, kot. Each row is its
   own `repeat(6, --tile)` grid, so the two line up as they did when they shared
   one twelve-slot grid, and **six is still the row width**: a seventh tile in a
   row wraps *within that row* rather than into the row below. **Keep `settings`
@@ -45,19 +45,6 @@ below.
   row and the grid drops to two columns, which is the phone layout. Drive's tile was pulled for
   a while (Jul 2026) so Chinmay could draw the icon himself, and came back once he
   had — the steering wheel in `assets/icons/drive.{png,gif,xcf}` is his.
-- **Projects is the one modal with a picker.** The left pane is a list of
-  `.proj-pick` buttons and the right pane holds one `<article class="proj">` per
-  project, all but the selected one `hidden`; the script swaps them (and, at
-  phone width, scrolls the shown one into view, since it sits below the whole
-  list). Each article is a photo in the usual `.media-frame`, then a
-  `.proj-head` row with the name on the left and a faint comma list of the tech
-  right-aligned beside it. **The tech is plain text, not pill tags** - Chinmay
-  rejected the pills as what every portfolio has - and a photo pile with rubber
-  stamps was tried and rejected too. Photos are `loading="lazy"` so the hidden
-  eleven cost nothing until picked. Adding a project is one `<li>` and one
-  `<article>`, joined by `aria-controls` → `id`. The tile has **no icon yet** -
-  Chinmay is drawing it - so it shows a dashed `.tile-pending` box, not an
-  `<img>`, which keeps it out of the png/gif hover swap.
 - **Adding a tile is one repeating pattern**, all inside `site/index.html` (no
   build step, so everything is inline):
   1. a `--<name>` accent colour in `:root` **and a lifted one in the
