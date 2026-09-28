@@ -29,19 +29,15 @@ the track cards, `/account`, `/leaderboard`, the nav, or the in-game board panel
   `tests/test_app.py` pins the first two and the invite's two labels. Nothing
   can test the layout itself: there is no browser in CI, so **shoot the nav at
   320/360/390 before shipping a change to it**.
-- **The home page is a headline, two doors and how to play.** "Race online!", then
-  a red **Drive now** (`/solo`) beside a yellow **Race your friends** (`/lobbies`) -
-  two halves of the game rather than a primary and a fallback, which is why the
-  second one is a colour of its own rather than the white secondary. **They stay
-  side by side on a phone** (`.cta`), because stacked they stop reading as a pair
-  and start reading as a first choice and a second one. At 1.3rem they cannot
-  share a 360px line, so below 620px they come down to 1rem and grow into the
-  row. Not `.btn-grid.two`: equal columns would size both buttons to whatever
-  "Race your friends" needs, and half a 320px screen is not enough for it at any
-  size worth tapping. There is no
-  grey standfirst under the headline: it restated the three paragraphs below it.
-  Those are one each - what a run is, what Solo is, what Multiplayer is - and the
-  track cards follow, so the page is read once and clicked from thereafter.
+- **The home page is a title screen, then the tracks.** A full-height `.hero`
+  with a 60s loop of fifteen tracks behind it (`static/video/home.mp4`), the
+  wheel and DRIVE in the nav's own face (Titillium 900, not the sponsor boards'
+  Barlow), four menu lines: Solo, Multiplayer, Daily track (`/daily`),
+  Leaderboards, and a small "See tracks" that fades in after a second and
+  smooth-scrolls to `#tracks`. The how-to-play paragraphs went: a run is learnt
+  by driving one. The loop is `tools/shoot_video.py loop` (see its docstring),
+  re-encoded at CRF 32 for the web; `home.jpg` is its first frame, and is the
+  poster *and* what a `prefers-reduced-motion` visitor sees instead.
 - **Solo is `/solo`, and the track is something you change from inside it.** There is
   no "pick a track" page any more: `/solo` opens whatever you were last driving (kept
   in the session, so the first paint is right) and the **track switcher** - the map

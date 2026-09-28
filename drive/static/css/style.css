@@ -3344,3 +3344,71 @@ body.garage-page .nav { flex: none; }
 .review-btns .rv-go { background: #1f7a4d; color: #fff; }
 .review-btns .rv-fix { background: var(--red); color: #fff; }
 .review-btns .rv-skip { background: rgba(255,255,255,.18); color: #fff; }
+
+/* The home page's title screen. The footage is the trailer with its wordmark
+   intro cut off; the gradient is what keeps white type readable over Rainbow
+   Road's pinks and Mount Joy's white sky. */
+.hero {
+  position: relative; overflow: hidden; isolation: isolate;
+  min-height: calc(100svh - 90px);
+  display: grid; place-items: center;
+  background: #0d0f16 url("../video/home.jpg") center / cover;
+  color: #fff; text-align: center;
+}
+.hero-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: -2; }
+.hero::after {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  background:
+    linear-gradient(to bottom, transparent 94%, var(--paper)),
+    radial-gradient(ellipse at center, rgba(8,10,16,.25) 0%, rgba(8,10,16,.7) 75%),
+    linear-gradient(to bottom, rgba(8,10,16,.2), rgba(8,10,16,.5));
+}
+.hero-in { padding: 2rem 1rem 4rem; }
+.hero-title {
+  font-family: var(--display); font-weight: 900; text-transform: uppercase;
+  font-size: clamp(4rem, 17vw, 10rem); line-height: 1; letter-spacing: .02em;
+  margin: 0 0 .3em; display: flex; align-items: center; justify-content: center; gap: .15em;
+  text-shadow: 0 6px 30px rgba(0,0,0,.45);
+}
+.hero-ico { width: .78em; height: .78em; filter: drop-shadow(0 6px 24px rgba(0,0,0,.45)); }
+.hero-menu { display: inline-flex; flex-direction: column; align-items: flex-start; gap: .1rem; }
+.hero-menu a {
+  font-family: var(--display); font-weight: 900; text-transform: uppercase;
+  font-size: clamp(1.4rem, 5vw, 2.1rem); line-height: 1.25; letter-spacing: .04em;
+  color: rgba(255,255,255,.82);
+  text-shadow: 0 2px 12px rgba(0,0,0,.5);
+  transition: color .15s, transform .15s;
+}
+.hero-menu a::before {
+  content: "›"; display: inline-block; width: .8em; color: var(--red-soft);
+  opacity: .5; transition: opacity .15s, transform .15s;
+}
+.hero-menu a:hover, .hero-menu a:focus-visible {
+  color: #fff; text-decoration: none; transform: translateX(.35em); outline: none;
+}
+.hero-menu a:hover::before, .hero-menu a:focus-visible::before { opacity: 1; transform: translateX(-.1em); }
+.hero-more {
+  position: absolute; left: 50%; bottom: 2.2rem; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: .1rem;
+  font-family: var(--display); font-weight: 700; font-size: .78rem;
+  letter-spacing: .22em; text-transform: uppercase; color: rgba(255,255,255,.75);
+  animation: hero-more-in .6s ease-out 1s both;
+}
+@keyframes hero-more-in { from { opacity: 0; } }
+.hero-more:hover { color: #fff; text-decoration: none; }
+.hero-more svg {
+  width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4;
+  stroke-linecap: round; stroke-linejoin: round; animation: hero-nudge 1.8s ease-in-out infinite;
+}
+@keyframes hero-nudge { 50% { transform: translateY(5px); } }
+html:has(.hero) { scroll-behavior: smooth; }
+#tracks { scroll-margin-top: 70px; }
+@media (max-width: 620px) { .hero { min-height: calc(100svh - 132px); } #tracks { scroll-margin-top: 100px; } }
+@media (prefers-reduced-motion: reduce) {
+  .hero-bg { display: none; }
+  .hero-more, .hero-more svg { animation: none; }
+  html:has(.hero) { scroll-behavior: auto; }
+}
+
+.home-tracks > h2 { text-align: center; font-size: 2rem; margin-top: 0; }
+.home-tracks .htabs-bar { justify-content: center; }

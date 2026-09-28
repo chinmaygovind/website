@@ -35,7 +35,7 @@ from _shots import have_playwright
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DRIVE = os.path.dirname(HERE)
-OUT = os.path.join(DRIVE, "covers")
+OUT = os.path.join(DRIVE, "media", "covers")
 
 SIZES = [(1920, 1080), (800, 1200), (800, 800)]
 
@@ -137,10 +137,10 @@ def main():
                 try:
                     res = hero.compose(page, cfg)
                     plain = os.path.join(OUT, "%s_%dx%d.png" % (slug, w, h))
-                    page.screenshot(path=plain)
+                    page.screenshot(path=plain, timeout=_hero.SHOT_MS)
                     _title(page, plain, w, h)
                     page.screenshot(path=os.path.join(
-                        OUT, "%s_%dx%d-title.png" % (slug, w, h)))
+                        OUT, "%s_%dx%d-title.png" % (slug, w, h)), timeout=_hero.SHOT_MS)
                 finally:
                     page.close()
                 print("  %-12s %4dx%-4d f=%.2f dist=%.0f"

@@ -549,6 +549,7 @@ async (a) => {
 
   (window.__coverCars || []).forEach(v => v.dispose());
   window.__coverCars = [];
+  window.__coverSlots = [];
 
   const pts = [];
   for (let i = a.i0; i <= a.i1; i++) pts.push(new THREE.Vector3(...L[i].p));
@@ -615,16 +616,21 @@ async (a) => {
     const right = new THREE.Vector3().crossVectors(up, back).normalize();
     const rot = new THREE.Quaternion().setFromRotationMatrix(
       new THREE.Matrix4().makeBasis(right, up, back));
+    const yaw = (rnd() * 2 - 1) * 0.16;
     rot.multiply(new THREE.Quaternion().setFromAxisAngle(
-      new THREE.Vector3(0, 1, 0), (rnd() * 2 - 1) * 0.16));
+      new THREE.Vector3(0, 1, 0), yaw));
     const view = new C.CarView(S.renderer.scene,
       a.liveries[(k + (a.liveryFrom || 0)) % a.liveries.length]);
-    view.update(pos, rot, { steer: (rnd()*2-1)*0.3, lean: (rnd()*2-1)*0.22,
-                            spin: 2 + rnd()*2 });
+    // Named rather than inline so `shoot_video.py` can drive this same car on
+    // from here - drawn in the order they always were, or every later car's
+    // numbers shift and the picture changes.
+    const pose = { steer: (rnd()*2-1)*0.3, lean: (rnd()*2-1)*0.22, spin: 2 + rnd()*2 };
+    view.update(pos, rot, pose);
     // No contact shadow for a car in the air - it would be a disc on a surface
     // the car is nowhere near.
     if (flying) view.shadow.visible = false;
     window.__coverCars.push(view);
+    window.__coverSlots.push({ i, lane: sl.lane, lift, yaw, pose, view });
   }
 
   // **Fitted against whichever angle is tighter, which is what lets the sizes
@@ -693,6 +699,7 @@ async (a) => {
   // on an interval means whatever moment the screenshot lands on, a current
   // frame is there to be taken. `requestAnimationFrame` is not available for
   // this - stopping it is what stops the game repainting over us.
+  window.__coverFit = { centre, radius, dist };
   clearInterval(window.__coverTick);
   window.__coverTick = setInterval(() => S.renderer.render(0.016), 40);
   S.renderer.render(0.016);

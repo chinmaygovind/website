@@ -1042,13 +1042,7 @@ def _last_track():
 
 @app.route("/")
 def index():
-    """The home page: what this is, then the tracks.
-
-    It is no longer the way in - "Solo" and "Drive now" both go straight to
-    /solo, which puts you on the track you were last driving. This page is here
-    to be read, so it leads with how the game works and keeps the track list
-    below as a way of picking a specific one.
-    """
+    """The home page: a title screen with four ways in, then the tracks."""
     pbs = _my_pb_map()
     pool = tracks_mod.summaries()
     # The same three-way split the switcher makes, made once here so the two

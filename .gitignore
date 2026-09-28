@@ -44,7 +44,7 @@ drive/static/img/tracks/daily-*.png
 # then the next run clears and re-renders the lot - so these are build output,
 # not source. Committed they would be 221MB of the repo forever, on top of the
 # ~484MB of media already in .git that CI works around with sparse checkouts.
-# The finished clips (drive/media/video/*.mp4 and beats/) ARE committed.
+# The finished trailers (drive/media/video/*.mp4 and beats/trailer/) ARE committed.
 drive/media/video/frames/
 
 # Storefront cover art from `drive/tools/shoot_covers.py` - the same hero shot
@@ -57,6 +57,14 @@ drive/covers/
 # time of each beat by eye. Those times are now constants in the script, so the
 # sheets are scouting output the same way drive/tools/views/ is.
 drive/media/video/probe/
+
+# The rest of `shoot_video.py`'s working output: one contact sheet per cut
+# (for looking at, like the probe sheets), and the loop's master and its
+# per-shot clips - the loop ships as drive/static/video/home.mp4, re-encoded
+# for the web, so the master is reproducible and 7MB more of .git for nothing.
+drive/media/video/*-sheet.png
+drive/media/video/loop.mp4
+drive/media/video/beats/loop/
 
 # GTO trainer: the opponent avatars are photographs of real people and this
 # repo is public. They live outside the tree in prod (/home/ubuntu/gto-avatars,

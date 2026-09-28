@@ -1,127 +1,145 @@
-"""The store preview video: five beats of the real game, rendered frame by frame.
+"""The game's videos: the store trailer and the home page's background loop.
 
-    python tools/shoot_video.py --beat cover      # one beat
-    python tools/shoot_video.py                   # every beat, then the cuts
-    python tools/shoot_video.py --aspect portrait
+    python tools/stage_race.py --db media/video/staged.db <every slug>   # first
+    python tools/shoot_video.py --db media/video/staged.db trailer
+    python tools/shoot_video.py --db media/video/staged.db loop
+    python tools/shoot_video.py --db ... trailer --beat launch --aspect landscape
+    python tools/shoot_video.py trailer --cut-only      # re-cut frames on disk
 
-CrazyGames wants two videos - **1920x1080 (16:9)** and **1080x1620 (2:3)** - of
-at most 20 seconds, under 50MB, **silent**, and starting seamlessly from the
-store cover (`covers/spa_1920x1080-title.png`). The edit is 15.5s:
+Two cuts of the same footage:
 
-    0.0- 3.0  the Spa cover, pushing in, with the cars running
-    3.0- 6.0  Rainbow Road, the multiplayer pack            race 113
-    6.0- 9.0  Big Red, first person                         chinmay's board lap
-    9.0-11.5  Mount Joy, up the ramp                        race 95
-   11.5-15.5  winning a multiplayer race                    race 113
+* **`trailer`** - 20s, silent, 1920x1080 and 1080x1620, opening on the Spa
+  cover. What CrazyGames asks for (at most 20s, under 50MB, no audio, starting
+  seamlessly from the store cover), and the same file is the embed on
+  cgovind.com (`site/assets/drive/drive-landscape.mp4`).
+* **`loop`** - 60s at 1280x720, fifteen tracks at four seconds each, no
+  wordmark. The home page's background (`static/video/home.mp4`), which is
+  cropped by `object-fit: cover` and so needs no portrait of its own.
 
-**This renders rather than screen-records, and that is the whole point.** A
-recorded viewport gave 1852x990 with an audio track and the site's own buttons in
-frame - off-spec on resolution, aspect and sound at once, and unccroppable to
-either required shape. Rendering hits both sizes natively and can be re-run when
-a track changes, which the covers and the switcher previews already need
-(`covers/README.md`).
+**Two kinds of shot.** A `fly` is `_hero.py`'s composition - the same framing
+as the track's card and its store cover - with the cars driven on along the
+ribbon and the camera pushing in. A `race` is a staged bot race
+(`stage_race.py`) played back through `/race/<id>`, the real watch page and
+its real chase camera, stepped at 30Hz.
 
-**How it draws.** `?shot=1` is the mode the covers use: HUD off, player car
-hidden, the frame loop stopped, and the scene exposed on `window.DriveShot`. So
-the opener is composed by the *same* code that made the cover - `shoot_covers`'s
-own `SCAN`, `_pick_window` and framing maths, imported rather than copied - and
-frame 0 is therefore the cover by construction rather than by eye. The wordmark
-is not drawn per frame: it is one transparent PNG laid over the beat by ffmpeg
-and faded out, which is both faster and the only way the first frame can be
-pixel-identical to the shipped `-title` cover.
+**The race shots pick themselves.** Which car to follow and from when is
+chosen off the race's own frames by what the beat asks for - `pack` (most
+cars close by), `air` (most time off the ground), `start` (off the grid) or
+`finish` (the closest finish in the race) - never across a respawn and never
+while the car is crawling. So a restaged race needs no new numbers here. Look
+at the contact sheet it prints anyway: a number cannot tell a wall from a view.
 
-**Nothing here may touch the simulation.** The cars in the opener are composed
-`CarView`s on the ribbon's own frame, exactly as on the cover - the same fiction,
-moved. The other four beats are real recorded laps played back, so what is on
-screen is what somebody drove.
+**The opener used to lose cars.** Each car was wrapped back to the start of
+its window when it reached the end, so a car vanished and reappeared mid-frame
+a couple of times a second. Now every car is the one `_hero.SHOOT` placed, and
+it simply keeps driving down the road - the field thins at the back as it
+goes, which three seconds never shows.
+
+**This renders rather than screen-records**, and that is the whole point: a
+recorded viewport is the wrong size, has sound and the site's buttons in it.
+The game's `requestAnimationFrame` is taken over (`PUMP`) so each frame is the
+real `frame()` advanced by exactly 1/30s.
 """
 
 import argparse
+import json
 import math
 import os
+import sqlite3
 import subprocess
 import sys
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _shots import GL_FLAGS, serving
-from shoot_covers import COVERS, PAINTS, SCAN, _pick_window, _b64, _light_wheel
+import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DRIVE = os.path.dirname(HERE)
-OUT = os.path.join(DRIVE, "video")
+sys.path.insert(0, HERE)
+sys.path.insert(0, DRIVE)
 
+import _hero  # noqa: E402
+from _shots import GL_FLAGS, serving  # noqa: E402
+from shoot_covers import _b64, _light_wheel  # noqa: E402
+
+OUT = os.path.join(DRIVE, "media", "video")
+COVERS = os.path.join(DRIVE, "media", "covers")
 FPS = 30
-SPAN = 0.16                      # how much of the lap the opener frames
 
-# Simulation steps per captured frame, for the replay beats.
-#
-# **This is what takes the judder out of the chase camera.** A recorded pose is
-# 15Hz (`course.js` GHOST_HZ) and `Ghost.at` interpolates it *linearly*, so the
-# speed `updateWatch` measures off it - `p.distanceTo(prev)/dt` - is a step
-# function that changes twice a video frame. The chase camera feeds that speed
-# into how far back it sits and how hard it chases (`render.js` follow), so the
-# whole frame lurches on every step. Running the loop at 120Hz and photographing
-# every fourth frame gives that exponential smoother four times as many bites,
-# which is what a browser at 120fps would do anyway - so the beat is the game
-# rendered properly rather than the game rendered coarsely.
-#
-# First person needs none of it and shows none of it: that camera *cuts* to the
-# eye position every frame instead of chasing, which is why Big Red was the one
-# beat that already looked right.
+# Simulation steps per captured frame on a replay. The chase camera is an
+# exponential follow, and a replay's pose steps at 15Hz; giving the camera four
+# bites per frame is what a 120Hz browser does, and is what takes the judder out.
 SUBSTEPS = 4
 
-# Both required shapes. Portrait is framed, not cropped: a 2:3 crop out of the
-# 16:9 cut throws away a third of the frame and puts the camera somewhere
-# nobody chose.
+# Racing pace for a `fly` beat's cars, in units a second.
+FLY_SPEED = 45.0
+
 ASPECTS = {
     "landscape": (1920, 1080),
     "portrait": (1080, 1620),
+    "web": (1280, 720),
 }
 
-# The edit. `secs` is how long the beat is on screen; `start` is where in the
-# recording it begins, in seconds, chosen by looking at `--probe` sheets.
-BEATS = [
-    dict(name="cover", secs=3.0),
-    # Both multiplayer beats are the *same* race - the pack early on and the
-    # flag at the end - so the video has one race running through it rather
-    # than two unrelated clips.
-    # The field is only together at the start - he wins this race by 2.75s, so
-    # by t=8 there is nobody else in shot and it stops being a multiplayer beat.
-    dict(name="pack", secs=3.0, url="/race/113", follow="chinmay", start=2.0),
-    # Into Big Red's loop, which is the one climb on a track that otherwise only
-    # falls, and the only thing on it worth three seconds of a driver's seat.
-    dict(name="firstperson", secs=3.0, url="/solo/bigred?watch=97", start=18.0,
-         view="first"),
-    # Mount Joy is "a boost pad, a ski jump onto the peak": the blue run-in is
-    # at t=9 and the car is off the lip and airborne against the sun at t=12.
-    dict(name="ramp", secs=2.5, url="/race/95", follow="chinmay", start=10.0),
-    # chinmay takes the flag at 49.700, so this ends just past it - at 45.7 the
-    # beat ran out 0.06s before he crossed, which is the one thing it is for.
-    dict(name="win", secs=4.0, url="/race/113", follow="chinmay", start=46.1),
+# ---------------------------------------------------------------------------
+# The edits
+# ---------------------------------------------------------------------------
+
+# 20.0s. Opens on Spa because the store's cover is Spa and the video has to
+# start on it; everything after that is a track the first trailer never showed.
+TRAILER = [
+    dict(name="open", kind="fly", slug="spa", secs=2.5, push=0.30, rise=0.05,
+         title="out"),
+    dict(name="launch", kind="race", slug="baku", secs=2.5, pick="start"),
+    dict(name="pack", kind="race", slug="suzuka", secs=2.0, pick="pack"),
+    # The montage: the tracks that are a place rather than a road.
+    dict(name="m-costco", kind="fly", slug="costco", secs=0.6, push=0.25),
+    dict(name="m-dino", kind="fly", slug="dino", secs=0.6, push=0.25),
+    dict(name="m-boo", kind="fly", slug="boo", secs=0.6, push=0.25),
+    dict(name="m-tokyo", kind="fly", slug="tokyo", secs=0.6, push=0.25),
+    dict(name="m-playground", kind="fly", slug="playground", secs=0.6, push=0.25),
+    dict(name="m-shroom", kind="fly", slug="shroom", secs=0.6, push=0.25),
+    dict(name="cockpit", kind="race", slug="monaco", secs=2.5, pick="pack", view="first"),
+    dict(name="air", kind="race", slug="jumpcity", secs=2.0, pick="air"),
+    dict(name="train", kind="race", slug="monza", secs=2.0, pick="pack"),
+    dict(name="flag", kind="race", slug="silverstone", secs=2.9, pick="finish",
+         title="in"),
 ]
 
-# What comes off the frame. The site's own furniture goes; what names the track
-# stays. `#modeLabel` reads "Race replay", which is true and is not what a
-# storefront should be told, and `#watchBar` carries a Leave button.
+# 60.0s: the fifteen tracks that look most unlike each other, four seconds
+# each - a background wants fewer, longer shots than a trailer does. Ordered so
+# no two neighbours share a sky.
+_LOOP = [
+    ("pillars", "fly"), ("bigred", "air"), ("suzuka", "pack"),
+    ("monaco", "first"), ("spa", "pack"), ("boo", "fly"),
+    ("dino", "fly"), ("tokyo", "pack"), ("mountjoy", "air"),
+    ("rainbow", "first"), ("playground", "air"), ("railway", "first"),
+    ("costco", "fly"), ("cove", "first"), ("baku", "pack"),
+]
+
+
+def _loop_beat(slug, how, secs=4.0):
+    if how == "fly":
+        return dict(name=slug, kind="fly", slug=slug, secs=secs, push=0.25, orbit=0.12)
+    if how == "first":
+        return dict(name=slug, kind="race", slug=slug, secs=secs, pick="pack", view="first")
+    return dict(name=slug, kind="race", slug=slug, secs=secs, pick=how)
+
+
+LOOP = [_loop_beat(s, h) for s, h in _LOOP]
+
+CUTS = {
+    "trailer": dict(beats=TRAILER, aspects=["landscape", "portrait"], crf=19),
+    "loop": dict(beats=LOOP, aspects=["web"], crf=30),
+}
+
+# What comes off the frame on a replay: everything but the world. The HUD is
+# all one `.hud` beside the `#gl` canvas, so this is the whole of it.
 HIDE = """
-  #watchBar, #modeLabel, #meters, .hbtn, #startHint, #firstBanner,
-  #toast, #btnWatchStop { display: none !important; }
-  /* The cursor is a real pixel in a screenshot. */
+  body > *:not(#gl) { display: none !important; }
   * { cursor: none !important; }
 """
 
-# The game's own loop, taken off the compositor and onto a queue we pump. This
-# is why the beats are the real game rather than a re-implementation of it:
-# `frame()` runs untouched, with its own camera, its own interpolation and its
-# own HUD - only the clock driving it is ours. Screenshotting a live rAF loop
-# instead would sample it at whatever moment the capture landed, which at ~0.09s
-# a frame is nowhere near 30Hz and would stutter.
 PUMP = """() => {
   window.__raf = [];
   window.__t = performance.now();
-  // Kept, because hijacking rAF also takes away the only way to ask Chrome for
-  // a composited frame - and `page.screenshot` waits for one. Without this the
-  // capture sits until it times out, having rendered everything correctly.
+  // Kept: `page.screenshot` waits for a composited frame, and asks rAF for one.
   window.__realRaf = window.requestAnimationFrame.bind(window);
   window.requestAnimationFrame = (cb) => { window.__raf.push(cb); return window.__raf.length; };
   window.__pump = (ms) => {
@@ -129,144 +147,267 @@ PUMP = """() => {
     const q = window.__raf; window.__raf = [];
     for (const cb of q) { try { cb(window.__t); } catch (e) { window.__err = String(e); } }
   };
-  window.__present = () => new Promise(r => window.__realRaf(() => r(1)));
+  // The last step of a frame runs *inside* a real animation frame. WebGL's
+  // buffer is not preserved, so a frame drawn outside one is thrown away before
+  // the screenshot composites it - every capture came back blank page colour.
+  window.__present = (ms) => new Promise(r => window.__realRaf(() => { window.__pump(ms); r(1); }));
 }"""
 
-
 # ---------------------------------------------------------------------------
-# In the page: the opener
+# fly: the hero composition, moving
 # ---------------------------------------------------------------------------
 
-# Build the field once. Creating and disposing fourteen CarViews per frame is
-# most of a frame's cost, and the cars do not change - only where they are.
-OPEN_SETUP = r"""
-async (a) => {
-  const C = window.DriveShot, S = C.S, THREE = C.THREE, L = S.built.line;
-  window.requestAnimationFrame = () => 0;
-  await new Promise(r => setTimeout(r, 150));
-
-  (window.__vidCars || []).forEach(v => v.dispose());
-  const pts = [];
-  for (let i = a.i0; i <= a.i1; i++) pts.push(new THREE.Vector3(...L[i].p));
-  const box = new THREE.Box3().setFromPoints(pts);
-  const centre = box.getCenter(new THREE.Vector3());
-  const radius = box.getSize(new THREE.Vector3()).length() / 2;
-
-  let s = a.seed || 1;
-  const rnd = () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648;
-  const cars = [];
-  for (let k = 0; k < a.cars; k++) {
-    // Every per-car random the cover drew is drawn once, here, and kept - so a
-    // car's lane, its lift and its yaw stay its own as it moves. Re-rolling
-    // them per frame is a field of cars twitching in place.
-    //
-    // **Drawn in `shoot_covers.SHOOT`'s exact order**, because they come off one
-    // seeded sequence: lift (and only when this car is one of the airborne
-    // quarter), then lane, then yaw, then the three the CarView gets. Swapping
-    // any two shifts every later car onto a different number and frame 0 stops
-    // being the cover - it was 39dB PSNR against it with lane and lift the wrong
-    // way round, which looks right and is not.
-    const lift = k % 4 === 0 ? 1.4 + rnd() * 4.5 : 0.55;
-    const lane = (rnd() * 2 - 1) * 0.62;
-    const yaw = (rnd() * 2 - 1) * 0.16;
-    cars.push({
-      t0: a.carFrom + (a.carTo - a.carFrom) * (k / Math.max(1, a.cars - 1)),
-      lane: lane,
-      lift: lift,
-      yaw: yaw,
-      steer: (rnd() * 2 - 1) * 0.3,
-      lean: (rnd() * 2 - 1) * 0.22,
-      spin: 2 + rnd() * 2,
-      view: new C.CarView(S.renderer.scene,
-                          { body: a.paints[k % a.paints.length], finish: 'gloss' }),
-    });
-  }
-  window.__vidCars = cars.map(c => c.view);
-  window.__vid = { cars, centre, radius, i0: a.i0, i1: a.i1 };
-  return { radius: +radius.toFixed(1) };
-}
-"""
-
-# One frame of the opener. `phase` is seconds into the beat; `pad` is the
-# cover's framing multiplier, shrunk over the beat to push the camera in.
-OPEN_FRAME = r"""
+# One frame. At phase 0 every car is exactly where `_hero.SHOOT` put it and the
+# camera is exactly its camera, so frame 0 of the opener *is* the cover.
+FLY_FRAME = r"""
 (a) => {
-  const C = window.DriveShot, S = C.S, THREE = C.THREE, L = S.built.line;
-  const V = window.__vid;
-
-  // Between two stations, not at one. **`Math.round` here is what made the
-  // opener judder**: the ribbon's stations are metres apart, so snapping to the
-  // nearest one moves a car in visible hops - a couple a second at this speed -
-  // while the camera slid smoothly past it. Every frame was a different picture,
-  // so nothing downstream could see it; the cars were simply teleporting.
-  const lerpAt = (fi) => {
-    const c0 = Math.max(0, Math.min(L.length - 2, Math.floor(fi)));
-    const u = Math.max(0, Math.min(1, fi - c0));
-    const A = L[c0], B = L[c0 + 1];
-    const mix = (x, y) => x + (y - x) * u;
-    return {
-      p: [mix(A.p[0], B.p[0]), mix(A.p[1], B.p[1]), mix(A.p[2], B.p[2])],
-      n: [mix(A.n[0], B.n[0]), mix(A.n[1], B.n[1]), mix(A.n[2], B.n[2])],
-      lat: [mix(A.lat[0], B.lat[0]), mix(A.lat[1], B.lat[1]), mix(A.lat[2], B.lat[2])],
-      hw: mix(A.hw, B.hw), i: c0,
-    };
+  const C = window.DriveShot, S = C.S, THREE = C.THREE, L = S.built.line, sA = S.built.s;
+  const total = sA[sA.length - 1], F = window.__coverFit;
+  const at = (s) => {
+    s = a.closed ? ((s % total) + total) % total : Math.min(s, total);
+    let lo = 0, hi = sA.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (sA[m] <= s) lo = m; else hi = m; }
+    return { c0: lo, u: sA[hi] > sA[lo] ? Math.min(1, (s - sA[lo]) / (sA[hi] - sA[lo])) : 0 };
   };
-
-  for (const c of V.cars) {
-    // Along the ribbon at `speed` of the window per second, wrapping inside the
-    // window so the field never thins out at one end.
-    let t = c.t0 + a.phase * a.speed;
-    t = t - Math.floor(t);
-    const fi = V.i0 + (V.i1 - V.i0) * t;
-    const st = lerpAt(fi);
-    const i = st.i;
+  const V = (x) => new THREE.Vector3(x[0], x[1], x[2]);
+  for (const c of window.__coverSlots) {
+    const { c0, u } = at(sA[c.i] + a.speed * a.phase);
+    const A = L[c0], B = L[Math.min(c0 + 1, L.length - 1)];
+    const i = u < 0.5 ? c0 : Math.min(c0 + 1, L.length - 1);
     const p = L[Math.max(0, i - 2)], q = L[Math.min(i + 2, L.length - 1)];
-    const fwd = new THREE.Vector3(q.p[0]-p.p[0], q.p[1]-p.p[1], q.p[2]-p.p[2]).normalize();
-    const up = new THREE.Vector3(...st.n).normalize();
-    const lat = new THREE.Vector3(...st.lat).normalize();
-    const pos = new THREE.Vector3(...st.p)
-      .addScaledVector(lat, c.lane * st.hw)
-      .addScaledVector(up, c.lift);
+    const fwd = V(q.p).sub(V(p.p)).normalize();
+    const up = V(A.n).lerp(V(B.n), u).normalize();
+    const lat = V(A.lat).lerp(V(B.lat), u).normalize();
+    const hw = A.hw + (B.hw - A.hw) * u;
+    const pos = V(A.p).lerp(V(B.p), u)
+      .addScaledVector(lat, c.lane * hw).addScaledVector(up, c.lift);
     const back = fwd.clone().negate();
     const right = new THREE.Vector3().crossVectors(up, back).normalize();
     const rot = new THREE.Quaternion().setFromRotationMatrix(
       new THREE.Matrix4().makeBasis(right, up, back));
-    rot.multiply(new THREE.Quaternion().setFromAxisAngle(
-      new THREE.Vector3(0, 1, 0), c.yaw));
-    c.view.update(pos, rot,
-      { steer: c.steer, lean: c.lean, spin: c.spin + a.phase * 26 });
-    if (c.lift > 1.2) c.view.shadow.visible = false;
+    rot.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), c.yaw));
+    c.view.update(pos, rot, { steer: c.pose.steer, lean: c.pose.lean,
+                              spin: c.pose.spin + a.phase * 26 });
+    c.view.shadow.visible = c.lift < 1.2 && !L[i].air;
   }
 
-  // The cover's own fit, with `pad` animated. Identical maths, so pad at its
-  // cover value reproduces the cover's camera exactly.
-  const cam = S.renderer.camera;
-  const vFov = a.fov * Math.PI / 180;
-  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * cam.aspect);
-  const dist = V.radius / Math.sin(Math.min(vFov, hFov) / 2) * a.pad;
-  cam.position.set(
-    V.centre.x + dist * Math.cos(a.pitch) * Math.cos(a.azimuth),
-    V.centre.y + dist * Math.sin(a.pitch),
-    V.centre.z + dist * Math.cos(a.pitch) * Math.sin(a.azimuth));
+  const cam = S.renderer.camera, e = a.e;
+  const centre = F.centre.clone();
+  if (a.eye) {
+    // A camera standing in the world (BOO!): dolly towards what it looks at.
+    centre.set(a.look[0], a.look[1], a.look[2]);
+    cam.position.copy(centre).lerp(V(a.eye), 1 - a.push * e);
+  } else {
+    const vFov = a.fov * Math.PI / 180;
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * cam.aspect);
+    const dist = F.radius / Math.sin(Math.min(vFov, hFov) / 2) * a.pad * (1 - a.push * e);
+    const az = a.azimuth + a.orbit * e, pit = a.pitch + a.rise * e;
+    cam.position.set(centre.x + dist * Math.cos(pit) * Math.cos(az),
+                     centre.y + dist * Math.sin(pit),
+                     centre.z + dist * Math.cos(pit) * Math.sin(az));
+  }
   cam.up.set(0, 1, 0);
-  cam.lookAt(V.centre);
-  cam.fov = a.fov;
-  cam.far = Math.max(2600, dist * 3);
+  cam.lookAt(centre);
   cam.updateProjectionMatrix();
+  if (S.renderer.sky) S.renderer.sky.position.copy(cam.position);
   S.renderer.render(1 / 30);
-  return +dist.toFixed(1);
+  return 1;
 }
 """
 
 
+def shoot_fly(hero, base, aspect, beat, d):
+    import tracks as tracks_mod
+    w, h = ASPECTS[aspect]
+    slug = beat["slug"]
+    # No car hanging in mid-air for a whole shot: a still can pose one mid-jump,
+    # a moving car at a fixed height over the road is a car hovering.
+    cfg = dict(_hero.frame_for(slug), air=0.0, **beat.get("over", {}))
+    page = hero.open(slug, (w, h))
+    try:
+        hero.compose(page, cfg)
+        # `compose` leaves a 40ms redraw running so a still always has a fresh
+        # frame to capture. Here every frame renders itself, and that interval
+        # was a full software-GL render per 40ms between shots - 50s a frame.
+        page.evaluate("() => clearInterval(window.__coverTick)")
+        closed = bool(tracks_mod.get(slug).get("closed"))
+        n = int(round(beat["secs"] * FPS))
+        for f in range(n):
+            u = f / max(1, n - 1)
+            page.evaluate(FLY_FRAME, dict(
+                phase=f / FPS, e=u * u * (3 - 2 * u), speed=FLY_SPEED, closed=closed,
+                push=beat.get("push", 0.25), orbit=beat.get("orbit", 0.0),
+                rise=beat.get("rise", 0.0), pad=cfg["pad"], fov=cfg["fov"],
+                azimuth=cfg["azimuth"], pitch=cfg["pitch"],
+                eye=cfg.get("eye"), look=cfg.get("look")))
+            snap(page, os.path.join(d, "f%04d.png" % f), timeout=_hero.SHOT_MS)
+    finally:
+        page.close()
+    return n
+
+
 # ---------------------------------------------------------------------------
-# The wordmark, as one transparent overlay
+# race: a staged race, played back
 # ---------------------------------------------------------------------------
 
-# The cover's scrim and mark with no picture behind them, so ffmpeg can lay it
-# over frame 0 and fade it off. Kept in step with `shoot_covers.TITLE_PAGE` by
-# using the same numbers; if that layout moves, this has to move with it or the
-# first frame stops matching the cover.
+def snap(page, path, **kw):
+    """`page.screenshot`, retried. Software GL now and then answers "Unable to
+    capture screenshot" for a frame that is fine a moment later, and one of
+    those three thousand captures in should not cost the whole render."""
+    for attempt in range(4):
+        try:
+            return page.screenshot(path=path, **kw)
+        except Exception:
+            if attempt == 3:
+                raise
+            page.wait_for_timeout(500)
+
+
+AIR, RESPAWN = 2, 4
+NEAR = 25.0          # units: "in the shot with you"
+
+
+def race_id(db, slug):
+    with sqlite3.connect(db) as c:
+        row = c.execute("SELECT id FROM drive_races WHERE track=? ORDER BY id DESC LIMIT 1",
+                        (slug,)).fetchone()
+    if not row:
+        raise RuntimeError("no staged race on %s - run stage_race.py %s" % (slug, slug))
+    return row[0]
+
+
+def pick(race, secs, how, near=(0.0, NEAR)):
+    """(name to follow, start in seconds) for a beat of `secs` wanting `how`."""
+    hz, cars = race["hz"], race["cars"]
+    n = int(round(secs * hz))
+    best = None
+    for c in cars:
+        F = c["frames"]
+        done = int(c["ms"] / 1000 * hz) if c.get("ms") else len(F)
+        if how == "start":
+            starts = [0]
+        elif how == "finish":
+            if not c.get("ms"):
+                continue
+            starts = [max(0, done - n + int(0.8 * hz))]
+        else:
+            starts = range(int(6 * hz), done - n, max(1, hz // 3))
+        for s in starts:
+            win = F[s:s + n]
+            if len(win) < n or any(f[7] & RESPAWN for f in win):
+                continue
+            if any(math.dist(win[k][:3], win[k - 1][:3]) > 15 for k in range(1, n)):
+                continue
+            if how != "start" and math.dist(win[0][:3], win[-1][:3]) / secs < 25:
+                continue
+            company = sum(1 for k in range(s, s + n) for o in cars if o is not c
+                          and k < len(o["frames"])
+                          and near[0] < math.dist(o["frames"][k][:3], F[k][:3]) < near[1]) / n
+            score = company
+            if how == "air":
+                score += 4.0 * sum(1 for f in win if f[7] & AIR) / n
+            if how == "finish":
+                gap = min((abs(o["ms"] - c["ms"]) for o in cars
+                           if o is not c and o.get("ms")), default=9999) / 1000.0
+                score = company - 3.0 * gap
+            if best is None or score > best[0]:
+                best = (score, c["name"], s / hz)
+    if best is None:
+        raise RuntimeError("nothing in race %s fits a %s shot" % (race["id"], how))
+    return best[1], best[2]
+
+
+def no_tags(page):
+    """Serve `render.js` with the name plates switched off. A plate is a sprite
+    that scales with distance, so any car near the camera wore its name across
+    half the frame; a pack reads as a race without them."""
+    def handler(route):
+        resp = route.fetch()
+        body = resp.text().replace("setLabel(text, color) {",
+                                   "setLabel(text, color) { text = null;", 1)
+        route.fulfill(response=resp, body=body)
+    page.route("**/static/js/render.js*", handler)
+
+
+def _clock(page):
+    txt = (page.text_content("#watchClock") or "").strip()      # m:ss.mmm
+    m, rest = txt.split(":")
+    return int(m) * 60 + float(rest)
+
+
+def _goto(page, start, hz):
+    """Put the replay at `start` with the camera already settled on its car.
+
+    With the page's clock frozen, the replay's own keys: R back to the flag,
+    Space to pause, then 5s and 1/15s steps to a second short of the shot.
+    Play, and pump that second so the chase camera has come round onto the
+    car at racing speed by the first frame. Pumping the whole way from zero is
+    a rendered frame per step - a quarter of an hour to reach the far end -
+    and a scrubber click landed the camera looking at the sky.
+    """
+    pre = min(1.0, start)
+    target = start - pre
+    page.keyboard.press("KeyR")
+    page.keyboard.press("Space")
+    for _ in range(int(target // 5)):
+        page.keyboard.press("ArrowRight")
+    for _ in range(int(round((target % 5) * hz))):
+        page.keyboard.press("Period")
+    if pre < 0.5:
+        # Off the grid there is no second before to settle in; settle paused.
+        for _ in range(30):
+            page.evaluate("() => window.__pump(1000 / 30)")
+        page.keyboard.press("Space")
+    else:
+        page.keyboard.press("Space")
+        for _ in range(int(pre * 30)):
+            page.evaluate("() => window.__pump(1000 / 30)")
+    return _clock(page)
+
+
+def shoot_race(browser, base, aspect, beat, d, db):
+    w, h = ASPECTS[aspect]
+    rid = race_id(db, beat["slug"])
+    race = json.load(urllib.request.urlopen("%s/api/race/%d" % (base, rid)))
+    # From the driver's seat a car alongside fills the windscreen; what looks
+    # like a race from there is a field some way up the road.
+    near = (8.0, 40.0) if beat.get("view") == "first" else (0.0, NEAR)
+    follow, start = pick(race, beat["secs"], beat["pick"], near)
+    print("    race %d: %s from %.1fs" % (rid, follow, start), flush=True)
+    page = browser.new_page(viewport={"width": w, "height": h})
+    no_tags(page)
+    try:
+        page.goto("%s/race/%d" % (base, rid), wait_until="load", timeout=90000)
+        page.wait_for_selector("#watchClock", timeout=90000)
+        page.wait_for_timeout(8000)
+        names = page.eval_on_selector_all("button.wcar span:nth-child(2)",
+                                          "els => els.map(e => e.textContent)")
+        page.click('button.wcar[data-cam="%d"]' % names.index(follow))
+        page.add_style_tag(content=HIDE)
+        page.evaluate(PUMP)
+        page.wait_for_timeout(200)
+        at = _goto(page, start, race["hz"])
+        if beat.get("view") == "first":
+            page.keyboard.down("f")
+        n = int(round(beat["secs"] * FPS))
+        step = 1000.0 / FPS / SUBSTEPS
+        for f in range(n):
+            for _ in range(SUBSTEPS - 1):
+                page.evaluate("(ms) => window.__pump(ms)", step)
+            page.evaluate("(ms) => window.__present(ms)", step)
+            snap(page, os.path.join(d, "f%04d.png" % f))
+        if beat.get("view") == "first":
+            page.keyboard.up("f")
+    finally:
+        page.close()
+    print("    race %d, following %s from %.1fs" % (rid, follow, at))
+    return n
+
+
+# ---------------------------------------------------------------------------
+# The wordmark
+# ---------------------------------------------------------------------------
+
 OVERLAY_PAGE = """
 <!doctype html><meta charset="utf-8">
 <style>
@@ -293,7 +434,8 @@ OVERLAY_PAGE = """
 
 
 def write_overlay(browser, w, h, out):
-    """The wordmark and its scrim on transparency, at `w`x`h`."""
+    """The cover's scrim and wordmark on transparency - kept in step with
+    `shoot_covers.TITLE_PAGE`, or frame 0 stops matching the cover."""
     k = min(w, h) / 1000.0
     html = OVERLAY_PAGE.format(
         w=w, h=h,
@@ -304,298 +446,21 @@ def write_overlay(browser, w, h, out):
     page = browser.new_page(viewport={"width": w, "height": h})
     page.set_content(html)
     page.wait_for_timeout(600)
-    page.screenshot(path=out, omit_background=True)
+    snap(page, out, omit_background=True)
     page.close()
-    return out
 
 
 # ---------------------------------------------------------------------------
-# Beats
+# Cutting
 # ---------------------------------------------------------------------------
 
-def frames_dir(aspect, beat):
-    d = os.path.join(OUT, "frames", aspect, beat)
+COVER_FOR = {"landscape": "spa_1920x1080-title.png", "portrait": "spa_800x1200-title.png"}
+
+
+def frames_dir(cut, aspect, name):
+    d = os.path.join(OUT, "frames", cut, aspect, name)
     os.makedirs(d, exist_ok=True)
     return d
-
-
-def clear(d):
-    """Old frames out first - a short render leaves a long one's tail behind,
-    and ffmpeg would happily encode the two spliced together."""
-    for f in os.listdir(d):
-        if f.endswith(".png"):
-            os.remove(os.path.join(d, f))
-
-
-def shoot_cover_beat(browser, base, aspect, secs, verbose=True):
-    """Beat 1: the Spa cover, coming alive and pushing in."""
-    w, h = ASPECTS[aspect]
-    slug = "spa"
-    cfg = COVERS[slug]
-    d = frames_dir(aspect, "cover")
-    clear(d)
-
-    page = browser.new_page(viewport={"width": w, "height": h})
-    errs = []
-    page.on("pageerror", lambda e: errs.append(str(e)))
-    page.on("console", lambda m: errs.append(m.text) if m.type == "error" else None)
-    page.goto("%s/solo/%s?shot=1" % (base, slug), wait_until="load", timeout=90000)
-    page.wait_for_function("window.DriveShot && window.DriveShot.S.built", timeout=90000)
-    # The mesh, the sky, the trackside furniture and the shader precompile all
-    # have to be done. A short wait here is a video of a half-built Spa.
-    page.wait_for_timeout(8000)
-
-    rows = page.evaluate(SCAN, SPAN)
-    win = _pick_window(rows, cfg["at"], SPAN)
-    page.evaluate(OPEN_SETUP, dict(i0=win["i0"], i1=win["i1"], cars=cfg["cars"],
-                                   carFrom=cfg["carFrom"], carTo=cfg["carTo"],
-                                   seed=cfg["seed"], paints=PAINTS))
-
-    n = int(round(secs * FPS))
-    for f in range(n):
-        phase = f / FPS
-        u = f / max(1, n - 1)
-        # Ease-in-out on the push, so it starts as a still and arrives settled
-        # rather than slamming to a stop.
-        e = u * u * (3 - 2 * u)
-        page.evaluate(OPEN_FRAME, dict(
-            # Racing pace, not a drift: the window is `SPAN` of a lap and Spa
-            # takes ~71s, so a car crosses it in ~11.4s - one window in 11.4s is
-            # 0.088 of it a second. At 0.030 the field was crawling, which is
-            # both wrong and what made the station-snapping so obvious.
-            phase=phase, speed=0.088,
-            pad=cfg["pad"] * (1 - 0.30 * e),      # 0.50 -> 0.35, a 30% push
-            azimuth=cfg["azimuth"],
-            pitch=cfg["pitch"] + 0.05 * e,        # rise very slightly with it
-            fov=cfg["fov"]))
-        page.screenshot(path=os.path.join(d, "f%04d.png" % f))
-    page.close()
-    if verbose:
-        print("  cover      %s %d frames" % (aspect, n))
-    if errs:
-        print("  PAGE ERRORS:", errs[:3])
-    return n
-
-
-# A pose further than this between two 15Hz samples is not driving. Top speed
-# here is about 5.7 units a sample, so 15 only ever catches a respawn or a
-# checkpoint reset.
-TELEPORT = 15.0
-
-# How many samples the smoother averages over. 7 is 0.47s, which takes the
-# timing jitter out (speed swing 3.54x -> 1.19x) while moving the racing line a
-# mean of 0.75 units - a fraction of the road's width.
-SMOOTH_WINDOW = 7
-
-
-def smooth_frames(frames, window=SMOOTH_WINDOW):
-    """Even out a *race* recording's timing jitter.
-
-    **A race is not recorded the way a lap is, and it is why the replays
-    juddered.** `course.js` records a solo ghost by resampling to exactly
-    `i / GHOST_HZ` seconds, so a board lap plays back at a constant rate - which
-    is why Big Red was the one beat that always looked right. A race is recorded
-    server-side off the live pose stream, so its frames land whenever packets
-    did, while `Ghost.at` plays them back assuming they are evenly spaced. The
-    car therefore appears to surge and slow: measured on race 113, the distance
-    covered between consecutive video frames swung 0.81 to 2.87 units inside
-    half a second, a 3.5x speed change no car can make.
-
-    Averaging the poses over a short centred window puts that right, and it is
-    an honest thing to do: the samples are real, only their *timing* is noise.
-
-    **Never across a teleport.** A respawn moves a car hundreds of units between
-    two samples, and a window straddling one would drag it across the map -
-    smoothing the whole track blind gave a worst-case error of 332 units. The
-    track is cut at every jump over `TELEPORT` and each piece smoothed alone,
-    which brings the worst error down to 4.
-    """
-    n = len(frames)
-    if n < 3:
-        return frames
-    k = window // 2
-    cuts = [0]
-    for i in range(1, n):
-        a, b = frames[i], frames[i - 1]
-        if math.dist(a[:3], b[:3]) > TELEPORT:
-            cuts.append(i)
-    cuts.append(n)
-
-    out = [list(f) for f in frames]
-    for s in range(len(cuts) - 1):
-        lo0, hi0 = cuts[s], cuts[s + 1]
-        for i in range(lo0, hi0):
-            lo, hi = max(lo0, i - k), min(hi0, i + k + 1)
-            m = hi - lo
-            # The pose only: the flag byte on the end is a state, not a
-            # quantity, and averaging it would invent lamp settings.
-            for c in range(min(7, len(frames[i]))):
-                out[i][c] = sum(frames[j][c] for j in range(lo, hi)) / m
-    return out
-
-
-def install_smoothing(page):
-    """Serve `/api/race/<id>` with its timing jitter taken out."""
-    def handler(route):
-        resp = route.fetch()
-        try:
-            data = resp.json()
-        except Exception:
-            route.fulfill(response=resp)
-            return
-        for car in data.get("cars", []):
-            if car.get("frames"):
-                car["frames"] = smooth_frames(car["frames"])
-        route.fulfill(response=resp, json=data)
-    page.route("**/api/race/*", handler)
-
-
-def _clock(page):
-    """Where the replay is, in seconds, off the page's own clock.
-
-    `textContent` and not `inner_text`: the clock lives inside `#watchBar`,
-    which `HIDE` has just taken off the screen, and `inner_text` is the
-    *rendered* text - it answers "" for anything invisible, so the seek would
-    read every position as zero and never arrive.
-    """
-    txt = (page.text_content("#watchClock") or "").strip()      # m:ss.mmm
-    if not txt:
-        raise RuntimeError("no clock on the page - is this a replay?")
-    m, rest = txt.split(":")
-    return int(m) * 60 + float(rest)
-
-
-def _seek(page, target, cap=4000):
-    """Pump the loop until the replay reaches `target` seconds.
-
-    Fast-forwarding is done at the loop's own dt ceiling (`Math.min(0.1, ...)`
-    in `frame`), so 100ms a pump is the largest step the game will honour - a
-    bigger one is silently clamped and the seek would undershoot without saying
-    so. The replay wraps at its duration, so a target already behind us is
-    reached by going round.
-    """
-    for _ in range(cap):
-        now = _clock(page)
-        if abs(now - target) < 0.05 or (now < target and target - now < 0.1):
-            return now
-        page.evaluate("() => window.__pump(100)")
-        if _clock(page) >= target > now:
-            return _clock(page)
-    return _clock(page)
-
-
-def shoot_replay_beat(browser, base, aspect, beat, verbose=True):
-    """Beats 2-5: a real recorded lap, played back and stepped at 30Hz."""
-    w, h = ASPECTS[aspect]
-    d = frames_dir(aspect, beat["name"])
-    clear(d)
-
-    page = browser.new_page(viewport={"width": w, "height": h})
-    errs = []
-    page.on("pageerror", lambda e: errs.append(str(e)))
-    install_smoothing(page)
-    page.goto(base + beat["url"], wait_until="load", timeout=90000)
-    page.wait_for_selector("#watchClock", timeout=90000)
-    # The world, the sky and the shader precompile, same as the opener.
-    page.wait_for_timeout(8000)
-
-    # Whose camera. A board lap is one car and offers no choice, so the buttons
-    # are only there for a race.
-    #
-    # **Before the chrome is hidden, not after.** The car buttons live inside
-    # `#watchBar`, so hiding it first makes them unclickable and Playwright sits
-    # there retrying a click on something it can see is invisible.
-    if beat.get("follow"):
-        names = page.eval_on_selector_all("button.wcar span:nth-child(2)",
-                                          "els => els.map(e => e.textContent)")
-        if beat["follow"] not in names:
-            raise RuntimeError("%s is not in %s: %s" % (beat["follow"], beat["url"], names))
-        page.click('button.wcar[data-cam="%d"]' % names.index(beat["follow"]))
-    page.add_style_tag(content=HIDE)
-
-    page.evaluate(PUMP)
-    page.wait_for_timeout(200)
-    at = _seek(page, beat["start"])
-
-    # Held, not pressed: `viewKeys()` reads the live key set every frame, so the
-    # driver's seat lasts exactly as long as the key is down (`game.js:892`).
-    if beat.get("view") == "first":
-        page.keyboard.down("f")
-
-    n = int(round(beat["secs"] * FPS))
-    step = 1000.0 / FPS / SUBSTEPS
-    for f in range(n):
-        for _ in range(SUBSTEPS):
-            page.evaluate("(ms) => window.__pump(ms)", step)
-        page.evaluate("() => window.__present()")
-        page.screenshot(path=os.path.join(d, "f%04d.png" % f))
-    end = _clock(page)
-    if beat.get("view") == "first":
-        page.keyboard.up("f")
-    page.close()
-
-    if verbose:
-        print("  %-11s %s %d frames  %.2fs -> %.2fs" % (beat["name"], aspect, n, at, end))
-    if errs:
-        print("  PAGE ERRORS:", errs[:3])
-    return n
-
-
-def probe(browser, base, aspect, beat, every=2.0):
-    """Contact sheet: one frame every `every` seconds of the whole recording.
-
-    Which second of a race is worth three of the video is not a thing a number
-    knows - the same reason `shoot_covers` records its angles by hand. This is
-    how the `start` values above were chosen.
-    """
-    w, h = ASPECTS[aspect]
-    d = os.path.join(OUT, "probe", beat["name"])
-    os.makedirs(d, exist_ok=True)
-    for f in os.listdir(d):
-        os.remove(os.path.join(d, f))
-
-    page = browser.new_page(viewport={"width": w // 2, "height": h // 2})
-    install_smoothing(page)
-    page.goto(base + beat["url"], wait_until="load", timeout=90000)
-    page.wait_for_selector("#watchClock", timeout=90000)
-    page.wait_for_timeout(8000)
-    if beat.get("follow"):
-        names = page.eval_on_selector_all("button.wcar span:nth-child(2)",
-                                          "els => els.map(e => e.textContent)")
-        page.click('button.wcar[data-cam="%d"]' % names.index(beat["follow"]))
-    page.add_style_tag(content=HIDE)
-    page.evaluate(PUMP)
-    page.wait_for_timeout(200)
-    if beat.get("view") == "first":
-        page.keyboard.down("f")
-    t = 0.0
-    # Long enough for any recording here; the clock wraps and the sheet stops.
-    while t < 120:
-        got = _seek(page, t)
-        if got < t - 1:
-            break
-        # A couple of real frames so the camera spring settles where it would be.
-        for _ in range(3):
-            page.evaluate("() => window.__pump(1000/30)")
-        page.evaluate("() => window.__present()")
-        page.screenshot(path=os.path.join(d, "t%05.1f.png" % t))
-        t += every
-    if beat.get("view") == "first":
-        page.keyboard.up("f")
-    page.close()
-    print("  probe %-11s %s -> %s" % (beat["name"], aspect, d))
-
-
-# ---------------------------------------------------------------------------
-# Cutting it together
-# ---------------------------------------------------------------------------
-
-# The store cover each shape starts from. Portrait pairs with the 800x1200,
-# which is already 2:3 and so scales to 1080x1620 without reframing.
-COVER_FOR = {
-    "landscape": "spa_1920x1080-title.png",
-    "portrait": "spa_800x1200-title.png",
-}
 
 
 def _run(cmd):
@@ -604,142 +469,125 @@ def _run(cmd):
         raise RuntimeError("ffmpeg failed:\n%s" % p.stderr[-2000:])
 
 
-def encode_beat(aspect, beat):
-    """One beat's frames to an intermediate, overlays and all.
-
-    Intermediates at CRF 16 rather than straight to the final file: the five are
-    concatenated afterwards, and re-encoding a beat that was already at delivery
-    quality would show it.
-    """
+def encode_beat(cut, aspect, beat):
+    """One beat to a CRF 16 intermediate, overlays and all."""
     w, h = ASPECTS[aspect]
-    d = frames_dir(aspect, beat["name"])
-    n = len([f for f in os.listdir(d) if f.endswith(".png")])
-    if not n:
-        raise RuntimeError("no frames for %s/%s - render it first" % (aspect, beat["name"]))
-    out = os.path.join(OUT, "beats", aspect)
+    d = frames_dir(cut, aspect, beat["name"])
+    if not any(f.endswith(".png") for f in os.listdir(d)):
+        raise RuntimeError("no frames for %s/%s/%s" % (cut, aspect, beat["name"]))
+    out = os.path.join(OUT, "beats", cut, aspect)
     os.makedirs(out, exist_ok=True)
     dst = os.path.join(out, beat["name"] + ".mp4")
-
     common = ["-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p",
               "-crf", "16", "-preset", "slow", "-an", "-r", str(FPS)]
-
-    if beat["name"] != "cover":
-        _run(["ffmpeg", "-v", "error", "-y", "-framerate", str(FPS),
-              "-i", os.path.join(d, "f%04d.png")] + common + [dst])
-        return dst
-
-    # The opener carries both overlays.
-    #
-    # **The true cover file is laid on top of frame 0 and dissolved off**, rather
-    # than trusting the render to reproduce it. The two match to ~41dB, which is
-    # invisible - but the shipped `-title.png` was re-rasterised through a
-    # browser compose and this is not, so they are not identical and "starts from
-    # the cover" is a claim worth making exactly true. Under the dissolve the
-    # push-in is already moving, so it reads as the still coming to life.
-    cover = os.path.join(DRIVE, "covers", COVER_FOR[aspect])
-    _run(["ffmpeg", "-v", "error", "-y",
-          "-framerate", str(FPS), "-i", os.path.join(d, "f%04d.png"),
-          "-loop", "1", "-i", os.path.join(OUT, "wordmark-%s.png" % aspect),
-          "-loop", "1", "-i", cover,
-          "-filter_complex",
-          "[1:v]format=rgba,fade=out:st=0.7:d=1.1:alpha=1[wm];"
-          "[0:v][wm]overlay=shortest=1[a];"
-          "[2:v]scale=%d:%d,format=rgba,fade=out:st=0.20:d=0.35:alpha=1[cv];"
-          "[a][cv]overlay=shortest=1[v]" % (w, h),
-          "-map", "[v]"] + common + [dst])
+    src = ["-framerate", str(FPS), "-i", os.path.join(d, "f%04d.png")]
+    wm = os.path.join(OUT, "wordmark-%s.png" % aspect)
+    title = beat.get("title")
+    if title == "out":
+        # The true cover file over frame 0, dissolved off, so "starts from the
+        # cover" is exactly true rather than true to ~41dB.
+        cover = os.path.join(COVERS, COVER_FOR[aspect])
+        _run(["ffmpeg", "-v", "error", "-y"] + src +
+             ["-loop", "1", "-i", wm, "-loop", "1", "-i", cover, "-filter_complex",
+              "[1:v]format=rgba,fade=out:st=0.7:d=1.1:alpha=1[wm];"
+              "[0:v][wm]overlay=shortest=1[a];"
+              "[2:v]scale=%d:%d,format=rgba,fade=out:st=0.20:d=0.35:alpha=1[cv];"
+              "[a][cv]overlay=shortest=1[v]" % (w, h),
+              "-map", "[v]"] + common + [dst])
+    elif title == "in":
+        st = beat["secs"] - 1.5
+        _run(["ffmpeg", "-v", "error", "-y"] + src +
+             ["-loop", "1", "-i", wm, "-filter_complex",
+              "[1:v]format=rgba,fade=in:st=%.2f:d=0.6:alpha=1[wm];"
+              "[0:v][wm]overlay=shortest=1[v]" % st,
+              "-map", "[v]"] + common + [dst])
+    else:
+        _run(["ffmpeg", "-v", "error", "-y"] + src + common + [dst])
     return dst
 
 
-def assemble(aspect):
-    """The five beats, hard cut, to the delivery file."""
-    out = os.path.join(OUT, "beats", aspect)
-    parts = [os.path.join(out, b["name"] + ".mp4") for b in BEATS]
-    missing = [p for p in parts if not os.path.exists(p)]
-    if missing:
-        raise RuntimeError("missing beats: %s" % ", ".join(os.path.basename(m) for m in missing))
-    lst = os.path.join(out, "concat.txt")
+def assemble(cut, aspect):
+    spec = CUTS[cut]
+    parts = [os.path.join(OUT, "beats", cut, aspect, b["name"] + ".mp4") for b in spec["beats"]]
+    lst = os.path.join(OUT, "beats", cut, aspect, "concat.txt")
     with open(lst, "w") as f:
-        for p in parts:
-            f.write("file '%s'\n" % os.path.abspath(p))
-    dst = os.path.join(OUT, "drive-%s.mp4" % aspect)
+        f.writelines("file '%s'\n" % p for p in parts)
+    dst = os.path.join(OUT, "drive-%s.mp4" % aspect if cut == "trailer" else "loop.mp4")
     _run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", lst,
           "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p",
-          "-crf", "19", "-preset", "slow", "-an", "-movflags", "+faststart", dst])
+          "-crf", str(spec["crf"]), "-preset", "slow", "-an", "-movflags", "+faststart", dst])
     mb = os.path.getsize(dst) / 1048576.0
-    total = sum(b["secs"] for b in BEATS)
+    total = sum(b["secs"] for b in spec["beats"])
     print("  -> %s  %.1fs  %.1f MB" % (dst, total, mb))
-    if mb > 50:
-        print("     OVER the 50MB limit")
-    if total > 20:
-        print("     OVER the 20s limit")
+    if cut == "trailer" and (mb > 50 or total > 20):
+        print("     OVER the store's limits (20s, 50MB)")
+    # One frame from the middle of every beat, for looking at.
+    sheet = dst[:-4] + "-sheet.png"
+    cols = 6
+    _run(["ffmpeg", "-v", "error", "-y"] +
+         sum([["-i", os.path.join(frames_dir(cut, aspect, b["name"]),
+                                  "f%04d.png" % int(b["secs"] * FPS / 2))]
+              for b in spec["beats"]], []) +
+         ["-filter_complex",
+          "".join("[%d:v]scale=320:-2[s%d];" % (i, i) for i in range(len(parts))) +
+          "".join("[s%d]" % i for i in range(len(parts))) +
+          "xstack=inputs=%d:layout=%s:fill=black" % (len(parts), _grid(len(parts), cols, aspect)),
+          sheet])
+    print("     sheet: %s" % sheet)
     return dst
+
+
+def _grid(n, cols, aspect):
+    w, h = ASPECTS[aspect]
+    tw, th = 320, int(320 * h / w) // 2 * 2
+    return "|".join("%d_%d" % ((i % cols) * tw, (i // cols) * th) for i in range(n))
 
 
 # ---------------------------------------------------------------------------
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--beat", action="append",
-                    help="only this beat (repeatable): " + ", ".join(b["name"] for b in BEATS))
-    ap.add_argument("--aspect", action="append", choices=list(ASPECTS),
-                    help="only this shape (repeatable)")
+    ap.add_argument("cut", choices=list(CUTS))
+    ap.add_argument("--beat", action="append", help="only this beat (repeatable)")
+    ap.add_argument("--aspect", action="append", choices=list(ASPECTS))
+    ap.add_argument("--db", help="sqlite file holding the staged races")
     ap.add_argument("--port", type=int, default=5097)
-    ap.add_argument("--probe", action="store_true",
-                    help="contact sheets of each replay beat, to choose `start` from")
-    ap.add_argument("--every", type=float, default=2.0, help="probe spacing, seconds")
-    # The four gameplay beats play back races that exist on prod and in no fresh
-    # checkout, so the tool is pointed at a database holding them rather than
-    # pretending the default one will do. `tools/pull_video_races.py` makes one.
-    ap.add_argument("--db", help="sqlite file holding the races in BEATS")
-    ap.add_argument("--cut-only", action="store_true",
-                    help="skip rendering; cut the frames already on disk")
+    ap.add_argument("--cut-only", action="store_true", help="skip rendering")
     args = ap.parse_args()
+    spec = CUTS[args.cut]
+    aspects = args.aspect or spec["aspects"]
+    todo = [b for b in spec["beats"] if not args.beat or b["name"] in args.beat]
     if args.db:
-        os.environ["DATABASE_URL"] = "sqlite:///" + os.path.abspath(args.db)
+        args.db = os.path.abspath(args.db)
+        os.environ["DATABASE_URL"] = "sqlite:///" + args.db
 
-    aspects = args.aspect or list(ASPECTS)
-    wanted = args.beat or [b["name"] for b in BEATS]
-    todo = [b for b in BEATS if b["name"] in wanted]
-
-    os.makedirs(OUT, exist_ok=True)
-    if args.cut_only:
-        for aspect in aspects:
-            print("%s" % aspect)
-            for b in todo:
-                encode_beat(aspect, b)
-            assemble(aspect)
-        return
-
-    from playwright.sync_api import sync_playwright
-    with serving(args.port) as base:
-        with sync_playwright() as pw:
-            browser = pw.chromium.launch(args=GL_FLAGS)
+    if not args.cut_only:
+        with serving(args.port) as base, _hero.Hero(base) as hero:
+            browser = hero._browser
             for aspect in aspects:
                 w, h = ASPECTS[aspect]
-                print("%s (%dx%d)" % (aspect, w, h))
-                if args.probe:
-                    for b in todo:
-                        if b.get("url"):
-                            probe(browser, base, aspect, b, args.every)
-                    continue
-                write_overlay(browser, w, h,
-                              os.path.join(OUT, "wordmark-%s.png" % aspect))
+                print("%s %s (%dx%d)" % (args.cut, aspect, w, h))
+                if args.cut == "trailer":
+                    write_overlay(browser, w, h, os.path.join(OUT, "wordmark-%s.png" % aspect))
                 for b in todo:
-                    if b["name"] == "cover":
-                        shoot_cover_beat(browser, base, aspect, b["secs"])
+                    d = frames_dir(args.cut, aspect, b["name"])
+                    for f in os.listdir(d):
+                        os.remove(os.path.join(d, f))
+                    if b["kind"] == "fly":
+                        n = shoot_fly(hero, base, aspect, b, d)
                     else:
-                        shoot_replay_beat(browser, base, aspect, b)
-            browser.close()
+                        if not args.db:
+                            raise SystemExit("race beats need --db")
+                        n = shoot_race(browser, base, aspect, b, d, args.db)
+                    print("  %-14s %3d frames" % (b["name"], n), flush=True)
+            for slug, msg in hero.errors:
+                print("  ! %s: %s" % (slug, msg))
 
-    # Cutting needs no browser, so it happens after the server and Chrome are
-    # down rather than holding both open through an encode.
-    if not args.probe:
-        for aspect in aspects:
-            print("%s: cutting" % aspect)
-            for b in todo:
-                encode_beat(aspect, b)
-            if len(todo) == len(BEATS):
-                assemble(aspect)
+    for aspect in aspects:
+        for b in todo:
+            encode_beat(args.cut, aspect, b)
+        if len(todo) == len(spec["beats"]):
+            assemble(args.cut, aspect)
 
 
 if __name__ == "__main__":

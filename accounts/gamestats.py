@@ -96,6 +96,7 @@ DRIVE_TRACKS = {
     "monza": "Monza",
     "playground": "Playground",
     "suzuka": "Suzuka",
+    "baku": "Baku",
 }
 
 
