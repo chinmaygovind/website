@@ -373,7 +373,18 @@ dashboard (`dashboard.py`); the full queue is `/admin/tracks`. Generated
 tracks are kept out of the author's own Builder list. A day runs midnight to
 midnight **Eastern** (`app.daily_date`), not UTC. Nobody has driven
 these before review, which is why the review is a lap and not a glance.
-Tests: `test_generate.py`.
+**A daily's picture is taken by the reviewer's browser**, since the box that
+generates dailies has no browser to photograph them in and could not afford one:
+`snapCover` in game.js renders one frame from `shotCamera`'s start-line spot
+with no cars, crops it to 640x360, and it rides on the Approve press (the
+`cover` field; saved under the `daily-N` slug approval gives it). A live daily
+with none gets one the first time an admin opens it in solo (`maybeSnapCover` →
+`/api/cover/<slug>`, which never overwrites). They are written to
+`static/img/tracks/` beside the pool's covers, untracked and gitignored, so a
+deploy's `reset --hard` keeps them and **a `git clean` would delete them**; to
+retake one, delete the file and open the daily again. The switcher and the home
+page show the plan view until one exists.
+Tests: `test_generate.py`, `test_daily_board.py`.
 
 ## Traps
 

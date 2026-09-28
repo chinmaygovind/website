@@ -46,6 +46,7 @@
     <form class="card review-card" method="post" action="/admin/review/{{ review.slug }}">
       <textarea name="note" rows="3" maxlength="1000"
         placeholder="What's wrong with it? Sent back to be fixed."></textarea>
+      <input type="hidden" name="cover">
       <div class="review-btns">
         <button name="action" value="approve" class="rv-go">Approve</button>
         <button name="action" value="fix" class="rv-fix">Send back</button>
@@ -678,11 +679,12 @@
     <div class="ttabs" id="tTabs" role="tablist">
       <button class="ttab on" data-tab="sprint" role="tab">Sprints</button>
       <button class="ttab" data-tab="circuit" role="tab">Circuits</button>
-      {# Hidden rather than deleted: neither has anything in it yet, and an
-         empty tab is a promise the game is not keeping. `hidden` is also what
-         `renderTrackTabs` reads to decide which tabs exist, so taking the
-         attribute off is the whole of turning one back on. #}
-      <button class="ttab" data-tab="daily" role="tab" hidden>Dailies</button>
+      {# `hidden` is what `renderTrackTabs` reads to decide which tabs exist,
+         so taking the attribute off is the whole of turning one on. Dailies is
+         solo only: a room's bots have no hot lap on a generated track, and a
+         daily's board is a time trial. Community has nothing in it yet, and an
+         empty tab is a promise the game is not keeping. #}
+      <button class="ttab" data-tab="daily" role="tab"{% if mode != 'solo' %} hidden{% endif %}>Dailies</button>
       <button class="ttab" data-tab="community" role="tab" hidden>Community</button>
     </div>
     <div class="tgrid" id="tGrid"></div>
@@ -1270,6 +1272,9 @@
        `DRIVE_BOTS=0` turns them off on the box without a deploy. The host's
        controls are not drawn where they would do nothing. #}
     bots: {{ 'true' if bots_on else 'false' }},
+    {# Whether this page may photograph a daily that has no picture yet - see
+       `maybeSnapCover`. The same rule as the admin routes it posts to. #}
+    coverAdmin: {{ 'true' if is_admin else 'false' }},
     maxBots: {{ max_bots }},
     maxRoom: {{ max_room }}
   };

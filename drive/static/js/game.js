@@ -392,6 +392,12 @@ function boot() {
   loadTrack(S.track);
   bindInput();
   wireSaves();
+  const review = document.querySelector('.review-card');
+  if (review) review.addEventListener('submit', e => {
+    if (!e.defaultPrevented && e.submitter && e.submitter.value === 'approve') {
+      try { review.elements.cover.value = snapCover(); } catch (_) {}
+    }
+  });
   if (CFG.mode === 'room') connect();
   if (CFG.mode === 'replay') {
     // Straight away, not when the cars arrive: the HUD is about a run of yours
@@ -645,6 +651,7 @@ function loadTrack(track, opts = {}) {
   setGhostMode(S.ghostMode, { quiet: true, remember: false });
   applyPhase();
   markActiveTrack();
+  maybeSnapCover();
 }
 
 function wireCarEvents() {
@@ -6012,6 +6019,42 @@ function shotCamera() {
   cam.lookAt(new THREE.Vector3(p[0] + f[0] * back * 0.5, p[1],
                                p[2] + f[2] * back * 0.5));
   cam.updateProjectionMatrix();
+}
+
+function snapCover() {
+  const cam = S.renderer.camera;
+  const pos = cam.position.clone(), quat = cam.quaternion.clone();
+  const cars = [S.view, S.ghostView].filter(Boolean)
+    .map(v => [v, v.group.visible, v.shadow.visible]);
+  for (const [v] of cars) { v.group.visible = false; v.shadow.visible = false; }
+  shotCamera();
+  S.renderer.render(0);
+  const src = $('gl');
+  const cw = Math.min(src.width, src.height * 16 / 9), ch = cw * 9 / 16;
+  const out = document.createElement('canvas');
+  out.width = 640; out.height = 360;
+  out.getContext('2d').drawImage(src, (src.width - cw) / 2, (src.height - ch) / 2,
+                                 cw, ch, 0, 0, 640, 360);
+  for (const [v, g, s] of cars) { v.group.visible = g; v.shadow.visible = s; }
+  cam.position.copy(pos);
+  cam.quaternion.copy(quat);
+  return out.toDataURL('image/png');
+}
+
+function maybeSnapCover() {
+  if (!CFG.coverAdmin || CFG.mode !== 'solo' || CFG.draft) return;
+  const card = (CFG.cards || []).find(c => c.slug === S.track.slug);
+  if (!card || card.tab !== 'daily' || card.image || card.snapped) return;
+  card.snapped = true;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (S.track.slug !== card.slug) { card.snapped = false; return; }
+    fetch('/api/cover/' + encodeURIComponent(card.slug), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ png: snapCover() }),
+    }).then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) card.image = d.image; })
+      .catch(() => {});
+  }));
 }
 
 /**

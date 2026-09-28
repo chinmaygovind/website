@@ -1068,9 +1068,9 @@ def _daily_cards():
     """The dailies the home page lists: today's, and the month behind it.
 
     Its own small query rather than a filter over `_track_cards`, which builds
-    every community card as well and is the switcher's job. The home page is
-    read rather than driven from, so it wants the same rows and none of the
-    pictures.
+    every community card as well and is the switcher's job. `image` is whether
+    the daily has had its picture taken yet (`maker.api_cover`); one that has
+    not shows its plan instead.
     """
     if not DATABASE_URL:
         return []
@@ -1085,6 +1085,7 @@ def _daily_cards():
         return []
     return [{"slug": r.slug, "name": r.name, "difficulty": r.difficulty,
              "daily_on": r.daily_on, "plan": r.plan_path,
+             "image": _has_cover(r.slug),
              "today": r.daily_on == daily_date()} for r in rows]
 
 

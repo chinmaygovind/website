@@ -134,10 +134,14 @@
         {% for d in dailies %}
         {% set pb = pbs.get(d.slug) %}
         <a class="tcard{% if d.today %} today{% endif %}" href="/solo/{{ d.slug }}">
+          {% if d.image %}
+          <div class="tshot" style="background-image:url('/static/img/tracks/{{ d.slug }}.png?v={{ asset_version }}')"></div>
+          {% else %}
           <div class="tshot tshot-plan">
             {% if d.plan %}<svg viewBox="0 0 200 96" preserveAspectRatio="xMidYMid meet"
                  aria-hidden="true"><path d="{{ d.plan }}"/></svg>{% endif %}
           </div>
+          {% endif %}
           <div class="tcard-in">
             <div class="tcard-top">
               <h3>{{ d.name }}</h3>

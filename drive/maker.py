@@ -30,7 +30,9 @@ module left out of that list contaminates the next test.
 """
 
 import os
+import re
 import math
+import base64
 import uuid
 import json as json_mod
 import time
@@ -57,7 +59,7 @@ import tuning
 # despite `app.py` importing this file.
 from app import (app, DATABASE_URL, get_current_user, get_effective_name,
                  portal_mode, script_json, _car_livery, _my_pb_map, _prefs_for,
-                 daily_date)
+                 daily_date, _COVER_DIR, _COVERS, _has_cover, ASSET_VERSION)
 
 
 # What a document may contain. Bounds rather than taste: a track over these is
@@ -1156,7 +1158,56 @@ def admin_review_act(slug):
         abort(400)
     db.session.commit()
     _forget_track(slug)
+    if action == "approve" and row.daily_on:
+        _save_cover(row.slug, request.form.get("cover"))
     return redirect(url_for("admin_review", after=row.id))
+
+
+# ---- a daily's picture ----------------------------------------------------
+#
+# A daily is generated on the box, which has no browser to photograph it in, so
+# its switcher picture is taken by Chinmay's: one frame of the start line off
+# the play page's own canvas (`snapCover` in game.js), sent with the approval
+# or, for a live daily that has none, the first time he opens it. Written next
+# to the pool's covers so every page that already asks `_has_cover` finds it,
+# and untracked there - the deploy's `git reset --hard` leaves it alone.
+
+COVER_MAX_BYTES = 1_000_000
+_PNG = b"\x89PNG\r\n\x1a\n"
+
+
+def _save_cover(slug, data_url):
+    """Write a `data:image/png` URL as this slug's cover. False if it is not one."""
+    head = "data:image/png;base64,"
+    if not (isinstance(data_url, str) and data_url.startswith(head)
+            and re.fullmatch(r"[a-z0-9-]+", slug)):
+        return False
+    try:
+        png = base64.b64decode(data_url[len(head):], validate=True)
+    except ValueError:
+        return False
+    if not png.startswith(_PNG) or len(png) > COVER_MAX_BYTES:
+        return False
+    path = os.path.join(_COVER_DIR, slug + ".png")
+    with open(path + ".tmp", "wb") as f:
+        f.write(png)
+    os.replace(path + ".tmp", path)
+    _COVERS[slug] = True
+    return True
+
+
+@app.route("/api/cover/<slug>", methods=["POST"])
+def api_cover(slug):
+    """A live daily's first picture. Never a replacement: one that exists stays."""
+    if not _is_admin(get_current_user()) or _make_forbidden():
+        abort(404)
+    row = _user_track_row(slug)
+    if (row is None or row.status != "live" or row.daily_on is None
+            or _has_cover(slug)):
+        abort(404)
+    if not _save_cover(slug, (request.get_json(silent=True) or {}).get("png")):
+        abort(400)
+    return jsonify(image="/static/img/tracks/%s.png?v=%s" % (slug, ASSET_VERSION))
 
 
 def _number_daily(row):

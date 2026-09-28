@@ -34,6 +34,11 @@ drive/todo.txt
 # nobody reads twice.
 drive/tools/views/
 
+# A daily's picture is taken in the browser and written by the server that
+# serves it (`maker.api_cover`), so prod's live only on prod and a local one is
+# a picture of a local database's track under a slug prod gives to another.
+drive/static/img/tracks/daily-*.png
+
 # Intermediate frames from `drive/tools/shoot_video.py`. The script renders each
 # beat to a few hundred PNGs and ffmpeg stitches them into the mp4s beside them,
 # then the next run clears and re-renders the lot - so these are build output,

@@ -2,13 +2,14 @@
 {% import "_player.html" as p with context %}
 {% block title %}Records | Drive{% endblock %}
 {% set active_page = 'leaderboard' %}
+{% block bodyclass %}lb-page{% endblock %}
 {% macro board_time(ms) %}{{ '%d:%06.3f'|format((ms // 60000), (ms % 60000) / 1000) }}{% endmacro %}
 {% macro record_rows(list) %}
   <table class="board">
     {# The gold time used to sit here. It is a property of the track rather than
        of the record; when the record went in is what this table can say that
        nothing else does. #}
-    <tr><th>Track</th><th>Holder</th><th class="num">Time</th><th class="num">Date</th></tr>
+    <tr><th>Track</th><th>Holder</th><th class="num">Time</th><th class="num when">Date</th></tr>
     {% for t in list %}
     {% set rec = records.get(t.slug) %}
     <tr>
@@ -17,7 +18,7 @@
       <td class="num">{{ board_time(rec[0]) if rec else '—' }}</td>
       {# Stored UTC and served as UTC so it is right with no JS; the script at
          the foot rewrites it into the reader's timezone. #}
-      <td class="num">{% if rec and rec[2] %}<time datetime="{{ rec[2].isoformat() }}Z"
+      <td class="num when">{% if rec and rec[2] %}<time datetime="{{ rec[2].isoformat() }}Z"
         >{{ rec[2].strftime('%-d %b %Y, %H:%M:%S') }} UTC</time>{% else %}—{% endif %}</td>
     </tr>
     {% endfor %}
@@ -47,21 +48,22 @@
 <div class="wrap lb-wrap">
   <h1>Records</h1>
   {# Five boards laid out | : : on a desktop - track records down the left, the
-     four ranked boards in a two-by-two grid - and one at a time behind a tab
-     bar on a phone. The tabs are a radio group as on the home page, so the
+     four ranked boards in a two-by-two grid with today's daily under Time
+     Trials - sized to the window rather than scrolling past it, and one at a
+     time behind a tab bar on a phone. The tabs are a radio group as on the home page, so the
      inputs must precede everything they select. #}
   <div class="lb">
     <input type="radio" name="lbtab" id="lb-rec" checked>
     <input type="radio" name="lbtab" id="lb-tt">
     <input type="radio" name="lbtab" id="lb-mp">
-    <input type="radio" name="lbtab" id="lb-pts">
     <input type="radio" name="lbtab" id="lb-day">
+    <input type="radio" name="lbtab" id="lb-pts">
     <div class="htabs-bar lb-bar" role="tablist">
       <label for="lb-rec">Records</label>
       <label for="lb-tt">Time Trials</label>
       <label for="lb-mp">Multiplayer</label>
-      <label for="lb-pts">Daily Points</label>
       <label for="lb-day">Today</label>
+      <label for="lb-pts">Daily Points</label>
     </div>
 
     <section class="lb-rec">
@@ -152,27 +154,6 @@
       </div></div>
     </section>
 
-    {# 15-12-10-8-6-5-4-3-2-1 for places on each finished daily, added up.
-       `_daily_points` in app.py. #}
-    <section class="lb-pts">
-      <h2>Daily Tracks Leaderboard</h2>
-      <div class="panel lb-panel">
-        <div class="lb-sub">
-          <input type="radio" name="ptab" id="pt-all" checked>
-          <input type="radio" name="ptab" id="pt-week">
-          <div class="lb-subbar">
-            <label for="pt-all">All time</label>
-            <label for="pt-week">This week</label>
-            <span class="whatsthis lb-subnote"
-              title="Each finished daily scores 15, 12, 10, 8, 6, 5, 4, 3, 2 and 1 for 1st to 10th"
-              >Points<span class="q">?</span></span>
-          </div>
-          <div class="lb-scroll" id="pt-all-p">{{ points_rows(points_all) }}</div>
-          <div class="lb-scroll" id="pt-week-p">{{ points_rows(points_week) }}</div>
-        </div>
-      </div>
-    </section>
-
     <section class="lb-day">
       <h2>Today's Daily</h2>
       <div class="panel lb-panel">
@@ -218,6 +199,27 @@
         {% else %}
         <p class="muted">No daily has been set yet.</p>
         {% endif %}
+      </div>
+    </section>
+
+    {# 15-12-10-8-6-5-4-3-2-1 for places on each finished daily, added up.
+       `_daily_points` in app.py. #}
+    <section class="lb-pts">
+      <h2>Daily Tracks Leaderboard</h2>
+      <div class="panel lb-panel">
+        <div class="lb-sub">
+          <input type="radio" name="ptab" id="pt-all" checked>
+          <input type="radio" name="ptab" id="pt-week">
+          <div class="lb-subbar">
+            <label for="pt-all">All time</label>
+            <label for="pt-week">This week</label>
+            <span class="whatsthis lb-subnote"
+              title="Each finished daily scores 15, 12, 10, 8, 6, 5, 4, 3, 2 and 1 for 1st to 10th"
+              >Points<span class="q">?</span></span>
+          </div>
+          <div class="lb-scroll" id="pt-all-p">{{ points_rows(points_all) }}</div>
+          <div class="lb-scroll" id="pt-week-p">{{ points_rows(points_week) }}</div>
+        </div>
       </div>
     </section>
   </div>

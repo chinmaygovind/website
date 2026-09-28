@@ -166,7 +166,7 @@ def test_the_page_has_all_five_boards_and_the_countdown(env):
     html = A.app.test_client().get("/leaderboard").get_data(as_text=True)
     at = [html.index(h) for h in ("Track Records", "Time Trials Leaderboard",
                                   "Multiplayer Leaderboard",
-                                  "Daily Tracks Leaderboard", "Today's Daily")]
+                                  "Today's Daily", "Daily Tracks Leaderboard")]
     assert at == sorted(at)
     assert 'class="dday-clock" data-ends=' in html
     assert ">Projected<" in html and "+15" in html
@@ -205,3 +205,52 @@ def test_the_lap_checker_can_find_a_daily(env):
             v = verify.Verifier()
             v.ensure(tracks_mod.get(slug))
             v.rt.eval("built(%s);" % json.dumps(slug))   # throws "no such track" if not
+
+
+def _png_url(extra=b""):
+    import base64
+    return "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\n" + extra).decode()
+
+
+def test_a_live_daily_takes_one_picture_from_chinmay_only(env, tmp_path, monkeypatch):
+    """`maybeSnapCover` posts here. Admin only, live dailies only, a PNG only,
+    and never over one that exists."""
+    A = env
+    monkeypatch.setattr(A, "_COVER_DIR", str(tmp_path))
+    monkeypatch.setattr(A.maker, "_COVER_DIR", str(tmp_path))
+    monkeypatch.setattr(A, "_COVERS", {})
+    monkeypatch.setattr(A.maker, "_COVERS", A._COVERS)
+    slug = _daily(A, "Foggy Ridge", day=A.daily_date())
+    c = A.app.test_client()
+    _login(c, _user(A, "ada"))
+    assert c.post("/api/cover/" + slug, json={"png": _png_url()}).status_code == 404
+    _login(c, _admin(A))
+    assert c.post("/api/cover/" + slug, json={"png": "data:image/png;base64,aGk="}).status_code == 400
+    assert c.post("/api/cover/nope", json={"png": _png_url()}).status_code == 404
+    r = c.post("/api/cover/" + slug, json={"png": _png_url(b"one")})
+    assert r.status_code == 200 and r.json["image"].startswith("/static/img/tracks/%s.png" % slug)
+    assert c.post("/api/cover/" + slug, json={"png": _png_url(b"two")}).status_code == 404
+    assert (tmp_path / (slug + ".png")).read_bytes().endswith(b"one")
+    with A.app.app_context():
+        cards = {x["slug"]: x for x in A._daily_cards()}
+    assert cards[slug]["image"] is True
+
+
+def test_approving_a_daily_in_review_keeps_its_picture(env, tmp_path, monkeypatch):
+    """The picture rides on the Approve press and lands under `daily-N`, the
+    slug approval gives it - not the draft slug it was reviewed under."""
+    A = env
+    monkeypatch.setattr(A.maker, "_COVER_DIR", str(tmp_path))
+    monkeypatch.setattr(A.maker, "_COVERS", {})
+    c = A.app.test_client()
+    _login(c, _user(A, "maker_foggy"))
+    slug = _publish(A, c, name="Foggy Ridge")
+    with A.app.app_context():
+        row = A.DriveUserTrack.query.filter_by(slug=slug).first()
+        row.doc_json = json.dumps(dict(row.doc, generated=True))
+        A.db.session.commit()
+    _login(c, _admin(A))
+    c.post("/admin/review/" + slug, data={"action": "approve", "cover": _png_url()})
+    with A.app.app_context():
+        new = A.DriveUserTrack.query.filter_by(status="live").first().slug
+    assert new.startswith("daily-") and (tmp_path / (new + ".png")).exists()

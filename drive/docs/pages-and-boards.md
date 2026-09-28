@@ -59,6 +59,10 @@ the track cards, `/account`, `/leaderboard`, the nav, or the in-game board panel
   has nothing to do with the current track. The same
   switcher is in a room, where only the host can pick - everyone else sees the same
   grid with the picking turned off, rather than a poorer version of it.
+  **Dailies is a tab in solo and not in a room** (`hidden` on the tab outside
+  `mode == 'solo'`): a room's bots have no hot lap on a generated track. A
+  daily's card picture is taken in Chinmay's browser, not by `shoot_tracks.py` -
+  see `docs/track-maker.md`, "The dailies".
   **A card shows your time and not the record.** The record was on there too, and it
   made every card an argument: two times and two names, one of them somebody else's,
   on a menu whose only job is choosing where to drive. `_track_cards` therefore does
@@ -182,9 +186,16 @@ the track cards, `/account`, `/leaderboard`, the nav, or the in-game board panel
 - **`/leaderboard` is five boards laid out `| : :`** since Sep 2026: Track
   Records down the left (subtabs Sprints / Circuits / Dailies, where Dailies is
   each day's *winner* rather than the all-time record on that track), then Time
-  Trials and Multiplayer on top and the two daily boards below. Each right-hand
-  board is about ten rows tall and scrolls inside itself. Under 900px it is one
-  board at a time behind a radio-group tab bar, the home page's pattern.
+  Trials and Multiplayer on top, and Today's Daily then Daily Tracks
+  Leaderboard below (Today's Daily sits under Time Trials). **The page is the
+  window's height** (`body.lb-page`, a flex column) and the grid takes what the
+  nav and heading leave as two equal rows, each board scrolling inside itself,
+  so a laptop sees all five with nothing below the fold; a window under 620px
+  tall falls back to fixed board heights and a scrolling page. Under 900px it
+  is one board at a time behind a radio-group tab bar, the home page's pattern:
+  upright, the open board fills the screen under its tab; on its side there is
+  no height to share, so the page scrolls instead and nothing scrolls inside
+  anything. The section headings are hidden on a phone because the tab says it.
 - **Daily points come from `drive_daily_times`, not `drive_times`.** A daily
   stays drivable after its day and `drive_times` keeps only an all-time best, so
   it cannot say what somebody had set by midnight. `_note_daily` writes the

@@ -698,7 +698,7 @@ def test_the_records_page_dates_the_record_and_drops_the_gold_time(env):
     _login(c, _user(env))
     c.post("/api/run", json=_run_payload(env, "sunrise", seconds=22))
     html = c.get("/leaderboard").get_data(as_text=True)
-    assert "<th class=\"num\">Date</th>" in html
+    assert "<th class=\"num when\">Date</th>" in html
     assert "Gold time" not in html
     with env.app.app_context():
         row = env.DriveTime.query.filter_by(track="sunrise").first()
