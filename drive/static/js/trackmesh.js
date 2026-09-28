@@ -517,6 +517,23 @@ export class MeshBuf {
   toMesh(material) { return new THREE.Mesh(this.toGeometry(), material); }
 }
 
+/**
+ * A MeshBuf that keeps nothing: what `buildTrack` draws into when there is no
+ * browser to draw.
+ *
+ * The anti-cheat (`verify.py`) runs this exact file in QuickJS to re-drive a
+ * lap, and all it needs from a track is the collider. Every `solid`, `bright`
+ * and `soft` write is picture - buildings, fences, water, the far city - and
+ * in QuickJS it was only ever filled and thrown away. Baku's city ran the
+ * engine out of memory doing that. Collision goes into `col` beside these
+ * writes, never through them, so skipping them cannot change what a car hits:
+ * `test_scenery.py` pins every track's collider count and is unchanged.
+ */
+class NullBuf extends MeshBuf {
+  tri() {}
+  triV() {}
+}
+
 const THICK = 0.9;      // depth of the tarmac slab under the road surface
 const RAIL_H = 1.15;    // barrier height
 const KERB_W = 0.7;     // width of the painted stripe along each edge
@@ -526,9 +543,11 @@ export function buildTrack(track, T) {
   const pal = palette(track);
   const group = new THREE.Group();
   const col = new Collider(CELL);
-  const solid = new MeshBuf();     // flat-shaded, receives light
-  const bright = new MeshBuf();    // unlit accents: kerbs, gate banners
-  const soft = new MeshBuf();      // lit but translucent: cloud
+  // No DOM means the anti-cheat, which needs the collider and none of this.
+  const Buf = typeof document === 'undefined' ? NullBuf : MeshBuf;
+  const solid = new Buf();     // flat-shaded, receives light
+  const bright = new Buf();    // unlit accents: kerbs, gate banners
+  const soft = new Buf();      // lit but translucent: cloud
   const line = track.line;
   let minY = Infinity, maxY = -Infinity;
   const bbox = { x0: Infinity, x1: -Infinity, z0: Infinity, z1: -Infinity };

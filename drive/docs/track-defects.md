@@ -846,3 +846,17 @@ New entries, unsorted, until somebody files them. One line is enough.
 - **A `Movers` mesh is Lambert, so a mover on a night track is as dark as the
   night.** `glow` (opt-in) swaps it for `MeshBasicMaterial`; author those colours
   the way `bright`'s are authored.
+
+- **Backdrop hills placed off the bounding box can swallow the road.** Baku's
+  Flame Towers ridge was a 260-unit cone sited `bbox.x0 - 110`, and the lobe's
+  west edge ran through it: after CP5 the road drove under a brown ceiling and
+  into a wall. Found by Chinmay on the first drive. Site anything big by walking
+  it away until *every station* clears its radius, not the bounding box.
+- **A landmark checked for clearance at its centre can still sit on the road.**
+  The Four Seasons is 48x28; its centre was 26 units off and its corner was on
+  the track. Sample the rotated footprint's edge (`clearBox` in Baku's scenery).
+- **Paint at the engine's own kerb height z-fights and shimmers in motion.** The
+  kerb stripe is 0.05 over the road and the rail is a quad on the road edge, so
+  an edge line at 0.05 and a wall wrap 3 cm inboard flickered as you drove -
+  invisible in stills. 0.12 over the road and 0.14 off the rail hold still.
+  Hairline fence wires (0.018) crawl the same way; a few wider ones do not.

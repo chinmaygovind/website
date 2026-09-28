@@ -548,17 +548,16 @@ def run_check_row(row, tracks_mod, verifier=None):
 # freed pages back to the kernel, so evicting the first collider does not shrink
 # the process. A fresh process is the only thing that gives the memory back.
 #
-# **And it is the collider itself, which is the part that cannot be skipped.**
-# The first guess was the visual mesh - `buildTrack` fills three MeshBufs nobody
-# here is ever going to draw - and the numbers say no: collider triangles run
-# 598 on sunrise, 4,044 on the Costco, 33,034 on Monaco and 43,902 and 46,254 on
-# Spa and Suzuka, which is the same ordering as the memory and a 73x spread. At
-# 13 floats a triangle in plain JS arrays plus the spatial hash, 46,000
-# triangles *is* the hundred megabytes. The two terrain tracks are heavy because
-# `pal.terrain` collides a height field sampled off the ribbon (another 16,000
-# cells of `gridH`/`gridD` on top), and every one of those triangles is road the
-# lap is being judged against. A collider-only build would save nothing worth
-# having, so the bound has to be process-shaped rather than build-shaped.
+# **That note used to say the collider was the cost and the visual mesh was not,
+# and it was wrong.** It inferred it from collider triangle counts, which rank
+# the tracks in the same order as the memory - but so does the scenery, because
+# the heavy tracks are heavy at everything. Measured directly (Sep 2026, peak
+# `memory_used_size` holding one built track): Spa 123MB -> 20, Suzuka 122 -> 20,
+# Dino 97 -> 17, Monaco 57 -> 18, Baku 196 -> 16, once `buildTrack` stopped
+# filling the three MeshBufs when there is no DOM (`NullBuf` in trackmesh.js).
+# The numbers above are from before that. `TRACKS_PER_CHILD` is left at one
+# anyway: a fresh process is still the only thing that returns memory, and the
+# box's headroom was not re-measured with the change.
 #
 # The cost is throughput - the rows left over wait for the next `_settle_checks`
 # sweep, which is a couple of minutes - and that is the right trade against a

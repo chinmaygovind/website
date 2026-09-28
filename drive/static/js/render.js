@@ -2519,7 +2519,10 @@ function skyDome(spec) {
       // purpose: a chase camera spends almost all its time looking at the band
       // just above the horizon, so cloud that only exists overhead is cloud
       // nobody ever sees.
-      t *= Math.max(0, Math.min(1, (u - 0.5) * 1.7));
+      // `fade` is how fast it comes in above the horizon: 1.7 is full cloud
+      // only straight up, and at chase-camera heights a quarter of it. Baku
+      // wants fair-weather cumulus you can see from the road, so it sets ~6.
+      t *= Math.max(0, Math.min(1, (u - 0.5) * (cl.fade != null ? cl.fade : 1.7)));
       if (cl.dark != null) c.lerp(new THREE.Color(cl.dark), t);
       if (cl.light != null) c.lerp(new THREE.Color(cl.light), (1 - t) * (cl.lit || 0));
     }

@@ -324,6 +324,13 @@ FRAMES = {
     # around it. It loses the water, which is the trade, and it is the right one
     # for a card this size: at thumbnail scale the cars are the only thing that
     # reads as racing, and the harbour is a texture either way.
+    # **The boulevard, from over the city.** The sea, the park and its pines,
+    # the Baku Eye, and the field strung out through Turns 17-20 - Baku from
+    # the side everyone photographs it. Picked off a `--sweep` at az 5.0. The
+    # castle was tried first and does not hold the middle of a wide frame at
+    # any azimuth: its corners are too tight, and the rest is rooftops.
+    "baku": dict(at=0.74, azimuth=5.00, pitch=0.40, pad=0.30,
+                 cars=12, air=0.0, liveryFrom=11),
     "monaco": dict(at=0.38, azimuth=5.00, pitch=0.52, span=0.09, pad=0.38,
                    cars=12, air=0.0, liveryFrom=11),
     # **The water, which the scan will never find.** Sandy Cove is scored on
