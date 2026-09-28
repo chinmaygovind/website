@@ -26,6 +26,10 @@ the track cards, `/account`, `/leaderboard`, the nav, or the in-game board panel
     content pushes the invite onto a row of its own. Sized from zero it never
     causes the break and ellipsises into what is left.
 
+  **And a third width in between.** 621-820px (a phone on its side) keeps the
+  one-line nav, but it is ~120px wider than that screen and wrapped onto two
+  rows, which cost the home page its whole hero; so there the invite uses its
+  short label and the byline goes.
   `tests/test_app.py` pins the first two and the invite's two labels. Nothing
   can test the layout itself: there is no browser in CI, so **shoot the nav at
   320/360/390 before shipping a change to it**.

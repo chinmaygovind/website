@@ -193,6 +193,13 @@ a:hover { text-decoration: underline; }
    icons here, which are drawn as outlines. */
 .discord-ico { width: 17px; height: 13px; fill: currentColor; flex: none; }
 .discord-short { display: none; }
+/* Between the phone tab bar and a laptop the one-line nav is wider than the
+   screen - a phone on its side is 667-844px - and wrapped onto two rows. The
+   short invite and no byline buy back the ~120px it needs. */
+@media (min-width: 621px) and (max-width: 820px) {
+  .brand small, .discord-long { display: none; }
+  .discord-short { display: inline; }
+}
 
 .nav-right { margin-left: auto; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
 .nav-right a { color: var(--ink); font-size: 1.05rem; }
@@ -3301,6 +3308,11 @@ body.garage-page .nav { flex: none; }
   .lb-rec .lb-sub { position: static; }
   .lb .lb-panel { height: 72vh; }
   .lb-bar { margin-bottom: .8rem; }
+  /* One row, always. Five tabs at the desktop padding need 379px and wrapped
+     two onto a second line on a phone; tightened in steps below they fit
+     one row down to 320px. */
+  .lb-bar { flex-wrap: nowrap; gap: 0; justify-content: space-between; }
+  .lb-bar label { white-space: nowrap; flex: none; }
   #lb-rec:checked ~ .lb-bar label[for="lb-rec"],
   #lb-tt:checked ~ .lb-bar label[for="lb-tt"],
   #lb-mp:checked ~ .lb-bar label[for="lb-mp"],
@@ -3366,7 +3378,7 @@ body.garage-page .nav { flex: none; }
 .hero-in { padding: 2rem 1rem 4rem; }
 .hero-title {
   font-family: var(--display); font-weight: 900; text-transform: uppercase;
-  font-size: clamp(4rem, 17vw, 10rem); line-height: 1; letter-spacing: .02em;
+  font-size: clamp(3rem, min(17vw, 24vh), 10rem); line-height: 1; letter-spacing: .02em;
   margin: 0 0 .3em; display: flex; align-items: center; justify-content: center; gap: .15em;
   text-shadow: 0 6px 30px rgba(0,0,0,.45);
 }
@@ -3374,7 +3386,7 @@ body.garage-page .nav { flex: none; }
 .hero-menu { display: inline-flex; flex-direction: column; align-items: flex-start; gap: .1rem; }
 .hero-menu a {
   font-family: var(--display); font-weight: 900; text-transform: uppercase;
-  font-size: clamp(1.4rem, 5vw, 2.1rem); line-height: 1.25; letter-spacing: .04em;
+  font-size: clamp(1.1rem, min(5vw, 6.5vh), 2.1rem); line-height: 1.25; letter-spacing: .04em;
   color: rgba(255,255,255,.82);
   text-shadow: 0 2px 12px rgba(0,0,0,.5);
   transition: color .15s, transform .15s;
@@ -3403,6 +3415,17 @@ body.garage-page .nav { flex: none; }
 @keyframes hero-nudge { 50% { transform: translateY(5px); } }
 html:has(.hero) { scroll-behavior: smooth; }
 #tracks { scroll-margin-top: 70px; }
+@media (max-width: 620px) { .lb-bar label { padding: 7px 6px; font-size: .88rem; } }
+@media (max-width: 380px) { .lb-bar label { padding: 6px 5px; font-size: .8rem; } }
+@media (max-width: 340px) { .lb-bar label { padding: 5px 4px; font-size: .72rem; } }
+/* A phone on its side has 300px of hero under the nav, which the width-led
+   sizes above overflow; this is the same stack, sized to the height. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .hero-in { padding: .8rem 1rem 2.6rem; }
+  .hero-title { font-size: clamp(2.4rem, 20vh, 6rem); margin-bottom: .15em; }
+  .hero-menu a { font-size: clamp(1rem, 6vh, 1.6rem); line-height: 1.2; }
+  .hero-more { bottom: .7rem; }
+}
 @media (max-width: 620px) { .hero { min-height: calc(100svh - 132px); } #tracks { scroll-margin-top: 100px; } }
 @media (prefers-reduced-motion: reduce) {
   .hero-bg { display: none; }
