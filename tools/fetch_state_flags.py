@@ -20,6 +20,7 @@ UA = {"User-Agent": "cgovind.com flag vendoring (one-time)"}
 # The Commons file name is not always "Flag of <state>.svg".
 SPECIAL = {
     "DC": "Flag of the District of Columbia.svg",
+    "GA": "Flag of Georgia (U.S. state).svg",      # plain "Georgia" is the country
 }
 
 STATES = {
