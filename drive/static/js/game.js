@@ -611,7 +611,11 @@ function loadTrack(track, opts = {}) {
   // pressing R before they arrive gets the restart it would have got anyway.
   loadSaves();
   // A guest has no server-side PB, but the one in localStorage is still theirs.
-  S.bestTime = (CFG.pbs && CFG.pbs[track.slug]) || storedBest() || null;
+  // `CFG.pbs` only knows the track the page opened on, and the switcher's card
+  // knows the rest - without it a signed-in PB read blank after a switch.
+  const card = trackCard(track.slug);
+  S.bestTime = (CFG.pbs && CFG.pbs[track.slug]) || (card && card.pb_ms)
+    || storedBest() || null;
   renderMedalTable();
   showPb();
   drawMinimapBase();
@@ -5687,6 +5691,9 @@ function frame(now) {
   // input, no physics, no clock of yours, and the camera belongs to them.
   if (S.watch) {
     updateWatch(dt);
+    // The movers follow the lap's clock, not the parked car's, or every one
+    // stands frozen through somebody else's run.
+    if (S.built.movers) S.built.movers.place(Math.round(S.watch.t / T.FIXED_DT));
     // Your car is parked for the replay, so nothing is stepping it - and a tow
     // you were in when you pressed Watch would otherwise hang in the air over
     // somebody else's lap. Bleed it, and let the streaks fly themselves out.
