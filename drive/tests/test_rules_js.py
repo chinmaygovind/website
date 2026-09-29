@@ -1486,6 +1486,7 @@ function renderStandings() {}
 function drawMinimap() {}
 function ordinal(n) { return n + 'th'; }
 function liveOrder() { return [{self: true}]; }
+function raceIsRun() { return !!(S.raceMode && S.raceDone); }
 var S = {run: {nextCp: 1, cps: [1, 2, 3], laps: 1, lap: 0, wrongWay: false},
          raceMode: true, racePhase: 'racing', remotes: {size: 0},
          previewOrder: null, previewPhase: null, standings: []};
@@ -1528,6 +1529,85 @@ def test_the_lap_readout_is_only_up_during_the_race():
     line = m.group(0)
     assert "S.raceMode" in line and "S.racePhase === 'racing'" in line, line
     assert ": 1" in line, "it has to fall back to one lap, or practice counts laps"
+
+
+def test_the_finish_banner_comes_down_when_the_car_is_yours_again():
+    """FINISH! and "waiting for others" are up for exactly as long as the
+    autopilot has the car. `hud` takes them down every frame that is not true,
+    so no way out of a race - results, reset, abort, track change - can leave
+    the banner standing over a car you are driving again."""
+    ctx = jsrt.quickjs.Context()
+    ctx.eval(HUD_STUB)
+    ctx.eval(_fn("hud"))
+    ctx.eval("$('finishBanner').style.display = ''; S.raceDone = true; hud(0);")
+    assert ctx.eval("$('finishBanner').style.display") == ""
+    ctx.eval("S.raceMode = false; hud(0);")
+    assert ctx.eval("$('finishBanner').style.display") == "none"
+
+
+# --- after the flag: the autopilot -------------------------------------------
+# Across the line in a race the car follows the road and eases to a stop, and
+# nothing you press reaches it. The course here is a straight road down -Z, the
+# way the car faces, so every answer is about sign and nothing else.
+
+AUTO_STUB = """
+function v(x, y, z) { return {x: x, y: y, z: z,
+  dot: function (o) { return this.x * o.x + this.y * o.y + this.z * o.z; }}; }
+var input = {throttle: 0, brake: 0, steer: 0, handbrake: false};
+var S = {track: {closed: false},
+         car: {pos: v(0, 0, 0), fwd: v(0, 0, -1), right: v(1, 0, 0),
+               vel: v(0, 0, 0), speed: 0},
+         course: {total: 100, line: [0, 0],
+                  locate: function (p) { return {s: Math.max(0, Math.min(100, -p.z))}; },
+                  pointAtS: function (s) { return [S.bend || 0, 0, -s]; },
+                  tangent: function () { return [0, 0, -1]; }}};
+"""
+
+
+def _autopilot(setup=""):
+    src = open(GAME_JS).read()
+    consts = re.findall(r"^const AUTO_\w+ = .*$", src, re.M)
+    assert len(consts) == 2, "the autopilot's two gains have moved"
+    ctx = jsrt.quickjs.Context()
+    ctx.eval(AUTO_STUB)
+    ctx.eval("\n".join(consts))
+    ctx.eval(_fn("autopilot"))
+    ctx.eval(setup)
+    return json.loads(ctx.eval("JSON.stringify(autopilot())"))
+
+
+def test_the_autopilot_brakes_a_rolling_car_and_never_accelerates_it():
+    got = _autopilot("S.car.vel = v(0, 0, -30); S.car.speed = 30;")
+    assert got["brake"] > 0 and got["throttle"] == 0 and not got["handbrake"]
+
+
+def test_the_autopilot_stops_rather_than_reversing():
+    """Holding the brake at a standstill is reverse, so a stopped car gets
+    nothing pressed at all."""
+    got = _autopilot()
+    assert got["brake"] == 0 and got["throttle"] == 0
+
+
+def test_the_autopilot_holds_a_car_rolling_backwards():
+    got = _autopilot("S.car.vel = v(0, 0, 5); S.car.speed = 5;")
+    assert got["throttle"] > 0 and got["brake"] == 0
+
+
+def test_the_autopilot_steers_towards_the_road():
+    """Positive steer is right (`Car.step` spins by `-steer`)."""
+    assert _autopilot("S.bend = 6; S.car.speed = 20;")["steer"] > 0
+    assert _autopilot("S.bend = -6; S.car.speed = 20;")["steer"] < 0
+    assert _autopilot("S.car.speed = 20;")["steer"] == 0
+
+
+def test_the_autopilot_drives_on_past_the_end_of_a_point_to_point_road():
+    """The centreline stops at the finish. Past it, the aim point has to carry
+    on along the road rather than be the end of the line - which is behind the
+    car, and would swing it round to drive back through the finish."""
+    got = _autopilot("S.car.pos = v(0, 0, -104); S.car.speed = 20;"
+                     "S.car.vel = v(0, 0, -20);")
+    assert abs(got["steer"]) < 1e-9
+    assert got["brake"] > 0
 
 
 LAPS_STUB = """

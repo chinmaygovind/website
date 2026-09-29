@@ -2749,7 +2749,7 @@ const HOLDABLE = ['banana', 'green', 'red'];
 
 function canUseItem() {
   return !!(S.socket && S.items.length && S.settings.powerups && contactOn() &&
-            !(S.spin && S.spin.slot === 0));
+            !(S.spin && S.spin.slot === 0) && !raceIsRun());
 }
 
 function useItem() {
@@ -4648,11 +4648,21 @@ function applyPhase() {
   // seconds of practice is a button that lied.
   setLabel(start, p === 'qualifying' ? 'Start race now'
                 : (S.settings.qualifying ? 'Start qualifying' : 'Start race'));
+  // Its twin in the room drawer, for the screens where the drawer covers the
+  // row. Copied rather than decided twice, so the two can never disagree.
+  const sideStart = $('btnStartRaceSide');
+  if (sideStart) {
+    sideStart.style.display = start.style.display;
+    setLabel(sideStart, labelOf(start));
+  }
   end.style.display = (S.isHost && live) ? '' : 'none';
   // It cancels before the lights and flags the race after them. Saying which
-  // matters: one of them throws a result away and the other records one.
-  setLabel(end, p === 'racing' ? 'End race' : 'Cancel race');
+  // matters: one of them throws a result away and the other records one. An
+  // icon, so it is said in the tooltip here and in the question it asks when
+  // pressed - see the click handler.
   disarm(end);
+  end.title = p === 'racing' ? 'End race' : 'Cancel race';
+  end.setAttribute('aria-label', end.title);
 
   // You can only retire from something you are in, and only if you are still
   // in it - a car already home or already out has nothing to resign from.
@@ -4867,6 +4877,74 @@ function restartRun() {
  */
 function raceIsRun() {
   return !!(S.raceMode && S.raceDone);
+}
+
+/**
+ * FINISH! and your time, then "waiting for others" until the race is over.
+ *
+ * The flash animates itself out; `hud` takes the whole banner down once
+ * `raceIsRun()` stops being true. The element is reused race after race, so
+ * the animation is reset each time or the second race's flash would already
+ * have faded.
+ */
+function showFinish(ms) {
+  const el = $('finishBanner');
+  if (!el) { toast('Finished ' + fmt(ms)); return; }
+  $('finishTime').textContent = fmt(ms);
+  const flash = el.querySelector('.fin-flash');
+  flash.style.animation = 'none';
+  void flash.offsetWidth;
+  flash.style.animation = '';
+  el.style.display = '';
+}
+
+/**
+ * The driver once you are across the line: follow the road and ease to a stop.
+ *
+ * **You have no control after the flag**, the way a real race hands the car
+ * to its cool-down. Your time is set and your place is taken, so anything you
+ * pressed now could only put a finished car in the way of somebody still
+ * racing. It stops rather than cruising on because twenty-one of the
+ * twenty-six tracks are point-to-point and run out of road just past the
+ * line - one behaviour everywhere beats a lap of honour on five of them.
+ *
+ * Pure pursuit on the centreline, the aim point a little further ahead the
+ * faster the car is going. On a point-to-point track the centreline ends at
+ * the finish, so past it the aim point carries on straight along the road's
+ * last direction instead of pointing back at the line behind you.
+ *
+ * Writes the same `input` object `readInput` does, so nothing downstream can
+ * tell a finished car from a driven one except that nobody is driving it.
+ */
+const AUTO_BRAKE = 0.3;                   // of T.BRAKE: a stop, not an emergency
+const AUTO_STEER = 2.0;                   // steer per radian of aim error
+
+function autopilot() {
+  const car = S.car, c = S.course;
+  const loc = c.locate(car.pos);
+  const look = 8 + Math.min(20, car.speed * 0.35);
+  const s = loc.s + look;
+  let p;
+  if (S.track && S.track.closed) {
+    p = c.pointAtS(((s % c.total) + c.total) % c.total);
+  } else if (s <= c.total) {
+    p = c.pointAtS(s);
+  } else {
+    const e = c.pointAtS(c.total), t = c.tangent(c.line.length - 1), k = s - c.total;
+    p = [e[0] + t[0] * k, e[1] + t[1] * k, e[2] + t[2] * k];
+  }
+  const dx = p[0] - car.pos.x, dy = p[1] - car.pos.y, dz = p[2] - car.pos.z;
+  const ahead = dx * car.fwd.x + dy * car.fwd.y + dz * car.fwd.z;
+  const side = dx * car.right.x + dy * car.right.y + dz * car.right.z;
+  const vLong = car.vel.dot(car.fwd);
+  input.steer = Math.max(-1, Math.min(1, Math.atan2(side, ahead) * AUTO_STEER));
+  // Brake while rolling forward and stop there: holding the brake at a
+  // standstill is reverse. A car rolling backwards down a slope is held with a
+  // touch of throttle, which is what the physics brakes a reversing car with.
+  input.brake = vLong > 1 ? AUTO_BRAKE : 0;
+  input.throttle = vLong < -1 ? AUTO_BRAKE : 0;
+  input.handbrake = false;
+  return input;
 }
 
 /**
@@ -5726,7 +5804,8 @@ function frame(now) {
     return;
   }
 
-  const inp = readInput();
+  // Across the line in a race, the car is not yours any more - see `autopilot`.
+  const inp = raceIsRun() ? autopilot() : readInput();
 
   // In solo, the clock starts the moment you ask the car to move. In a race it
   // starts on the green light, which the server picks for everyone.
@@ -6184,7 +6263,14 @@ function hud(now) {
   // after it, which is what a lap board says.
   $('lapNum').style.display = run.laps > 1 ? '' : 'none';
   if (run.laps > 1) $('lapNum').textContent = 'LAP ' + (run.lap + 1) + '/' + run.laps;
-  $('wrongWay').style.display = run.wrongWay ? '' : 'none';
+  // Not once the autopilot has the car: it is not your way to be wrong about,
+  // and it would sit on top of the FINISH! banner.
+  $('wrongWay').style.display = run.wrongWay && !raceIsRun() ? '' : 'none';
+  // Down the moment the car is yours again - results, a reset, an abort, a
+  // track change. Every frame rather than at each of those, so no way out of
+  // a race can leave it standing.
+  const fin = $('finishBanner');
+  if (fin && !raceIsRun() && fin.style.display !== 'none') fin.style.display = 'none';
 
   // Race positions - but not during qualifying, which is not a race: running
   // order by distance means nothing when everybody is on their own lap, and
@@ -6931,7 +7017,7 @@ async function onFinish() {
   // has: a race ends on the standings when the last car is in, and qualifying
   // ends when the clock does - and covering the road with a results overlay
   // while there are seconds left to improve is taking the session away.
-  if (racing) toast('Finished ' + fmt(run.time));
+  if (racing) showFinish(run.time);
   else if (qualifying) {
     // Straight back out for another. Ninety seconds is two or three laps on
     // most of these tracks, and making each one cost a keypress on a screen
@@ -7567,6 +7653,7 @@ function connect() {
   socket.on('room_error', (d) => toast(d.error || 'Error'));
 
   $('btnStartRace').onclick = () => socket.emit('start_race', { code: CFG.room });
+  $('btnStartRaceSide').onclick = () => socket.emit('start_race', { code: CFG.room });
   $('btnEndRace').onclick = (e) => {
     const b = e.currentTarget;
     // "Cancel" throws a session away and "End race" writes a result, so the
@@ -7575,7 +7662,8 @@ function connect() {
     socket.emit('end_race', { code: CFG.room });
   };
   $('btnResign').onclick = (e) => {
-    if (!armed(e.currentTarget, 'Sure?')) return;
+    // Names itself: the button is only an icon until this first press.
+    if (!armed(e.currentTarget, 'Resign?')) return;
     socket.emit('resign', {});
   };
   $('btnLeave').onclick = () => { socket.emit('leave'); location.href = '/lobbies'; };

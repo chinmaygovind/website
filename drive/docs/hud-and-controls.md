@@ -19,9 +19,25 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   can open**: the room drawer (rooms only), the track switcher, help, settings. Icon
   buttons and nothing else - plus, solo only, the medal times. In a room those are
   gone: a table of lap times floating over a race you are driving against other people
-  relates to nothing on the screen. **Top centre is the host's Start race button**, and
-  only that; it used to live in the room drawer, which closes itself, so the one thing
-  everybody was waiting on was behind a panel.
+  relates to nothing on the screen. **The race buttons lead that row** (`.race-btns`):
+  the host's red Start race pill, then End race (a stop square) and Resign (a door)
+  as icons that open out into their question on the first press and act on the
+  second. They were top centre until Sep 2026 - three full-size text buttons over the
+  road, which on a phone ran into the track card and the FPS/ping card beside it. In
+  the right-aligned row a button appearing only grows it leftwards into sky. Start
+  race still must never be in the room drawer, which closes itself: it is the one
+  thing everybody is waiting on.
+- **On a phone the FPS/ping card sits beside the track card, not under it**
+  (`body.touch #meters`, absolutely placed against `.hud-l`). In the column it was one
+  more card above the map, and on touch the map follows the cards rather than sitting
+  on the floor, so switching a meter on pushed the map down onto the item button and
+  the steering pad. The top centre being empty (above) is what makes room for it.
+- **Across the line in a race the car is not yours** (`autopilot`, driven while
+  `raceIsRun()`): it follows the centreline and brakes gently to a stop, the same on
+  every track because twenty-one of them end in no more road. Items and the R/T keys
+  are refused for the same reason. `#finishBanner` flashes FINISH! and the time, then
+  leaves "Waiting for others to finish" up until the results; `hud` takes it down
+  on any frame `raceIsRun()` is false, so no way out of a race can strand it.
 - **Bottom left is the minimap with restart and last-checkpoint above it.** Those two
   used to head the settings sheet, which meant a menu you had to open to restart a run
   - which is the most common thing you do. They are hidden on touch, where the real

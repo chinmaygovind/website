@@ -649,10 +649,23 @@ body.touch #minimap { width: 118px; height: 92px; }
    and neither can be pushed by anything. */
 /* The standings already live in the right-hand column, which is anchored at
    the top and grows downward, so nothing moves when they appear. They are just
-   too big for a phone at desktop size. */
-body.touch #standingsCard { max-width: 44vw; padding: .35rem .5rem; }
-body.touch #standingsCard .st-row { font-size: .74rem; gap: .3rem; }
-body.touch #standingsCard .st-name { max-width: 14vw; }
+   too big for a phone at desktop size - and the first cut at shrinking them
+   (44vw, .74rem) still took a third of the windscreen with a full grid, so
+   this is roughly half that: every row kept, each one a glance tall. */
+body.touch #standingsCard { max-width: 30vw; padding: .18rem .4rem; border-radius: 8px; }
+body.touch #standingsCard .st-row { font-size: .58rem; line-height: 1.25; gap: .22rem;
+                                    padding: 0; }
+body.touch #standingsCard .st-pos { width: .7rem; }
+body.touch #standingsCard .st-dot { width: 6px; height: 6px; }
+body.touch #standingsCard .st-name { max-width: 10vw; }
+body.touch #standingsCard .st-gap { font-size: .56rem; }
+/* **The frame and ping readout goes beside the track card, not under it.** In
+   the column it was one more card above the map, and on touch the map is not
+   on the floor - it follows the cards - so switching either meter on pushed
+   the map down onto the item button and the steering pad. Absolutely placed
+   against `.hud-l`, level with the track card (12rem on touch, below) and
+   clear of it, so the column holds exactly what it held with them off. */
+body.touch #meters { position: absolute; top: 0; left: calc(12rem + 8px); }
 /* The slots sit over the steering pad, which is the hand that is not throwing:
    you read them with the thumb that is already there and press with the other.
    Bottom-anchored off the pad's own height so they clear the arrows on a phone
@@ -686,35 +699,39 @@ body.touch .item-hint {
 .mapbtns { display: flex; gap: 6px; }
 body.touch .mapbtns { display: none; }
 
-/* The host's one decision, where nobody has to look for it. */
-.hud-tc { position: absolute; top: calc(12px + env(safe-area-inset-top, 0px));
-          left: 50%; transform: translateX(-50%); }
-.tc-btns { display: flex; gap: 8px; align-items: stretch; }
-/* One size for all three, whichever of them the phase is showing. They are the
-   same kind of decision taken at the same moment - start this, stop this, get
-   out of this - and a row of three different heights reads as three unrelated
-   controls that happen to be next to each other. Weight carries the difference
-   instead: the red one is the thing the room is waiting on, the others are not.
-   `min-width` rather than a fixed one, so "Start qualifying" and "Start race
-   now" do not resize the row as the phase changes. */
-.tc-btns .btn {
-  font-size: 1rem; padding: .5rem 1.1rem; min-width: 9.5rem;
-  display: flex; align-items: center; justify-content: center; gap: .4rem;
-}
+/* --- the race buttons, at the front of the top-right row -------------------
+   They were three full-size text buttons in the top centre, over the road, and
+   on a phone they ran into the track card and anything placed beside it. In
+   the button row they cost nothing: the row is right-aligned, so one appearing
+   grows it leftwards into sky and moves nothing that was already there. A
+   little extra space after them keeps them a group of their own rather than
+   three more things to open. */
+.race-btns { display: flex; gap: 6px; margin-right: 6px; }
+/* The thing the room is waiting on keeps its words and its red, at the row's
+   own height so it reads as part of it. */
 .btn.start-race {
+  height: 38px; padding: 0 .9rem; font-size: .9rem; white-space: nowrap;
+  display: inline-flex; align-items: center;
   background: var(--red); color: #fff; border-color: rgba(0, 0, 0, .35);
   box-shadow: 0 6px 22px rgba(232, 69, 60, .4);
 }
-/* Deliberately quieter than Start race. Ending one is never the thing the
-   room is waiting on, and it sits next to the button that is. */
-.btn.end-race {
-  background: rgba(20, 23, 30, .82); color: #ffb4aa;
-  border: 1px solid rgba(255, 138, 122, .5);
-  backdrop-filter: blur(6px);
+/* End race and Resign: icons in the row's own style, tinted so they read as
+   the two that stop something rather than open something. */
+.hbtn.race-stop { color: #ffb4aa; border-color: rgba(255, 138, 122, .5); }
+.hbtn.race-stop:hover { background: rgba(232, 69, 60, .9); color: #fff; }
+.hbtn.race-stop .hbtn-label:empty { display: none; }
+/* Armed, the icon opens out into its question - "End it?", "Resign?" - so the
+   second press is made knowing what it does. */
+.hbtn.race-stop.armed { width: auto; padding: 0 .7rem; gap: .35rem;
+                        font-size: .85rem; font-weight: 700; }
+/* Its twin at the top of the room drawer: full width, for the screens where the
+   drawer covers the row (a phone, or under 900px - the same two cases that
+   stop `.hud-tr` sliding clear of it, below). Anywhere else the row is still
+   showing its own, so this one stands down. */
+.btn.start-race.side-start { width: 100%; justify-content: center; margin-bottom: .5rem; }
+@media (min-width: 901px) {
+  body:not(.touch) #btnStartRaceSide { display: none !important; }
 }
-.btn.end-race svg { width: 17px; height: 17px; fill: none; stroke: currentColor;
-                    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.btn.end-race:hover { background: rgba(232, 69, 60, .9); color: #fff; }
 /* Every one of these confirms in place rather than opening a dialog over the
    road: an overlay mid-race hides the thing you would want to look at before
    deciding. Resign, End race, and the restart button.
@@ -771,7 +788,6 @@ body.touch .mapbtns { display: none; }
   .qual-note { display: none; }
   .qual-rows { max-height: 34vh; padding: .2rem 0; }
   .qual-clock { font-size: 1.05rem; }
-  .tc-btns .btn { font-size: .85rem; padding: .35rem .8rem; min-width: 7rem; }
   /* The start hint is one long centred line, and on this screen the right end
      of it runs underneath the qualifying board. Only while the board is up, it
      wraps onto two lines and keeps to the left of it - a first-time player
@@ -783,14 +799,6 @@ body.touch .mapbtns { display: none; }
   }
 }
 
-/* Resign sits with the other race buttons and carries its word as well as its
-   flag: it is the one control up here that cannot be undone, and a lone icon
-   would be a guess. */
-.btn.resign { display: inline-flex; align-items: center; gap: .4rem; }
-.btn.resign svg {
-  width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2;
-  stroke-linecap: round; stroke-linejoin: round;
-}
 .hbtn-label { letter-spacing: .02em; }
 .hud-bc { position: absolute; bottom: calc(12px + env(safe-area-inset-bottom, 0px));
           left: 50%; transform: translateX(-50%); width: 340px; max-width: 60vw;
@@ -1117,6 +1125,46 @@ body.touch .now-playing { max-width: min(210px, 52vw); padding: .4rem .7rem; }
 }
 .countdown.go { color: #55e08a; font-size: 7rem; }
 .countdown.n1 { color: #ffd96b; }
+
+/* Across the line in a race. The flash is the countdown's type, because it is
+   the other end of the same thing; it pops, holds and fades on its own, and
+   the waiting line under it stays in the same pixels throughout, so nothing
+   shifts when the flash goes. `pointer-events: none` - it sits over the road
+   and the top-centre buttons are still the host's to press. */
+#finishBanner {
+  position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; gap: .6rem;
+  pointer-events: none; text-align: center;
+}
+.fin-flash { display: flex; flex-direction: column; align-items: center;
+             animation: fin-pop 2.5s ease-out forwards; }
+.fin-flash b {
+  font-family: var(--display); font-size: 6rem; font-weight: 900; line-height: 1;
+  color: #ffd96b; letter-spacing: .02em; text-shadow: 0 6px 24px rgba(0, 0, 0, .55);
+}
+#finishTime {
+  font-family: var(--mono); font-size: 1.5rem; font-weight: 700; color: #fff;
+  font-variant-numeric: tabular-nums; text-shadow: 0 2px 10px rgba(0, 0, 0, .7);
+}
+.fin-wait {
+  background: var(--hud); color: #fff; border: 1px solid var(--hud-line);
+  padding: .35rem 1rem; border-radius: 999px; font-size: .95rem; white-space: nowrap;
+}
+@keyframes fin-pop {
+  0% { opacity: 0; transform: scale(.6); }
+  12% { opacity: 1; transform: scale(1.08); }
+  20% { transform: scale(1); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  @keyframes fin-pop { 0%, 80% { opacity: 1; } 100% { opacity: 0; } }
+}
+@media (max-height: 460px) {
+  .fin-flash b { font-size: 3.6rem; }
+  #finishTime { font-size: 1.1rem; }
+  .fin-wait { font-size: .8rem; padding: .25rem .8rem; }
+}
 
 /* Clear of the bottom-centre clock and of the touch controls, so it reads as
    part of the world rather than part of the HUD. */
