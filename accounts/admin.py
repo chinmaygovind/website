@@ -827,3 +827,66 @@ def account_list():
                            total=total, per_page=ACCOUNTS_PER_PAGE,
                            pages=max(1, -(-total // ACCOUNTS_PER_PAGE)),
                            game_list=GAMES)
+
+
+# ---------------------------------------------------------------------------
+# Chat: every conversation, and what people reported
+# ---------------------------------------------------------------------------
+#
+# The tables are the chat service's (`chat/models.py`), read raw like every
+# game's. The dock tells everybody the admin can read chats; this is that.
+
+def chat_conversations(conn, limit=200):
+    if not _table_exists(conn, "chat_conversations"):
+        return []
+    rows = _rows(conn, """
+        SELECT c.id, c.is_group, c.name, c.last_message_at,
+               (SELECT COUNT(*) FROM chat_messages m WHERE m.conversation_id = c.id) AS messages,
+               (SELECT COUNT(*) FROM chat_reports r JOIN chat_messages m ON m.id = r.message_id
+                 WHERE m.conversation_id = c.id) AS reports,
+               (SELECT group_concat(user_id) FROM chat_members WHERE conversation_id = c.id) AS members
+        FROM chat_conversations c ORDER BY c.last_message_at DESC LIMIT :lim""", lim=limit)
+    people = _people(conn, [u for r in rows for u in (r["members"] or "").split(",")])
+    return [dict(r, last=_when(r["last_message_at"]),
+                 people=[people[int(u)] for u in (r["members"] or "").split(",")
+                         if u and int(u) in people]) for r in rows]
+
+
+def chat_reports(conn, limit=100):
+    if not _table_exists(conn, "chat_reports"):
+        return []
+    rows = _rows(conn, """
+        SELECT r.id, r.reporter_id, r.reason, r.created_at, m.id AS message_id,
+               m.sender_id, m.body, m.kind, m.conversation_id
+        FROM chat_reports r JOIN chat_messages m ON m.id = r.message_id
+        ORDER BY r.created_at DESC LIMIT :lim""", lim=limit)
+    people = _people(conn, [r["reporter_id"] for r in rows] + [r["sender_id"] for r in rows])
+    return [dict(r, when=_when(r["created_at"]), reporter=people.get(r["reporter_id"]),
+                 sender=people.get(r["sender_id"])) for r in rows]
+
+
+@bp.route("/chats", strict_slashes=False)
+def chat_list():
+    conn = db.session.connection()
+    return render_template("admin/chats.html", convs=chat_conversations(conn),
+                           reports=chat_reports(conn))
+
+
+@bp.route("/chats/<cid>", strict_slashes=False)
+def chat_page(cid):
+    conn = db.session.connection()
+    if not cid.isdigit() or not _table_exists(conn, "chat_conversations"):
+        abort(404)
+    conv = _row(conn, "SELECT * FROM chat_conversations WHERE id = :c", c=cid)
+    if not conv:
+        abort(404)
+    msgs = _rows(conn, """
+        SELECT m.*, (SELECT COUNT(*) FROM chat_reports r WHERE r.message_id = m.id) AS reports
+        FROM chat_messages m WHERE m.conversation_id = :c ORDER BY m.id""", c=cid)
+    members = [r["user_id"] for r in _rows(
+        conn, "SELECT user_id FROM chat_members WHERE conversation_id = :c", c=cid)]
+    people = _people(conn, members + [m["sender_id"] for m in msgs])
+    return render_template("admin/chat.html", conv=conv,
+                           members=[people[u] for u in members if u in people],
+                           msgs=[dict(m, when=_when(m["created_at"]),
+                                      sender=people.get(m["sender_id"])) for m in msgs])

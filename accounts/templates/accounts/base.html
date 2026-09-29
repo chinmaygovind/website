@@ -36,5 +36,6 @@
   {% block body %}{% endblock %}
 </div>
 {% block scripts %}{% endblock %}
+{% if me and chat_url %}<script src="{{ chat_url }}/static/dock.js" defer></script>{% endif %}
 </body>
 </html>

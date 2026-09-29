@@ -261,6 +261,15 @@ mounts outside `/accounts` and because a blueprint is what lets one
   `datetime.min.timestamp()` raises on macOS, which made `?sort=seen` a 500 for
   every account that had never been seen.
 
+### Chat on these pages
+
+The chat service (`chat/`) owns the conversations; this app only shows them.
+`/admin/chats` lists every conversation and every report, read raw from the
+`chat_*` tables like the games' figures. The profile's Message / Add / Invite /
+Block buttons and the settings page's "Messages" box are driven through the
+dock's `window.cgvChat` and stay hidden until it loads. `CHAT_URL` (default
+`https://chat.cgovind.com`, empty turns it off) is where the dock comes from.
+
 ### Tests
 
 `scripts/tests.sh site` — 245 tests, about 5s, plus the `import app` check the

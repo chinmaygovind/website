@@ -87,3 +87,6 @@ drive/tracks/zzscratch*/
 # last run. A hint for ordering the next run, derived and machine-specific.
 drive/.pytest-file-times
 kot/.pytest-file-times
+
+# Copies of the prod database. They hold emails and password hashes: never commit.
+backups/

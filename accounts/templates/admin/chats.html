@@ -1,0 +1,46 @@
+{% extends "admin/base.html" %}
+{% import "admin/_bits.html" as ad with context %}
+{% block heading %}Chats{% endblock %}
+
+{% block body %}
+<div class="card">
+  <h2>Reported messages</h2>
+  {% if reports %}
+  <table class="tbl">
+    <thead><tr><th>When</th><th>Reported by</th><th>Sender</th><th>Message</th><th>Why</th></tr></thead>
+    <tbody>
+    {% for r in reports %}
+    <tr>
+      <td>{{ ad.when(r.when) }}</td>
+      <td>{{ ad.person(r.reporter) }}</td>
+      <td>{{ ad.person(r.sender) }}</td>
+      <td class="clip wide"><a href="{{ url_for('admin.chat_page', cid=r.conversation_id) }}#m{{ r.message_id }}">
+        {{ 'Game invite' if r.kind == 'invite' else r.body }}</a></td>
+      <td class="dim clip">{{ r.reason or '—' }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted">Nothing reported.</p>{% endif %}
+</div>
+
+<div class="card">
+  <h2>Every conversation</h2>
+  {% if convs %}
+  <table class="tbl">
+    <thead><tr><th>Last message</th><th>Who</th><th class="num">Messages</th><th class="num">Reports</th></tr></thead>
+    <tbody>
+    {% for c in convs %}
+    <tr>
+      <td><a href="{{ url_for('admin.chat_page', cid=c.id) }}">{{ ad.when(c.last) }}</a></td>
+      <td>{% if c.is_group %}<b>{{ c.name or 'Group' }}</b> · {% endif %}
+        {%- for p in c.people %}{{ ad.person(p) }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+      <td class="num">{{ c.messages }}</td>
+      <td class="num {{ 'bad' if c.reports }}">{{ c.reports }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted">No chats yet.</p>{% endif %}
+</div>
+{% endblock %}

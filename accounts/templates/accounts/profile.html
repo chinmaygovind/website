@@ -24,6 +24,16 @@
         <span class="dot" aria-hidden="true"></span>
         <span>{{ status.text if status else 'Offline' }}</span>
       </div>
+      {# Filled in by the chat dock once it has loaded, so a page without it
+         (no chat service, a blocked script) shows no dead buttons. #}
+      {% if me and not is_me %}
+      <div class="chat-acts" id="chat-acts" data-user="{{ user.id }}" hidden>
+        <button type="button" class="btn tiny primary" data-act="message">Message</button>
+        <button type="button" class="btn tiny" data-act="follow">Add</button>
+        <button type="button" class="btn tiny" data-act="invite">Invite to my room</button>
+        <button type="button" class="btn tiny danger" data-act="block">Block</button>
+      </div>
+      {% endif %}
       <div class="hero-meta">
         {% set where = places.place_name(user.profile.country if user.profile else none,
                                          user.profile.us_state if user.profile else none) %}
@@ -138,6 +148,39 @@
 {% endblock %}
 
 {% block scripts %}
+{% if me and not is_me %}
+<script>
+// The profile's chat buttons, driven through the dock's `window.cgvChat`.
+(function () {
+  var box = document.getElementById('chat-acts');
+  var uid = Number(box.dataset.user);
+  function btn(a) { return box.querySelector('[data-act="' + a + '"]'); }
+  function paint(p) {
+    btn('follow').textContent = p.following ? 'Added' : 'Add';
+    btn('follow').classList.toggle('on', p.following);
+    btn('block').textContent = p.blocked ? 'Unblock' : 'Block';
+    btn('message').hidden = !p.can_message;
+    btn('invite').hidden = !p.can_message;
+    box.hidden = false;
+  }
+  function start() {
+    var chat = window.cgvChat, state;
+    chat.person(uid).then(function (p) { state = p; paint(p); }).catch(function () {});
+    btn('message').onclick = function () { chat.open(uid); };
+    btn('invite').onclick = function () { chat.invite(uid); };
+    btn('follow').onclick = function () {
+      chat.follow(uid, !state.following).then(function () { state.following = !state.following; paint(state); });
+    };
+    btn('block').onclick = function () {
+      chat.block(uid, !state.blocked).then(function () { return chat.person(uid); })
+        .then(function (p) { state = p; paint(p); });
+    };
+  }
+  if (window.cgvChat && window.cgvChat.ready) start();
+  else window.addEventListener('cgvchat:ready', start, { once: true });
+})();
+</script>
+{% endif %}
 <script>
 // The tabs already work as links - each one is a real URL that renders the
 // right panel. This only saves the round trip, and rewrites the address with

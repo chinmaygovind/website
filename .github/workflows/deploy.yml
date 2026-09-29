@@ -61,7 +61,7 @@ jobs:
           RUN_ALL: ${{ github.event_name == 'workflow_dispatch' && inputs.test_all }}
         run: |
           set -uo pipefail
-          ALL='["site","drive","ers","kot"]'
+          ALL='["site","chat","drive","ers","kot"]'
 
           if [ "$RUN_ALL" = "true" ]; then
             modules="$ALL"
@@ -173,11 +173,9 @@ jobs:
 
             APP=/home/ubuntu/website
             # The live Conductor is NOT this repo's ttr/ submodule: it is
-            # its own clone, and its instance/ holds the SQLite file all five
-            # services share. **Never `git clean` in there** - the database and
-            # the .env are both untracked, and cleaning would delete the site's
-            # entire data. `reset --hard` is safe: neither is tracked, so
-            # neither is touched.
+            # its own clone. **Never `git clean` in there** - its .env is
+            # untracked. The shared database used to live in its instance/ and
+            # is now /home/ubuntu/data/cgovind.db, outside every checkout.
             TTR=/home/ubuntu/TicketToRide
 
             echo "==> Pulling latest from main (with submodules)"
@@ -244,6 +242,8 @@ jobs:
             # left gunicorn serving the old one - a green deploy and an
             # unchanged site. Nothing catches that but looking at the page.
             game gto
+            # Site-wide chat. Skipped by `game` until its .env exists on the box.
+            game chat
 
             # Conductor, from this repo's submodule pointer.
             #

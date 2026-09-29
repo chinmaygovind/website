@@ -222,5 +222,9 @@
       navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
     }
   </script>
+  {# The site-wide chat dock (chat.cgovind.com). Logged-in people only: chat
+     needs an account to hang a conversation on.
+     Not in the CrazyGames build, whose players have no cgovind.com account. #}
+  {% if current_user and chat_url and not portal %}<script src="{{ chat_url }}/static/dock.js" defer></script>{% endif %}
 </body>
 </html>

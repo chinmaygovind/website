@@ -1,0 +1,29 @@
+{% extends "admin/base.html" %}
+{% import "admin/_bits.html" as ad with context %}
+{% block heading %}One chat{% endblock %}
+
+{% block body %}
+<div class="card">
+  <h2>{{ conv.name or ('Group' if conv.is_group else 'Direct message') }}</h2>
+  <p class="muted">{% for p in members %}{{ ad.person(p) }}{% if not loop.last %}, {% endif %}{% endfor %}</p>
+</div>
+
+<div class="card">
+  <table class="tbl">
+    <thead><tr><th>When</th><th>Who</th><th>Message</th></tr></thead>
+    <tbody>
+    {% for m in msgs %}
+    <tr id="m{{ m.id }}" class="{{ 'flagged' if m.reports }}">
+      <td>{{ ad.when(m.when) }}</td>
+      <td>{{ ad.person(m.sender) }}</td>
+      <td class="{{ 'bad' if m.reports }}">
+        {%- if m.kind == 'invite' %}<i>invite to {{ m.game }} room {{ m.room }}</i>
+        {%- elif m.kind == 'system' %}<i>{{ m.body }}</i>
+        {%- else %}{{ m.body }}{% endif %}
+        {%- if m.reports %} <b>({{ m.reports }} report{{ '' if m.reports == 1 else 's' }})</b>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

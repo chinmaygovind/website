@@ -63,17 +63,21 @@ holds the database everything else shares.
 **The service, the directory and the database file are all still called some form
 of "tickettoride", and that is deliberate.** The game was renamed to Conductor in
 Sep 2026 after a trademark notice, but none of those three names is public, and
-that path is hardcoded in `kot/app.py`, `drive/models.py`, `kot/.env.example` and
-the box's own `.env`. Renaming the directory would move the SQLite file five
-services share. Only what a visitor can see was renamed.
+Only what a visitor can see was renamed. The database used to live in that
+clone's `instance/` and moved out in Sep 2026 - see below.
 
 ## The database
 
-All four apps share **one SQLite file**:
+Every service shares **one SQLite file**, outside every git checkout:
 
 ```
-/home/ubuntu/TicketToRide/instance/tickettoride.db
+/home/ubuntu/data/cgovind.db
 ```
+
+It was `/home/ubuntu/data/cgovind.db` until Sep 2026,
+inside Conductor's clone where a `git clean` could delete it. Each service
+reaches it through `DATABASE_URL` in its own `.env`. **The `sqlite3` CLI is
+not installed on the box** - use `python3 -c "import sqlite3; ..."` instead.
 
 `users` is the shared account table. Each app keeps its own tables alongside it:
 `ttr_*` (well, TTR still uses `users.elo` in prod), `ers_stats` / `ers_games` /
@@ -97,21 +101,21 @@ ssh kotprod 'grep DATABASE_URL /home/ubuntu/website/kot/.env'
 with `file:...?mode=ro` so a stray query can never take a write lock:
 
 ```bash
-ssh kotprod 'sqlite3 "file:/home/ubuntu/TicketToRide/instance/tickettoride.db?mode=ro" ".tables"'
+ssh kotprod 'sqlite3 "file:/home/ubuntu/data/cgovind.db?mode=ro" ".tables"'
 ```
 
 Useful starting points:
 
 ```bash
 # schema of one table
-ssh kotprod 'sqlite3 "file:/home/ubuntu/TicketToRide/instance/tickettoride.db?mode=ro" ".schema kot_games"'
+ssh kotprod 'sqlite3 "file:/home/ubuntu/data/cgovind.db?mode=ro" ".schema kot_games"'
 
 # how much real play data exists
-ssh kotprod 'sqlite3 "file:/home/ubuntu/TicketToRide/instance/tickettoride.db?mode=ro" \
+ssh kotprod 'sqlite3 "file:/home/ubuntu/data/cgovind.db?mode=ro" \
   "SELECT status, COUNT(*) FROM kot_games GROUP BY status;"'
 
 # any game currently live (check before restarting a service)
-ssh kotprod 'sqlite3 "file:/home/ubuntu/TicketToRide/instance/tickettoride.db?mode=ro" \
+ssh kotprod 'sqlite3 "file:/home/ubuntu/data/cgovind.db?mode=ro" \
   "SELECT code, last_activity_at FROM kot_games WHERE status='\''playing'\'';"'
 ```
 
@@ -121,7 +125,7 @@ For anything bigger than a couple of queries, copy the DB down instead of runnin
 long queries against the live file:
 
 ```bash
-scp kotprod:/home/ubuntu/TicketToRide/instance/tickettoride.db /tmp/prod-copy.db
+scp kotprod:/home/ubuntu/data/cgovind.db /tmp/prod-copy.db
 ```
 
 Quoting nests badly over SSH. For any non-trivial SQL, write the query to a local

@@ -140,6 +140,17 @@
   </div>
 </div>
 
+{# ---- chat: who may start a conversation with you --------------------------
+     Stored by the chat service, so it is read and written through the dock's
+     `window.cgvChat` and the box stays hidden until that has loaded. #}
+<div class="card" id="messages" hidden>
+  <h2>Messages</h2>
+  <p class="muted" style="margin-bottom:.9rem">Who can start a chat with you or invite you to a game?</p>
+  <label class="radio"><input type="radio" name="dm_policy" value="anyone"/> Anyone with an account</label>
+  <label class="radio"><input type="radio" name="dm_policy" value="following"/> Only people I've added</label>
+  <p class="muted tiny" id="dmSaved" style="margin-top:.6rem" hidden>Saved.</p>
+</div>
+
 {# ---- the bits that need your password ------------------------------------ #}
 <div class="card" id="security">
   <h2>Log in details</h2>
@@ -198,6 +209,24 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+(function () {
+  var box = document.getElementById('messages');
+  function start() {
+    window.cgvChat.prefs().then(function (j) {
+      box.querySelector('[value="' + j.dm_policy + '"]').checked = true;
+      box.hidden = false;
+    });
+    box.addEventListener('change', function (e) {
+      window.cgvChat.prefs(e.target.value).then(function () {
+        document.getElementById('dmSaved').hidden = false;
+      });
+    });
+  }
+  if (window.cgvChat && window.cgvChat.ready) start();
+  else window.addEventListener('cgvchat:ready', start, { once: true });
+})();
+</script>
 <script>
 // ---- the picture ----------------------------------------------------------
 //

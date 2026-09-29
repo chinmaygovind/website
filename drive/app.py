@@ -289,6 +289,8 @@ def _now_ms():
 # SITE_URL=https://drive.cgovind.com), and quietly borrowing it would point
 # every flag at the wrong host.
 MAIN_SITE_URL = os.environ.get("MAIN_SITE_URL", "https://cgovind.com").rstrip("/")
+# The chat service whose dock every logged-in page loads. Empty turns it off.
+CHAT_URL = os.environ.get("CHAT_URL", "https://chat.cgovind.com").rstrip("/")
 
 # Drive's own public origin. Only the share card needs it: `og:image` has to be
 # an absolute URL and nothing that reads one ever sees a relative path resolved.
@@ -582,6 +584,7 @@ def inject_globals():
             # rather than four, so a game refers to it by absolute URL - see
             # `UserProfile.flag_path`, which returns the path half.
             "site_url": MAIN_SITE_URL,
+            "chat_url": CHAT_URL,
             # Drive's own origin and one-liner, for the share card in base.html.
             # `og_title` falling back to the page's own <title> and `og_image` to
             # the wheel are the defaults every page that is not about one track

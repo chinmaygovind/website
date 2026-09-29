@@ -154,6 +154,8 @@ def _lock(code):
 # SITE_URL=https://drive.cgovind.com), and quietly borrowing it would point
 # every flag at the wrong host.
 MAIN_SITE_URL = os.environ.get("MAIN_SITE_URL", "https://cgovind.com").rstrip("/")
+# The chat service whose dock every logged-in page loads. Empty turns it off.
+CHAT_URL = os.environ.get("CHAT_URL", "https://chat.cgovind.com").rstrip("/")
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +231,7 @@ def inject_globals():
             # rather than four, so a game refers to it by absolute URL - see
             # `UserProfile.flag_path`, which returns the path half.
             "site_url": MAIN_SITE_URL,
+            "chat_url": CHAT_URL,
             # What the heartbeat in base.html says about this page. Derived
             # from the endpoint rather than passed by each route, so a new
             # page gets a sensible answer without anybody remembering one.
@@ -506,6 +509,30 @@ def join():
         _add_player(game)
         _broadcast_lobbies()
     return jsonify({"ok": True, "code": game.code})
+
+
+@app.route("/j/<code>")
+@require_login
+def join_link(code):
+    """The invite link: open it and you are in the room, as Drive's `/j/` does.
+
+    A chat invite lands here. Holding the link is the invitation, so a private
+    room's passcode is not asked for - the passcode keeps strangers out, and a
+    stranger does not have the link.
+    """
+    code = (code or "").strip().upper()
+    game = KotGame.query.filter_by(code=code).first()
+    if not game:
+        return redirect(url_for("lobbies"))
+    sk = get_session_key()
+    if not KotPlayer.query.filter_by(game_id=game.id, session_key=sk).first():
+        if game.status != "waiting" or len(game.players) >= game.max_players \
+                or _active_playing_game(sk, exclude_code=code):
+            return redirect(url_for("lobbies"))
+        _leave_waiting_lobbies(sk)
+        _add_player(game)
+        _broadcast_lobbies()
+    return redirect(url_for("lobby", code=game.code))
 
 
 @app.route("/lobby/<code>")

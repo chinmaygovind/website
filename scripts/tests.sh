@@ -10,7 +10,7 @@
 #
 # Usage:
 #   scripts/tests.sh                  # only what changed (see changed-modules.sh)
-#   scripts/tests.sh drive            # a specific module (site, gto, drive, ers, kot)
+#   scripts/tests.sh drive            # a specific module (site, chat, gto, drive, ers, kot)
 #   scripts/tests.sh drive kot        # several
 #   scripts/tests.sh --all            # everything
 #   scripts/tests.sh --list           # print what would run, run nothing
@@ -21,7 +21,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
 
-ALL_MODULES="site gto drive ers kot"
+ALL_MODULES="site chat gto drive ers kot"
 
 modules=""
 pytest_args=""
@@ -139,6 +139,8 @@ parallel_for() {
 
   # 18 tests in a twentieth of a second. Starting workers costs more.
   [ "$m" = ers ] && return 0
+  # chat: a couple of seconds serially.
+  [ "$m" = chat ] && return 0
 
   # **drive must never be handed to xdist, and this is the belt to
   # `run_parallel`'s braces.** It deadlocks there - `eventlet.monkey_patch()`

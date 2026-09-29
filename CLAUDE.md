@@ -7,7 +7,7 @@ and redirects to four games and a poker trainer. `/` is the landing page.
 
 ## Where the documentation is
 
-**This repo is six near-independent services, each documenting itself in its own
+**This repo is seven near-independent services, each documenting itself in its own
 directory. Read the one for the thing you are changing; do not read the others.**
 
 | you are working on | read |
@@ -18,6 +18,7 @@ directory. Read the one for the thing you are changing; do not read the others.*
 | King of Tokyo | `kot/CLAUDE.md` |
 | Drive | `drive/CLAUDE.md`, then **one** file from `drive/docs/` |
 | the GTO poker trainer | `gto/CLAUDE.md` |
+| site-wide chat, DMs, game invites, the dock | `chat/CLAUDE.md` |
 | `app.py`, deploy, CI, test selection | this file |
 
 `drive/docs/` is 360KB across thirteen files - more than the rest of the repo put
@@ -63,6 +64,9 @@ It has its own CI and is not tested from this repo.
   box's account, and a 30s call two requests from holding every worker. `gto`
   does talk to a model - see `gto/CLAUDE.md`, where it is one service, one
   account, its own key and its own ceilings.
+- **Chat is its own service at `chat.cgovind.com` (port 5007)**, and every
+  logged-in page on every host loads its dock script. See `chat/CLAUDE.md`,
+  including the one-time bring-up the deploy does not do.
 - **`/accounts` and `/admin` are the only non-static things here.** Both live in
   `accounts/` and are attached by `accounts.init_app(app)` at the foot of
   `app.py`, **only when `DATABASE_URL` is set**, so a checkout that just wants to
@@ -94,9 +98,9 @@ It has its own CI and is not tested from this repo.
   which were deleted from the game repo - they were only tracing references, and
   the board the game draws on is our own SVG. What deliberately did **not**
   change is anything private and load-bearing: the `ttr/` directory name, the
-  `tickettoride` systemd unit, the `/home/ubuntu/TicketToRide` checkout and
-  `instance/tickettoride.db`, which is the file **all five services share** and
-  is hardcoded in `kot/app.py`, `drive/models.py` and the box's `.env`.
+  `tickettoride` systemd unit and the `/home/ubuntu/TicketToRide` checkout.
+  The shared database *was* `TicketToRide/instance/tickettoride.db` until it
+  moved out of every git checkout - see **The database** below.
   **`app.py` reads `CONDUCTOR_URL` but falls back to `TTR_URL`**, because the
   box's `.env` is the one thing the deploy never touches.
   **`ttr.cgovind.com` is dead and must stay dead.** It 301'd to
@@ -165,9 +169,20 @@ there is live before this pointer moves; bump the pointer anyway, or this repo
 stops recording what prod runs. The
 pointer is the source of truth on purpose - what this repo records is what prod
 runs, readable with one `git ls-tree`. **Never `git clean` in that clone**:
-`instance/tickettoride.db` is the SQLite file *all five services share* and
-`.env` is beside it, both untracked, so a clean would delete the site's entire
-data. `reset --hard` is safe precisely because neither is tracked.
+its `.env` is untracked and a clean would delete it.
+
+### The database
+
+**Every service shares one SQLite file, `/home/ubuntu/data/cgovind.db`**, and
+it is outside every git checkout on purpose. Until Sep 2026 it was
+`TicketToRide/instance/tickettoride.db`, untracked inside Conductor's clone,
+where one `git clean` would have deleted the site's entire data. Each service
+finds it through `DATABASE_URL` in its own `.env` - seven of them: the root,
+`drive`, `ers`, `gto`, `kot`, `chat` and `/home/ubuntu/TicketToRide/.env`. The
+code's fallbacks (`../ttr/instance/tickettoride.db`) are for a laptop only; on
+the box a service with no `DATABASE_URL` would silently create an empty
+database in its own directory, so a new service's `.env` must set it.
+The pre-move file is `/home/ubuntu/backups/tickettoride-20260929-pre-move.db`.
 
 Apply nginx/TLS/`.env` changes by hand over SSH (`ssh ubuntu@54.157.20.148`;
 config at `/etc/nginx/sites-available/website`). `deploy/setup.sh` is the

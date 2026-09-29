@@ -835,6 +835,9 @@ span.clip { display: inline-block; vertical-align: bottom; }
 
 .filters { display: flex; align-items: center; gap: .5rem; margin-top: 1rem; flex-wrap: wrap; }
 .btn.tiny { padding: .25rem .7rem; font-size: .95rem; }
+label.radio { display: flex; gap: .5rem; align-items: center; font-size: 1.1rem; margin: .3rem 0; cursor: pointer; }
+.chat-acts { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .7rem; }
+.chat-acts[hidden], .chat-acts [hidden] { display: none; }
 .btn.on { border-color: var(--link); color: var(--link); }
 
 .pager { display: flex; align-items: center; gap: 1rem; margin-top: 1.2rem; }

@@ -121,6 +121,8 @@ def _inject():
         "places": places,
         "avatars": avatars,
         "now": datetime.utcnow(),
+        # The chat service whose dock `base.html` loads. Empty turns it off.
+        "chat_url": os.environ.get("CHAT_URL", "https://chat.cgovind.com").rstrip("/"),
     }
 
 

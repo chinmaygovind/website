@@ -1,0 +1,22 @@
+# Site-wide chat (chat.cgovind.com), served from website/chat.
+#
+# One eventlet worker, like the games: each open page holds a socket, and the
+# rooms those sockets sit in live in this process. Its .env is {{APP_DIR}}/chat/.env
+# with the games' SECRET_KEY, SESSION_COOKIE_DOMAIN=.cgovind.com and the shared
+# DATABASE_URL, so the login cookie every game sets is a login here too.
+[Unit]
+Description=Chat (chat.cgovind.com, from website subdir)
+After=network.target
+
+[Service]
+User={{USER}}
+WorkingDirectory={{APP_DIR}}/chat
+EnvironmentFile={{APP_DIR}}/chat/.env
+ExecStart={{APP_DIR}}/chat/venv/bin/gunicorn --worker-class eventlet -w 1 --bind 127.0.0.1:5007 app:app
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

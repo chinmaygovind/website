@@ -680,7 +680,7 @@ instead, and the now-playing card in-game is the credit being shown.
 - Getting them onto the box is **`python tools/sync_music.py`**, which rsyncs
   them and then checks the manifest against what actually landed.
   **The deploy does `git reset --hard`, which leaves untracked files alone** -
-  the same reason TTR's `instance/tickettoride.db` and `.env` survive it. And
+  the same reason every service's `.env` survives it. And
   the same warning applies: never `git clean` there.
 - **Nothing at runtime tells you a file is missing.** The game just plays no
   music on that track, which looks exactly like the music being switched off -

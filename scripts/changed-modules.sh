@@ -65,9 +65,9 @@ paths="$(printf '%s\n' "$paths" | sed 's/.* -> //' | sed 's/^"//; s/"$//' | grep
 
 # --- map paths to modules ------------------------------------------------
 
-want_site=0 want_gto=0 want_drive=0 want_ers=0 want_kot=0
+want_site=0 want_gto=0 want_drive=0 want_ers=0 want_kot=0 want_chat=0
 
-all() { want_site=1; want_gto=1; want_drive=1; want_ers=1; want_kot=1; }
+all() { want_site=1; want_gto=1; want_drive=1; want_ers=1; want_kot=1; want_chat=1; }
 
 while IFS= read -r p; do
   [ -n "$p" ] || continue
@@ -91,6 +91,7 @@ while IFS= read -r p; do
     drive/*) want_drive=1 ;;
     ers/*)   want_ers=1 ;;
     kot/*)   want_kot=1 ;;
+    chat/*)  want_chat=1 ;;
 
     # app.py, requirements.txt, accounts/, tests/, site/ and anything
     # unrecognised: the root app. Its suite is the accounts tests plus the
@@ -111,6 +112,7 @@ EOF
 # Canonical order: cheapest first.
 mods=""
 [ $want_site  = 1 ] && mods="$mods site"
+[ $want_chat  = 1 ] && mods="$mods chat"
 [ $want_gto   = 1 ] && mods="$mods gto"
 [ $want_drive = 1 ] && mods="$mods drive"
 [ $want_ers   = 1 ] && mods="$mods ers"

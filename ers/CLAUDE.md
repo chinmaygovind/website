@@ -23,8 +23,8 @@ per-game lock wins.
   one. `tests/test_login.py` pins both halves.
 - **Prod DB path gotcha:** the live TTR does NOT run from this repo's `ttr/` submodule; it
   runs from a **separate clone `/home/ubuntu/TicketToRide`** (systemd `tickettoride`, port
-  5001), whose db is `/home/ubuntu/TicketToRide/instance/tickettoride.db` -- that is the
-  shared file `ers/.env`'s `DATABASE_URL` points at.
+  5001). The shared db is `/home/ubuntu/data/cgovind.db` (outside every checkout
+  since Sep 2026), which is what `ers/.env`'s `DATABASE_URL` points at.
 - **SSO:** every service signs the same `.cgovind.com` cookie with the shared `SECRET_KEY`,
   so one login covers all of them and the accounts pages. This was one-directional for a
   long time -- TTR's `.env` was missing `SESSION_COOKIE_DOMAIN`, so a login there set a
