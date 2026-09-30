@@ -60,8 +60,12 @@ script, `static/dock.js`, that every logged-in page on every host loads.
   Unset, it is two thirds of the way down the right edge (`top: 67%`), on every
   host. Drive uses it only on touch, to lift it back to 42% off the throttle.
 - **That chats are readable by the admin is said in Drive's privacy policy**, not
-  in the dock's footer, which only holds the sound toggle (an SVG bell, not an
+  in the dock's footer, which holds the full-chat link and the sound toggle (an SVG bell, not an
   emoji, so it matches the site's line icons).
+- **`/` is the dock as a whole page** (`static/index.html`). `dock.js` goes
+  full-page when `location.origin` is its own host: no tab, no close button,
+  mounted in `<main>`, and `#c<id>` opens that thread. Everywhere else the
+  footer's "Open full chat" links there (new tab, so a game is not left).
 - **Toasts never take focus.** Mid-race the throttle stays held.
 - `window.cgvChat` (`open`, `invite`, `person`, `follow`, `block`, `prefs`) is
   how the profile buttons and the settings "Messages" box drive it. Both stay

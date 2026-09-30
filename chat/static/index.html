@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chat · cgovind.com</title>
+<meta name="robots" content="noindex">
+<style>
+:root{--bg:#f3f4f6;--card:#fff;--fg:#16171a;--mute:#6b6f76;--line:#e3e4e8;--hot:#2f7cf6}
+@media (prefers-color-scheme:dark){:root{--bg:#111215;--card:#1b1c20;--fg:#eceef2;--mute:#9a9ea7;--line:#2e3036;--hot:#5b9bff}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--card)}
+header a{color:var(--mute);text-decoration:none;font-size:14px}
+header a:hover{color:var(--fg)}
+header b{font-size:17px}
+header .sp{flex:1}
+main{flex:1;min-height:0;display:flex;justify-content:center;padding:20px 16px}
+.guest{align-self:center;text-align:center;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:28px 32px;max-width:360px}
+.guest a{display:inline-block;margin-top:10px;padding:9px 20px;border-radius:9px;background:var(--hot);color:#fff;text-decoration:none;font-weight:600}
+@media (max-width:520px){main{padding:0}}
+</style>
+</head>
+<body>
+<header>
+  <a href="https://cgovind.com">&larr; cgovind.com</a>
+  <span class="sp"></span>
+  <b>Chat</b>
+  <span class="sp"></span>
+  <a id="me" href="https://cgovind.com/accounts/"></a>
+</header>
+<main>
+  <div class="guest" id="guest">
+    <p>Log in to see your chats.</p>
+    <a href="https://cgovind.com/accounts/login?next=https://chat.cgovind.com/">Log in</a>
+  </div>
+</main>
+<script src="/static/dock.js"></script>
+<script>
+window.addEventListener('cgvchat:ready', function () {
+  document.getElementById('guest').hidden = true;
+  cgvChat.prefs().then(function (j) {
+    var me = document.getElementById('me');
+    me.textContent = j.user.name;
+    me.href = 'https://cgovind.com/accounts/' + encodeURIComponent(j.user.username);
+  });
+});
+</script>
+</body>
+</html>

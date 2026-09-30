@@ -3,6 +3,8 @@
   if (window.cgvChat) return;
 
   var BASE = new URL(document.currentScript.src).origin;
+  // On chat.cgovind.com itself the dock is the page: always open, no tab.
+  var FULL = location.origin === BASE;
   var SITE = BASE.indexOf('cgovind.com') >= 0 ? 'https://cgovind.com' : '';
   var IO_SRC = 'https://cdn.socket.io/4.7.5/socket.io.min.js';
   var GAME_ICONS = { drive: '🏎️', kot: '👑', ers: '🃏', ttr: '🚂' };
@@ -77,7 +79,7 @@
   // keyup is let through so a key held when focus arrived is still released.
   ['keydown', 'keypress'].forEach(function (t) {
     root.addEventListener(t, function (e) {
-      if (e.key === 'Escape' && S.open) { toggle(false); e.preventDefault(); }
+      if (e.key === 'Escape' && S.open && !FULL) { toggle(false); e.preventDefault(); }
       e.stopPropagation();
     });
   });
@@ -120,7 +122,7 @@
       back ? h('button', { class: 'icon', 'aria-label': 'Back', onclick: back, text: '‹' }) : null,
       h('div', { class: 'title' }, title),
       extra || null,
-      h('button', { class: 'icon', 'aria-label': 'Close', onclick: function () { toggle(false); }, text: '×' }),
+      FULL ? null : h('button', { class: 'icon', 'aria-label': 'Close', onclick: function () { toggle(false); }, text: '×' }),
     ]);
   }
 
@@ -134,7 +136,8 @@
 
   function footer() {
     return h('div', { class: 'foot' }, [
-      h('span'),
+      FULL ? h('span') : h('a', { class: 'link', target: '_blank', text: 'Open full chat ↗',
+        href: BASE + '/' + (S.view === 'thread' && S.conv ? '#c' + S.conv.id : '') }),
       h('button', { class: 'link snd', 'aria-label': S.muted ? 'Sound off' : 'Sound on',
         title: S.muted ? 'Sound off' : 'Sound on', onclick: function () {
         S.muted = !S.muted;
@@ -593,7 +596,15 @@
 
   api('/api/me').then(function (j) {
     S.me = j.user;
-    document.body.appendChild(host);
+    if (FULL) {
+      host.className = panel.className = 'full';
+      panel.classList.add('panel');
+      tab.hidden = true;
+      (document.querySelector('main') || document.body).appendChild(host);
+      var c = /^#c(\d+)$/.exec(location.hash);
+      if (c) { S.view = 'thread'; S.conv = { id: +c[1] }; }
+      toggle(true);
+    } else document.body.appendChild(host);
     setBadge(j.unread);
     connect();
     window.cgvChat.ready = true;
@@ -616,6 +627,7 @@
     return [
       ':host{all:initial}',
       '[hidden]{display:none!important}',
+      ':host(.full){display:flex;width:100%;max-width:760px}',
       '*{box-sizing:border-box;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}',
       '.tab,.panel,.toasts{--bg:#fff;--fg:#16171a;--mute:#6b6f76;--line:#e3e4e8;--soft:#f3f4f6;--hot:#2f7cf6;--mine:#2f7cf6;--mine-fg:#fff;--bad:#d93b3b}',
       '@media (prefers-color-scheme:dark){.tab,.panel,.toasts{--bg:#1b1c20;--fg:#eceef2;--mute:#9a9ea7;--line:#2e3036;--soft:#26282d;--hot:#5b9bff;--mine:#3b82f6}}',
@@ -625,6 +637,8 @@
       '.badge{position:absolute;top:-6px;left:-6px;min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:var(--bad);color:#fff;font:700 11px/20px system-ui;text-align:center}',
       '.panel{position:fixed;right:52px;top:50%;transform:translateY(-50%);z-index:2147483001;width:360px;height:min(560px,86vh);background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.28);display:flex;flex-direction:column;overflow:hidden;font-size:14px}',
       '@media (max-width:520px){.panel{right:0;left:0;top:0;bottom:0;width:auto;height:auto;transform:none;border-radius:0}}',
+      '.panel.full{position:static;transform:none;width:100%;height:auto;z-index:auto;box-shadow:0 4px 24px rgba(0,0,0,.08)}',
+      '@media (max-width:520px){.panel.full{border:0;border-radius:0}}',
       '.head{display:flex;align-items:center;gap:6px;padding:10px 10px 10px 14px;border-bottom:1px solid var(--line)}',
       '.title{flex:1;min-width:0;display:flex;flex-direction:column;font-weight:700}',
       '.title small,.mid small{font-weight:400;color:var(--mute);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',

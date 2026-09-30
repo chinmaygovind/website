@@ -17,7 +17,7 @@ from functools import wraps
 from dotenv import load_dotenv
 load_dotenv()
 
-from flask import Flask, jsonify, redirect, request, session
+from flask import Flask, jsonify, request, session
 from flask_socketio import SocketIO, join_room
 from sqlalchemy import event, or_
 from sqlalchemy.engine import Engine
@@ -278,7 +278,7 @@ def can_send(uid, c):
 
 @app.route("/")
 def index():
-    return redirect(SITE_URL)
+    return app.send_static_file("index.html")
 
 
 @app.route("/api/me", methods=["GET", "OPTIONS"])

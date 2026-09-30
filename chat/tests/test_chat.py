@@ -73,6 +73,11 @@ def test_guests_get_nothing():
     assert chat.app.test_client().get("/api/me").status_code == 401
 
 
+def test_the_root_is_the_full_page_chat():
+    r = chat.app.test_client().get("/")
+    assert r.status_code == 200 and b"/static/dock.js" in r.data
+
+
 def test_a_dm_is_one_thread_whoever_opens_it():
     assert dm(1, 2) == dm(2, 1)
 
