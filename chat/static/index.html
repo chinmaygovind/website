@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Chat · cgovind.com</title>
 <meta name="robots" content="noindex">
 <style>
@@ -10,16 +10,16 @@
 @media (prefers-color-scheme:dark){:root{--bg:#111215;--card:#1b1c20;--fg:#eceef2;--mute:#9a9ea7;--line:#2e3036;--hot:#5b9bff}}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
+body{height:100dvh}
 body{background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;flex-direction:column}
 header{display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--card)}
 header a{color:var(--mute);text-decoration:none;font-size:14px}
 header a:hover{color:var(--fg)}
 header b{font-size:17px}
 header .sp{flex:1}
-main{flex:1;min-height:0;display:flex;justify-content:center;padding:20px 16px}
-.guest{align-self:center;text-align:center;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:28px 32px;max-width:360px}
+main{flex:1;min-height:0;display:flex;justify-content:center}
+.guest{align-self:center;margin:16px;text-align:center;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:28px 32px;max-width:360px}
 .guest a{display:inline-block;margin-top:10px;padding:9px 20px;border-radius:9px;background:var(--hot);color:#fff;text-decoration:none;font-weight:600}
-@media (max-width:520px){main{padding:0}}
 </style>
 </head>
 <body>
