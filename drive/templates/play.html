@@ -168,22 +168,20 @@
       <span class="race-btns">
         <button class="hbtn start-race" id="btnStartRace" style="display:none"
                 title="Start race" aria-label="Start race">
-          <svg viewBox="0 0 24 24"><path d="M5 21V4h14v9H5"/><path class="fill" d="M5 4h3.5v3H5zM12 4h3.5v3H12zM8.5 7H12v3H8.5zM15.5 7H19v3h-3.5zM5 10h3.5v3H5zM12 10h3.5v3H12z"/></svg>
+          <svg viewBox="0 0 24 24"><path d="M4.5 3v18"/><g class="wave" style="animation-delay:-0.00s"><rect class="lt" x="5" y="4" width="3" height="3"/><rect class="dk" x="5" y="7" width="3" height="3"/><rect class="lt" x="5" y="10" width="3" height="3"/></g><g class="wave" style="animation-delay:-0.12s"><rect class="dk" x="8" y="4" width="3" height="3"/><rect class="lt" x="8" y="7" width="3" height="3"/><rect class="dk" x="8" y="10" width="3" height="3"/></g><g class="wave" style="animation-delay:-0.24s"><rect class="lt" x="11" y="4" width="3" height="3"/><rect class="dk" x="11" y="7" width="3" height="3"/><rect class="lt" x="11" y="10" width="3" height="3"/></g><g class="wave" style="animation-delay:-0.36s"><rect class="dk" x="14" y="4" width="3" height="3"/><rect class="lt" x="14" y="7" width="3" height="3"/><rect class="dk" x="14" y="10" width="3" height="3"/></g><g class="wave" style="animation-delay:-0.48s"><rect class="lt" x="17" y="4" width="3" height="3"/><rect class="dk" x="17" y="7" width="3" height="3"/><rect class="lt" x="17" y="10" width="3" height="3"/></g></svg>
+          <span class="hbtn-label"></span>
         </button>
         <!-- The host's way out of a race that is not going to end on its own.
              Before the lights it cancels; once they are out it is the
              chequered flag. Its title and its question say which. -->
         <button class="hbtn race-stop" id="btnEndRace" style="display:none"
                 title="End race" aria-label="End race">
-          <svg viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/></svg>
+          <svg viewBox="0 0 24 24"><path d="M8.7 3h6.6L21 8.7v6.6L15.3 21H8.7L3 15.3V8.7z"/><path d="M8 12h8"/></svg>
           <span class="hbtn-label"></span>
         </button>
-        <!-- Retiring: a steering wheel struck through - you stop driving. Not
-             a white flag, because the flag on the touch pad is the last
-             checkpoint and Start race is a flag too. -->
         <button class="hbtn race-stop" id="btnResign" style="display:none"
                 title="Retire from this race" aria-label="Resign">
-          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2"/><path d="M4 12h6M14 12h6M12 14v6M5 5l14 14"/></svg>
+          <svg viewBox="0 0 24 24"><path d="M6 21V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17M4 21h16"/><circle cx="14.5" cy="12.5" r="0.6"/></svg>
           <span class="hbtn-label"></span>
         </button>
       </span>

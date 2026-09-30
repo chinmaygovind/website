@@ -4703,6 +4703,8 @@ function applyPhase() {
   // seconds of practice is a button that lied.
   setLabel(start, p === 'qualifying' ? 'Start race now'
                 : (S.settings.qualifying ? 'Start qualifying' : 'Start race'));
+  start.title = labelOf(start);
+  start.setAttribute('aria-label', start.title);
   // Its twin in the room drawer, for the screens where the drawer covers the
   // row. Copied rather than decided twice, so the two can never disagree.
   const sideStart = $('btnStartRaceSide');
