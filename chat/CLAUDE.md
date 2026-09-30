@@ -64,7 +64,10 @@ script, `static/dock.js`, that every logged-in page on every host loads.
   emoji, so it matches the site's line icons).
 - **`/` is the dock as a whole page** (`static/index.html`). `dock.js` goes
   full-page when `location.origin` is its own host: no tab, no close button,
-  mounted in `<main>`, and `#c<id>` opens that thread. Everywhere else the
+  mounted in `<main>`, and `#c<id>` opens that thread. At 700px and wider it is
+  two panes, the list (`side`) beside the open chat (`pane`); `render()` then
+  only redraws the pane, and the list redraws on its own data, so a typing
+  event cannot wipe the friends search box. Everywhere else the
   footer's "Open full chat" links there (new tab, so a game is not left).
 - **Toasts never take focus.** Mid-race the throttle stays held.
 - `window.cgvChat` (`open`, `invite`, `person`, `follow`, `block`, `prefs`) is

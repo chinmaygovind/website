@@ -98,7 +98,9 @@
     panel.hidden = !S.open;
     tab.classList.toggle('on', S.open);
     if (S.open) {
-      if (S.view === 'thread' && S.conv) openThread(S.conv.id); else showList();
+      if (split()) { loadList(); loadRooms(); }
+      if (S.view === 'thread' && S.conv) openThread(S.conv.id);
+      else if (split()) render(); else showList();
     }
   }
 
@@ -147,8 +149,37 @@
     ]);
   }
 
+  // The full page on a wide screen is two panes: the list beside whatever is
+  // open. The list only redraws when its data moves, so a typing event cannot
+  // wipe the friends search.
+  var side = h('div', { class: 'side' });
+  var pane = h('div', { class: 'pane' });
+  function split() { return FULL && window.innerWidth >= 700; }
+  function mount(where, kids) {
+    var t = panel;
+    if (split()) {
+      if (side.parentNode !== panel) panel.replaceChildren(side, pane);
+      t = where === 'side' ? side : pane;
+    }
+    panel.classList.toggle('split', split());
+    t.replaceChildren.apply(t, kids);
+  }
+  var wasSplit = split();
+  window.addEventListener('resize', function () {
+    if (split() === wasSplit) return;
+    wasSplit = split();
+    if (wasSplit) drawList();
+    render();
+  });
+
   function render() {
     if (!S.open) return;
+    if (split()) {
+      if (S.view === 'thread') drawThread();
+      else if (S.view === 'pick') drawPick();
+      else mount('pane', [h('div', { class: 'empty', text: 'Pick a chat, or start a new one.' })]);
+      return;
+    }
     if (S.view === 'list') drawList();
     else if (S.view === 'thread') drawThread();
     else if (S.view === 'pick') drawPick();
@@ -166,11 +197,16 @@
     S.view = 'list';
     S.conv = null;
     render();
+    loadList();
+    loadRooms();
+  }
+
+  function loadList() {
     var load = S.tab === 'chats'
       ? api('/api/conversations').then(function (j) { S.convs = j.conversations; })
       : api('/api/friends').then(function (j) { S.friends = j.friends; });
-    load.then(render).catch(function (e) { flash(e.message); });
-    loadRooms();
+    load.then(function () { if (split()) drawList(); else render(); })
+      .catch(function (e) { flash(e.message); });
   }
 
   function loadRooms() {
@@ -180,21 +216,21 @@
 
   function drawList() {
     var tabs = h('div', { class: 'tabs' }, ['chats', 'friends'].map(function (t) {
-      return h('button', { class: S.tab === t ? 'on' : '', onclick: function () { S.tab = t; showList(); },
+      return h('button', { class: S.tab === t ? 'on' : '', onclick: function () {
+        S.tab = t;
+        if (split()) { drawList(); loadList(); } else showList();
+      },
                            text: t === 'chats' ? 'Chats' : 'Friends' });
     }));
     var body = h('div', { class: 'scroll' });
     if (S.tab === 'chats') {
-      body.appendChild(h('button', { class: 'wide', text: '+ New chat', onclick: function () {
-        S.picked = {}; S.pickMode = 'new'; S.view = 'pick'; render();
-      } }));
       if (!S.convs.length) body.appendChild(h('p', { class: 'muted', text: 'No chats yet.' }));
       S.convs.forEach(function (c) {
         var other = c.is_group ? null : c.members.filter(function (m) { return m.id !== S.me.id; })[0];
         var last = c.last;
         var preview = !last ? '' : last.kind === 'invite' ? 'Game invite' :
           last.kind === 'system' ? nameOf(c, last.sender) + ' ' + last.body : last.body;
-        body.appendChild(h('button', { class: 'row' + (c.unread ? ' unread' : ''),
+        body.appendChild(h('button', { class: 'row' + (c.unread ? ' unread' : '') + (S.conv && S.conv.id === c.id ? ' sel' : ''),
                                        onclick: function () { openThread(c.id); } }, [
           h('span', { class: 'who' }, [c.is_group ? h('span', { class: 'av group', text: '👥' }) : avatar(other),
                                        other ? dot(other) : null]),
@@ -224,7 +260,10 @@
       if (!friends.length) body.appendChild(h('p', { class: 'muted', text: 'Search above to add people. They show up here with what they\'re playing.' }));
       friends.forEach(function (p) { body.appendChild(personRow(p)); });
     }
-    panel.replaceChildren(header('Chat'), tabs, body, footer());
+    var add = h('button', { class: 'mini hot', text: '+ New chat', onclick: function () {
+      S.picked = {}; S.pickMode = 'new'; S.view = 'pick'; render();
+    } });
+    mount('side', [header('Chat', null, add), tabs, body, footer()]);
   }
 
   function personRow(p) {
@@ -294,11 +333,11 @@
       req.then(function (j) { openThread(j.conversation.id); }).catch(function (e) { flash(e.message); });
     }
     drawPickSummary();
-    panel.replaceChildren(
+    mount('pane', [
       header(S.pickMode === 'add' ? 'Add people' : 'New chat', function () {
         if (S.pickMode === 'add') openThread(S.conv.id); else showList();
       }),
-      h('div', { class: 'scroll' }, [q, results]), summary, footer());
+      h('div', { class: 'scroll' }, [q, results]), summary, split() ? null : footer()]);
     setTimeout(function () { q.focus(); }, 0);
   }
 
@@ -312,12 +351,14 @@
 
   function openThread(cid) {
     S.view = 'thread';
+    if (FULL) history.replaceState(null, '', '#c' + cid);
     Promise.all([api('/api/conversations/' + cid), api('/api/conversations/' + cid + '/messages')])
       .then(function (r) {
         S.conv = r[0].conversation;
         S.msgs = r[1].messages; S.reads = r[1].reads; S.canSend = r[1].can_send; S.more = r[1].more;
         S.menu = false;
         render();
+        if (split()) drawList();
         markRead();
       }).catch(function (e) { flash(e.message); showList(); });
     if (S.rooms == null) loadRooms();
@@ -329,7 +370,7 @@
     if (!last || (S.reads[S.me.id] || 0) >= last.id) return;
     S.reads[S.me.id] = last.id;
     api('/api/conversations/' + S.conv.id + '/read', { method: 'POST', body: { message_id: last.id } })
-      .then(refreshBadge).catch(function () {});
+      .then(function () { refreshBadge(); if (split() && S.tab === 'chats') loadList(); }).catch(function () {});
   }
 
   function drawThread() {
@@ -357,12 +398,12 @@
     if (typers.length) log.appendChild(h('div', { class: 'typing',
       text: typers.map(function (u) { return nameOf(c, Number(u)); }).join(', ') + ' typing…' }));
 
-    var parts = [header(title, showList, menuBtn)];
+    var parts = [header(title, split() ? null : showList, menuBtn)];
     if (S.menu) parts.push(threadMenu(c, other));
     parts.push(log);
     parts.push(S.canSend ? composer(c) : h('div', { class: 'foot', text: 'You can\'t send messages here.' }));
-    parts.push(footer());
-    panel.replaceChildren.apply(panel, parts);
+    if (!split()) parts.push(footer());
+    mount('pane', parts);
     log.scrollTop = log.scrollHeight;
   }
 
@@ -563,7 +604,7 @@
       }
       beep();
     }
-    if (S.open && S.view === 'list' && S.tab === 'chats') showList();
+    if (S.open && S.tab === 'chats' && (split() || S.view === 'list')) loadList();
     refreshBadge();
   }
 
@@ -627,7 +668,7 @@
     return [
       ':host{all:initial}',
       '[hidden]{display:none!important}',
-      ':host(.full){display:flex;width:100%;max-width:760px}',
+      ':host(.full){display:flex;width:100%;max-width:1200px}',
       '*{box-sizing:border-box;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}',
       '.tab,.panel,.toasts{--bg:#fff;--fg:#16171a;--mute:#6b6f76;--line:#e3e4e8;--soft:#f3f4f6;--hot:#2f7cf6;--mine:#2f7cf6;--mine-fg:#fff;--bad:#d93b3b}',
       '@media (prefers-color-scheme:dark){.tab,.panel,.toasts{--bg:#1b1c20;--fg:#eceef2;--mute:#9a9ea7;--line:#2e3036;--soft:#26282d;--hot:#5b9bff;--mine:#3b82f6}}',
@@ -637,8 +678,13 @@
       '.badge{position:absolute;top:-6px;left:-6px;min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:var(--bad);color:#fff;font:700 11px/20px system-ui;text-align:center}',
       '.panel{position:fixed;right:52px;top:50%;transform:translateY(-50%);z-index:2147483001;width:360px;height:min(560px,86vh);background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.28);display:flex;flex-direction:column;overflow:hidden;font-size:14px}',
       '@media (max-width:520px){.panel{right:0;left:0;top:0;bottom:0;width:auto;height:auto;transform:none;border-radius:0}}',
-      '.panel.full{position:static;transform:none;width:100%;height:auto;z-index:auto;box-shadow:0 4px 24px rgba(0,0,0,.08)}',
+      '.panel.full{position:relative;top:auto;right:auto;left:auto;bottom:auto;transform:none;width:100%;height:auto;z-index:auto;box-shadow:0 4px 24px rgba(0,0,0,.08)}',
       '@media (max-width:520px){.panel.full{border:0;border-radius:0}}',
+      '.panel.split{flex-direction:row}',
+      '.side{width:320px;flex:none;border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}',
+      '.pane{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0}',
+      '.empty{margin:auto;color:var(--mute)}',
+      '.row.sel{background:var(--soft)}',
       '.head{display:flex;align-items:center;gap:6px;padding:10px 10px 10px 14px;border-bottom:1px solid var(--line)}',
       '.title{flex:1;min-width:0;display:flex;flex-direction:column;font-weight:700}',
       '.title small,.mid small{font-weight:400;color:var(--mute);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
