@@ -3142,6 +3142,11 @@ SHELL_MS = 5000           # a green that has hit nothing gives up
 HOMING_MS = 9000
 BANANA_MS = 45000         # a banana waits, but not for the whole race
 SHOT_HIT_R2 = 16          # 4 units, squared
+# **A banana is smaller than a shell's reach.** It sat on the same four units,
+# and the car is only 3.4 long, so a peel caught a car whose nose was well
+# short of it and one passing a whole car's width to the side. 2.5 is about
+# the car's half length plus the peel's own, so it takes driving over it.
+BANANA_HIT_R2 = 6.25      # 2.5 units, squared
 # How many ticks a shot is on the wire before it is allowed to do anything.
 # Two, so it is in two snapshots - one is enough to be sent and two is enough
 # to survive a dropped frame - and at 30Hz that is 66ms, which nobody can feel
@@ -3345,12 +3350,17 @@ ITEM_ODDS = {
     # them at all.
     "front": {"banana": 34, "green": 18, "red": 16, "boost": 18, "shield": 14},
     # In the pack: everything, weighted toward what makes a move.
-    "mid": {"red": 24, "banana": 16, "boost": 18, "green": 12, "bomb": 12,
-            "shield": 8, "star": 6, "blue": 4},
-    # Down the back: the items that exist to fix being there, and nothing that
-    # only defends a place you have not got.
-    "back": {"star": 22, "boost": 22, "red": 20, "bomb": 16, "blue": 12,
-             "green": 8},
+    "mid": {"red": 24, "banana": 14, "boost": 20, "green": 10, "bomb": 12,
+            "shield": 8, "star": 8, "blue": 4},
+    # Down the back: the items that exist to fix being there. **Boosts and
+    # stars are over half of it**, because they are the two that make up road
+    # by themselves - a red or a bomb needs a car in range, and at the back
+    # there often is not one. The green went entirely for the same reason.
+    # **And the occasional shield**, which is not defending a place here but
+    # the comeback: a car climbing through the pack is the one everybody
+    # around it is throwing at.
+    "back": {"boost": 30, "star": 28, "red": 16, "bomb": 10, "shield": 8,
+             "blue": 8},
 }
 
 
@@ -3867,9 +3877,10 @@ def _tick_shots(r, now):
         # A banana on the road is anybody's, the thrower's included, once it
         # has landed - driving into your own is the price of throwing it ahead.
         mine_too = "arc" in s and now >= s["arc"]["t"] + s["arc"]["T"] + BANANA_OWNER_MS
+        hit_r2 = BANANA_HIT_R2 if s["item"] == "banana" else SHOT_HIT_R2
         hit = next((pid for pid, c in r["cars"].items()
                     if (pid != s["owner"] or mine_too) and not c.get("gone") and
-                    sum((c["p"][i] - s["p"][i]) ** 2 for i in range(3)) < SHOT_HIT_R2), None)
+                    sum((c["p"][i] - s["p"][i]) ** 2 for i in range(3)) < hit_r2), None)
         if hit and s["item"] == "bomb":
             _blast(r, s, now)
             continue

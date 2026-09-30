@@ -546,6 +546,11 @@ with how late it was and what the rooms were doing.
     *for*: bananas and a shield in front, a red in the pack, and a star, a
     boost or a bomb at the back, which is the only place the odds can make
     catching up possible.
+    **The back is now over half boosts and stars** (30 and 28 of 100), because
+    they make up road on their own where a red or a bomb needs somebody in
+    range; its green went entirely and it gets the **occasional shield** (8),
+    which there protects the comeback rather than a place. The pack's boost and
+    star went up a little too, out of its banana and green.
   - **The browser empties its slots whenever the room does** (`clearItems`, on
     `qual_countdown`, `race_start`, `race_reset`, `race_abort`). `_open_race`
     and `_reset_race` wipe every queue without a message, and a browser still
@@ -599,7 +604,9 @@ with how late it was and what the rooms were doing.
     `_pump` at the same 30Hz the poses go out at, and `_snapshot` carries the
     list - a shell nobody can see is a hit out of nowhere. A banana is the same
     object standing still, four units behind the car and lasting `BANANA_MS`
-    rather than `SHELL_MS`. **Nothing ever hits the car that let it go**: a shell
+    rather than `SHELL_MS`, and **with a smaller hit radius** -
+    `BANANA_HIT_R2` is 2.5 units against a shell's four, since a car is only
+    3.4 long and at four a peel caught cars passing a car's width to the side. **Nothing ever hits the car that let it go**: a shell
     leaves three units off the nose against a four-unit hit radius, so without
     that clause every shot hit its own owner on the first tick - which is what
     `tests/test_powerups.py` pins.

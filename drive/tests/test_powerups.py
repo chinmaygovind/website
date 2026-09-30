@@ -1001,6 +1001,20 @@ def test_the_back_of_the_field_is_where_the_star_lives(A):
     assert "banana" not in set(rolls), "handed the one item that defends a lead"
 
 
+def test_the_back_of_the_field_is_mostly_boosts_and_stars(A):
+    """The two items that make up road on their own, with the odd shield for
+    the car everybody around it is throwing at on its way through."""
+    r = _room(A, "racing")
+    pids = _field(A, r, [900.0, 600.0, 300.0, 10.0])
+    rolls = [A._roll_item(r, pids[-1]) for _ in range(20000)]
+    share = lambda item: rolls.count(item) / float(len(rolls))
+    assert share("boost") + share("star") > 0.5
+    assert 0.03 < share("shield") < 0.15
+    assert "green" not in set(rolls)
+    front = [A._roll_item(r, pids[0]) for _ in range(20000)]
+    assert rolls.count("boost") > front.count("boost") * 1.3
+
+
 def test_the_band_is_the_running_order(A):
     r = _room(A, "racing")
     pids = _field(A, r, [900.0, 600.0, 300.0, 10.0])
@@ -1401,3 +1415,22 @@ def test_a_blast_breaks_what_you_are_holding_and_hits_you_anyway(A, monkeypatch,
     assert ("item_hit", {"item": item, "pid": "lead", "owner": "b"}) in seen
     assert not any(ev == "item_blocked" for ev, d in seen), "said it was blocked"
     assert r["held"] == {} and A._item_queue(r, "lead") == [], "the shell survived"
+
+
+@pytest.mark.parametrize("item,off,hits", [
+    ("banana", 3.0, False),     # a shell would take this one
+    ("banana", 2.0, True),      # driving over it
+    ("green", 3.0, True),
+])
+def test_a_banana_is_smaller_than_a_shell(A, monkeypatch, item, off, hits):
+    """A peel caught a car a whole car's width to the side; it takes driving
+    over it now, and a shell keeps its reach."""
+    r = _room(A)
+    _car(A, r, "b", at=(off, 0.0, 0.0))
+    seen = []
+    monkeypatch.setattr(A.socketio, "emit", lambda ev, d=None, **k: seen.append((ev, d)))
+    now = A._now_ms()
+    r["shots"].append({"id": 1, "item": item, "owner": "a", "p": [0.0, 0.0, 0.0],
+                       "v": [0.0, 0.0, 0.0], "until": now + 10000})
+    A._tick_shots(r, now)
+    assert any(ev == "item_hit" and d["pid"] == "b" for ev, d in seen) == hits
