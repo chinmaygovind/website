@@ -57,7 +57,7 @@ script, `static/dock.js`, that every logged-in page on every host loads.
 - **A host page can move the tab** with two custom properties on the shadow
   host, which inherit through `:host{all:initial}` because `all` does not reset
   custom properties: `#cgv-chat { --cgv-tab-top: auto; --cgv-tab-bottom: 24px; }`.
-  Unset, it is two thirds of the way down the right edge (`top: 67%`), on every
+  Unset, its bottom edge sits 95% of the way down the right edge, on every
   host. Drive uses it only on touch, to lift it back to 42% off the throttle.
 - **That chats are readable by the admin is said in Drive's privacy policy**, not
   in the dock's footer, which holds the full-chat link and the sound toggle (an SVG bell, not an
