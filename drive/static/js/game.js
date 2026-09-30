@@ -7641,7 +7641,7 @@ function connect() {
     const b = e.currentTarget;
     // "Cancel" throws a session away and "End race" writes a result, so the
     // confirmation says which one the second press is about to do.
-    if (!armed(b, S.racePhase === 'racing' ? 'End it?' : 'Cancel it?')) return;
+    if (!armed(b, S.racePhase === 'racing' ? 'End Race?' : 'Cancel?')) return;
     socket.emit('end_race', { code: CFG.room });
   };
   $('btnResign').onclick = (e) => {

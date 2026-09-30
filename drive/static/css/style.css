@@ -713,28 +713,38 @@ body.touch .mapbtns { display: none; }
    little extra space after them keeps them a group of their own rather than
    three more things to open. */
 .race-btns { display: flex; gap: 6px; margin-right: 6px; }
-/* The thing the room is waiting on keeps its words and its red, at the row's
-   own height so it reads as part of it. */
-.btn.start-race {
-  height: 38px; padding: 0 .9rem; font-size: .9rem; white-space: nowrap;
-  display: inline-flex; align-items: center;
+/* The thing the room is waiting on is the red square. */
+.hbtn.start-race {
   background: var(--red); color: #fff; border-color: rgba(0, 0, 0, .35);
   box-shadow: 0 6px 22px rgba(232, 69, 60, .4);
 }
+.hbtn.start-race .fill { fill: currentColor; stroke: none; }
 /* End race and Resign: icons in the row's own style, tinted so they read as
-   the two that stop something rather than open something. */
+   the two that stop something rather than open something. Hover only where
+   there is a real pointer: on a phone a tap leaves :hover stuck on, and the
+   button stayed red after it had disarmed. */
 .hbtn.race-stop { color: #ffb4aa; border-color: rgba(255, 138, 122, .5); }
-.hbtn.race-stop:hover { background: rgba(232, 69, 60, .9); color: #fff; }
+@media (hover: hover) {
+  .hbtn.race-stop:hover { background: rgba(232, 69, 60, .9); color: #fff; }
+}
 .hbtn.race-stop .hbtn-label:empty { display: none; }
-/* Armed, the icon opens out into its question - "End it?", "Resign?" - so the
-   second press is made knowing what it does. */
-.hbtn.race-stop.armed { width: auto; padding: 0 .7rem; gap: .35rem;
-                        font-size: .85rem; font-weight: 700; }
+/* Armed, the square keeps its size and the icon gives way to its question -
+   "End Race?", "Resign?" - small enough to fit, wrapping onto two lines. */
+.hbtn.race-stop.armed svg { display: none; }
+.hbtn.race-stop.armed .hbtn-label {
+  font-size: 9px; font-weight: 800; line-height: 1.05; letter-spacing: 0;
+  text-align: center; padding: 0 2px;
+}
 /* Its twin at the top of the room drawer: full width, for the screens where the
    drawer covers the row (a phone, or under 900px - the same two cases that
    stop `.hud-tr` sliding clear of it, below). Anywhere else the row is still
    showing its own, so this one stands down. */
-.btn.start-race.side-start { width: 100%; justify-content: center; margin-bottom: .5rem; }
+.btn.side-start {
+  height: 38px; padding: 0 .9rem; font-size: .9rem; white-space: nowrap;
+  display: inline-flex; align-items: center;
+  background: var(--red); color: #fff; border-color: rgba(0, 0, 0, .35);
+  width: 100%; justify-content: center; margin-bottom: .5rem;
+}
 @media (min-width: 901px) {
   body:not(.touch) #btnStartRaceSide { display: none !important; }
 }
@@ -990,11 +1000,10 @@ body.touch .maprow { gap: 10px; }
 body.touch #place b { font-size: 1.9rem; }
 body.touch #lapNum { font-size: .7rem; }
 
-/* The chat dock's tab sits halfway up the right edge on every other host. Here
-   that is beside the top-right buttons' column and over the road, and the
-   bottom right corner is empty now the race position has moved to the map - so
-   on a desktop it goes down there. Not on touch: that corner is the throttle. */
-body:not(.touch) #cgv-chat { --cgv-tab-top: auto; --cgv-tab-bottom: 24px; }
+/* The chat dock's tab sits two thirds of the way down the right edge on every
+   host, here included - except on touch, where that is the throttle, so it
+   stays up at 42%. */
+body.touch #cgv-chat { --cgv-tab-top: 42%; }
 
 #wrongWay {
   position: absolute; top: 26%; left: 50%; transform: translateX(-50%);

@@ -160,12 +160,16 @@
            a button appearing only grows it leftwards into empty sky. Which of
            them is up depends on the phase and on whether you are the host, and
            `applyPhase` is the only thing that decides.
-           Start race keeps its words and its red: it is the one thing the room
-           is waiting on. The other two are icons that cannot be undone, so each
-           asks twice - the first press opens the button out into its question
-           ("End it?", "Resign?") and the second is the one that counts. -->
+           All three are squares like the rest of the row. Start race is the
+           red one, a chequered flag, because it is the thing the room is
+           waiting on. The other two cannot be undone, so each asks twice - the
+           first press turns the square into its question ("End Race?",
+           "Resign?") and the second is the one that counts. -->
       <span class="race-btns">
-        <button class="btn start-race" id="btnStartRace" style="display:none">Start race</button>
+        <button class="hbtn start-race" id="btnStartRace" style="display:none"
+                title="Start race" aria-label="Start race">
+          <svg viewBox="0 0 24 24"><path d="M5 21V4h14v9H5"/><path class="fill" d="M5 4h3.5v3H5zM12 4h3.5v3H12zM8.5 7H12v3H8.5zM15.5 7H19v3h-3.5zM5 10h3.5v3H5zM12 10h3.5v3H12z"/></svg>
+        </button>
         <!-- The host's way out of a race that is not going to end on its own.
              Before the lights it cancels; once they are out it is the
              chequered flag. Its title and its question say which. -->
@@ -174,12 +178,12 @@
           <svg viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/></svg>
           <span class="hbtn-label"></span>
         </button>
-        <!-- Retiring: out of the door rather than a flag, because the flag on
-             the touch pad is the last checkpoint and two flags meaning two
-             different things is a guess every time. -->
+        <!-- Retiring: a steering wheel struck through - you stop driving. Not
+             a white flag, because the flag on the touch pad is the last
+             checkpoint and Start race is a flag too. -->
         <button class="hbtn race-stop" id="btnResign" style="display:none"
                 title="Retire from this race" aria-label="Resign">
-          <svg viewBox="0 0 24 24"><path d="M14 4.5H6.5v15H14"/><path d="M10.5 12H20"/><path d="M16.5 8.5 20 12l-3.5 3.5"/></svg>
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2"/><path d="M4 12h6M14 12h6M12 14v6M5 5l14 14"/></svg>
           <span class="hbtn-label"></span>
         </button>
       </span>

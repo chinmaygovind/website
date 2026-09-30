@@ -57,8 +57,11 @@ script, `static/dock.js`, that every logged-in page on every host loads.
 - **A host page can move the tab** with two custom properties on the shadow
   host, which inherit through `:host{all:initial}` because `all` does not reset
   custom properties: `#cgv-chat { --cgv-tab-top: auto; --cgv-tab-bottom: 24px; }`.
-  Unset, it is halfway up the right edge (`top: 42%`). Drive uses it to put the
-  tab in the bottom right on a desktop, where its race HUD leaves room.
+  Unset, it is two thirds of the way down the right edge (`top: 67%`), on every
+  host. Drive uses it only on touch, to lift it back to 42% off the throttle.
+- **That chats are readable by the admin is said in Drive's privacy policy**, not
+  in the dock's footer, which only holds the sound toggle (an SVG bell, not an
+  emoji, so it matches the site's line icons).
 - **Toasts never take focus.** Mid-race the throttle stays held.
 - `window.cgvChat` (`open`, `invite`, `person`, `follow`, `block`, `prefs`) is
   how the profile buttons and the settings "Messages" box drive it. Both stay
