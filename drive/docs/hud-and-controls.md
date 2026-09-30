@@ -1110,5 +1110,6 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   freely licensable thing to Formula 1's own display face, which is proprietary.
   `--display` is headings and buttons, `--sans` is body text, both the same family.
   **This is Drive only** - the landing page and the other three games still use xkcd
-  Script. Changing the font means changing `sw.js`'s precache list too.
+  Script. Changing the font means changing `sw.js`'s precache list too. **600 and 900 are inlined in `style.css`** and so are not in that list - see
+  `pages-and-boards.md` on the home page for why.
 

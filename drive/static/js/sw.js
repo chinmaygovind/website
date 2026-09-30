@@ -19,9 +19,7 @@ const ASSETS = [
   "/static/js/menumusic.js",
   "/static/js/vendor/three.module.js",
   "/static/fonts/titillium-400.woff2",
-  "/static/fonts/titillium-600.woff2",
   "/static/fonts/titillium-700.woff2",
-  "/static/fonts/titillium-900.woff2",
   "/static/img/icon-192.png",
   "/static/img/icon.svg",
 ];

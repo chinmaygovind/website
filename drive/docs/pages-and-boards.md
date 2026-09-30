@@ -42,6 +42,18 @@ the track cards, `/account`, `/leaderboard`, the nav, or the in-game board panel
   by driving one. The loop is `tools/shoot_video.py loop` (see its docstring),
   re-encoded at CRF 32 for the web; `home.jpg` is its first frame, and is the
   poster *and* what a `prefers-reduced-motion` visitor sees instead.
+  **The menu used to flicker on an iPhone, twice, for two reasons** (Sep 2026,
+  both found by recording the page in Playwright's WebKit through a throttled
+  proxy, which is the only way to see either one on this machine):
+  - **Late font.** Titillium was only discovered after `style.css` parsed, so
+    the menu drew in the fallback face and swapped. 600 and 900, the two the
+    hero is set in, are now inlined in `style.css` as `data:` URIs.
+  - **The video starting.** When the first frame of `home.mp4` replaced the
+    poster, Safari promoted the text over it to a new compositing layer and
+    repainted it a beat late: the wordmark and menu went blank for ~0.4s about
+    a second in, every time, and never with the video blocked. `.hero-in` and
+    `.hero-more` carry `will-change: transform` so that layer exists from the
+    first paint. Taking it off brings the blank back; check it with the video.
 - **Solo is `/solo`, and the track is something you change from inside it.** There is
   no "pick a track" page any more: `/solo` opens whatever you were last driving (kept
   in the session, so the first paint is right) and the **track switcher** - the map
