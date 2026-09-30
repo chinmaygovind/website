@@ -947,17 +947,18 @@ body.touch .hud-tl > .card:first-child { width: 12rem; }
 .st-elo.down { color: #ff8a7a; }
 .elo-line { margin-top: .4rem; font-size: .85rem; color: #cfd7e3; }
 
-/* The race position: one number, big, in a corner of its own. No card behind
-   it - a panel would make it a thing to read rather than a thing to glance at,
-   and at this size the drop shadow is enough to hold it against a bright sky. */
+/* The race position: one number, big, beside the map. No card behind it - a
+   panel would make it a thing to read rather than a thing to glance at, and at
+   this size the drop shadow is enough to hold it against a bright sky. It was
+   alone in the bottom right corner on a desktop until Sep 2026; the phone had
+   it beside the map already, and that read better, so both do now. */
+.maprow { display: flex; align-items: flex-start; gap: 12px; }
 #place {
-  position: absolute; right: calc(16px + env(safe-area-inset-right, 0px));
-  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
-  display: flex; flex-direction: column; align-items: flex-end;
-  pointer-events: none; color: #fff;
+  display: flex; flex-direction: column; align-items: flex-start;
+  padding-top: 2px; pointer-events: none; color: #fff;
 }
 #place b {
-  font-family: var(--mono); font-size: 3.4rem; font-weight: 700; line-height: .95;
+  font-family: var(--mono); font-size: 3rem; font-weight: 700; line-height: .95;
   letter-spacing: -.03em; text-shadow: 0 3px 14px rgba(0, 0, 0, .75);
 }
 /* The podium in the medals' own three colours, everything else white. It is
@@ -978,24 +979,16 @@ body.touch .hud-tl > .card:first-child { width: 12rem; }
 #place.p1 b { color: #ffd76a; }
 #place.p2 b { color: #d8dde6; }
 #place.p3 b { color: #e0a06a; }
-/* **On a phone it goes to the top, beside the map.** The bottom right corner
-   is the throttle, and the two things you look *up* for - where am I on the
-   track, and where am I in the race - belong together where the eye already
-   goes. Left of centre, next to the map rather than over it, so neither has
-   to be read past the other. */
-/* **Beside the map, in the map's own row.** `movePlaceByMap` puts it there on
-   touch; all this does is stop it being positioned against the screen. It was
-   `left: 160px` - the map's width plus a gap *on one phone* - and on any other
-   it stood off in the middle of the windscreen with nothing near it. */
-body.touch .hud-bl { flex-direction: row; align-items: flex-start; gap: 10px; }
-body.touch #place {
-  position: static; align-items: flex-start; gap: 0; padding-top: 2px;
-}
+/* On a phone the map is 118px, so the number and the lap come down with it. */
+body.touch .maprow { gap: 10px; }
 body.touch #place b { font-size: 1.9rem; }
-/* On a phone it stays exactly where it is - directly under the ordinal, in the
-   map's row - which is the whole of what was asked of it. Only the size comes
-   down, with the number it sits under. */
 body.touch #lapNum { font-size: .7rem; }
+
+/* The chat dock's tab sits halfway up the right edge on every other host. Here
+   that is beside the top-right buttons' column and over the road, and the
+   bottom right corner is empty now the race position has moved to the map - so
+   on a desktop it goes down there. Not on touch: that corner is the throttle. */
+body:not(.touch) #cgv-chat { --cgv-tab-top: auto; --cgv-tab-bottom: 24px; }
 
 #wrongWay {
   position: absolute; top: 26%; left: 50%; transform: translateX(-50%);

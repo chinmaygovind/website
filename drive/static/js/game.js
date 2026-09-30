@@ -1597,7 +1597,6 @@ function bindInput() {
     // *is* a pad to move them to - and a phone that learns it is a phone after
     // the slots have been placed is the whole class of bug this avoids.
     moveItemsToPad();
-    movePlaceByMap();
   }
 
   $('btnSettings').onclick = () => toggleMenu();
@@ -2726,22 +2725,6 @@ function moveItemsToPad() {
   const hud = $('itemHud');
   if (!row || !hud || !document.body.classList.contains('touch')) return;
   row.insertBefore(hud, row.firstChild);
-}
-
-/**
- * And on a phone the race position goes *beside the map*, in the same row.
- *
- * It was `left: 160px`, which is the map's width plus a gap on the screen it
- * was measured on and a gap of some other size on every other screen - the map
- * is 118px on a phone and the card around it is not, so the number sat out in
- * the middle of the windscreen with nothing near it. In the row it is next to
- * the map by construction, whatever either of them is.
- */
-function movePlaceByMap() {
-  const bl = document.querySelector('.hud-bl');
-  const place = $('place');
-  if (!bl || !place || !document.body.classList.contains('touch')) return;
-  bl.appendChild(place);
 }
 
 /** The three you can hold out behind you. Mirrors `HOLDABLE` in `app.py`. */

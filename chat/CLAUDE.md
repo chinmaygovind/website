@@ -54,6 +54,11 @@ script, `static/dock.js`, that every logged-in page on every host loads.
   WASD in a message would drive the car. The shadow root stops `keydown` and
   `keypress`; `keyup` is let through so a key held when focus arrived still
   releases.
+- **A host page can move the tab** with two custom properties on the shadow
+  host, which inherit through `:host{all:initial}` because `all` does not reset
+  custom properties: `#cgv-chat { --cgv-tab-top: auto; --cgv-tab-bottom: 24px; }`.
+  Unset, it is halfway up the right edge (`top: 42%`). Drive uses it to put the
+  tab in the bottom right on a desktop, where its race HUD leaves room.
 - **Toasts never take focus.** Mid-race the throttle stays held.
 - `window.cgvChat` (`open`, `invite`, `person`, `follow`, `block`, `prefs`) is
   how the profile buttons and the settings "Messages" box drive it. Both stay

@@ -879,29 +879,25 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   screenshot: the map's box is identical before the countdown, during it, and
   at speed.
 
-- **The race position is an ordinal in a corner of its own.** It was a card in
-  the top-left column reading `3/4` over the word *Position* - a fraction, in
-  the corner that already holds the track name and the standings, so answering
-  "where am I" meant reading three things. It is `2nd` now, 3.4rem, bottom
-  right, opposite the clock, with `of 6` small underneath because the field
-  size is the context rather than the number; first place is gold, which is the
-  one position worth seeing without reading. **On a phone the bottom right is
-  the throttle**, so it moves under the button row at the top right - the only
-  other part of the screen nothing is ever held over.
-  - **It lives outside `.hud-l`, and that is load-bearing.** The left-hand
-    column is `position: absolute`, so anything absolutely positioned *inside*
-    it is anchored to the column rather than to the screen - which put this
-    card, with its `bottom`/`right`, in the bottom-left corner underneath the
-    minimap, painted over and invisible on every desktop screen. It is a
-    sibling of the column now. On touch `movePlaceByMap` still appends it into
-    `.hud-bl`, which is the one layout where it does belong in there.
+- **The race position is an ordinal beside the minimap, on every device.** It
+  was a card in the top-left column reading `3/4` over the word *Position* - a
+  fraction, in the corner that already holds the track name and the standings,
+  so answering "where am I" meant reading three things. It is `2nd` now, big
+  (3rem, 1.9rem on touch), with the podium in medal colours. It then spent a
+  while bottom right on a desktop, opposite the clock, while a phone had it
+  beside the map because its bottom right is the throttle - and **the phone's
+  was the one that read better**, so in Sep 2026 the desktop followed it. It
+  is simply the second child of `.maprow`, a row in the template holding the
+  map card and this, so there is no JS moving it (`movePlaceByMap` is gone)
+  and nothing positioned against the screen. That freed the desktop's bottom
+  right corner for the chat tab (`body:not(.touch) #cgv-chat` in `style.css`;
+  see `chat/CLAUDE.md`).
   - **`LAP 2/3` sits directly under it**, small and quiet, and only when the
     race has more than one lap - see `_race_laps` in `docs/rooms-and-races.md`.
     They are the two halves of one question, where am I and how much is left,
-    so they are read in one glance; anywhere else would make that two. It is
-    the same element in both layouts, which is why it is a child of the card
-    rather than positioned of its own accord - the phone move carries it along
-    for free. Hidden at one lap and on the twenty-one point-to-point tracks,
+    so they are read in one glance; anywhere else would make that two. It is a
+    child of the position card rather than positioned of its own accord, so it
+    goes wherever the number does. Hidden at one lap and on the twenty-one point-to-point tracks,
     where `LAP 1/1` is a line that never changes, and tabular so `9/10` does
     not shift under `1/10` on the last lap. Crossing the line mid-race gets the
     checkpoint chime and a toast rather than the finish fanfare: nothing has

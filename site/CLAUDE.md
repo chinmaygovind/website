@@ -828,7 +828,7 @@ and the OS is ignored.
 
 The page is set entirely in xkcd Script, so how it loads *is* how the page loads.
 It used to flash: every visitor, on every visit, saw a moment of Comic Sans before
-it snapped into the right face. Three things caused that and all three are fixed —
+it snapped into the right face. The fixes below are layered —
 if you touch one, know what the other two are doing.
 
 - **The font was never cached.** `send_from_directory` defaults to
@@ -843,15 +843,25 @@ if you touch one, know what the other two are doing.
   wrong font first. `block` holds the text invisible instead and paints once.
   `optional` is the trap: it never swaps in late, so one slow first load leaves
   the whole page in Comic Sans until a reload.
-- **`<link rel="preload">` in the head**, because otherwise the font is only
-  discovered after the stylesheet is parsed and something using it is laid out.
-  It needs `crossorigin` even though the font is same-origin — fonts fetch in
-  CORS mode, and a preload whose mode does not match the real request is
-  discarded and fetched twice.
+- **The characters this page uses are inlined; the full font is a fallback.**
+  The rest of this list was not enough on a phone: a first visit over cellular
+  still waited on 139KB with the text held invisible, so the tile labels
+  vanished for a second while their icons were already drawn. The page's own
+  text needs ~100 glyphs (printable ASCII plus `× ‑ – — ‹ › ★`), which subset
+  to **29KB**, and that sits in the first `@font-face` as a base64 `data:` URI
+  with a matching `unicode-range` - so the font is there at first paint and the
+  file is never fetched. The second `@font-face` is the full file with the
+  *complement* range, so an accented artist name from Spotify still gets
+  the real face (lazily, under `block`). The old `<link rel="preload">` is gone
+  on purpose: it would fetch 139KB the page no longer needs. **If you add a
+  character outside the range** it still renders, it just costs the full
+  download; to fold it in, widen both ranges and rebuild:
+  `python3 -m fontTools.subset site/fonts/xkcd-script.woff2 --unicodes=<range>
+  --flavor=woff2 --layout-features='*' --output-file=page.woff2`, then base64
+  it into the `src`. Tested by serving the page with `/fonts/` hanging forever:
+  it renders correctly and never requests it.
 
-Measured on a throttled link (50KB/s, 400ms RTT) the text is correct at 1.5s
-while the tile icons are still arriving; the preload is what puts the font ahead
-of them. `.woff2` is the same font 23% smaller (182KB → 139KB); the `.woff` stays
+`.woff2` is the same font 23% smaller (182KB → 139KB); the `.woff` stays
 beside it as the second `src` and is what `accounts/`, `ers/` and `kot/` still
 use — **those three are still on `swap` and still ask for the `.woff`**, so they
 flash the way this page used to. `drive/` is already `block`, for its own reason.
