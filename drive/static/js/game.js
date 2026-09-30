@@ -2298,28 +2298,53 @@ function shotMesh(kind) {
  * **Keyed by the shot's id, not by its place in the list.** A shell is one
  * object flying down a road for several seconds, but the list it arrives in
  * changes order every time one is fired or hits something - so binding a mesh
- * to a list position made shells swap places with each other mid-flight, which
- * is most of what "choppy" was. With an id, a mesh belongs to a shell for that
- * shell's whole life, and the position that arrives at 30Hz is somewhere for
- * it to be *going* rather than somewhere to be put.
+ * to a list position made shells swap places with each other mid-flight.
+ *
+ * **Drawn where it is now, not chased to where it was.** A mesh easing toward
+ * the last position sat five units behind the server's shell at 75 units a
+ * second, so a hit landed with the shell visibly short of the car. Now each
+ * one is extrapolated along its velocity from the snapshot's own time
+ * (`shotTruth`), the same way a rival car is, and whatever a new snapshot
+ * corrects is kept as an offset and eased out (`SHOT_SETTLE`) rather than
+ * jumped. A new shot's offset starts it at the nose of the car that threw it
+ * as *this* screen draws that car - which on the thrower's own screen is a
+ * round trip ahead of where the server put it.
  */
-function renderShots(shots) {
+function renderShots(shots, t) {
   const list = shots || [];
   if (!S.shots) { S.shots = new THREE.Group(); S.shotById = new Map(); }
   if (S.shots.parent !== S.renderer.scene) S.renderer.scene.add(S.shots);
   const seen = new Set();
+  const now = serverNow();
   for (const sh of list) {
     const id = sh[4] || 0;
     seen.add(id);
     let m = S.shotById.get(id);
-    if (!m) {
+    const fresh = !m;
+    if (fresh) {
       m = shotMesh(sh[0]);
-      m.position.set(sh[1], sh[2], sh[3]);     // born where it is, not at 0,0,0
+      m.userData.off = new THREE.Vector3();
       S.shots.add(m);
       S.shotById.set(id, m);
     }
-    m.userData.to = m.userData.to || new THREE.Vector3();
-    m.userData.to.set(sh[1], sh[2], sh[3]);
+    const d = m.userData;
+    d.p = [sh[1], sh[2], sh[3]];
+    d.v = sh.length > 7 ? [sh[5], sh[6], sh[7]] : [0, 0, 0];
+    d.t = t || now;
+    d.owner = sh[8];
+    d.path = sh[9] || null;
+    const at = shotTruth(m, now);
+    if (fresh) {
+      m.position.copy(at);
+      const car = drawnCar(d.owner);
+      if (car && car.fwd && car.pos.distanceTo(at) < SHOT_NOSE_REACH) {
+        const way = _shotTmp.copy(at).sub(car.pos).dot(car.fwd) >= 0 ? 1 : -1;
+        m.position.copy(car.pos).addScaledVector(car.fwd, way * 2.6);
+        if (car.up) m.position.addScaledVector(car.up, 0.5);
+      }
+    }
+    d.off.copy(m.position).sub(at);
+    if (d.off.lengthSq() > SHOT_SNAP * SHOT_SNAP) d.off.set(0, 0, 0);
   }
   for (const [id, m] of S.shotById) {
     if (seen.has(id)) continue;
@@ -2328,16 +2353,56 @@ function renderShots(shots) {
   }
 }
 
+// How fast a correction is eased out, per second. 10 is a new shell out of
+// the thrower's nose onto its true line in about a quarter of a second.
+const SHOT_SETTLE = 10;
+// A correction bigger than this is a different place, not a wobble: snapped.
+const SHOT_SNAP = 25;
+// A shot first seen this close to its owner is one they have just thrown.
+const SHOT_NOSE_REACH = 20;
+// How far past its snapshot a shot is extrapolated, at most, in seconds.
+const SHOT_AHEAD_S = 0.2;
+// How many times a blue goes round its man, and how wide, while it circles.
+const BLUE_TURNS = 2, BLUE_RADIUS = 3.2;
+const _shotTmp = new THREE.Vector3(), _shotAt = new THREE.Vector3();
+
+/** A car as this screen draws it: your own, or a rival's. */
+function drawnCar(pid) {
+  if (CFG.me && pid === CFG.me.pid) return S.car;
+  return (pid && S.remotes.get(pid)) || null;
+}
+
 /**
- * Fly them, between the thirty snapshots a second that say where they are.
- *
- * The same problem every other car on the road has and the same shape of
- * answer, one order of magnitude simpler: a shell has no input to predict and
- * no collision to respect, so chasing the last known position at a fixed rate
- * is enough. `SHOT_CHASE` is tuned so that at 30Hz the mesh is a couple of
- * units behind the truth at most, which nobody can see, and never steps.
+ * Where a shot is at server time `now`, before its eased offset. Three cases,
+ * and the two with a `path` are worked out whole rather than from samples:
+ * a blue circling its man goes round the car *as drawn here*, which is the
+ * only way the leader sees it round their own car rather than a car length
+ * behind it; a banana's lob is the server's `_arc_point`, the same formula.
  */
-const SHOT_CHASE = 16;
+function shotTruth(m, now) {
+  const d = m.userData, path = d.path, out = _shotAt;
+  if (path && path.o != null) {
+    const car = drawnCar(path.o);
+    if (car) {
+      const k = Math.min(1, Math.max(0, (now - path.t) / path.T));
+      const a = k * BLUE_TURNS * Math.PI * 2;
+      const r = BLUE_RADIUS * (1 - 0.6 * k * k);
+      // Down out of the sky over the circle and onto the roof at the end.
+      return out.set(car.pos.x + Math.cos(a) * r,
+                     car.pos.y + 1 + (path.h - 1) * (1 - k) * (1 - k) + 1.5 * (1 - k),
+                     car.pos.z + Math.sin(a) * r);
+    }
+  }
+  if (path && path.a) {
+    const k = Math.min(1, Math.max(0, (now - path.t) / path.T));
+    const h = 4 * path.h * k * (1 - k);
+    return out.set(path.a[0] + (path.b[0] - path.a[0]) * k + path.n[0] * h,
+                   path.a[1] + (path.b[1] - path.a[1]) * k + path.n[1] * h,
+                   path.a[2] + (path.b[2] - path.a[2]) * k + path.n[2] * h);
+  }
+  const age = Math.min(SHOT_AHEAD_S, Math.max(0, (now - d.t) / 1000));
+  return out.set(d.p[0] + d.v[0] * age, d.p[1] + d.v[1] * age, d.p[2] + d.v[2] * age);
+}
 
 /**
  * Being hit: the whole of it, in one place.
@@ -2459,16 +2524,23 @@ function shellWarning(now) {
 
 function moveShots(dt) {
   if (S.shotById) {
-    const k = 1 - Math.exp(-SHOT_CHASE * dt);
+    const now = serverNow();
+    const ease = Math.exp(-SHOT_SETTLE * dt);
     for (const m of S.shotById.values()) {
-      if (m.userData.to) m.position.lerp(m.userData.to, k);
+      const d = m.userData;
+      d.off.multiplyScalar(ease);
+      m.position.copy(shotTruth(m, now)).add(d.off);
+      if (d.path && d.path.a && now < d.path.t + d.path.T) {
+        m.rotateX(-11 * dt);                // end over end through the lob
+        continue;
+      }
       // **Stand on the road, not on the world.** A banana lying flat while the
       // road banks away under it - Playground's walls, Spa's Eau Rouge, any
       // loop - looks like a bug in a way a floating shell does not, because
       // the thing it is lying on is right there. The collider knows which way
       // is up here; ask it, and lean the mesh that way.
       layOnRoad(m, dt);
-      m.rotateOnAxis(UP_LOCAL, (m.userData.spin || 0) * dt);
+      m.rotateOnAxis(UP_LOCAL, (d.spin || 0) * dt);
     }
   }
   if (S.blasts) moveBlasts(dt);
@@ -2574,16 +2646,16 @@ const BLAST_S = 0.65;
  * nowhere, and standing next to one that catches somebody *else* is the other
  * half of what makes the item worth throwing.
  */
-function addBlast(p, radius) {
+function addBlast(p, radius, blue) {
   if (!S.renderer) return;
   // Two shells: a white-hot core that goes first and an orange ball that
   // outlives it, which is what makes it read as heat rather than as a balloon.
   const g = new THREE.Group();
   const ball = new THREE.Mesh(new THREE.IcosahedronGeometry(radius || 16, 2),
-                              new THREE.MeshBasicMaterial({ color: 0xff7a18, transparent: true,
+                              new THREE.MeshBasicMaterial({ color: blue ? 0x2f7fe8 : 0xff7a18, transparent: true,
                                                             opacity: 0.6, depthWrite: false }));
   const core = new THREE.Mesh(new THREE.IcosahedronGeometry((radius || 16) * 0.55, 1),
-                              new THREE.MeshBasicMaterial({ color: 0xfff0b0, transparent: true,
+                              new THREE.MeshBasicMaterial({ color: blue ? 0xd6ecff : 0xfff0b0, transparent: true,
                                                             opacity: 0.9, depthWrite: false }));
   g.add(ball, core);
   g.position.set(p[0], p[1], p[2]);
@@ -6642,9 +6714,9 @@ function drawMinimap() {
         g.moveTo(x, y - 5.4); g.lineTo(x + 5.4, y);
         g.lineTo(x, y + 5.4); g.lineTo(x - 5.4, y);
       } else {
-        // Pointed along its last step, which the mesh is already chasing.
-        const to = m.userData.to || m.position;
-        const a = Math.atan2(to.z - m.position.z, to.x - m.position.x) || 0;
+        // Pointed the way it is flying.
+        const v = m.userData.v || [0, 0, 0];
+        const a = Math.atan2(v[2], v[0]) || 0;
         [[6.4, 0], [-3.6, 4.2], [-3.6, -4.2]].forEach(([dx, dz], i) => {
           const px = x + dx * Math.cos(a) - dz * Math.sin(a);
           const py = y + dx * Math.sin(a) + dz * Math.cos(a);
@@ -7511,7 +7583,10 @@ function connect() {
   });
   socket.on('item_blast', (d) => {
     if (!d) return;
-    addBlast(d.p, d.r);
+    // A blue comes down on a car, so the flash goes where that car is drawn.
+    const on = d.item === 'blue' && drawnCar(d.pid);
+    if (on) d.p = [on.pos.x, on.pos.y, on.pos.z];
+    addBlast(d.p, d.r, d.item === 'blue');
     (S.mapBlasts = S.mapBlasts || []).push({ p: d.p, r: d.r || 16,
                                              t: performance.now() });
     // Heard and felt wherever you are: the flash is the place's, not a car's,
@@ -7527,6 +7602,18 @@ function connect() {
     // throwing. The victim's half of this is the shove, below.
     if (d && CFG.me && d.owner === CFG.me.pid && d.pid !== CFG.me.pid) {
       toast((HIT_SAID[d.item] || 'Hit') + ' ' + nameOf(d.pid) + '!');
+    }
+    // **Somebody else's hit, seen.** Their tumble reaches this screen a round
+    // trip later on their poses; the sparks are on the car the moment the
+    // server says so, which is where the shell just was.
+    const them = d && S.remotes.get(d.pid);
+    if (them && S.renderer) {
+      for (const up of [6, 3]) {
+        S.renderer.smoke(them.pos.clone().setY(them.pos.y + 0.5),
+                         new THREE.Vector3((Math.random() - 0.5) * 8, up,
+                                           (Math.random() - 0.5) * 8), 'spark');
+      }
+      if (them.pos.distanceTo(S.car.pos) < 40) S.sound.itemHit();
     }
     if (!d || !CFG.me || d.pid !== CFG.me.pid || S.car.star > 0) return;
     // **And your own, named the other way round.** Being spun by something you
@@ -7762,7 +7849,7 @@ function onPoses(snap) {
   // worked out once when one arrives instead of once a frame off whichever one
   // happens to be current.
   S.order = orderFromSnapshot(snap);
-  renderShots(snap.shots);
+  renderShots(snap.shots, snap.t);
   for (const pid in snap.cars) {
     if (CFG.me && pid === CFG.me.pid) continue;
     const a = snap.cars[pid];

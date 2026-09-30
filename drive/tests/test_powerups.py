@@ -231,16 +231,102 @@ def test_a_bomb_thrown_backwards_is_just_lobbed(A, bend):
     assert r["shots"][0]["v"][2] == A.BOMB_SPEED
 
 
-def test_a_banana_thrown_backwards_is_a_banana_dropped(A, bend):
-    """It is the one item whose backwards is *standing still*: dropping one on
-    the road behind you is the whole of what a banana is for."""
+def test_a_banana_thrown_backwards_is_tossed_behind(A, bend):
+    """Tossed back in an arc, not flung - and a shell thrown back still flies."""
     r = _room(A)
     _car(A, r, "a")
     A._fire(r, "a", "banana", back=True)
     A._fire(r, "a", "green", back=True)
     banana, shell = r["shots"]
-    assert banana["p"][2] > 0 and banana["v"] == [0.0, 0.0, 0.0]
+    assert banana["p"][2] > 0 and banana["v"][2] == A.BANANA_TOSS
     assert shell["p"][2] > 0 and shell["v"][2] > 0, "a shell thrown back still flies"
+
+
+def _along_x(A, r, pid, x=35.0, speed=0.0):
+    c = _car(A, r, pid, at=(x, 0.0, 0.0))
+    c["q"] = [0.0, -0.7071, 0.0, 0.7071]          # pointing along +X, the road
+    c["v"] = [speed, 0.0, 0.0]
+    return c
+
+
+@pytest.mark.parametrize("back", [False, True])
+def test_a_banana_is_lobbed_in_an_arc_and_sticks(A, bend, monkeypatch, back):
+    """Up, over and down onto the road - ahead of a car at speed, or behind it
+    - and then it does not move again."""
+    r = _room(A)
+    _along_x(A, r, "a", speed=48.0)
+    t = [1_700_000_000_000]
+    monkeypatch.setattr(A, "_now_ms", lambda: t[0])
+    A._fire(r, "a", "banana", back=back)
+    s = r["shots"][0]
+    start = list(s["p"])
+    heights = []
+    for step in range(1, 40):
+        t[0] += 33
+        A._tick_shots(r, t[0])
+        heights.append(s["p"][1])
+    assert max(heights) > start[1] + 2, "never went up"
+    landed = s["p"]
+    assert abs(landed[1] - start[1]) < 0.01, "did not come back down to the road"
+    assert s["pv"] == [0.0, 0.0, 0.0], "still moving after it landed"
+    # Forwards it lands well ahead of where it left; backwards, it is behind
+    # the car by then even though the car was doing 48.
+    assert landed[0] > start[0] + 20 if not back else landed[0] < 35.0 + 48 * 0.65
+    assert A._snapshot(r)["shots"][0][9] is None, "still sending the arc after it landed"
+
+
+def test_a_blue_flies_over_everybody_and_comes_down_on_the_leader(A, bend, monkeypatch):
+    """Up out of reach, past the car in the way, round the leader, then down."""
+    r = _room(A)
+    _along_x(A, r, "a", x=10.0)["prog"] = 10.0
+    _along_x(A, r, "mid", x=25.0)["prog"] = 25.0       # sitting right in its path
+    _along_x(A, r, "lead", x=90.0)["prog"] = 90.0
+    seen = []
+    monkeypatch.setattr(A.socketio, "emit", lambda ev, d, **k: seen.append((ev, d)))
+    t = [1_700_000_000_000]
+    monkeypatch.setattr(A, "_now_ms", lambda: t[0])
+    A._fire(r, "a", "blue", "lead")
+    s = r["shots"][0]
+    orbiting = False
+    for step in range(1, 120):
+        t[0] += 33
+        A._tick_shots(r, t[0])
+        if not r["shots"]:
+            break
+        if s.get("orbit_at") is not None:
+            orbiting = True
+            assert A._snapshot(r)["shots"][0][9]["o"] == "lead"
+        elif step > 20:
+            assert s["p"][1] > A.BLUE_ALT, "not up in the air"
+    assert orbiting, "never circled"
+    hit = [d["pid"] for ev, d in seen if ev == "item_hit"]
+    assert hit == ["lead"], hit
+    assert any(ev == "item_blast" and d["item"] == "blue" and d["pid"] == "lead"
+               for ev, d in seen), "no blue explosion"
+
+
+def test_a_shell_leaves_from_where_the_car_is_now(A, bend):
+    """A pose is a pose interval old; at speed that is a car length."""
+    r = _room(A)
+    c = _along_x(A, r, "a", speed=50.0)
+    c["ts"] = A._now_ms() - 100                  # the last pose is 100ms old
+    A._fire(r, "a", "green")
+    assert r["shots"][0]["p"][0] > 35.0 + 5 + 4, "launched from where it used to be"
+
+
+def test_a_shell_moves_smoothly_between_stations(A, bend, monkeypatch):
+    """No 3.5-unit steps: every tick is about the same distance."""
+    r = _room(A)
+    _along_x(A, r, "a")
+    monkeypatch.setattr(A.socketio, "emit", lambda *a, **k: None)
+    A._fire(r, "a", "green")
+    now = A._now_ms()
+    xs = []
+    for step in range(1, 12):
+        A._tick_shots(r, now + step * 33)
+        xs.append(r["shots"][0]["p"][0])
+    steps = [b - a for a, b in zip(xs[3:], xs[4:])]
+    assert max(steps) - min(steps) < 0.5, steps
 
 
 def test_a_shell_thrown_backwards_keeps_its_own_clock(A, bend, monkeypatch):
@@ -355,15 +441,16 @@ def test_the_shots_ride_the_pose_snapshot(A, bend):
     because a browser has to tell this shell from the one beside it."""
     r = _room(A)
     _car(A, r, "a")
-    A._fire(r, "a", "banana", back=True)          # dropped: it sits where it lands
+    A._fire(r, "a", "banana", back=True)
     shots = A._snapshot(r)["shots"]
-    assert shots == [["banana", 0.0, 0.0, 4.0, r["shots"][0]["id"]]]
+    assert shots[0][:5] == ["banana", 0.0, 1.0, 4.0, r["shots"][0]["id"]]
+    assert shots[0][8] == "a" and shots[0][9]["T"] == A.BANANA_FLY_MS
     A._fire(r, "a", "green")
     ids = [sh[4] for sh in A._snapshot(r)["shots"]]
     assert len(set(ids)) == 2, "two shots with one id"
 
 
-def test_a_new_race_starts_with_no_shells_or_items_in_it(A):
+def test_a_new_race_starts_with_no_shells_or_items_in_it(A, bend):
     r = _room(A)
     _car(A, r, "a")
     r.setdefault("items", {})["a"] = ["red"]
@@ -846,7 +933,7 @@ def test_the_handbrake_throws_it_out_behind_you(A, bend, monkeypatch, item):
     assert shot["target"] is None, "a shell thrown backwards still went hunting"
 
 
-def test_a_banana_is_thrown_by_default_and_dropped_on_request(A, monkeypatch):
+def test_a_banana_is_thrown_by_default_and_tossed_back_on_request(A, bend, monkeypatch):
     """The same sign as every other item, through the press rather than the
     `_fire` call: holding the throttle throws it, letting go drops it."""
     r = _room(A)
@@ -854,10 +941,9 @@ def test_a_banana_is_thrown_by_default_and_dropped_on_request(A, monkeypatch):
     monkeypatch.setattr(A.socketio, "emit", lambda *a, **k: None)
     A._item_queue(r, "a").extend(["banana", "banana"])
     A._spend_item(r, "a")                     # lobbed ahead
-    A._spend_item(r, "a", back=True)          # dropped behind
-    lobbed, dropped = r["shots"]
-    assert lobbed["p"][2] < 0 and dropped["p"][2] > 0
-    assert dropped["v"] == [0.0, 0.0, 0.0], "a dropped banana should sit still"
+    A._spend_item(r, "a", back=True)          # tossed behind
+    lobbed, tossed = r["shots"]
+    assert lobbed["p"][2] < 0 and tossed["p"][2] > 0
 
 
 def test_a_green_shell_bounces_off_the_wall_instead_of_leaving(A, bend, monkeypatch):

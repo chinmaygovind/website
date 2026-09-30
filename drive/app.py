@@ -3149,6 +3149,30 @@ SHOT_LEAN = 24.0
 PAST_STATIONS = 3
 SHOT_WALL = 0.6           # how far inside the kerb a bouncing shell turns
 SHOT_LIFT = 0.9           # how far off the road a shell rides
+# **The blue flies over the field, circles the leader and comes down on them.**
+# It used to ride the road at a shell's height and spin out the first car it
+# touched on the way, which is a red shell that happens to be blue. Up in the
+# air nothing can hit it and it can hit nobody until it arrives - and the
+# circling is the second of warning that makes it a blue shell. The browser
+# draws the circle round the car it can see (`shotTruth`); the server only
+# keeps time.
+BLUE_ALT = 9.0            # how far above the road it flies
+BLUE_RISE_MS = 500        # climbing to that off the thrower's roof
+BLUE_REACH = 14.0         # this close to its man it stops chasing and circles
+BLUE_ORBIT_MS = 1200      # circling before it comes down
+BLUE_BLAST = 7.0          # and what the explosion catches
+# A blue closes on the leader at 65 units a second, so HOMING_MS is under 600
+# units of road - a blue from the back of a long track timed out and vanished.
+BLUE_MS = 20000
+# **A banana is lobbed, both ways, and sticks where it lands.** Forwards it is
+# thrown on top of the car's own speed so it lands ahead of you; backwards it
+# is tossed against it, so it lands a little behind. The arc is worked out
+# whole at the throw (`_fire`) and both ends draw it from the same numbers.
+BANANA_LOB = 20.0         # thrown ahead, on top of the car's speed
+BANANA_TOSS = 12.0        # tossed back, against it
+BANANA_FLY_MS = 650
+BANANA_ARC = 3.5          # how high the lob goes
+BANANA_LIFT = 1.0         # where it sits: the peel's own foot on the road
 # The bomb is the only item that is thrown at a *place* rather than at a car:
 # it is lobbed up the road, settles where it lands and then goes off, and what
 # it catches is whatever happens to be near it - **including whoever threw
@@ -3460,7 +3484,14 @@ def _ribbon_at(track, p, hint=0):
     _, i = runcheck.nearest_station(track, p, hint)
     st = line[i]
     lat = sum((p[j] - st["p"][j]) * st["lat"][j] for j in range(3))
-    return i, lat, i
+    # **The fraction as well as the station.** A whole station put a shell
+    # up to 3.5 units behind where it was thrown from - inside the car.
+    k = min(i, len(line) - 2) if len(line) > 1 else 0
+    seg = [line[k + 1]["p"][j] - line[k]["p"][j] for j in range(3)] if len(line) > 1 else [0, 0, 0]
+    l2 = sum(x * x for x in seg) or 1e-9
+    t = sum((p[j] - line[k]["p"][j]) * seg[j] for j in range(3)) / l2
+    si = max(0.0, min(len(line) - 1.0, k + max(-1.0, min(2.0, t))))
+    return si, lat, i
 
 
 def _road_axes(track, i, f):
@@ -3483,9 +3514,26 @@ def _road_axes(track, i, f):
 def _ribbon_point(track, si, lat, lift):
     """A station index (fractional) and an offset across it, back to a point."""
     line = track["line"]
-    i = max(0, min(len(line) - 1, int(si)))
-    st = line[i]
-    return [st["p"][j] + st["lat"][j] * lat + st["n"][j] * lift for j in range(3)]
+    n = len(line) - 1
+    si = max(0.0, min(float(n), si))
+    i = min(int(si), max(0, n - 1))
+    f = si - i
+    a, b = line[i], line[min(n, i + 1)]
+    # **Between the stations, not on them.** Snapped to a whole station a
+    # shell at 75 units a second moved 3.5, then nothing, then 3.5 - the
+    # choppiness was here before it was ever on the wire.
+    return [a["p"][j] + (b["p"][j] - a["p"][j]) * f
+            + (a["lat"][j] + (b["lat"][j] - a["lat"][j]) * f) * lat
+            + (a["n"][j] + (b["n"][j] - a["n"][j]) * f) * lift for j in range(3)]
+
+
+def _arc_point(s, now):
+    """A lobbed banana, where it is along its arc at `now`. `shotTruth` in
+    game.js is the same formula, which is what makes the lob smooth."""
+    a = s["arc"]
+    k = max(0.0, min(1.0, (now - a["t"]) / float(a["T"])))
+    h = 4 * a["h"] * k * (1 - k)
+    s["p"] = [a["a"][j] + (a["b"][j] - a["a"][j]) * k + a["n"][j] * h for j in range(3)]
 
 
 def _fire(r, owner, item, target=None, back=False):
@@ -3511,24 +3559,33 @@ def _fire(r, owner, item, target=None, back=False):
     f = _forward(c["q"])
     behind = bool(back)
     bomb = item == "bomb"
-    drop = item == "banana" and behind          # only a *dropped* banana sits
+    banana = item == "banana"
+    now = _now_ms()
+    ahead = sum(c["v"][i] * f[i] for i in range(3))     # the car's own speed
     # **Out in front of the car, not out of its nose.** A shell that appears
     # where the car already is spends its first tenth of a second inside your
     # own bodywork, which is exactly when you are trying to see where you have
     # aimed it. Five units is a car length clear.
-    reach, speed = ((-4.0, 0.0) if drop else
-                    (5.0, BOMB_SPEED) if bomb else (5.0, SHOT_SPEED))
-    if bomb and not behind:
-        # **It has to outrun the car that threw it.** `BOMB_SPEED` is 38 and a
-        # car does 50, so a bomb lobbed at speed was left behind by the thrower
-        # inside half a second and went off under their own back wheels. The
-        # throw is added to what the car is already doing, the way a real one
-        # would be - so it lands ahead at any speed, and `BOMB_SPEED` goes back
-        # to meaning what it says: how hard it is lobbed.
-        speed = max(speed, sum(c["v"][i] * f[i] for i in range(3)) + BOMB_LOB)
-    if behind and not drop:
-        reach = -4.0
-    now = _now_ms()
+    reach = -4.0 if behind else 5.0
+    if banana:
+        speed = ahead + (-BANANA_TOSS if behind else BANANA_LOB)
+    elif bomb:
+        speed = BOMB_SPEED
+        if not behind:
+            # **It has to outrun the car that threw it.** `BOMB_SPEED` is 38
+            # and a car does 50, so a bomb lobbed at speed was left behind by
+            # the thrower inside half a second and went off under their own
+            # back wheels. The throw is added to what the car is already
+            # doing, so it lands ahead at any speed.
+            speed = max(speed, ahead + BOMB_LOB)
+        speed = -speed if behind else speed
+    else:
+        speed = -SHOT_SPEED if behind else SHOT_SPEED
+    # **From where the car is now, not where its last pose said.** A pose is
+    # up to a pose interval old plus its trip here, which at 50 units a second
+    # is the shell leaving from somewhere under the car's back wheels.
+    age = min(0.25, max(0.0, (now - c["ts"] + c.get("up", 0.0)) / 1000.0))
+    base = [c["p"][i] + c["v"][i] * age for i in range(3)]
     # An id, so a browser can tell *this* shell from the one that arrived in
     # the same packet - without one the client can only draw the list it was
     # sent, and a list changes order as shots are added and taken away, which
@@ -3539,17 +3596,18 @@ def _fire(r, owner, item, target=None, back=False):
             # every shot is on at least one snapshot - and so on at least one
             # screen - before it can spin somebody over. See `_tick_shots`.
             "arm": SHOT_ARM_TICKS,
-            "p": [c["p"][i] + f[i] * reach for i in range(3)],
-            "v": [f[i] * (-speed if behind else speed) for i in range(3)],
+            "p": [base[i] + f[i] * reach for i in range(3)],
+            "v": [f[i] * speed for i in range(3)],
             # **The item's own clock, not the direction's.** This asked `back`,
             # which was the banana's flag by accident of it being the only
             # thing ever thrown that way - so a green thrown backwards lived
             # BANANA_MS and bounced around the track for forty-five seconds.
             "until": now + (BANANA_MS if item == "banana" else
                              BOMB_FLY_MS + BOMB_FUSE_MS if bomb else
-                             HOMING_MS if item in ("red", "blue") else SHELL_MS)}
-    if bomb:
-        shot["stop_at"] = now + BOMB_FLY_MS
+                             BLUE_MS if item == "blue" else
+                             HOMING_MS if item == "red" else SHELL_MS)}
+    if bomb or banana:
+        shot["stop_at"] = now + (BOMB_FLY_MS if bomb else BANANA_FLY_MS)
     # **A homing shell rides the ribbon rather than the straight line to its
     # target.** Flying at the car directly is what made it disappear into the
     # scenery on the first corner: the thing being chased is round a bend, and
@@ -3561,7 +3619,7 @@ def _fire(r, owner, item, target=None, back=False):
     # do different things with it: a red or a blue steers toward a car, a green
     # holds its line and bounces off the walls. Both need the same two numbers
     # - where along, and how far across - so both are put on the ribbon here.
-    track = _hot_track(r) if item in ("red", "blue", "green") else None
+    track = _hot_track(r) if item in ("red", "blue", "green", "banana") else None
     if track:
         # **From the station this car is at, not from station zero.** The scan
         # in `nearest_station` starts at its hint and only falls back to the
@@ -3571,7 +3629,19 @@ def _fire(r, owner, item, target=None, back=False):
         # track from there. The watcher already knows where this car is; it has
         # been keeping that number for the anti-cheat every pose.
         si, lat, hint = _ribbon_at(track, shot["p"], _watch(r, owner).hint)
-        if si is not None:
+        if si is not None and banana:
+            # The whole lob, decided now: where it leaves, where it lands.
+            line = track["line"]
+            along, _ = _road_axes(track, int(si), f)
+            si1 = si + along * speed * BANANA_FLY_MS / 1000.0 / (track.get("station") or 3.5)
+            n = len(line) - 1
+            si1 = si1 % n if track.get("closed") else max(0.0, min(float(n), si1))
+            shot["arc"] = {"a": _ribbon_point(track, si, lat, BANANA_LIFT),
+                           "b": _ribbon_point(track, si1, lat, BANANA_LIFT),
+                           "n": list(line[min(n, int(si1))]["n"]),
+                           "t": now, "T": BANANA_FLY_MS, "h": BANANA_ARC}
+            shot["p"] = list(shot["arc"]["a"])
+        elif si is not None:
             shot.update({"si": float(si), "lat": lat, "hint": hint})
             # Which way up the road it is going, which for a homing shell is
             # decided by the throw and not by where its target is: backwards
@@ -3586,6 +3656,9 @@ def _fire(r, owner, item, target=None, back=False):
                     along, across = -along, -across
                 shot["along"] = along * SHOT_SPEED
                 shot["across"] = across * SHOT_SPEED
+            # Where it is on the road from the first snapshot, so it does not
+            # jump there on the tick it arms.
+            shot["p"] = _ribbon_point(track, shot["si"], lat, SHOT_LIFT)
     r["shots"].append(shot)
 
 
@@ -3697,9 +3770,26 @@ def _snapshot(r):
     # Shells and bananas ride the pose channel rather than getting one of their
     # own: they move every tick like a car does, and a client that misses one
     # frame of them wants the next frame, not the one it missed.
+    #
+    # After the id: its velocity, so a browser can draw it where it is *now*
+    # rather than chase where it was; its owner, so the thrower's screen can
+    # start it at their own nose; and the path, for the two items that are not
+    # a straight line - a banana's lob and a blue's circle - which both ends
+    # work out from the same few numbers rather than from 30Hz samples of them.
     shots = [[s["item"], round(s["p"][0], 2), round(s["p"][1], 2), round(s["p"][2], 2),
-              s.get("id", 0)] for s in r.get("shots", ())]
+              s.get("id", 0)] + [round(x, 1) for x in s.get("pv", (0.0, 0.0, 0.0))]
+             + [s["owner"], _shot_path(s, now)] for s in r.get("shots", ())]
     return {"t": now, "cars": cars, "shots": shots}
+
+
+def _shot_path(s, now):
+    if s.get("orbit_at") is not None:
+        return {"o": s["target"], "t": s["orbit_at"], "T": BLUE_ORBIT_MS, "h": BLUE_ALT}
+    a = s.get("arc")
+    if a and now < a["t"] + a["T"] + 200:
+        return {"a": [round(x, 2) for x in a["a"]], "b": [round(x, 2) for x in a["b"]],
+                "n": [round(x, 3) for x in a["n"]], "t": a["t"], "T": a["T"], "h": a["h"]}
+    return None
 
 
 def _tick_shots(r, now):
@@ -3739,17 +3829,30 @@ def _tick_shots(r, now):
             continue
         if s.get("stop_at") and now >= s["stop_at"]:
             s["v"] = [0.0, 0.0, 0.0]        # landed: now it is a mine
+        was = list(s["p"])
         # Asked for only when something is actually following the road: this
         # runs at 30Hz per room and `_hot_track` is a memo over a query.
         if "si" in s and track is None:
             track = _hot_track(r) or False
-        if "si" in s and track:
+        if s.get("orbit_at") is not None:
+            if not _orbit(r, s, now):
+                continue                      # came down on them
+        elif "arc" in s:
+            _arc_point(s, now)
+        elif "si" in s and track:
             fly = _bounce_along_road if s["item"] == "green" else _steer_along_road
             if not fly(r, s, track, dt):
                 continue                      # ran out of road
+            if s["item"] == "blue" and _blue_arrived(s, track):
+                s["orbit_at"] = now
+                s["until"] = max(s["until"], now + BLUE_ORBIT_MS + 500)
         else:
             for i in range(3):
                 s["p"][i] += s["v"][i] * dt
+        s["pv"] = [(s["p"][i] - was[i]) / dt for i in range(3)] if dt else [0.0, 0.0, 0.0]
+        if s["item"] == "blue":
+            keep.append(s)                    # up in the air: it hits by landing
+            continue
         # **Never the car that fired it.** A shell leaves the nose three units
         # ahead and the hit radius is four, so without this every shot hit its
         # own owner on the tick it armed - and a banana is dropped four units
@@ -3785,7 +3888,31 @@ def _tick_shots(r, now):
     r["shots"] = keep
 
 
-def _blast(r, s, now):
+def _blue_arrived(s, track):
+    """Close enough behind its man - or past him - to stop and circle."""
+    if not s.get("target") or s.get("tsi") is None:
+        return False
+    gap = s["tsi"] - s["si"]
+    if track.get("closed"):
+        n = len(track["line"]) - 1
+        gap = (gap + n / 2.0) % n - n / 2.0
+    return gap * (track.get("station") or 3.5) < BLUE_REACH
+
+
+def _orbit(r, s, now):
+    """A blue circling its man. False once it has come down on him."""
+    c = r["cars"].get(s["target"])
+    if c and not c.get("gone"):
+        s["p"] = [c["p"][0], c["p"][1] + 3.0, c["p"][2]]
+    if now - s["orbit_at"] < BLUE_ORBIT_MS:
+        return True
+    if c:
+        s["p"] = list(c["p"])
+    _blast(r, s, now, BLUE_BLAST)
+    return False
+
+
+def _blast(r, s, now, radius=BOMB_BLAST):
     """A bomb goes off: everybody near it is hit, and everybody can see it.
 
     **The owner is in the blast.** A bomb that could not catch the car that
@@ -3801,11 +3928,11 @@ def _blast(r, s, now):
     for pid, c in r["cars"].items():
         if c.get("gone"):
             continue
-        if sum((c["p"][i] - p[i]) ** 2 for i in range(3)) <= BOMB_BLAST ** 2:
+        if sum((c["p"][i] - p[i]) ** 2 for i in range(3)) <= radius ** 2:
             if _drop_held(r, pid):
                 continue                      # it ate the blast instead
-            _tally("bomb", "hit")
-            socketio.emit("item_hit", {"item": "bomb", "pid": pid, "owner": s["owner"]},
+            _tally(s["item"], "hit")
+            socketio.emit("item_hit", {"item": s["item"], "pid": pid, "owner": s["owner"]},
                           room="room:" + r["code"])
             if pid in _bot_pids(r):
                 w = _bot_world(r)
@@ -3814,7 +3941,10 @@ def _blast(r, s, now):
                         w.hit(pid)
                     except Exception:
                         app.logger.exception("bot blast failed in %s", r["code"])
-    socketio.emit("item_blast", {"p": [round(v, 2) for v in p], "r": BOMB_BLAST},
+    # `pid` is who a blue came down on, so every screen can put the flash on
+    # that car as *it* draws it rather than where the server last heard of it.
+    socketio.emit("item_blast", {"p": [round(v, 2) for v in p], "r": radius,
+                                 "item": s["item"], "pid": s.get("target")},
                   room="room:" + r["code"])
 
 
@@ -3884,10 +4014,14 @@ def _steer_along_road(r, s, track, dt):
     # Past its man is a miss - except on a ring, where "past" is a lap of
     # arithmetic away from "not there yet". A shell on a closed circuit is
     # bounded by its clock instead, which is what `HOMING_MS` is.
-    if target and s.get("tsi") is not None and not track.get("closed") and \
+    if not blue and target and s.get("tsi") is not None and not track.get("closed") and \
             way * (s["si"] - s["tsi"]) > PAST_STATIONS:
         return False
-    s["p"] = _ribbon_point(track, s["si"], s["lat"], SHOT_LIFT)
+    lift = SHOT_LIFT
+    if blue:
+        s["risen"] = min(1.0, s.get("risen", 0.0) + dt * 1000.0 / BLUE_RISE_MS)
+        lift += BLUE_ALT * s["risen"] * (2 - s["risen"])     # up fast, then level
+    s["p"] = _ribbon_point(track, s["si"], s["lat"], lift)
     return True
 
 
