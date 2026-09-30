@@ -1363,6 +1363,7 @@ def test_r_and_t_do_nothing_once_your_race_is_run():
 
 SMOKE_STUB = """
 var puffs = [];
+Math.random = () => 0.9;              // every frame a puff, so it can be counted
 var THREE = {Vector3: function (x, y, z) { this.x = x; this.y = y; this.z = z; }};
 var v3 = () => ({addScaledVector: function () { return this; }, clone: function () { return this; }});
 var S = {hitSmoke: 1.4,
@@ -1374,6 +1375,7 @@ var S = {hitSmoke: 1.4,
 def _smoke_frames(n, setup=SMOKE_STUB, dt=0.1):
     ctx = _ctx(setup)
     ctx.eval(_fn("hitSmoke"))
+    ctx.eval(_fn("soot"))
     ctx.eval("for (var i = 0; i < %d; i++) hitSmoke(%r);" % (n, dt))
     return (json.loads(ctx.eval("JSON.stringify(puffs)")),
             json.loads(ctx.eval("JSON.stringify(S.hitSmoke)")))
@@ -1387,6 +1389,15 @@ def test_a_hit_car_smokes_and_then_stops():
     assert len(puffs) == 14 and set(puffs) == {"soot"}
 
 
+def test_a_rival_who_was_hit_smokes_too():
+    """You see the smoke off the car your shell caught, not only your own."""
+    setup = SMOKE_STUB.replace("var S = {hitSmoke: 1.4,", """var S = {hitSmoke: 0,
+         remotes: new Map([["b", {hitSmoke: 0.45, pos: v3(), fwd: v3(), up: v3(),
+                                  view: {group: {visible: true}}}]]),""")
+    puffs, _ = _smoke_frames(10, setup)
+    assert len(puffs) == 5 and set(puffs) == {"soot"}
+
+
 def test_a_respawn_puts_a_clean_car_back():
     puffs, left = _smoke_frames(5, SMOKE_STUB.replace("respawnIn: 0", "respawnIn: 1.2"))
     assert puffs == [] and left == 0
@@ -1395,6 +1406,7 @@ def test_a_respawn_puts_a_clean_car_back():
 def _hold(n, setup=SMOKE_STUB, dt=0.1):
     ctx = _ctx(setup.replace("var S = {hitSmoke: 1.4,", "var S = {hitSmoke: 1.4, hitHold: 1.0,"))
     ctx.eval(_fn("hitSmoke"))
+    ctx.eval(_fn("soot"))
     ctx.eval("for (var i = 0; i < %d; i++) hitSmoke(%r);" % (n, dt))
     return json.loads(ctx.eval("JSON.stringify(S.hitHold)"))
 
@@ -1497,6 +1509,7 @@ def _lap_readout(laps, lap=0, phase="racing"):
     ctx = jsrt.quickjs.Context()
     ctx.eval(HUD_STUB)
     ctx.eval(_fn("hud"))
+    ctx.eval(_fn("flashLap"))
     ctx.eval("S.run.laps = %d; S.run.lap = %d; S.racePhase = %s; hud(0);"
              % (laps, lap, json.dumps(phase)))
     return (ctx.eval("$('lapNum').style.display"),
@@ -1539,6 +1552,7 @@ def test_the_finish_banner_comes_down_when_the_car_is_yours_again():
     ctx = jsrt.quickjs.Context()
     ctx.eval(HUD_STUB)
     ctx.eval(_fn("hud"))
+    ctx.eval(_fn("flashLap"))
     ctx.eval("$('finishBanner').style.display = ''; S.raceDone = true; hud(0);")
     assert ctx.eval("$('finishBanner').style.display") == ""
     ctx.eval("S.raceMode = false; hud(0);")

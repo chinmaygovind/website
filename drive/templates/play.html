@@ -120,6 +120,7 @@
       </button>
       {% endif %}
     </div>
+    <div class="slotrow">
     {% if mode == 'room' %}
     <div class="item-hud" id="itemHud" aria-label="Items" style="display:none">
       <div class="item-slot big" id="item0"><span class="item-art" id="item0art"></span>
@@ -130,21 +131,13 @@
       <span class="item-hint" id="itemHint"></span>
     </div>
     {% endif %}
-    {# The race position and lap sit beside the map on every device. On a desktop
-       they were alone in the bottom right corner, a long way from anything else
-       you look at; next to the map is where the phone already had them. #}
-    <div class="maprow">
-      <div class="card"><canvas id="minimap" width="190" height="150"></canvas></div>
       <div id="place" style="display:none">
         <b id="placeNum">1st</b>
-        <!-- The lap, directly under the position and deliberately small. They are
-             the two halves of one question - where am I, and how much is left -
-             so they are read in one glance, and putting the lap anywhere else
-             would make that two. Hidden outside a multi-lap race: on the twenty-one
-             point-to-point tracks, and on a circuit the host has left at one lap,
-             "LAP 1/1" is a line that never changes. -->
         <span id="lapNum" style="display:none">LAP 1/3</span>
       </div>
+    </div>
+    <div class="maprow">
+      <div class="card"><canvas id="minimap" width="190" height="150"></canvas></div>
     </div>
   </div>
   </div><!-- /hud-l -->
@@ -330,6 +323,9 @@
      the minute of not being able to drive is explained rather than looking
      like the controls have stopped working. Up while `raceIsRun()` and at no
      other time; `hud` takes it down on the first frame that is not true. #}
+  <div id="lapBanner" style="display:none" aria-live="polite">
+    <div class="fin-flash"><b id="lapBannerText"></b></div>
+  </div>
   <div id="finishBanner" style="display:none" aria-live="polite">
     <div class="fin-flash"><b>FINISH!</b><span id="finishTime"></span></div>
     <div class="fin-wait">Waiting for others to finish&hellip;</div>
@@ -493,7 +489,6 @@
         <button class="btn small" id="btnAddBot">+ Bot</button>
       </div>
       <button class="btn ghost small" id="btnFillBots">Fill the grid</button>
-      <div class="setting-note" id="botNote"></div>
     </div>
   </div>
   <!-- The invitation.
@@ -525,12 +520,10 @@
       <span class="setting-name">Qualifying</span>
       <span class="switch"><i></i></span>
     </button>
-    <div class="setting-note" id="qualNote"></div>
     <button class="setting" id="optPowerups" role="switch" aria-checked="true">
       <span class="setting-name">Powerups</span>
       <span class="switch"><i></i></span>
     </button>
-    <div class="setting-note" id="powerupsNote"></div>
     <!-- Laps, and only on a circuit - see `renderSettings`. A stepper rather
          than a switch because the answer is a number, and the number is small
          enough that - and + are fewer presses than a field you have to select
@@ -541,7 +534,6 @@
       <b id="lapsVal">3</b>
       <button class="lapbtn" id="btnLapsUp" aria-label="One lap more">+</button>
     </div>
-    <div class="setting-note" id="lapsNote"></div>
   </div>
   <button class="btn ghost" id="btnLeave" style="border-color:#ff8a7a;color:#ff8a7a">Leave room</button>
   <!-- Chat last, and pinned to the floor of the drawer: it takes whatever

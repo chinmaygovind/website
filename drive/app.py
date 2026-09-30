@@ -3940,8 +3940,9 @@ def _blast(r, s, now, radius=BOMB_BLAST):
         if c.get("gone"):
             continue
         if sum((c["p"][i] - p[i]) ** 2 for i in range(3)) <= radius ** 2:
-            if _drop_held(r, pid):
-                continue                      # it ate the blast instead
+            # A blast goes through whatever you are holding: it breaks, and
+            # you are hit anyway. Held items only stop a shell or a banana.
+            _drop_held(r, pid, blocked=False)
             _tally(s["item"], "hit")
             socketio.emit("item_hit", {"item": s["item"], "pid": pid, "owner": s["owner"]},
                           room="room:" + r["code"])
@@ -5633,11 +5634,12 @@ def on_hold_item(data=None):
                       room="room:" + code)
 
 
-def _drop_held(r, pid):
+def _drop_held(r, pid, blocked=True):
     """Whatever this car was holding is gone: it took the hit instead.
 
     Returns True if there was something, which is the caller's answer to
-    "was this car protected".
+    "was this car protected". `blocked=False` is a blue shell: the held item
+    breaks and the car is hit anyway, so nothing says it was blocked.
     """
     held = r.get("held") or {}
     item = held.pop(pid, None)
@@ -5647,8 +5649,9 @@ def _drop_held(r, pid):
     if q and q[0] == item:
         q.pop(0)
     socketio.emit("item_held", {"pid": pid, "item": None}, room="room:" + r["code"])
-    _tally(item, "blocked")
-    socketio.emit("item_blocked", {"pid": pid, "item": item}, room="room:" + r["code"])
+    if blocked:
+        _tally(item, "blocked")
+        socketio.emit("item_blocked", {"pid": pid, "item": item}, room="room:" + r["code"])
     socketio.emit("items", {"pid": pid, "slots": list(q)}, room="room:" + r["code"])
     return True
 

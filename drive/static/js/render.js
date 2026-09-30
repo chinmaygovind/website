@@ -2340,7 +2340,7 @@ export class Renderer {
       // A hit car smoking. Dark, so it has to be blended normally - see
       // `Particles.spawn`. A cached copy of this file falls through to the
       // pale smoke below, which is a duller effect rather than a broken page.
-      this.particles.spawn(pos, vel, 0x15161a, 1.0, 0.55, 1.6,
+      this.particles.spawn(pos, vel, 0x15161a, 0.7, 0.55, 1.4,
                            THREE.NormalBlending);
     } else {
       this.particles.spawn(pos, vel, 0xdfe6ef, 0.75, 0.42);

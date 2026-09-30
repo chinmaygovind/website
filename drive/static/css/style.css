@@ -970,12 +970,13 @@ body.touch .hud-tl > .card:first-child { width: 12rem; }
 .st-elo.down { color: #ff8a7a; }
 .elo-line { margin-top: .4rem; font-size: .85rem; color: #cfd7e3; }
 
-/* The race position: one number, big, beside the map. No card behind it - a
-   panel would make it a thing to read rather than a thing to glance at, and at
-   this size the drop shadow is enough to hold it against a bright sky. It was
-   alone in the bottom right corner on a desktop until Sep 2026; the phone had
-   it beside the map already, and that read better, so both do now. */
+/* The race position: one number, big. On a desktop it is beside the item
+   slots, above the map; on a phone the slots go to the touch pad and it moves
+   beside the map (`moveItemsToPad`). No card behind it - the drop shadow is
+   enough to hold it against a bright sky. */
 .maprow { display: flex; align-items: flex-start; gap: 12px; }
+.slotrow { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 8px; }
+.slotrow #place b { font-size: 2.6rem; }
 #place {
   display: flex; flex-direction: column; align-items: flex-start;
   padding-top: 2px; pointer-events: none; color: #fff;
@@ -1146,7 +1147,7 @@ body.touch .now-playing { max-width: min(210px, 52vw); padding: .4rem .7rem; }
    the waiting line under it stays in the same pixels throughout, so nothing
    shifts when the flash goes. `pointer-events: none` - it sits over the road
    and the top-centre buttons are still the host's to press. */
-#finishBanner {
+#finishBanner, #lapBanner {
   position: absolute; top: 30%; left: 50%; transform: translate(-50%, -50%);
   display: flex; flex-direction: column; align-items: center; gap: .6rem;
   pointer-events: none; text-align: center;

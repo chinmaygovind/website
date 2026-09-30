@@ -1110,6 +1110,7 @@ function endTour() {
 // looking behind you and driving the rest of the lap backwards because the
 // keyup went to a message. `readInput` reads the five it wants by name, so the
 // physics never sees these two.
+const DRIVE_KEYS = new Set(['up', 'down', 'left', 'right']);
 const KEYMAP = {
   ArrowUp: 'up', KeyW: 'up',
   ArrowDown: 'down', KeyS: 'down',
@@ -1141,6 +1142,15 @@ function bindInput() {
     if (S.watch && replayKey(e)) return;
     const k = KEYMAP[e.code];
     if (k) { keys.add(k); e.preventDefault(); }
+    // Driving puts the room drawer away: the key that closes it is the one
+    // you were going to press anyway. Focus goes too, or an arrow would still
+    // be changing the bot level under your thumb.
+    if (DRIVE_KEYS.has(k) && document.body.classList.contains('side-open')) {
+      showSide(false);
+      if (document.activeElement && document.activeElement !== document.body) {
+        document.activeElement.blur();
+      }
+    }
     // R starts the whole run again; T only puts you back on the road at the last
     // checkpoint and leaves the clock running, which is the difference between
     // "that lap is gone" and "I just fell off". Both do nothing until you have
@@ -1739,32 +1749,22 @@ function renderSettings() {
   b.classList.toggle('on', on);
   b.setAttribute('aria-checked', on ? 'true' : 'false');
   b.disabled = !S.isHost || livePhase();
-  $('qualNote').textContent = on
-    ? 'Ninety seconds of practice first - your fastest lap sets the grid.'
-    : 'No qualifying: the grid is the last race, reversed.';
   const powerups = $('optPowerups');
   const enabled = !!S.settings.powerups;
   powerups.classList.toggle('on', enabled);
   powerups.setAttribute('aria-checked', enabled ? 'true' : 'false');
   powerups.disabled = !S.isHost || livePhase();
-  $('powerupsNote').textContent = enabled
-    ? 'Item boxes are active in practice and races; qualifying stays item-free.'
-    : 'No items in this room.';
   // **Only on a circuit.** Twenty-one of the twenty-six tracks start and finish
   // in different places, so there is no lap to do again and the control would
   // be one that did nothing - hidden rather than disabled, because a greyed-out
   // stepper is a thing to wonder about and this one has nothing to say.
   const laps = raceLaps(), circuit = !!(S.track && S.track.closed);
   $('optLaps').style.display = circuit ? '' : 'none';
-  $('lapsNote').style.display = circuit ? '' : 'none';
   if (circuit) {
     $('lapsVal').textContent = laps;
     const locked = !S.isHost || livePhase();
     $('btnLapsDown').disabled = locked || laps <= 1;
     $('btnLapsUp').disabled = locked || laps >= LAPS_MAX;
-    $('lapsNote').textContent = laps > 1
-      ? laps + ' laps of the circuit - the flag is the last time past the line.'
-      : 'One lap: the race is over the first time anyone crosses the line.';
   }
   renderItems();
 }
@@ -2454,7 +2454,7 @@ function hitByItem() {
 // A hit, in three numbers.
 const HIT_KEEP = 0.15;        // of the speed you had: it stops you, not slows you
 const HIT_AIR = 5.5;          // units/s upwards. It was 16, which is a launch.
-const HIT_SMOKE_S = 3.0;      // how long the car smokes, and is held back
+const HIT_SMOKE_S = 1.6;      // how long the car smokes, and is held back
 const HIT_SLOW = 0.7;         // of T.MAX_SPEED: the most it makes while smoking
 const HIT_HOLD_S = 1.0;       // how long the camera keeps its own frame
 
@@ -2468,14 +2468,27 @@ const HIT_HOLD_S = 1.0;       // how long the camera keeps its own frame
  */
 function hitSmoke(dt) {
   if (S.hitHold) S.hitHold = S.car.respawnIn > 0 ? 0 : Math.max(0, S.hitHold - dt);
+  // Everybody who has been hit smokes, not only you: a rival spun by your
+  // shell is the other half of throwing it.
+  for (const r of (S.remotes ? S.remotes.values() : [])) {
+    if (!r.hitSmoke) continue;
+    r.hitSmoke = Math.max(0, r.hitSmoke - dt);
+    if (r.view.group.visible) soot(r);
+  }
   if (!S.hitSmoke) return;
   if (S.car.respawnIn > 0) { S.hitSmoke = 0; return; }
   S.hitSmoke = Math.max(0, S.hitSmoke - dt);
-  const back = S.car.pos.clone()
-    .addScaledVector(S.car.fwd, -1.1).addScaledVector(S.car.up, 0.35);
-  S.renderer.smoke(back, new THREE.Vector3((Math.random() - 0.5) * 3,
+  soot(S.car);
+}
+
+/** One puff off the back of a car, about every other frame: a thin trail. */
+function soot(car) {
+  if (Math.random() < 0.5) return;
+  const back = car.pos.clone()
+    .addScaledVector(car.fwd, -1.1).addScaledVector(car.up, 0.35);
+  S.renderer.smoke(back, new THREE.Vector3((Math.random() - 0.5) * 2,
                                            2 + Math.random() * 2,
-                                           (Math.random() - 0.5) * 3), 'soot');
+                                           (Math.random() - 0.5) * 2), 'soot');
 }
 
 /** How a hit reads when it was yours. The verb is the item's, not the car's. */
@@ -2796,8 +2809,10 @@ function itemUp() {
 function moveItemsToPad() {
   const row = document.querySelector('.tpad.left .item-row');
   const hud = $('itemHud');
-  if (!row || !hud || !document.body.classList.contains('touch')) return;
-  row.insertBefore(hud, row.firstChild);
+  if (!document.body.classList.contains('touch')) return;
+  const map = document.querySelector('.maprow');
+  if (map && $('place')) map.appendChild($('place'));
+  if (row && hud) row.insertBefore(hud, row.firstChild);
 }
 
 /** The three you can hold out behind you. Mirrors `HOLDABLE` in `app.py`. */
@@ -5016,6 +5031,30 @@ function raceIsRun() {
  * the animation is reset each time or the second race's flash would already
  * have faded.
  */
+/**
+ * LAP 2 / 3, popped up the way FINISH! is, as each new lap starts. Not the
+ * first (the lights said that) and not past the last (that is FINISH!).
+ */
+function flashLap(run) {
+  const el = $('lapBanner');
+  const lap = run.lap | 0;
+  if (!el || S.lapShown == null || lap < S.lapShown || !(run.laps > 1)) {
+    S.lapShown = lap;
+    return;
+  }
+  if (lap === S.lapShown) return;
+  S.lapShown = lap;
+  if (lap >= run.laps || !S.raceMode) return;
+  $('lapBannerText').textContent = 'LAP ' + (lap + 1) + ' / ' + run.laps;
+  const flash = el.querySelector('.fin-flash');
+  flash.style.animation = 'none';
+  void flash.offsetWidth;
+  flash.style.animation = '';
+  el.style.display = '';
+  clearTimeout(S.lapBannerT);
+  S.lapBannerT = setTimeout(() => { el.style.display = 'none'; }, 2600);
+}
+
 function showFinish(ms) {
   const el = $('finishBanner');
   if (!el) { toast('Finished ' + fmt(ms)); return; }
@@ -6403,6 +6442,7 @@ function hud(now) {
   // after it, which is what a lap board says.
   $('lapNum').style.display = run.laps > 1 ? '' : 'none';
   if (run.laps > 1) $('lapNum').textContent = 'LAP ' + (run.lap + 1) + '/' + run.laps;
+  flashLap(run);
   // Not once the autopilot has the car: it is not your way to be wrong about,
   // and it would sit on top of the FINISH! banner.
   $('wrongWay').style.display = run.wrongWay && !raceIsRun() ? '' : 'none';
@@ -7693,6 +7733,7 @@ function connect() {
     // server says so, which is where the shell just was.
     const them = d && S.remotes.get(d.pid);
     if (them && S.renderer) {
+      them.hitSmoke = HIT_SMOKE_S;
       for (const up of [6, 3]) {
         S.renderer.smoke(them.pos.clone().setY(them.pos.y + 0.5),
                          new THREE.Vector3((Math.random() - 0.5) * 8, up,
@@ -8356,18 +8397,10 @@ function renderBotControls(players, fromRoster) {
   }
   const fill = $('btnFillBots');
   if (!S.fillingBots) { fill.classList.remove('busy'); setLabel(fill, 'Fill the grid'); }
-  // Gone once there is nothing left to fill, rather than sitting there disabled:
-  // "+ Bot" one line up already carries the reason in `botNote`, and a dead
-  // control under a full grid is just something else to read.
+  // Gone once there is nothing left to fill, rather than sitting there disabled.
   fill.style.display = (full || capped) ? 'none' : '';
   $('btnAddBot').disabled = full || capped || live;
   fill.disabled = full || capped || live || S.fillingBots;
-  $('botNote').textContent =
-    live ? 'Bots can be added between races.'
-    : capped ? 'That is as many bots as a room takes.'
-    : full ? 'Every seat is taken.'
-    : bots ? bots + (bots === 1 ? ' bot in the room.' : ' bots in the room.')
-    : 'Add cars to race against. They practise, qualify and race.';
 }
 
 // ---------------------------------------------------------------------------

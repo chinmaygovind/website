@@ -1386,3 +1386,18 @@ def test_you_can_drive_into_your_own_banana_once_it_has_landed(A, bend, monkeypa
     t[0] += 33
     A._tick_shots(r, t[0])
     assert ("item_hit", {"item": "banana", "pid": "a", "owner": "a"}) in seen
+
+
+@pytest.mark.parametrize("item", ["blue", "bomb"])
+def test_a_blast_breaks_what_you_are_holding_and_hits_you_anyway(A, monkeypatch, item):
+    r = _room(A)
+    _car(A, r, "lead")
+    A._item_queue(r, "lead").append("green")
+    r.setdefault("held", {})["lead"] = "green"
+    seen = []
+    monkeypatch.setattr(A.socketio, "emit", lambda ev, d, **k: seen.append((ev, d)))
+    A._blast(r, {"item": item, "p": [0.0, 0.0, 0.0], "owner": "b", "target": "lead"},
+             A._now_ms(), A.BLUE_BLAST)
+    assert ("item_hit", {"item": item, "pid": "lead", "owner": "b"}) in seen
+    assert not any(ev == "item_blocked" for ev, d in seen), "said it was blocked"
+    assert r["held"] == {} and A._item_queue(r, "lead") == [], "the shell survived"
