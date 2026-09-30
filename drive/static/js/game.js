@@ -2454,7 +2454,8 @@ function hitByItem() {
 // A hit, in three numbers.
 const HIT_KEEP = 0.15;        // of the speed you had: it stops you, not slows you
 const HIT_AIR = 5.5;          // units/s upwards. It was 16, which is a launch.
-const HIT_SMOKE_S = 1.4;      // how long the car smokes afterwards
+const HIT_SMOKE_S = 3.0;      // how long the car smokes, and is held back
+const HIT_SLOW = 0.7;         // of T.MAX_SPEED: the most it makes while smoking
 const HIT_HOLD_S = 1.0;       // how long the camera keeps its own frame
 
 /**
@@ -2809,29 +2810,19 @@ function canUseItem() {
 
 function useItem() {
   if (!canUseItem()) return;
-  // **The throttle is which way you are throwing it.** On the power it goes out
-  // in front, off it behind - one rule, every item. A banana thrown behind is
-  // *dropped*, which is the only per-item difference left and is the thing
-  // anybody throwing a banana backwards meant.
+  // Holding back throws it behind you; see `throwingBack`.
   S.socket.emit('use_item', { back: throwingBack() });
 }
 
 /**
- * Which way this throw goes: backwards, unless you are on the power.
- *
- * **It was the handbrake and this is better.** The two things you are doing
- * when you want to throw something *behind* you are defending a place and
- * being caught, and in both of them you are hard on the throttle - so the
- * handbrake version asked for a third finger at exactly the wrong moment, and
- * it fought the drift, which is a thing you do *while* accelerating. Off the
- * power is the honest signal: it is a decision you have already made with the
- * hand that is already there, and it costs the speed it should.
- *
- * The same question `readInput` asks the physics, asked the same way - keys or
- * thumbs - so it means the same thing on a phone.
+ * Which way this throw goes: behind you while you hold back (S, down, the
+ * brake pad) or the handbrake, the way every kart game does it. It was "off
+ * the throttle", which nobody could find: letting go of a key is not a thing
+ * you do on purpose, and holding back to throw back is what everybody tried.
  */
 function throwingBack() {
-  return !(keys.has('up') || touchKeys.has('up'));
+  const on = (k) => keys.has(k) || touchKeys.has(k);
+  return on('down') || on('drift');
 }
 
 // ---------------------------------------------------------------------------
@@ -3407,7 +3398,7 @@ function startReplay(cars, opts = {}) {
     const view = new CarView(S.renderer.scene, c.livery || color);
     view.setLabel(c.name || 'Driver', view.plateColor);
     const g = new Ghost(c.frames, c.hz || GHOST_RATE);
-    return { g, view, prev: null, name: c.name || 'Driver', color, ms: c.ms,
+    return { g, view, prev: null, name: c.name || 'Driver', color, ms: c.ms, pid: c.pid,
              // Its air, and the boosts to put in it. One `Draft` each, the way
              // every rival on a live track has one - the streaks have to fly
              // their own run out and cannot be shared between cars.
@@ -3443,6 +3434,9 @@ function startReplay(cars, opts = {}) {
                padBoost: 0, slipBoost: 0 },
     title: opts.title || null,
     share: opts.share || null,
+    items: opts.items || null,
+    itemsHz: opts.hz || GHOST_RATE,
+    shotMeshes: new Map(),
     playing: true,
     rate: 1,
     // The last byte the pad drew, so it is only touched when it changes: nine
@@ -3503,17 +3497,37 @@ function replayGates(ghost, splits) {
   S.course.resetHint(0);
   const out = [];
   const pos = new THREE.Vector3();
-  let next = 0, bestS = 0;
-  for (let i = 0; i < ghost.frames.length && next < gateS.length; i++) {
+  // **Every lap, on a circuit.** Distance along the ribbon starts again at the
+  // line, so the furthest-reached of it stopped at the end of lap one and a
+  // three-lap race had checkpoints on its first third only. Unwrapped here:
+  // a drop of more than half a lap is the line, and the lap count goes up.
+  const closed = !!(S.track && S.track.closed), total = S.course.total;
+  let next = 0, bestS = 0, lap = 0, prevS = null;
+  const laps = [];
+  for (let i = 0; i < ghost.frames.length; i++) {
     const f = ghost.frames[i];
     pos.set(f[0], f[1], f[2]);
-    bestS = Math.max(bestS, S.course.locate(pos).s);
-    while (next < gateS.length && bestS >= gateS[next]) {
+    const sNow = S.course.locate(pos).s;
+    if (closed) {
+      // On the grid behind the line reads as nearly a whole lap done.
+      if (prevS === null && sNow > total / 2) lap = -1;
+      else if (prevS !== null && prevS - sNow > total / 2) {
+        lap++;
+        if (lap > 0) laps.push(i / ghost.hz);
+      } else if (prevS !== null && sNow - prevS > total / 2) lap--;
+      prevS = sNow;
+    }
+    bestS = Math.max(bestS, lap * total + sNow);
+    const lapOf = (k) => Math.floor(k / gateS.length);
+    while (bestS >= gateS[next % gateS.length] + lapOf(next) * total) {
       out.push(i / ghost.hz);
       next++;
+      if (!closed && next >= gateS.length) break;
     }
+    if (!closed && next >= gateS.length) break;
   }
   S.course.resetHint(hint);
+  out.laps = laps;
   return out;
 }
 
@@ -3569,8 +3583,11 @@ function drawScrubTicks() {
   const w = S.watch;
   if (!el || !w) return;
   const c = w.cars[w.at];
-  el.innerHTML = (w.dur > 0 ? c.gates : []).map(t =>
-    `<i style="left:${(Math.min(t, w.dur) / w.dur * 100).toFixed(3)}%"></i>`).join('');
+  const mark = (t, cls) =>
+    `<i${cls} style="left:${(Math.min(t, w.dur) / w.dur * 100).toFixed(3)}%"></i>`;
+  el.innerHTML = w.dur > 0
+    ? c.gates.map(t => mark(t, '')).join('') + (c.gates.laps || []).map(t => mark(t, ' class="lap"')).join('')
+    : '';
 }
 
 /** The seven speeds, as buttons. Built once; only the lit one moves after. */
@@ -3597,6 +3614,7 @@ function watchFrom(i) {
 function stopWatching() {
   if (!S.watch) return;
   for (const c of S.watch.cars) { c.view.dispose(); c.fx.dispose(); }
+  for (const m of S.watch.shotMeshes.values()) S.renderer.scene.remove(m);
   S.watch = null;
   S.car.frozen = false;
   S.view.setVisible(true);
@@ -4217,7 +4235,12 @@ function updateWatch(dt) {
       // How fast the car was, asked of the recording. The camera falls back to
       // it (below) and the pad reads nothing else.
       const real = recordedSpeed(c.g, w.t);
-      s.speed = c.prev ? p.distanceTo(c.prev) / Math.max(1e-3, dt * w.rate) : real;
+      // Off the recording and eased, not measured frame to frame: a distance
+      // over one render frame is as noisy as the frames are, and the engine
+      // note read it straight, which is what made it jump.
+      c.smooth = c.prev && c.smooth != null
+        ? c.smooth + (real - c.smooth) * (1 - Math.exp(-6 * dt)) : real;
+      s.speed = c.smooth;
       s.pos.copy(p);
       s.fwd.set(0, 0, -1).applyQuaternion(q);
       s.up.set(0, 1, 0).applyQuaternion(q);
@@ -4298,7 +4321,55 @@ function updateWatch(dt) {
     }
     c.prev = p.clone();
   }
+  if (w.items) drawReplayItems(w, step, dt);
   syncWatchUi();
+}
+
+/**
+ * The race's shells and bananas, and its blasts and hits, off the recording.
+ * The shots are sampled on the cars' own clock, so they are drawn the same
+ * way: two frames and the fraction between. Events fire as the film crosses
+ * them, and not on a scrub, which is the rule the boost whoosh follows too.
+ */
+function drawReplayItems(w, step, dt) {
+  if (S.blasts) moveBlasts(dt);
+  const it = w.items;
+  if (!it) return;
+  const shots = it.shots || [];
+  const f = w.t * w.itemsHz;
+  const i = Math.max(0, Math.min(shots.length - 1, Math.floor(f))), u = Math.max(0, f - i);
+  const next = new Map((shots[i + 1] || []).map(s => [s[0], s]));
+  const live = new Set();
+  for (const s of shots[i] || []) {
+    live.add(s[0]);
+    let m = w.shotMeshes.get(s[0]);
+    if (!m) { m = shotMesh(s[1]); S.renderer.scene.add(m); w.shotMeshes.set(s[0], m); }
+    const n = next.get(s[0]) || s;
+    m.position.set(s[2] + (n[2] - s[2]) * u, s[3] + (n[3] - s[3]) * u, s[4] + (n[4] - s[4]) * u);
+    m.rotateOnAxis(UP_LOCAL, (m.userData.spin || 0) * step);
+  }
+  for (const [id, m] of w.shotMeshes) {
+    if (!live.has(id)) { S.renderer.scene.remove(m); w.shotMeshes.delete(id); }
+  }
+  if (!step) return;
+  for (const e of it.events || []) {
+    const t = e[0] / 1000;
+    if (t <= w.t - step || t > w.t) continue;
+    if (e[1] === 'blast') {
+      addBlast(e[3], e[4], e[2] === 'blue');
+      S.sound.bombBlast();
+    } else if (e[1] === 'hit') {
+      const car = w.cars.find(c => c.pid === e[3]);
+      if (!car) continue;
+      const at = car.view.group.position;
+      for (const up of [6, 3]) {
+        S.renderer.smoke(at.clone().setY(at.y + 0.5),
+                         new THREE.Vector3((Math.random() - 0.5) * 8, up,
+                                           (Math.random() - 0.5) * 8), 'spark');
+      }
+      if (car === w.cars[w.at]) S.sound.itemHit();
+    }
+  }
 }
 
 /**
@@ -4317,9 +4388,10 @@ async function openRaceReplay() {
   } catch (e) { d = null; }
   if (!d || !d.cars || !d.cars.length) { toast('That replay is not there'); return; }
   startReplay(d.cars.map(c => ({
-    frames: c.frames, hz: d.hz, name: c.name, color: c.color, ms: c.ms,
+    frames: c.frames, hz: d.hz, name: c.name, color: c.color, ms: c.ms, pid: c.pid,
   })), {
     title: 'Race replay',
+    items: d.items, hz: d.hz,
     // A race *is* a page, so the address is the one already in the bar. Read off
     // `location` rather than rebuilt from `CFG.race`, which would drop the query
     // somebody arrived with.
@@ -4975,6 +5047,11 @@ function showFinish(ms) {
  */
 const AUTO_BRAKE = 0.3;                   // of T.BRAKE: a stop, not an emergency
 const AUTO_STEER = 2.0;                   // steer per radian of aim error
+// **It drives on, at a cruise.** It used to brake from the line and park,
+// which from the seat is the autopilot not happening. A circuit gets a lap of
+// honour for as long as the others take; a point-to-point track cruises until
+// the road runs out and only then stops.
+const AUTO_CRUISE = 0.55;                 // of T.MAX_SPEED
 
 function autopilot() {
   const car = S.car, c = S.course;
@@ -4998,8 +5075,10 @@ function autopilot() {
   // Brake while rolling forward and stop there: holding the brake at a
   // standstill is reverse. A car rolling backwards down a slope is held with a
   // touch of throttle, which is what the physics brakes a reversing car with.
-  input.brake = vLong > 1 ? AUTO_BRAKE : 0;
-  input.throttle = vLong < -1 ? AUTO_BRAKE : 0;
+  const roadLeft = !(S.track && S.track.closed) && loc.s > c.total - 5;
+  const cruise = roadLeft ? 0 : AUTO_CRUISE * T.MAX_SPEED;
+  input.brake = vLong > cruise + 1 ? AUTO_BRAKE : 0;
+  input.throttle = vLong < -1 ? AUTO_BRAKE : (vLong < cruise ? 0.7 : 0);
   input.handbrake = false;
   return input;
 }
@@ -5863,6 +5942,10 @@ function frame(now) {
 
   // Across the line in a race, the car is not yours any more - see `autopilot`.
   const inp = raceIsRun() ? autopilot() : readInput();
+  // Still smoking from a hit: the engine is off the pace until it clears.
+  // Through the input rather than the speed, so the recording and the
+  // verifier see the same held-back car the screen does.
+  if (S.hitSmoke > 0 && S.car.speed > HIT_SLOW * T.MAX_SPEED) inp.throttle = 0;
 
   // In solo, the clock starts the moment you ask the car to move. In a race it
   // starts on the green light, which the server picks for everyone.

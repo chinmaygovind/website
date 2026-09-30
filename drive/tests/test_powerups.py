@@ -1365,3 +1365,24 @@ def test_the_browser_empties_its_slots_whenever_the_room_does():
         body = js[i:i + 1500]
         end = re.search(r"\n\}|\n  \}\);", body).start()
         assert "clearItems()" in body[:end], start
+
+
+def test_you_can_drive_into_your_own_banana_once_it_has_landed(A, bend, monkeypatch):
+    r = _room(A)
+    c = _along_x(A, r, "a", speed=30.0)
+    seen = []
+    monkeypatch.setattr(A.socketio, "emit", lambda ev, d, **k: seen.append((ev, d)))
+    t = [1_700_000_000_000]
+    monkeypatch.setattr(A, "_now_ms", lambda: t[0])
+    A._fire(r, "a", "banana")
+    landed = None
+    for step in range(1, 60):
+        t[0] += 33
+        A._tick_shots(r, t[0])
+        if landed is None and r["shots"] and r["shots"][0].get("pv") == [0.0, 0.0, 0.0] and step > 5:
+            landed = list(r["shots"][0]["p"])
+    assert not seen, "hit its own thrower in the air"
+    c["p"] = [landed[0], landed[1], landed[2]]           # drive into it
+    t[0] += 33
+    A._tick_shots(r, t[0])
+    assert ("item_hit", {"item": "banana", "pid": "a", "owner": "a"}) in seen

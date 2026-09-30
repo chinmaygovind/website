@@ -772,7 +772,17 @@ export class Ghost {
     if (i < 0) return this.frames[0];
     if (i >= this.frames.length - 1) return this.frames[this.frames.length - 1];
     const a = this.frames[i], b = this.frames[i + 1], u = f - i;
-    const out = [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u,
+    // Position on a Catmull-Rom curve through the neighbours, not a straight
+    // line between two: at 15Hz a straight line is a corner every 66ms, and
+    // the car's speed stepped at each one.
+    const z = this.frames[Math.max(0, i - 1)], c = this.frames[Math.min(this.frames.length - 1, i + 2)];
+    const u2 = u * u, u3 = u2 * u;
+    // Not across a respawn, where the curve would swing wide of both ends.
+    const far = (x, y) => (x[0] - y[0]) ** 2 + (x[1] - y[1]) ** 2 + (x[2] - y[2]) ** 2 > 900;
+    const jump = far(z, a) || far(a, b) || far(b, c);
+    const cr = jump ? (k) => a[k] + (b[k] - a[k]) * u : (k) => 0.5 * (2 * a[k] + (b[k] - z[k]) * u
+      + (2 * z[k] - 5 * a[k] + 4 * b[k] - c[k]) * u2 + (3 * a[k] - z[k] - 3 * b[k] + c[k]) * u3);
+    const out = [cr(0), cr(1), cr(2),
                  a[3] + (b[3] - a[3]) * u, a[4] + (b[4] - a[4]) * u,
                  a[5] + (b[5] - a[5]) * u, a[6] + (b[6] - a[6]) * u];
     if (a.length > 7) out.push(a[7]);

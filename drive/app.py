@@ -25,7 +25,8 @@ from sqlalchemy import func
 import models as models_mod
 from models import (db, User, DriveStats, DriveTime, DriveStart, DriveRunCheck,
                     DriveItemStat,
-                    DriveGame, DrivePlayer, DriveRace, DriveGarage, DrivePrefs,
+                    DriveGame, DrivePlayer, DriveRace, DriveRaceItems,
+                    DriveGarage, DrivePrefs,
                     DriveCheatFlag, DriveUserTrack, DriveSave,
                     DriveDailyTime)
 import portal as portal_mod
@@ -1769,9 +1770,14 @@ def api_race(race_id):
                      # replay plays back on the car it was driven in.
                      "livery": c.get("livery"), "ms": c.get("ms"),
                      "dnf": c.get("dnf"), "frames": frames})
+    row = DriveRaceItems.query.get(race.id)
+    try:
+        items = json_mod.loads(row.items_json) if row else None
+    except ValueError:
+        items = None
     return jsonify({"ok": True, "id": race.id, "track": race.track,
                     "hz": race.hz or REPLAY_HZ, "ms": race.ms,
-                    "why": race.why, "cars": cars})
+                    "why": race.why, "cars": cars, "items": items})
 
 
 @app.route("/install")
@@ -3128,7 +3134,7 @@ SHOT_SPEED = 75.0
 # lap of road, and at a shell's pace it arrived so late that the race it was
 # meant to change had already been decided. It is also the one shot everybody
 # is watching rather than dodging.
-BLUE_SPEED = 115.0
+BLUE_SPEED = 170.0
 SHELL_MS = 5000           # a green that has hit nothing gives up
 # A homing shell gets longer, because it is not thrown at a place - it is sent
 # after a car, and following the road to one two corners ahead is most of that
@@ -3156,12 +3162,12 @@ SHOT_LIFT = 0.9           # how far off the road a shell rides
 # circling is the second of warning that makes it a blue shell. The browser
 # draws the circle round the car it can see (`shotTruth`); the server only
 # keeps time.
-BLUE_ALT = 9.0            # how far above the road it flies
-BLUE_RISE_MS = 500        # climbing to that off the thrower's roof
+BLUE_ALT = 16.0           # how far above the road it flies
+BLUE_RISE_MS = 600        # climbing to that off the thrower's roof
 BLUE_REACH = 14.0         # this close to its man it stops chasing and circles
 BLUE_ORBIT_MS = 1200      # circling before it comes down
 BLUE_BLAST = 7.0          # and what the explosion catches
-# A blue closes on the leader at 65 units a second, so HOMING_MS is under 600
+# Even closing on the leader at 120 units a second, HOMING_MS is barely 1000
 # units of road - a blue from the back of a long track timed out and vanished.
 BLUE_MS = 20000
 # **A banana is lobbed, both ways, and sticks where it lands.** Forwards it is
@@ -3173,6 +3179,7 @@ BANANA_TOSS = 12.0        # tossed back, against it
 BANANA_FLY_MS = 650
 BANANA_ARC = 3.5          # how high the lob goes
 BANANA_LIFT = 1.0         # where it sits: the peel's own foot on the road
+BANANA_OWNER_MS = 400     # after landing, until it can catch its own thrower
 # The bomb is the only item that is thrown at a *place* rather than at a car:
 # it is lobbed up the road, settles where it lands and then goes off, and what
 # it catches is whatever happens to be near it - **including whoever threw
@@ -3857,8 +3864,11 @@ def _tick_shots(r, now):
         # ahead and the hit radius is four, so without this every shot hit its
         # own owner on the tick it armed - and a banana is dropped four units
         # behind a car that has not moved yet, which is the same distance.
+        # A banana on the road is anybody's, the thrower's included, once it
+        # has landed - driving into your own is the price of throwing it ahead.
+        mine_too = "arc" in s and now >= s["arc"]["t"] + s["arc"]["T"] + BANANA_OWNER_MS
         hit = next((pid for pid, c in r["cars"].items()
-                    if pid != s["owner"] and not c.get("gone") and
+                    if (pid != s["owner"] or mine_too) and not c.get("gone") and
                     sum((c["p"][i] - s["p"][i]) ** 2 for i in range(3)) < SHOT_HIT_R2), None)
         if hit and s["item"] == "bomb":
             _blast(r, s, now)
@@ -3881,6 +3891,7 @@ def _tick_shots(r, now):
                     except Exception:
                         app.logger.exception("bot hit failed in room %s", r["code"])
             _tally(s["item"], "hit")
+            _rec_event(r, "hit", s["item"], hit)
             socketio.emit("item_hit", {"item": s["item"], "pid": hit, "owner": s["owner"]},
                           room="room:" + r["code"])
         else:
@@ -3943,6 +3954,7 @@ def _blast(r, s, now, radius=BOMB_BLAST):
                         app.logger.exception("bot blast failed in %s", r["code"])
     # `pid` is who a blue came down on, so every screen can put the flash on
     # that car as *it* draws it rather than where the server last heard of it.
+    _rec_event(r, "blast", s["item"], [round(v, 1) for v in p], radius, s.get("target"))
     socketio.emit("item_blast", {"p": [round(v, 2) for v in p], "r": radius,
                                  "item": s["item"], "pid": s.get("target")},
                   room="room:" + r["code"])
@@ -4529,20 +4541,43 @@ def _record_race(r):
     rec = r.get("rec")
     if not rec or r["phase"] != "racing":
         return
-    elapsed = (_now_ms() - rec["t0"]) / 1000.0
+    now = _now_ms()
+    elapsed = (now - rec["t0"]) / 1000.0
     while rec["n"] / REPLAY_HZ <= elapsed:
         if rec["n"] >= REPLAY_MAX_FRAMES:
             return
+        tf = rec["t0"] + rec["n"] * 1000.0 / REPLAY_HZ
         for pid, frames in rec["cars"].items():
             c = r["cars"].get(pid)
             if c is None:
                 frames.append(list(frames[-1]) if frames
                               else [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0])
                 continue
-            frames.append([c["p"][0], c["p"][1], c["p"][2],
+            # **At the frame's own instant, not whenever the last pose landed.**
+            # Poses arrive at 30Hz with network jitter and frames are taken at
+            # 15, so "the latest pose" was sometimes the same one twice and
+            # sometimes two apart - a car that stopped and then jumped, which
+            # is the replay's stutter. Carried along its velocity to `tf`.
+            age = max(-0.1, min(0.25, (tf - (c["ts"] - c.get("up", 0.0))) / 1000.0))
+            frames.append([c["p"][0] + c["v"][0] * age, c["p"][1] + c["v"][1] * age,
+                           c["p"][2] + c["v"][2] * age,
                            c["q"][0], c["q"][1], c["q"][2], c["q"][3],
                            c["flags"]])
+        # The shells and bananas on this frame, walked back to its instant.
+        back = (tf - now) / 1000.0
+        rec.setdefault("shots", []).append([
+            [s.get("id", 0), s["item"]] +
+            [round(s["p"][i] + s.get("pv", (0, 0, 0))[i] * back, 1) for i in range(3)]
+            for s in r.get("shots", ())])
         rec["n"] += 1
+
+
+def _rec_event(r, *ev):
+    """A blast or a hit, for the replay: milliseconds from the green light,
+    then what it was."""
+    rec = r.get("rec")
+    if rec and r["phase"] == "racing":
+        rec.setdefault("events", []).append([int(_now_ms() - rec["t0"])] + list(ev))
 
 
 def _store_replay(r, game, standings, why):
@@ -4589,6 +4624,11 @@ def _store_replay(r, game, standings, why):
                      why=why, cars_json=json_mod.dumps(cars))
     db.session.add(race)
     db.session.commit()
+    if any(rec.get("shots") or ()) or rec.get("events"):
+        db.session.add(DriveRaceItems(race_id=race.id, items_json=json_mod.dumps(
+            {"shots": rec.get("shots") or [], "events": rec.get("events") or []},
+            separators=(",", ":"))))
+        db.session.commit()
     return race.id
 
 
@@ -6661,6 +6701,9 @@ def _sweep_once():
         if old:
             for race in old:
                 db.session.delete(race)
+            DriveRaceItems.query.filter(
+                DriveRaceItems.race_id.in_([race.id for race in old])
+            ).delete(synchronize_session=False)
             db.session.commit()
         if changed:
             _broadcast_lobbies()

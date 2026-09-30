@@ -399,6 +399,17 @@ class DriveRace(db.Model):
             return []
 
 
+class DriveRaceItems(db.Model):
+    """The items in a finished race: every shell and banana on each replay
+    frame, and the blasts and hits as events. Its own table for the reason
+    ``DriveRace`` is one - ``create_all`` makes it, no migration - and so
+    ``cars_json`` stays exactly one entry per car for everything reading it."""
+    __tablename__ = "drive_race_items"
+
+    race_id    = db.Column(db.Integer, primary_key=True)
+    items_json = db.Column(db.Text, default="{}")
+
+
 class DriveCheatFlag(db.Model):
     """A car whose race stopped being rated, and why.
 

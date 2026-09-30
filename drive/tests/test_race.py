@@ -748,6 +748,36 @@ def test_a_finished_race_is_stored_as_one_replay_per_car(env):
             assert len(frames) == A.REPLAY_HZ + 1 and len(frames[0]) == 8
 
 
+def test_each_frame_is_the_car_at_that_frame_s_instant(env, monkeypatch):
+    """Taking whatever pose had landed last made a car stop and jump; each
+    frame is carried along the velocity to its own moment instead."""
+    A = env
+    r = _recording(A, cars=("a",))
+    c = r["cars"]["a"]
+    now = 1_700_000_000_000
+    monkeypatch.setattr(A, "_now_ms", lambda: now)
+    r["rec"]["t0"] = now - 1000                    # so the last frame is `now`
+    c["p"], c["v"], c["ts"], c["up"] = [0.0, 0.0, 0.0], [30.0, 0.0, 0.0], now - 100, 0.0
+    A._record_race(r)
+    assert abs(r["rec"]["cars"]["a"][-1][0] - 3.0) < 0.01, "not carried to its instant"
+
+
+def test_the_items_ride_into_the_stored_replay(env):
+    A = env
+    with A.app.app_context():
+        game = A.DriveGame(code="REC", track="sunrise")
+        A.db.session.add(game)
+        A.db.session.commit()
+        r = _recording(A)
+        r["shots"] = [{"id": 7, "item": "banana", "p": [1.0, 2.0, 3.0], "owner": "a"}]
+        A._record_race(r)
+        A._rec_event(r, "hit", "green", "b")
+        rid = A._store_replay(r, game, [], "all in")
+        items = A.app.test_client().get("/api/race/%d" % rid).get_json()["items"]
+        assert items["shots"][0] == [[7, "banana", 1.0, 2.0, 3.0]]
+        assert items["events"][0][1:] == ["hit", "green", "b"]
+
+
 def test_a_race_with_nothing_recorded_stores_no_replay(env):
     """Everybody vanished before the first frame. An empty replay offered from
     the results sheet is worse than no replay at all."""

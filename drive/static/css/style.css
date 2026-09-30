@@ -724,7 +724,7 @@ body.touch .mapbtns { display: none; }
 .hbtn.start-race .dk { fill: #17171b; }
 .hbtn.start-race .wave { animation: flag-wave 0.9s ease-in-out infinite alternate; }
 .hbtn.start-race .hbtn-label { display: none; }
-@keyframes flag-wave { from { transform: translateY(-1.1px); } to { transform: translateY(1.1px); } }
+@keyframes flag-wave { from { transform: translateY(calc(-1 * var(--a))); } to { transform: translateY(var(--a)); } }
 @media (prefers-reduced-motion: reduce) { .hbtn.start-race .wave { animation: none; } }
 /* End race and Resign: icons in the row's own style, tinted so they read as
    the two that stop something rather than open something. Hover only where
@@ -1966,6 +1966,10 @@ body.touch.watch-many #watchWho { display: none; }
 #scrubTicks i {
   position: absolute; top: -5px; width: 2px; height: 10px; margin-left: -1px;
   border-radius: 1px; background: rgba(255, 255, 255, .8);
+}
+#scrubTicks i.lap {
+  top: -8px; width: 4px; height: 16px; margin-left: -2px;
+  background: #ffc933; box-shadow: 0 0 4px rgba(255, 201, 51, .7);
 }
 .scrub-knob {
   left: var(--at, 0%); width: 12px; height: 12px; margin: -6px 0 0 -6px;
