@@ -235,6 +235,7 @@ export class Run {
     this._ghostN = 0;
     this._prevPose = null;
     this.inputs = [];            // one byte per physics step - see noteStep
+    this._stepPos = [];
     this.anchors = [];           // the car itself, every STEPS_PER_FRAME steps
     this._sides = new Map();     // gate -> which side of its plane we were on
     this._lastPos = null;
@@ -290,6 +291,7 @@ export class Run {
     this._prevPose = null;
     this.inputs = [];
     this.anchors = [];
+    this._stepPos = [];
     this._sides.clear();
     // A new run from the line is a clean one, whatever the last one was, which
     // is what makes "press Shift+R and drive it properly" always give you a lap
@@ -325,6 +327,7 @@ export class Run {
    */
   noteStep(car, input, nowMs) {
     if (this.state !== 'running') return;
+    this._stepPos.push([car.pos.x, car.pos.y, car.pos.z]);
     if (this.inputs.length >= MAX_INPUT_STEPS) return;
     if (this.inputs.length % STEPS_PER_FRAME === 0) {
       this.anchors.push([
@@ -536,6 +539,34 @@ export class Run {
     this._prevPose = { t, f: cur };
   }
 
+  _finishTime(gate, car, nowMs, stepper) {
+    const wall = nowMs - this.startedAt;
+    const P = this._stepPos;
+    if (!stepper || !P.length) return Math.round(wall);
+    const step = stepper.T.FIXED_DT * 1000;
+    const pts = P.concat([[car.pos.x, car.pos.y, car.pos.z]]);
+    const side = (p) => (p[0] - gate.p[0]) * gate.f[0] + (p[1] - gate.p[1]) * gate.f[1] +
+                        (p[2] - gate.p[2]) * gate.f[2];
+    let seg = -1, u = 1;
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = side(pts[i]), b = side(pts[i + 1]);
+      if (a < 0 && b >= 0) { seg = i; u = -a / (b - a); }
+    }
+    if (seg < 0) return Math.round(wall);
+    const after = pts.length - 2 - seg;
+    const t = wall - stepper.acc * 1000 - (after + 1 - u) * step;
+    return (t > 0 && t <= wall) ? Math.round(t) : Math.round(wall);
+  }
+
+  _trimGhost() {
+    const want = Math.floor(this.time / 1000 * GHOST_HZ) + 1;
+    if (this.ghost.length > want) this.ghost.length = want;
+    while (this.ghost.length && this.ghost.length < want) {
+      this.ghost.push(this.ghost[this.ghost.length - 1].slice());
+    }
+    this._ghostN = this.ghost.length;
+  }
+
   _side(gate, pos) {
     return (pos.x - gate.p[0]) * gate.f[0] + (pos.y - gate.p[1]) * gate.f[1] +
            (pos.z - gate.p[2]) * gate.f[2];
@@ -567,7 +598,7 @@ export class Run {
    * Advance the run. Returns a list of event strings for sound/HUD:
    * 'cp', 'finish', 'missed'.
    */
-  update(car, nowMs, input) {
+  update(car, nowMs, input, stepper) {
     const events = [];
     const pos = car.pos;
     // What the driver was pressing this frame, for the ninth value of a ghost
@@ -669,7 +700,8 @@ export class Run {
               events.push('lap');
             } else {
               this.state = 'done';
-              this.time = Math.round(nowMs - this.startedAt);
+              this.time = this._finishTime(this.finish, car, nowMs, stepper);
+              this._trimGhost();
               events.push('finish');
             }
           } else if (this.closed && this.nextCp === 0) {
@@ -691,6 +723,7 @@ export class Run {
     }
 
     this._lastPos = [pos.x, pos.y, pos.z];
+    this._stepPos = [];
 
     // Keep the car's respawn target up to date (last checkpoint reached).
     if (this.respawnGate) {

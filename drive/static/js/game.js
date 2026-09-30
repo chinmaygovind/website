@@ -6106,7 +6106,7 @@ function frame(now) {
   // run bookkeeping
   // The input goes in as well as the car: a ghost frame's ninth value is what
   // the driver was pressing, which no amount of looking at the car can recover.
-  const events = S.run.update(S.car, now, inp);
+  const events = S.run.update(S.car, now, inp, S.stepper);
   for (const e of events) {
     if (e === 'cp') {
       S.sound.checkpoint();

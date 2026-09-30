@@ -577,3 +577,29 @@ socket ping timeout and so disconnected everybody who was driving.
     they are not comparable with new ones, and the records are correspondingly
     harder to beat. `tests/test_start_line.py` pins the mechanism (the real
     `Stepper` in QuickJS) and the two frame-loop lines.
+- **The finish is timed where the car crossed, not where the frame landed.** The
+  other end of the same lap had the same kind of error: `time_ms` was the clock
+  on the frame that *noticed* the finish, i.e. the crossing step plus however
+  long that frame took to come round - 0 to 7ms at 144Hz, up to 17ms at 60Hz.
+  Found from the board: BotTyler's five Chicane laps sit 1.7 to 4.0ms after their
+  crossing steps, so two identically driven laps landed milliseconds apart by
+  frame timing alone, at a margin where the top of a board is decided.
+  - `noteStep` keeps where each of the frame's steps began, and
+    `Run._finishTime` interpolates the gate plane inside the step that crossed
+    it. `update` takes the `Stepper` as a fourth argument for the one number it
+    needs, the time not yet simulated (`acc`).
+  - **Anchored to the frame's clock, not counted in steps from zero.** A frame
+    past the stepper's clamp drops physics time; a step count would stop
+    charging for it, and a tab throttled under 4fps would be slow motion for
+    free. So the crossing is the frame's clock less `acc` less the steps after
+    it - exact physics time in normal play, and a stall still costs.
+  - `_trimGhost` drops the ghost sample that can lie past the new, earlier time,
+    so `runcheck.time_window`'s exact `frames == floor(time_ms/1000*15) + 1`
+    still holds without leaning on `FRAME_SLACK`.
+  - The bots call `update` without a stepper and keep the frame clock. So does a
+    browser holding a cached `course.js` against a new `game.js` - the extra
+    argument is ignored, which is why this was an argument and not an export.
+  - **The old times were kept**, as they were for the start line: every lap
+    before this carries its frame's delay, so a new lap driven identically reads
+    a few ms quicker. `tests/test_finish_time.py` pins it at five frame rates,
+    the ghost length, the stall and the frame loop's argument.
