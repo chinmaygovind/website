@@ -512,6 +512,16 @@ round at all read as a level with nothing to do. It now says so.
   not full in any sense that should keep somebody out - they are only there
   because nobody else was - so `join` stands the weakest one down. Weakest and
   not newest: the field is there to race and the easy one is the least of it.
+- **A bot is painted to stand apart** (`garage.pick_bot_body`,
+  `garage.bot_livery`, `_player_livery`). Its body comes from `BOT_BODIES` - the
+  whole wheel plus white, silver, gunmetal and black, none of which the body
+  palette may offer a person - picked at random from the colours at least
+  `BOT_CLASH_DE` from every car already seated, and stored in `color`. The rest
+  of the car (a pattern, a stripe that contrasts with the body, rims, finish,
+  sometimes a roof) is seeded off the seat's session key, so it is the same car
+  all afternoon. Never a gated pinstripe, forged rim or badge: those mean
+  somebody earned them. When a person sits down in a colour a bot is already
+  wearing, `_repaint_bots` repaints the bot, between races only.
 - Bots are placed on the grid by the same `_start_grid`/`_reverse_grid` that
   orders everybody else, they set qualifying times, and **a bot on provisional
   pole hands its lap to the room as the ghost to chase** - which on a max bot is

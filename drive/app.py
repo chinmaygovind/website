@@ -266,6 +266,17 @@ def _livery_for(user, holders=None, name=None, leaders=None):
                               user.username, got)
 
 
+def _player_livery(pl, holders=None, leaders=None):
+    """The livery for one seat, bot or person.
+
+    A bot has no garage, so it is `garage.bot_livery` off its seat: the body it
+    was painted at `_seat_bot` and a pattern seeded off its session key.
+    """
+    if pl.is_bot:
+        return garage_mod.bot_livery(pl.session_key, pl.color)
+    return _livery_for(pl.linked_user, holders, pl.name, leaders)
+
+
 def _car_livery(user):
     """The livery for the car *you* are about to drive, guests included."""
     return _livery_for(user, name=get_effective_name())
@@ -2825,7 +2836,7 @@ def _roster(game):
     points = (_rooms.get(game.code) or {}).get("points", {})
     out = []
     for pl in game.players:
-        seat = pl.to_dict(_livery_for(pl.linked_user, holders, pl.name, leaders))
+        seat = pl.to_dict(_player_livery(pl, holders, leaders))
         seat["points"] = points.get(pl.pid, 0)
         out.append(seat)
     return out
@@ -2864,6 +2875,7 @@ def _refresh_seat(p):
     p.name = get_effective_name()
     p.color = color_for(user.username if user else p.name)
     db.session.commit()
+    _repaint_bots(p.game)
     return p
 
 
@@ -2896,6 +2908,7 @@ def _add_player(game, host=False):
                     color=color, seat_order=seat, is_host=host)
     db.session.add(p)
     db.session.commit()
+    _repaint_bots(game)
     return p
 
 
@@ -4388,7 +4401,7 @@ def _sync_bots(r, game):
         # it is in the room and two bots never make them together.
         w.add(p.pid, want[p.pid], seed=p.id * 7919 + i)
         c = _car(r, p.pid)
-        seat = p.to_dict(_livery_for(None, holders, p.name, leaders))
+        seat = p.to_dict(_player_livery(p, holders, leaders))
         c["name"], c["color"] = p.name, seat["color"]
     r["bots"] = dict(w.bots)
     r["bot_slot"] = {p.pid: i for i, p in enumerate(seats)}
@@ -4612,7 +4625,7 @@ def _store_replay(r, game, standings, why):
     # would make it a record of nothing.
     holders = garage_mod.records_held()
     leaders = garage_mod.time_trial_leaders()
-    livery_by_pid = {pl.pid: _livery_for(pl.linked_user, holders, pl.name, leaders)
+    livery_by_pid = {pl.pid: _player_livery(pl, holders, leaders)
                      for pl in game.players}
     bots = {pl.pid for pl in game.players if pl.is_bot}
     cars = []
@@ -4924,6 +4937,57 @@ def on_set_setting(data=None):
     socketio.emit("room_settings", out, room="room:" + code)
 
 
+def _room_colors(game, people_only=False, skip=None):
+    """The body colour of every car seated in a room.
+
+    Parameters
+    ----------
+    game : DriveGame
+    people_only : bool, optional
+        Leave the bots out.
+    skip : DrivePlayer, optional
+        One seat not to count, usually the bot being painted.
+
+    Returns
+    -------
+    list of str
+    """
+    out = []
+    for pl in game.players:
+        if pl is skip or (people_only and pl.is_bot):
+            continue
+        out.append(pl.color if pl.is_bot
+                   else (_livery_for(pl.linked_user, name=pl.name) or {}).get("body")
+                   or pl.color)
+    return out
+
+
+def _repaint_bots(game):
+    """Give any bot that now looks like a person in the room a new colour.
+
+    Only between races: a car changing colour mid-race is a car you have just
+    lost track of. The live car's colour is updated with the seat, because the
+    minimap and the name tags read it rather than the livery.
+    """
+    r = _rooms.get(game.code)
+    if r and r["phase"] in LIVE_PHASES:
+        return
+    people = _room_colors(game, people_only=True)
+    changed = False
+    for pl in game.players:
+        if not pl.is_bot:
+            continue
+        if min((garage_mod.delta_e(pl.color, c) for c in people),
+               default=999.0) >= garage_mod.BOT_CLASH_DE:
+            continue
+        pl.color = garage_mod.pick_bot_body(_room_colors(game, skip=pl))
+        if r and pl.pid in r["cars"]:
+            r["cars"][pl.pid]["color"] = pl.color
+        changed = True
+    if changed:
+        db.session.commit()
+
+
 def _seat_bot(game, level, commit=True):
     """Add one bot seat to a room. Returns the row, or None if it is full.
 
@@ -4942,8 +5006,8 @@ def _seat_bot(game, level, commit=True):
     seat = max((p.seat_order for p in game.players), default=-1) + 1
     p = DrivePlayer(game_id=game.id, user_id=None,
                     session_key="bot_%s" % uuid.uuid4().hex[:12],
-                    name=name, color=color_for(name), seat_order=seat,
-                    is_host=False, is_bot=True, bot_level=level)
+                    name=name, color=garage_mod.pick_bot_body(_room_colors(game)),
+                    seat_order=seat, is_host=False, is_bot=True, bot_level=level)
     db.session.add(p)
     # `flush` gets the row an id without a write transaction, but **it does not
     # expire anything**, and `game.players` is a loaded collection that stays
@@ -5303,7 +5367,7 @@ def _seat_livery(code, pid):
         return None
     for pl in game.players:
         if pl.pid == pid:
-            return _livery_for(pl.linked_user, name=pl.name)
+            return _player_livery(pl)
     return None
 
 

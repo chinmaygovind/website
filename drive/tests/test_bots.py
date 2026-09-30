@@ -755,3 +755,56 @@ def test_a_bot_reaching_a_checkpoint_tells_the_room(env, monkeypatch):
             if "race_split" in sent:
                 break
         assert "race_split" in sent, "a bot passed a checkpoint and said nothing"
+
+
+# ---------------------------------------------------------------------------
+# The paint
+# ---------------------------------------------------------------------------
+
+def test_bots_come_in_the_whole_spectrum_and_the_neutrals():
+    import random
+    import garage
+    assert {"#f4f4f2", "#9aa1ab", "#16171b"} <= set(garage.BOT_BODIES)
+    rng = random.Random(1)
+    got = {garage.pick_bot_body([], rng) for _ in range(2000)}
+    assert got == set(garage.BOT_BODIES)
+
+
+def test_a_bot_wears_a_pattern_and_never_a_gated_one():
+    import garage
+    for i in range(200):
+        lv = garage.bot_livery("bot_%d" % i, garage.BOT_BODIES[i % len(garage.BOT_BODIES)])
+        assert lv["livery"] in garage.LIVERIES and lv["livery"] not in ("none", "pinstripe")
+        assert lv["rim_style"] != "forged" and lv["badge"] == "none"
+        assert garage.delta_e(lv["stripe"], lv["body"]) >= 35.0
+    assert garage.bot_livery("bot_x", "#e8453c") == garage.bot_livery("bot_x", "#e8453c")
+
+
+def test_a_bot_is_not_painted_like_the_people_in_the_room(env):
+    import garage
+    with env.app.app_context():
+        g, host = _game(env)
+        human = env._livery_for(None, name=host.name)["body"]
+        for _ in range(7):
+            bot = env._seat_bot(g, "easy")
+            assert garage.delta_e(bot.color, human) >= garage.BOT_CLASH_DE
+        seat = [s for s in env._roster(g) if s["bot"]][0]
+        assert seat["livery"]["livery"] != "none"
+        assert seat["color"] == seat["livery"]["body"]
+
+
+def test_a_bot_is_repainted_when_somebody_joins_in_its_colour(env):
+    import garage
+    from models import DrivePlayer
+    with env.app.app_context():
+        g, _ = _game(env)
+        bot = env._seat_bot(g, "easy")
+        bot.color = "#e8453c"
+        env.db.session.commit()
+        twin = next(n for n in ("a%d" % i for i in range(500))
+                    if env.color_for(n) == "#e8453c")
+        env.db.session.add(DrivePlayer(game_id=g.id, session_key="twin",
+                                       name=twin, color="#e8453c", seat_order=9))
+        env.db.session.commit()
+        env._repaint_bots(g)
+        assert garage.delta_e(bot.color, "#e8453c") >= garage.BOT_CLASH_DE

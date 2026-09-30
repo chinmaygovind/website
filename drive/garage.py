@@ -28,6 +28,7 @@ have not earned cannot be worn by POSTing it - see `validate` vs `resolve`.
 
 import hashlib
 import json
+import random
 import re
 
 import tracks as tracks_mod
@@ -688,3 +689,148 @@ def loads(blob):
         return validate(json.loads(blob) if blob else {})
     except (ValueError, TypeError):
         return dict(DEFAULTS)
+
+
+# ---------------------------------------------------------------------------
+# Bot paint
+# ---------------------------------------------------------------------------
+# **A bot's car is not held to the body palette's rules**, because the palette
+# exists so that *people* are told apart, and a bot has nobody to confuse with
+# anybody. So the bots get the whole wheel plus white, grey and black - which
+# the body palette may never offer - and every one of them wears a pattern out
+# of the garage. Hashed off the name over `HASH_COLORS` they came out of the
+# same eight a person does, which is how a grid of bots ended up looking like
+# the lobby it was sitting in.
+BOT_BODIES = [
+    "#e8453c",   # red
+    "#a8182e",   # crimson
+    "#ff7a45",   # orange
+    "#f2c94c",   # yellow
+    "#c3dc3a",   # lime
+    "#2fb344",   # green
+    "#0f7b5f",   # emerald
+    "#17bfa8",   # teal
+    "#3bc9db",   # cyan
+    "#3d8bfd",   # blue
+    "#2340a8",   # navy
+    "#7b6cf6",   # violet
+    "#bb6bd9",   # purple
+    "#e64fb0",   # magenta
+    "#f178b6",   # pink
+    "#8b5a2b",   # brown
+    "#c9a96e",   # tan
+    "#f4f4f2",   # white
+    "#9aa1ab",   # silver
+    "#555b66",   # gunmetal
+    "#16171b",   # black
+]
+# Closer than this to a car already in the room and a bot is repainted.
+BOT_CLASH_DE = 20.0
+# Patterns a bot may wear: everything but "none", and not the pinstripe, which
+# is a gate and means somebody earned it.
+BOT_PATTERNS = tuple(v for v in LIVERIES
+                     if v != "none" and v != GATES["pinstripe"]["value"])
+BOT_RIMS = tuple(v for v in RIM_STYLES if v != GATES["forged"]["value"])
+
+
+def lab(hex_):
+    """CIELAB (D65) of a ``#rrggbb`` colour.
+
+    Parameters
+    ----------
+    hex_ : str
+
+    Returns
+    -------
+    tuple of float
+        ``(L, a, b)``.
+    """
+    r, g, b = (int(hex_[i:i + 2], 16) / 255.0 for i in (1, 3, 5))
+
+    def lin(c):
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+    r, g, b = lin(r), lin(g), lin(b)
+    x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047
+    y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883
+
+    def f(t):
+        return t ** (1 / 3) if t > 0.008856 else (7.787 * t + 16 / 116)
+
+    fx, fy, fz = f(x), f(y), f(z)
+    return (116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz))
+
+
+def delta_e(a, b):
+    """CIE76 distance between two ``#rrggbb`` colours.
+
+    Parameters
+    ----------
+    a, b : str
+
+    Returns
+    -------
+    float
+    """
+    return sum((x - y) ** 2 for x, y in zip(lab(a), lab(b))) ** 0.5
+
+
+def _nearest(hex_, others):
+    return min((delta_e(hex_, o) for o in others), default=999.0)
+
+
+def pick_bot_body(avoid, rng=random):
+    """A body colour for a bot that stands apart from the cars around it.
+
+    Parameters
+    ----------
+    avoid : iterable of str
+        Colours already in the room - people first, other bots too.
+    rng : random.Random, optional
+
+    Returns
+    -------
+    str
+        One of `BOT_BODIES`: a random one of those at least `BOT_CLASH_DE` from
+        everything in `avoid`, or the furthest there is if none are.
+    """
+    avoid = [a for a in avoid if isinstance(a, str) and _HEX.match(a)]
+    clear = [c for c in BOT_BODIES if _nearest(c, avoid) >= BOT_CLASH_DE]
+    if clear:
+        return rng.choice(clear)
+    return max(BOT_BODIES, key=lambda c: _nearest(c, avoid))
+
+
+def bot_livery(seed, body):
+    """The whole car a bot drives: `body` plus a pattern, stripe, rims and roof.
+
+    Parameters
+    ----------
+    seed : str
+        The bot seat's session key, so a bot keeps its look for as long as it
+        is in the room.
+    body : str
+        The body colour, from `pick_bot_body`.
+
+    Returns
+    -------
+    dict
+        A livery in the shape `resolve` returns. Not passed through `validate`,
+        which would throw away every body colour outside `BODY_OK`.
+    """
+    rng = random.Random(seed)
+    out = dict(DEFAULTS)
+    out["body"] = body
+    out["livery"] = rng.choice(BOT_PATTERNS)
+    # A stripe you can see: white, grey, black and the brights, but only the
+    # ones that are far enough from the paint underneath.
+    stripes = [c for c in NEUTRALS + BRIGHTS if delta_e(c, body) >= 35.0]
+    out["stripe"] = rng.choice(stripes or NEUTRALS)
+    out["finish"] = rng.choice(FINISHES)
+    out["rim_style"] = rng.choice(BOT_RIMS)
+    out["rim"] = rng.choice(SWATCHES["rim"])
+    if rng.random() < 0.35:
+        roofs = [c for c in SWATCHES["roof"] if delta_e(c, body) >= 25.0]
+        out["roof"] = rng.choice(roofs) if roofs else None
+    return out
