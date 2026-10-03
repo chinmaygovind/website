@@ -403,8 +403,10 @@ midnight **Eastern** (`app.daily_date`), not UTC. Nobody has driven
 these before review, which is why the review is a lap and not a glance.
 **A daily's picture is taken by the reviewer's browser**, since the box that
 generates dailies has no browser to photograph them in and could not afford one:
-`snapCover` in game.js renders one frame from `shotCamera`'s start-line spot
-with no cars, crops it to 640x360, and it rides on the Approve press (the
+`snapCover` in game.js renders the whole lap from straight above (`coverCamera`:
+long side across, sky off, background set to the ground's own colour so the
+slab's edge vanishes) with no cars, at the share card's 1200x630, and it rides
+on the Approve press (the
 `cover` field; saved under the `daily-N` slug approval gives it). A live daily
 with none gets one the first time an admin opens it in solo (`maybeSnapCover` â†’
 `/api/cover/<slug>`, which never overwrites). They are written to
@@ -412,6 +414,15 @@ with none gets one the first time an admin opens it in solo (`maybeSnapCover` â†
 deploy's `reset --hard` keeps them and **a `git clean` would delete them**; to
 retake one, delete the file and open the daily again. The switcher and the home
 page show the plan view until one exists.
+**A daily's world is grown to that photograph**: `trackmesh.coverFrame` widens
+the ground and the tree scatter of any `daily-*` slug to the card's frame, or
+the trees stop in a rectangle around the road. The extra trees come from a
+second random stream, so none of the original ones move.
+**Its share cards are drawn on the box**, by `ogcard.py` (Pillow) at
+`/og/<slug>.jpg` - the name and the day - since a daily arrives after any deploy
+and `shoot_og_cards.py` never sees it. A `?watch=` link on *any* track unfurls
+into `/og/lap/<id>-<ms>.jpg`, the driver's flag, name and time over the track's
+cover; the flags are PNG copies of the site's made by `tools/raster_flags.py`.
 Tests: `test_generate.py`, `test_daily_board.py`.
 
 ## Traps

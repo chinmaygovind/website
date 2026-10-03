@@ -1134,7 +1134,13 @@ export function buildTrack(track, T) {
 
   // --- ground / void -------------------------------------------------------
   const pad = CELL * 7;
-  const gx0 = bbox.x0 - pad, gx1 = bbox.x1 + pad, gz0 = bbox.z0 - pad, gz1 = bbox.z1 + pad;
+  // A daily's cover is shot straight down onto the whole lap (`snapCover` in
+  // game.js), so its ground and its scatter reach the edges of that frame -
+  // otherwise the trees stop in a rectangle around the road with bare ground
+  // beyond it. Dailies only, because nothing else is photographed that way.
+  const world = groundY != null && (track.coverFrame || /^daily-/.test(track.slug || ''))
+    ? coverFrame(bbox) : bbox;
+  const gx0 = world.x0 - pad, gx1 = world.x1 + pad, gz0 = world.z0 - pad, gz1 = world.z1 + pad;
   let killY;
   if (groundY != null && pal.shore) {
     // A coast. The ground plane stops at the waterline instead of running to
@@ -1235,7 +1241,7 @@ export function buildTrack(track, T) {
   // --- scenery (procedural, seeded, deterministic) -------------------------
   const gridStations = track.line.findIndex((e) => !e.grid);
   const scenic = gridStations > 0 ? { ...track, line: track.line.slice(gridStations) } : track;
-  addScenery(solid, scenic, pal, bbox, CELL, terrain);
+  addScenery(solid, scenic, pal, bbox, CELL, terrain, world);
   // Whatever this track brought of its own. A sibling of the scatter rather than
   // of Spa's furniture, which is reachable only from the terrain branch above.
   //
@@ -3786,10 +3792,29 @@ function drawTerrain(buf, col, terr, pal, apron, gravelTo) {
   }
 }
 
-function addScenery(buf, track, pal, bbox, CELL, terrain) {
+/**
+ * The ground a daily's cover photographs: the lap's bbox grown on its short
+ * side to the card's 1200x630, plus a fifth for the camera's margin and for
+ * perspective, since the ground sits below the road the frame is fitted to.
+ * Long side across, as `coverCamera` in game.js turns it.
+ */
+function coverFrame(b) {
+  const ASPECT = 1200 / 630;
+  const cx = (b.x0 + b.x1) / 2, cz = (b.z0 + b.z1) / 2;
+  const w = b.x1 - b.x0, d = b.z1 - b.z0;
+  const long = Math.max(w, d), short = Math.min(w, d);
+  const hl = Math.max(long, short * ASPECT) * 0.6, hs = Math.max(short, long / ASPECT) * 0.6;
+  return w >= d ? { x0: cx - hl, x1: cx + hl, z0: cz - hs, z1: cz + hs }
+                : { x0: cx - hs, x1: cx + hs, z0: cz - hl, z1: cz + hl };
+}
+
+function addScenery(buf, track, pal, bbox, CELL, terrain, world = bbox) {
   let seed = 0;
   for (let i = 0; i < track.slug.length; i++) seed = seed * 31 + track.slug.charCodeAt(i);
-  const rnd = mulberry(seed);
+  // Cells beyond the usual ring draw from a second stream, so widening `world`
+  // adds trees around the old ones without moving a single one of them.
+  const rndIn = mulberry(seed), rndOut = mulberry(seed ^ 0x5bd1e995);
+  let rnd = rndIn;
   const onGround = track.ground != null;
   const gy = onGround ? track.ground : null;
   // Keep props off the road. A cell counts as occupied if any station's road
@@ -3824,8 +3849,11 @@ function addScenery(buf, track, pal, bbox, CELL, terrain) {
 
   const x0 = Math.floor(bbox.x0 / CELL) - 4, x1 = Math.ceil(bbox.x1 / CELL) + 4;
   const z0 = Math.floor(bbox.z0 / CELL) - 4, z1 = Math.ceil(bbox.z1 / CELL) + 4;
-  for (let gx = x0; gx <= x1; gx++) {
-    for (let gz = z0; gz <= z1; gz++) {
+  const X0 = Math.min(x0, Math.floor(world.x0 / CELL) - 4), X1 = Math.max(x1, Math.ceil(world.x1 / CELL) + 4);
+  const Z0 = Math.min(z0, Math.floor(world.z0 / CELL) - 4), Z1 = Math.max(z1, Math.ceil(world.z1 / CELL) + 4);
+  for (let gx = X0; gx <= X1; gx++) {
+    for (let gz = Z0; gz <= Z1; gz++) {
+      rnd = (gx >= x0 && gx <= x1 && gz >= z0 && gz <= z1) ? rndIn : rndOut;
       if (occupied.has(gx + ',' + gz)) continue;
       if (rnd() > (pal.density != null ? pal.density : (onGround ? 0.17 : 0.05))) continue;
       if (!onGround) continue;         // nothing to stand a tree on in the void

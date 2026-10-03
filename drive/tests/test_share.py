@@ -119,8 +119,40 @@ def test_a_shared_lap_unfurls_with_the_time_and_the_driver(env):
     assert "0:25.000" in og["title"]
     assert "Sunrise" in og["title"]
     assert "chinmay" in og["description"]
-    # Still that track's picture - there is no per-lap art.
-    assert "/static/img/og/sunrise.png" in og["image"]
+    # Its own card, with the time in the path so a later PB is a new URL.
+    assert "/og/lap/%d-25000.jpg?v=" % lap in og["image"]
+
+
+def test_a_lap_card_is_drawn(env):
+    """`ogcard.lap_card` over the track's cover, at the size the tags promise."""
+    from PIL import Image
+    import io
+    uid = _user(env, "chinmay")
+    lap = _lap(env, uid, "sunrise", ms=25000)
+    r = env.app.test_client().get("/og/lap/%d-25000.jpg" % lap)
+    assert r.status_code == 200 and r.mimetype == "image/jpeg"
+    assert Image.open(io.BytesIO(r.data)).size == (1200, 630)
+
+
+def test_a_card_for_nothing_falls_back_to_the_wheel(env):
+    """A lap that is gone, or a track with no cover yet, is the site's card
+    rather than a broken image in somebody's feed."""
+    c = env.app.test_client()
+    for url in ("/og/lap/999999-1.jpg", "/og/no-such-track.jpg"):
+        r = c.get(url)
+        assert r.status_code == 302 and r.location.endswith("/static/img/og.png"), url
+
+
+def test_a_drivers_flag_is_found_as_a_png(env):
+    """The card cannot draw the site's SVG flags; `tools/raster_flags.py` made
+    PNG copies, and both kinds of profile flag resolve to one."""
+    class P:
+        flag_path = "/assets/flags/country/de.svg"
+    assert env._card_flag(P).endswith("flags/de.png")
+    P.flag_path = "/assets/flags/us/pa.png"
+    assert env._card_flag(P).endswith("flags/us-pa.png")
+    P.flag_path = None
+    assert env._card_flag(P) is None
 
 
 def test_a_lap_id_from_another_track_is_not_believed(env):

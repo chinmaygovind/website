@@ -419,6 +419,9 @@ def make_drive(token):
     review = None
     if _REVIEWS.get(token) and _is_admin(user):
         review = {"slug": _REVIEWS[token], "left": len(_review_queue())}
+        # Built as the daily it will become, because Approve photographs it
+        # (`trackmesh.coverFrame`, which otherwise goes by the `daily-` slug).
+        track["coverFrame"] = True
     return render_template(
         "play.html", mode="solo", track=track, draft_token=token, review=review,
         og_image=None, og_title="%s | Drive" % track["name"],

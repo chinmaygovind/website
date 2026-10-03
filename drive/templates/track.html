@@ -90,10 +90,10 @@
       '<div class="bd-splits">' + (rows || '<p class="muted">No splits recorded.</p>') + '</div>' +
       '<div class="bd-actions">' +
       (lap.has_ghost
-        ? '<a class="btn dark" href="/solo/' + SLUG + '?ghost=' + lap.id + '">Race this ghost</a>' +
-          '<a class="btn secondary" href="/solo/' + SLUG + '?watch=' + lap.id + '">Watch it</a>'
+        ? '<a class="btn" href="/solo/' + SLUG + '?ghost=' + lap.id + '">Race this ghost</a>' +
+          '<a class="btn dark" href="/solo/' + SLUG + '?watch=' + lap.id + '">Watch it</a>'
         : '<p class="muted">This lap has no replay.</p>') +
-      '<button class="btn secondary" id="lapBack">Track info</button></div>';
+      '<button class="btn secondary" id="lapBack">Close</button></div>';
     detail.style.display = '';
     facts.style.display = 'none';
     document.getElementById('lapBack').onclick = () => {

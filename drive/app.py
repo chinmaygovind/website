@@ -1374,15 +1374,73 @@ def _track_og(track, lap=None):
     boilerplate anyway. The *lap* description below is still worth having,
     because it is about a lap somebody drove rather than about the road.
     """
-    og = {"og_image": "/static/img/og/%s.png" % track["slug"],
+    slug = track["slug"]
+    # A pool track's card is pre-rendered; a daily or a community track is
+    # made on the box after any deploy, so its card is drawn on request.
+    pool = os.path.exists(os.path.join(_OG_DIR, slug + ".png"))
+    og = {"og_image": ("/static/img/og/%s.png" if pool else "/og/%s.jpg") % slug,
           "og_title": "%s | Drive" % track["name"]}
     if lap is not None:
+        # The time is in the path so a PB set later is a new URL, not a stale
+        # card in somebody's unfurl cache.
+        og["og_image"] = "/og/lap/%d-%d.jpg" % (lap.id, lap.time_ms)
         who = lap.user.display if lap.user else "Somebody"
         og["og_title"] = "%s on %s | Drive" % (fmt_ms(lap.time_ms), track["name"])
         og["og_description"] = (
             "%s drove %s here. Open it to watch the lap, then try to beat it."
             % (who, fmt_ms(lap.time_ms)))
     return og
+
+
+_OG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                       "static", "img", "og")
+_FLAG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "static", "img", "flags")
+
+
+def _card(png):
+    """A drawn share card. A day's cache: the URL changes when what it shows does."""
+    return Response(png, mimetype="image/jpeg",
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
+def _card_flag(user):
+    """The PNG copy (`tools/raster_flags.py`) of the flag this person flies."""
+    path = user.flag_path if user else None
+    if not path:
+        return None
+    country, us = "/assets/flags/country/", "/assets/flags/us/"
+    name = (path[len(country):-4] if path.startswith(country)
+            else "us-" + path[len(us):-4] if path.startswith(us) else None)
+    got = name and os.path.join(_FLAG_DIR, name + ".png")
+    return got if got and os.path.exists(got) else None
+
+
+@app.route("/og/<slug>.jpg")
+def og_track_card(slug):
+    """A daily's or a community track's share card: its cover, name and day."""
+    track = tracks_mod.get(slug)
+    cover = os.path.join(_COVER_DIR, slug + ".png")
+    if not track or not os.path.exists(cover):
+        return redirect("/static/img/og.png")
+    row = DriveUserTrack.query.filter_by(slug=slug).first()
+    day = row.daily_on if row else None
+    date = "%s %d, %d" % (day.strftime("%B"), day.day, day.year) if day else None
+    import ogcard  # Pillow, which a checkout serving only the game can do without
+    return _card(ogcard.track_card(cover, track["name"], date))
+
+
+@app.route("/og/lap/<int:lap_id>-<int:ms>.jpg")
+def og_lap_card(lap_id, ms):
+    """One lap's share card: the driver and the time, over the track's cover."""
+    lap = db.session.get(DriveTime, lap_id)
+    track = tracks_mod.get(lap.track) if lap else None
+    cover = track and os.path.join(_COVER_DIR, track["slug"] + ".png")
+    if not track or not os.path.exists(cover):
+        return redirect("/static/img/og.png")
+    who = lap.user.display if lap.user else "Somebody"
+    import ogcard
+    return _card(ogcard.lap_card(cover, who, fmt_ms(lap.time_ms), _card_flag(lap.user)))
 
 
 def _play_solo(slug):

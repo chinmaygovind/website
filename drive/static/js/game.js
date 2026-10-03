@@ -1574,7 +1574,7 @@ function bindInput() {
     // re-driven server-side by `verify.py` - but a handle on the live game
     // hanging off every page would still be a thing to explain, and it does
     // not have to exist.
-    window.DriveShot = { S, CarView, THREE };
+    window.DriveShot = { S, CarView, THREE, snapCover };
     const at = /^at:([0-9.]+)$/.exec(S.shotMode);
     if (at) {
       // The car stays visible here, and that is the point of this mode: it is
@@ -6286,23 +6286,76 @@ function shotCamera() {
   cam.updateProjectionMatrix();
 }
 
+/**
+ * A daily's cover: straight down onto the whole lap, long side across, at the
+ * share card's 1200x630 - the card is drawn over this picture by `ogcard.py`.
+ *
+ * Fitted to the centre crop of the canvas that `snapCover` keeps, not to the
+ * canvas, or a reviewer's tall window would crop the ends of the lap. The sky
+ * is hidden and the background set to whatever colour most of the frame came
+ * out, which is the ground: `trackmesh.coverFrame` grows a daily's ground to
+ * this frame, but the edge of a slab seen from straight above is a hard line,
+ * and matching the background makes it nothing.
+ */
+function coverCamera(cw, ch, src) {
+  const R = S.renderer, cam = R.camera;
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, hi = -Infinity;
+  for (const e of S.built.line) {
+    x0 = Math.min(x0, e.p[0]); x1 = Math.max(x1, e.p[0]);
+    z0 = Math.min(z0, e.p[2]); z1 = Math.max(z1, e.p[2]);
+    hi = Math.max(hi, e.p[1]);
+  }
+  const turn = z1 - z0 > x1 - x0;
+  const across = turn ? z1 - z0 : x1 - x0, down = turn ? x1 - x0 : z1 - z0;
+  const tv = Math.tan(cam.fov * Math.PI / 360) * ch / src.height;
+  const need = Math.max((down / 2) / tv, (across / 2) / (tv * cw / ch)) * 1.06;
+  const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+  cam.position.set(cx, hi + need, cz);
+  cam.up.set(turn ? 1 : 0, 0, turn ? 0 : -1);
+  cam.lookAt(new THREE.Vector3(cx, hi, cz));
+  cam.updateProjectionMatrix();
+  R.scene.fog = null;
+  if (R.sky) R.sky.visible = false;
+  R.render(0);
+  // The commonest colour on a coarse grid, averaged over the cells that had it.
+  const t = document.createElement('canvas');
+  t.width = 64; t.height = 36;
+  const g = t.getContext('2d');
+  g.drawImage(src, 0, 0, 64, 36);
+  const d = g.getImageData(0, 0, 64, 36).data, seen = new Map();
+  for (let i = 0; i < d.length; i += 4) {
+    const k = (d[i] >> 3) << 10 | (d[i + 1] >> 3) << 5 | d[i + 2] >> 3;
+    const v = seen.get(k) || [0, 0, 0, 0];
+    v[0] += d[i]; v[1] += d[i + 1]; v[2] += d[i + 2]; v[3]++;
+    seen.set(k, v);
+  }
+  const [r, gg, b, n] = [...seen.values()].sort((p, q) => q[3] - p[3])[0];
+  R.scene.background = new THREE.Color().setRGB(r / n / 255, gg / n / 255, b / n / 255,
+                                                THREE.SRGBColorSpace);
+  R.render(0);
+}
+
 function snapCover() {
-  const cam = S.renderer.camera;
-  const pos = cam.position.clone(), quat = cam.quaternion.clone();
+  const R = S.renderer, cam = R.camera;
+  const pos = cam.position.clone(), quat = cam.quaternion.clone(), up = cam.up.clone();
+  const fog = R.scene.fog, bg = R.scene.background;
   const cars = [S.view, S.ghostView].filter(Boolean)
     .map(v => [v, v.group.visible, v.shadow.visible]);
   for (const [v] of cars) { v.group.visible = false; v.shadow.visible = false; }
-  shotCamera();
-  S.renderer.render(0);
   const src = $('gl');
-  const cw = Math.min(src.width, src.height * 16 / 9), ch = cw * 9 / 16;
+  const cw = Math.min(src.width, src.height * 1200 / 630), ch = cw * 630 / 1200;
+  coverCamera(cw, ch, src);
   const out = document.createElement('canvas');
-  out.width = 640; out.height = 360;
+  out.width = 1200; out.height = 630;
   out.getContext('2d').drawImage(src, (src.width - cw) / 2, (src.height - ch) / 2,
-                                 cw, ch, 0, 0, 640, 360);
+                                 cw, ch, 0, 0, 1200, 630);
   for (const [v, g, s] of cars) { v.group.visible = g; v.shadow.visible = s; }
+  R.scene.fog = fog;
+  R.scene.background = bg;
+  if (R.sky) R.sky.visible = true;
   cam.position.copy(pos);
   cam.quaternion.copy(quat);
+  cam.up.copy(up);
   return out.toDataURL('image/png');
 }
 
