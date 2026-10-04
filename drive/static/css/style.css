@@ -146,7 +146,7 @@ a:hover { text-decoration: underline; }
    about 1.5:1, which is not a contrast failure so much as a strip nobody can
    read. Dark on pale is 12:1 and keeps the stamped look the nav already has. */
 .newsbar {
-  background: #bfe4f6; color: var(--ink);
+  background: #b5e3c0; color: var(--ink);
   font-family: var(--sans); font-size: .82rem; font-weight: 700;
   letter-spacing: .04em; text-transform: uppercase; text-align: center;
   padding: .4rem 1.1rem;

@@ -122,6 +122,16 @@ EXPECTED = {
     # `Builder.wall`. Nearly all of it is `road`; the `wall` count fell by two
     # poles, which now decline to stand on a profiled station.
     "playground": {"total":   9902, "road":  4230, "wall":  5490, "off":     0, "boost": 182},
+    # Recorded when the track was added. 700 of the `wall` are
+    # `tracks/sepang/scenery.js`: the front of the umbrella grandstand, which is
+    # the barrier between the two straights because there is no room there for
+    # armco; the fence between the Turn 9 straight and the back straight; and
+    # **the wall down the right of the start straight and round the inside of
+    # Turns 1 and 2**, without which the pair is a 3.3x shortcut; and the one
+    # on the left from late in Turn 1 to Turn 2's exit, because running wide out
+    # of T1 landed you on T2's exit; and kerb-side walls inside Turns 4, 9-10,
+    # 14 and 15. If this number drops, one of those has stopped being solid.
+    "sepang":    {"total":  24190, "road":  1454, "wall":  3180, "off": 19556, "boost":  0},
 }
 
 COUNTER = """

@@ -86,19 +86,50 @@ def hinomaru(W=36, H=24):
         g.append(''.join(row))
     return g
 
+def jalur_gemilang(W=56, H=28):
+    """The Malaysian flag: fourteen red and white stripes, red at the top, and a
+    navy canton over the top eight of them reaching half the length, carrying a
+    yellow crescent and a fourteen-point star.
+
+    1:2, two rows per stripe so each stripe is a whole number of cells. The
+    crescent opens towards the fly and the star sits in its mouth; the inner
+    circle is offset towards the fly, which is what makes it a crescent rather
+    than a ring. At this resolution the star is a blob with a ragged edge, which
+    is also what it is from a car at speed.
+    """
+    import math
+    g = [['R' if (y // (H // 14)) % 2 == 0 else 'W' for x in range(W)] for y in range(H)]
+    ch, cw = H * 8 // 14, W // 2
+    for y in range(ch):
+        for x in range(cw):
+            px, py = x + 0.5, y + 0.5
+            c = 'B'
+            cx, cy = cw * 0.36, ch / 2.0
+            if (px - cx) ** 2 + (py - cy) ** 2 <= (0.42 * ch) ** 2 and \
+               (px - cx - 0.17 * ch) ** 2 + (py - cy) ** 2 > (0.35 * ch) ** 2:
+                c = 'Y'
+            sx, sy = cw * 0.72, ch / 2.0
+            a = math.atan2(py - sy, px - sx) + math.pi / 2
+            k = (a * 14 / (2 * math.pi)) % 1.0
+            rr = (0.17 + 0.18 * (1 - abs(k - 0.5) * 2)) * ch
+            if math.hypot(px - sx, py - sy) <= rr:
+                c = 'Y'
+            g[y][x] = c
+    return [''.join(r) for r in g]
+
 def runs(grid):
     n = 0
     for r in grid:
         n += 1 + sum(1 for i in range(1, len(r)) if r[i] != r[i - 1])
     return n
 
-for name, grid in (('gb', union_jack()), ('be', tricolour('KYR')), ('jp', hinomaru())):
+for name, grid in (('gb', union_jack()), ('be', tricolour('KYR')), ('jp', hinomaru()), ('my', jalur_gemilang())):
     art = {'B': '·', 'W': '#', 'R': '+', 'K': ' ', 'Y': ':'}
     print('%s  %dx%d  %d merged quads' % (name, len(grid[0]), len(grid), runs(grid)))
     for r in grid:
         print('   ', ''.join(art[c] for c in r))
     print()
-for name, grid in (('gb', union_jack()), ('be', tricolour('KYR')), ('jp', hinomaru())):
+for name, grid in (('gb', union_jack()), ('be', tricolour('KYR')), ('jp', hinomaru()), ('my', jalur_gemilang())):
     print("    %s: [" % name)
     for r in grid:
         print("      '%s'," % r)

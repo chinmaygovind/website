@@ -358,7 +358,7 @@ def memoize_build_track(rt):
 # shortcut, which invalidated every lap it could be recut from. The line here
 # now is off a lap that drives the whole circuit - `hotlap.py` reports the air
 # in a lap it cuts, and this one has no gap wide enough to be one.
-NO_HOTLAP_YET = {"baku"}
+NO_HOTLAP_YET = {"baku", "sepang"}
 
 # Waiting on a board deep enough to cut a standard from - five or so distinct
 # players. Drop the entry, then, on the box:
@@ -366,7 +366,7 @@ NO_HOTLAP_YET = {"baku"}
 # Empty: every track in the pool now declares its own three times. Kept rather
 # than deleted because it is the escape hatch a brand-new folder needs on the
 # commit that adds it - a track nobody has driven has no board to cut from.
-NO_CUT_MEDALS_YET = {"baku", "silverstone", "monaco", "dino", "monza", "boo", "suzuka"}
+NO_CUT_MEDALS_YET = {"baku", "silverstone", "monaco", "dino", "monza", "boo", "suzuka", "sepang"}
 
 
 # ---------------------------------------------------------------------------

@@ -860,3 +860,15 @@ New entries, unsorted, until somebody files them. One line is enough.
   an edge line at 0.05 and a wall wrap 3 cm inboard flickered as you drove -
   invisible in stills. 0.12 over the road and 0.14 off the rail hold still.
   Hairline fence wires (0.018) crawl the same way; a few wider ones do not.
+- **A ring of hills built from non-integer harmonics has a slit at angle 0.**
+  Sepang's backdrop summed `sin(a * lumps * 2.3)`, which does not come back to
+  its start at 2pi, so the last quad and the first stood at different heights
+  and the cover shot had a white streak of sky through the hills. Index the
+  profile `k % N`. Paint the suspect red to tell a slit from something showing.
+- **The ground plate's edge is the height field's grid, not `bbox` plus a guess.**
+  A rectangle rebuilt from `bbox` and `CELL` came out larger than the one drawn;
+  read `terrain.x0`, `terrain.nx * terrain.CELL` instead.
+- **Two straights side by side with a grandstand between can leave no room for
+  armco.** Sepang's are 48 apart centre to centre, so the kit cuts the barrier
+  there and the stand's own front wall has to be the collider - measure the gap
+  before assuming furniture fits between two legs.
