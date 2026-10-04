@@ -84,18 +84,37 @@
         (d == null ? '' : (d >= 0 ? '+' : '') + (d / 1000).toFixed(3)) + '</i></div>';
     }).join('');
     detail.innerHTML =
-      '<div class="bd-head"><div class="bd-time">' + fmt(lap.time_ms) + '</div>' +
-      '<div class="bd-who"><span class="medal ' + (lap.medal || 'none') + '"></span>' +
-      esc(lap.name) + '</div></div>' +
+      '<div class="sheet-head"><div class="bd-who"><span class="medal ' +
+      (lap.medal || 'none') + '"></span>' + esc(lap.name) + '</div>' +
+      '<button class="sheet-x" id="lapBack" title="Close" aria-label="Close">' +
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>' +
+      '</button></div>' +
+      '<div class="bd-time">' + fmt(lap.time_ms) + '</div>' +
       '<div class="bd-splits">' + (rows || '<p class="muted">No splits recorded.</p>') + '</div>' +
       '<div class="bd-actions">' +
       (lap.has_ghost
         ? '<a class="btn" href="/solo/' + SLUG + '?ghost=' + lap.id + '">Race this ghost</a>' +
-          '<a class="btn dark" href="/solo/' + SLUG + '?watch=' + lap.id + '">Watch it</a>'
-        : '<p class="muted">This lap has no replay.</p>') +
-      '<button class="btn secondary" id="lapBack">Close</button></div>';
+          '<a class="btn dark" href="/solo/' + SLUG + '?watch=' + lap.id + '">Watch it</a>' +
+          '<button class="btn secondary bd-share" id="lapShare">' +
+          '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2.2"/>' +
+          '<path d="M15 5.6A2.6 2.6 0 0 0 12.4 3H6.6A2.6 2.6 0 0 0 4 5.6v5.8A2.6 2.6 0 0 0 6.6 14"/>' +
+          '</svg><span>Share</span></button>'
+        : '<p class="muted">This lap has no replay.</p>') + '</div>';
     detail.style.display = '';
     facts.style.display = 'none';
+    const share = document.getElementById('lapShare');
+    // The same link the in-game board's Share copies. No toast on this page,
+    // so the button says it did.
+    if (share) share.onclick = async () => {
+      const label = share.querySelector('span');
+      try {
+        await navigator.clipboard.writeText(location.origin + '/solo/' + SLUG + '?watch=' + lap.id);
+        label.textContent = 'Link copied!';
+      } catch (e) {
+        label.textContent = 'Could not copy';
+      }
+      setTimeout(() => { label.textContent = 'Share'; }, 1600);
+    };
     document.getElementById('lapBack').onclick = () => {
       detail.style.display = 'none';
       facts.style.display = '';
