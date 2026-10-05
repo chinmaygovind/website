@@ -267,7 +267,7 @@ const esc = (s) => (s + '').replace(/[&<>"]/g, (c) =>
 // lie about what is in the cabinet. `test_rules_js.py` checks both directions.
 const TITLE = {
   none: 'None', stock: 'Stock', matte: 'Matte', gloss: 'Gloss',
-  centre: 'Centre', twin: 'Twin',
+  centre: 'Center', twin: 'Twin',
   band: 'Band', hoop: 'Hoop', halves: 'Halves', fade: 'Fade',
   pinstripe: 'Pinstripe', spoke5: '5-spoke', spoke6: '6-spoke', mesh: 'Mesh',
   dish: 'Dish', forged: 'Split 5',
@@ -341,7 +341,7 @@ function colorSlot(slot, current, label = '', autoLabel = 'Auto') {
             data-value="">${esc(autoLabel)}</button>
     <span class="gcolors">${sw}<button
       class="gsw gcustom${custom ? ' has' : ''}" data-pick="${esc(slot)}"
-      title="Any other colour"${custom ? ` style="--pick:${esc(current)}"` : ''}
+      title="Any other color"${custom ? ` style="--pick:${esc(current)}"` : ''}
       ></button></span>`;
 }
 

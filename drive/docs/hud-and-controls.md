@@ -75,6 +75,38 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   choices *and* a switch beside them, and in a room the four include
   *Provisional Pole*, which cannot be said in fewer words - at 620 they wrapped
   and left a hole under the switch.
+- **Settings, the board and the track switcher are one `.panel`**: white,
+  outlined, the middle 75% of the window (full screen on a phone), styled once
+  at the foot of `style.css`. Moving straight from one to another
+  (`body.panel-swap`, set in `closeOtherPanels`) crossfades instead of
+  re-opening, which is what makes *View Others* smooth. The height is fixed and
+  settings fills it with **more settings, not bigger ones**: four grouped lists
+  on a 2x2 grid (Ghost | Audio over HUD | Display) where each group stretches
+  to its row partner's height, so the four line up. White sheet and 2px-outlined
+  groups like the other two panels - the warm grey was tried and did not match.
+  Row height grows with the window past 800px tall, and the sheet fits without
+  scrolling down to 1366x768. Splits has no *View Others* any more; in solo the
+  sheet's *View Leaderboard* opens the in-game board (`#menuBoardLink`) rather
+  than leaving the page. Tiles that stretched to fill were tried and
+  rejected. Switches are `.pill` - not `.switch`, which is the room drawer's -
+  and choices are `.seg`. The track switcher fits as many 210px-wide cards per
+  row as the panel allows. Opening is 0.12-0.16s; slower felt sluggish.
+- **The machine-local settings** (never sent to the account, like sound):
+  Graphics (`drive.quality`), Field of View (`drive.fov`, 58/66/76 into
+  `renderer.baseFov`), Camera Shake (`drive.shake`, `renderer.noShake` checked
+  in `kick`), Tire Smoke (`drive.smoke`, checked in `tyreSmoke()` - crash dust
+  and sparks still show), Speed Units (`drive.units`), Minimap
+  (`drive.minimap`, hides the minimap's own `.card` - **not** `.maprow`, which on
+  touch also holds the race position; hiding the row hid the position) and Volume (`drive.volume`, 0-1 over the
+  master gain, so it covers music too). `render.js` and `sound.js` carry no
+  cache token, so every new method call on them is guarded.
+- **Graphics: Low / Medium / High** (`drive.quality`, local only - it is about
+  the machine). `QUALITY` in `render.js` sets pixel ratio (0.7 / 1 / up to 2),
+  antialiasing (off on Low) and rain density (25% / 50% / 100%). High is how the
+  game always looked. Pixel ratio is live; antialiasing is fixed when the WebGL
+  context is made, so it lands on the next load, and rain on the next track.
+  `game.js` guards `S.renderer.setQuality` because `render.js` carries no cache
+  token (see `tests/test_untokened_modules.py`).
 - **Which lap you drive against and whether it is drawn are two switches.** They
   were one - the "Ghost" row, where picking a lap turned the car on and `Off`
   turned both off together - so the only way to stop a translucent car driving

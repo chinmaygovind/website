@@ -304,7 +304,7 @@
     <div class="brow">
       <div class="stat pb"><b id="pbTime">--:--.---</b><span>{% if draft_token %}Best this session{% else %}Personal best{% endif %}</span></div>
       <div class="stat cps"><b id="cpCount">0/0</b><span>Checkpoints</span></div>
-      <div class="stat spd"><b id="speed">0</b><span>km/h</span></div>
+      <div class="stat spd"><b id="speed">0</b><span id="speedUnit">km/h</span></div>
     </div>
     <div class="speed-bar"><i id="speedFill"></i></div>
   </div>
@@ -654,7 +654,7 @@
      it, so for everyone else this is the same panel with the picking turned off
      rather than a different, poorer one. -->
 <div class="overlay" id="tracksOv" style="display:none">
-  <div class="sheet wide tracks-sheet">
+  <div class="sheet wide panel tracks-sheet">
     <div class="sheet-head">
       <h2>Tracks</h2>
       {# Up here rather than in the sort row, where it was a second thing
@@ -834,7 +834,7 @@
      you open constantly. What is left is the things you actually set, so the
      sheet closes with an X like any other panel and ends in the one way out. -->
 <div class="overlay" id="menu" style="display:none">
-  <div class="sheet wide settings">
+  <div class="sheet wide panel settings">
     <div class="sheet-head">
       <h2>Settings</h2>
       <button class="sheet-x" id="btnResume" title="Close (Esc / O)" aria-label="Close">
@@ -842,144 +842,141 @@
       </button>
     </div>
 
-    <!-- Two questions, and they used to be one control answering both badly:
-         **which lap you are driving against**, and **whether it is drawn**.
-         The first is the one with more than two answers, so it is a row of
-         choices - off, your own lap, the record, or somebody else's, which is
-         what the board is for. It is called Splits because that is what it is
-         for at 200km/h: the delta over the clock at every checkpoint. The
-         ghost car is the switch beside it, because wanting the numbers off the
-         record without a translucent car on the line in front of you is an
-         ordinary thing to want and there was no way to ask for it.
-         In a room the third choice is different, because the lap worth chasing
-         there is different: whoever is provisionally on pole, live, while there
-         is still time to beat them. Picking somebody off the leaderboard is not
-         that - everybody in the room is on the road with you, and the board is
-         a list of people who are not. -->
-    <div class="set-row splits-row">
-      <div class="set-main">
-        <h3>Splits</h3>
-        <div class="opt-row" id="ghostOpts">
-          {# Title case on every one of them, and the same words in both modes.
-             It used to read "My best here" in a room, to say that the lap is
-             this session's rather than your all-time PB - which is true, and is
-             already the sentence under the row. It cost the whole row a line:
-             four chips and the ghost switch fit beside each other only without
-             it, and "Provisional pole" is the one word that cannot be shortened
-             because it is what the choice *is*. #}
+    {# Grouped like a phone's settings: a caption over a group of rows, on a
+       2x2 grid so the four groups line up. Every original switch keeps its id, its `.on` and its hidden
+       On/Off word, because game.js writes those; the pill is drawn from `.on`.
+       No explanatory text anywhere - just the controls. #}
+    <div class="set-body">
+      <section class="set-sec">
+        <div class="set-cap">Ghost</div>
+        <div class="set-group">
+      <div class="set-cell stack">
+        <span class="set-name">Splits</span>
+        <div class="seg" id="ghostOpts">
           <button class="opt" data-ghost="off">Off</button>
-          {# A draft is not on any board, so there is no stored lap of yours, no
-             record and nobody else to watch - every option here but Off would be
-             a control that silently does nothing. #}
           {% if not draft_token %}
           <button class="opt" data-ghost="me">My Best</button>
           {% if mode == 'room' %}
           <button class="opt" data-ghost="pole">Provisional Pole</button>
           {% endif %}
           <button class="opt" data-ghost="wr">World Record</button>
-          {% if mode != 'room' %}
-          <button class="opt" data-ghost="others">View Others</button>
-          {% endif %}
           {% endif %}
         </div>
       </div>
-      <!-- A sheet, not a glyph: every icon in this game is inline SVG, for the
-           reason the others are. -->
-      <button class="btn secondary toggle" id="btnGhost" aria-pressed="true"
-              title="Draw the ghost car">
+      <button class="set-cell toggle" id="btnGhost" aria-pressed="true" title="Draw the ghost car">
         <svg class="icn" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M5 20V10a7 7 0 0 1 14 0v10l-2.3-1.8L14.4 20l-2.4-1.8L9.6 20 7.3 18.2z"/>
           <circle cx="9.6" cy="10.4" r="1.1"/>
           <circle cx="14.4" cy="10.4" r="1.1"/>
         </svg>
-        Ghost Car: <span id="btnGhostState">On</span>
+        <span class="set-name">Ghost Car</span>
+        <span class="sr" id="btnGhostState">On</span><span class="pill" aria-hidden="true"></span>
       </button>
-    </div>
-    <div class="ghost-now" id="ghostNow"></div>
-
-    <!-- Two switches rather than one, because they are two buses: the car and
-         the world on one, the music on the other. Driving with the game muted
-         and your own music on, or with the engine and nothing over the top of
-         it, are both ordinary ways to play and neither was askable. -->
-    <!-- No heading over these. Every other row on the sheet is captioned by the
-         thing it does and this one had a word above it saying "Audio" over two
-         buttons that already say Sound and Music. -->
-    <div class="btn-grid two">
-      <button class="btn secondary toggle" id="btnSound" aria-pressed="true">
+        </div>
+      </section>
+      <section class="set-sec">
+        <div class="set-cap">Audio</div>
+        <div class="set-group">
+      <div class="set-cell">
         <svg class="icn" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4z"/>
           <path d="M15.8 9.2a4 4 0 0 1 0 5.6M18.4 6.6a7.6 7.6 0 0 1 0 10.8"/>
         </svg>
-        Sound: <span id="btnSoundState">On</span>
-      </button>
-      <button class="btn secondary toggle" id="btnMusic" aria-pressed="false">
+        <span class="set-name">Sound</span>
+        <input type="range" class="vol" id="sfxVol" min="0" max="100" step="1" aria-label="Sound volume">
+        <button class="pill-btn" id="btnSound" aria-pressed="true" aria-label="Sound"><span class="sr" id="btnSoundState">On</span><span class="pill" aria-hidden="true"></span></button>
+      </div>
+      <div class="set-cell">
         <svg class="icn" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M9 17.5V6.2l10-2v11.3"/>
           <circle cx="6.6" cy="17.6" r="2.4"/>
           <circle cx="16.6" cy="15.4" r="2.4"/>
         </svg>
-        Music: <span id="btnMusicState">Off</span>
+        <span class="set-name">Music</span>
+        <input type="range" class="vol" id="musicVol" min="0" max="100" step="1" aria-label="Music volume">
+        <button class="pill-btn" id="btnMusic" aria-pressed="false" aria-label="Music"><span class="sr" id="btnMusicState">Off</span><span class="pill" aria-hidden="true"></span></button>
+      </div>
+        </div>
+      </section>
+      <section class="set-sec">
+        <div class="set-cap">HUD</div>
+        <div class="set-group">
+      <div class="set-cell">
+        <svg class="icn" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 17.7A8 8 0 1 1 19.5 17.7"/><path d="M12 15 9.3 10.4"/></svg>
+        <span class="set-name">Speed Units</span>
+        <div class="seg" id="unitOpts">
+          <button class="opt" data-units="kmh">km/h</button>
+          <button class="opt" data-units="mph">mph</button>
+        </div>
+      </div>
+      <button class="set-cell toggle" id="btnMap" aria-pressed="true">
+        <svg class="icn" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.5 9 4.5l6 2 5.5-2v13L15 19.5l-6-2-5.5 2z"/><path d="M9 4.5v13M15 6.5v13"/></svg>
+        <span class="set-name">Minimap</span>
+        <span class="pill" aria-hidden="true"></span>
       </button>
-      <!-- The two readouts, in the same grid as the audio pair rather than a
-           second one under it: four switches of the same kind, two to a row, so
-           the grid's own gap separates the rows. Two `.btn-grid`s stacked put
-           the rows flush against each other and four independent switches read
-           as one welded block.
-           Two switches and not one, because wanting to know your frame rate and
-           wanting to know your latency are different questions. Both default
-           off: a number over the road is something you go looking for. -->
-      {# A dial and a needle, not the zigzag-over-a-baseline it used to be: that
-         is the generic "chart" mark every analytics page uses, and it said
-         *some numbers about something* rather than naming the thing the switch
-         turns on. A gauge reads as a rate at a glance, and the needle is swung
-         high on purpose - up is the good end of this number.
-         Two things it needs at 17px. The dial carries **past horizontal at both
-         ends** (220 degrees, not a half circle): a clean semicircle with a
-         needle under it is a hump with a line in it, and the overhanging ends
-         are what make it read as a dial. And the **needle stops well short of
-         the rim** - drawn out to the arc it welds to it and closes the shape
-         into a filled triangle at this size. There is no hub dot, because a
-         1.9-wide round cap already is one. #}
-      <button class="btn secondary toggle" id="btnFps" aria-pressed="false">
+      <button class="set-cell toggle" id="btnFps" aria-pressed="false">
         <svg class="icn" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M4.5 17.7A8 8 0 1 1 19.5 17.7"/>
           <path d="M12 15 14.7 10.4"/>
         </svg>
-        FPS Counter: <span id="btnFpsState">Off</span>
+        <span class="set-name">FPS Counter</span>
+        <span class="sr" id="btnFpsState">Off</span><span class="pill" aria-hidden="true"></span>
       </button>
-      <button class="btn secondary toggle" id="btnPing" aria-pressed="false">
+      <button class="set-cell toggle" id="btnPing" aria-pressed="false">
         <svg class="icn" viewBox="0 0 24 24" aria-hidden="true">
-          {# The dot sits on the arcs' own centre, (12, 18.4) - both arcs are
-             struck from there, so anywhere else and the rings are not around
-             it. It is drawn as a zero-length stroke with a round cap rather
-             than as a tiny circle: an `a2 2 …` arc back to its own start puts
-             the *start* on the circle and the centre a radius off to one side,
-             which is exactly how this one ended up 2 units left of the arcs it
-             belongs to. #}
           <path d="M12 18.4h.01"/>
           <path d="M8.1 14.6a5.5 5.5 0 0 1 7.8 0"/>
           <path d="M4.8 11.1a10.2 10.2 0 0 1 14.4 0"/>
         </svg>
-        Ping Counter: <span id="btnPingState">Off</span>
+        <span class="set-name">Ping Counter</span>
+        <span class="sr" id="btnPingState">Off</span><span class="pill" aria-hidden="true"></span>
       </button>
+        </div>
+      </section>
+      <section class="set-sec">
+        <div class="set-cap">Display</div>
+        <div class="set-group">
+      <div class="set-cell">
+        <svg class="icn" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="11.5" rx="1.8"/><path d="M9 20h6M12 16.5V20"/></svg>
+        <span class="set-name">Graphics</span>
+        <div class="seg" id="qualityOpts">
+          <button class="opt" data-quality="low">Low</button>
+          <button class="opt" data-quality="medium">Medium</button>
+          <button class="opt" data-quality="high">High</button>
+        </div>
+      </div>
+      <div class="set-cell">
+        <svg class="icn" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 18 4 6M12 18l8-12"/><path d="M6.5 9.8a9 9 0 0 1 11 0"/></svg>
+        <span class="set-name">Field of View</span>
+        <div class="seg" id="fovOpts">
+          <button class="opt" data-fov="narrow">Narrow</button>
+          <button class="opt" data-fov="normal">Normal</button>
+          <button class="opt" data-fov="wide">Wide</button>
+        </div>
+      </div>
+      <button class="set-cell toggle" id="btnShake" aria-pressed="true">
+        <svg class="icn" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h2l2-5 3 10 3-12 3 10 2-3h3"/></svg>
+        <span class="set-name">Camera Shake</span>
+        <span class="pill" aria-hidden="true"></span>
+      </button>
+      <button class="set-cell toggle" id="btnSmoke" aria-pressed="true">
+        <svg class="icn" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18a4 4 0 0 1-.5-8A5.5 5.5 0 0 1 17 8.5a4.5 4.5 0 0 1 0 9.5z"/></svg>
+        <span class="set-name">Tire Smoke</span>
+        <span class="pill" aria-hidden="true"></span>
+      </button>
+        </div>
+      </section>
     </div>
 
-    <!-- The two ways out, side by side at the foot: one of them leaves the
-         game and the other leaves the page, and leaving is the last thing to
-         offer. The red one is last of the two for the same reason - it is the
-         only control on this sheet you cannot undo by pressing it again. -->
     {# The privacy notice, and this is the whole of how it appears in front of a
        player: one quiet line at the foot of a sheet you opened yourself. A
        portal requires the notice to exist and be reachable; it explicitly
        prefers that over a consent dialog in front of the game, and a driving
        game is the wrong place to be read a policy. In the frame it opens a new
        tab like every other link out. #}
-    <p class="sheet-fine">
-      <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy</a>
-    </p>
     <div class="sheet-foot">
       <div class="btn-grid two">
-        <a class="btn secondary board-link" href="/track/{{ track.slug }}">View Leaderboard</a>
+        <a class="btn secondary board-link" id="menuBoardLink" href="/track/{{ track.slug }}">View Leaderboard</a>
         {# The word names **what you are leaving**, not the act of leaving.
            "Leave" on its own is the one label on this sheet that does not say
            where the press lands, and the three destinations are genuinely
@@ -1007,6 +1004,9 @@
         {% endif %}
       </div>
     </div>
+    <p class="sheet-fine">
+      <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy</a>
+    </p>
   </div>
 </div>
 
@@ -1016,7 +1016,7 @@
      Left is the board; clicking a row opens the lap on the right - its splits,
      who set it, and the two things you can do with it. -->
 <div class="overlay" id="boardOv" style="display:none">
-  <div class="sheet wide board-sheet">
+  <div class="sheet wide panel board-sheet">
     <div class="sheet-head">
       <h2 id="boardTitle">Leaderboard</h2>
       <button class="sheet-x" id="btnBoardClose" title="Close" aria-label="Close">
@@ -1026,7 +1026,6 @@
     <div class="board-split">
       <div class="board-list" id="boardList"></div>
       <div class="board-detail" id="boardDetail">
-        <p class="muted empty">Pick a time to see its splits.</p>
       </div>
     </div>
     <!-- The way out to the whole thing. `/api/board` sends the top 50, which is

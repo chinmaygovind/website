@@ -59,7 +59,7 @@ RADII = (14.0, 17.0, 21.0, 26.0, 32.0, 40.0, 50.0, 62.0)
 
 # Two halves of a name. Not a theme - a label, so fifty of them in a queue can
 # be told apart.
-FIRST = ("Copper", "Harbour", "Ridgeway", "Saltmarsh", "Kingfisher", "Ember",
+FIRST = ("Copper", "Harbor", "Ridgeway", "Saltmarsh", "Kingfisher", "Ember",
          "Thistle", "Larkspur", "Draycott", "Halfpenny", "Wintergreen",
          "Brackenfell", "Cinder", "Quarry", "Tanglewood", "Marlow", "Pennyroyal",
          "Foxglove", "Blackthorn", "Crowsnest", "Aldermoor", "Sandgate",

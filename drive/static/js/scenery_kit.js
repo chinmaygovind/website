@@ -199,7 +199,7 @@ const MODELS = {
 
   rock: {
     name: 'Rock', group: 'Nature',
-    blurb: 'A boulder, the colour of the ground it is sitting on.',
+    blurb: 'A boulder, the color of the ground it is sitting on.',
     params: { at: [0, 1, 0.002, 0.2], off: [12, 260, 1, 26],
               size: [1, 14, 0.2, 3] },
     build(ctx, p) {
@@ -430,8 +430,8 @@ const MODELS = {
   },
 
   tyres: {
-    name: 'Tyre stack', group: 'Circuit',
-    blurb: 'A pile of tyres. Cheap, and it says motorsport instantly.',
+    name: 'Tire stack', group: 'Circuit',
+    blurb: 'A pile of tires. Cheap, and it says motorsport instantly.',
     params: { at: [0, 1, 0.002, 0.2], off: [10, 90, 1, 16],
               wide: [1, 6, 1, 3], high: [1, 5, 1, 2] },
     build(ctx, p) {
@@ -825,7 +825,7 @@ const MODELS = {
 
   flags: {
     name: 'Flag poles', group: 'Circuit',
-    blurb: 'A run of poles with flags. Each one a different colour off the '
+    blurb: 'A run of poles with flags. Each one a different color off the '
          + 'palette.',
     params: { at: [0, 1, 0.002, 0.2], to: [0, 1, 0.002, 0.26],
               off: [8, 90, 1, 22], h: [4, 20, 0.5, 9], every: [2, 20, 1, 6] },

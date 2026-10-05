@@ -156,6 +156,11 @@ function storedFlag(key, dflt) {
   return v == null ? dflt : v === '1';
 }
 
+function storedVolume(key) {
+  const v = parseFloat(lsGet(key));
+  return isNaN(v) ? 1 : Math.min(1, Math.max(0, v));
+}
+
 function rememberFlag(key, on) {
   rememberPref(key, on === true);
 }
@@ -198,6 +203,16 @@ const S = {
   // Both readouts default off: a number over the road is asked for, not given.
   showFps: storedFlag('drive.fps', false),
   showPing: storedFlag('drive.ping', false),
+  quality: ['low', 'medium', 'high'].includes(lsGet('drive.quality')) ? lsGet('drive.quality') : 'high',
+  // The rest of the machine-local settings: they are about the screen and the
+  // room, not the person, so they never go to the account.
+  fov: ['narrow', 'normal', 'wide'].includes(lsGet('drive.fov')) ? lsGet('drive.fov') : 'normal',
+  units: lsGet('drive.units') === 'mph' ? 'mph' : 'kmh',
+  shake: storedFlag('drive.shake', true),
+  tyreSmoke: storedFlag('drive.smoke', true),
+  showMap: storedFlag('drive.minimap', true),
+  sfxVolume: storedVolume('drive.sfxvol'),
+  musicVolume: storedVolume('drive.musicvol'),
   // The slug being loaded right now, or null. One at a time: a second click
   // during the (network + several hundred ms of building) that a switch costs
   // would race the first one into `loadTrack`. In a room it is also what holds
@@ -371,7 +386,7 @@ function boot() {
   // Before anything draws, and after `S` has read them: an account playing here
   // for the first time keeps the settings this browser was already holding.
   adoptLocalPrefs();
-  S.renderer = new Renderer($('gl'));
+  S.renderer = new Renderer($('gl'), S.quality);
   // The one hook a track's own effects have back into the mix, and it is only
   // ever sound: the fright at BOO!'s gable is one of that track's own ghosts,
   // flown at the camera by the renderer (`Storm._lunge`), and this is the
@@ -1654,12 +1669,38 @@ function bindInput() {
   $('btnPing').onclick = () => setPingOn(!S.showPing);
   setFpsOn(S.showFps, { remember: false });
   setPingOn(S.showPing, { remember: false });
+  $('qualityOpts').querySelectorAll('[data-quality]').forEach(b => {
+    b.onclick = () => setQuality(b.dataset.quality);
+  });
+  setQuality(S.quality, { quiet: true });
+  wireChoice('fovOpts', 'fov', setFov);
+  wireChoice('unitOpts', 'units', setUnits);
+  setFov(S.fov, { quiet: true });
+  setUnits(S.units, { quiet: true });
+  $('btnShake').onclick = () => setSwitch('shake', !S.shake);
+  $('btnSmoke').onclick = () => setSwitch('tyreSmoke', !S.tyreSmoke);
+  $('btnMap').onclick = () => setSwitch('showMap', !S.showMap);
+  for (const k of ['shake', 'tyreSmoke', 'showMap']) setSwitch(k, S[k], { quiet: true });
+  for (const [k, id] of [['sfxVolume', 'sfxVol'], ['musicVolume', 'musicVol']]) {
+    $(id).value = Math.round(S[k] * 100);
+    $(id).oninput = () => setVolume(k, $(id).value / 100);
+    setVolume(k, S[k], { quiet: true });
+  }
 
   if ($('btnTracks')) $('btnTracks').onclick = () => toggleTracks();
   $('btnTracksClose').onclick = () => toggleTracks(false);
   // Solo only - in a room this slot is the room button, and everybody in there
   // is on the road with you rather than on a board.
   if ($('btnBoard')) $('btnBoard').onclick = () => openBoard();
+  // In solo the settings sheet's View Leaderboard opens the in-game board (L)
+  // rather than leaving the page; the href stays for a middle-click.
+  if (CFG.mode === 'solo') {
+    $('menuBoardLink').onclick = (e) => {
+      if (e.ctrlKey || e.metaKey || e.shiftKey || e.button) return;
+      e.preventDefault();
+      openBoard();
+    };
+  }
   $('btnBoardClose').onclick = () => toggleBoard(false);
   $('btnWatchStop').onclick = () => stopWatching();
   if ($('btnWatchShare')) $('btnWatchShare').onclick = () => shareReplay();
@@ -3184,6 +3225,81 @@ function syncMeters() {
   card.style.display = (S.showFps || S.showPing) ? '' : 'none';
 }
 
+const FOV = { narrow: 58, normal: 66, wide: 76 };
+// The three local switches added with the grouped settings sheet: state key,
+// storage key, button, and what turning it applies to.
+const SWITCHES = {
+  shake: { key: 'drive.shake', btn: 'btnShake',
+           apply: (on) => { S.renderer.noShake = !on; } },
+  tyreSmoke: { key: 'drive.smoke', btn: 'btnSmoke', apply: () => {} },
+  showMap: { key: 'drive.minimap', btn: 'btnMap',
+             // The map's own card and not `.maprow`: on touch the race position
+             // lives in that row too (`moveItemsToPad`).
+             apply: (on) => { $('minimap').closest('.card').style.display = on ? '' : 'none'; } },
+};
+
+function setSwitch(name, on, opts = {}) {
+  const sw = SWITCHES[name];
+  S[name] = on;
+  if (!opts.quiet) rememberFlag(sw.key, on);
+  sw.apply(on);
+  $(sw.btn).classList.toggle('on', on);
+  $(sw.btn).setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+
+function wireChoice(id, attr, fn) {
+  $(id).querySelectorAll('[data-' + attr + ']').forEach(b => {
+    b.onclick = () => fn(b.dataset[attr]);
+  });
+}
+
+function markChoice(id, attr, v) {
+  $(id).querySelectorAll('[data-' + attr + ']').forEach(b => {
+    b.classList.toggle('on', b.dataset[attr] === v);
+  });
+}
+
+function setFov(v, opts = {}) {
+  S.fov = v;
+  S.renderer.baseFov = FOV[v];
+  if (!opts.quiet) rememberPref('drive.fov', v);
+  markChoice('fovOpts', 'fov', v);
+}
+
+function setUnits(v, opts = {}) {
+  S.units = v;
+  if (!opts.quiet) rememberPref('drive.units', v);
+  $('speedUnit').textContent = v === 'mph' ? 'mph' : 'km/h';
+  markChoice('unitOpts', 'units', v);
+}
+
+const VOLUMES = {
+  sfxVolume: { key: 'drive.sfxvol', el: 'sfxVol', set: 'setSfxVolume' },
+  musicVolume: { key: 'drive.musicvol', el: 'musicVol', set: 'setMusicVolume' },
+};
+
+function setVolume(k, v, opts = {}) {
+  const vol = VOLUMES[k];
+  S[k] = v;
+  $(vol.el).style.setProperty('--v', Math.round(v * 100) + '%');
+  // sound.js carries no cache token either; an hour-old copy has no sliders.
+  if (S.sound[vol.set]) S.sound[vol.set](v);
+  if (!opts.quiet) rememberPref(vol.key, String(v));
+}
+
+/** Graphics quality is about the machine, not the person, so it stays local. */
+function setQuality(q, opts = {}) {
+  const changed = q !== S.quality;
+  S.quality = q;
+  // render.js carries no cache token, so an hour-old copy may not have this.
+  if (S.renderer.setQuality) S.renderer.setQuality(q);
+  if (!opts.quiet) rememberPref('drive.quality', q);
+  $('qualityOpts').querySelectorAll('[data-quality]').forEach(b => {
+    b.classList.toggle('on', b.dataset.quality === q);
+  });
+  if (!opts.quiet && changed) toast('Graphics: ' + q[0].toUpperCase() + q.slice(1));
+}
+
 function setFpsOn(on, opts = {}) {
   S.showFps = on;
   if (opts.remember !== false) rememberFlag('drive.fps', on);
@@ -3245,7 +3361,7 @@ function toggleBoard(force) {
   syncPaused();
   if (!on) return;
   $('boardTitle').textContent = S.track.name;
-  $('boardDetail').innerHTML = '<p class="muted empty">Pick a time to see its splits.</p>';
+  $('boardDetail').innerHTML = '';
 }
 
 async function openBoard() {
@@ -3265,7 +3381,7 @@ async function openBoard() {
   }
   S.board = rows;
   if (!rows.length) {
-    list.innerHTML = '<p class="muted empty">No times here yet. Set the first one.</p>';
+    list.innerHTML = '<p class="muted empty">No times yet.</p>';
     return;
   }
   list.innerHTML = rows.map((row, i) => `
@@ -3308,7 +3424,7 @@ function showBoardRow(i) {
       <div class="bd-time">${fmt(row.time_ms)}</div>
       <div class="bd-who"><span class="medal ${row.medal || 'none'}"></span>${esc(row.name)}</div>
     </div>
-    <div class="bd-splits">${rows || '<p class="muted">No splits recorded.</p>'}</div>
+    <div class="bd-splits">${rows || ''}</div>
     ${row.has_ghost ? `<div class="bd-actions">
       <button class="btn" data-race="${row.id}">Race this Ghost</button>
       <button class="btn dark" data-watch="${row.id}">Watch Replay</button>
@@ -3317,7 +3433,7 @@ function showBoardRow(i) {
           <rect x="9" y="9" width="11" height="11" rx="2.2"/>
           <path d="M15 5.6A2.6 2.6 0 0 0 12.4 3H6.6A2.6 2.6 0 0 0 4 5.6v5.8A2.6 2.6 0 0 0 6.6 14"/>
         </svg>Share</button>
-    </div>` : '<p class="muted">This lap has no replay to watch.</p>'}`;
+    </div>` : ''}`;
   const detail = $('boardDetail');
   const race = detail.querySelector('[data-race]');
   const watch = detail.querySelector('[data-watch]');
@@ -4562,9 +4678,9 @@ function renderTrackCards() {
   const cards = visibleTrackCards();
   if (!cards.length) {
     grid.innerHTML = '<p class="tempty">' + (TPREF.tab === 'daily'
-      ? 'No daily has been set yet. Check back tomorrow.'
+      ? 'No dailies yet.'
       : TPREF.tab === 'community'
-        ? 'Nobody has published a track yet. <a href="/make">Make the first one</a>.'
+        ? 'No community tracks yet.'
         : 'Nothing here.') + '</p>';
     return;
   }
@@ -6180,7 +6296,7 @@ function tyreSmoke(car, kind) {
   const back = new THREE.Vector3().copy(car.pos)
     .addScaledVector(car.fwd, -1.3).addScaledVector(car.up, -0.3);
   const jitter = new THREE.Vector3((Math.random() - 0.5) * 2, 0.9, (Math.random() - 0.5) * 2);
-  S.renderer.smoke(back, jitter, kind);
+  if (S.tyreSmoke !== false) S.renderer.smoke(back, jitter, kind);
 }
 
 function render(dt, now) {
@@ -6473,7 +6589,7 @@ function seatCarAlongLap(f) {
  */
 function hudFast() {
   const car = S.car, run = S.run;
-  $('speed').textContent = Math.round(car.speed * 3.1);
+  $('speed').textContent = Math.round(car.speed * (S.units === 'mph' ? 3.1 * 0.6214 : 3.1));
   $('speedFill').style.width = Math.min(100, (car.speed / T.MAX_SPEED) * 100) + '%';
   // Over MAX_SPEED means a descent is doing the work, which is worth showing.
   $('speedFill').classList.toggle('over', car.speed > T.MAX_SPEED);
@@ -7569,6 +7685,14 @@ function hideResults() {
  * Only ever called on the way *open*, so a close can never re-enter it.
  */
 function closeOtherPanels(keep) {
+  // Going straight from one panel to another is a crossfade, not a fresh open:
+  // the panels are one size, so only the contents should change.
+  const open = { menu: S.menuOpen, help: S.helpOpen,
+                 board: $('boardOv').style.display !== 'none',
+                 tracks: $('tracksOv').style.display !== 'none',
+                 saves: $('savesOv').style.display !== 'none' };
+  document.body.classList.toggle('panel-swap',
+    Object.keys(open).some(k => k !== keep && open[k]));
   if (keep !== 'menu' && S.menuOpen) toggleMenu(false);
   if (keep !== 'help' && S.helpOpen) toggleHelp(false);
   if (keep !== 'board' && $('boardOv').style.display !== 'none') toggleBoard(false);

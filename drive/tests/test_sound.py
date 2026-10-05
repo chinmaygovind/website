@@ -371,8 +371,11 @@ def test_muting_the_sound_leaves_the_music_playing(ctx):
 
 
 def test_the_music_is_beside_the_effects_rather_than_under_them(ctx):
-    assert ctx.eval("snd.music.bus.out.indexOf(snd.master) >= 0")
+    # Through its own volume slider's gain, and from there to the master.
+    assert ctx.eval("snd.music.bus.out.indexOf(snd.musicGain) >= 0")
+    assert ctx.eval("snd.musicGain.out.indexOf(snd.master) >= 0")
     assert not ctx.eval("snd.music.bus.out.indexOf(snd.sfx) >= 0")
+    assert not ctx.eval("snd.musicGain.out.indexOf(snd.sfx) >= 0")
 
 
 def test_a_muted_driver_who_wants_music_still_gets_a_context():

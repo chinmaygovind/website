@@ -97,6 +97,8 @@ DRIVE_TRACKS = {
     "playground": "Playground",
     "suzuka": "Suzuka",
     "baku": "Baku",
+    "sepang": "Sepang",
+    "citadel": "Citadel",
 }
 
 

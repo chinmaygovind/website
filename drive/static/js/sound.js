@@ -109,7 +109,7 @@ export class Sound {
     // Everything that is not music. Muting is this gain rather than the
     // master's, so the two switches in settings are actually two switches.
     this.sfx = ctx.createGain();
-    this.sfx.gain.value = this.enabled ? 1 : 0;
+    this.sfx.gain.value = this.enabled ? this.sfxLevel() : 0;
     this.sfx.connect(this.master);
 
     // **The one recording in here**, fetched once the context exists and never
@@ -207,7 +207,11 @@ export class Sound {
     // Beside the sfx bus rather than under it, so the two switches are two
     // switches. Built even when it is switched off: it is three nodes and two
     // `<audio>` elements that have not been given a `src`.
-    this.music = new MusicPlayer(ctx, this.master, {
+    // Its own level for the music slider, between the player and the master.
+    this.musicGain = ctx.createGain();
+    this.musicGain.gain.value = this.musicVolume != null ? this.musicVolume : 1;
+    this.musicGain.connect(this.master);
+    this.music = new MusicPlayer(ctx, this.musicGain, {
       onsong: (e) => { if (this.onsong) this.onsong(e); },
     });
     // The manifest is fetched once and may land after the context is built, so
@@ -265,9 +269,22 @@ export class Sound {
     this.rivalBus.gain.setTargetAtTime(RIVAL_BUS, this.ctx.currentTime, 0.05);
   }
 
+  /** The two volume sliders in settings, 0 to 1. Muting still wins. */
+  sfxLevel() { return this.sfxVolume != null ? this.sfxVolume : 1; }
+
+  setSfxVolume(v) {
+    this.sfxVolume = v;
+    if (this.sfx && this.enabled) this.sfx.gain.value = v;
+  }
+
+  setMusicVolume(v) {
+    this.musicVolume = v;
+    if (this.musicGain) this.musicGain.gain.value = v;
+  }
+
   mute(m) {
     this.enabled = !m;
-    if (this.sfx) this.sfx.gain.value = m ? 0 : 1;
+    if (this.sfx) this.sfx.gain.value = m ? 0 : this.sfxLevel();
   }
 
   /**

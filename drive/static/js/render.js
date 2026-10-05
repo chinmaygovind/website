@@ -2067,10 +2067,21 @@ class Lamps {
   }
 }
 
+// Graphics quality: how many pixels are drawn, whether edges are smoothed and
+// how dense the rain is. High is how the game always looked. Antialiasing is
+// fixed when the canvas's context is made, so it only changes on the next load.
+const QUALITY = {
+  low: { ratio: () => 0.7, aa: false, rain: 0.25 },
+  medium: { ratio: () => 1, aa: true, rain: 0.5 },
+  high: { ratio: () => Math.min(window.devicePixelRatio || 1, 2), aa: true, rain: 1 },
+};
+
 export class Renderer {
-  constructor(canvas) {
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  constructor(canvas, quality = 'high') {
+    this.quality = QUALITY[quality] ? quality : 'high';
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: QUALITY[this.quality].aa,
+                                              powerPreference: 'high-performance' });
+    this.renderer.setPixelRatio(QUALITY[this.quality].ratio());
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(66, 1, 0.4, 2600);
     this.baseFov = 66;
@@ -2112,6 +2123,13 @@ export class Renderer {
     this.camera.updateProjectionMatrix();
   }
 
+  setQuality(q) {
+    if (!QUALITY[q]) return;
+    this.quality = q;
+    this.renderer.setPixelRatio(QUALITY[q].ratio());
+    this.resize();
+  }
+
   /** Whether this track's movers have a voice. See `_ghostsNear`. */
   setMoverVoice(on) { this.moverVoice = !!on; }
 
@@ -2128,7 +2146,11 @@ export class Renderer {
     // navigating, so it has to be torn down here rather than at page load or a
     // switch off a wet track leaves it raining on a dry one.
     if (this.rain) { this.rain.dispose(); this.rain = null; }
-    if (pal.rain) this.rain = new Rain(this.scene, pal.rain);
+    if (pal.rain) {
+      const n = pal.rain.count != null ? pal.rain.count : 2600;
+      this.rain = new Rain(this.scene, { ...pal.rain,
+                                         count: Math.round(n * QUALITY[this.quality].rain) });
+    }
     // Same teardown rule as the rain, and for a sharper reason: a `PointLight`
     // left behind by the previous track is a pool of candlelight hanging in the
     // open air of the next one, at a world coordinate that means nothing there.
@@ -2314,7 +2336,7 @@ export class Renderer {
     this.sun.target.updateMatrixWorld();
   }
 
-  kick(amount) { this.shake = Math.min(2.2, this.shake + amount); }
+  kick(amount) { if (!this.noShake) this.shake = Math.min(2.2, this.shake + amount); }
 
   /**
    * The air round a car while its tow fills and while it pays out.

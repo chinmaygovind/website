@@ -199,7 +199,7 @@
   {
    "name": "Opening ranges",
    "against": "published 6-max 100bb solutions",
-   "question": "does a chart labelled `solver` open as often as the solve it names?",
+   "question": "does a chart labeled `solver` open as often as the solve it names?",
    "status": "pass",
    "samples": 4,
    "worst": 2.448718,

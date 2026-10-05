@@ -1449,7 +1449,7 @@ body:not(.touch) .touch-only.watch-only { display: none; }
   backdrop-filter: blur(3px); padding: 1rem;
 }
 .sheet {
-  background: var(--paper); border: 2px solid var(--line); border-radius: 14px;
+  background: #fff; border: 2px solid var(--line); border-radius: 14px;
   padding: 1.3rem 1.5rem; max-width: 460px; width: 100%;
   box-shadow: 5px 5px 0 rgba(0, 0, 0, .3); max-height: 90vh; overflow: auto;
 }
@@ -1559,6 +1559,111 @@ body:not(.touch) .touch-only.watch-only { display: none; }
    it sat closer to the audio switches than to the thing it is about and read as
    a caption for Sound and Music. Tight above, a clear gap below. */
 .ghost-now { margin: .3rem 0 1.05rem; font-size: .9rem; color: var(--ink-soft); }
+
+/* --- the settings sheet ---------------------------------------------------
+   Grouped like a phone's settings: a small caption, a white rounded group of
+   rows with hairlines between them, on the sheet's warm grey. Two columns.
+   Switches are pills that slide; choices are segmented controls. The sheet is
+   a `.panel` like the board and the switcher - see the foot of the file. No
+   explanatory text anywhere. */
+.settings { --ease: cubic-bezier(.32, .72, 0, 1); }
+.set-body {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0 1.4rem; align-content: start;
+}
+/* Each group stretches to its row partner's height and shares it out between
+   its rows, so Ghost lines up with Audio and HUD with Display. */
+.set-sec { display: flex; flex-direction: column; min-width: 0; }
+.set-sec .set-group { flex: 1 1 auto; display: flex; flex-direction: column; }
+.set-group > .set-cell { flex: 1 1 auto; }
+.set-cap {
+  margin: .85rem 0 .3rem 1rem; font-size: .76rem; font-weight: 600;
+  letter-spacing: .04em; text-transform: uppercase; color: var(--ink-soft);
+}
+.set-sec:nth-child(-n+2) .set-cap { margin-top: .2rem; }
+.set-group { background: #fff; border: 2px solid var(--line); border-radius: 12px; overflow: hidden; }
+.set-cell {
+  display: flex; align-items: center; gap: .7rem; width: 100%;
+  min-height: max(42px, calc(42px + (100vh - 800px) * .1));
+  padding: .35rem .9rem; position: relative; text-align: left;
+  font: inherit; font-size: 1rem; color: var(--ink); background: #fff; border: 0;
+}
+.set-cell + .set-cell::before {
+  content: ""; position: absolute; top: 0; right: 0; left: 2.9rem;
+  height: 1px; background: rgba(29, 29, 31, .1);
+}
+.set-cell.stack { flex-direction: column; align-items: stretch; justify-content: center; gap: .45rem; padding: .6rem .9rem; }
+.set-cell.stack + .set-cell::before { left: 0; }
+.set-cell.stack .set-name { flex: none; }
+.set-cell .icn { width: 20px; height: 20px; flex: none; fill: none; stroke: var(--ink-soft);
+                 stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.set-name { flex: 1 1 auto; font-weight: 500; }
+button.set-cell { cursor: pointer; transition: background .2s; }
+button.set-cell:hover { background: #faf9f6; }
+button.set-cell:active { background: #f0eee9; }
+button.set-cell:focus-visible { outline: 3px solid var(--blue); outline-offset: -3px; border-radius: 12px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.pill {
+  flex: none; width: 50px; height: 30px; border-radius: 999px; position: relative;
+  background: #e2e0db; transition: background .25s var(--ease);
+}
+.pill::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 26px; height: 26px;
+  border-radius: 50%; background: #fff;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, .18), 0 0 1px rgba(0, 0, 0, .2);
+  transition: transform .3s var(--ease), width .15s var(--ease);
+}
+.set-cell.on .pill, .pill-btn.on .pill { background: #34c759; }
+.set-cell.on .pill::after, .pill-btn.on .pill::after { transform: translateX(20px); }
+button.set-cell:active .pill::after, .pill-btn:active .pill::after { width: 32px; }
+button.set-cell.on:active .pill::after, .pill-btn.on:active .pill::after { transform: translateX(14px); }
+.pill-btn { flex: none; display: flex; padding: 0; border: 0; background: none; cursor: pointer; border-radius: 999px; }
+.pill-btn:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+
+.seg { display: flex; gap: 2px; padding: 2px; border-radius: 9px; background: #ebe9e4;
+       flex: none; max-width: 100%; }
+.set-cell.stack .seg .opt { flex: 1 1 auto; min-width: 0; padding-left: .4rem; padding-right: .4rem;
+                            overflow: hidden; text-overflow: ellipsis; }
+/* A room's four choices do not fit a portrait phone on one row: two by two,
+   never three and a straggler. */
+@media (max-width: 600px) {
+  .set-cell.stack .seg:has(.opt:nth-child(4)) { display: grid; grid-template-columns: 1fr 1fr; }
+}
+.seg .opt {
+  flex: 1 1 auto; border: 0; border-radius: 7px; background: transparent; cursor: pointer;
+  font-family: inherit; font-weight: 500; font-size: .88rem; padding: .36rem .8rem;
+  color: var(--ink); white-space: nowrap;
+  transition: background .2s var(--ease), box-shadow .2s var(--ease);
+}
+.seg .opt:hover { background: rgba(255, 255, 255, .55); }
+.seg .opt.on { background: #fff; font-weight: 600;
+               box-shadow: 0 2px 6px rgba(0, 0, 0, .12), 0 0 1px rgba(0, 0, 0, .15); }
+
+/* The volume slider: a thin track filled green up to the thumb, and the same
+   white knob as the switches. */
+.vol { flex: 0 1 45%; min-width: 0; height: 30px; margin: 0; background: transparent;
+       -webkit-appearance: none; appearance: none; cursor: pointer; accent-color: #34c759; }
+.vol::-webkit-slider-runnable-track { height: 4px; border-radius: 2px;
+  background: linear-gradient(90deg, #34c759 var(--v, 100%), #e2e0db var(--v, 100%)); }
+.vol::-moz-range-track { height: 4px; border-radius: 2px; background: #e2e0db; }
+.vol::-moz-range-progress { height: 4px; border-radius: 2px; background: #34c759; }
+.vol::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 26px; height: 26px; margin-top: -11px; border-radius: 50%;
+  background: #fff; box-shadow: 0 2px 5px rgba(0, 0, 0, .2), 0 0 1px rgba(0, 0, 0, .25);
+}
+.vol::-moz-range-thumb { width: 26px; height: 26px; border: 0; border-radius: 50%;
+  background: #fff; box-shadow: 0 2px 5px rgba(0, 0, 0, .2), 0 0 1px rgba(0, 0, 0, .25); }
+
+.settings .sheet-foot { margin-top: .5rem; }
+.settings .sheet-fine { margin-top: .6rem; }
+@media (max-width: 760px) {
+  .set-body { grid-template-columns: 1fr; }
+  .set-sec:nth-child(2) .set-cap { margin-top: .85rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pill, .pill::after, .seg .opt { transition: none; }
+}
 
 /* --- the board, in the game ---------------------------------------------- */
 .tracks-sheet { max-width: 780px; }
@@ -1725,7 +1830,7 @@ body:not(.touch) .touch-only.watch-only { display: none; }
 /* --- the track switcher --------------------------------------------------
    Cards big enough to recognise a place from. The picture is the point: nine
    names in a list are nine names, and nine pictures are nine tracks. */
-.tgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: .6rem;
+.tgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: .6rem;
          max-height: 66vh; overflow: auto; }
 .tcard2 {
   display: flex; flex-direction: column; text-align: left; cursor: pointer;
@@ -1776,7 +1881,6 @@ body:not(.touch) .touch-only.watch-only { display: none; }
 .tgrid.busy .tcard2 { cursor: default; opacity: .55; pointer-events: none; }
 .tgrid.busy .tcard2:hover { transform: none; border-color: var(--line); }
 .tgrid.busy .tcard2.busy { opacity: 1; border-color: var(--red); }
-@media (max-width: 760px) { .tgrid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 480px) { .tgrid { grid-template-columns: 1fr; } }
 
 /* --- watching a replay ---------------------------------------------------
@@ -3508,3 +3612,32 @@ html:has(.hero) { scroll-behavior: smooth; }
 
 .home-tracks > h2 { text-align: center; font-size: 2rem; margin-top: 0; }
 .home-tracks .htabs-bar { justify-content: center; }
+
+/* --- the three big panels ------------------------------------------------
+   Settings, the board and the track switcher are one size - the middle 75% of
+   the window - and one look, so moving between them is a change of contents
+   and not of furniture. Last in the file so it outranks each sheet's own
+   width and height. The overlay fades and the sheet rises on open; going
+   straight from one panel to another (`body.panel-swap`, set by
+   `closeOtherPanels`) skips the rise and only crossfades. */
+.sheet.wide.panel {
+  width: 75vw; max-width: none; height: 75vh; max-height: none;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.panel > .sheet-head { flex: none; }
+.tracks-sheet .tgrid { flex: 1 1 auto; height: auto; }
+.board-sheet .board-split { flex: 1 1 auto; }
+@media (max-width: 760px), (max-height: 520px) {
+  .sheet.wide.panel { width: 100%; height: 100%; }
+  .sheet.wide.panel.settings { max-height: 100%; }
+}
+.overlay { animation: ov-in .12s ease-out; }
+.overlay > .sheet { animation: sheet-in .16s cubic-bezier(.2, .8, .2, 1); }
+body.panel-swap .overlay { animation: none; }
+body.panel-swap .overlay > .sheet { animation: sheet-swap .12s ease-out; }
+@keyframes ov-in { from { opacity: 0; } }
+@keyframes sheet-in { from { opacity: 0; transform: translateY(8px) scale(.99); } }
+@keyframes sheet-swap { from { opacity: .4; } }
+@media (prefers-reduced-motion: reduce) {
+  .overlay, .overlay > .sheet { animation: none; }
+}

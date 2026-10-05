@@ -110,7 +110,9 @@ function renderSettings() {} function openChat() {} function closeChat() {}
 function setGhostCar() {} function setMusic() {} function storedFlag() {}
 // The two readouts. They are switches wired here beside Sound and Music, so
 // they land in this slice for the same reason those two do.
-function setFpsOn() {} function setPingOn() {}
+function setFpsOn() {} function setPingOn() {} function setQuality() {}
+function wireChoice() {} function setFov() {} function setUnits() {}
+function setSwitch() {} function setVolume() {}
 // The save-state pair, counted rather than stubbed away, because whether a tap
 // reaches them is the whole of `test_saving_works_with_a_thumb_on_the_throttle`.
 var SAVED = 0, OPENED = 0;

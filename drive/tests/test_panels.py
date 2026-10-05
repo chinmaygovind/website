@@ -70,6 +70,7 @@ function El(id) {
   };
 }
 function $(id) { if (!els[id]) els[id] = new El(id); return els[id]; }
+var document = { body: new El('body') };
 // The two overlays are `style="display:none"` in the template, and the toggles
 // read that string to decide which way they are going. Starting them undefined
 // would make the first press of either a *close*.
@@ -172,7 +173,7 @@ def test_the_switcher_is_not_the_odd_one_out_any_more():
 
 
 def test_settings_is_left_out_of_the_way_when_it_opens_the_board():
-    """The View Others chip lives *inside* settings and opens the board.
+    """View Leaderboard lives *inside* settings and, in solo, opens the board.
 
     It is the one path where the panel being replaced is the one the press came
     from, and it went through `openBoard`'s own hand-wired `toggleMenu(false)` -

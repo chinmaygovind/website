@@ -333,7 +333,7 @@ def _bucket_line(d, m):
 
     total = sum(g[0] for g in groups) or 1.0
     if not d.board:
-        names = ("you are a clear favourite over", "it is close against",
+        names = ("you are a clear favorite over", "it is close against",
                  "you are behind")
     elif len(d.board) >= 5:
         # No cards to come, so nothing is drawing and nothing is dead: a

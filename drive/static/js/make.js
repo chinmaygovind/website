@@ -308,13 +308,13 @@ const CTX_API = [
   ['ground(i, off)', 'number',
    'The height of the ground there. Everything stands on this. Inside the '
    + 'apron it is the road less 1.2; beyond it, the height field.'],
-  ['face(a, b, c, d, colour)', 'void',
+  ['face(a, b, c, d, color)', 'void',
    'A quad, drawn both windings. Always use this rather than solid.quad - the '
    + 'world material is FrontSide, so a single winding is invisible from one '
    + 'side, and an invisible wall is not an error in either language.'],
-  ['solid.box(cx, cy, cz, hx, hy, hz, colour)', 'void',
-   'A lit box from its centre and half-extents. The workhorse.'],
-  ['solid.quad(a, b, c, d, colour) / solid.tri(...)', 'void',
+  ['solid.box(cx, cy, cz, hx, hy, hz, color)', 'void',
+   'A lit box from its center and half-extents. The workhorse.'],
+  ['solid.quad(a, b, c, d, color) / solid.tri(...)', 'void',
    'Lit geometry, one winding. Prefer face().'],
   ['bright.box / .quad / .tri', 'void',
    'Unlit geometry, for anything that should read as emitting light.'],
@@ -328,7 +328,7 @@ const CTX_API = [
    'The ribbon. Each station has p (x,y,z), n (up normal) and lat (the '
    + 'road\'s right). track.line.length is how many there are.'],
   ['pal', 'object',
-   'The palette. Take colours from it - pal.prop, pal.prop2, pal.rail - so '
+   'The palette. Take colors from it - pal.prop, pal.prop2, pal.rail - so '
    + 'scenery follows a palette change instead of fighting it.'],
   ['bbox', '{x0, x1, z0, z1}', 'How far the lap reaches, in world x and z.'],
   ['terrain', 'null or {height(x, z)}',
@@ -336,8 +336,8 @@ const CTX_API = [
    + 'ground(i, off) - it knows about the run-off apron beside the road, where '
    + 'the raw field returns whichever leg of the lap is nearest and jumps '
    + 'between them wherever the layout folds back on itself.'],
-  ['shade(colour, amount)', 'number',
-   'Lighten (positive) or darken (negative) a packed colour. shade(pal.prop, '
+  ['shade(color, amount)', 'number',
+   'Lighten (positive) or darken (negative) a packed color. shade(pal.prop, '
    + '-0.3) is a darker version of the same green.'],
   ['kit.<model>(opts)', 'void',
    'The scenery library, on the context: kit.stand({at: 0.1, side: -1, '
@@ -368,8 +368,8 @@ const CTX_API = [
  */
 const LOOK = [
   ['The road', [
-    ['road', 'c', 'surface'], ['kerb', 'c', 'kerb, light'],
-    ['kerb2', 'c', 'kerb, dark'], ['rail', 'c', 'barriers'],
+    ['road', 'c', 'surface'], ['kerb', 'c', 'curb, light'],
+    ['kerb2', 'c', 'curb, dark'], ['rail', 'c', 'barriers'],
     ['gravel', 'c', 'run-off'], ['deco', 'c', 'markings'],
   ]],
   ['Beside it', [
@@ -1955,7 +1955,7 @@ function startEditor() {
    */
   const HINTS = [
     [/\bTHREE\b/, 'This API has no THREE and no DOM. To stand a box:\n'
-      + '  solid.box(x, y, z, hx, hy, hz, colour)\n'
+      + '  solid.box(x, y, z, hx, hy, hz, color)\n'
       + 'Position it off the ribbon, never in world space:\n'
       + '  const i = at(0.42), [x, z] = spot(i, 40);\n'
       + '  const y = ground(i, 40);'],
@@ -2066,7 +2066,7 @@ function startEditor() {
     L.push('');
     L.push('Eighteen models the engine can draw. Prefer these over building');
     L.push('something out of boxes - they are aligned to the road, they stand');
-    L.push('on the ground, and they take their colours from the palette.');
+    L.push('on the ground, and they take their colors from the palette.');
     L.push('');
     for (const k of KIT) {
       const ps = Object.entries(k.params)
@@ -2113,7 +2113,7 @@ function startEditor() {
     L.push('A track is an ordered list of moves - a turtle walking a road into');
     L.push('existence. There are no coordinates and no curves: you say "turn 90');
     L.push('degrees on a 46 radius" and the road goes there. One unit is about a');
-    L.push('metre, a road is 9 wide by default.');
+    L.push('meter, a road is 9 wide by default.');
     L.push('');
     L.push('    {"t": "arc", "deg": -150, "rad": 17, "rise": 7}');
     L.push('');
@@ -2268,9 +2268,9 @@ function startEditor() {
     const cols = Object.keys(pal).filter(k => typeof pal[k] === 'number');
     if (cols.length) {
       L.push('');
-      L.push('## Palette keys with a colour in them');
+      L.push('## Palette keys with a color in them');
       L.push('');
-      L.push(cols.join(', ') + ' — take scenery colours from these so it '
+      L.push(cols.join(', ') + ' — take scenery colors from these so it '
              + 'follows a palette change instead of fighting it.');
     }
     L.push('');
