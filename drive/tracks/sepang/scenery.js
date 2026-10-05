@@ -326,6 +326,20 @@
       // T1 dropped you straight onto T2's exit. Close to the kerb, because the
       // inside wall above sits too far into a radius-18 hairpin to stop it.
       wall(0.124, 0.168, 1.6, -1);
+      // **And a cross wall shutting the grass strip between that inside wall
+      // and the armco**, found on prod: BotTyler left the straight before the
+      // inside wall starts, ran the strip and came out onto Turn 2 half way
+      // round, skipping Turn 1 for 1.5s. It stands where the armco ends, so
+      // the strip is a dead end rather than a way through.
+      {
+        const e = line[atD(0.0900)];
+        const p = (v) => [e.p[0] + e.lat[0] * v, e.p[1] - DROP, e.p[2] + e.lat[2] * v];
+        const q = p(e.hw + 3), r = p(e.hw + 21);
+        const up = (v) => [v[0], v[1] + BAR_H, v[2]];
+        face(q, r, up(r), up(q), TEAL);
+        face(r, q, up(q), up(r), TEAL);
+        col.addQuad(q, r, up(r), up(q), KIND.WALL);
+      }
       // The other corners you could clip across the grass, found by driving
       // and then by `cut_check` run at 1.25x rather than its usual 2x: Turn 4,
       // Turns 9 into 10, Turn 14 onto the back straight, and Turn 15 - which

@@ -131,7 +131,9 @@ EXPECTED = {
     # on the left from late in Turn 1 to Turn 2's exit, because running wide out
     # of T1 landed you on T2's exit; and kerb-side walls inside Turns 4, 9-10,
     # 14 and 15. If this number drops, one of those has stopped being solid.
-    "sepang":    {"total":  24190, "road":  1454, "wall":  3180, "off": 19556, "boost":  0},
+    # +2 in Oct 2026: a cross wall shutting the grass strip on the left of the
+    # start straight, which a lap on the board used to skip Turn 1.
+    "sepang":    {"total":  24192, "road":  1454, "wall":  3182, "off": 19556, "boost":  0},
 }
 
 COUNTER = """
