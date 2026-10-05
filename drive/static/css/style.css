@@ -3619,7 +3619,9 @@ html:has(.hero) { scroll-behavior: smooth; }
    and not of furniture. Last in the file so it outranks each sheet's own
    width and height. The overlay fades and the sheet rises on open; going
    straight from one panel to another (`body.panel-swap`, set by
-   `closeOtherPanels`) skips the rise and only crossfades. */
+   `closeOtherPanels`) skips the rise and only crossfades. The two finish
+   sheets, `#results` and `#raceOver`, skip both: crossing the line should
+   land on the result at once. */
 .sheet.wide.panel {
   width: 75vw; max-width: none; height: 75vh; max-height: none;
   display: flex; flex-direction: column; overflow: hidden;
@@ -3634,6 +3636,7 @@ html:has(.hero) { scroll-behavior: smooth; }
 .overlay { animation: ov-in .12s ease-out; }
 .overlay > .sheet { animation: sheet-in .16s cubic-bezier(.2, .8, .2, 1); }
 body.panel-swap .overlay { animation: none; }
+#results, #results > .sheet, #raceOver, #raceOver > .sheet { animation: none; }
 body.panel-swap .overlay > .sheet { animation: sheet-swap .12s ease-out; }
 @keyframes ov-in { from { opacity: 0; } }
 @keyframes sheet-in { from { opacity: 0; transform: translateY(8px) scale(.99); } }
