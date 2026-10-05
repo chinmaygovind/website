@@ -30,6 +30,7 @@ straight live, and why the review is a lap and not a glance.
 """
 
 import argparse
+import math
 import os
 import sys
 
@@ -174,6 +175,33 @@ def bot_laps(track, levels=("max", "easy"), max_t=None):
 # itself too much - better dropped than fenced.
 MAX_WALLED = 0.4
 
+# A pad at the top of a climb is a pad on a crest: the road levels off under
+# it, the car goes light, and only a car on the right line touches it at all.
+# Daily #9's last pad had a 30% grade ending at it and "you have to get a
+# finicky angle" was the note. Steepest grade allowed in the run-up; the pool's
+# own worst is Citadel's 0.12, which was placed by hand.
+PAD_CLIMB = 0.1
+PAD_RUNUP = 14.0
+
+
+def pads_on_climbs(track):
+    """Station of every pad whose run-up climbs steeper than `PAD_CLIMB`."""
+    line = track["line"]
+    out = []
+    for s in range(1, len(line)):
+        if not line[s].get("bp") or line[s - 1].get("bp"):
+            continue
+        i, run = s, 0.0
+        while i > 0 and run < PAD_RUNUP:
+            a, b = line[i - 1]["p"], line[i]["p"]
+            flat = math.hypot(b[0] - a[0], b[2] - a[2])
+            if not line[i].get("air") and b[1] - a[1] > PAD_CLIMB * max(flat, 1e-6):
+                out.append(s)
+                break
+            run += flat
+            i -= 1
+    return out
+
 
 def judge(doc, bot=True):
     """Build it, check it, price it. Returns `(track, why_not)`.
@@ -256,6 +284,8 @@ def judge(doc, bot=True):
     walled = sum(1 for e in road if e.get("wl") or e.get("wr")) / max(1, len(road))
     if walled > MAX_WALLED:
         why.append("%.0f%% walled after closing its shortcuts" % (100 * walled))
+    if pads_on_climbs(track):
+        why.append("a boost pad at the top of a climb")
     if (doc.get("ground") is None and not doc.get("exposed")
             and not doc.get("rails")):
         why.append("floats with no barriers and is not exposed")

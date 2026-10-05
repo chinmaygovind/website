@@ -377,6 +377,10 @@ walls both stretches of a grass cut, walls the take-off of a drop (or, if it is
 already walled, puts a checkpoint between take-off and landing), then the
 track is re-judged. Walls of death only ever climb,
 and every loop and wall is followed by a checkpoint, for the same reason.
+**No pad at the top of a climb** (`gen_daily.pads_on_climbs`): a pad where the
+road levels off is a pad on a crest, the car goes light over it and only an exact
+line touches it - Daily #9's last pad, after a 30% climb out of a tight corner,
+was the report. More than a 10% grade in the 14 units before a pad drops the seed.
 
 **Generate on a laptop, queue on the box**: the bot laps are QuickJS and the box
 is memory-tight, so `--save dailies.json` locally, copy it up, and

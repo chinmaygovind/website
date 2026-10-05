@@ -196,3 +196,20 @@ def test_dailies_have_barriers_only_where_they_do_a_job():
         assert doc["rails"] is False
         assert doc["exposed"] is generate.is_void(
             next(l for l in looks if l["slug"] == doc["generated"]["look"]))
+
+
+def test_a_pad_at_the_top_of_a_climb_is_refused():
+    """Daily #9's last pad sat where a 30% climb levelled off, so the car went
+    light over it and only an exact line touched it. The same corner flat into
+    the same pad is fine."""
+    def doc(rise):
+        return {"width": 12.0, "ground": 0.0, "rails": False, "moves": [
+            {"t": "start", "run": 40.0},
+            {"t": "arc", "deg": 67.1, "rad": 17.0, "rise": rise},
+            {"t": "boost", "len": 12.0},
+            {"t": "straight", "len": 60.0, "rise": -rise},
+            {"t": "finish"}]}
+    climb = tracks_mod.from_document("daily-x", doc(4.1), timed=False)
+    flat = tracks_mod.from_document("daily-x", doc(0.0), timed=False)
+    assert gen_daily.pads_on_climbs(climb)
+    assert gen_daily.pads_on_climbs(flat) == []
