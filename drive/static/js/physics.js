@@ -224,6 +224,18 @@ export class Car {
     // --- gravity, always -------------------------------------------------
     this.vel.y -= T.GRAVITY * dt;
 
+    // A geyser is a cap you meet in mid-column rather than on a surface, so it
+    // shares the cap's lock and its callback: one pass is one launch, and it
+    // sounds and kicks like one. Posed off `_tick` for the movers' reason.
+    if (this.world.movers && this.world.movers.lift && this.bounceLock <= 0) {
+      const up = this.world.movers.lift(this._tick, this.pos.x, this.pos.y, this.pos.z);
+      if (up > 0 && up > this.vel.y) {
+        this.vel.y = up;
+        this.bounceLock = T.BOUNCE_LOCK;
+        this.onBounce && this.onBounce(up);
+      }
+    }
+
     if (this.grounded) {
       const prevAir = this.airTime;
       this.airTime = 0;

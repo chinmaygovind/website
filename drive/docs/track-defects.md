@@ -75,6 +75,12 @@ find by looking at a bad picture.
 
 ## In the road views
 
+- **Scenery at the kerb on an exposed track reads as a barrier it is not.** Citadel's
+  first battlements stood at `hw + 3`, road height, uncollided - a wall you can see
+  and fall through. Keep uncollided scenery well back from the edge, or collide it.
+- **`below: lava` crust ignores the road.** Its plates are up to four units tall with
+  no `clear()` test, so under a grate (a `skin` run) one stands in the road as a
+  black block. Citadel turns it off (`crustCover: 0`) and lays its own.
 - **Geometry floating in the sky.** Buildings, racking, props standing at a Y
   that has nothing to do with the ground under them. The built-in scatter cannot
   do this — it stands things at `terrain.height()` or `gy` — so when it happens

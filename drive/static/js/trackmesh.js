@@ -423,6 +423,7 @@ export class Movers {
   place(k) {
     for (const m of this.list) {
       if (!m.obj) continue;
+      if (m.geyser) { Movers.erupt(m, k); continue; }
       const p = Movers.pose(m, k);
       m.obj.position.set(p.x, p.y, p.z);
       m.obj.rotation.y = p.yaw;
@@ -437,6 +438,7 @@ export class Movers {
    */
   walls(k, x, y, z, r, cb) {
     for (const m of this.list) {
+      if (m.geyser) continue;
       const p = Movers.pose(m, k);
       // Into the box's frame: yaw only, because a mover walks on the ground.
       const c = Math.cos(-p.yaw), s = Math.sin(-p.yaw);
@@ -461,6 +463,140 @@ export class Movers {
       const cc = Math.cos(p.yaw), ss = Math.sin(p.yaw);
       cb(ox * cc - oz * ss, oy, ox * ss + oz * cc, r - d);
     }
+  }
+
+  /**
+   * Where geyser `m` is in its cycle at step `k`: the step into the eruption
+   * (0..burst-1), or -1 when it is not erupting. The cycle opens on the
+   * eruption and ends on `warn` steps of bubbling, so the warning always comes
+   * immediately before the eruption it is warning about. Integer arithmetic only,
+   * for the reason `pose` is.
+   */
+  static phase(m, k) {
+    const u = ((k + m.phase) % m.period + m.period) % m.period;
+    return u < m.burst ? u : -1;
+  }
+
+  /**
+   * **A geyser is a mover that throws rather than shoves.** It is a vertical
+   * cylinder over the lava, and a car inside it while it erupts is given
+   * `vel` straight up - the launch, not a force, the same as a mushroom
+   * cap's. Returns that speed, or 0. The car only asks while its `bounceLock` is
+   * spent, so one pass through a column is one launch.
+   */
+  lift(k, x, y, z) {
+    for (const m of this.list) {
+      if (!m.geyser || Movers.phase(m, k) < 0) continue;
+      if (y < m.y - 4 || y > m.y + m.reach) continue;
+      const dx = x - m.x, dz = z - m.z;
+      if (dx * dx + dz * dz > m.r * m.r) continue;
+      return m.vel;
+    }
+    return 0;
+  }
+
+  /**
+   * Everything a geyser shows at step `k`. Visual only.
+   *
+   * **The warning is drawn on the road, not on the lava.** The column comes up
+   * through a grate seven units over the lake, and a pool bubbling down there
+   * is invisible from a car - which is what made the first geysers blind. So
+   * the ring on the road surface is always lit dimly (you always know where
+   * one stands), and for the `warn` steps before an eruption it flares, pulses
+   * faster as the eruption nears, sputters and throws embers.
+   */
+  static erupt(m, k) {
+    const u = ((k + m.phase) % m.period + m.period) % m.period;
+    const g = m.parts;
+    const warnAt = m.period - m.warn;
+    const H = m.height, n = g.segs.length;
+    if (u < m.burst) {
+      const t = u / m.burst;
+      // Shoots up in a tenth of the eruption, holds, and falls back over the
+      // last quarter - the column drains from the top, not the bottom.
+      const h = H * Math.min(1, t / 0.1);
+      const drain = t > 0.75 ? (t - 0.75) / 0.25 : 0;
+      const segH = h / n;
+      for (let i = 0; i < n; i++) {
+        const sg = g.segs[i];
+        const live = (i + 1) / n <= 1 - drain * 0.95;
+        sg.visible = live;
+        const w = 1 + 0.18 * Math.sin(u * 0.45 + i * 1.7);
+        sg.position.y = i * segH;
+        sg.scale.set(w, segH, w);
+      }
+      g.core.visible = true;
+      g.core.scale.set(1 + 0.1 * Math.sin(u * 0.7), h * (1 - drain), 1 + 0.1 * Math.cos(u * 0.6));
+      // Blobs thrown off the top, on a parabola of their own.
+      const top = h * (1 - drain * 0.95);
+      for (let i = 0; i < g.blobs.length; i++) {
+        const bl = g.blobs[i];
+        const tt = ((u + i * 13) % 50) / 50;
+        const a = i * 2.39996;
+        const rr = m.r * (0.4 + 1.6 * tt);
+        bl.visible = top > 4;
+        bl.position.set(Math.cos(a) * rr, top + 9 * tt - 14 * tt * tt, Math.sin(a) * rr);
+      }
+      g.hot.visible = true;
+      g.hot.material.opacity = 0.9;
+      g.glow.material.opacity = 0.3;
+      g.sheath.visible = true;
+      g.sheath.scale.set(1 + 0.08 * Math.sin(u * 0.33), h * (1 - drain), 1 + 0.08 * Math.cos(u * 0.29));
+      g.sputter.visible = false;
+      for (const e of g.embers) e.visible = false;
+      g.pool.scale.set(1.3, 1, 1.3);
+      return;
+    }
+    for (const sg of g.segs) sg.visible = false;
+    g.core.visible = false;
+    g.sheath.visible = false;
+    for (const bl of g.blobs) bl.visible = false;
+    if (u >= warnAt) {
+      const t = (u - warnAt) / m.warn;              // 0 .. 1 toward the eruption
+      // Pulses that quicken: the phase advances faster as t grows.
+      const pulse = 0.5 + 0.5 * Math.sin(t * t * 38);
+      g.hot.visible = true;
+      g.hot.material.opacity = 0.35 + 0.6 * pulse * (0.4 + 0.6 * t);
+      g.glow.material.opacity = 0.15 + 0.5 * t * pulse;
+      g.sputter.visible = true;
+      g.sputter.scale.set(1, 0.4 + (1.5 + 3 * t) * (0.5 + 0.5 * Math.sin(u * 1.3)), 1);
+      for (let i = 0; i < g.embers.length; i++) {
+        const e = g.embers[i];
+        const tt = ((u + i * 17) % 40) / 40;
+        const a = i * 2.39996 + u * 0.02;
+        e.visible = true;
+        e.position.set(Math.cos(a) * m.r * 0.6, g.road + tt * (4 + 6 * t), Math.sin(a) * m.r * 0.6);
+      }
+      g.pool.scale.set(0.8 + 0.5 * t, 1, 0.8 + 0.5 * t);
+    } else {
+      g.hot.visible = false;
+      g.glow.material.opacity = 0.0;
+      g.sputter.visible = false;
+      for (const e of g.embers) e.visible = false;
+      g.pool.scale.set(0.8, 1, 0.8);
+    }
+  }
+}
+
+/** An n-sided prism from y0 to y1, radius r0 at the foot and r1 at the top. */
+function prism(buf, n, r0, r1, y0, y1, color, top) {
+  for (let i = 0; i < n; i++) {
+    const a0 = i / n * Math.PI * 2, a1 = (i + 1) / n * Math.PI * 2;
+    const c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1);
+    buf.quad([c0 * r0, y0, s0 * r0], [c0 * r1, y1, s0 * r1],
+             [c1 * r1, y1, s1 * r1], [c1 * r0, y0, s1 * r0], color);
+    if (top) buf.tri([0, y1, 0], [c1 * r1, y1, s1 * r1], [c0 * r1, y1, s0 * r1], top);
+  }
+}
+
+/** A flat ring at height y, both faces. */
+function annulus(buf, n, r0, r1, y, color) {
+  for (let i = 0; i < n; i++) {
+    const a0 = i / n * Math.PI * 2, a1 = (i + 1) / n * Math.PI * 2;
+    const A = [Math.cos(a0) * r0, y, Math.sin(a0) * r0], B = [Math.cos(a0) * r1, y, Math.sin(a0) * r1];
+    const C = [Math.cos(a1) * r1, y, Math.sin(a1) * r1], D = [Math.cos(a1) * r0, y, Math.sin(a1) * r0];
+    buf.quad(A, B, C, D, color);
+    buf.quad(A, D, C, B, color);
   }
 }
 
@@ -1229,6 +1365,11 @@ export function buildTrack(track, T) {
     killY = groundY - 30;
   } else {
     killY = minY - 26;
+    // `below.kill` makes the lava the floor of the world rather than the view
+    // from it: touch the surface and you respawn, instead of falling past it.
+    if (pal.below && pal.below.kill) {
+      killY = minY - (pal.below.deck != null ? pal.below.deck : 24) + 0.6;
+    }
     // A distant plate so the void has a floor to look at - unless the palette
     // puts a whole world down there, in which case that is the floor.
     if (!pal.below) {
@@ -1303,6 +1444,55 @@ export function buildTrack(track, T) {
     for (const m of list) {
       m.phase = m.phase || 0;
       m.period = Math.max(2, Math.round(m.period || 240));
+      if (m.geyser) {
+        // Steps, not seconds, and integers, for `pose`'s reason.
+        m.burst = Math.round(m.burst || m.period / 3);
+        m.warn = Math.round(m.warn || m.period / 3);
+        m.r = m.r || 6; m.reach = m.reach || 14; m.vel = m.vel || 40;
+        m.height = m.height || 40;
+        const hot = m.hot || 0xff6a14, core = m.core || 0xffd890;
+        const road = (m.top != null ? m.top : m.y + m.reach - 3) - m.y + 0.12;
+        const g = new THREE.Group();
+        g.position.set(m.x, m.y, m.z);
+        const unlit = () => new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+        const fade = () => new THREE.MeshBasicMaterial({
+          vertexColors: true, transparent: true, opacity: 0, depthWrite: false,
+          side: THREE.DoubleSide });
+        const mesh = (fill, mat) => { const b = new MeshBuf(); fill(b); const o = b.toMesh(mat); g.add(o); return o; };
+        // Unit-tall pieces, so a y scale is a height.
+        const segs = [];
+        for (let i = 0; i < 7; i++) {
+          const r = m.r * (0.72 - i * 0.05);
+          segs.push(mesh((b) => prism(b, 10, r, r * 0.92, 0, 1.04, i % 2 ? hot : 0xff8a2a), unlit()));
+        }
+        const coreM = mesh((b) => prism(b, 8, m.r * 0.36, m.r * 0.22, 0, 1, core), unlit());
+        // A translucent sheath wider than the column, so it reads as a column
+        // of light rather than a stack of solid pieces.
+        const sheath = mesh((b) => prism(b, 12, m.r * 1.05, m.r * 0.6, 0, 1, 0xff9a40), fade());
+        sheath.material.opacity = 0.35;
+        const blobs = [];
+        for (let i = 0; i < 9; i++) {
+          const sz = 0.7 + (i % 3) * 0.35;
+          blobs.push(mesh((b) => b.box(0, 0, 0, sz, sz, sz, i % 2 ? hot : core), unlit()));
+        }
+        const pool = mesh((b) => prism(b, 10, m.r * 1.05, m.r, 0, 0.5, hot, core), unlit());
+        mesh((b) => annulus(b, 16, m.r - 0.7, m.r, road, 0x7a2a0c), unlit());
+        const hotRing = mesh((b) => annulus(b, 16, m.r - 1.1, m.r + 0.3, road + 0.03, 0xffb040), fade());
+        const glow = mesh((b) => annulus(b, 16, 0, m.r - 1.1, road + 0.02, 0xff7a20), fade());
+        // Authored from its own foot and stood on the road, so a y scale grows
+        // it up out of the grate rather than out of the lava.
+        const sputter = mesh((b) => prism(b, 6, m.r * 0.3, m.r * 0.12, 0, 1, core), unlit());
+        sputter.position.set(0, road, 0);
+        const embers = [];
+        for (let i = 0; i < 7; i++) {
+          embers.push(mesh((b) => b.box(0, 0, 0, 0.18, 0.18, 0.18, core), unlit()));
+        }
+        m.parts = { segs, core: coreM, sheath, blobs, pool, hot: hotRing, glow, sputter, embers, road };
+        m.obj = g;
+        group.add(g);
+        Movers.erupt(m, 0);
+        continue;
+      }
       const buf = new MeshBuf();
       for (const b of (m.parts || [])) {
         buf.box(b[0], b[1], b[2], b[3], b[4], b[5], b[6]);
