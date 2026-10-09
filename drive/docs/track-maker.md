@@ -365,6 +365,15 @@ banked sweepers, walled chicanes, the odd half-pipe or loop), and one with a
 gaps, drops, half-pipes. **Neither has barriers by default**: they go round
 loops, through chicanes, and wherever a shortcut is closed, and nowhere else -
 a daily walled end to end was no fun to drive.
+**Each daily is its own menu** (`generate._flavour`): one signature set piece
+weighted four times over, and two others drawn beside it - nothing else. The
+whole vocabulary is a circuit's jumps, crests, humps, rollers, pads, sweepers,
+esses, chicanes, wall-rides, a narrow section, caps, half-pipes and loops, and a
+stunt track's loops, walls of death, a climbing helix, gaps, drop staircases,
+bowed leaps, dives, caps, half-pipes and wall-rides. With everything on offer
+at base weight every daily was the same mix in a different order and "they all
+feel the same" was the note. The signature is in `generated.signature`, and
+`propose` never puts the same one on neighbouring days.
 `look_order` hands the looks out so every one is used before any repeats,
 neighbours in the queue differ, and the first few avoid `--avoid` (the looks of
 the dailies already scheduled - "same theme as daily #1" was a review note).

@@ -304,8 +304,14 @@ def propose(n, first_seed=0, verbose=True, avoid=(), per_look=80):
         for _ in range(per_look):
             tried += 1
             doc = generate.generate(seed, looks, look=look)
-            track, why = judge(doc)
             seed += 1
+            # Neighbouring days lean on different set pieces, as they get
+            # different looks - the same signature twice running reads as the
+            # same track again.
+            if kept and (kept[-1][1]["generated"]["signature"]
+                         == doc["generated"]["signature"]):
+                continue
+            track, why = judge(doc)
             if not why:
                 kept.append((seed - 1, doc, track))
                 if verbose:

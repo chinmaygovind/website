@@ -141,10 +141,13 @@ def _length(m):
 # What each kind of daily may throw in down a straight, by weight. A stunt
 # track is mostly set pieces; a circuit is mostly road with a few.
 CIRCUIT_TRICKS = (("jump", 3), ("crest", 3), ("hump", 2), ("boost", 2),
-                  ("sweeper", 3), ("pipe", 1), ("loop", 1), ("chicane", 3))
+                  ("sweeper", 3), ("pipe", 1), ("loop", 1), ("chicane", 3),
+                  ("esses", 3), ("rollers", 2), ("wallride", 2), ("bounce", 1),
+                  ("narrows", 2))
 STUNT_TRICKS = (("loop", 3), ("wall", 3), ("jump", 3), ("gap", 3),
-                ("pipe", 2), ("dive", 2), ("sweeper", 2), ("boost", 1))
-
+                ("pipe", 2), ("dive", 2), ("sweeper", 2), ("boost", 1),
+                ("bounce", 3), ("helix", 2), ("stairs", 2), ("leap", 2),
+                ("wallride", 2), ("esses", 1))
 
 def _pick(rng, table):
     total = sum(w for _, w in table)
@@ -154,6 +157,22 @@ def _pick(rng, table):
         if r <= 0:
             return name
     return table[-1][0]
+
+
+# **Every daily is its own menu**: one signature set piece, weighted this many
+# times, and two others drawn beside it - nothing else from the table. With
+# every trick on offer at its base weight the dailies came out as the same even
+# mix in a different order and all felt alike; a day that is mostly caps with a
+# helix, and the next mostly esses with a wall-ride, are two different tracks.
+SIGNATURE = 4
+SIDES = 2
+
+
+def _flavour(rng, table):
+    sig = _pick(rng, table)
+    rest = [kw for kw in table if kw[0] != sig]
+    sides = rng.sample(rest, min(SIDES, len(rest)))
+    return ((sig, dict(table)[sig] * SIGNATURE),) + tuple(sides), sig
 
 
 def _trick(rng, kind, turn, radii, stunt):
@@ -246,6 +265,84 @@ def _trick(rng, kind, turn, radii, stunt):
                   "ramp": round(ramp, 1), "rise": rise, "w": 21.0},
                  {"t": "straight", "len": 26.0, "w": None},
                  {"t": "cp"}], rise, turn)
+    if kind == "bounce":
+        # A cap wants a wide zone to land on and road to come down onto: hang
+        # time is fixed, so where you touch down moves with arrival speed. Boo's
+        # numbers (26 of cap, 16 wide) - see its track.py.
+        return ([{"t": "straight", "len": 18.0, "w": 16.0},
+                 {"t": "bounce", "len": 26.0, "w": 16.0},
+                 {"t": "straight", "len": round(rng.uniform(70.0, 100.0), 1),
+                  "w": 16.0},
+                 {"t": "straight", "len": 12.0, "w": None}], 0.0, turn)
+    if kind == "esses":
+        out = []
+        for _ in range(rng.randint(3, 4)):
+            turn = -turn
+            out.append({"t": "arc", "deg": round(rng.uniform(35.0, 70.0) * turn, 1),
+                        "rad": rng.choice([r for r in radii if r >= 21.0] or [26.0]),
+                        "rise": 0.0, "bank": round(rng.uniform(4.0, 10.0) * turn, 1)})
+        return out, 0.0, turn
+    if kind == "rollers":
+        out = []
+        for _ in range(rng.randint(2, 3)):
+            out.append({"t": "hump", "rise": round(rng.uniform(2.5, 4.0), 1),
+                        "len": round(rng.uniform(24.0, 32.0), 1)})
+        return out, 0.0, turn
+    if kind == "wallride":
+        # One wall, on the outside of a long corner: a high line to take.
+        turn = -turn
+        return ([{"t": "pipe", "depth": round(rng.uniform(5.0, 7.5), 1),
+                  "floor": round(rng.uniform(0.3, 0.45), 2),
+                  "side": "l" if turn > 0 else "r"},
+                 {"t": "arc", "deg": round(rng.uniform(90.0, 170.0) * turn, 1),
+                  "rad": rng.choice([r for r in radii if r >= 26.0] or [32.0]),
+                  "rise": 0.0},
+                 {"t": "flat"}, {"t": "straight", "len": 16.0}], 0.0, turn)
+    if kind == "narrows":
+        out = [{"t": "straight", "len": 14.0, "w": 8.0}]
+        for _ in range(rng.randint(2, 3)):
+            turn = -turn
+            out.append({"t": "arc", "deg": round(rng.uniform(30.0, 60.0) * turn, 1),
+                        "rad": rng.choice([r for r in radii if r >= 26.0] or [32.0]),
+                        "rise": 0.0})
+        out.append({"t": "straight", "len": 16.0, "w": None})
+        return out, 0.0, turn
+    if kind == "helix":
+        # Climbing only, for the walls' reason: one that descends puts its exit
+        # under itself and dropping off the top skips it.
+        turn = -turn if rng.random() < 0.5 else turn
+        rise = round(rng.uniform(20.0, 28.0), 1)
+        return ([{"t": "boost", "len": 14.0},
+                 {"t": "straight", "len": 30.0},
+                 {"t": "arc", "deg": round(rng.uniform(330.0, 400.0) * turn, 1),
+                  "rad": round(rng.uniform(34.0, 44.0), 1), "rise": rise,
+                  "bank": round(rng.uniform(14.0, 22.0) * turn, 1)},
+                 {"t": "straight", "len": 24.0}, {"t": "cp"}], rise, turn)
+    if kind == "stairs":
+        out, dy = [{"t": "boost", "len": 14.0},
+                   {"t": "straight", "len": round(rng.uniform(26.0, 36.0), 1)}], 0.0
+        for _ in range(rng.randint(2, 3)):
+            drop = round(rng.uniform(4.0, 8.0), 1)
+            out += [{"t": "gap", "len": round(rng.uniform(10.0, 16.0), 1),
+                     "drop": drop},
+                    {"t": "straight", "len": round(rng.uniform(22.0, 30.0), 1)}]
+            dy -= drop
+        return out, dy, turn
+    if kind == "leap":
+        # A big one: off a steep crease, over a long hole, well below. The bow
+        # matches the kick so the racing line does not read the lip as a corner
+        # (Rickety Rails' `_bow`).
+        length = round(rng.uniform(40.0, 60.0), 1)
+        drop = round(rng.uniform(14.0, 24.0), 1)
+        grade = 0.12
+        return ([{"t": "boost", "len": 14.0},
+                 {"t": "straight", "len": round(rng.uniform(30.0, 40.0), 1)},
+                 {"t": "straight", "len": 24.0, "rise": round(24.0 * grade, 1),
+                  "ease": False},
+                 {"t": "gap", "len": length, "drop": drop,
+                  "bow": round((drop + length * grade) / math.pi, 3)},
+                 {"t": "straight", "len": 34.0},
+                 {"t": "cp"}], -drop + 24.0 * grade, turn)
     if kind == "dive":
         drop = round(rng.uniform(12.0, 24.0), 1)
         return ([{"t": "straight", "len": round(rng.uniform(50.0, 80.0), 1),
@@ -286,8 +383,8 @@ def generate(seed, looks, secs=None, look=None):
     # How much height is in hand. A track that only ever climbs ends in orbit,
     # so the walk is pulled back towards zero rather than being free.
     y = 0.0
-    table = STUNT_TRICKS if stunt else CIRCUIT_TRICKS
-    tricks = rng.randint(5, 7) if stunt else rng.randint(3, 4)
+    table, sig = _flavour(rng, STUNT_TRICKS if stunt else CIRCUIT_TRICKS)
+    tricks = rng.randint(6, 8) if stunt else rng.randint(4, 6)
     gap_after = 1 if stunt else 2
     since = 0
 
@@ -371,7 +468,8 @@ def generate(seed, looks, secs=None, look=None):
         "difficulty": (4 if stunt else (2 if max(radii) >= 40 else 3)),
         "pal": pal,
         "generated": {"seed": seed, "look": look["slug"],
-                      "kind": "stunt" if stunt else "circuit"},
+                      "kind": "stunt" if stunt else "circuit",
+                      "signature": sig},
     }
 
 
