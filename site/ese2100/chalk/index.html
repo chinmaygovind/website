@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Squeaky Chalk</title>
+<meta name="description" content="Press a stick of chalk harder against a board and the smooth line turns into a chattering dotted line. Grab the chalk, draw, and watch the tip move through its phase plane as a subcritical Hopf bifurcation switches the squeal on.">
+<meta name="robots" content="noindex">
+<link rel="preload" href="../../fonts/xkcd-script.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face {
+  font-family: "xkcd Script";
+  src: url("../../fonts/xkcd-script.woff2") format("woff2"),
+       url("../../fonts/xkcd-script.woff") format("woff");
+  font-display: block;
+}
+:root{
+  color-scheme: light;
+  --bg:#ffffff; --fg:#000000; --panel:#ffffff;
+  --hair: rgba(0,0,0,0.12); --wash: rgba(0,0,0,0.02); --wash-2: rgba(0,0,0,0.05);
+  --faint: rgba(0,0,0,0.45); --grid: rgba(0,0,0,0.08); --axis: rgba(0,0,0,0.55);
+  --math:#1f7a4d; --unstable:#c0182b; --semi:#b8860b; --orbit:#c2571b;
+  --accent: var(--math);
+}
+html[data-theme="dark"]{
+  color-scheme: dark;
+  --bg:#101114; --fg:#ececec; --panel:#191b20;
+  --hair: rgba(255,255,255,0.16); --wash: rgba(255,255,255,0.03); --wash-2: rgba(255,255,255,0.06);
+  --faint: rgba(255,255,255,0.45); --grid: rgba(255,255,255,0.08); --axis: rgba(255,255,255,0.6);
+  --math:#52d68a; --unstable:#ff6b7a; --semi:#e8c04a; --orbit:#ff9d4d;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%}
+body{
+  background:var(--bg); color:var(--fg);
+  font-family:"xkcd Script","Comic Sans MS",cursive;
+  line-height:1.4; overflow:hidden;
+}
+html{-webkit-text-size-adjust:100%}
+.app{height:100dvh;display:grid;grid-template-rows:auto minmax(0,1fr);gap:0.55rem;padding:0.6rem 1rem 0.8rem;max-width:1900px;margin:0 auto}
+header{display:flex;align-items:baseline;gap:0.9rem;min-width:0}
+a.back{color:var(--faint);text-decoration:none;font-size:0.95rem;white-space:nowrap}
+a.back:hover{color:var(--accent)}
+h1{margin:0;font-weight:bold;line-height:1;font-size:clamp(1.4rem,2.4vw,2rem);color:var(--accent);white-space:nowrap}
+.sub{margin:0;color:var(--faint);font-size:0.95rem;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.main{display:grid;grid-template-columns:minmax(0,1.75fr) minmax(320px,1fr);gap:0.7rem;min-height:0}
+.stage{display:flex;flex-direction:column;min-height:0;position:relative}
+.viewport{flex:1 1 0;min-height:0;position:relative}
+#scene{width:100%;height:100%;display:block;border-radius:12px;touch-action:none;cursor:grab;background:var(--wash-2)}
+#sound{position:absolute;right:0.8rem;bottom:0.8rem;background:rgba(0,0,0,0.4);border-color:transparent;color:#f1efe4}
+#sound:hover{background:rgba(0,0,0,0.6);color:#fff}
+#scene.grabbing{cursor:grabbing}
+.hint{
+  position:absolute;left:0.9rem;top:0.7rem;pointer-events:none;color:#f1efe4;font-size:1.05rem;
+  background:rgba(0,0,0,0.35);padding:0.25rem 0.7rem;border-radius:8px;transition:opacity 0.6s ease;
+}
+.hint.gone{opacity:0}
+.side{display:grid;grid-template-rows:minmax(0,1.3fr) minmax(0,0.8fr) auto;gap:0.55rem;min-height:0}
+.panel{
+  background:var(--panel);border:1px solid var(--hair);border-radius:12px;
+  padding:0.5rem 0.7rem 0.6rem;display:flex;flex-direction:column;min-height:0;
+}
+.panel canvas{flex:1 1 0;min-height:0;width:100%;display:block;border-radius:8px}
+#phase{cursor:crosshair}
+#diagram{cursor:ew-resize;touch-action:none}
+.ph{display:flex;justify-content:space-between;align-items:baseline;gap:0.6rem;margin:0 0 0.3rem}
+.railhead{margin:0;font-size:0.76rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--faint);font-weight:normal;white-space:nowrap}
+.readout{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:0.74rem;color:var(--faint);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.readout b{color:var(--accent);font-weight:normal}
+.cap{margin:0 0 0.3rem;font-size:0.8rem;color:var(--faint);line-height:1.3}
+.cap b{color:var(--fg);font-weight:normal}
+.readout .bad{color:var(--unstable)}
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:0.45rem;margin-top:0.5rem}
+.pillbtn{
+  cursor:pointer;border:2px solid var(--accent);background:none;color:var(--accent);
+  padding:0.28rem 0.85rem;border-radius:999px;font:inherit;font-size:0.92rem;
+  transition:background 0.15s ease,transform 0.12s ease;
+}
+.pillbtn:hover{background:color-mix(in srgb, var(--accent) 14%, transparent)}
+.pillbtn:active{transform:scale(0.97)}
+.pillbtn.ghost{border-color:var(--hair);color:var(--fg)}
+.pillbtn.ghost:hover{border-color:var(--accent);color:var(--accent)}
+.pillbtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.status{margin:0.4rem 0 0;font-size:0.92rem;height:2.8em;overflow:hidden} /* fixed: a wrap here would resize the WebGL canvas, and a resize clears it to white */
+.status b{color:var(--accent)}
+.status .bad{color:var(--unstable)}
+.status .warm{color:var(--semi)}
+input[type=range].slider{width:100%;height:20px;margin:0;background:none;-webkit-appearance:none;appearance:none;cursor:pointer}
+.slider:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+.slider::-webkit-slider-runnable-track{height:6px;border-radius:999px;border:2px solid var(--accent);background:var(--wash)}
+.slider::-moz-range-track{height:6px;border-radius:999px;border:2px solid var(--accent);background:var(--wash)}
+.slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;margin-top:-7px;border-radius:50%;background:var(--accent)}
+.slider::-moz-range-thumb{width:16px;height:16px;border:none;border-radius:50%;background:var(--accent)}
+.presets{display:flex;flex-wrap:wrap;gap:0.3rem;margin-bottom:0.35rem}
+.chip{
+  cursor:pointer;border:2px solid var(--hair);background:var(--wash);color:var(--fg);
+  border-radius:999px;padding:0.1rem 0.6rem;font:inherit;font-size:0.84rem;
+}
+.chip:hover{border-color:var(--accent)}
+.chip.on{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb, var(--accent) 12%, var(--panel))}
+.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.knobs{display:grid;grid-template-columns:1fr 1fr;gap:0.15rem 0.9rem}
+.param .top{display:flex;justify-content:space-between;align-items:baseline;font-size:0.84rem}
+.param .nm{color:var(--accent)}
+.param .val{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:0.8rem}
+.param .ends{display:flex;justify-content:space-between;font-size:0.68rem;color:var(--faint);margin-top:-2px}
+.legend{display:flex;gap:0.8rem;flex-wrap:wrap;font-size:0.74rem;color:var(--faint);margin-top:0.3rem}
+.legend span{display:inline-flex;align-items:center;gap:0.3rem}
+.swatch{width:14px;height:0;border-top:3px solid var(--fg);display:inline-block}
+.swatch.stableline{border-color:var(--math)}
+.swatch.unstableline{border-top-style:dashed;border-color:var(--unstable)}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none}
+.dot.stable{background:var(--math)}
+.dot.kicked{background:transparent;border:2px solid var(--orbit)}
+.dot.you{background:var(--fg)}
+dialog{
+  max-width:min(760px,92vw);max-height:88dvh;overflow:auto;border:1px solid var(--hair);border-radius:14px;
+  background:var(--panel);color:var(--fg);padding:1.1rem 1.4rem;font:inherit;line-height:1.5;
+}
+dialog::backdrop{background:rgba(0,0,0,0.45)}
+dialog h2{margin:0 0 0.6rem;color:var(--accent)}
+dialog p{margin:0 0 0.8rem}
+.eq{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:0.86rem;
+  background:var(--wash-2);border-radius:8px;padding:0.55rem 0.8rem;margin:0 0 0.8rem;
+  overflow-x:auto;white-space:pre;line-height:1.7;
+}
+@media (max-width:900px),(max-height:620px){
+  body{overflow:auto}
+  .app{height:auto}
+  .sub{white-space:normal}
+  header{flex-wrap:wrap}
+  .main{grid-template-columns:minmax(0,1fr)}
+  .viewport{flex:none;height:60vh}
+  .side{grid-template-rows:auto}
+  #phase{flex:none;height:300px}
+  #diagram{flex:none;height:200px}
+}
+</style>
+<script>
+(function(){
+  var d=document.documentElement,s={};
+  try{ s=JSON.parse(localStorage.getItem("cgovind:settings"))||{}; }catch(e){}
+  var dark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;
+  d.dataset.theme=s.theme||(dark?"dark":"light");
+})();
+</script>
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.min.js" } }</script>
+</head>
+<body>
+<div class="app">
+  <header>
+    <a class="back" href="/ese2100/">&#8592; ESE 2100</a>
+    <h1>Squeaky chalk</h1>
+    <p class="sub">Press harder or push the chalk and the smooth line turns into a chattering dotted line: a Hopf bifurcation in a friction oscillator.</p>
+    <button class="pillbtn ghost" id="mathbtn">the math</button>
+  </header>
+
+  <div class="main">
+    <section class="stage">
+      <div class="viewport">
+        <canvas id="scene" aria-label="3D chalkboard; press and drag on it to draw with the chalk"></canvas>
+        <div class="hint" id="hint">grab the chalk anywhere on the board and draw</div>
+        <button class="pillbtn" id="sound">&#128264; sound on</button>
+      </div>
+      <div class="bar">
+        <button class="pillbtn" id="play"></button>
+        <button class="pillbtn ghost" id="wipe">wipe the board</button>
+        <button class="pillbtn ghost" id="slowmo" aria-pressed="false">slow motion: off</button>
+      </div>
+      <p class="status" id="status"></p>
+    </section>
+
+    <aside class="side">
+      <section class="panel">
+        <div class="ph"><h2 class="railhead">state space of the tip</h2><span class="readout" id="readout"></span></div>
+        <p class="cap">The orange dot is the chalk tip right now: <b>how bent</b> it is (left&ndash;right) and <b>how fast it is springing</b> (up&ndash;down). Dot parked on the circle = smooth line. Dot running round a loop = squeal.</p>
+        <canvas id="phase" aria-label="phase plane of the chalk tip; click to set the state"></canvas>
+      </section>
+      <section class="panel">
+        <div class="ph"><h2 class="railhead">Pressure vs Oscillations</h2></div>
+        <p class="cap">Try dragging the black line to change the pressure!</p>
+        <canvas id="diagram" aria-label="bifurcation diagram: oscillation size against press; drag to set the press"></canvas>
+        <div class="legend">
+          <span><i class="dot stable"></i> from a glide</span>
+          <span><i class="dot kicked"></i> from a kick</span>
+          <span><i class="swatch stableline"></i> glide stable</span>
+          <span><i class="swatch unstableline"></i> unstable</span>
+          <span><i class="dot you"></i> you</span>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="presets" id="presets"></div>
+        <div class="knobs" id="params"></div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<dialog id="math">
+  <h2>The model</h2>
+  <p>Treat the stick of chalk as a spring. Your hand moves along the board at speed V; the tip is displaced x from where the hand would put it (negative means it lags behind), so the tip slides over the board at u = V + x&#775;. Friction drags it backwards, and how hard the tip presses on the board depends on how the chalk is bent: lean it so it is pushed and friction digs the tip in harder (&kappa; &gt; 0); pull it and friction lifts it (&kappa; &lt; 0).</p>
+  <div class="eq">x&#776; + 2&zeta;x&#775; + x = &minus;&mu;(V + x&#775;) &middot; N,        N = max(0, P &minus; &kappa;x)
+&mu;(u) = (&mu;<sub>d</sub> + (&mu;<sub>s</sub> &minus; &mu;<sub>d</sub>) e<sup>&minus;|u|/v<sub>s</sub></sup>) &middot; tanh(u/&epsilon;)     &mu;<sub>s</sub> = 0.8, &mu;<sub>d</sub> = 0.4, v<sub>s</sub> = 0.5, &epsilon; = 0.02</div>
+  <p>Static friction beats sliding friction, so &mu; <i>falls</i> as the slip speed rises. The tanh is a smoothed sign: it lets the tip stick (u = 0, the dashed "stuck" line in the state space) without a separate stuck mode. When N hits zero the chalk is off the board: no friction and no chalk, which is where the gaps between the dots come from.</p>
+  <p>The steady glide is the fixed point x&#775; = 0, x* = &minus;&mu;(V)P / (1 &minus; &mu;(V)&kappa;). Linearise about it:</p>
+  <div class="eq">&xi;&#776; + (2&zeta; + &mu;&prime;(V) N*) &xi;&#775; + (1 &minus; &mu;(V)&kappa;) &xi; = 0,        N* = P / (1 &minus; &mu;(V)&kappa;)</div>
+  <p>&mu;&prime;(V) &lt; 0, so friction <i>subtracts</i> damping, more the harder you press. The trace crosses zero with the determinant positive, so a complex pair of eigenvalues crosses the imaginary axis: a Hopf bifurcation, at</p>
+  <div class="eq">P<sub>c</sub> = 2&zeta;(1 &minus; &mu;(V)&kappa;) / |&mu;&prime;(V)|</div>
+  <p>Press harder: past P<sub>c</sub>. Push instead of pull (&kappa; up): P<sub>c</sub> drops. Draw slowly: |&mu;&prime;| is largest near zero speed, so P<sub>c</sub> drops again, which is why a slow careful line squeaks and a quick flick does not. A stiffer, better-damped stick (&zeta; up) raises it, which is why snapping the chalk in half helps.</p>
+  <p>The Hopf is <b>subcritical</b>: a kick starts a stick-slip cycle well below P<sub>c</sub>, and once it is going you have to ease off a long way to stop it. The bifurcation diagram runs two simulations per press, one from a glide and one from a kick; where they disagree, both states are stable at once.</p>
+  <form method="dialog"><button class="pillbtn">close</button></form>
+</dialog>
+
+<script type="module">
+import * as THREE from "three";
+
+// --- physics --- (plain functions, no DOM; checked from node during development)
+var MS=0.8, MD=0.4, VS=0.5, EPS=0.02;
+function mu(u){ return Math.tanh(u/EPS)*(MD+(MS-MD)*Math.exp(-Math.abs(u)/VS)); }
+function dmu(u){ var h=1e-4; return (mu(u+h)-mu(u-h))/(2*h); }
+function normal(p,x){ return Math.max(0,p.P-p.k*x); }
+function field(p,x,y){ return [y, -2*p.z*y - x - mu(p.V+y)*normal(p,x)]; }
+function rk4(p,s,h){
+  var a=field(p,s[0],s[1]),
+      b=field(p,s[0]+h/2*a[0],s[1]+h/2*a[1]),
+      c=field(p,s[0]+h/2*b[0],s[1]+h/2*b[1]),
+      d=field(p,s[0]+h*c[0],s[1]+h*c[1]);
+  return [s[0]+h/6*(a[0]+2*b[0]+2*c[0]+d[0]), s[1]+h/6*(a[1]+2*b[1]+2*c[1]+d[1])];
+}
+function glide(p){
+  var m=mu(p.V), det=1-m*p.k, N=p.P/det, dm=dmu(p.V), tr=-(2*p.z+dm*N);
+  return {x:-m*p.P/det, N:N, tr:tr, det:det, Pc:dm<0?2*p.z*det/-dm:Infinity};
+}
+// Run from s0 for T, measure the half-swing of x and the share of time off the board over the last 40%.
+function settleFrom(p,s0,T,h){
+  var s=s0, lo=Infinity, hi=-Infinity, off=0, n=0, steps=Math.round(T/h), keep=Math.round(steps*0.6);
+  for(var i=0;i<steps;i++){
+    s=rk4(p,s,h);
+    if(i>=keep){ lo=Math.min(lo,s[0]); hi=Math.max(hi,s[0]); n++; if(normal(p,s[0])<=0) off++; }
+  }
+  return {amp:(hi-lo)/2, off:off/n};
+}
+function kickFrom(p){ var g=glide(p); return [g.x-1, 0]; }
+// --- end physics ---
+
+function cssVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+function sizeCanvas(cv){
+  var r=cv.getBoundingClientRect(), dpr=window.devicePixelRatio||1;
+  var w=Math.max(1,Math.round(r.width*dpr)), h=Math.max(1,Math.round(r.height*dpr));
+  if(cv.width!==w||cv.height!==h){ cv.width=w; cv.height=h; }
+  return {w:r.width||1, h:r.height||1, dpr:dpr};
+}
+var FONT="'xkcd Script', 'Comic Sans MS', cursive";
+
+var PMAX=1;
+// Stick length is the knob; the model only sees the damping it sets. A short stub is stiff and
+// well damped, a fresh long stick is wobbly: 2 cm -> zeta 0.2, 9 cm -> zeta 0.01.
+function zetaOf(cm){ return 0.01+0.19*(9-cm)/7; }
+var P={P:0.35, k:1, V:0.5, L:7.5, z:zetaOf(7.5)};
+var KNOBS=[
+  {id:"P", name:"pressure", min:0, max:PMAX, step:0.005, lo:"feather", hi:"lean on it"},
+  {id:"k", name:"chalk angle", min:-1, max:1.1, step:0.01, lo:"pulled", hi:"pushed"},
+  {id:"V", name:"writing speed", min:0.1, max:1.5, step:0.01, lo:"slow", hi:"flick"},
+  {id:"L", name:"stick length", min:2, max:9, step:0.1, lo:"stub", hi:"new stick"}
+];
+var PRESETS=[
+  {name:"pushed hard: dotted", p:{P:0.35, k:1, V:0.5, L:7.5}},
+  {name:"careful line", p:{P:0.1, k:-0.6, V:0.6, L:7.5}},
+  {name:"just under threshold", p:{P:0.14, k:1, V:0.5, L:7.5}},
+  {name:"pulled hard", p:{P:0.8, k:-1, V:0.5, L:7.5}},
+  {name:"drawing slowly", p:{P:0.25, k:0.5, V:0.25, L:7.5}},
+  {name:"quick flick", p:{P:0.25, k:0.5, V:1.4, L:7.5}}
+];
+
+// ---------- board geometry: world units, the board in the plane z = 0 ----------
+// Real units, measured off a video of a finished dotted-line board. The board is 1.2 m wide, so one
+// world unit is 10 cm. SCALE turns model length into board length; with the model clock below it puts
+// the hand at ~0.6 m/s for V = 0.5 and one dot every ~1.2 cm. Deflection and stroke share it, or a
+// stuck tip would drift across the board instead of sitting still.
+var BW=12, BH=6, SCALE=0.027;
+var ERASER={w:0.5,h:1.5};   // a 5 x 15 cm board eraser
+var TEXW=2048, TEXH=1024, COLW=0.42, EDGE=0.35;
+var S={
+  state:[0,0], auto:true, grab:false, slow:1, trail:[], pause:0, t1:0, t2:0, Nprev:0, stuck:false,
+  H:{x:-BW/2+EDGE, y:BH/2-EDGE}, target:null, vel:{x:0,y:0}, d:{x:0,y:-1}, Vlive:0,
+  onBoard:true, lift:0, painted:false, events:[], grit:0, dtFrame:0,
+  erase:null
+};
+function params(){ return S.grab ? {P:P.P, k:P.k, V:S.Vlive, z:P.z} : P; }
+
+// ---------- chalk texture ----------
+var tex2d=document.createElement("canvas"); tex2d.width=TEXW; tex2d.height=TEXH;
+var tg=tex2d.getContext("2d");
+function paintSlate(){
+  tg.fillStyle="#2c463a"; tg.fillRect(0,0,TEXW,TEXH);
+  for(var i=0;i<14;i++){ // old eraser sweeps, wide and faint
+    tg.fillStyle="rgba(255,255,255,"+(0.008+Math.random()*0.01)+")";
+    tg.beginPath(); tg.ellipse(Math.random()*TEXW,Math.random()*TEXH,250+Math.random()*350,70+Math.random()*90,(Math.random()-0.5)*0.4,0,Math.PI*2); tg.fill();
+  }
+  S.painted=true;
+}
+function texXY(w){ return [(w.x+BW/2)/BW*TEXW, (BH/2-w.y)/BH*TEXH]; }
+// Chalk goes down per moment of contact, in proportion to the press, and much faster while the tip
+// is pinned than while it slides: a stuck, loaded tip grinds chalk into one spot, a fast slip barely
+// marks. Relative to the glide (slip speed V), so a steady stroke draws the same even line at any
+// speed. In stick-slip each stick becomes a bright dot, each slip nothing much, each lift-off a gap.
+// (Depositing along the slide is what drew dashes.) Deposit accumulates and is stamped every 0.75
+// texture px of travel, and once more when the tip lifts, so a pinned tip costs one stamp, not hundreds.
+var DOTS=[0,1,2,3].map(function(){ // ponytail: four speckled chalk sprites, chosen at random per stamp
+  var c=document.createElement("canvas"); c.width=c.height=16; var g=c.getContext("2d");
+  for(var i=0;i<70;i++){ var a=Math.random()*6.283, r=Math.sqrt(Math.random())*7;
+    g.fillStyle="rgba(245,245,235,"+(0.45+0.55*Math.random())+")"; g.fillRect(8+Math.cos(a)*r,8+Math.sin(a)*r,1.6,1.6); }
+  return c;
+});
+var PIN=0.1;    // slip speed over which the grinding falls off by e
+var ACC={a:0,x:0,y:0,n:0,s:1,last:null};
+function deposit(w,N,Nref,u,V){
+  var A=texXY(w), s=Math.min(2.5,N/Math.max(1e-6,Nref));
+  ACC.a=Math.min(1.5,ACC.a+0.0045*s*Math.exp(Math.min(8,(V-Math.abs(u))/PIN)));
+  ACC.x+=A[0]; ACC.y+=A[1]; ACC.n++; ACC.s=s;
+  if(!ACC.last) ACC.last=A;
+  if(Math.hypot(A[0]-ACC.last[0],A[1]-ACC.last[1])>=0.75){ flushDeposit(); ACC.last=A; }
+}
+function flushDeposit(){
+  if(ACC.n&&ACC.a>0.002){
+    var len=4+2*Math.min(1.5,ACC.s), wid=2.6+1.2*Math.min(1.5,ACC.s);
+    tg.save(); tg.globalAlpha=Math.min(0.9,ACC.a); tg.translate(ACC.x/ACC.n,ACC.y/ACC.n); tg.rotate(Math.atan2(-S.d.y,S.d.x));
+    tg.drawImage(DOTS[(Math.random()*4)|0],-len/2,-wid/2,len,wid); tg.restore(); S.painted=true;
+  }
+  ACC.a=0; ACC.x=0; ACC.y=0; ACC.n=0;
+}
+function liftChalk(){ flushDeposit(); ACC.last=null; S.Nprev=0; }
+
+// ---------- three.js scene ----------
+var sceneCv=document.getElementById("scene");
+var renderer=new THREE.WebGLRenderer({canvas:sceneCv, antialias:true});
+renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
+renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+var scene=new THREE.Scene();
+var camera=new THREE.PerspectiveCamera(30,1.6,0.1,100);
+var CAMDIR=new THREE.Vector3(0.16,0.1,1).normalize(), LOOK=new THREE.Vector3(0,-0.1,0);
+
+var chalkTex=new THREE.CanvasTexture(tex2d); chalkTex.colorSpace=THREE.SRGBColorSpace; chalkTex.anisotropy=8;
+var slate=new THREE.Mesh(new THREE.PlaneGeometry(BW,BH), new THREE.MeshStandardMaterial({map:chalkTex, roughness:0.95}));
+slate.receiveShadow=true; scene.add(slate);
+var wood=new THREE.MeshStandardMaterial({color:0x8a6a45, roughness:0.7});
+var F=0.3;
+[[BW+2*F,F,0,BH/2+F/2],[BW+2*F,F,0,-BH/2-F/2],[F,BH,-BW/2-F/2,0],[F,BH,BW/2+F/2,0]].forEach(function(b){
+  var m=new THREE.Mesh(new THREE.BoxGeometry(b[0],b[1],0.18),wood); m.position.set(b[2],b[3],0.06);
+  m.castShadow=true; m.receiveShadow=true; scene.add(m);
+});
+var tray=new THREE.Mesh(new THREE.BoxGeometry(BW+2*F,0.1,0.45),wood); tray.position.set(0,-BH/2-F,0.3);
+tray.castShadow=true; tray.receiveShadow=true; scene.add(tray);
+var wall=new THREE.Mesh(new THREE.PlaneGeometry(60,40), new THREE.MeshStandardMaterial({color:0xd9d4c7, roughness:1}));
+wall.position.z=-0.04; wall.receiveShadow=true; scene.add(wall);
+
+var chalkMat=new THREE.MeshStandardMaterial({color:0xf6f3e8, roughness:1});
+var stick=new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.1,1,28), chalkMat);
+stick.castShadow=true; scene.add(stick);
+var spare=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,0.7,16), chalkMat);
+var eraser=new THREE.Group();
+var felt=new THREE.Mesh(new THREE.BoxGeometry(ERASER.w,ERASER.h,0.08), new THREE.MeshStandardMaterial({color:0x3b3b3e, roughness:1}));
+felt.position.z=0.04; felt.castShadow=true; eraser.add(felt);
+var back=new THREE.Mesh(new THREE.BoxGeometry(ERASER.w,ERASER.h,0.22), new THREE.MeshStandardMaterial({color:0xb48a5a, roughness:0.6}));
+back.position.z=0.19; back.castShadow=true; eraser.add(back);
+scene.add(eraser);
+// QBOARD: felt flat on the board. QTRAY: felt down on the tray, long side along it.
+var QBOARD=new THREE.Quaternion(), QTRAY=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(
+  new THREE.Vector3(0,0,1), new THREE.Vector3(1,0,0), new THREE.Vector3(0,1,0)));
+eraser.quaternion.copy(QTRAY); eraser.position.set(3.8,-BH/2-F+0.05,0.3);
+spare.position.x=-3.5; spare.rotation.z=Math.PI/2; spare.position.set(-3.5,-BH/2-F+0.11,0.35); spare.castShadow=true; scene.add(spare);
+
+scene.add(new THREE.AmbientLight(0xffffff,0.55));
+var sun=new THREE.DirectionalLight(0xffffff,2.1); sun.position.set(-5,6,9); sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048);
+Object.assign(sun.shadow.camera,{left:-8,right:8,top:5,bottom:-5,near:1,far:30}); sun.shadow.bias=-0.0005;
+scene.add(sun);
+
+function themeScene(){
+  var dark=document.documentElement.dataset.theme==="dark";
+  scene.background=new THREE.Color(dark?0x17181c:0xe9e5da);
+  wall.material.color.set(dark?0x1d1f24:0xe2ddd0);
+}
+function sizeScene(){
+  var r=sceneCv.getBoundingClientRect(), w=Math.max(1,r.width), h=Math.max(1,r.height);
+  renderer.setSize(w,h,false);
+  camera.aspect=w/h;
+  // back off until the framed board fits both ways
+  var t=Math.tan(camera.fov*Math.PI/360), halfW=BW/2+F+0.25, halfH=BH/2+F+0.35;
+  var dist=Math.max(halfH/t, halfW/(t*camera.aspect))*1.04;
+  camera.position.copy(LOOK).addScaledVector(CAMDIR,dist); camera.lookAt(LOOK);
+  camera.updateProjectionMatrix();
+  renderer.render(scene,camera); // setSize cleared the buffer; do not wait a frame to refill it
+}
+new ResizeObserver(sizeScene).observe(sceneCv);
+
+var UP=new THREE.Vector3(0,1,0), tmpA=new THREE.Vector3(), tmpB=new THREE.Vector3(), tmpD=new THREE.Vector3();
+function placeStick(){
+  var x=S.state[0], N=normal(params(),x);
+  var targetLift=(!S.onBoard||S.pause>0||S.erase)?0.35:(N<=0?0.07:0);
+  S.lift+= (targetLift-S.lift)*0.35;
+  var lean=(0.2+0.6*Math.min(1,Math.abs(P.k)/1.1))*(P.k>=0?1:-1), L=P.L*0.2; // drawn at its length: 9 cm -> 1.8 units
+  // tip: where the hand would put it, plus the deflection along the stroke
+  tmpA.set(S.H.x+S.d.x*x*SCALE, S.H.y+S.d.y*x*SCALE, 0.07+S.lift);
+  // top: pushed chalk leans back against the stroke, pulled chalk leans ahead of it
+  tmpB.set(S.H.x-S.d.x*L*Math.sin(lean), S.H.y-S.d.y*L*Math.sin(lean), 0.07+S.lift+L*Math.cos(lean));
+  tmpD.subVectors(tmpB,tmpA); var len=tmpD.length(); tmpD.normalize();
+  stick.quaternion.setFromUnitVectors(UP,tmpD);
+  stick.scale.set(1,len,1);
+  stick.position.copy(tmpA).addScaledVector(tmpD,len/2);
+}
+
+// ---------- grabbing ----------
+var ray=new THREE.Raycaster(), ndc=new THREE.Vector2(), plane=new THREE.Plane(new THREE.Vector3(0,0,1),0), hitV=new THREE.Vector3();
+function boardHit(ev){
+  var r=sceneCv.getBoundingClientRect();
+  ndc.set((ev.clientX-r.left)/r.width*2-1, -((ev.clientY-r.top)/r.height*2-1));
+  ray.setFromCamera(ndc,camera);
+  if(!ray.ray.intersectPlane(plane,hitV)) return null;
+  return {x:Math.max(-BW/2+0.1,Math.min(BW/2-0.1,hitV.x)), y:Math.max(-BH/2+0.1,Math.min(BH/2-0.1,hitV.y)),
+          inside:Math.abs(hitV.x)<BW/2+0.4&&Math.abs(hitV.y)<BH/2+0.4};
+}
+sceneCv.addEventListener("pointerdown",function(ev){
+  var h=boardHit(ev); if(!h||!h.inside) return;
+  sceneCv.setPointerCapture(ev.pointerId); sceneCv.classList.add("grabbing");
+  S.grab=true; S.auto=false; S.onBoard=true; syncPlay();
+  S.H={x:h.x,y:h.y}; S.target={x:h.x,y:h.y}; S.vel={x:0,y:0}; S.Vlive=0;
+  jumpTo([0,0]); liftChalk();
+  document.getElementById("hint").classList.add("gone");
+});
+sceneCv.addEventListener("pointermove",function(ev){ if(S.grab){ var h=boardHit(ev); if(h) S.target={x:h.x,y:h.y}; } });
+function release(){ if(!S.grab) return; liftChalk(); S.H={x:S.target.x,y:S.target.y}; S.grab=false; S.onBoard=false; sceneCv.classList.remove("grabbing"); }
+sceneCv.addEventListener("pointerup",release);
+sceneCv.addEventListener("pointercancel",release);
+
+// ---------- controls ----------
+var paramsEl=document.getElementById("params"), inputs={};
+KNOBS.forEach(function(k){
+  var d=document.createElement("label"); d.className="param";
+  d.innerHTML='<div class="top"><span class="nm">'+k.name+'</span><span class="val" id="v_'+k.id+'"></span></div>'+
+    '<input type="range" class="slider" min="'+k.min+'" max="'+k.max+'" step="'+k.step+'">'+
+    '<div class="ends"><span>'+k.lo+'</span><span>'+k.hi+'</span></div>';
+  paramsEl.appendChild(d);
+  var inp=d.querySelector("input"); inputs[k.id]=inp;
+  inp.addEventListener("input",function(){ P[k.id]=+inp.value; P.z=zetaOf(P.L); showVal(k.id); markPreset(-1); if(k.id!=="P") invalidateDiagram(); });
+});
+var presetEl=document.getElementById("presets");
+PRESETS.forEach(function(pr,i){
+  var b=document.createElement("button"); b.className="chip"; b.textContent=pr.name;
+  b.addEventListener("click",function(){ applyPreset(i); });
+  presetEl.appendChild(b);
+});
+function markPreset(i){ Array.prototype.forEach.call(presetEl.children,function(b,j){ b.classList.toggle("on",i===j); }); }
+function applyPreset(i){
+  Object.assign(P,PRESETS[i].p); P.z=zetaOf(P.L);
+  syncInputs(); markPreset(i); invalidateDiagram();
+  var g=glide(P); jumpTo([g.x+0.15,0]);
+  if(!S.grab){ S.auto=true; S.onBoard=true; syncPlay(); }
+}
+function syncInputs(){ KNOBS.forEach(function(k){ inputs[k.id].value=P[k.id]; showVal(k.id); }); }
+function showVal(id){ document.getElementById("v_"+id).textContent=id==="L"?P.L.toFixed(1)+" cm":id==="V"?(P.V*SCALE*RATE/10).toFixed(2)+" m/s":P[id].toFixed(2); }
+
+var playBtn=document.getElementById("play");
+function syncPlay(){ playBtn.innerHTML=S.auto?"&#10073;&#10073; stop":"&#9654;&#65038; auto-draw"; }
+playBtn.addEventListener("click",function(){ S.auto=!S.auto; if(S.auto){ S.onBoard=true; S.d={x:0,y:-1}; } syncPlay(); });
+document.getElementById("wipe").addEventListener("click",function(){ if(!S.grab) startErase(); });
+var slowBtn=document.getElementById("slowmo");
+slowBtn.addEventListener("click",function(){
+  S.slow=S.slow===1?10:1; slowBtn.setAttribute("aria-pressed",S.slow>1);
+  slowBtn.textContent=S.slow>1?"slow motion: 10\u00d7":"slow motion: off";
+});
+var dlg=document.getElementById("math");
+document.getElementById("mathbtn").addEventListener("click",function(){ dlg.showModal(); });
+
+// ---------- simulation ----------
+// One clock for the board, the state space and the sound. At 1x, model time runs at RATE units per
+// real second, which puts a stick-slip cycle at ~45 per second - the dot rate of real dotted chalk
+// and the tick rate in recordings of it. Slow-mo divides the clock; the sound comes from the dots
+// the board actually draws, so the two can never disagree.
+var HSTEP=0.01, RATE=2*Math.PI*70;
+function rate(){ return RATE/S.slow; }           // model units per real second
+var TREM=66;                                    // hand tremor correlation time, model units (~0.15 s)
+function gauss(){ return (Math.random()+Math.random()+Math.random()-1.5)*2; }
+function nextColumn(){
+  liftChalk();
+  S.H.x+=COLW; S.H.y=BH/2-EDGE; S.pause=Math.min(3,0.25*S.slow);   // the hand lifts and moves over
+  if(S.H.x>BW/2-EDGE){ S.H.x=-BW/2+EDGE; startErase(); }
+}
+
+// ---------- the eraser ----------
+// It lifts off the tray, stands on its felt, sweeps the board in five rows and lies back down.
+function startErase(){
+  if(S.erase) return;
+  liftChalk();
+  var rest=[3.8,-BH/2-F+0.05,0.3], xl=-BW/2+0.3, xr=BW/2-0.3, keys=[[0,rest[0],rest[1],rest[2],0]], t=0.5;
+  for(var k=0;k<5;k++){
+    var y=BH/2-0.75-k*1.125, a=k%2?xr:xl, b=k%2?xl:xr;
+    keys.push([t,a,y,0,1]); t+=0.75; keys.push([t,b,y,0,1]); t+=0.12;
+  }
+  keys.push([t+0.4,rest[0],rest[1],rest[2],0]);
+  S.erase={t:0, keys:keys, last:null};
+}
+function eraseAt(t){
+  var K=S.erase.keys, i=1; while(i<K.length-1&&K[i][0]<t) i++;
+  var a=K[i-1], b=K[i], u=Math.max(0,Math.min(1,(t-a[0])/(b[0]-a[0]))); if(a[4]!==b[4]) u=u*u*(3-2*u);
+  return {x:a[1]+(b[1]-a[1])*u, y:a[2]+(b[2]-a[2])*u, z:a[3]+(b[3]-a[3])*u, q:a[4]+(b[4]-a[4])*u};
+}
+function rubOut(from,to){
+  var A=texXY(from), B=texXY(to), n=Math.max(1,Math.ceil(Math.hypot(B[0]-A[0],B[1]-A[1])/8));
+  var w=ERASER.w/BW*TEXW, h=ERASER.h/BH*TEXH;
+  for(var i=1;i<=n;i++){
+    var x=A[0]+(B[0]-A[0])*i/n, y=A[1]+(B[1]-A[1])*i/n;
+    tg.fillStyle="rgba(44,70,58,0.35)"; tg.fillRect(x-w/2,y-h/2,w,h);
+    tg.fillStyle="rgba(255,255,255,0.004)"; tg.fillRect(x-w/2,y-h/2,w,h);     // a little dust always stays
+  }
+  S.painted=true;
+}
+function updateEraser(dt){
+  var E=S.erase; if(!E) return;
+  E.t+=dt; var pos=eraseAt(E.t), end=E.keys[E.keys.length-1][0];
+  if(pos.q>0.999){ if(E.last) rubOut(E.last,pos); E.last=pos; }
+  else E.last=null;
+  eraser.position.set(pos.x,pos.y,pos.z); eraser.quaternion.slerpQuaternions(QTRAY,QBOARD,pos.q);
+  if(E.t>=end){ S.erase=null; S.H={x:-BW/2+EDGE,y:BH/2-EDGE}; }
+}
+
+function advance(dt){
+  S.events=[]; S.grit=0; S.dtFrame=dt;
+  if(S.erase) return;
+  if(S.grab){ // hand speed along its own direction of travel becomes V
+    var t=S.target, rx=(t.x-S.H.x)/Math.max(dt,1e-3), ry=(t.y-S.H.y)/Math.max(dt,1e-3), a=1-Math.exp(-dt/0.08);
+    S.vel.x+=(rx-S.vel.x)*a; S.vel.y+=(ry-S.vel.y)*a;
+    var sp=Math.hypot(S.vel.x,S.vel.y);
+    if(sp>0.08){ S.d={x:S.vel.x/sp, y:S.vel.y/sp}; }
+    S.Vlive=Math.min(2.5, sp/SCALE/rate());
+  } else if(S.auto&&!S.erase){ S.d={x:0,y:-1}; if(S.pause>0){ S.pause-=dt; return; } }
+  else return; // chalk off the board: nothing moves
+  var p=params(), Nref=glide(p).N, n=Math.min(4000,Math.round(dt*rate()/HSTEP)), ta=HSTEP/TREM, tq=Math.sqrt(2*ta);
+  for(var i=0;i<n;i++){
+    S.t1+=-ta*S.t1+tq*gauss(); S.t2+=-ta*S.t2+tq*gauss();          // no hand is steady: ~3% on press, ~4% on speed
+    var q={P:p.P*(1+0.03*S.t1), k:p.k, V:p.V*(1+0.04*S.t2), z:p.z};
+    S.state=rk4(q,S.state,HSTEP);
+    if(!isFinite(S.state[0])||Math.abs(S.state[0])>50){ S.state=[glide(p).x,0]; }
+    if(S.grab){ S.H.x+=(S.target.x-S.H.x)/(n-i); S.H.y+=(S.target.y-S.H.y)/(n-i); }
+    else { S.H.y-=q.V*HSTEP*SCALE; if(S.H.y<-BH/2+EDGE){ nextColumn(); break; } }
+    var x=S.state[0], u=q.V+S.state[1], N=normal(q,x), at=i*HSTEP/rate();
+    var tip={x:S.H.x+S.d.x*x*SCALE, y:S.H.y+S.d.y*x*SCALE};
+    if(N>0){
+      if(S.Nprev<=0) S.events.push([at,0.6+0.5*Math.random()]);                         // landing: the tick of a dot
+      else if(S.stuck&&Math.abs(u)>0.05) S.events.push([at,0.12*Math.min(2,N/Nref)]);    // breaking free: a faint one
+      deposit(tip,N,Nref,u,Math.max(0.05,q.V));
+      S.grit+=Math.abs(u)*HSTEP*SCALE*Math.min(2,N/Nref);                               // board distance slid, by press
+    } else if(S.Nprev>0) flushDeposit();
+    S.stuck=N>0&&Math.abs(u)<0.05; S.Nprev=N;
+    if(i%3===0){ S.trail.push(S.state); if(S.trail.length>700) S.trail.shift(); }
+  }
+}
+
+// ---------- state space ----------
+var VIEW={x0:-3.5, x1:2, y0:-2.6, y1:2.6};
+function niceStep(span){ var r=span/6, m=Math.pow(10,Math.floor(Math.log10(r))), n=r/m; return (n<1.5?1:n<3?2:n<7?5:10)*m; }
+function drawPhase(){
+  var cv=document.getElementById("phase"), r=sizeCanvas(cv), g=cv.getContext("2d"), p=params();
+  g.setTransform(r.dpr,0,0,r.dpr,0,0); g.clearRect(0,0,r.w,r.h);
+  var pad={l:40,r:10,t:8,b:34}, W=r.w-pad.l-pad.r, H=r.h-pad.t-pad.b;
+  function X(x){ return pad.l+(x-VIEW.x0)/(VIEW.x1-VIEW.x0)*W; }
+  function Y(y){ return pad.t+(VIEW.y1-y)/(VIEW.y1-VIEW.y0)*H; }
+  var faint=cssVar("--faint"), grid=cssVar("--grid"), axis=cssVar("--axis"), orbit=cssVar("--orbit"),
+      math=cssVar("--math"), bad=cssVar("--unstable"), semi=cssVar("--semi"), fg=cssVar("--fg");
+  g.save(); g.beginPath(); g.rect(pad.l,pad.t,W,H); g.clip();
+  g.fillStyle=cssVar("--wash-2"); g.fillRect(pad.l,pad.t,W,H);
+  // chalk-off-the-board half plane
+  if(Math.abs(p.k)>1e-3){
+    var xb=X(p.P/p.k);
+    g.fillStyle="rgba(140,140,140,0.16)";
+    if(p.k>0) g.fillRect(xb,pad.t,pad.l+W-xb,H); else g.fillRect(pad.l,pad.t,xb-pad.l,H);
+  }
+  // grid
+  var sx=niceStep(VIEW.x1-VIEW.x0), sy=niceStep(VIEW.y1-VIEW.y0);
+  g.strokeStyle=grid; g.lineWidth=1; g.beginPath();
+  for(var gx=Math.ceil(VIEW.x0/sx)*sx; gx<=VIEW.x1; gx+=sx){ g.moveTo(X(gx),pad.t); g.lineTo(X(gx),pad.t+H); }
+  for(var gy=Math.ceil(VIEW.y0/sy)*sy; gy<=VIEW.y1; gy+=sy){ g.moveTo(pad.l,Y(gy)); g.lineTo(pad.l+W,Y(gy)); }
+  g.stroke();
+  // flow arrows
+  g.strokeStyle=faint; g.globalAlpha=0.35; g.lineWidth=1.1;
+  var nx=20, ny=Math.max(8,Math.round(nx*H/W)), L=Math.min(W/nx,H/ny)*0.36;
+  for(var i=0;i<nx;i++) for(var j=0;j<ny;j++){
+    var x=VIEW.x0+(i+0.5)/nx*(VIEW.x1-VIEW.x0), y=VIEW.y0+(j+0.5)/ny*(VIEW.y1-VIEW.y0);
+    var f=field(p,x,y), dx=f[0]/(VIEW.x1-VIEW.x0)*W, dy=-f[1]/(VIEW.y1-VIEW.y0)*H, m=Math.hypot(dx,dy)||1;
+    dx=dx/m*L; dy=dy/m*L; var cx=X(x), cy=Y(y), hd=Math.atan2(dy,dx);
+    g.beginPath(); g.moveTo(cx-dx,cy-dy); g.lineTo(cx+dx,cy+dy);
+    g.lineTo(cx+dx-4*Math.cos(hd-0.5),cy+dy-4*Math.sin(hd-0.5)); g.stroke();
+  }
+  g.globalAlpha=1;
+  // axes through the origin
+  g.strokeStyle=axis; g.lineWidth=1.3; g.beginPath();
+  g.moveTo(pad.l,Y(0)); g.lineTo(pad.l+W,Y(0)); g.moveTo(X(0),pad.t); g.lineTo(X(0),pad.t+H); g.stroke();
+  // stuck line: the tip moving with the board
+  g.strokeStyle=semi; g.setLineDash([6,5]); g.lineWidth=1.8;
+  g.beginPath(); g.moveTo(pad.l,Y(-p.V)); g.lineTo(pad.l+W,Y(-p.V)); g.stroke(); g.setLineDash([]);
+  g.font="12px "+FONT; g.fillStyle=semi; g.textAlign="left"; g.fillText("stuck to the board", pad.l+5, Y(-p.V)+14);
+  if(Math.abs(p.k)>1e-3){ var xb2=X(p.P/p.k); if(xb2>pad.l&&xb2<pad.l+W){ g.fillStyle=faint; g.textAlign=p.k>0?"right":"left"; g.fillText("chalk off the board", p.k>0?pad.l+W-5:pad.l+5, pad.t+14); } }
+  // trail, brightening toward the head
+  var n=S.trail.length;
+  if(n>1){
+    g.strokeStyle=orbit; g.lineWidth=2; g.lineJoin="round";
+    for(var c=0;c<n-1;c+=20){
+      g.globalAlpha=0.12+0.88*Math.pow(c/n,2); g.beginPath();
+      for(var t=c;t<=Math.min(n-1,c+20);t++){ var q=S.trail[t]; if(t===c) g.moveTo(X(q[0]),Y(q[1])); else g.lineTo(X(q[0]),Y(q[1])); }
+      g.stroke();
+    }
+    g.globalAlpha=1;
+  }
+  // the steady glide
+  var gl=glide(p), ex=X(gl.x), ey=Y(0);
+  g.beginPath(); g.arc(ex,ey,6,0,Math.PI*2);
+  if(gl.tr<0){ g.fillStyle=math; g.fill(); } else { g.fillStyle=cssVar("--panel"); g.fill(); g.strokeStyle=bad; g.lineWidth=2.4; g.stroke(); }
+  g.fillStyle=gl.tr<0?math:bad; g.textAlign="left"; g.font="12px "+FONT;
+  g.fillText("steady glide", ex+9, ey-8);
+  // the tip right now
+  if(S.onBoard||S.grab){
+    var hx=X(S.state[0]), hy=Y(S.state[1]);
+    g.beginPath(); g.arc(hx,hy,9,0,Math.PI*2); g.fillStyle=orbit; g.globalAlpha=0.25; g.fill(); g.globalAlpha=1;
+    g.beginPath(); g.arc(hx,hy,5,0,Math.PI*2); g.fill();
+  }
+  g.restore();
+  // ticks and titles
+  g.strokeStyle=axis; g.lineWidth=1; g.strokeRect(pad.l,pad.t,W,H);
+  g.fillStyle=faint; g.font="11px ui-monospace, Menlo, monospace"; g.textAlign="center";
+  for(gx=Math.ceil(VIEW.x0/sx)*sx; gx<=VIEW.x1+1e-9; gx+=sx) g.fillText(+gx.toFixed(2), X(gx), pad.t+H+12);
+  g.textAlign="right";
+  for(gy=Math.ceil(VIEW.y0/sy)*sy; gy<=VIEW.y1+1e-9; gy+=sy) g.fillText(+gy.toFixed(2), pad.l-4, Y(gy)+4);
+  g.font="13px "+FONT; g.fillStyle=fg; g.textAlign="center";
+  g.fillText("chalk angle", pad.l+W/2, r.h-3);
+  g.save(); g.translate(11,pad.t+H/2); g.rotate(-Math.PI/2); g.fillText("tip velocity", 0, 0); g.restore();
+}
+var phaseCv=document.getElementById("phase");
+phaseCv.addEventListener("pointerdown",function(ev){
+  var r=phaseCv.getBoundingClientRect(), W=r.width-50, H=r.height-42;
+  jumpTo([VIEW.x0+(ev.clientX-r.left-40)/W*(VIEW.x1-VIEW.x0), VIEW.y1-(ev.clientY-r.top-8)/H*(VIEW.y1-VIEW.y0)]);
+});
+
+// ---------- bifurcation diagram ----------
+var COLS=100, D={cols:[], next:0};
+function invalidateDiagram(){ D.cols=[]; D.next=0; }
+function workDiagram(budgetMs){
+  var t0=performance.now();
+  while(D.next<=COLS && performance.now()-t0<budgetMs){
+    var q={P:D.next/COLS*PMAX, k:P.k, V:P.V, z:P.z}, g=glide(q);
+    D.cols.push({P:q.P, quiet:settleFrom(q,[g.x+0.01,0],260,0.02), kicked:settleFrom(q,kickFrom(q),260,0.02)});
+    D.next++;
+  }
+}
+var dpad={l:40,r:10,t:8,b:30};
+function drawDiagram(){
+  var cv=document.getElementById("diagram"), r=sizeCanvas(cv), g=cv.getContext("2d");
+  g.setTransform(r.dpr,0,0,r.dpr,0,0); g.clearRect(0,0,r.w,r.h);
+  var W=r.w-dpad.l-dpad.r, H=r.h-dpad.t-dpad.b;
+  var maxA=0.4; D.cols.forEach(function(c){ maxA=Math.max(maxA,c.quiet.amp,c.kicked.amp); });
+  var top=maxA*1.12;
+  function X(p){ return dpad.l+p/PMAX*W; } function Y(a){ return dpad.t+H-a/top*H; }
+  var faint=cssVar("--faint"), grid=cssVar("--grid"), axis=cssVar("--axis"), math=cssVar("--math"), bad=cssVar("--unstable"), orbit=cssVar("--orbit"), fg=cssVar("--fg");
+  g.fillStyle=cssVar("--wash-2"); g.fillRect(dpad.l,dpad.t,W,H);
+  g.strokeStyle=grid; g.lineWidth=1; g.font="11px ui-monospace, Menlo, monospace"; g.fillStyle=faint;
+  for(var p=0;p<=PMAX+1e-9;p+=0.2){ g.beginPath(); g.moveTo(X(p),dpad.t); g.lineTo(X(p),dpad.t+H); g.stroke(); g.textAlign="center"; g.fillText(p.toFixed(1),X(p),dpad.t+H+12); }
+  var sa=niceStep(top);
+  for(var a=0;a<=top;a+=sa){ g.beginPath(); g.moveTo(dpad.l,Y(a)); g.lineTo(dpad.l+W,Y(a)); g.stroke(); g.textAlign="right"; g.fillText(+a.toFixed(2),dpad.l-4,Y(a)+4); }
+  g.strokeStyle=axis; g.strokeRect(dpad.l,dpad.t,W,H);
+  g.font="13px "+FONT; g.fillStyle=fg; g.textAlign="center"; g.fillText("pressure", dpad.l+W/2, r.h-3);
+  g.save(); g.translate(11,dpad.t+H/2); g.rotate(-Math.PI/2); g.fillText("swing of x", 0, 0); g.restore();
+  var Pc=glide(P).Pc, pc=Math.min(PMAX,Math.max(0,Pc));
+  g.lineWidth=3; g.strokeStyle=math; g.beginPath(); g.moveTo(X(0),Y(0)); g.lineTo(X(pc),Y(0)); g.stroke();
+  if(pc<PMAX){ g.strokeStyle=bad; g.setLineDash([7,5]); g.beginPath(); g.moveTo(X(pc),Y(0)); g.lineTo(X(PMAX),Y(0)); g.stroke(); g.setLineDash([]); }
+  if(Pc<=PMAX){
+    g.strokeStyle=bad; g.lineWidth=1; g.globalAlpha=0.5; g.beginPath(); g.moveTo(X(Pc),dpad.t); g.lineTo(X(Pc),dpad.t+H); g.stroke(); g.globalAlpha=1;
+    g.fillStyle=bad; g.textAlign="left"; g.font="12px "+FONT; g.fillText("Pc = "+Pc.toFixed(3), X(Pc)+4, dpad.t+14);
+  }
+  D.cols.forEach(function(c){
+    g.beginPath(); g.arc(X(c.P),Y(c.kicked.amp),3.2,0,Math.PI*2); g.strokeStyle=orbit; g.lineWidth=1.5; g.stroke();
+    g.beginPath(); g.arc(X(c.P),Y(c.quiet.amp),2.3,0,Math.PI*2); g.fillStyle=math; g.fill();
+  });
+  g.strokeStyle=fg; g.lineWidth=1.3; g.setLineDash([3,4]);
+  g.beginPath(); g.moveTo(X(P.P),dpad.t); g.lineTo(X(P.P),dpad.t+H); g.stroke(); g.setLineDash([]);
+  var sw=liveSwing();
+  if(sw!==null){ g.beginPath(); g.arc(X(P.P),Y(Math.min(top,sw)),5.5,0,Math.PI*2); g.fillStyle=fg; g.fill(); }
+}
+var dg=document.getElementById("diagram"), dragging=false;
+function diagramPick(ev){
+  var r=dg.getBoundingClientRect(), W=r.width-dpad.l-dpad.r;
+  P.P=Math.round(Math.max(0,Math.min(PMAX,(ev.clientX-r.left-dpad.l)/W*PMAX))/0.005)*0.005;
+  syncInputs(); markPreset(-1);
+}
+dg.addEventListener("pointerdown",function(ev){ dragging=true; dg.setPointerCapture(ev.pointerId); diagramPick(ev); });
+dg.addEventListener("pointermove",function(ev){ if(dragging) diagramPick(ev); });
+dg.addEventListener("pointerup",function(){ dragging=false; });
+
+// ---------- status ----------
+function liveSwing(){
+  if(S.trail.length<200) return null;
+  var lo=Infinity,hi=-Infinity; S.trail.forEach(function(s){ lo=Math.min(lo,s[0]); hi=Math.max(hi,s[0]); });
+  return (hi-lo)/2;
+}
+function lambdas(gl){
+  var d=gl.tr*gl.tr/4-gl.det, re=gl.tr/2;
+  if(d<0) return re.toFixed(3)+" ± "+Math.sqrt(-d).toFixed(3)+"i";
+  return (re+Math.sqrt(d)).toFixed(2)+", "+(re-Math.sqrt(d)).toFixed(2);
+}
+function drawStatus(){
+  var p=params(), gl=glide(p), sw=liveSwing()||0, off=S.trail.length>200&&S.trail.some(function(s){ return normal(p,s[0])<=0; });
+  var msg, lead=S.grab?"Your hand: V = "+p.V.toFixed(2)+". ":"";
+  if(S.erase) msg="Wiping the board.";
+  else if(!S.onBoard&&!S.grab) msg="The chalk is off the board. Grab it and draw, or hit <b>auto-draw</b>.";
+  else if(S.grab&&p.V<0.05) msg=lead+"<b>Stuck.</b> Your hand is barely moving, so static friction holds the tip still. Drag it.";
+  else if(gl.tr<0){
+    msg=lead+(sw>0.08
+      ? '<span class="warm">Squealing anyway.</span> The glide is stable (Re &lambda; &lt; 0), but the tip is on the big stick-slip cycle around it. The Hopf is subcritical, so both exist at once. Ease off the press to stop it.'
+      : '<b>Smooth line.</b> The steady glide is a stable focus, so wobbles die out. Press harder, push instead of pull, or draw slower to bring P<sub>c</sub> down to you.');
+  } else {
+    msg=lead+'<span class="bad">Squeal.</span> Re &lambda; &gt; 0, so the glide repels and the tip runs out to a stick-slip cycle.'+
+      (off?' The tip pins, then flies off the board every cycle, so the line comes out <b>dotted</b>.':' It never leaves the board, but every stick grinds a bead of chalk, so the line comes out <b>beaded</b>.');
+  }
+  document.getElementById("status").innerHTML=msg;
+  document.getElementById("readout").innerHTML=
+    "&lambda; = <span class=\""+(gl.tr>0?"bad":"")+"\">"+lambdas(gl)+"</span> &middot; P<sub>c</sub> = <b>"+(isFinite(gl.Pc)?gl.Pc.toFixed(3):"&mdash;")+"</b> &middot; P = "+p.P.toFixed(3);
+}
+
+
+// ---------- sound ----------
+// The sound is what the board does. Every dot the simulation lays down - a lifted tip landing, or a
+// pinned tip breaking free - is posted with its time inside the frame, and the worklet plays it ~40 ms
+// later as a tick; how far the tip slid, by press, sets a rate of grit impacts (the scratch of an
+// ordinary line). So the ticks are the dots: ~45 a second at real time, one per visible dot in slow-mo.
+// The tick itself is measured from recordings of real dotted chalk lines (Lewin's "His Hand Doesn't
+// Even Move" and two others): a click and ~4 micro-bounces ~1.7 ms apart, ringing briefly in bands
+// at 1.36/1.56/1.76 and 2.15/2.4 kHz, almost nothing above 3 kHz. Nothing rings long - a sustained
+// tone is what reads as fingernails on a board.
+var GRITW=500;   // grit impacts per world unit slid (a world unit is 10 cm of board)
+var WORKLET=`
+function bp(f,q,g){ // RBJ band-pass, 0 dB peak
+  var w=2*Math.PI*Math.min(f,sampleRate*0.45)/sampleRate, a=Math.sin(w)/(2*q), a0=1+a;
+  return {b0:a/a0*g, b2:-a/a0*g, a1:-2*Math.cos(w)/a0, a2:(1-a)/a0, x1:0,x2:0,y1:0,y2:0};
+}
+function run(f,x){ var y=f.b0*x+f.b2*f.x2-f.a1*f.y1-f.a2*f.y2; f.x2=f.x1; f.x1=x; f.y2=f.y1; f.y1=y; return y; }
+class Chalk extends AudioWorkletProcessor{
+  constructor(){
+    super(); this.q=[]; this.grit=0; this.on=true; this.g=0; this.dc=0; this.xp=0;
+    this.ring=[bp(1360,6,1.0), bp(1560,7,0.9), bp(1760,7,0.8), bp(2150,6,0.4), bp(2400,6,0.3), bp(140,0.9,0.35)]; this.lp=0;
+    this.port.onmessage=e=>{
+      var m=e.data, base=currentFrame+Math.round(0.04*sampleRate);
+      for(var i=0;i<m.ev.length;i++){
+        var at=base+Math.round(m.ev[i][0]*sampleRate), A=m.ev[i][1];
+        this.q.push([at,A]);
+        for(var k=1,b=0.5*A;k<=4;k++,b*=0.5) this.q.push([at+Math.round(k*sampleRate*0.0017*(0.85+0.3*Math.random())),b]); // micro-bounces
+      }
+      this.grit=m.grit; this.on=m.on;
+    };
+  }
+  process(_,outs){
+    var out=outs[0][0];
+    for(var n=0;n<out.length;n++){
+      var now=currentFrame+n, ex=0;
+      for(var j=this.q.length-1;j>=0;j--) if(this.q[j][0]<=now){ ex+=(Math.random()<0.5?-1:1)*this.q[j][1]; this.q.splice(j,1); }
+      if(Math.random()<this.grit/sampleRate) ex+=(Math.random()<0.5?-1:1)*(0.04+0.1*Math.random());
+      this.g+=((this.on?1:0)-this.g)*0.002;                               // fade in/out, no clicks
+      var y=0.02*ex; for(var m=0;m<this.ring.length;m++) y+=run(this.ring[m],ex);
+      this.lp+=0.35*(y-this.lp);                                          // soften: roll off above ~3 kHz
+      var hp=this.lp-this.xp+0.995*this.dc; this.xp=this.lp; this.dc=hp;  // DC blocker
+      out[n]=Math.tanh(2.5*hp)*0.55*this.g;
+    }
+    return true;
+  }
+}
+registerProcessor("chalk",Chalk);`;
+var AU={ctx:null, node:null, want:true};
+function startAudio(){
+  if(AU.ctx||!AU.want||!window.AudioContext) return;
+  AU.ctx=new AudioContext();
+  AU.ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET],{type:"text/javascript"}))).then(function(){
+    AU.node=new AudioWorkletNode(AU.ctx,"chalk"); AU.node.connect(AU.ctx.destination);
+  });
+}
+function jumpTo(s){ S.state=s; S.trail=[]; }
+function feedAudio(){
+  if(AU.node) AU.node.port.postMessage({ev:S.events, grit:S.dtFrame>0?S.grit*GRITW/S.dtFrame:0, on:AU.want});
+}
+var soundBtn=document.getElementById("sound");
+soundBtn.addEventListener("click",function(){
+  AU.want=!AU.want; soundBtn.innerHTML=AU.want?"&#128264; sound on":"&#128263; sound off";
+  if(AU.want){ startAudio(); if(AU.ctx) AU.ctx.resume(); }
+});
+// browsers only allow audio after a gesture: the first press anywhere starts it
+window.addEventListener("pointerdown",function(e){ if(e.target.id==="sound") return; startAudio(); if(AU.ctx&&AU.ctx.state!=="running") AU.ctx.resume(); },true);
+
+// ---------- loop ----------
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000); last=now;
+  updateEraser(dt);
+  advance(dt);
+  feedAudio();
+  if(S.painted){ chalkTex.needsUpdate=true; S.painted=false; }
+  placeStick();
+  renderer.render(scene,camera);
+  workDiagram(5);
+  drawPhase(); drawDiagram(); drawStatus();
+  requestAnimationFrame(frame);
+}
+
+themeScene(); paintSlate(); syncInputs(); syncPlay(); applyPreset(0); sizeScene();
+(document.fonts&&document.fonts.ready?document.fonts.ready:Promise.resolve()).then(function(){ requestAnimationFrame(frame); });
+</script>
+</body>
+</html>

@@ -284,7 +284,7 @@ lists the weeks, and it is **the URL that gets handed in** - the assignment asks
 for a link, so there has to be one address that keeps working as weeks are added.
 Newest week first; a new week is one `<a class="week">` and a directory.
 
-**All four pages are `noindex`, in no sitemap, and nothing on the landing page
+**All five pages are `noindex`, in no sitemap, and nothing on the landing page
 links to them.** They are pages you send someone the URL for. `tests/test_ese2100.py`
 pins the `noindex` on each, because nothing else in the suite would notice it
 going missing on the next edit.
@@ -308,7 +308,7 @@ A 301 rather than a 302 because this *is* the canonical address now.
 - **CI asks for `site/ese2100` by name in the sparse checkout.** Sparse mode is a
   cone, so the existing `site/assets/flags` pattern drags in `site/`'s own files
   but none of its subdirectories - without the extra pattern every test that
-  reads these pages would skip, which reads as a pass. They are four HTML files
+  reads these pages would skip, which reads as a pass. They are five HTML files
   and no media, so asking for them costs nothing.
 
 ### `/ese2100/cobweb` (week 2)
@@ -494,6 +494,123 @@ function names it only matches when the next character is not a letter.
   when the hoop is edge-on - cos&theta; is zero twice a turn and the angle would
   jump. The drag reads the raw `atan2` instead, as though you were looking at
   the hoop edge-on, which is a little wrong every frame and never surprising.
+
+### `/ese2100/chalk` (weeks 6-7)
+
+Squeaky chalk: why chalk pressed hard against a board shrieks and draws dashes.
+The assignment asked for a 2-D continuous-time system and a Hopf bifurcation,
+and this is one: a stick of chalk as a damped spring, x&#776; + 2&zeta;x&#775; + x
+= &minus;&mu;(V + x&#775;)&middot;max(0, P &minus; &kappa;x). No parser this time - the
+model is fixed, and the four knobs (press P, lean &kappa;, stroke speed V,
+damping &zeta;) are sliders.
+
+**It is one screen, no scroll, by request**: a 100dvh grid with the 3D board on
+the left and the state space, bifurcation diagram and knobs stacked on the
+right. The derivation lives in a `<dialog>` behind "the math". Below 900px wide
+or 620px tall it falls back to a scrolling stack.
+
+- **The board is three.js, from the same jsdelivr importmap
+  (`three@0.169.0`) that `/intro-to-vibecoding` uses** - the only coursework
+  page with an external script. The chalk marks are a 2048x1024 2D canvas used
+  as a `CanvasTexture` on the slate, re-uploaded only on frames that drew. The
+  stick is a lit cylinder drawn from the tip (hand + x along the stroke) to a top
+  that leans with &kappa;, so it visibly rocks with x, casts a shadow, and lifts
+  off when N = 0.
+- **Grabbing the board puts the chalk in your hand.** The pointer is raycast
+  onto z = 0; the hand's smoothed speed along its own direction of travel *is*
+  V, so slow strokes squeal and fast ones do not, in any direction. While
+  grabbed the dynamics use that live V (`params()`), and the V slider and the
+  diagram stay on the auto-draw speed - otherwise the diagram would recompute
+  every frame.
+- **Auto-draw strokes top to bottom**, one column at a time, and wipes when the
+  board is full. The state carries across columns rather than resetting, so
+  the squeal does not have to rebuild on every stroke.
+- A hidden tab gets no `requestAnimationFrame`, so nothing moves there; that is
+  why testing it through the Chrome extension's background tab shows a frozen
+  board. Headless Chrome over CDP with `Input.dispatchMouseEvent` is what
+  verified the drawing.
+
+- **Friction that falls with slip speed is the negative damping.** Linearising
+  about the steady glide gives trace &minus;(2&zeta; + &mu;&prime;(V)N*), and
+  &mu;&prime; &lt; 0, so pressing harder pushes the trace through zero:
+  P<sub>c</sub> = 2&zeta;(1 &minus; &mu;&kappa;)/|&mu;&prime;(V)|. The page
+  states that formula and the readout prints it live; the analytic P<sub>c</sub>
+  was checked against the simulation at five settings (decays at 0.9 P<sub>c</sub>,
+  grows at 1.2 P<sub>c</sub>) when the page was written.
+- **The Hopf is subcritical and the page is built around that.** A kick starts
+  a stick-slip cycle well below P<sub>c</sub>, so the bifurcation diagram runs
+  two simulations per column (from the glide, and from a kick) and the overlap
+  is the hysteresis. The unstable cycle between them is not drawn; finding it
+  means bisecting on the start amplitude per column.
+- **The dashes come from &kappa;, not from friction.** N = P &minus; &kappa;x is
+  the sprag coupling: pushed chalk (&kappa; &gt; 0) digs in when friction bends
+  it back and lifts off when it springs forward. N = 0 means no friction and no
+  chalk, which is the gap. Chalk deposited per step scales with N relative to
+  the glide's N*, so a cycle that never lifts still shows as a pulsing line.
+- **`tanh(u/&epsilon;)` stands in for sticking**, so there is one smooth vector
+  field and no stuck/slipping mode switch. With &epsilon; = 0.02 that is mildly
+  stiff; RK4 at h = 0.01 (live) and 0.02 (diagram) is inside its stability
+  limit. The physics is the block between `// --- physics ---` markers and has
+  no DOM, so it can be pulled into node and run.
+- **One clock for the board, the state space and the sound, in real units.**
+  At 1x, model time runs at RATE = 2&pi;&middot;70 units per real second, which
+  puts a stick-slip cycle at ~45/s. The board is 1.2 m wide (1 world unit =
+  10 cm) and `SCALE` = 0.027, so V = 0.5 is a hand at ~0.6 m/s and a dot every
+  ~1.2 cm. Measured off reference videos (Lewin's "His Hand Doesn't Even Move",
+  YouTube l789l6np-qA, and "I can finally do the Walter Lewin's dotted lines",
+  2dTyCImwG4E): strokes of 0.6-0.9 s, ~30 thin dots per ~45 cm stroke, gaps
+  about one dot long, 40-50 ticks/s in the audio. The page gives 0.89 s, 41 dots
+  per 53 cm stroke, 46/s. The "time" slider is now **slow-mo** (1-50x) and
+  divides the clock; auto-draw pauses ~0.25 s between strokes, like a hand.
+  **The sim and the sound used to run on separate clocks** - slowed board, real-
+  time audio - and the user heard ticks at a rate unrelated to the dots. Never
+  again: the sound is now *driven by the board*. Each frame posts the dots the
+  sim laid down (a lifted tip landing, or a faint one when a pinned tip breaks
+  free) with their times inside the frame, plus a grit rate from how far the tip
+  slid by press; the worklet plays them ~40 ms later. So ticks = dots at any
+  slow-mo.
+- **The tick is measured, not guessed**: a click plus ~4 micro-bounces ~1.7 ms
+  apart, ringing briefly at 1.36/1.56/1.76 and 2.15/2.4 kHz, almost nothing above
+  3 kHz. Rejected along the way, and the reasons are the design: the raw
+  friction force ("insane"); a ~2 kHz squeal through high-Q modes ("hurts my
+  ears"); ticks at ~120/s through bands 1.45x too high ("still terrible"); ticks
+  on a different clock from the dots. Beware `ffmpeg showspectrumpic`'s
+  frequency labels: they read ~1.4x off; take bands from an FFT.
+- **Hand tremor lives in the sim** (OU noise, ~0.15 s, ~3% on P and ~4% on V),
+  so the dots and the ticks wobble together and the chatter comes and goes near
+  P<sub>c</sub>.
+- **Chalk goes down per moment of contact, weighted by how pinned the tip is**:
+  alpha ~ N/N* &middot; exp((V &minus; |u|)/0.1), accumulated and stamped as a thin
+  speckled ellipse along the stroke every 0.75 texture px of travel and once when
+  the tip lifts (a pinned tip is one stamp, not hundreds). A glide (|u| = V) draws the same even line at any stroke speed; a
+  stuck, loaded tip grinds a bright dot; a fast slip barely marks; lift-off
+  leaves a gap. **Depositing along the slide (Archard per distance) drew long
+  dashes and the user rejected it** - real dotted chalk lines are dots, and the
+  dots are where the tip is pinned. The "stick length" slider (2-9 cm) is the
+  user-facing knob for &zeta; (`zetaOf`, short = stiff and well damped) and sets
+  the drawn length of the 3D stick; do not relabel it "damping".
+- **Auto-draw is vertical strokes, top to bottom, column by column.** A version
+  that wrote random phrases in a hand-coded single-stroke font was built and
+  the user rejected it as annoying; it was deleted, not hidden. When the board
+  fills, the eraser clears it and drawing restarts top-left.
+- **"Wipe the board" is an eraser animation**: a felt-and-wood block lifts off the
+  tray, stands on its felt, sweeps five rows (`rubOut` paints slate at 35% per
+  8 px step, leaving a trace of dust), and lies back down; auto-draw calls it
+  when the board is full. Drawing pauses while it runs. **It is silent on
+  purpose**: a low-passed rubbing hiss was tried and the user called it
+  horrible.
+- **The press is labelled "pressure"** everywhere a viewer reads it (slider,
+  diagram axis, captions) - "press P" was rejected. The math dialog keeps P.
+- **Controls the user asked to remove stay removed**: "kick the chalk" and
+  "settle it" ("idk what those are saying"), and the slow-mo *slider* ("makes no
+  sense") - it is a two-state "slow motion: off / 10x" button now.
+- **The tick was softened on request** ("can sound softer"): resonance Q 6-7
+  instead of 10-12, bounces half as loud, a one-pole roll-off above ~3 kHz, less
+  drive into the tanh.
+- The sound button floats on the board's bottom-right corner, in `.viewport`
+  with the hint, not in the transport row.
+- `advance()` caps one frame at 4000 substeps and the frame dt at 50ms, so a
+  background tab coming back does not freeze the page catching up.
 
 ### `/ese2100/review/quizzam1`
 
