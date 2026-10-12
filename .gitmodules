@@ -1,3 +1,7 @@
 [submodule "ttr"]
 	path = ttr
 	url = https://github.com/chinmaygovind/Conductor
+[submodule "site/per/rev11-explorer"]
+	path = site/per/rev11-explorer
+	url = https://github.com/chinmaygovind/car-explorer
+	update = none
