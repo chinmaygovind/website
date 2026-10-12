@@ -878,3 +878,21 @@ New entries, unsorted, until somebody files them. One line is enough.
   armco.** Sepang's are 48 apart centre to centre, so the kit cuts the barrier
   there and the stand's own front wall has to be the collider - measure the gap
   before assuming furniture fits between two legs.
+
+- **Water that reads from a distance can read as planks up close.** Marina Bay's
+  bay was opaque bands with gaps over a mirrored city - a good broken reflection
+  from across the water, and from beside the bay straight a deck of boards with
+  the mirror showing as dark blocks between them. Keep the surface whole within
+  reach of the car and let it break up with distance. Found by Chinmay driving it.
+- **A shoreline taken off a grid is a staircase.** Wet-or-dry per cell drew the
+  river's edge as eight-unit steps, each with a wall on its riser; halving the
+  cell only made the steps smaller. Draw the quay along the water polygon's own
+  edges and push the grid's sawtooth under a strip of paving behind it.
+- **A translucent sheet over a mirrored scene shows almost none of it.** `soft`
+  is fixed at 0.82 opacity, so a reflection under it is a fifth of itself and
+  invisible from a chase camera.
+- **Night water authored from the idea of night water comes out black.** Four
+  passes at Marina Bay (black, glints, a translucent sheet, dark bands) were all
+  rejected. Game water at night is a saturated deep teal with a visible pattern
+  of lit crests and dark troughs, sparkles, and foam at the edges - Mario Kart
+  8's Singapore Speedway is the reference. Look at a game, not at a photograph.
