@@ -15,19 +15,22 @@ Two kinds of daily, and the look decides which
 ----------------------------------------------
 * **A circuit** sits on a ground plane under one of the pool's grounded looks:
   corners, hills, and a few tricks - jumps, crests, banked sweepers, a boost
-  pad, now and then a half-pipe or a loop. Tight chicanes get barriers, because
+  pad, now and then a half-pipe. Tight chicanes get barriers, because
   a chicane you can drive straight through on the grass is not a chicane.
 * **A stunt track** floats under one of the pool's void looks (void, lava,
   desert, downtown, pillars), open-edged like Playground (`exposed`), and is
-  built from its vocabulary: loops, walls of death, gaps, drops, half-pipes.
+  built from its vocabulary: walls of death, gaps, drops, half-pipes.
 
-Neither kind has barriers by default. They go round loops, through chicanes,
+**No loops.** A loop is a free skip - drop off it and you land past it -
+and the checkpoint after one never closed that, so neither kind gets them.
+
+Neither kind has barriers by default. They go through chicanes,
 and wherever a shortcut has to be closed - nowhere else.
 
 **Walls of death only ever climb.** One that descends puts its own exit under
 its wrap, so dropping off the top lands on it and the whole corner is optional -
 the Playground wall that does that is one of the two places every top time
-there skips. And every loop and wall is followed by a checkpoint, which kills
+there skips. And every wall is followed by a checkpoint, which kills
 any drop that would land past it. `checks.shortcuts` is what is asked
 afterwards, and `gen_daily.repair` fixes what it finds or the seed is dropped.
 """
@@ -141,10 +144,10 @@ def _length(m):
 # What each kind of daily may throw in down a straight, by weight. A stunt
 # track is mostly set pieces; a circuit is mostly road with a few.
 CIRCUIT_TRICKS = (("jump", 3), ("crest", 3), ("hump", 2), ("boost", 2),
-                  ("sweeper", 3), ("pipe", 1), ("loop", 1), ("chicane", 3),
+                  ("sweeper", 3), ("pipe", 1), ("chicane", 3),
                   ("esses", 3), ("rollers", 2), ("wallride", 2), ("bounce", 1),
                   ("narrows", 2))
-STUNT_TRICKS = (("loop", 3), ("wall", 3), ("jump", 3), ("gap", 3),
+STUNT_TRICKS = (("wall", 3), ("jump", 3), ("gap", 3),
                 ("pipe", 2), ("dive", 2), ("sweeper", 2), ("boost", 1),
                 ("bounce", 3), ("helix", 2), ("stairs", 2), ("leap", 2),
                 ("wallride", 2), ("esses", 1))
@@ -239,16 +242,6 @@ def _trick(rng, kind, turn, radii, stunt):
                   "floor": round(rng.uniform(0.25, 0.4), 2), "side": "lr"}]
                 + inner + [{"t": "flat"}, {"t": "straight", "len": 16.0}],
                 0.0, turn)
-    if kind == "loop":
-        # Walled round the loop itself and nowhere else: coming off the inside
-        # of a loop is falling, not driving.
-        extra = {"rail": "lr"}
-        return ([{"t": "boost", "len": 14.0},
-                 {"t": "straight", "len": round(rng.uniform(30.0, 44.0), 1)},
-                 dict({"t": "loop", "rad": round(rng.uniform(20.0, 25.0), 1),
-                       "dir": rng.choice(("l", "r"))}, **extra),
-                 dict({"t": "straight", "len": 20.0}, **extra),
-                 {"t": "cp", "rail": None}], 0.0, turn)
     if kind == "wall":
         turn = -turn if rng.random() < 0.6 else turn
         rise = round(rng.uniform(8.0, 18.0), 1)

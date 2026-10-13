@@ -359,17 +359,19 @@ of drifting from a second copy.
 
 **Two kinds, and the look decides.** Every pool track's look is on offer: a
 grounded one makes a *circuit* on a ground plane (corners, hills, jumps, crests,
-banked sweepers, walled chicanes, the odd half-pipe or loop), and one with a
+banked sweepers, walled chicanes, the odd half-pipe), and one with a
 `below` (void, lava, desert, downtown, pillars) makes an open-edged
-(`exposed`) *stunt track* from Playground's vocabulary - loops, walls of death,
-gaps, drops, half-pipes. **Neither has barriers by default**: they go round
-loops, through chicanes, and wherever a shortcut is closed, and nowhere else -
+(`exposed`) *stunt track* from Playground's vocabulary - walls of death,
+gaps, drops, half-pipes. **Neither has barriers by default**: they go
+through chicanes, and wherever a shortcut is closed, and nowhere else -
 a daily walled end to end was no fun to drive.
+**No loops, on either kind** (Oct 2026): every one was a free skip - drop
+off and land past it - and the checkpoint after it never stopped that.
 **Each daily is its own menu** (`generate._flavour`): one signature set piece
 weighted four times over, and two others drawn beside it - nothing else. The
 whole vocabulary is a circuit's jumps, crests, humps, rollers, pads, sweepers,
-esses, chicanes, wall-rides, a narrow section, caps, half-pipes and loops, and a
-stunt track's loops, walls of death, a climbing helix, gaps, drop staircases,
+esses, chicanes, wall-rides, a narrow section, caps and half-pipes, and a
+stunt track's walls of death, a climbing helix, gaps, drop staircases,
 bowed leaps, dives, caps, half-pipes and wall-rides. With everything on offer
 at base weight every daily was the same mix in a different order and "they all
 feel the same" was the note. The signature is in `generated.signature`, and
@@ -385,7 +387,7 @@ which is how every top Playground time skips the Climb. `gen_daily.repair`
 walls both stretches of a grass cut, walls the take-off of a drop (or, if it is
 already walled, puts a checkpoint between take-off and landing), then the
 track is re-judged. Walls of death only ever climb,
-and every loop and wall is followed by a checkpoint, for the same reason.
+and every wall is followed by a checkpoint, for the same reason.
 **No pad at the top of a climb** (`gen_daily.pads_on_climbs`): a pad where the
 road levels off is a pad on a crest, the car goes light over it and only an exact
 line touches it - Daily #9's last pad, after a 30% climb out of a tight corner,
