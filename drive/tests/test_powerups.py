@@ -511,6 +511,10 @@ def test_a_box_and_then_using_it_both_come_back_over_the_socket(A, monkeypatch):
 
     cl.emit("use_item", {})
     got = _drain(cl)
+    if item == "grapple":
+        # Alone in the room there is nobody to hook: it is kept, and said so.
+        assert got["item_nothing"] and "item_used" not in got
+        return
     assert got["item_used"][-1]["pid"] == pid
     assert got["item_used"][-1]["item"] == item
     # What a box gives is random, and the boost is the one item a press does
