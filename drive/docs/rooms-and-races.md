@@ -408,6 +408,24 @@ with how late it was and what the rooms were doing.
     (`S.run.laps`), because every way into a race and out of one already goes
     through it - and only for a race you are *in*, since somebody who walked in
     after the lights is practising on the same road and drives one lap.
+  - **`Run.bestS` never passes the next gate the car still owes** (`capS`).
+    Distance alone was trusted and the replays of races 339-363 show two ways
+    that is wrong: a re-locate onto the other branch of Suzuka's crossover
+    handed cars ~2000 units and the lead (races 345, 349), and a car that
+    crossed the line with a checkpoint missed kept climbing as though the lap
+    had counted - shown second for most of race 339 while really last. The
+    server's `Watcher.prog` is unchanged: it is a bound on the claim, and the
+    claim is what is capped.
+  - **A room race forgives one missed checkpoint a lap**, never the last one
+    before the line (`Run.forgive`, set for a race you are in and for every
+    bot). Crossing the gate after the one you owe credits both. Solo and
+    qualifying are untouched, and nothing it credits reaches the board. A
+    reload does not remember a skip already spent that lap.
+  - **`nearest_station` wraps its window on a circuit.** Clipped at the last
+    station it held a car that had just crossed the line on the old end of the
+    ribbon until it was `CORRIDOR` away - a 60-unit freeze on every lap. Wrapped,
+    a grid slot behind the line reads as nearly a lap done, so the first sample
+    of a race sets `w.lap = -1` there, as `Run.update` does with `sLap`.
   - **`Watcher.prog` counts the laps too**, which is the part that is not
     cosmetic. The ribbon's arc is 0..length whichever lap the car is on, so a
     field spread over two would read as everybody bunched on one - and the

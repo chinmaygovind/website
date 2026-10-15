@@ -155,6 +155,7 @@ class BotWorld {
     for (const b of this.bots) {
       b.car.frozen = false;
       b.run.laps = 1;
+      b.run.forgive = false;
       b.run.reset();
       b.started = false;
       b.finished = null;
@@ -320,6 +321,7 @@ class BotWorld {
     for (const b of this.bots) {
       b.car.frozen = false;
       b.run.laps = Math.max(1, laps | 0) || 1;
+      b.run.forgive = true;
       b.run.start(nowMs);
       b.started = true;
       b.finished = null;

@@ -1291,9 +1291,11 @@ def test_a_finished_car_is_not_something_to_be_behind():
     """After the flag a finisher keeps rolling and its `prog` keeps climbing,
     so a gap measured to it grew a little every second - which is what made
     the board look broken once the first car was home. Gaps are to the leader
-    still *on the road*, and when nobody is, there are none."""
+    still *on the road*, the leader on the road shows its time to the flag,
+    and when nobody is driving there are none."""
     ctx = _ctx()
     ctx.eval("var GAP_FLOOR = 12;")
+    ctx.eval("var S = {run: {_finS: 1500, laps: 1}, course: {total: 2000}};")
     ctx.eval("function fmt(ms) { return 'T' + ms; }")
     ctx.eval("function esc(s) { return s; }")
     ctx.eval("var rows = []; var el = {set innerHTML(v) { rows.push(v); }};")
@@ -1308,6 +1310,7 @@ def test_a_finished_car_is_not_something_to_be_behind():
     html = ctx.eval("rows[0]")
     assert "T61000" in html, "the finisher lost its time"
     assert "-2.00" in html, "the gap is not to the leader on the road"
+    assert "-10.0" in html, "the leader on the road does not show its time to the flag"
     ctx.eval("rows.length = 0;")
     ctx.eval("""renderStandings([
       {name: 'a', color: '#fff', ms: 61000, s: 1, speed: 0},

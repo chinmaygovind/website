@@ -188,6 +188,14 @@ the second track that wants one as the thing that will find the bugs.
   the quad becomes a skewed sheet thrown across the infield. Both of those
   shipped and both looked like "stray quads". The rule is: inside the apron use
   `station.p[1] - drop`, outside it use the field.
+- **The apron is collided only where it faces up.** It is drawn both ways
+  round because its winding flips with the side of the road, and it used to be
+  collided as wound - so on one side of every terrain circuit it was a floor
+  facing *down*. An upright car never chose one (its normal disagrees with the
+  car's up), but a car an item hit had turned over agreed with it, grounded on
+  it, and drove beneath the ground until it fell out (race 362, Sepang).
+  Re-driving the top five on each of the five terrain circuits' boards (22
+  laps with an input stream) gave identical numbers before and after.
 - **Two rules must never both decide who draws a piece of ground.** The apron
   clips itself back wherever another leg is nearer, and `drawTerrain` used to
   skip the cells the apron covers. Those two disagreed about the strip in

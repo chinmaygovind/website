@@ -158,6 +158,13 @@ const _rv = [0, 0, 0];
 const STUCK_SPEED = 1.5;          // units/s of progress that still counts as moving
 const STUCK_NUDGE_S = 1.4;        // back up and try again
 const STUCK_GIVE_UP_S = 3.2;      // take the checkpoint
+// Not getting anywhere, measured as distance from where it was rather than as
+// speed. A bot wedged on a wall backs off, drives back into it and backs off
+// again, and every back-off resets `stuck` - the replays have bots doing that
+// for three minutes. Ten units is more than the shuffle and less than a crawl
+// round the tightest hairpin (`CRAWL`) covers in the time.
+const STALL_DIST = 10.0;
+const STALL_GIVE_UP_S = 2.0;
 const WRONG_WAY_DOT = -0.4;
 const WRONG_WAY_GIVE_UP_S = 3.0;
 // How much road a car takes to merge onto the racing line from where it was
@@ -492,6 +499,8 @@ class Bot {
     this.lastGiveUp = null;
     this.wrongFor = 0;
     this.fellFor = 0;
+    this.stallFor = 0;
+    this.anchor = null;
     this.drifting = false;
     this.tapLeft = 0;
     this.tapRest = 0;
@@ -514,7 +523,8 @@ class Bot {
   reset() {
     const p = this.car.pos;
     this.hint = this.line.relock(p.x, p.y, p.z).i;
-    this.stuck = this.lostFor = this.wrongFor = this.fellFor = 0;
+    this.stuck = this.lostFor = this.wrongFor = this.fellFor = this.stallFor = 0;
+    this.anchor = null;
     this.drifting = false;
     this.lastS = this.line.s[this.hint];
     this.launched = false;
@@ -567,7 +577,8 @@ class Bot {
     // Being put back on the road is not a moment with a decision in it, and the
     // timers must not run while it happens or the car respawns again on landing.
     if (car.respawnIn > 0) {
-      this.stuck = this.lostFor = this.wrongFor = this.fellFor = 0;
+      this.stuck = this.lostFor = this.wrongFor = this.fellFor = this.stallFor = 0;
+      this.anchor = null;
       this.pendingReset = true;
       return NEUTRAL;
     }
@@ -1090,6 +1101,26 @@ class Bot {
                   this.line.p[loc.i][1] - car.pos.y > FELL_BELOW;
     if (under) this.fellFor += dt;
     else this.fellFor = 0;
+
+    const a = this.anchor, p = car.pos;
+    if (!a || (p.x - a[0]) ** 2 + (p.y - a[1]) ** 2 + (p.z - a[2]) ** 2 > STALL_DIST * STALL_DIST) {
+      this.anchor = [p.x, p.y, p.z];
+      this.stallFor = 0;
+    } else {
+      this.stallFor += dt;
+    }
+
+    // A stall goes back to the last checkpoint rather than a few units up the
+    // line: whatever it is wedged on is still there a few units back.
+    if (this.stallFor > STALL_GIVE_UP_S) {
+      this.gaveUp.stall = (this.gaveUp.stall || 0) + 1;
+      this.lastGiveUp = { why: 'stall', i: loc.i, d: loc.d, y: car.pos.y,
+                          lineY: this.line.p[loc.i][1], speed: car.speed };
+      car.requestRespawn();
+      this.stuck = this.wrongFor = this.lostFor = this.fellFor = this.stallFor = 0;
+      this.anchor = null;
+      return NEUTRAL;
+    }
 
     const giveUp = this.stuck > STUCK_GIVE_UP_S ||
                    this.wrongFor > WRONG_WAY_GIVE_UP_S ||

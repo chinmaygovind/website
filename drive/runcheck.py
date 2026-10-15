@@ -624,16 +624,25 @@ def nearest_station(track, f, hint=0):
     if not line:
         return None, hint
 
+    n = len(line)
+
     def scan(lo, hi):
         best, bi = None, lo
-        for j in range(lo, hi):
+        for k in range(lo, hi):
+            j = k % n
             p = line[j]["p"]
             d = ((f[0] - p[0]) ** 2 + (f[1] - p[1]) ** 2 + (f[2] - p[2]) ** 2)
             if best is None or d < best:
                 best, bi = d, j
         return best, bi
 
-    best, bi = scan(max(0, hint - 10), min(len(line), hint + 40))
+    # A ring's window wraps past its last station onto its first. Clipped, it
+    # held a car crossing the line on the old end of the ribbon until it was
+    # `CORRIDOR` away - a 60-unit freeze in the standings on every lap.
+    if track.get("closed"):
+        best, bi = scan(hint - 10, hint + 40)
+    else:
+        best, bi = scan(max(0, hint - 10), min(n, hint + 40))
     if best is None or best > CORRIDOR * CORRIDOR:
         best, bi = scan(0, len(line))
     return best, bi

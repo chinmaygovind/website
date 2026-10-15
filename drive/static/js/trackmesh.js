@@ -2529,7 +2529,16 @@ function addApron(buf, col, track, pal, terrain, cfg, drop) {
         const c = k === 0 ? grit : pal.ground;
         buf.quad(p0, p1, p2, p3, c);
         buf.quad(p3, p2, p1, p0, c);
-        col.addQuad(p0, p1, p2, p3, KIND.OFFROAD);
+        // **Collided only where it faces up.** Which way round this quad winds
+        // depends on the side of the road, so on one side it was a floor facing
+        // down. An upright car never picks one of those (its normal disagrees
+        // with the car's up), so leaving them out changes nothing for it - but
+        // a car flipped by an item hit agreed with it, grounded on it, and
+        // drove along underneath the ground until it fell out of the world.
+        // The height field is under the whole apron, so nothing is lost.
+        if ((p1[2] - p0[2]) * (p2[0] - p0[0]) - (p1[0] - p0[0]) * (p2[2] - p0[2]) > 0) {
+          col.addQuad(p0, p1, p2, p3, KIND.OFFROAD);
+        }
       }
       // The lip under the kerb, so the step down to the gravel reads as a step
       // rather than as the road floating. It has to reach the *kerb*, which on a

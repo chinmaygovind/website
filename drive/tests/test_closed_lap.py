@@ -289,3 +289,92 @@ def test_every_gate_of_a_race_has_its_own_index(rt, slug):
         " return out; })()" % json.dumps(slug))
     assert len(seen) == len(set(seen)), "two gates share an index"
     assert seen == sorted(seen), "a later gate is numbered before an earlier one"
+
+
+# ---------------------------------------------------------------------------
+# What the standings are ordered by
+# ---------------------------------------------------------------------------
+# `bestS` never runs past the next gate the car still owes. Off the replays of
+# races 339-363: a re-locate onto the other branch of Suzuka's crossover gave
+# cars 2000 units and the lead, and a car that crossed the line with a
+# checkpoint missed kept climbing as if the lap had counted.
+
+
+def test_a_jump_to_another_part_of_the_lap_is_held_at_the_next_gate(rt):
+    out = rt.call(
+        "(function () { var c = makeRun('suzuka'), line = c.course.line;"
+        " function at(i) { var p = line[i].p;"
+        "   c.run.update(stubCar([p[0], p[1] + 0.6, p[2]], [0, 0, 1]), 2000); }"
+        " at(8); c.course.resetHint(Math.floor(line.length * 0.6));"
+        " at(Math.floor(line.length * 0.6));"
+        " return { best: c.run.bestS, cap: c.run.capS() }; })()")
+    assert out["best"] <= out["cap"] + 1e-6, out
+
+
+@pytest.mark.parametrize("slug", CLOSED, ids=CLOSED)
+def test_crossing_the_line_with_a_checkpoint_missed_banks_nothing(rt, slug):
+    out = rt.call(
+        "(function () { var c = makeRun(%s), line = c.course.line, n = line.length;"
+        " c.run.laps = 3; c.run.nextCp = c.run.cps.length - 1;"   # owes the last
+        " c.run.sLap = 0; c.run._lastS = c.course.s[n - 10];"
+        " for (var i = 0; i < 60; i += 2) { var p = line[i].p;"
+        "   c.run.update(stubCar([p[0], p[1] + 0.6, p[2]], [0, 0, 1]), 3000 + i); }"
+        " return { best: c.run.bestS, last: c.run._cpS[c.run.cps.length - 1],"
+        "          lap: c.run.lap }; })()" % json.dumps(slug))
+    assert out["lap"] == 0
+    assert out["best"] <= out["last"] + 1e-6, out
+
+
+def test_a_room_race_forgives_one_missed_checkpoint_a_lap(rt):
+    out = rt.call(
+        "(function () { var c = makeRun('suzuka'); c.run.forgive = true;"
+        " var cps = c.run.cps, r = {};"
+        " through(c, cps[1]); r.skipOne = c.run.nextCp;"           # missed cps[0]
+        " through(c, cps[3]); r.skipTwo = c.run.nextCp;"           # missed cps[2] too
+        " through(c, cps[2]); r.back = c.run.nextCp;"
+        " return r; })()")
+    assert out == {"skipOne": 2, "skipTwo": 2, "back": 3}, out
+
+
+def test_the_last_checkpoint_is_never_forgiven(rt):
+    ev = rt.call(
+        "(function () { var c = makeRun('suzuka'); c.run.forgive = true;"
+        " c.run.nextCp = c.run.cps.length - 1;"
+        " return through(c, c.course.finishGate()); })()")
+    assert "missed" in ev and "finish" not in ev, ev
+
+
+def test_solo_forgives_nothing(rt):
+    got = rt.call(
+        "(function () { var c = makeRun('suzuka');"
+        " through(c, c.run.cps[1]); return c.run.nextCp; })()")
+    assert got == 0
+
+
+# ---------------------------------------------------------------------------
+# A car flipped by an item hit lands on the ground, not under it
+# ---------------------------------------------------------------------------
+# The run-off apron winds one way round on one side of the road and the other
+# way on the other, and was collided as drawn - so one side was a floor facing
+# down. A car the hit had turned over agreed with it and drove along beneath
+# the ground until it fell out of the world (race 362, Sepang).
+
+
+@pytest.mark.parametrize("side", [-1, 1])
+def test_a_hit_on_the_run_off_lands_on_it(rt, side):
+    out = rt.call(
+        "(function () { var t = TRACKS.find(function (x) { return x.slug === 'sepang'; });"
+        " var b = buildTrack(t, T), car = new Car(T, b), st = b.line[300];"
+        " var o = st.hw + 4 * %d, p = st.p, l = st.lat;"
+        " car.placeAt([p[0] + l[0] * o, p[1] + 1, p[2] + l[2] * o], [1, 0, 0]);"
+        " var go = { throttle: 1, brake: 0, steer: 0, handbrake: false };"
+        " for (var i = 0; i < 120; i++) car.step(1 / 120, go);"
+        " var y0 = car.pos.y;"
+        " car.vel.multiplyScalar(0.15); car.vel.addScaledVector(car.up, 5.5);"
+        " car._spin(car.right, 2.2);"
+        " for (var i = 0; i < 240; i++) car.step(1 / 120, go);"
+        " return { y0: y0, y: car.pos.y, up: car.up.y, respawn: car.respawnIn }; })()"
+        % side)
+    assert out["respawn"] <= 0, out
+    assert out["y"] > out["y0"] - 1.0, out
+    assert out["up"] > 0.9, out

@@ -328,6 +328,7 @@ def sample_progress(w, track, p, now_ms):
     """
     if not track or now_ms < w.next_prog_ms:
         return None
+    first = not w.next_prog_ms
     w.next_prog_ms = now_ms + PROG_SAMPLE_MS
     best, w.hint = runcheck.nearest_station(track, p, w.hint)
     if best is None:
@@ -338,7 +339,9 @@ def sample_progress(w, track, p, now_ms):
     length = station_arc(track, len(track.get("line") or []))
     if track.get("closed") and length:
         step = arc - w.arc
-        if step < -length * LAP_WRAP:
+        if first and arc > length / 2:
+            w.lap = -1          # on the grid, behind the line: not a lap done
+        elif step < -length * LAP_WRAP:
             w.lap += 1
         elif step > length * LAP_WRAP:
             w.lap = max(0, w.lap - 1)

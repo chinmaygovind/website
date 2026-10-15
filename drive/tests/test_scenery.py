@@ -78,7 +78,10 @@ EXPECTED = {
     "cove":      {"total":   1948, "road":  1556, "wall":   240, "off":   152, "boost":  0},
     "pillars":   {"total":   1892, "road":  1412, "wall":   480, "off":     0, "boost":  0},
     "rainbow":   {"total":  13300, "road": 12720, "wall":   580, "off":     0, "boost":  0},
-    "spa":       {"total":  43902, "road":  1810, "wall":  3878, "off": 38214, "boost":  0},
+    # -3510 `off` in Oct 2026: the run-off apron is collided only where it faces
+    # up (see `addApron`). The down-facing copies were a floor an item hit's
+    # flipped car could drive under; the top laps re-drive identically.
+    "spa":       {"total":  40392, "road":  1810, "wall":  3878, "off": 34704, "boost":  0},
     "costco":    {"total":   4058, "road":  1202, "wall":  2834, "off":     2, "boost": 20},
     "bigred":    {"total":   2862, "road":  1596, "wall":  1188, "off":     0, "boost": 78},
     # Recorded when the track was added rather than off an earlier tree, since
@@ -93,7 +96,10 @@ EXPECTED = {
     # hangars and **252 of the barriers on the inside of the arena and Luffield**,
     # which are the only scenery in the pool that exists to stop a shortcut. If that
     # number drops, the corners you could skip are skippable again.
-    "silverstone": {"total":  31228, "road":  1552, "wall":  3458, "off": 26218, "boost":  0},
+    # -3104 `off` in Oct 2026: the run-off apron is collided only where it faces
+    # up (see `addApron`). The down-facing copies were a floor an item hit's
+    # flipped car could drive under; the top laps re-drive identically.
+    "silverstone": {"total":  28124, "road":  1552, "wall":  3458, "off": 23114, "boost":  0},
     # Recorded when the track was added. **Worth having for a reason the others
     # are not**: Rickety Rails' cave - the floor, the roof, the trestle bents,
     # the crystals - is mesh only, and `docs/track-defects.md` says a scenery
@@ -133,7 +139,10 @@ EXPECTED = {
     # 14 and 15. If this number drops, one of those has stopped being solid.
     # +2 in Oct 2026: a cross wall shutting the grass strip on the left of the
     # start straight, which a lap on the board used to skip Turn 1.
-    "sepang":    {"total":  24192, "road":  1454, "wall":  3182, "off": 19556, "boost":  0},
+    # -2642 `off` in Oct 2026: the run-off apron is collided only where it faces
+    # up (see `addApron`). The down-facing copies were a floor an item hit's
+    # flipped car could drive under; the top laps re-drive identically.
+    "sepang":    {"total":  21550, "road":  1454, "wall":  3182, "off": 16914, "boost":  0},
 }
 
 COUNTER = """

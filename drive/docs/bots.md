@@ -297,6 +297,15 @@ so there is nothing to measure yet.
 
 ## Things learned the hard way in the driver
 
+- **A stall goes back to the last checkpoint** (`STALL_DIST`/`STALL_GIVE_UP_S`
+  in `bot.js`): ten units of movement in two seconds or it respawns. The other
+  four triggers missed bots wedged on a wall, because backing off it resets
+  `stuck` every time - the replays had twelve of them sitting for one to three
+  minutes with no respawn at all. Note that every `requestRespawn` lands on the
+  last gate anyway: `Run.update` re-sets the car's respawn target to it every
+  tick, inside the 0.45s `RESPAWN_DELAY`, so the "few units back up the line"
+  target the give-up path sets does not survive to the respawn.
+
 Each of these was a real failure and each is cheap to reintroduce.
 
 - **The reference lap's standing start is not a speed limit.** Both lines are

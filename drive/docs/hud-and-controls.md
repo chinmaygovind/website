@@ -870,6 +870,12 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
     exactly as much warning as a shell is. It is measured in the time you have
     to do something about it rather than in distance.
 
+- **The first car still driving under a finisher shows its time to the flag.**
+  The interval is measured to the nearest car above that is still racing, so
+  once somebody is home the new leader on the road had an empty cell. It now
+  reads `-` the time to the finish line instead (`_finS` and `laps` off
+  `S.run`, divided by that car's pace like any other gap).
+
 - **The standings gap is a time, not a distance** (`gapLabel`). It read
   `-500m`, which is a number you have to convert before it means anything:
   five hundred metres is nothing down Big Red's descent and half a race on

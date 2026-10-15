@@ -220,6 +220,22 @@ export class Run {
     // it alone: a run is restarted a dozen times a session and the race it is
     // part of is still the same length.
     this.laps = 1;
+    // A room race lets a lap through with one checkpoint missed, as long as it
+    // was not the last one before the line. The caller sets it, like `laps`.
+    this.forgive = false;
+    // Where each gate sits along the ribbon, so progress can be held at the
+    // next gate the car still owes - see `capS`.
+    const sOf = (g) => {
+      let best = 0, bestD = Infinity;
+      course.line.forEach((pt, i) => {
+        const d = (pt.p[0] - g.p[0]) ** 2 + (pt.p[1] - g.p[1]) ** 2 + (pt.p[2] - g.p[2]) ** 2;
+        if (d < bestD) { bestD = d; best = i; }
+      });
+      return course.s[best];
+    };
+    this._cpS = this.cps.map(sOf);
+    this._finS = this.finish ? sOf(this.finish) + (this.closed ? course.total : 0)
+                             : course.total;
     this.reset();
   }
 
@@ -229,6 +245,7 @@ export class Run {
     this.time = 0;               // ms
     this.splits = [];
     this.nextCp = 0;
+    this._skipped = false;
     this.missed = false;
     this.distance = 0;
     this.ghost = [];
@@ -281,6 +298,7 @@ export class Run {
     this.time = 0;
     this.splits = [];
     this.nextCp = 0;
+    this._skipped = false;
     this.lap = 0;
     this.sLap = 0;
     this._lastS = null;
@@ -629,9 +647,18 @@ export class Run {
       const step = loc.s - this._lastS;
       if (step < -total * LAP_WRAP) this.sLap++;
       else if (step > total * LAP_WRAP) this.sLap--;
+    } else if (this.closed && this.lap === 0 && this.nextCp === 0 && loc.s > total / 2) {
+      // A grid slot far enough back to miss the local window reads as nearly a
+      // whole lap done. It is behind the line, not a lap ahead.
+      this.sLap = -1;
     }
     this._lastS = loc.s;
-    const covered = loc.s + this.sLap * total;
+    // **Never past the next gate this car still owes.** Distance alone was
+    // trusted, and it is wrong in two ways the replays show: a re-locate onto
+    // the other branch of Suzuka's crossover handed cars 2000 units, and a car
+    // that crossed the line with a checkpoint missed went on climbing as if the
+    // lap had counted - first on the board while really eighth.
+    const covered = Math.min(loc.s + this.sLap * total, this.capS());
     if (covered > this.bestS) this.bestS = covered;
 
     // wrong way: are we pointing against the road?
@@ -676,7 +703,16 @@ export class Run {
       for (let i = 0; i < this.cps.length; i++) {
         const gate = this.cps[i];
         check(gate, () => {
-          if (i !== this.nextCp) return;
+          // The forgiving case: this is the gate after the one you are due, and
+          // you have not skipped one yet this lap. The last checkpoint can
+          // never be the one skipped, because nothing after it but the line.
+          const skip = this.forgive && !this._skipped && i === this.nextCp + 1;
+          if (i !== this.nextCp && !skip) return;
+          if (skip) {
+            this._skipped = true;
+            this.nextCp++;
+            this.splits.push(Math.round(this.time));
+          }
           this.nextCp++;
           this.splits.push(Math.round(this.time));
           this.respawnGate = gate;
@@ -695,6 +731,7 @@ export class Run {
               // exactly how a checkpoint goes silently missing.
               this.lap++;
               this.nextCp = 0;
+              this._skipped = false;
               this._sides.clear();
               this.respawnGate = this.finish;
               events.push('lap');
@@ -770,6 +807,12 @@ export class Run {
     this.sLap = this.lap;
     this.respawnGate = this.nextCp > 0 ? this.cps[this.nextCp - 1]
                                        : this.course.startGate();
+  }
+
+  /** The race distance of the next gate still owed: the cap on `bestS`. */
+  capS() {
+    const base = this.lap * this.course.total;
+    return base + (this.nextCp < this.cps.length ? this._cpS[this.nextCp] : this._finS);
   }
 
   progress01() {

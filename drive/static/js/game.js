@@ -4888,6 +4888,7 @@ function applyPhase() {
   // race you are actually in: somebody who walked in after the lights is
   // practising on the same road and drives one lap like anyone else.
   S.run.laps = (S.raceMode && S.racePhase === 'racing') ? raceLaps() : 1;
+  S.run.forgive = S.raceMode && S.racePhase === 'racing';
   const p = S.previewPhase || S.racePhase;      // `?panel=qual|racing`
   const [text, racing] = PHASE_LABEL[p] || PHASE_LABEL.free;
   setMode(text, racing);
@@ -6841,9 +6842,17 @@ function renderStandings(order) {
   // finisher keeps rolling and its progress keeps climbing past the flag - so
   // a finisher's row shows its time and is skipped as a reference. The leader
   // on the road has nothing in front of it and says nothing.
+  //
+  // Except under a finisher: the first car still driving has nobody on the
+  // road to measure to, so it shows how far it is from the flag instead.
+  // `_finS` is missing from a `course.js` cached from before this, and then
+  // the cell is left blank as it always was.
   let ahead = null;
+  const flag = S.run._finS != null &&
+               { s: S.run._finS + (S.run.laps - 1) * S.course.total };
   el.innerHTML = order.map((e, i) => {
-    const cell = e.ms != null ? fmt(e.ms) : (ahead ? gapLabel(ahead, e) : '');
+    const ref = ahead || (i > 0 && flag);
+    const cell = e.ms != null ? fmt(e.ms) : (ref ? gapLabel(ref, e) : '');
     if (e.ms == null) ahead = e;
     return `
     <div class="st-row${e.self ? ' me' : ''}">

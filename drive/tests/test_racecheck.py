@@ -590,3 +590,30 @@ def test_a_clean_race_flags_nobody(env):
             "b": _frames(_walk(TRACK, tuning.MAX_SPEED * 0.5, A.REPLAY_HZ)),
         }}
         assert A._judge_race(r) == {}
+
+
+def test_crossing_the_line_of_a_circuit_does_not_freeze_progress():
+    """The window wraps onto station 0. Clipped at the last station, it held a
+    car that had crossed the line on the old end of the ribbon until it was
+    `CORRIDOR` away, then credited the sixty units all at once."""
+    ring = tracks_mod.get("silverstone")
+    line = ring["line"]
+    n = len(line)
+    w = racecheck.Watcher()
+    w.hint, w.next_prog_ms = n - 6, 1
+    t = 10
+    seen = []
+    for i in list(range(n - 6, n)) + list(range(0, 12)):
+        t += racecheck.PROG_SAMPLE_MS
+        racecheck.sample_progress(w, ring, line[i]["p"], t)
+        seen.append(w.prog)
+    steps = [b - a for a, b in zip(seen, seen[1:])]
+    assert max(steps) < 10, steps
+
+
+def test_the_grid_behind_the_line_is_not_a_lap_done():
+    ring = tracks_mod.get("silverstone")
+    line = ring["line"]
+    w = racecheck.Watcher()
+    racecheck.sample_progress(w, ring, line[len(line) - 4]["p"], 10)
+    assert w.prog < 50, w.prog
