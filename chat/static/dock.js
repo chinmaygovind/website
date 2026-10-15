@@ -8,10 +8,15 @@
   var SITE = BASE.indexOf('cgovind.com') >= 0 ? 'https://cgovind.com' : '';
   var IO_SRC = 'https://cdn.socket.io/4.7.5/socket.io.min.js';
   var GAME_ICONS = { drive: '🏎️', kot: '👑', ers: '🃏', ttr: '🚂' };
+  // Which game's page this is, so its channel can be pinned before anybody
+  // has joined it (see `/api/channels`).
+  var HERE = /^drive\./.test(location.hostname) ? 'drive' : '';
+  // Channels that never toast or beep: everybody on a game, not your room.
+  var QUIET = { drive: true };
 
   var S = {
     me: null, unread: 0, open: false, view: 'list', tab: 'chats',
-    convs: [], conv: null, msgs: [], reads: {}, canSend: true, more: false,
+    convs: [], channels: [], conv: null, msgs: [], reads: {}, canSend: true, more: false,
     typing: {}, rooms: null, picked: {}, pickMode: 'new', muted: false, socket: null,
     toastTimer: null,
   };
@@ -203,7 +208,8 @@
 
   function loadList() {
     var load = S.tab === 'chats'
-      ? api('/api/conversations').then(function (j) { S.convs = j.conversations; })
+      ? Promise.all([api('/api/conversations'), api('/api/channels?here=' + HERE)])
+        .then(function (r) { S.convs = r[0].conversations; S.channels = r[1].channels; })
       : api('/api/friends').then(function (j) { S.friends = j.friends; });
     load.then(function () { if (split()) drawList(); else render(); })
       .catch(function (e) { flash(e.message); });
@@ -224,6 +230,11 @@
     }));
     var body = h('div', { class: 'scroll' });
     if (S.tab === 'chats') {
+      if (S.channels.length) {
+        body.appendChild(h('div', { class: 'label', text: 'Pinned' }));
+        S.channels.forEach(function (ch) { body.appendChild(channelRow(ch)); });
+        body.appendChild(h('div', { class: 'label', text: 'Chats' }));
+      }
       if (!S.convs.length) body.appendChild(h('p', { class: 'muted', text: 'No chats yet.' }));
       S.convs.forEach(function (c) {
         var other = c.is_group ? null : c.members.filter(function (m) { return m.id !== S.me.id; })[0];
@@ -264,6 +275,25 @@
       S.picked = {}; S.pickMode = 'new'; S.view = 'pick'; render();
     } });
     mount('side', [header('Chat', null, add), tabs, body, footer()]);
+  }
+
+  function channelRow(ch) {
+    var c = ch.conversation, unread = c ? c.unread : 0;
+    var last = c && c.last;
+    var preview = !last ? ch.sub : last.kind === 'invite' ? 'Game invite' :
+      last.kind === 'system' ? ch.sub : nameOf(c, last.sender) + ': ' + last.body;
+    return h('button', { class: 'row' + (unread ? ' unread' : '') + (S.conv && c && S.conv.id === c.id ? ' sel' : ''),
+                         onclick: function () { openChannel(ch.key); } }, [
+      h('span', { class: 'who' }, [h('span', { class: 'av group', text: ch.key === 'drive' ? GAME_ICONS.drive : '🏁' })]),
+      h('span', { class: 'mid' }, [h('b', { text: ch.title }), h('small', { text: preview })]),
+      unread ? h('span', { class: 'count', text: String(unread) }) : null,
+    ]);
+  }
+
+  function openChannel(key) {
+    return api('/api/channels', { method: 'POST', body: { key: key } })
+      .then(function (j) { toggle(true); openThread(j.conversation.id); return j.conversation; })
+      .catch(function (e) { toggle(true); flash(e.message); });
   }
 
   function personRow(p) {
@@ -377,8 +407,10 @@
     var c = S.conv;
     if (!c) return;
     var other = c.is_group ? null : c.members.filter(function (m) { return m.id !== S.me.id; })[0];
-    var sub = c.is_group ? c.members.length + ' people' : (other ? other.status : '');
-    var title = [h('b', { text: c.title }), h('small', { text: sub })];
+    var room = /^lobby:[a-z]+:(\w+)$/.exec(c.channel || '');
+    var n = c.members.length + (c.members.length === 1 ? ' person' : ' people');
+    var sub = room ? 'Room ' + room[1] + ' · ' + n : c.is_group ? n : (other ? other.status : '');
+    var title = [h('b', { text: room ? 'Your lobby' : c.title }), h('small', { text: sub })];
     var menuBtn = h('button', { class: 'icon', 'aria-label': 'Options', text: '⋯',
                                 onclick: function () { S.menu = !S.menu; render(); } });
     var log = h('div', { class: 'scroll log' });
@@ -398,7 +430,7 @@
     if (typers.length) log.appendChild(h('div', { class: 'typing',
       text: typers.map(function (u) { return nameOf(c, Number(u)); }).join(', ') + ' typing…' }));
 
-    var parts = [header(title, split() ? null : showList, menuBtn)];
+    var parts = [header(title, split() ? null : showList, c.channel ? null : menuBtn)];
     if (S.menu) parts.push(threadMenu(c, other));
     parts.push(log);
     parts.push(S.canSend ? composer(c) : h('div', { class: 'foot', text: 'You can\'t send messages here.' }));
@@ -594,9 +626,9 @@
   function onMessage(m) {
     var here = S.open && S.view === 'thread' && S.conv && S.conv.id === m.conversation_id && !document.hidden;
     if (S.conv && m.conversation_id === S.conv.id) addMessage(m);
-    if (m.sender !== S.me.id && m.kind !== 'system') {
+    if (m.sender !== S.me.id && m.kind !== 'system' && !QUIET[m.channel]) {
       if (!here) {
-        var c = S.convs.filter(function (x) { return x.id === m.conversation_id; })[0];
+        var c = S.convs.concat(S.channels.map(function (ch) { return ch.conversation; }).filter(Boolean)).filter(function (x) { return x.id === m.conversation_id; })[0];
         var named = function (conv) { m.sender_name = nameOf(conv, m.sender); toast(m); };
         if (c) named(c);
         else api('/api/conversations/' + m.conversation_id).then(function (j) { named(j.conversation); })
@@ -655,6 +687,7 @@
   window.cgvChat = {
     ready: false,
     open: function (userId) { return userId ? openWith(userId) : toggle(true); },
+    channel: openChannel,
     invite: inviteTo,
     person: function (userId) { return api('/api/people/' + userId); },
     follow: function (userId, on) { return api('/api/follow/' + userId, { method: on ? 'POST' : 'DELETE' }); },

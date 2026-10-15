@@ -21,6 +21,8 @@ class Conversation(db.Model):
     name = db.Column(db.String(60), nullable=True)
     # "<low id>:<high id>" for a DM, NULL for a group. Unique, so two people
     # opening a chat with each other at the same moment get the one thread.
+    # A channel (a group nobody creates - see `CHANNELS` in app.py) keeps its
+    # key here too, as "ch:<key>", so it is found the same way a DM is.
     dm_key = db.Column(db.String(24), unique=True, nullable=True)
     created_by = db.Column(db.Integer, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

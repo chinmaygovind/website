@@ -23,6 +23,9 @@ SHARED = [
     "CREATE TABLE kot_games (id INTEGER PRIMARY KEY, code TEXT, status TEXT, max_players INT,"
     " created_at TEXT, last_activity_at TEXT)",
     "CREATE TABLE kot_players (id INTEGER PRIMARY KEY, game_id INT, user_id INT)",
+    "CREATE TABLE drive_games (id INTEGER PRIMARY KEY, code TEXT, status TEXT, max_players INT,"
+    " created_at TEXT, last_activity_at TEXT)",
+    "CREATE TABLE drive_players (id INTEGER PRIMARY KEY, game_id INT, user_id INT)",
 ]
 
 
@@ -47,7 +50,7 @@ def clean():
         with db.engine.begin() as c:
             for t in ("chat_reports", "chat_messages", "chat_members", "chat_conversations",
                       "chat_follows", "chat_blocks", "chat_prefs", "users", "user_profiles",
-                      "user_presence", "kot_games", "kot_players"):
+                      "user_presence", "kot_games", "kot_players", "drive_games", "drive_players"):
                 c.execute(text("DELETE FROM %s" % t))
             for i, name in enumerate(["chinmay", "tyler", "sam", "dana"], start=1):
                 c.execute(text("INSERT INTO users VALUES (:i, :n, 0)"), {"i": i, "n": name})
@@ -237,3 +240,85 @@ def test_socket_push_reaches_only_members():
 def test_guest_socket_is_refused():
     guest = chat.socketio.test_client(chat.app, flask_test_client=chat.app.test_client())
     assert not guest.is_connected()
+
+
+# ---------------------------------------------------------------------------
+# Channels: the Drive lobby and everybody on Drive
+# ---------------------------------------------------------------------------
+
+def seat(uid, code="ABCD", game_id=1):
+    with chat.app.app_context():
+        with db.engine.begin() as c:
+            if not c.execute(text("SELECT 1 FROM drive_games WHERE id = :g"), {"g": game_id}).first():
+                c.execute(text("INSERT INTO drive_games VALUES (:g, :c, 'waiting', 8, :t, :t)"),
+                          {"g": game_id, "c": code, "t": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")})
+            c.execute(text("INSERT INTO drive_players (game_id, user_id) VALUES (:g, :u)"),
+                      {"g": game_id, "u": uid})
+
+
+def unseat(uid):
+    with chat.app.app_context():
+        with db.engine.begin() as c:
+            c.execute(text("DELETE FROM drive_players WHERE user_id = :u"), {"u": uid})
+
+
+def pinned(uid, here=""):
+    return client(uid).get("/api/channels?here=" + here).get_json()["channels"]
+
+
+def test_your_lobby_is_pinned_only_while_you_are_in_the_room():
+    assert pinned(1) == []
+    seat(1)
+    (lobby,) = pinned(1)
+    assert lobby["key"] == "lobby:drive:ABCD" and lobby["title"] == "Your lobby"
+    unseat(1)
+    assert pinned(1) == []
+
+
+def test_only_people_in_the_room_can_join_its_lobby():
+    seat(1)
+    assert post(client(2), "/api/channels", {"key": "lobby:drive:ABCD"}).status_code == 403
+    r = post(client(1), "/api/channels", {"key": "lobby:drive:abcd"})
+    assert r.status_code == 200 and r.get_json()["conversation"]["channel"] == "lobby:drive:ABCD"
+
+
+def test_a_lobby_message_reaches_the_room_and_not_somebody_who_left(monkeypatch):
+    seat(1); seat(2); seat(3)
+    cid = [post(client(u), "/api/channels", {"key": "lobby:drive:ABCD"}).get_json()["conversation"]["id"]
+           for u in (1, 2, 3)][0]
+    unseat(3)
+    sent = []
+    monkeypatch.setattr(chat, "push", lambda ids, ev, p: sent.append((sorted(set(ids)), ev, p)))
+    post(client(1), "/api/conversations/%d/messages" % cid, {"body": "gg"})
+    (ids, ev, payload), = sent
+    assert ids == [1, 2] and payload["channel"] == "lobby:drive:ABCD"
+    assert client(2).get("/api/me").get_json()["unread"] == 1
+
+
+def test_the_drive_channel_is_pinned_on_drive_and_never_counts_toward_the_badge():
+    assert pinned(1) == [] and [c["key"] for c in pinned(1, "drive")] == ["drive"]
+    cid = post(client(1), "/api/channels", {"key": "drive"}).get_json()["conversation"]["id"]
+    post(client(2), "/api/channels", {"key": "drive"})
+    assert [c["key"] for c in pinned(1)] == ["drive"], "unpinned once you have joined"
+    post(client(2), "/api/conversations/%d/messages" % cid, {"body": "anyone up for spa"})
+    assert client(1).get("/api/me").get_json()["unread"] == 0
+    assert pinned(1)[0]["conversation"]["unread"] == 1
+
+
+def test_a_channel_is_not_in_the_ordinary_list_and_cannot_be_renamed_or_added_to():
+    cid = post(client(1), "/api/channels", {"key": "drive"}).get_json()["conversation"]["id"]
+    assert client(1).get("/api/conversations").get_json()["conversations"] == []
+    assert post(client(1), "/api/conversations/%d" % cid, {"name": "mine"}).status_code == 400
+    assert post(client(1), "/api/conversations/%d/members" % cid, {"user_ids": [2]}).status_code == 404
+
+
+def test_joining_a_channel_does_not_arrive_with_a_backlog():
+    cid = post(client(1), "/api/channels", {"key": "drive"}).get_json()["conversation"]["id"]
+    for i in range(3):
+        post(client(1), "/api/conversations/%d/messages" % cid, {"body": str(i)})
+    post(client(2), "/api/channels", {"key": "drive"})
+    assert pinned(2)[0]["conversation"]["unread"] == 0
+
+
+def test_an_unknown_channel_is_refused():
+    assert post(client(1), "/api/channels", {"key": "everyone"}).status_code == 403

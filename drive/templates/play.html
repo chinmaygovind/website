@@ -187,7 +187,7 @@
            of what it opens. The two behind are smaller and cut off by the edges
            of the box, which is what makes a crowd out of three heads rather
            than a row of three buttons. -->
-      <button class="hbtn" id="btnRoom" title="Room: players, track, chat">
+      <button class="hbtn" id="btnRoom" title="Room: players, track">
         <svg viewBox="0 0 24 24">
           <circle cx="12" cy="9.4" r="3"/>
           <path d="M6.6 19.6a5.4 5.4 0 0 1 10.8 0"/>
@@ -536,16 +536,6 @@
     </div>
   </div>
   <button class="btn ghost" id="btnLeave" style="border-color:#ff8a7a;color:#ff8a7a">Leave room</button>
-  <!-- Chat last, and pinned to the floor of the drawer: it takes whatever
-       height is left over, so the box you type into is at the bottom however
-       many people are in the room. M puts the cursor in it from the road. -->
-  <div class="side-chat">
-    <h4>Chat</h4>
-    <div id="chatLog"></div>
-    <form id="chatForm" autocomplete="off">
-      <input id="chatInput" placeholder="Message (Enter to send)" maxlength="200"/>
-    </form>
-  </div>
 </aside>
 {% endif %}
 

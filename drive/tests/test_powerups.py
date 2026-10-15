@@ -511,10 +511,6 @@ def test_a_box_and_then_using_it_both_come_back_over_the_socket(A, monkeypatch):
 
     cl.emit("use_item", {})
     got = _drain(cl)
-    if item == "grapple":
-        # Alone in the room there is nobody to hook: it is kept, and said so.
-        assert got["item_nothing"] and "item_used" not in got
-        return
     assert got["item_used"][-1]["pid"] == pid
     assert got["item_used"][-1]["item"] == item
     # What a box gives is random, and the boost is the one item a press does
@@ -1444,15 +1440,16 @@ def test_a_banana_is_smaller_than_a_shell(A, monkeypatch, item, off, hits):
 # The grapple
 # ---------------------------------------------------------------------------
 
-def test_a_grapple_hooks_the_car_ahead_in_reach_and_keeps_itself_otherwise(A, monkeypatch):
+def test_a_grapple_hooks_the_car_ahead_in_reach_and_is_wasted_otherwise(A, monkeypatch):
     r = _room(A)
     _car(A, r, "a")["prog"] = 100.0
     _car(A, r, "far", at=(0.0, 0.0, -200.0))["prog"] = 150.0
     sent = []
     monkeypatch.setattr(A.socketio, "emit", lambda ev, d=None, **k: sent.append((ev, d)))
-    A._item_queue(r, "a").append("grapple")
-    assert A._spend_item(r, "a") is None, "fired at a car out of reach"
-    assert A._item_queue(r, "a") == ["grapple"]
+    A._item_queue(r, "a").extend(["grapple", "grapple"])
+    assert A._spend_item(r, "a") == "grapple"
+    assert A._item_queue(r, "a") == ["grapple"], "a miss still spends it"
+    assert not [e for e, _ in sent if e == "item_grapple"], "hooked a car out of reach"
     _car(A, r, "near", at=(0.0, 0.0, -30.0))["prog"] = 140.0
     _car(A, r, "behind", at=(0.0, 0.0, 5.0))["prog"] = 90.0
     assert A._spend_item(r, "a") == "grapple"
@@ -1479,3 +1476,28 @@ def test_a_real_bot_world_is_yanked_by_a_grapple(A):
         assert w.rt.ctx.eval("WORLDS['JSGR'].get('b1').car.itemBoost") == 1.2
     finally:
         botsim.drop("JSGR")
+
+
+def test_the_grapple_is_a_mid_pack_item(A):
+    r = _room(A, "racing")
+    pids = _field(A, r, [900.0, 600.0, 300.0, 10.0])
+    mid = [p for p in pids if A._race_band(r, p) == "mid"]
+    assert mid and "grapple" in {A._roll_item(r, mid[0]) for _ in range(600)}
+    for p in (pids[0], pids[-1]):
+        assert "grapple" not in {A._roll_item(r, p) for _ in range(600)}
+
+
+@pytest.mark.parametrize("phase", ["free", "racing"])
+@pytest.mark.parametrize("held", ["boost", "star"])
+def test_a_box_never_hands_you_a_second_boost_or_star(A, phase, held):
+    r = _room(A, phase)
+    pids = _field(A, r, [900.0, 600.0, 300.0, 10.0])
+    A._item_queue(r, pids[-1]).append(held)
+    assert held not in {A._roll_item(r, pids[-1]) for _ in range(800)}
+
+
+def test_a_lit_star_is_a_star_you_already_have(A):
+    r = _room(A, "racing")
+    pids = _field(A, r, [900.0, 600.0, 300.0, 10.0])
+    r["cars"][pids[-1]]["flags"] = A.racecheck.FLAG_STAR
+    assert "star" not in {A._roll_item(r, pids[-1]) for _ in range(800)}

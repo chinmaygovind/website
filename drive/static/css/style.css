@@ -2684,10 +2684,6 @@ body.touch.side-open .hud-tr { transform: none; }
    listed and whatever else is above it. The log itself is what stretches -
    capping it left the input floating half way up the drawer with a hole under
    it, which is exactly what "chat at the bottom" is not. */
-.side-chat { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: auto; }
-#chatLog { flex: 1; min-height: 70px; overflow: auto; font-size: .82rem; }
-.cm { padding: .1rem 0; line-height: 1.35; word-break: break-word; }
-#chatInput { font-family: var(--sans); font-size: .85rem; padding: .3rem .45rem; border-width: 1px; }
 
 /* --- touch controls -------------------------------------------------------
    Two thumb clusters pinned to the bottom corners: steering left, pedals right

@@ -51,6 +51,19 @@ SITE_URL = os.environ.get("MAIN_SITE_URL", "https://cgovind.com")
 ORIGIN_RE = re.compile(os.environ.get("CHAT_ORIGIN_RE", r"^https://([a-z0-9-]+\.)?cgovind\.com$"))
 
 MAX_BODY = 2000
+
+# **Channels**: groups that exist because of where you are rather than who you
+# asked. `drive` is everybody on Drive; `lobby:drive:<code>` is one Drive room,
+# open only to people seated in it, and it is what replaced the chat box in
+# the room's drawer. Both are pinned at the top of the Chats tab, never in the
+# list under it. Stored as an ordinary group with `dm_key = "ch:<key>"`.
+#
+# The global one is quiet: it never toasts, never beeps and never counts
+# toward the tab's badge, because a room full of strangers talking should not
+# be able to interrupt somebody's race. A lobby does all three - it is the
+# room you are sitting in.
+CHANNEL_NAMES = {"drive": "Drive"}
+QUIET = ("drive",)
 MAX_GROUP = 25
 PAGE = 50
 
@@ -186,6 +199,49 @@ def stamp(dt):
     return dt.isoformat() + "Z" if dt else None
 
 
+def channel_of(c):
+    """The channel key, or None for an ordinary DM or group."""
+    return c.dm_key[3:] if c and c.dm_key and c.dm_key.startswith("ch:") else None
+
+
+def lobby_room(key):
+    """`(game, code)` for a lobby key, or None."""
+    parts = (key or "").split(":")
+    if len(parts) == 3 and parts[0] == "lobby" and parts[1] in rooms.GAMES and parts[2]:
+        return parts[1], parts[2].upper()
+    return None
+
+
+def may_join(uid, key):
+    if key in CHANNEL_NAMES:
+        return True
+    room = lobby_room(key)
+    return bool(room) and rooms.is_in(conn(), uid, *room)
+
+
+def channel(uid, key):
+    """The channel's conversation with `uid` in it, made on first use."""
+    c = Conversation.query.filter_by(dm_key="ch:" + key).first()
+    if not c:
+        room = lobby_room(key)
+        c = Conversation(is_group=True, dm_key="ch:" + key, created_by=uid,
+                         name=CHANNEL_NAMES.get(key) or "Lobby " + room[1])
+        db.session.add(c)
+        try:
+            db.session.flush()
+        except IntegrityError:              # somebody else opened it first
+            db.session.rollback()
+            c = Conversation.query.filter_by(dm_key="ch:" + key).first()
+    if not membership(uid, c.id):
+        # Joining reads everything already there, so a channel never arrives
+        # with a backlog of unread messages from before you turned up.
+        newest = db.session.execute(db.text(
+            "SELECT MAX(id) FROM chat_messages WHERE conversation_id = :c"), {"c": c.id}).scalar() or 0
+        db.session.add(Member(conversation_id=c.id, user_id=uid, last_read_id=newest))
+    db.session.commit()
+    return c
+
+
 def message_dict(m):
     return {"id": m.id, "conversation_id": m.conversation_id, "sender": m.sender_id,
             "kind": m.kind, "body": m.body, "game": m.game, "room": m.room,
@@ -217,6 +273,7 @@ def conversation_dict(c, uid, hidden=None):
     unread = q.filter(Message.id > (mine.last_read_id if mine else 0),
                       Message.sender_id != uid).count()
     return {"id": c.id, "is_group": c.is_group, "name": c.name, "title": title,
+            "channel": channel_of(c),
             "members": members, "last": message_dict(last) if last else None,
             "unread": unread, "at": stamp(c.last_message_at)}
 
@@ -233,6 +290,12 @@ def post_message(uid, c, kind="text", text_body="", game=None, room=None):
     db.session.commit()
     payload = message_dict(m)
     ids = member_ids(c.id)
+    key = payload["channel"] = channel_of(c)
+    room = lobby_room(key)
+    if room:
+        # Only the people still in the room: a lobby you walked out of stops
+        # talking to you, although the membership row stays.
+        ids = [i for i in ids if rooms.is_in(conn(), i, *room)]
     # Somebody who blocked the sender never has it pushed, and never sees it in
     # history either - `messages` filters the same way.
     deaf = {b.user_id for b in Block.query.filter(Block.target_id == uid,
@@ -286,7 +349,11 @@ def index():
 def api_me(uid):
     hidden = blocked_by(uid)
     total = 0
+    quiet = {c.id for c in Conversation.query.filter(
+        Conversation.dm_key.in_(["ch:" + k for k in QUIET]))}
     for m in Member.query.filter_by(user_id=uid):
+        if m.conversation_id in quiet:
+            continue
         q = Message.query.filter(Message.conversation_id == m.conversation_id,
                                  Message.id > m.last_read_id, Message.sender_id != uid)
         if hidden:
@@ -318,6 +385,8 @@ def api_conversations(uid):
         hidden = blocked_by(uid)
         convs = (Conversation.query.join(Member, Member.conversation_id == Conversation.id)
                  .filter(Member.user_id == uid)
+                 .filter(or_(Conversation.dm_key.is_(None),
+                             ~Conversation.dm_key.startswith("ch:")))
                  .order_by(Conversation.last_message_at.desc()).limit(50).all())
         return jsonify({"conversations": [conversation_dict(c, uid, hidden) for c in convs]})
 
@@ -354,6 +423,40 @@ def api_conversations(uid):
     return jsonify({"conversation": conversation_dict(c, uid)})
 
 
+@app.route("/api/channels", methods=["GET", "POST", "OPTIONS"])
+@login_required
+def api_channels(uid):
+    """GET: what to pin above the Chats list - the lobby of every Drive room you
+    are in, and the Drive channel when you are on Drive (`?here=drive`) or have
+    joined it. POST `{key}`: join one and get the conversation back."""
+    if request.method == "POST":
+        key = (body().get("key") or "").strip()
+        room = lobby_room(key)
+        if room:
+            key = "lobby:%s:%s" % room
+        if not may_join(uid, key):
+            return err("You're not in that room.", 403)
+        return jsonify({"conversation": conversation_dict(channel(uid, key), uid)})
+
+    keys = ["lobby:drive:" + r["code"] for r in rooms.mine(conn(), uid) if r["game"] == "drive"]
+    joined = {c.dm_key[3:]: c for c in Conversation.query
+              .join(Member, Member.conversation_id == Conversation.id)
+              .filter(Member.user_id == uid, Conversation.dm_key.startswith("ch:"))}
+    for key in CHANNEL_NAMES:
+        if key in joined or request.args.get("here") == key:
+            keys.append(key)
+    hidden = blocked_by(uid)
+    out = []
+    for key in keys:
+        c = joined.get(key)
+        room = lobby_room(key)
+        out.append({"key": key,
+                    "title": "Your lobby" if room else CHANNEL_NAMES[key],
+                    "sub": ("Room %s" % room[1]) if room else "Everyone on " + CHANNEL_NAMES[key],
+                    "conversation": conversation_dict(c, uid, hidden) if c else None})
+    return jsonify({"channels": out})
+
+
 def _conversation_for(uid, cid):
     c = db.session.get(Conversation, cid)
     if not c or not membership(uid, cid):
@@ -368,7 +471,7 @@ def api_conversation(uid, cid):
     if not c:
         return err("Not found.", 404)
     if request.method == "POST":                       # rename a group
-        if not c.is_group:
+        if not c.is_group or channel_of(c):
             return err("Only groups have names.")
         c.name = (body().get("name") or "").strip()[:60] or None
         db.session.commit()
@@ -432,7 +535,7 @@ def api_read(uid, cid):
 @login_required
 def api_add_members(uid, cid):
     c = _conversation_for(uid, cid)
-    if not c or not c.is_group:
+    if not c or not c.is_group or channel_of(c):
         return err("Not found.", 404)
     try:
         ids = {int(i) for i in body().get("user_ids") or []} - set(member_ids(cid))

@@ -598,9 +598,14 @@ with how late it was and what the rooms were doing.
     victim keeps `GRAPPLE_KEEP` of its speed, and every screen draws an orange
     rope between them (`addRope`). It is not a shot - `_grapple` emits
     `item_grapple` and each browser applies its own half, `BotWorld.grab` a
-    bot's. **Nobody in reach keeps it in the slot** (`item_nothing`, *Nobody in
-    reach*), and a bot holds it the same way it holds a red with no target.
-    Mid and back bands only, plus practice.
+    bot's. **Nobody in reach wastes it**: it is spent and announced as an
+    ordinary `item_used`, which the thrower sees as *Grapple missed!*. A bot
+    still holds it until somebody is in reach, the way it holds a red.
+    Mid band only, plus practice: it needs somebody close in front, which is
+    what being in the pack means.
+  - **A box never pays a second boost or a second star** (`_roll_item`): not
+    while one is already in a slot (an open boost window keeps the boost
+    there), and not a star while `FLAG_STAR` says one is lit.
   - **Nothing hits a car that has never been sent one frame of it.** `_fire`
     runs in a socket handler; `_tick_shots` runs at the top of the next tick
     and `_snapshot` at the bottom of the same one - so a shot thrown at

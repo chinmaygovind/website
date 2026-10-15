@@ -3265,10 +3265,11 @@ BOMB_LOB = 18.0           # and how far ahead of your own car it is lobbed
 BOMB_FLY_MS = 900         # how long it travels before it settles
 BOMB_FUSE_MS = 3000       # and how long after that until it goes off
 BOMB_BLAST = 16.0         # how far the blast reaches
-# **The grapple hooks the nearest car ahead and reels the two of you together**:
+# **The grapple hooks the nearest car ahead and reels the two of you together**,
+# and only the middle of the pack draws it - the cars with somebody close ahead:
 # you get pulled forward, they get yanked back. It needs somebody within
-# `GRAPPLE_REACH`, so with nobody there it stays in the slot rather than being
-# thrown at nothing. A shield eats it and a star ignores it, like any hit.
+# `GRAPPLE_REACH`; with nobody there it is simply wasted, like a red shell
+# thrown with nothing ahead. A shield eats it and a star ignores it, like any hit.
 GRAPPLE_REACH = 60.0      # straight-line units to the car it hooks
 GRAPPLE_MS = 1200         # how long the rope is out, and the pull lasts
 PRACTICE_ITEMS = ("boost", "green", "red", "banana", "shield", "bomb", "grapple")
@@ -3282,7 +3283,7 @@ def _room(code):
     r = _rooms.get(code)
     if not r:
         r = _rooms[code] = {"code": code, "phase": "free", "cars": {}, "t0": None,
-                            "deadline": None, "finish": [], "chat": [],
+                            "deadline": None, "finish": [],
                             "loop": None, "seq": 0,
                             # qualifying -> grid
                             "qual": {}, "qual_end": None, "grid": {}, "splits": {},
@@ -3437,7 +3438,7 @@ ITEM_ODDS = {
     # the comeback: a car climbing through the pack is the one everybody
     # around it is throwing at.
     "back": {"boost": 30, "star": 28, "red": 16, "bomb": 10, "shield": 8,
-             "blue": 8, "grapple": 6},
+             "blue": 8},
 }
 
 
@@ -3448,10 +3449,15 @@ def _roll_item(r, pid):
     a session with no leader and no last place, one is a car going quicker for
     no reason and the other has nobody to aim at.
     """
+    # **Never a second boost or a second star**: not while one is already in a
+    # slot (an open boost window keeps it there), nor a star while one is lit.
+    no = set(_item_queue(r, pid)) & {"boost", "star"}
+    if ((r["cars"].get(pid) or {}).get("flags") or 0) & racecheck.FLAG_STAR:
+        no.add("star")
     if r["phase"] != "racing":
-        return random.choice(PRACTICE_ITEMS)
+        return random.choice([i for i in PRACTICE_ITEMS if i not in no])
     odds = ITEM_ODDS[_race_band(r, pid)]
-    items = list(odds)
+    items = [i for i in odds if i not in no]
     return random.choices(items, weights=[odds[i] for i in items])[0]
 
 
@@ -4763,8 +4769,8 @@ def on_join_room(data=None):
     r = _room(code)
     c = _car(r, me.pid)
     # The livery decides the colour, not the column - the same rule `to_dict`
-    # follows and for the same reason. This dict is what the standings, the chat
-    # line, the pole message and the stored replay all read, so a stale column
+    # follows and for the same reason. This dict is what the standings, the
+    # pole message and the stored replay all read, so a stale column
     # here would put somebody's hashed colour on every one of those while their
     # car on the road wore the one they chose. Taken on every connect rather
     # than at join, so changing a livery and reloading is enough.
@@ -4787,7 +4793,7 @@ def on_join_room(data=None):
     emit("room_hello", {"track": game.track,
                         "me": seat,
                         "players": _roster(game),
-                        "race": _race_state(r), "chat": r["chat"][-30:],
+                        "race": _race_state(r),
                         "settings": dict(r["settings"]),
                         "items": list(_item_queue(r, me.pid)),
                         "boxes": _boxes(r),
@@ -5821,8 +5827,6 @@ def on_use_item(data=None):
         return
     if _spend_item(r, pid, back=bool((data or {}).get("back"))) is not None:
         emit("items", {"slots": _item_queue(r, pid)})
-    elif _item_queue(r, pid)[:1] == ["grapple"]:
-        emit("item_nothing", {"item": "grapple"})
 
 
 # The boost is not one press, it is a **window**: the first press opens it, and
@@ -5889,15 +5893,17 @@ def _spend_item(r, pid, back=False):
 
 
 def _grapple(r, pid, q, now):
-    """Hook the car in front and reel both of you in. Nobody in reach keeps it.
+    """Hook the car in front and reel both of you in. Nobody in reach wastes it.
 
     The pull is each car's own browser's to apply, the way a hit is: the owner
     gets a boost, the victim a yank backwards. A bot's half is `BotWorld`.
     """
     target = _grapple_target(r, pid)
-    if not target:
-        return None
     q.pop(0)
+    if not target:
+        _tally("grapple", "used")
+        _announce_use(r, pid, "grapple")
+        return "grapple"
     bots = _bot_pids(r)
     if pid in bots:
         _bot_item(r, pid, "grapple")
@@ -6644,26 +6650,6 @@ def _rate_race(game, standings, skip=()):
         out[pid] = {"before": mine, "after": st.elo, "delta": round(delta)}
     db.session.commit()
     return out
-
-
-@socketio.on("chat")
-def on_chat(data=None):
-    ent = _sid_room.get(request.sid)
-    if not ent:
-        return
-    code, pid = ent
-    text = ((data or {}).get("text") or "").strip()[:200]
-    if not text:
-        return
-    r = _rooms.get(code)
-    if not r:
-        return
-    c = _car(r, pid)
-    msg = {"pid": pid, "name": c["name"], "color": c["color"], "text": text,
-           "t": _now_ms()}
-    r["chat"].append(msg)
-    del r["chat"][:-60]
-    socketio.emit("chat", msg, room="room:" + code)
 
 
 @socketio.on("leave")

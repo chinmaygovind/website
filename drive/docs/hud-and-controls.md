@@ -708,10 +708,10 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   what it opens. It is a head and shoulders with two smaller ones behind, run
   off the edges of the 24-unit box so it reads as a crowd rather than as three
   buttons. The drawer reads top to bottom as who is here, what the next
-  race will be, the way out, and then the talking: **chat is last and the box you
-  type into is on the floor of the panel**, which is `#chatLog` stretching rather
-  than the block being pushed down - capping the log left the input floating half
-  way up with a hole under it.
+  race will be, and the way out. **There is no chat in it any more**: the room's
+  talking is its lobby channel in the site-wide chat dock (`chat/CLAUDE.md`,
+  **Channels**), pinned at the top of the dock's Chats tab while you are seated,
+  next to a Drive-wide channel. Its messages toast over the game like any DM.
 - **Race settings are in the drawer, drawn for everybody and pressable by the
   host.** One switch so far (Qualifying), not a host-only panel: what the next
   race will be is something everyone is about to drive, so it cannot be a rule
@@ -1086,7 +1086,7 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   so there is none. `P` opens the track switcher, which is the most common thing
   there is to do that is not driving. **Enter is the host's start button** in a
   room, which is why it is no longer a third way to press T, along with
-  Backspace - and inside the chat box it still sends the message.
+  Backspace.
 - **A replay takes the driving keys, because nothing is being driven.** Space is
   play/pause, left/right seek five seconds, up/down step through the speeds,
   comma and full stop step **one ghost frame** (1/15s - the recording has no state
@@ -1132,9 +1132,9 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   **The ears ride the camera**, so a look back also swaps the side a rival arrives
   from - correctly, since you are looking at them when it happens.
 - **`M` is the one key that means two things, and it is the right two.** Solo it
-  mutes; in a room it puts the cursor in the chat box (opening the drawer), and
-  Enter sends and hands the keyboard straight back to the car - staying in the box
-  is what a chat window does, and this is a driving game. Muting is still in
+  mutes; in a room it opens the room's lobby in the chat dock
+  (`cgvChat.channel`), and Escape closes the dock again. A guest has no dock,
+  so for a guest it does nothing. Muting is still in
   settings with every other preference, and the Controls sheet lists whichever M
   you have (`.room-only` / `.solo-only`, the same mechanism as `.touch-only`).
   Opening it clears `keys`: the keyup for anything you were holding is delivered

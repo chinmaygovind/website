@@ -46,6 +46,29 @@ script, `static/dock.js`, that every logged-in page on every host loads.
 - **The admin can read every chat** at `/admin/chats` (in `accounts/admin.py`,
   read-only like the rest of the console), and the dock says so in its footer.
 
+## Channels
+
+- **A channel is a group nobody creates**: `drive` (everybody on Drive) and
+  `lobby:drive:<code>` (one Drive room). Stored as an ordinary group whose
+  `dm_key` is `ch:<key>`, so there was no migration. `/api/channels` GET says
+  what to pin and POST `{key}` joins one; joining marks everything already
+  there read.
+- **They are pinned, never listed**: the top of the Chats tab under a
+  "Pinned" label, and filtered out of `/api/conversations`. A lobby is pinned
+  while `rooms.mine` says you are seated in that room; `drive` while the dock
+  is on a drive host (`?here=drive`) or once you have joined it.
+- **A lobby is only for the room.** Joining needs `rooms.is_in`, and a message
+  is pushed only to members still seated, though nobody's row is deleted.
+- **`drive` is quiet** (`QUIET`): no toast, no beep, not in `/api/me`'s
+  unread total, only the count on its own row. A lobby toasts like a DM.
+- **No rename, no adding people, no menu** on a channel.
+- **It replaced Drive's chat box in the room drawer**, so a guest in a Drive
+  room has no chat at all now, and neither does the CrazyGames build, which
+  loads no dock.
+- ponytail: `conversation_dict` loads every member and their presence, which
+  is fine for a channel of dozens and is the first thing to cut if `drive`
+  ever has thousands.
+
 ## The dock (`static/dock.js`)
 
 - **Shadow DOM, so no game's CSS can reach it** - and so the one real trap:

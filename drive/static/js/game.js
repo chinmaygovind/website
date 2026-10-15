@@ -1733,13 +1733,6 @@ function bindInput() {
     };
     $('btnLapsDown').onclick = () => stepLaps(-1);
     $('btnLapsUp').onclick = () => stepLaps(1);
-    // Escape gets you out of the message box and back to the car. It never
-    // reaches the window handler - that one ignores anything typed into an
-    // input, which is what keeps WASD from driving while you write - so the
-    // way out has to be bound here.
-    $('chatInput').addEventListener('keydown', (e) => {
-      if (e.code === 'Escape') { e.preventDefault(); closeChat(); }
-    });
     renderSettings();
     showSide(true);           // you arrive in a lobby, so start with it open
   }
@@ -1748,29 +1741,19 @@ function bindInput() {
 function showSide(on) {
   document.body.classList.toggle('side-open', on);
   $('btnRoom').classList.toggle('on', on);
-  if (!on) closeChat();
 }
 
 /**
- * M: the cursor in the message box, without leaving the road.
- *
- * Anything held goes with it. The keyup for a key you were holding when you
- * started typing is delivered to the input and swallowed, so without this the
- * car would drive itself into the barrier at full throttle for as long as the
- * sentence took - and the window handler ignores keystrokes aimed at an input,
- * which is exactly what stops WASD steering while you write.
+ * M: the room's lobby chat, in the site-wide chat dock rather than a box in
+ * the drawer. The dock's own shadow root keeps WASD typed into it from
+ * reaching the car, and Escape closes it. Held keys are dropped first, for the
+ * same reason they always were: the keyup for a key held when focus moved is
+ * not the window's to see, and the car would drive on without you.
  */
 function openChat() {
-  const inp = $('chatInput');
-  if (!inp) return;
-  showSide(true);
+  if (!window.cgvChat || !window.cgvChat.ready) return;
   keys.clear();
-  inp.focus();
-}
-
-function closeChat() {
-  const inp = $('chatInput');
-  if (inp) inp.blur();
+  window.cgvChat.channel('lobby:drive:' + CFG.room);
 }
 
 /**
@@ -7889,7 +7872,6 @@ function connect() {
       startQualClock();
       if (S.ghostMode === 'pole') loadPoleGhost();
     }
-    (d.chat || []).forEach(addChat);
   });
   socket.on('roster', (d) => {
     renderRoster(d.players);
@@ -7928,6 +7910,12 @@ function connect() {
     // already on its way to the leader and there is nothing it can do about it.
     if (d && d.item === 'blue' && CFG.me && d.pid !== CFG.me.pid) S.sound.itemBlue();
     if (!d || !CFG.me || d.pid !== CFG.me.pid) return;
+    // A grapple only comes through here when it hooked nobody.
+    if (d.item === 'grapple') {
+      (S.sound.itemGrapple || S.sound.itemShell).call(S.sound);
+      toast('Grapple missed!');
+      return;
+    }
     S.sound[ITEM_SOUND[d.item] || 'itemShell']();
     const now = performance.now();
     if (d.item === 'boost') {
@@ -7944,7 +7932,6 @@ function connect() {
     toast((ITEM_LABEL[d.item] || d.item) + '!');
   });
   socket.on('item_held', (d) => { if (d) setHeld(d.pid, d.item); });
-  socket.on('item_nothing', () => toast('Nobody in reach'));
   socket.on('item_grapple', (d) => {
     if (!d) return;
     addRope(d.owner, d.pid, d.ms);
@@ -8108,7 +8095,6 @@ function connect() {
                                   : 'Qualifying off - last race, reversed');
     }
   });
-  socket.on('chat', addChat);
   socket.on('kicked', (d) => { if (CFG.me && d.pid === CFG.me.pid) location.href = '/lobbies'; });
   // The room ended under you - the host left, everybody left, or it expired.
   // The reason is carried to the lobby list and said there, because a page
@@ -8207,16 +8193,6 @@ function connect() {
       // plain http. The link is selected, so there is still something to do.
       toast('Press copy on your keyboard');
     }
-  };
-  // Enter sends it and hands the keyboard back to the car. Staying in the box
-  // is what a chat window does; this is a driving game, and the next thing you
-  // do after saying something is drive.
-  $('chatForm').onsubmit = (e) => {
-    e.preventDefault();
-    const inp = $('chatInput');
-    if (inp.value.trim()) socket.emit('chat', { text: inp.value.trim() });
-    inp.value = '';
-    inp.blur();
   };
   // Track picking is the switcher's job in both modes now - see pickTrack.
 }
@@ -9149,16 +9125,6 @@ function layoutRaceActions() {
   if (!row) return;
   const shown = [...row.children].filter((b) => b.style.display !== 'none');
   row.dataset.n = shown.length;
-}
-
-function addChat(m) {
-  const log = $('chatLog');
-  const d = document.createElement('div');
-  d.className = 'cm';
-  d.innerHTML = `<b style="color:${esc(m.color || '#fff')}">${esc(m.name)}</b> ${esc(m.text)}`;
-  log.appendChild(d);
-  while (log.children.length > 60) log.removeChild(log.firstChild);
-  log.scrollTop = log.scrollHeight;
 }
 
 // ---------------------------------------------------------------------------
