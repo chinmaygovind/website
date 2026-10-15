@@ -1812,7 +1812,7 @@ function renderSettings() {
 
 const ITEM_LABEL = { boost: 'Boost', green: 'Green shell', red: 'Red shell',
   blue: 'Blue shell', banana: 'Banana', shield: 'Shield', star: 'Star',
-  bomb: 'Bomb' };
+  bomb: 'Bomb', grapple: 'Grapple' };
 
 /**
  * What each item looks like in a slot.
@@ -1848,6 +1848,7 @@ const ICON_POSE = {
   shield: new THREE.Euler(-0.16, 0.42, 0),
   boost: new THREE.Euler(-0.16, 0.42, 0),
   banana: new THREE.Euler(-0.22, 0.5, 0),
+  grapple: new THREE.Euler(-0.16, 0.42, 0.35),
 };
 
 function itemIcon(item) {
@@ -2273,6 +2274,25 @@ function buildShot(kind) {
     g.add(spark);
     return g;
   }
+  if (kind === 'grapple') {
+    // A shaft, a ring to tie the rope to, and a J of hook with a barb on it.
+    const steel = new THREE.MeshLambertMaterial({ color: 0xb8c0cc, flatShading: true });
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 1.3, 6), steel);
+    shaft.position.y = 0.15;
+    g.add(shaft);
+    const eye = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.07, 5, 10),
+                               new THREE.MeshLambertMaterial({ color: 0xff8a2a, flatShading: true }));
+    eye.position.y = 0.95;
+    g.add(eye);
+    const hook = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.1, 5, 10, Math.PI), steel);
+    hook.position.set(0.38, -0.5, 0);
+    hook.rotation.z = Math.PI;
+    g.add(hook);
+    const barb = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.4, 4), steel);
+    barb.position.set(0.76, -0.38, 0);
+    g.add(barb);
+    return g;
+  }
   if (kind === 'banana') {
     // **A peel, not a fruit.** What is lying on the road is the thing you slip
     // on: a flattened crescent for the skin, three flaps splayed off one end,
@@ -2535,7 +2555,8 @@ function soot(car) {
 /** How a hit reads when it was yours. The verb is the item's, not the car's. */
 const HIT_SAID = { green: 'Green shell hit', red: 'Red shell hit',
                    blue: 'Blue shell hit', banana: 'Banana got',
-                   bomb: 'Bomb caught', star: 'Starred into' };
+                   bomb: 'Bomb caught', star: 'Starred into',
+                   grapple: 'Grappled' };
 
 /** A pid as a name, off the roster the room keeps. */
 function nameOf(pid) {
@@ -2719,6 +2740,41 @@ function addBlast(p, radius, blue) {
   S.renderer.scene.add(g);
   (S.blasts = S.blasts || []).push(g);
 }
+
+/**
+ * A grapple's rope: one line from the car that threw it to the car it hooked,
+ * redrawn every frame between the two as this screen draws them, until the
+ * pull is over. The pull itself is each car's own, in `item_grapple`.
+ */
+function addRope(owner, pid, ms) {
+  if (!S.renderer) return;
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(
+    [new THREE.Vector3(), new THREE.Vector3()]),
+    new THREE.LineBasicMaterial({ color: 0xff8a2a }));
+  line.frustumCulled = false;
+  S.renderer.scene.add(line);
+  (S.ropes = S.ropes || []).push({ owner, pid, until: performance.now() + ms, line });
+}
+
+function moveRopes(now) {
+  if (!S.ropes) return;
+  for (let i = S.ropes.length - 1; i >= 0; i--) {
+    const r = S.ropes[i], a = drawnCar(r.owner), b = drawnCar(r.pid);
+    if (now >= r.until || !a || !b) {
+      S.renderer.scene.remove(r.line);
+      r.line.geometry.dispose(); r.line.material.dispose();
+      S.ropes.splice(i, 1);
+      continue;
+    }
+    const at = r.line.geometry.attributes.position;
+    at.setXYZ(0, a.pos.x, a.pos.y + 0.6, a.pos.z);
+    at.setXYZ(1, b.pos.x, b.pos.y + 0.6, b.pos.z);
+    at.needsUpdate = true;
+  }
+}
+
+/** Of the speed a grappled car keeps: yanked back, not stopped like a hit. */
+const GRAPPLE_KEEP = 0.45;
 
 function moveBlasts(dt) {
   for (let i = S.blasts.length - 1; i >= 0; i--) {
@@ -6303,6 +6359,7 @@ function tyreSmoke(car, kind) {
 function render(dt, now) {
   const car = S.car;
   hitSmoke(dt);
+  moveRopes(now);
   animateItemBoxes(now);
   moveShots(dt);
   shellWarning(now);
@@ -6845,11 +6902,13 @@ function renderStandings(order) {
   //
   // Except under a finisher: the first car still driving has nobody on the
   // road to measure to, so it shows how far it is from the flag instead.
-  // `_finS` is missing from a `course.js` cached from before this, and then
-  // the cell is left blank as it always was.
+  // **Not gated on `_finS`.** `course.js` is untokened and cached for an hour,
+  // and a copy from before `_finS` existed left this cell blank for that hour
+  // after the deploy - which reads as the fix not working. The course length
+  // is where the flag is on every track to within a gate's width.
   let ahead = null;
-  const flag = S.run._finS != null &&
-               { s: S.run._finS + (S.run.laps - 1) * S.course.total };
+  const flag = { s: (S.run._finS != null ? S.run._finS : S.course.total) +
+                    (S.run.laps - 1) * S.course.total };
   el.innerHTML = order.map((e, i) => {
     const ref = ahead || (i > 0 && flag);
     const cell = e.ms != null ? fmt(e.ms) : (ref ? gapLabel(ref, e) : '');
@@ -7885,6 +7944,33 @@ function connect() {
     toast((ITEM_LABEL[d.item] || d.item) + '!');
   });
   socket.on('item_held', (d) => { if (d) setHeld(d.pid, d.item); });
+  socket.on('item_nothing', () => toast('Nobody in reach'));
+  socket.on('item_grapple', (d) => {
+    if (!d) return;
+    addRope(d.owner, d.pid, d.ms);
+    if (!CFG.me) return;
+    const now = performance.now();
+    if (d.owner === CFG.me.pid) {
+      // Reeled in: the pull toward them is a boost for as long as the rope is out.
+      // Guarded: `sound.js` is untokened, and a copy cached from before the
+      // grapple has no such method.
+      (S.sound.itemGrapple || S.sound.itemShell).call(S.sound);
+      S.car.itemBoost = d.ms / 1000;
+      S.itemUntil.itemBoost = now + d.ms;
+      S.renderer.kick(0.3);
+      toast('Grappled ' + nameOf(d.pid) + '!');
+    }
+    if (d.pid !== CFG.me.pid || S.car.star > 0) return;
+    if (S.car.shield > 0) {
+      S.car.shield = 0; S.sound.itemBlocked();
+      toast('Shield blocked ' + nameOf(d.owner) + "'s grapple!");
+      return;
+    }
+    S.car.vel.multiplyScalar(GRAPPLE_KEEP);
+    (S.sound.itemGrapple || S.sound.itemHit).call(S.sound);
+    S.renderer.kick(0.6);
+    toast('Grappled by ' + nameOf(d.owner) + '!');
+  });
   socket.on('item_blocked', (d) => {
     if (!d) return;
     // The thing you were holding took it. Worth its own sound: from the seat

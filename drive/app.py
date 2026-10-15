@@ -3265,7 +3265,13 @@ BOMB_LOB = 18.0           # and how far ahead of your own car it is lobbed
 BOMB_FLY_MS = 900         # how long it travels before it settles
 BOMB_FUSE_MS = 3000       # and how long after that until it goes off
 BOMB_BLAST = 16.0         # how far the blast reaches
-PRACTICE_ITEMS = ("boost", "green", "red", "banana", "shield", "bomb")
+# **The grapple hooks the nearest car ahead and reels the two of you together**:
+# you get pulled forward, they get yanked back. It needs somebody within
+# `GRAPPLE_REACH`, so with nobody there it stays in the slot rather than being
+# thrown at nothing. A shield eats it and a star ignores it, like any hit.
+GRAPPLE_REACH = 60.0      # straight-line units to the car it hooks
+GRAPPLE_MS = 1200         # how long the rope is out, and the pull lasts
+PRACTICE_ITEMS = ("boost", "green", "red", "banana", "shield", "bomb", "grapple")
 RACE_ITEMS = PRACTICE_ITEMS + ("blue", "star")
 
 _rooms = {}       # code -> live room state
@@ -3422,7 +3428,7 @@ ITEM_ODDS = {
     "front": {"banana": 34, "green": 18, "red": 16, "boost": 18, "shield": 14},
     # In the pack: everything, weighted toward what makes a move.
     "mid": {"red": 24, "banana": 14, "boost": 20, "green": 10, "bomb": 12,
-            "shield": 8, "star": 8, "blue": 4},
+            "shield": 8, "star": 8, "blue": 4, "grapple": 8},
     # Down the back: the items that exist to fix being there. **Boosts and
     # stars are over half of it**, because they are the two that make up road
     # by themselves - a red or a bomb needs a car in range, and at the back
@@ -3431,7 +3437,7 @@ ITEM_ODDS = {
     # the comeback: a car climbing through the pack is the one everybody
     # around it is throwing at.
     "back": {"boost": 30, "star": 28, "red": 16, "bomb": 10, "shield": 8,
-             "blue": 8},
+             "blue": 8, "grapple": 6},
 }
 
 
@@ -3557,6 +3563,19 @@ def _shell_target(r, owner, blue=False, behind=False):
         return max(back, key=lambda e: e[1]["prog"], default=(None, None))[0]
     ahead = [(pid, c) for pid, c in cars if c["prog"] > mine["prog"]]
     return min(ahead, key=lambda e: e[1]["prog"], default=(None, None))[0]
+
+
+def _grapple_target(r, owner):
+    """The nearest car ahead on the road that is also within `GRAPPLE_REACH`."""
+    mine = r["cars"].get(owner)
+    if not mine:
+        return None
+    ahead = sorted(((c["prog"], pid) for pid, c in r["cars"].items()
+                    if pid != owner and not c.get("gone") and c["prog"] > mine["prog"]))
+    for _, pid in ahead:
+        if sum((r["cars"][pid]["p"][i] - mine["p"][i]) ** 2 for i in range(3)) <= GRAPPLE_REACH ** 2:
+            return pid
+    return None
 
 
 def _ribbon_at(track, p, hint=0):
@@ -5802,6 +5821,8 @@ def on_use_item(data=None):
         return
     if _spend_item(r, pid, back=bool((data or {}).get("back"))) is not None:
         emit("items", {"slots": _item_queue(r, pid)})
+    elif _item_queue(r, pid)[:1] == ["grapple"]:
+        emit("item_nothing", {"item": "grapple"})
 
 
 # The boost is not one press, it is a **window**: the first press opens it, and
@@ -5848,6 +5869,8 @@ def _spend_item(r, pid, back=False):
             _tally(item, "used")
         _announce_use(r, pid, item, until=until)
         return item
+    if item == "grapple":
+        return _grapple(r, pid, q, now)
     q.pop(0)
     # Thrown is no longer held. The event goes out either way, because every
     # other screen is drawing the thing that was behind this car.
@@ -5863,6 +5886,33 @@ def _spend_item(r, pid, back=False):
     _tally(item, "used")
     _announce_use(r, pid, item, target=target)
     return item
+
+
+def _grapple(r, pid, q, now):
+    """Hook the car in front and reel both of you in. Nobody in reach keeps it.
+
+    The pull is each car's own browser's to apply, the way a hit is: the owner
+    gets a boost, the victim a yank backwards. A bot's half is `BotWorld`.
+    """
+    target = _grapple_target(r, pid)
+    if not target:
+        return None
+    q.pop(0)
+    bots = _bot_pids(r)
+    if pid in bots:
+        _bot_item(r, pid, "grapple")
+    if target in bots:
+        w = _bot_world(r)
+        if w:
+            try:
+                w.grab(target)
+            except Exception:
+                app.logger.exception("bot grab failed in room %s", r["code"])
+    _tally("grapple", "used")
+    _tally("grapple", "hit")
+    socketio.emit("item_grapple", {"pid": target, "owner": pid, "ms": GRAPPLE_MS},
+                  room="room:" + r["code"])
+    return "grapple"
 
 
 def _announce_use(r, pid, item, target=None, until=None):
@@ -6104,6 +6154,8 @@ def _tick_bot_items(r, now):
             continue
         if q[0] in ("red", "blue") and not _shell_target(r, pid, q[0] == "blue"):
             continue                       # nothing to aim at yet: keep hold of it
+        if q[0] == "grapple" and not _grapple_target(r, pid):
+            continue
         # A bot drops its bananas rather than lobbing them: it is defending a
         # place, which is what the item is for, and forwards is a throw that
         # needs a car in front to be worth anything.

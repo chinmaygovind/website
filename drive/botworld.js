@@ -92,6 +92,15 @@ class BotWorld {
     if (item === 'boost') b.car.itemBoost = 1.1;
     else if (item === 'star') b.car.star = 10;
     else if (item === 'shield') b.car.shield = 10;
+    else if (item === 'grapple') b.car.itemBoost = 1.2;   // reeled in: GRAPPLE_MS
+  }
+
+  /** A grapple hooked this bot: the same yank `item_grapple` gives a person. */
+  grab(pid) {
+    const b = this.get(pid);
+    if (!b || b.car.star > 0) return;
+    if (b.car.shield > 0) { b.car.shield = 0; return; }
+    b.car.vel.multiplyScalar(0.45);
   }
 
   /**

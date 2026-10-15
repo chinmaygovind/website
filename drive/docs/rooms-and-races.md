@@ -593,6 +593,14 @@ with how late it was and what the rooms were doing.
     the bang, which belong to the place rather than to any car. It will not go
     off on contact with the car that just threw it, which is the same clause
     that stops a shell hitting its own nose.
+  - **The grapple hooks the nearest car ahead within `GRAPPLE_REACH` (60)**
+    and reels the two together for `GRAPPLE_MS`: the thrower gets a boost, the
+    victim keeps `GRAPPLE_KEEP` of its speed, and every screen draws an orange
+    rope between them (`addRope`). It is not a shot - `_grapple` emits
+    `item_grapple` and each browser applies its own half, `BotWorld.grab` a
+    bot's. **Nobody in reach keeps it in the slot** (`item_nothing`, *Nobody in
+    reach*), and a bot holds it the same way it holds a red with no target.
+    Mid and back bands only, plus practice.
   - **Nothing hits a car that has never been sent one frame of it.** `_fire`
     runs in a socket handler; `_tick_shots` runs at the top of the next tick
     and `_snapshot` at the bottom of the same one - so a shot thrown at

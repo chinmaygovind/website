@@ -228,6 +228,11 @@ class World:
         if pid in self.bots:
             self._js("hit(%s)" % json.dumps(pid))
 
+    def grab(self, pid):
+        """A grapple hooked one of the bots. See `BotWorld.grab`."""
+        if pid in self.bots:
+            self._js("grab(%s)" % json.dumps(pid))
+
     def use(self, pid, item):
         """A bot spent a held item. See `BotWorld.use`."""
         if pid in self.bots:

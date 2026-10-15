@@ -626,6 +626,16 @@ export class Sound {
   }
 
   /** A held item taking a hit for you: a solid knock, and then nothing. */
+  /** The grapple: a whip of rope going out, then the ratchet reeling it in. */
+  itemGrapple() {
+    this._burst({ freq: 3200, q: 2.5, dur: 0.1, gain: 0.12 });
+    this._blip({ freq: 300, to: 1400, type: 'sawtooth', dur: 0.16, gain: 0.08 });
+    for (let i = 0; i < 6; i++) {
+      this._blip({ freq: 1800 - i * 120, type: 'square', dur: 0.025, gain: 0.07,
+                   delay: 0.22 + i * 0.13 });
+    }
+  }
+
   itemBlocked() {
     this._burst({ freq: 520, q: 0.5, dur: 0.14, gain: 0.2 });
     this._blip({ freq: 880, to: 620, type: 'square', dur: 0.1, gain: 0.1 });

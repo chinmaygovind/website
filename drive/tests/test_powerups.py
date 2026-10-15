@@ -1434,3 +1434,44 @@ def test_a_banana_is_smaller_than_a_shell(A, monkeypatch, item, off, hits):
                        "v": [0.0, 0.0, 0.0], "until": now + 10000})
     A._tick_shots(r, now)
     assert any(ev == "item_hit" and d["pid"] == "b" for ev, d in seen) == hits
+
+
+# ---------------------------------------------------------------------------
+# The grapple
+# ---------------------------------------------------------------------------
+
+def test_a_grapple_hooks_the_car_ahead_in_reach_and_keeps_itself_otherwise(A, monkeypatch):
+    r = _room(A)
+    _car(A, r, "a")["prog"] = 100.0
+    _car(A, r, "far", at=(0.0, 0.0, -200.0))["prog"] = 150.0
+    sent = []
+    monkeypatch.setattr(A.socketio, "emit", lambda ev, d=None, **k: sent.append((ev, d)))
+    A._item_queue(r, "a").append("grapple")
+    assert A._spend_item(r, "a") is None, "fired at a car out of reach"
+    assert A._item_queue(r, "a") == ["grapple"]
+    _car(A, r, "near", at=(0.0, 0.0, -30.0))["prog"] = 140.0
+    _car(A, r, "behind", at=(0.0, 0.0, 5.0))["prog"] = 90.0
+    assert A._spend_item(r, "a") == "grapple"
+    assert A._item_queue(r, "a") == []
+    assert ("item_grapple", {"pid": "near", "owner": "a", "ms": A.GRAPPLE_MS}) in sent
+
+
+@pytest.mark.skipif(not __import__("botsim").available(),
+                    reason="needs a JS runtime")
+def test_a_real_bot_world_is_yanked_by_a_grapple(A):
+    import botsim
+    w = botsim.world("JSGR", "sunrise", create=True)
+    try:
+        w.add("b1", "medium", seed=3)
+        now = 1000
+        for _ in range(60):
+            now += 33
+            w.tick(0.033, [], now, "free", None)
+        speed = "WORLDS['JSGR'].get('b1').car.vel.length()"
+        before = w.rt.ctx.eval(speed)
+        w.grab("b1")
+        assert w.rt.ctx.eval(speed) == pytest.approx(before * 0.45)
+        w.use("b1", "grapple")
+        assert w.rt.ctx.eval("WORLDS['JSGR'].get('b1').car.itemBoost") == 1.2
+    finally:
+        botsim.drop("JSGR")
