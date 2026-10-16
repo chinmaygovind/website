@@ -2836,21 +2836,8 @@ def _leave_other_rooms(sk, keep_code=None):
     for p in list(_my_players(sk)):
         g = p.game
         if g.code != keep_code:
-            was_host = p.is_host
-            db.session.delete(p)
-            db.session.commit()
-            remaining = sorted(g.players, key=lambda q: q.seat_order)
-            # **The host leaving closes the room**, and creating or joining
-            # another room is leaving this one. Same rule as `_drop`, which is
-            # the same decision reached through the Leave button, and the
-            # reasoning for it is written down there.
-            if was_host:
-                _close_room(g, "The host left, so the room closed.")
-            # Bots do not keep a room alive; see `_drop`.
-            elif not any(not q.is_bot for q in remaining):
-                _close_room(g, "Everyone left.")
-            else:
-                _broadcast_roster(g)
+            # Creating or joining another room is leaving this one.
+            _vacate(g, p)
 
 
 def _seated_room(sk=None):
@@ -3083,6 +3070,22 @@ def _close_room(game, reason):
     socketio.emit("room_closed", {"reason": reason}, room="room:" + game.code)
     _delete_game(game)
     _broadcast_lobbies()
+
+
+def _vacate(game, player):
+    """Take one seat out of a room, and close the room if that was its host or
+    its last person. The one rule behind the Leave button, joining somewhere
+    else, and a seat nobody came back for - see `_drop` for why the host
+    leaving closes the room."""
+    was_host = player.is_host
+    db.session.delete(player)
+    db.session.commit()
+    if was_host:
+        _close_room(game, "The host left, so the room closed.")
+    elif not any(not p.is_bot for p in game.players):
+        _close_room(game, "Everyone left.")
+    else:
+        _broadcast_roster(game)
 
 
 # ---------------------------------------------------------------------------
@@ -6714,10 +6717,6 @@ def _drop(sid, hard):
                                          session_key=get_session_key()).first()
         if not me:
             return
-        was_host = me.is_host
-        db.session.delete(me)
-        db.session.commit()
-        remaining = sorted(game.players, key=lambda p: p.seat_order)
         # **The host leaving closes the room.** The seat used to be handed to
         # whoever was next in seat order, which sounds generous and is not: the
         # room is the host's - the track, the settings, the grid, when a race
@@ -6733,10 +6732,8 @@ def _drop(sid, hard):
         # It only fires on a **hard** leave - the Leave button, or joining
         # somewhere else - because a disconnect is the soft kind: closing a tab
         # or losing wifi keeps the seat, so the host's train going into a tunnel
-        # does not take everybody's race with it.
-        if was_host:
-            _close_room(game, "The host left, so the room closed.")
-            return
+        # does not take everybody's race with it. Kept for `SEAT_GRACE`, not
+        # for ever: a seat nobody comes back for is vacated by the sweep.
         # **A room of nothing but bots is an empty room.** They cannot leave,
         # cannot host, and would otherwise hold the seat count above zero for
         # ever - the room would sit in the lobby list with four cars going round
@@ -6746,10 +6743,7 @@ def _drop(sid, hard):
         # takes the host's own departure: anybody else leaving leaves the host
         # behind, and a host is a person. Kept because it is two lines, and
         # because what it prevents would otherwise wait on the 45-minute sweep.
-        if not any(not p.is_bot for p in remaining):
-            _close_room(game, "Everyone left.")
-            return
-        _broadcast_roster(game)
+        _vacate(game, me)
 
 
 @socketio.on("kick")
@@ -6831,6 +6825,15 @@ IDLE_LIMIT = timedelta(minutes=45)
 # not survive a closed tab, which is exactly the line wanted.
 EMPTY_LIMIT = timedelta(minutes=5)
 
+# **How long a seat outlives its socket.** A disconnect keeps the seat so a
+# reload, a blink of wifi or a replay comes back to it - but a closed tab or a
+# walk back to the lobby list is a disconnect too, and those seats used to
+# stay until the whole room expired: still on the roster, still counted
+# against `max_players`, so a busy room filled up with people who had gone and
+# turned real ones away at the door. Outlasts `LOST_GRACE_MS` and a replay.
+SEAT_GRACE_S = 180
+_away = {}        # (code, pid) -> when the sweep first saw that seat with no socket
+
 
 def _sweep_once():
     """One pass of the janitor: dead rooms, orphaned room state, old replays.
@@ -6845,7 +6848,24 @@ def _sweep_once():
         cutoff = now - IDLE_LIMIT
         empty_cutoff = now - EMPTY_LIMIT
         held = {code for code, _ in _sid_room.values()}
+        seated = set(_sid_room.values())
+        clock = time.time()
+        for key in [k for k in _away if k in seated]:
+            del _away[key]
         for game in DriveGame.query.filter(DriveGame.status != "ended").all():
+            for p in [p for p in game.players if not p.is_bot]:
+                key = (game.code, p.pid)
+                if key in seated:
+                    continue
+                if clock - _away.setdefault(key, clock) >= SEAT_GRACE_S:
+                    del _away[key]
+                    with _lock(game.code):
+                        _vacate(game, p)
+                    changed = True
+                    if not DriveGame.query.filter_by(id=game.id).first():
+                        break                     # that was its host
+            if not DriveGame.query.filter_by(id=game.id).first():
+                continue
             seen = game.last_activity_at or game.created_at
             live = _rooms.get(game.code)
             # Busy means *people*. Bots report a pose thirty times a second for
@@ -6859,6 +6879,9 @@ def _sweep_once():
                               room="room:" + game.code)
                 _delete_game(game)
                 changed = True
+        open_codes = {g.code for g in DriveGame.query.filter(DriveGame.status != "ended")}
+        for key in [k for k in _away if k[0] not in open_codes]:
+            del _away[key]
         for code in list(_rooms):
             if not DriveGame.query.filter_by(code=code).first():
                 _rooms.pop(code, None)

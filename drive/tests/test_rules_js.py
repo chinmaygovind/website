@@ -1513,6 +1513,7 @@ def _lap_readout(laps, lap=0, phase="racing"):
     ctx.eval(HUD_STUB)
     ctx.eval(_fn("hud"))
     ctx.eval(_fn("flashLap"))
+    ctx.eval("function updateSpec() {}")
     ctx.eval("S.run.laps = %d; S.run.lap = %d; S.racePhase = %s; hud(0);"
              % (laps, lap, json.dumps(phase)))
     return (ctx.eval("$('lapNum').style.display"),
@@ -1556,6 +1557,7 @@ def test_the_finish_banner_comes_down_when_the_car_is_yours_again():
     ctx.eval(HUD_STUB)
     ctx.eval(_fn("hud"))
     ctx.eval(_fn("flashLap"))
+    ctx.eval("function updateSpec() {}")
     ctx.eval("$('finishBanner').style.display = ''; S.raceDone = true; hud(0);")
     assert ctx.eval("$('finishBanner').style.display") == ""
     ctx.eval("S.raceMode = false; hud(0);")
@@ -1705,3 +1707,59 @@ def test_the_grid_has_road_under_every_car(slug):
     assert have >= want, (
         "%s: %.1f units of road behind the start line, and a grid of %d cars "
         "needs %.1f. Lengthen `pre` in Builder.start." % (slug, have, GRID_CARS, want))
+
+
+# --- across the line, the camera goes to somebody still racing ---------------
+
+SPEC_STUB = """
+var done = false, order = [];
+function raceIsRun() { return done; }
+function liveOrder() { return order; }
+var els = {};
+function $(id) { return els[id] || (els[id] = {style: {}, textContent: '', disabled: false}); }
+var S = {spec: null, specLost: 0, run: {laps: 3}, course: {total: 1000},
+         remotes: new Map([['a', {name: 'A', color: '#f00', prog: 1500}],
+                           ['b', {name: 'B', color: '#0f0', prog: 900}]])};
+"""
+
+
+def _spec():
+    ctx = _ctx(SPEC_STUB)
+    ctx.eval("var SPEC_HOLD_MS = 2500;")
+    for name in ("racersLeft", "cycleSpec", "updateSpec"):
+        ctx.eval(_fn(name))
+    ctx.eval("""order = [{pid: 'me', self: true, ms: 60000},
+                         {pid: 'a', ms: null}, {pid: 'b', ms: null}];""")
+    return ctx
+
+
+def test_nobody_is_watched_until_you_are_across_the_line():
+    ctx = _spec()
+    ctx.eval("updateSpec(0)")
+    assert ctx.eval("S.spec") is None
+    assert ctx.eval("$('finWatch').style.display") == "none"
+
+
+def test_the_best_placed_car_still_racing_is_watched_first_and_the_arrows_cycle():
+    ctx = _spec()
+    ctx.eval("done = true; updateSpec(0)")
+    assert ctx.eval("S.spec") == "a"
+    assert ctx.eval("$('specInfo').textContent") == "P2 · Lap 2/3"
+    ctx.eval("cycleSpec(1)")
+    assert ctx.eval("S.spec") == "b"
+    ctx.eval("cycleSpec(1)")
+    assert ctx.eval("S.spec") == "a", "does not wrap round"
+    ctx.eval("cycleSpec(-1)")
+    assert ctx.eval("S.spec") == "b"
+
+
+def test_a_car_that_finishes_is_held_for_the_line_then_the_next_is_picked():
+    ctx = _spec()
+    ctx.eval("done = true; updateSpec(0); order[1].ms = 61000; updateSpec(100)")
+    assert ctx.eval("S.spec") == "a", "cut away before it crossed the line"
+    assert "Finished" in ctx.eval("$('specInfo').textContent")
+    ctx.eval("updateSpec(100 + SPEC_HOLD_MS)")
+    assert ctx.eval("S.spec") == "b"
+    ctx.eval("order[2].ms = 62000; updateSpec(10000); updateSpec(20000)")
+    assert ctx.eval("S.spec") is None, "nobody left, and still not your own car"
+    assert ctx.eval("$('finWatch').style.display") == "none"

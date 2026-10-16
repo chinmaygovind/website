@@ -1166,6 +1166,15 @@ body.touch .now-playing { max-width: min(210px, 52vw); padding: .4rem .7rem; }
   background: var(--hud); color: #fff; border: 1px solid var(--hud-line);
   padding: .35rem 1rem; border-radius: 999px; font-size: .95rem; white-space: nowrap;
 }
+.fin-watch { display: flex; align-items: center; gap: .5rem; pointer-events: auto; }
+.fin-watch button {
+  background: none; border: 0; color: #fff; font-size: 1.7rem; line-height: 1;
+  padding: 0 .55rem; margin: -.3rem 0; cursor: pointer; opacity: .8;
+}
+.fin-watch button:hover { opacity: 1; }
+.fin-watch button:disabled { opacity: .25; cursor: default; }
+.spec-dot { width: .6rem; height: .6rem; border-radius: 50%; flex: none; }
+.spec-info { color: rgba(255, 255, 255, .7); font-variant-numeric: tabular-nums; }
 @keyframes fin-pop {
   0% { opacity: 0; transform: scale(.6); }
   12% { opacity: 1; transform: scale(1.08); }

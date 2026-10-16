@@ -1451,6 +1451,63 @@ def test_a_room_somebody_still_holds_a_socket_on_is_left_alone(env, monkeypatch)
             A._sid_room.pop("sid-1", None)
 
 
+def _room_of(A, code, *names):
+    """A room whose first name is the host; returns the game and its players."""
+    game = A.DriveGame(code=code, track="sunrise")
+    A.db.session.add(game)
+    A.db.session.commit()
+    players = [A.DrivePlayer(game_id=game.id, session_key="sk-" + n, name=n,
+                             color="#fff", is_host=(i == 0))
+               for i, n in enumerate(names)]
+    A.db.session.add_all(players)
+    A.db.session.commit()
+    return game, players
+
+
+def test_a_seat_nobody_comes_back_for_is_let_go(env, monkeypatch):
+    """A closed tab kept its seat until the whole room expired, so a busy room
+    filled up with people who had gone and turned real ones away at the door."""
+    A = env
+    monkeypatch.setattr(A.socketio, "emit", lambda *a, **k: None)
+    clock = [1000.0]
+    monkeypatch.setattr(A.time, "time", lambda: clock[0])
+    with A.app.app_context():
+        game, (host, gone, back) = _room_of(A, "SEAT01", "Host", "Gone", "Back")
+        A._sid_room["sid-h"] = ("SEAT01", host.pid)
+        try:
+            A._sweep_once()                          # the clock starts for two
+            clock[0] += A.SEAT_GRACE_S - 1
+            A._sid_room["sid-b"] = ("SEAT01", back.pid)   # one reloads in time
+            A._sweep_once()
+            assert len(A.DriveGame.query.filter_by(code="SEAT01").first().players) == 3
+            del A._sid_room["sid-b"]                  # and leaves again: a new clock
+            clock[0] += 2
+            A._sweep_once()
+            A.db.session.expire_all()
+            names = {p.name for p in A.DriveGame.query.filter_by(code="SEAT01").first().players}
+            assert names == {"Host", "Back"}, names
+        finally:
+            A._sid_room.pop("sid-h", None)
+            A._sid_room.pop("sid-b", None)
+
+
+def test_a_host_nobody_comes_back_for_closes_the_room(env, monkeypatch):
+    A = env
+    monkeypatch.setattr(A.socketio, "emit", lambda *a, **k: None)
+    clock = [1000.0]
+    monkeypatch.setattr(A.time, "time", lambda: clock[0])
+    with A.app.app_context():
+        game, (host, guest) = _room_of(A, "SEAT02", "Host", "Guest")
+        A._sid_room["sid-g"] = ("SEAT02", guest.pid)
+        try:
+            A._sweep_once()
+            clock[0] += A.SEAT_GRACE_S
+            A._sweep_once()
+            assert A.DriveGame.query.filter_by(code="SEAT02").first() is None
+        finally:
+            A._sid_room.pop("sid-g", None)
+
+
 def test_a_pose_gap_is_not_leaving_the_race(env):
     """The unfair DNF.
 

@@ -1155,6 +1155,14 @@ function bindInput() {
     // the two camera holds, Escape - so watching a lap is not a mode with its
     // own keyboard, it is the same keyboard pointed at somebody else's lap.
     if (S.watch && replayKey(e)) return;
+    // Across the line the car is the autopilot's, so left and right are free
+    // to pick whose race you are watching.
+    if (S.spec && (e.code === 'ArrowLeft' || e.code === 'KeyA' ||
+                   e.code === 'ArrowRight' || e.code === 'KeyD')) {
+      e.preventDefault();
+      if (!e.repeat) cycleSpec(e.code === 'ArrowLeft' || e.code === 'KeyA' ? -1 : 1);
+      return;
+    }
     const k = KEYMAP[e.code];
     if (k) { keys.add(k); e.preventDefault(); }
     // Driving puts the room drawer away: the key that closes it is the one
@@ -5223,6 +5231,64 @@ function showFinish(ms) {
 }
 
 /**
+ * Across the line, the camera goes to somebody still racing.
+ *
+ * `S.spec` is whose car it follows, chosen from the cars still out there in
+ * running order - the best placed first, since that is where the race is
+ * still being decided. Left and right (or the arrows on the pill) step
+ * through them. When the car being watched crosses the line it is held for
+ * `SPEC_HOLD_MS` so you see it finish, then the next one is picked. With
+ * nobody left on this screen it is your own car again and the pill goes back
+ * to waiting.
+ */
+const SPEC_HOLD_MS = 2500;
+
+function racersLeft() {
+  return liveOrder().filter((e) => !e.self && e.ms == null && S.remotes.has(e.pid));
+}
+
+function cycleSpec(by) {
+  const left = racersLeft();
+  if (!left.length) return;
+  const i = left.findIndex((e) => e.pid === S.spec);
+  S.spec = left[((i < 0 ? 0 : i + by) % left.length + left.length) % left.length].pid;
+  S.specLost = 0;
+}
+
+function updateSpec(now) {
+  const watch = $('finWatch');
+  if (!watch) return;
+  const left = raceIsRun() ? racersLeft() : [];
+  if (!raceIsRun()) S.spec = null;
+  else if (!left.some((e) => e.pid === S.spec)) {
+    // Gone from the list: finished, or retired. Stay for the line, then move on.
+    if (S.spec && S.remotes.has(S.spec) && (!S.specLost || now - S.specLost < SPEC_HOLD_MS)) {
+      S.specLost = S.specLost || now;
+    } else {
+      S.spec = left.length ? left[0].pid : null;
+      S.specLost = 0;
+    }
+  }
+  const r = S.spec && S.remotes.get(S.spec);
+  watch.style.display = r ? '' : 'none';
+  if (!r) return;
+  const order = liveOrder();
+  const place = order.findIndex((e) => e.pid === S.spec) + 1;
+  const laps = S.run.laps || 1;
+  const lap = Math.min(laps, Math.floor((r.prog || 0) / (S.course.total || 1)) + 1);
+  const done = !left.some((e) => e.pid === S.spec);
+  const info = (place ? 'P' + place : '') +
+    (done ? ' · Finished' : laps > 1 ? ' · Lap ' + lap + '/' + laps : '');
+  const key = r.name + '|' + r.color + '|' + info + '|' + left.length;
+  if (watch._key === key) return;
+  watch._key = key;
+  $('specDot').style.background = r.color;
+  $('specName').textContent = r.name;
+  $('specInfo').textContent = info;
+  $('specPrev').disabled = $('specNext').disabled = left.length < 2;
+}
+
+/**
  * The driver once you are across the line: follow the road and ease to a stop.
  *
  * **You have no control after the flag**, the way a real race hands the car
@@ -6346,7 +6412,9 @@ function render(dt, now) {
   animateItemBoxes(now);
   moveShots(dt);
   shellWarning(now);
-  S.renderer.follow(car, dt, { ...viewKeys(), hold: S.hitHold > 0 });
+  const watched = S.spec && S.remotes.get(S.spec);
+  S.renderer.follow(watched || car, dt,
+                    { ...viewKeys(), hold: !watched && S.hitHold > 0 });
   // The ears ride the camera, so they are moved the moment it has been - and
   // the field is spatialised against where it has just gone rather than where
   // it was last frame. Your own car stays out of this: it is the thing you are
@@ -6661,6 +6729,7 @@ function hud(now) {
   // a race can leave it standing.
   const fin = $('finishBanner');
   if (fin && !raceIsRun() && fin.style.display !== 'none') fin.style.display = 'none';
+  updateSpec(now);
 
   // Race positions - but not during qualifying, which is not a race: running
   // order by distance means nothing when everybody is on their own lap, and
@@ -8121,6 +8190,8 @@ function connect() {
     socket.emit('resign', {});
   };
   $('btnLeave').onclick = () => { socket.emit('leave'); location.href = '/lobbies'; };
+  $('specPrev').onclick = () => cycleSpec(-1);
+  $('specNext').onclick = () => cycleSpec(1);
   // Every way out of a room is an ordinary link, so it navigates whatever
   // happens; this just gives the room a chance to hear about it first.
   for (const id of ['btnQuit', 'btnExit', 'btnRaceQuit']) {
@@ -8284,6 +8355,7 @@ function addRemote(pid) {
     // the two halves of the tow. All of them are filled in by updateRemotes.
     right: new THREE.Vector3(1, 0, 0), up: new THREE.Vector3(0, 1, 0),
     speed: 0, slipCharge: 0, slipBoost: 0, respawnIn: 0, T,
+    grounded: true,           // for the chase camera when it follows this car
     draftFx: S.renderer.makeDraft(),
   };
   // No colour handed over, so the car answers. `plateColor` is the body colour

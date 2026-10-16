@@ -269,6 +269,13 @@ with how late it was and what the rooms were doing.
     door, because creating or joining a room elsewhere is leaving this one. Two
     call sites, one rule: otherwise the way to keep a room you have walked out of
     is to walk out of it sideways.
+  - **A soft leave is not for ever** (`SEAT_GRACE_S`, 3 minutes). Kept until
+    the room expired, the seats of people who closed the tab or walked back to
+    the lobby list stayed on the roster and counted against `max_players`, so a
+    busy room filled up with people who had gone and turned real ones away.
+    The sweep starts a clock on any human seat with no socket (`_away`) and
+    vacates it through `_vacate`, the same helper as the Leave button and
+    `_leave_other_rooms` - so a host nobody comes back for closes the room.
   - **The reason is carried out with the reader.** `room_closed` has always had
     one and the client threw it away, so a room ending looked exactly like a bug
     - you were simply somewhere else. It goes to `/lobbies?closed=…` and is said
