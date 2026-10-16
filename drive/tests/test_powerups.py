@@ -1336,6 +1336,11 @@ def test_nothing_hits_a_car_that_was_never_sent_a_frame_of_it(A, item, bend, mon
     r = _room(A)
     _car(A, r, "a", at=(0.0, 0.0, 0.0))
     _car(A, r, "b", at=(0.0, 0.0, -6.0))          # six units up the road
+    # One clock for the throw and the ticks. A lob's arc is timed off the
+    # wall clock, so a slow machine pausing between `_fire` and the first tick
+    # carried the banana past `b` and failed this about one CI run in five.
+    t0 = A._now_ms()
+    monkeypatch.setattr(A, "_now_ms", lambda: t0)
     hits = []
     monkeypatch.setattr(A.socketio, "emit",
                         lambda ev, d=None, **kw: hits.append((ev, d)))
