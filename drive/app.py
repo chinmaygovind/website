@@ -6705,6 +6705,13 @@ def _drop(sid, hard):
             c["left_at"] = _now_ms()
         else:
             r["cars"].pop(pid, None)
+            # Out of a race a reload is a fresh start, so the items go with
+            # the car. Mid-race they are kept above, for coming back to.
+            r["items"].pop(pid, None)
+            (r.get("boost_until") or {}).pop(pid, None)
+            if (r.get("held") or {}).pop(pid, None):
+                socketio.emit("item_held", {"pid": pid, "item": None},
+                              room="room:" + code)
     # Whoever just left may have been the last car still out there.
     _maybe_close(code)
     if not hard:

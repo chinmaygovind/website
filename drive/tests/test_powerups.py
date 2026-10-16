@@ -1506,3 +1506,24 @@ def test_a_lit_star_is_a_star_you_already_have(A):
     pids = _field(A, r, [900.0, 600.0, 300.0, 10.0])
     r["cars"][pids[-1]]["flags"] = A.racecheck.FLAG_STAR
     assert "star" not in {A._roll_item(r, pids[-1]) for _ in range(800)}
+
+
+def test_a_reload_in_practice_is_a_fresh_start_but_not_mid_race(A, monkeypatch):
+    """Out of a race a reload came back to the last session's items; in one
+    it still has to, because that is a connection blinking, not a new start."""
+    monkeypatch.setattr(A.socketio, "emit", lambda *a, **k: None)
+    r = _room(A, "free")
+    _car(A, r, "p1")
+    A._item_queue(r, "p1").append("red")
+    A._sid_room["sid-1"] = ("ITEM", "p1")
+    A._drop("sid-1", hard=False)
+    assert not A._item_queue(r, "p1")
+
+    r = _room(A, "racing")
+    c = _car(A, r, "p1")
+    c["ms"] = None
+    r["grid"] = {"p1": 0}
+    A._item_queue(r, "p1").append("red")
+    A._sid_room["sid-2"] = ("ITEM", "p1")
+    A._drop("sid-2", hard=False)
+    assert A._item_queue(r, "p1") == ["red"]

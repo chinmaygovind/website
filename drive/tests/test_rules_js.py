@@ -1737,14 +1737,14 @@ def test_nobody_is_watched_until_you_are_across_the_line():
     ctx = _spec()
     ctx.eval("updateSpec(0)")
     assert ctx.eval("S.spec") is None
-    assert ctx.eval("$('finWatch').style.display") == "none"
+    assert ctx.eval("$('finWatch').style.visibility") == "hidden"
 
 
 def test_across_the_line_the_camera_stays_on_you_until_you_switch():
     ctx = _spec()
     ctx.eval("order[0].name = 'Me'; order[0].color = '#00f'; done = true; updateSpec(0)")
     assert ctx.eval("S.spec") is None, "the camera left you without being asked"
-    assert ctx.eval("$('finWatch').style.display") == "", "nothing to switch with"
+    assert ctx.eval("$('finWatch').style.visibility") == "", "nothing to switch with"
     assert ctx.eval("$('specName').textContent") == "Me"
     assert ctx.eval("$('specInfo').textContent") == "P1 · Finished"
     ctx.eval("cycleSpec(1)")
@@ -1769,4 +1769,4 @@ def test_a_watched_car_that_finishes_is_held_for_the_line_then_the_next_is_picke
     assert ctx.eval("S.spec") == "b"
     ctx.eval("order[2].ms = 62000; updateSpec(10000); updateSpec(20000)")
     assert ctx.eval("S.spec") is None, "nobody left, and still not your own car"
-    assert ctx.eval("$('finWatch').style.display") == "none"
+    assert ctx.eval("$('finWatch').style.visibility") == "hidden"

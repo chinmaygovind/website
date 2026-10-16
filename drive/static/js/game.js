@@ -5273,7 +5273,9 @@ function updateSpec(now) {
   const r = S.spec && S.remotes.get(S.spec);
   // Up while there is somebody to switch to, or somebody being watched.
   const show = raceIsRun() && (left.length > 0 || !!r);
-  watch.style.display = show ? '' : 'none';
+  // Hidden, not removed: the banner is centred on its own height, so taking
+  // the pill out of the layout slid the waiting line down the screen.
+  watch.style.visibility = show ? '' : 'hidden';
   if (!show) return;
   const order = liveOrder();
   const mine = order.find((e) => e.self) || {};
@@ -8095,6 +8097,10 @@ function connect() {
     hitByItem();
   });
   socket.on('track_change', (d) => {
+    // The server's `_reset_race` has just emptied every queue; without this
+    // the slots went on showing the last track's items, which could not be
+    // spent and made every box say both hands were full.
+    clearItems();
     setItemBoxes(d.boxes);
     // A circuit and a point-to-point track are the difference between the lap
     // control meaning something and not existing - so the drawer is redrawn
