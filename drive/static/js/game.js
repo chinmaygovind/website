@@ -1157,7 +1157,7 @@ function bindInput() {
     if (S.watch && replayKey(e)) return;
     // Across the line the car is the autopilot's, so left and right are free
     // to pick whose race you are watching.
-    if (S.spec && (e.code === 'ArrowLeft' || e.code === 'KeyA' ||
+    if (raceIsRun() && (e.code === 'ArrowLeft' || e.code === 'KeyA' ||
                    e.code === 'ArrowRight' || e.code === 'KeyD')) {
       e.preventDefault();
       if (!e.repeat) cycleSpec(e.code === 'ArrowLeft' || e.code === 'KeyA' ? -1 : 1);
@@ -5247,11 +5247,11 @@ function racersLeft() {
   return liveOrder().filter((e) => !e.self && e.ms == null && S.remotes.has(e.pid));
 }
 
+/** You first, then everybody still racing in running order; null is you. */
 function cycleSpec(by) {
-  const left = racersLeft();
-  if (!left.length) return;
-  const i = left.findIndex((e) => e.pid === S.spec);
-  S.spec = left[((i < 0 ? 0 : i + by) % left.length + left.length) % left.length].pid;
+  const ring = [null].concat(racersLeft().map((e) => e.pid));
+  const i = Math.max(0, ring.indexOf(S.spec));
+  S.spec = ring[((i + by) % ring.length + ring.length) % ring.length];
   S.specLost = 0;
 }
 
@@ -5260,9 +5260,10 @@ function updateSpec(now) {
   if (!watch) return;
   const left = raceIsRun() ? racersLeft() : [];
   if (!raceIsRun()) S.spec = null;
-  else if (!left.some((e) => e.pid === S.spec)) {
-    // Gone from the list: finished, or retired. Stay for the line, then move on.
-    if (S.spec && S.remotes.has(S.spec) && (!S.specLost || now - S.specLost < SPEC_HOLD_MS)) {
+  else if (S.spec && !left.some((e) => e.pid === S.spec)) {
+    // Gone from the list: finished, or retired. Stay for the line, then move
+    // on to the next one still racing, or back to you.
+    if (S.remotes.has(S.spec) && (!S.specLost || now - S.specLost < SPEC_HOLD_MS)) {
       S.specLost = S.specLost || now;
     } else {
       S.spec = left.length ? left[0].pid : null;
@@ -5270,22 +5271,28 @@ function updateSpec(now) {
     }
   }
   const r = S.spec && S.remotes.get(S.spec);
-  watch.style.display = r ? '' : 'none';
-  if (!r) return;
+  // Up while there is somebody to switch to, or somebody being watched.
+  const show = raceIsRun() && (left.length > 0 || !!r);
+  watch.style.display = show ? '' : 'none';
+  if (!show) return;
   const order = liveOrder();
-  const place = order.findIndex((e) => e.pid === S.spec) + 1;
+  const mine = order.find((e) => e.self) || {};
+  const pid = r ? S.spec : mine.pid;
+  const place = order.findIndex((e) => (r ? e.pid === S.spec : e.self)) + 1;
   const laps = S.run.laps || 1;
-  const lap = Math.min(laps, Math.floor((r.prog || 0) / (S.course.total || 1)) + 1);
-  const done = !left.some((e) => e.pid === S.spec);
+  const lap = r ? Math.min(laps, Math.floor((r.prog || 0) / (S.course.total || 1)) + 1) : laps;
+  const done = !left.some((e) => e.pid === pid);
   const info = (place ? 'P' + place : '') +
     (done ? ' · Finished' : laps > 1 ? ' · Lap ' + lap + '/' + laps : '');
-  const key = r.name + '|' + r.color + '|' + info + '|' + left.length;
+  const name = r ? r.name : (mine.name || 'You');
+  const color = r ? r.color : mine.color;
+  const key = name + '|' + color + '|' + info + '|' + left.length;
   if (watch._key === key) return;
   watch._key = key;
-  $('specDot').style.background = r.color;
-  $('specName').textContent = r.name;
+  $('specDot').style.background = color;
+  $('specName').textContent = name;
   $('specInfo').textContent = info;
-  $('specPrev').disabled = $('specNext').disabled = left.length < 2;
+  $('specPrev').disabled = $('specNext').disabled = left.length < 1;
 }
 
 /**

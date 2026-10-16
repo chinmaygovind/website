@@ -39,11 +39,12 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   leaves "Waiting for others to finish" up until the results; `hud` takes it down
   on any frame `raceIsRun()` is false, so no way out of a race can strand it.
   **While anybody else is still racing, a viewer pill sits under it**
-  (`updateSpec`, `S.spec`): the chase camera follows the best-placed car still
-  out there, the viewer names it with its place and lap, and its arrows or
-  left/right (free, since the autopilot has the car) step through the rest. A
-  car crossing the line is held for `SPEC_HOLD_MS` so you see it finish, then
-  the next is picked; with nobody left it is your own car and the viewer goes. A remote car carries `grounded: true` only so `Renderer.follow` can
+  (`updateSpec`, `S.spec`): the camera **stays on your own car** and the viewer
+  names whoever it is on with their place and lap. Its arrows or left/right
+  (free, since the autopilot has the car) step from you through everybody still
+  racing in running order and back to you. A watched car crossing the line is
+  held for `SPEC_HOLD_MS` so you see it finish, then the next one still racing
+  is picked, or you; with nobody left the viewer goes. A remote car carries `grounded: true` only so `Renderer.follow` can
   take it.
 - **Bottom left is the minimap with restart and last-checkpoint above it.** Those two
   used to head the settings sheet, which meant a menu you had to open to restart a run

@@ -1740,22 +1740,29 @@ def test_nobody_is_watched_until_you_are_across_the_line():
     assert ctx.eval("$('finWatch').style.display") == "none"
 
 
-def test_the_best_placed_car_still_racing_is_watched_first_and_the_arrows_cycle():
+def test_across_the_line_the_camera_stays_on_you_until_you_switch():
     ctx = _spec()
-    ctx.eval("done = true; updateSpec(0)")
+    ctx.eval("order[0].name = 'Me'; order[0].color = '#00f'; done = true; updateSpec(0)")
+    assert ctx.eval("S.spec") is None, "the camera left you without being asked"
+    assert ctx.eval("$('finWatch').style.display") == "", "nothing to switch with"
+    assert ctx.eval("$('specName').textContent") == "Me"
+    assert ctx.eval("$('specInfo').textContent") == "P1 · Finished"
+    ctx.eval("cycleSpec(1)")
     assert ctx.eval("S.spec") == "a"
+    ctx.eval("updateSpec(1)")
     assert ctx.eval("$('specInfo').textContent") == "P2 · Lap 2/3"
     ctx.eval("cycleSpec(1)")
     assert ctx.eval("S.spec") == "b"
     ctx.eval("cycleSpec(1)")
-    assert ctx.eval("S.spec") == "a", "does not wrap round"
+    assert ctx.eval("S.spec") is None, "does not come back round to you"
     ctx.eval("cycleSpec(-1)")
     assert ctx.eval("S.spec") == "b"
 
 
-def test_a_car_that_finishes_is_held_for_the_line_then_the_next_is_picked():
+def test_a_watched_car_that_finishes_is_held_for_the_line_then_the_next_is_picked():
     ctx = _spec()
-    ctx.eval("done = true; updateSpec(0); order[1].ms = 61000; updateSpec(100)")
+    ctx.eval("done = true; updateSpec(0); cycleSpec(1); updateSpec(0)")
+    ctx.eval("order[1].ms = 61000; updateSpec(100)")
     assert ctx.eval("S.spec") == "a", "cut away before it crossed the line"
     assert "Finished" in ctx.eval("$('specInfo').textContent")
     ctx.eval("updateSpec(100 + SPEC_HOLD_MS)")
