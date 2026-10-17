@@ -308,6 +308,20 @@ def close(build, base_builder, closes=("pos", "yaw", "y")):
                 "it (singular Jacobian): %s. Nominate different ones with FREE()."
                 % ", ".join(_describe(k) for k in knobs))
         p = [p[k] + step[k] for k in range(len(p))]
+        # A diverging step can ask for a straight millions of units long, and
+        # building it to measure the residual emits a station every STATION
+        # units - a draft Starport did that and took 28GB before the kernel
+        # killed it. So refuse anything far past the final guards' own limits
+        # here, before the next `at(p)` builds it.
+        for k, v in zip(knobs, p):
+            far = (k["param"] == "len" and abs(v) > 4 * max(abs(k["base"]), 1.0)
+                   or k["param"] == "deg" and abs(v - k["base"]) > 90)
+            if far:
+                raise CannotClose(
+                    "could not close this lap: the solve diverged, asking for %s "
+                    "to be %.1f (from %.1f). The layout is too far from closing; "
+                    "get the authored legs within about 10%% first."
+                    % (_describe(k), v, k["base"]))
     else:
         raise CannotClose(
             "could not close this lap: still %.4f out after %d attempts, "

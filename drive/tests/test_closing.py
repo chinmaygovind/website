@@ -339,3 +339,59 @@ def test_spa_closes_and_says_which_leg_it_moved():
     assert all(c["param"] == "len" for c in t["closure"]), (
         "the solver changed something other than a straight on Spa, whose corners "
         "are all real places: %r" % t["closure"])
+
+
+def test_a_diverging_solve_is_refused_before_it_builds():
+    """A draft that is far from closing must fail fast, not eat the machine.
+
+    The guards used to run only after the Newton loop, so an overshooting step
+    could ask for a straight millions of units long and the next build emitted a
+    station per STATION units of it: a draft track took 28GB and the OOM killer.
+    This is that draft (an early Jade Temple), under a memory cap.
+    """
+    import resource
+    def build(b):
+        b.start(run=30)
+        b.straight(20)
+        b.arc(50, 55)
+        b.straight(30)
+        b.cp()
+        b.arc(-140, 22)
+        b.straight(24)
+        b.straight(90, rise=20)
+        b.cp(pre=24, post=24)
+        b.straight(90, rise=-20)
+        b.straight(20)
+        b.arc(100, 30)
+        b.straight(36)
+        b.pipe(4.5, 0.34, "l")
+        b.arc(150, 40)
+        b.flat()
+        b.straight(FREE(30))
+        b.cp()
+        b.arc(-60, 60)
+        b.straight(20)
+        b.straight(84, rise=18)
+        b.boost(20)
+        b.straight(10)
+        b.crest(5.0, 12.0)
+        b.gap(46, drop=12.0)
+        b.straight(46)
+        b.cp()
+        b.arc(90, 26)
+        b.straight(70, rise=-10)
+        b.arc(-45, 45)
+        b.arc(180, 16)
+        b.straight(FREE(60))
+        b.arc(FREE(55), 34)
+        b.straight(40)
+        b.finish_at_start()
+
+    soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+    resource.setrlimit(resource.RLIMIT_AS, (4 << 30, hard))
+    try:
+        with pytest.raises(solver.CannotClose) as e:
+            solver.close(build, fresh())
+    finally:
+        resource.setrlimit(resource.RLIMIT_AS, (soft, hard))
+    assert "diverged" in str(e.value) or "%" in str(e.value), e.value
