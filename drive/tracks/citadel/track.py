@@ -102,7 +102,7 @@ def build(b):
     b.rail("lr")
     b.straight(46)
     b.rail("")
-    b.cp()
+    b.straight(34)
 
     # The forge: two grate corners over the lava river, each with a geyser
     # standing on the apex.
