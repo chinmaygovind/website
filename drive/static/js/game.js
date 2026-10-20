@@ -6414,9 +6414,54 @@ function tyreSmoke(car, kind) {
   if (S.tyreSmoke !== false) S.renderer.smoke(back, jitter, kind);
 }
 
+const REENTRY = [0xfff0b0, 0xffb347, 0xff6a1f, 0xff3b10];
+
+/**
+ * A car falling into the void on a track with `pal.reentry` burns up like a
+ * capsule coming in: plasma off its leading face, building with the fall.
+ * Drawn straight into the renderer's particle pool, which a cached
+ * `render.js` already has.
+ */
+function reentry(car) {
+  const pal = S.built && S.built.palette;
+  if (!pal || !pal.reentry) return;
+  // Only once it is below every road on the track - a jump or a descent
+  // never gets here - building to full well before the kill line.
+  const burning = !car.grounded && car.respawnIn <= 0 && car.vel.y < -5;
+  const k = burning ? Math.min(1, Math.max(0, (S.built.minY - 1 - car.pos.y) / 8)) : 0;
+  // A cached sound.js has no `reentry`, and is simply silent.
+  if (S.sound.reentry) S.sound.reentry(k);
+  if (k <= 0) return;
+  // A shell round the nose, the way a heat shield burns: each puff is born
+  // on a ring ahead of the bumper and carried with the car while it slides
+  // back along the body, so the fire wraps the front and streams off behind.
+  const right = new THREE.Vector3().crossVectors(car.fwd, car.up).normalize();
+  for (let i = 0, n = 2 + Math.round(k * 2); i < n; i++) {
+    const a = Math.random() * Math.PI * 2, r = 0.5 + Math.random() * 0.6;
+    const ring = right.clone().multiplyScalar(Math.cos(a) * 1.15 * r)
+      .addScaledVector(car.up, Math.sin(a) * 0.6 * r + 0.25);
+    const p = car.pos.clone().addScaledVector(car.fwd, 1.5 + Math.random() * 0.4).add(ring);
+    const v = car.vel.clone().multiplyScalar(0.92)
+      .addScaledVector(car.fwd, -(5 + k * 6))
+      .addScaledVector(ring, 3);
+    const c = REENTRY[Math.min(3, Math.floor(Math.random() * (1 + k * 3)))];
+    S.renderer.particles.spawn(p, v, c, 0.45 + k * 0.45, 0.2 + Math.random() * 0.12, 1.2);
+  }
+  // and smoke off the back of the fire, left behind to stream up past you
+  if (Math.random() < 0.4 + k * 0.5) {
+    const p = car.pos.clone().addScaledVector(car.fwd, -0.6).add(new THREE.Vector3(
+      (Math.random() - 0.5) * 1.6, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 1.6));
+    const v = car.vel.clone().multiplyScalar(0.3).add(new THREE.Vector3(
+      (Math.random() - 0.5) * 3, 0, (Math.random() - 0.5) * 3));
+    S.renderer.particles.spawn(p, v, Math.random() < 0.5 ? 0x2a2522 : 0x45403c,
+                               0.9 + k * 0.7, 0.5 + Math.random() * 0.3, 2.2, THREE.NormalBlending);
+  }
+}
+
 function render(dt, now) {
   const car = S.car;
   hitSmoke(dt);
+  reentry(car);
   moveRopes(now);
   animateItemBoxes(now);
   moveShots(dt);

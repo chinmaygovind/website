@@ -222,9 +222,7 @@ a shortcut are all blocked and none is open. Read
   a solid slab over the lower one. It is Mount Joy's pattern (a lower envelope of
   upward cones, which arithmetically cannot come up through a road), built as a
   chamfer sweep so it has no reach cutoff.
-- **`rails = True` is the point rather than a concession.** A floating track
-  carries barriers by default and `test_barriers_are_opt_in` *requires* them,
-  which is the opposite of the fight a ground track has - and walls on both kerbs
+- **`rails = True` is the point rather than a concession.** Walls on both kerbs
   for a whole lap is exactly what Monaco is. It is the only circuit in the pool
   where that is correct.
 - **The tunnel is found, not authored.** The stations the hill closes over are the
@@ -290,9 +288,7 @@ legs are a flat `p[1] - 16` and the floor is forty units down. Read
   rail answers the only question a corner asks, and here it also hides the drop
   that is the whole subject. Instead every portal-frame upright and lamp post is
   `KIND.WALL` collider geometry at `hw + 1.7`, so a wide moment hits timber and
-  the racing line never touches one. It **has** to be scenery rather than a rail:
-  `test_barriers_are_opt_in` counts walled *stations*, so railing the posts would
-  cost the track its flag. Same pattern as the Costco's racking and Silverstone's
+  the racing line never touches one. Same pattern as the Costco's racking and Silverstone's
   anti-cut barriers, and it is pinned in `test_scenery.py` - if that `wall` count
   falls, the posts have stopped being solid.
 - **The loop needed both shortcut fixes, and they fail differently.** `loop`
@@ -383,9 +379,7 @@ cloud and then nothing. Read `docs/tracks-and-geometry.md` before touching it.
   groundless road every 26 units so it reads as built rather than floating, which
   is wrong for a road that is *supposed* to be floating. The key is new and is an
   opt-out, so no existing track moves.
-- **The barrier is an edge beam, not rails.** `test_barriers_are_opt_in` counts
-  walled *stations*, so it has to be scenery - same reason as Rickety's timbering.
-  A low bar at each kerb rather than a rank of posts: posts read as a picket
+- **The barrier is an edge beam, not rails.** A low bar at each kerb rather than a rank of posts: posts read as a picket
   fence down a track whose subject is the road's orientation.
 
 ## Adding a track
@@ -542,8 +536,9 @@ than 15% or move a corner more than 8 degrees before refusing.
   `docs/portal.md`.
 - **The announcement banner is one dict at the top of `_nav.html`.** The red
   strip above the nav ("New Track: Playground", with only the name underlined
-  and clickable) is `{% set banner = {...} %}` with `before`, `link`, `after`
-  and `href` - change those four strings to announce the next thing, set
+  and clickable) is `{% set banner = {...} %}` with `before`, `after` and
+  `links`, a list of `[name, href]` pairs (several are joined with commas and
+  an ampersand) - change those to announce the next thing, set
   `banner` to `none` to take it down, and there is nothing else to touch.
   Deliberately not a config file or a database row: it changes when a track
   ships, which is a deploy anyway. It rides *above* `.nav` and is not sticky, so
@@ -675,8 +670,9 @@ instead, and the now-playing card in-game is the credit being shown.
   rather than given `"in": 1.0` because a cold deck has no metadata yet: `_seek`
   defers to `loadedmetadata` while `play()` has already started at 0:00, so an
   `in` is not reliably in force on the very first pass - which is the one pass
-  that matters here. Spa, Silverstone and Monaco deliberately share
-  one `file`, which is what stops driving between them restarting it.
+  that matters here. The eight real circuits deliberately share
+  one `playlist`, which is what stops driving between them restarting it.
+  Any track can have a playlist instead of a song - see `docs/hud-and-controls.md`.
 - Getting them onto the box is **`python tools/sync_music.py`**, which rsyncs
   them and then checks the manifest against what actually landed.
   **The deploy does `git reset --hard`, which leaves untracked files alone** -

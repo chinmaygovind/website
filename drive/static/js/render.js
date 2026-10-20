@@ -1133,7 +1133,7 @@ export class CarView {
 // geometry, one draw call per particle - at these counts that is free, and it
 // avoids shipping a particle library.
 class Particles {
-  constructor(scene, count = 90) {
+  constructor(scene, count = 160) {
     this.items = [];
     const geo = new THREE.PlaneGeometry(1, 1);
     for (let i = 0; i < count; i++) {
@@ -1521,6 +1521,203 @@ class Rain {
     this.mesh.material.dispose();
   }
 }
+
+// Water
+//
+// A sea that moves, turned on by a `water` block in a palette. Every other
+// surface in the world is baked into the track's one static buffer, which is
+// exactly why water modelled there - faceted, foamed, coloured by depth - still
+// read as a sculpture of water. What makes water read as water is all per frame
+// and all per pixel, so it lives here beside `Rain`:
+//
+//  - **Gerstner waves** move the vertices, four of them summed, so crests are
+//    sharp and troughs are broad the way swell actually is.
+//  - **Ripples** perturb the normal per pixel, which is where the small detail
+//    comes from without paying for it in triangles.
+//  - **Fresnel**: looking down you see the dark body of the water, at a grazing
+//    angle it is a mirror of the sky. That one term is most of the realism.
+//  - **The glint** is a sharp highlight off the moving normals toward the sky's
+//    own sun or moon, so the light breaks up into a path that follows you.
+//
+// The plane follows the camera, snapped to its finest cell so nothing swims,
+// and is denser near the middle than at the edges, where the fog has it anyway.
+// The surface sits at the kill line under the road (`deck` + `lift` below the
+// lowest station, the same rule as `below.kill`), so touching it is the respawn
+// it looks like. Visual only: `verify.py` has no renderer, and nothing here is
+// in the collider.
+class Water {
+  constructor(scene, cfg, line, pal, segments) {
+    const c = cfg || {};
+    let minY = Infinity;
+    for (const e of line || []) minY = Math.min(minY, e.p[1]);
+    if (!isFinite(minY)) minY = 0;
+    const deck = c.deck != null ? c.deck : (pal.below && pal.below.deck != null ? pal.below.deck : 24);
+    this.half = c.reach != null ? c.reach : 1400;
+    // Spacing grows from the middle: f(u) = half * (a*u + (1-a)*u*|u|).
+    const N = segments, A = 0.25;
+    this.cell = this.half * A * 2 / N;
+    const geo = new THREE.PlaneGeometry(2, 2, N, N);
+    geo.rotateX(-Math.PI / 2);
+    const pos = geo.attributes.position;
+    const warp = (u) => this.half * (A * u + (1 - A) * u * Math.abs(u));
+    for (let i = 0; i < pos.count; i++) {
+      pos.setX(i, warp(pos.getX(i)));
+      pos.setZ(i, warp(pos.getZ(i)));
+    }
+    geo.computeBoundingSphere();
+
+    const spec = pal.sky && pal.sky.stops ? pal.sky : null;
+    const horizon = spec ? sampleStops(spec.stops, 0.5) : new THREE.Color(pal.fog);
+    const zenith = spec ? sampleStops(spec.stops, 1.0) : new THREE.Color(pal.sky || pal.fog);
+    const sun = spec && spec.sun ? sunDir(spec.sun.az, spec.sun.el)
+                                 : new THREE.Vector3(0.45, 1, 0.32).normalize();
+    const col = (v, d) => new THREE.Color(v != null ? v : d);
+    // [direction x, direction z, steepness, wavelength] - long swell first.
+    // Wavelengths with no common multiple near the camera, or the swell tiles
+    // into a lattice that the plan view shows at once.
+    const waves = c.waves || [[1, 0.25, 0.14, 52], [0.35, 1, 0.11, 31.3],
+                              [-0.7, 0.6, 0.08, 17.7], [0.85, -0.45, 0.06, 10.9]];
+    const chop = c.chop != null ? c.chop : 1;
+    // The tallest a crest can get, so foam can be "near the top" of this sea.
+    let crest = 0;
+    for (const w of waves) crest += w[2] * chop * w[3] / (2 * Math.PI);
+    // **Never let a trough fall below `deck`.** Every scenery file builds its
+    // islands, piers and pyramid down to exactly that plane, so a trough under
+    // it opens a gap beneath them. The kill line stays where it is; the sea
+    // just stands a little above it.
+    this.y = minY - deck + Math.max(c.lift != null ? c.lift : 0.6, crest + 0.15);
+    this.uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
+      uTime: { value: 0 },
+      uWave: { value: waves.map(w => new THREE.Vector4(w[0], w[1], w[2] * chop, w[3])) },
+      uDeep: { value: col(c.deep, 0x02141c) },
+      uShallow: { value: col(c.shallow, 0x0f4652) },
+      uHorizon: { value: c.horizon != null ? new THREE.Color(c.horizon) : horizon },
+      uZenith: { value: c.zenith != null ? new THREE.Color(c.zenith) : zenith },
+      uGlint: { value: col(c.glint, spec && spec.sun ? spec.sun.color : 0xffffff) },
+      uGlintPower: { value: c.glintPower != null ? c.glintPower : 420 },
+      uFoam: { value: c.foam != null ? c.foam : 0.5 },
+      uCrest: { value: Math.max(0.01, crest) },
+      uRipple: { value: c.ripple != null ? c.ripple : 1 },
+      uSun: { value: sun },
+      // Holes the sea is not drawn over: [x, z, r], at most two - Harbor's
+      // whirlpool is a funnel *below* the surface and would be covered.
+      uHole: { value: [0, 1].map(i => {
+        const h = (c.holes || [])[i];
+        return h ? new THREE.Vector3(h[0], h[1], h[2]) : new THREE.Vector3(0, 0, -1);
+      }) },
+    }]);
+    const mat = new THREE.ShaderMaterial({
+      uniforms: this.uniforms, fog: true,
+      vertexShader: WATER_VERT, fragmentShader: WATER_FRAG,
+    });
+    this.mesh = new THREE.Mesh(geo, mat);
+    this.mesh.position.y = this.y;
+    // The vertices move in the shader, so three's bounding sphere is a guess.
+    this.mesh.frustumCulled = false;
+    this.geo = geo;
+    this.scene = scene;
+    scene.add(this.mesh);
+  }
+
+  update(dt, camera) {
+    if (dt > 0 && dt < 1) this.uniforms.uTime.value += dt;
+    const s = this.cell;
+    this.mesh.position.x = Math.round(camera.position.x / s) * s;
+    this.mesh.position.z = Math.round(camera.position.z / s) * s;
+  }
+
+  dispose() {
+    this.scene.remove(this.mesh);
+    this.geo.dispose();
+    this.mesh.material.dispose();
+  }
+}
+
+const WATER_VERT = `
+uniform float uTime;
+uniform vec4 uWave[4];
+varying vec3 vWorld;
+varying vec3 vNormal;
+varying float vCrest;
+#include <fog_pars_vertex>
+void main() {
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vec3 p = wp.xyz;
+  float dist = length(p.xz - cameraPosition.xz);
+  // Far cells are coarse; flatten them before they alias into noise.
+  float fade = 1.0 - smoothstep(350.0, 1100.0, dist);
+  vec3 tan = vec3(1.0, 0.0, 0.0), bin = vec3(0.0, 0.0, 1.0), off = vec3(0.0);
+  for (int i = 0; i < 4; i++) {
+    vec4 w = uWave[i];
+    float k = 6.2831853 / w.w;
+    float c = sqrt(9.8 / k);
+    vec2 d = normalize(w.xy);
+    float f = k * (dot(d, p.xz) - c * uTime);
+    float s = w.z * fade;
+    float a = s / k;
+    float sf = sin(f), cf = cos(f);
+    tan += vec3(-d.x * d.x * s * sf, d.x * s * cf, -d.x * d.y * s * sf);
+    bin += vec3(-d.x * d.y * s * sf, d.y * s * cf, -d.y * d.y * s * sf);
+    off += vec3(d.x * a * cf, a * sf, d.y * a * cf);
+  }
+  p += off;
+  vWorld = p;
+  vNormal = normalize(cross(bin, tan));
+  vCrest = off.y;
+  vec4 mvPosition = viewMatrix * vec4(p, 1.0);
+  gl_Position = projectionMatrix * mvPosition;
+  #include <fog_vertex>
+}`;
+
+const WATER_FRAG = `
+uniform float uTime;
+uniform vec3 uDeep, uShallow, uHorizon, uZenith, uGlint, uSun;
+uniform float uGlintPower, uFoam, uRipple, uCrest;
+uniform vec3 uHole[2];
+varying vec3 vWorld;
+varying vec3 vNormal;
+varying float vCrest;
+#include <fog_pars_fragment>
+// Gradient of a few travelling sines: small ripples for the normal only.
+vec2 ripple(vec2 x, float t) {
+  vec2 g = vec2(0.0);
+  for (int i = 0; i < 5; i++) {
+    float fi = float(i);
+    float ang = fi * 2.399 + 0.7;
+    vec2 d = vec2(cos(ang), sin(ang));
+    float k = 0.55 * pow(1.55, fi);
+    float a = 0.11 / pow(1.4, fi);
+    g += d * (a * k * cos(dot(d, x) * k + t * (1.3 + fi * 0.45)));
+  }
+  return g;
+}
+void main() {
+  for (int i = 0; i < 2; i++) {
+    if (distance(vWorld.xz, uHole[i].xy) < uHole[i].z) discard;
+  }
+  vec3 toCam = cameraPosition - vWorld;
+  float dist = length(toCam);
+  vec3 V = toCam / dist;
+  vec2 g = ripple(vWorld.xz, uTime) * uRipple * (1.0 - smoothstep(25.0, 220.0, dist));
+  vec3 N = normalize(vNormal + vec3(-g.x, 0.0, -g.y));
+  float ndv = max(dot(N, V), 0.0);
+  float fres = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
+  vec3 R = reflect(-V, N);
+  vec3 sky = mix(uHorizon, uZenith, smoothstep(0.0, 0.6, max(R.y, 0.0)));
+  // The body: deep looking down, lifted toward the shallow colour where a
+  // crest is thin enough to see light through.
+  vec3 body = mix(uDeep, uShallow, clamp(0.3 + 0.4 * vCrest / uCrest, 0.0, 1.0) * (1.0 - ndv * 0.5));
+  vec3 col = mix(body, sky, fres);
+  vec3 H = normalize(uSun + V);
+  // A sharp glint off the ripples and a broad sheen under it, which is what
+  // lays the path toward the moon once the ripples have faded out.
+  float nh = max(dot(N, H), 0.0);
+  col += uGlint * (pow(nh, uGlintPower) * 3.0 + pow(nh, uGlintPower * 0.08) * 0.22);
+  col = mix(col, vec3(0.85, 0.9, 0.92), smoothstep(0.72, 0.95, vCrest / uCrest) * uFoam * 0.45);
+  gl_FragColor = vec4(col, 1.0);
+  #include <colorspace_fragment>
+  #include <fog_fragment>
+}`;
 
 // Lamps
 //
@@ -2071,9 +2268,9 @@ class Lamps {
 // how dense the rain is. High is how the game always looked. Antialiasing is
 // fixed when the canvas's context is made, so it only changes on the next load.
 const QUALITY = {
-  low: { ratio: () => 0.7, aa: false, rain: 0.25 },
-  medium: { ratio: () => 1, aa: true, rain: 0.5 },
-  high: { ratio: () => Math.min(window.devicePixelRatio || 1, 2), aa: true, rain: 1 },
+  low: { ratio: () => 0.7, aa: false, rain: 0.25, water: 96 },
+  medium: { ratio: () => 1, aa: true, rain: 0.5, water: 160 },
+  high: { ratio: () => Math.min(window.devicePixelRatio || 1, 2), aa: true, rain: 1, water: 256 },
 };
 
 export class Renderer {
@@ -2200,6 +2397,9 @@ export class Renderer {
     this.moverArmed = [];
     this.moverQuiet = 0;
     if (this.lamps) this.lamps.onlight = this.onCandle || null;
+    if (this.water) { this.water.dispose(); this.water = null; }
+    if (pal.water) this.water = new Water(this.scene, pal.water, built.line, pal,
+                                          QUALITY[this.quality].water);
     this.started = false;
     this.precompile();
   }
@@ -2427,6 +2627,7 @@ export class Renderer {
     if (this.rain) this.rain.update(dt, this.camera);
     if (this.lamps) this.lamps.update(this.camera, dt);
     if (this.storm) this.storm.update(dt, this.camera);
+    if (this.water) this.water.update(dt, this.camera);
     this.renderer.render(this.scene, this.camera);
   }
 

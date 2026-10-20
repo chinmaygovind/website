@@ -65,6 +65,12 @@ KNOWN = REQUIRED + (
                       # it touches the collider or a medal time - `verify.py`
                       # has no renderer, so an effect a car could feel would
                       # make every lap on the track unverifiable. See `Storm`.
+    "water",          # an animated sea at the kill line: Gerstner waves,
+                      # ripples, fresnel and a glint toward the sky's sun.
+                      # Lives in render.js beside `rain`; visual only, so no
+                      # lap and no medal moves. See `Water`.
+    "reentry",        # true: a car falling into the void burns up like a
+                      # capsule coming in. Particles in game.js, visual only.
     "lamps",          # local point lights - candles, a lamp over a door. Lives
                       # beside `rain` in render.js for the same reason: it is
                       # not baked into the track's buffer, so the switcher has

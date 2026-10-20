@@ -421,8 +421,14 @@ snd.manifest = {fade: 1.2, tracks: {
   rainbow: {file: 'rainbow.mp3', artist: 'Panman14', title: 'Rainbow Road',
             url: 'https://example.invalid/2', in: 20, out: 330, fade: 2.5},
   spa: {file: 'f1.mp3', artist: 'Hans Zimmer', title: 'F1'},
-  monaco: {file: 'f1.mp3', artist: 'Hans Zimmer', title: 'F1'}
-}};
+  monaco: {file: 'f1.mp3', artist: 'Hans Zimmer', title: 'F1'},
+  monza: {playlist: 'f1'},
+  suzuka: {playlist: 'f1'}
+}, playlists: {f1: [
+  {file: 'a.mp3', title: 'A', url: 'https://example.invalid/a'},
+  {file: 'b.mp3', title: 'B', url: 'https://example.invalid/b'},
+  {file: 'c.mp3', title: 'C', url: 'https://example.invalid/c'}
+]}};
 """
 
 
@@ -484,6 +490,34 @@ def test_the_three_circuits_share_one_file_without_restarting_it(ctx):
     ctx.eval("snd.setSong('monaco');")
     assert _cued(ctx)["at"] == 42
     assert not _cued(ctx)["paused"]
+
+
+def test_driving_between_circuits_keeps_the_playlist_song(ctx):
+    """The circuits share a playlist, and each `setSong` picks a random song
+    from it - so arriving at the next circuit must not pick again."""
+    ctx.eval(FAKE + "snd.setMusic(true); snd.setSong('monza');")
+    was = _cued(ctx)["src"]
+    ctx.eval("snd.music.decks[snd.music.active].el.ready(300);")
+    ctx.eval("snd.music.decks[snd.music.active].el.currentTime = 42;")
+    ctx.eval("snd.setSong('suzuka');")
+    assert _cued(ctx)["src"] == was
+    assert _cued(ctx)["at"] == 42
+
+
+def test_a_playlist_crossfades_into_a_different_song(ctx):
+    """The end of a playlist song is the next song, never itself again, and
+    the idle deck already holds it so its seek is not thrown away."""
+    ctx.eval(FAKE + "snd.setMusic(true); snd.setSong('monza');")
+    first = _cued(ctx)["src"]
+    idle = ctx.eval("snd.music.decks[1].el.getAttribute('src')")
+    assert idle != first
+    _ready(ctx, 200)
+    ctx.eval("snd.music.decks[0].el.currentTime = 199.5; snd.musicTick();")
+    assert _cued(ctx)["src"] == idle
+    assert ctx.eval("snd.currentSong().src") == idle
+    ctx.eval("runTimers();")
+    after = ctx.eval("snd.music.decks[0].el.getAttribute('src')")
+    assert after != idle                    # the parked deck holds the one after
 
 
 def test_the_loop_point_is_a_crossfade_and_not_a_cut(ctx):

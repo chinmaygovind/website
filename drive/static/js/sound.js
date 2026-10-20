@@ -195,6 +195,20 @@ export class Sound {
     this.draftSrc.connect(this.draftFilter).connect(this.draftGain).connect(this.sfx);
     this.draftSrc.start();
 
+    // --- reentry ---------------------------------------------------------
+    // A car burning up in the void: low roaring noise, opened up as it heats.
+    this.burnSrc = ctx.createBufferSource();
+    this.burnSrc.buffer = whiteNoise(ctx, 2);
+    this.burnSrc.loop = true;
+    this.burnFilter = ctx.createBiquadFilter();
+    this.burnFilter.type = 'lowpass';
+    this.burnFilter.frequency.value = 300;
+    this.burnFilter.Q.value = 2.5;
+    this.burnGain = ctx.createGain();
+    this.burnGain.gain.value = 0;
+    this.burnSrc.connect(this.burnFilter).connect(this.burnGain).connect(this.sfx);
+    this.burnSrc.start();
+
     // --- other cars ------------------------------------------------------
     // One bus for every rival, so the whole field can be pulled down against
     // your own car without touching eight voices. It sits under the sfx bus,
@@ -250,7 +264,8 @@ export class Sound {
     if (!this.ready) return;
     const t = this.ctx.currentTime;
     for (const p of [this.engGain.gain, this.whineGain.gain, this.tyreGain.gain,
-                     this.windGain.gain, this.draftGain.gain, this.rivalBus.gain]) {
+                     this.windGain.gain, this.draftGain.gain, this.burnGain.gain,
+                     this.rivalBus.gain]) {
       p.setTargetAtTime(0, t, SLEEP_TC);
     }
     // So the first frame back opens up quickly rather than crossfading from
@@ -423,6 +438,21 @@ export class Sound {
     set(this.draftGain.gain, a * (boosting ? 0.15 : 0.075), 0.08);
     set(this.draftFilter.frequency, 420 + a * (boosting ? 2600 : 1500), 0.1);
     set(this.draftFilter.Q, boosting ? 1.3 : 3.4, 0.12);
+  }
+
+  /** The reentry roar, 0 to 1. Written every frame on a track that has it. */
+  reentry(k) {
+    if (!this.ready) return;
+    const t = this.ctx.currentTime;
+    // A little flutter on top, so it reads as fire rather than as wind.
+    const flicker = 0.85 + Math.random() * 0.3;
+    this.burnGain.gain.setTargetAtTime(k * 0.32 * flicker, t, k ? 0.06 : 0.15);
+    this.burnFilter.frequency.setTargetAtTime(300 + k * 1400, t, 0.1);
+    // crackle: short random pops, thicker as it heats
+    if (k > 0 && Math.random() < 0.15 + k * 0.35) {
+      this._burst({ freq: 1500 + Math.random() * 3500, q: 1.5,
+                    dur: 0.02 + Math.random() * 0.04, gain: (0.05 + Math.random() * 0.09) * (0.5 + k) });
+    }
   }
 
   // The tow letting go: a rising whoosh with a bright top on it. It has to be

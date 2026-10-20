@@ -36,11 +36,13 @@ def manifest_files():
     lines about one problem.
     """
     with open(os.path.join(HERE, "music.json")) as f:
-        tracks = json.load(f)["tracks"]
+        m = json.load(f)
     want = {}
-    for slug, e in tracks.items():
-        if e.get("file"):
-            want.setdefault(e["file"], []).append(slug)
+    for slug, e in m["tracks"].items():
+        songs = m.get("playlists", {}).get(e["playlist"], []) if e.get("playlist") else [e]
+        for s in songs:
+            if s.get("file"):
+                want.setdefault(s["file"], []).append(slug)
     return want
 
 

@@ -30,6 +30,9 @@
 export const MANIFEST_URL = '/static/audio/music.json';
 
 const FADE = 1.2;      // default crossfade, seconds - overridable per song
+// One song into a different one. A loop's seam is a second; two unrelated
+// songs butted together that fast is a cut, so a playlist takes its time.
+const SWITCH_FADE = 4;
 // The music bus, beside the sfx bus under the master. Above 1 on purpose: the
 // songs are normalised to -17 LUFS in the file, which is the loudest a linear
 // gain can make the quietest-headroom song in the pool (chicane, true peak
@@ -67,6 +70,19 @@ export function loadManifest(url = MANIFEST_URL) {
  */
 function entryFor(manifest, slug) {
   const e = manifest && manifest.tracks && manifest.tracks[slug];
+  if (!e) return null;
+  // A playlist is named rather than written into each track, so every circuit
+  // that shares one shares it exactly and `setSong` can tell it is the same.
+  if (e.playlist) {
+    const raw = (manifest.playlists && manifest.playlists[e.playlist]) || [];
+    const list = raw.map((s) => songFor(manifest, s, slug)).filter(Boolean);
+    if (!list.length) return null;
+    return Object.assign({}, weighted(list), { list, key: e.playlist });
+  }
+  return songFor(manifest, e, slug);
+}
+
+function songFor(manifest, e, slug) {
   if (!e || !e.file) return null;
   return {
     slug,
@@ -78,7 +94,22 @@ function entryFor(manifest, slug) {
     out: typeof e.out === 'number' ? e.out : null,
     fade: typeof e.fade === 'number' ? e.fade
           : (manifest.fade != null ? manifest.fade : FADE),
+    weight: typeof e.weight === 'number' ? e.weight : 1,
   };
+}
+
+/** A random song, `weight: 3` coming up three times as often as the rest. */
+function weighted(list) {
+  let r = Math.random() * list.reduce((a, s) => a + s.weight, 0);
+  for (const s of list) if ((r -= s.weight) < 0) return s;
+  return list[list.length - 1];
+}
+
+/** Any song in the playlist but the one playing, so it never repeats back to back. */
+function nextIn(entry) {
+  if (!entry || !entry.list || entry.list.length < 2) return entry;
+  const rest = entry.list.filter((s) => s.src !== entry.src);
+  return Object.assign({}, weighted(rest), { list: entry.list, key: entry.key });
 }
 
 export class MusicPlayer {
@@ -106,6 +137,7 @@ export class MusicPlayer {
 
     this.on = false;
     this.entry = null;
+    this.next = null;     // what the crossfade brings in: the same song, or a playlist's next
     this.decks = null;    // built on first use, because they are DOM elements
     this.active = 0;
     this.fading = false;
@@ -133,6 +165,7 @@ export class MusicPlayer {
       // a crossfade, because by here there is no tail left to fade.
       el.addEventListener('ended', () => {
         if (this.on && !this.fading && this.decks[this.active].el === el) {
+          if (this.entry && this.entry.list) this._advance();
           this._startActive(this.entry ? this.entry.in : 0);
         }
       });
@@ -150,9 +183,12 @@ export class MusicPlayer {
    * over a different one.
    */
   setSong(entry) {
+    // The circuits share one playlist; driving between them must not restart it.
+    if (entry && this.entry && entry.key && entry.key === this.entry.key) return;
     const same = entry && this.entry && entry.src === this.entry.src;
     this.entry = entry || null;
-    if (same) return;          // the three circuits share one file; do not restart it
+    this.next = nextIn(this.entry);
+    if (same) return;
     this._stopAll();
     if (this.on) this._startActive(this.entry ? this.entry.in : 0);
     if (this.onsong) this.onsong(this.entry);
@@ -191,7 +227,7 @@ export class MusicPlayer {
     const end = this.entry.out != null
       ? Math.min(this.entry.out, d.el.duration)
       : d.el.duration;
-    if (d.el.currentTime >= end - this.entry.fade) this._crossfade(end);
+    if (d.el.currentTime >= end - this._fadeLen()) this._crossfade(end);
   }
 
   /** Where the active deck has got to, for handing across a page navigation. */
@@ -213,9 +249,23 @@ export class MusicPlayer {
    * costs a request the HTTP cache answers.
    */
   _cue() {
-    this._build().forEach((d) => {
-      if (d.el.getAttribute('src') !== this.entry.src) d.el.src = this.entry.src;
+    const decks = this._build();
+    const want = [this.entry.src, (this.next || this.entry).src];
+    [this.active, 1 - this.active].forEach((i, k) => {
+      if (decks[i].el.getAttribute('src') !== want[k]) decks[i].el.src = want[k];
     });
+  }
+
+  _fadeLen() {
+    return this.entry.list && this.next && this.next.src !== this.entry.src
+      ? Math.max(this.entry.fade, SWITCH_FADE) : this.entry.fade;
+  }
+
+  /** On to the playlist's next song, and tell the now-playing card. */
+  _advance() {
+    this.entry = this.next;
+    this.next = nextIn(this.entry);
+    if (this.onsong) this.onsong(this.entry);
   }
 
   _startActive(at) {
@@ -246,29 +296,36 @@ export class MusicPlayer {
 
   _crossfade(end) {
     const t = this.ctx.currentTime;
-    const fade = this.entry.fade;
+    const fade = this._fadeLen();
+    // Linear for a song change: an exponential ramp sits near silence until
+    // its last moment, which over two different songs is heard as a cut.
+    const ramp = this.entry.list ? 'linearRampToValueAtTime' : 'exponentialRampToValueAtTime';
     const from = this.decks[this.active];
     const to = this.decks[1 - this.active];
     this.fading = true;
 
     this._cue();
-    this._seek(to.el, this.entry.in);
+    const coming = this.next || this.entry;
+    this._seek(to.el, coming.in);
     to.gain.gain.cancelScheduledValues(t);
     to.gain.gain.setValueAtTime(0.0001, t);
-    to.gain.gain.exponentialRampToValueAtTime(1, t + fade);
+    to.gain.gain[ramp](1, t + fade);
     const p = to.el.play();
     if (p && p.catch) p.catch(() => {});
 
     from.gain.gain.cancelScheduledValues(t);
     from.gain.gain.setValueAtTime(Math.max(from.gain.gain.value, 0.0001), t);
-    from.gain.gain.exponentialRampToValueAtTime(0.0001, t + fade);
+    from.gain.gain[ramp](0.0001, t + fade);
 
     this.active = 1 - this.active;
+    const list = !!this.entry.list;
+    if (list) this._advance();
     // Parked only once it is silent. Pausing it now is the cut the crossfade
     // exists to avoid.
     setTimeout(() => {
       from.el.pause();
       this.fading = false;
+      if (list && this.entry) this._cue();   // the parked deck takes the song after this one
     }, fade * 1000);
   }
 

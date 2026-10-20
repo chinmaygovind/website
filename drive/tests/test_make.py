@@ -623,6 +623,9 @@ def test_the_editor_draws_a_control_for_every_palette_key():
                # and a swatch for one is a control that cannot be used without
                # the other four numbers beside it.
                "storm",
+               # `water` for `rain`'s reason: it is an effect in render.js
+               # whose height is the track's own `deck`, not a swatch.
+               "water", "reentry",
                # `moverVoice` is not colour either, and it is not even
                # geometry: it is a fact about what this track's movers *are* -
                # a chapel full of Boos rather than a herd of hadrosaurs - and

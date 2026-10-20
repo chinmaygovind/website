@@ -31,7 +31,6 @@ Listed so you do not waste a look on them. All of these fail in
 - A gap the car cannot clear (`test_every_gap_is_clearable`).
 - Medals out of order, unreachable, or too far apart.
 - A closed lap that does not close (`test_a_closed_lap_actually_closes`).
-- Barriers on a ground track that did not ask for them (`test_barriers_are_opt_in`).
 - A checkpoint creditable from a road passing above it.
 - Pole starting on the outside of turn one.
 - A track folder that fails to load (`test_every_track_folder_loads`).
@@ -70,6 +69,9 @@ find by looking at a bad picture.
 - **A closing stretch half as long as it read in the code.** Straight lengths do
   not feel like their numbers until you see them against the rest.
 - **A crossing that is not where you meant it to be.**
+- **A U-turn you can jump across.** Monument's two legs of a hairpin ran close
+  enough that a car could leave one and land on the other over the river. Close
+  it with a checkpoint, distance, or a wall; `tools/cut_check.py` should see it.
 - **The whole track drifting off in one direction** instead of returning near
   where it started. Fine for a point-to-point, worth noticing anyway.
 
@@ -413,8 +415,7 @@ New entries, unsorted, until somebody files them. One line is enough.
   worth three or four seconds each. Two things fix it and they fix different
   cases: a **checkpoint inside the loop** kills anything that spans it, and a
   **barrier** kills a chord across one apex. A barrier alone was not enough here -
-  the big cuts go round the outside of a whole complex, not over an apex - and a
-  ribbon `rail` is not available on a ground track (`test_barriers_are_opt_in`), so
+  the big cuts go round the outside of a whole complex, not over an apex - so
   the barrier is collider geometry in `scenery.js` like the Costco's parapet.
   *Not mechanical, and worth knowing why: the obvious check flags loops, walled
   interiors and hairpins on seven existing tracks, because a chord in plan says
@@ -896,3 +897,17 @@ New entries, unsorted, until somebody files them. One line is enough.
   rejected. Game water at night is a saturated deep teal with a visible pattern
   of lit crests and dark troughs, sparkles, and foam at the edges - Mario Kart
   8's Singapore Speedway is the reference. Look at a game, not at a photograph.
+- **Mist as flat `soft` boxes on the water reads as rafts.** Harbor's low fog banks
+  were thin translucent slabs a metre over the sea; from the road they were grey
+  planks floating, and from the cover camera concrete pontoons. Lambert-shaded
+  boxes cannot be mist - leave it to `fogNear`/`fogFar`.
+- **Posts placed off the centreline come up through the road on banked corners.**
+  Harbor's pilings stood under the planking at `hw - 0.8` with tops at the
+  *centreline's* height, and a bank drops the inner edge `hw * sin(bank)` below
+  that, so they poked through on the inside of every banked turn. Stand them
+  outside the edge, top them off the edge's own height, and assert it.
+- **A ramp boarding a structure meets that structure's wall across the road.**
+  Harbor's gangplank ran onto the galleon through the stern's bulwark band, which
+  spanned the full beam above the deck - drawn, not collided, so the car went
+  through a wall. Cut an entry port the full height with no lintel; same for a
+  bow you fly off.

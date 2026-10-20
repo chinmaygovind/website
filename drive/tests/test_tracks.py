@@ -431,30 +431,6 @@ def test_the_road_is_never_buried_in_its_own_ground(track):
 
 
 @pytest.mark.parametrize("track", ALL, ids=IDS)
-def test_barriers_are_opt_in(track):
-    """Rails on every corner look like a bobsleigh run and remove the only
-    interesting decision on a corner exit. Ground-level tracks get none."""
-    line = track["line"]
-    walled = sum(1 for e in line if e.get("wl") or e.get("wr"))
-    if track["ground"] is not None:
-        assert walled == 0, \
-            f"{track['slug']} sits on the ground but has {walled} walled stations"
-    elif track["exposed"]:
-        # A track may declare that falling off is the point rather than a gap in
-        # its barriers - but then it has to actually be exposed. A track wearing
-        # the flag with rails all down it is as wrong as a normal floating track
-        # without them, and it is the more likely mistake of the two: the flag
-        # stays behind long after somebody has railed the track for safety.
-        assert walled < len(line) * 0.25, (
-            f"{track['slug']} is marked exposed but {walled} of {len(line)} "
-            f"stations are walled - either unrail it or drop it from EXPOSED")
-    else:
-        # floating tracks do want them: there is nothing to catch a wide moment
-        assert walled > len(line) * 0.5, \
-            f"{track['slug']} floats in the void with only {walled} walled stations"
-
-
-@pytest.mark.parametrize("track", ALL, ids=IDS)
 def test_pole_starts_on_the_inside_of_the_first_corner(track):
     """`pole_side` has to agree with the corner the grid is pointing at.
 

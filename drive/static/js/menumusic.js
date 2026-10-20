@@ -28,8 +28,11 @@
 
 import { MusicPlayer, loadManifest, entryFor } from './music.js';
 
-const KEY = 'drive.music.at';    // where the song had got to, and when
-const SLUG = 'menu';
+// The multiplayer lobbies have their own song; every other menu page shares one.
+const SLUG = location.pathname.startsWith('/lobbies') ? 'lobbies' : 'menu';
+// Where the song had got to, and when - per song, so walking into the lobbies
+// does not start their song at wherever the menu's had got to.
+const KEY = 'drive.music.at' + (SLUG === 'menu' ? '' : '.' + SLUG);
 const TICK_MS = 250;             // the crossfade watch; a frame loop's job elsewhere
 const CARD_MS = 6500;            // the credit's dwell, as the play page's
 /**

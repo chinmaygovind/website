@@ -606,9 +606,7 @@ wants a building as the thing that will find the bugs.
   before the signage section declares it - and a `const` is in its temporal dead
   zone until its own line runs, so that throws rather than reading as undefined.
   Helpers used by more than one section go up with the rest of the helpers.
-- **The rooftop railing cannot be a ribbon `rail`.** This is a ground track, and
-  `test_barriers_are_opt_in` requires a ground track to carry *no* walled stations
-  at all. So the parapet along the deck is collider geometry standing beside the
+- **The rooftop railing is not a ribbon `rail`.** The parapet along the deck is collider geometry standing beside the
   road, the way the racking is - which also keeps it outside the kerb, so the
   racing line never touches it and no medal time moves. It takes its up vector
   from the station's own normal, so it leans with the banking.
@@ -841,10 +839,8 @@ wants a building as the thing that will find the bugs.
   and why the two never z-fight.
 - **A floating track can opt out of rails, and Rainbow Road is the one that
   does.** `tracks.EXPOSED` is the set where falling off is the point rather than
-  a gap in the barriers, and `test_barriers_are_opt_in` then checks the claim in
-  *both* directions - a track wearing the flag with rails all down it fails just
-  as loudly as a normal floating track without them, which is the more likely
-  mistake, since the flag outlives whoever railed the track for safety. Loops
+  a gap in the barriers. Nothing checks how much of a track is railed; put
+  barriers wherever the track wants them. Loops
   keep their rails even there: a loop without them is a fall at the top rather
   than a corner, which is not exposure, it is a broken corner. Cloudbreak is in
   the set for the same reason it was worth building: railing every corner of a
@@ -961,3 +957,35 @@ bounce, so sand makes every underside warm over a desert, snow removes the dark
 shadows from a winter scene, and molten orange is most of what separates a lava
 field from a dark field.
 
+
+### Animated water (`pal.water`, Harbor and Monument)
+
+**A sea modelled in `scenery.js` reads as a sculpture however well it is
+faceted**, because everything there is baked into one static buffer. Water reads
+as water because of things that only exist per frame and per pixel, so a `water`
+block in the palette builds `Water` in `render.js`, beside `Rain`: four summed
+Gerstner waves moving the vertices, travelling-sine ripples on the normal, a
+Fresnel blend from the body colour to the sky's own horizon and zenith stops, and
+a sharp glint plus a broad sheen toward the sky's `sun`, which is what lays a
+path toward a low moon. The plane follows the camera, snapped to its finest cell
+so nothing swims, and is warped denser in the middle.
+
+- **Its troughs never go below `deck`** (defaulting to `below.deck`) under the
+  lowest station: the mean surface is `deck` plus the larger of `lift` (0.6, the
+  kill line) and the tallest crest. Every scenery file builds down to exactly that
+  plane, so a trough under it opened a visible gap beneath Monument's pyramid. The
+  kill line does not move, so the sea stands a little above it at high chop.
+  Visual only; `verify.py` has no renderer.
+- **It is opaque, so it covers anything a track draws under the surface.** A track
+  that turns it on must stop drawing its own sea (`if (!pal.water)` in Harbor's
+  and Monument's `scenery.js`), and anything meant to be seen *below* the
+  waterline needs a hole (`pal.water.holes`, up to two circles). Nothing uses
+  one now; Harbor's whirlpool was drawn under the sea and was taken out.
+- **Keys**: `deck`, `lift`, `reach`, `chop` (scales every wave), `waves`
+  (`[dx, dz, steepness, wavelength]` x4), `deep`, `shallow`, `horizon`/`zenith`
+  (override the sky's stops; Monument needs darker ones or a noon sky turns the
+  river into ice), `glint`, `glintPower`, `foam`, `ripple`, `holes`.
+- **Wavelengths must not share a near multiple**, or the swell tiles into a
+  lattice the plan view shows at once. The defaults are 52, 31.3, 17.7, 10.9.
+- **No depth-based shoreline foam.** That needs a depth texture this renderer
+  does not keep; foam where things meet the water is still the track's own rings.

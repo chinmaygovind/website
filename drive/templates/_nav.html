@@ -27,10 +27,10 @@
    of losing the lap.
 
    `after` may be empty; `href` is an ordinary path on this site. #}
-{% set banner = {"before": "New Track:", "link": "MARINA BAY", "after": "", "href": "/solo/singapore"} %}
+{% set banner = {"before": "NEW CIRCUITS:", "after": "", "links": [["MONUMENT", "/solo/monument"], ["STARPORT", "/solo/starport"], ["FROST", "/solo/frost"], ["HARBOR", "/solo/harbor"]]} %}
 {% if banner %}
 <div class="newsbar">
-  {{ banner.before }} <b><a href="{{ banner.href }}">{{ banner.link }}</a></b>{% if banner.after %} {{ banner.after }}{% endif %}
+  {{ banner.before }} {% for name, href in banner.links %}{% if loop.last and not loop.first %}&amp; {% endif %}<b><a href="{{ href }}">{{ name }}</a></b>{% if not loop.last %}, {% endif %}{% endfor %}{% if banner.after %} {{ banner.after }}{% endif %}
 </div>
 {% endif %}
 <nav class="nav">

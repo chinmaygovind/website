@@ -86,71 +86,31 @@
       "url": "https://www.youtube.com/watch?v=yLz7Kp9KqnM"
     },
     "rainbow": {
-      "file": "rainbow.mp3",
-      "artist": "Panman10",
-      "title": "Wii Rainbow Road",
-      "url": "https://www.youtube.com/watch?v=7UHCfeeKZz4",
-      "fade": 2.5
+      "playlist": "rainbow"
     },
     "spa": {
-      "file": "f1.mp3",
-      "artist": "Hans Zimmer",
-      "title": "F1",
-      "url": "https://www.youtube.com/watch?v=YhX_Woa3kVA&list=RDYhX_Woa3kVA",
-      "in": 11.0,
-      "out": 179.0,
-      "fade": 2.0
+      "playlist": "f1"
     },
     "silverstone": {
-      "file": "f1.mp3",
-      "artist": "Hans Zimmer",
-      "title": "F1",
-      "url": "https://www.youtube.com/watch?v=YhX_Woa3kVA&list=RDYhX_Woa3kVA",
-      "in": 11.0,
-      "out": 179.0,
-      "fade": 2.0
+      "playlist": "f1"
     },
     "monaco": {
-      "file": "f1.mp3",
-      "artist": "Hans Zimmer",
-      "title": "F1",
-      "url": "https://www.youtube.com/watch?v=YhX_Woa3kVA&list=RDYhX_Woa3kVA",
-      "in": 11.0,
-      "out": 179.0,
-      "fade": 2.0
+      "playlist": "f1"
     },
     "monza": {
-      "file": "f1.mp3",
-      "artist": "Hans Zimmer",
-      "title": "F1",
-      "url": "https://www.youtube.com/watch?v=YhX_Woa3kVA&list=RDYhX_Woa3kVA",
-      "in": 11.0,
-      "out": 179.0,
-      "fade": 2.0
+      "playlist": "f1"
     },
     "suzuka": {
-      "file": "f1.mp3",
-      "artist": "Hans Zimmer",
-      "title": "F1",
-      "url": "https://www.youtube.com/watch?v=YhX_Woa3kVA&list=RDYhX_Woa3kVA",
-      "in": 11.0,
-      "out": 179.0,
-      "fade": 2.0
+      "playlist": "f1"
     },
     "sepang": {
-      "file": "f1.mp3",
-      "artist": "Hans Zimmer",
-      "title": "F1",
-      "url": "https://www.youtube.com/watch?v=YhX_Woa3kVA&list=RDYhX_Woa3kVA",
-      "in": 11.0,
-      "out": 179.0,
-      "fade": 2.0
+      "playlist": "f1"
     },
     "costco": {
-      "file": "costco.mp3",
-      "artist": "MKWii",
+      "file": "costco-qumu.mp3",
+      "artist": "Qumu",
       "title": "Coconut Mall",
-      "url": "https://www.youtube.com/watch?v=cscuCIzItZQ"
+      "url": "https://www.youtube.com/watch?v=kleaVWJESuA"
     },
     "bigred": {
       "file": "bigred.mp3",
@@ -198,22 +158,187 @@
       "url": "https://www.youtube.com/watch?v=xmf6Za0Tc9Q"
     },
     "baku": {
-      "file": "f1.mp3",
-      "artist": "Hans Zimmer",
-      "title": "F1",
-      "url": "https://www.youtube.com/watch?v=YhX_Woa3kVA&list=RDYhX_Woa3kVA",
-      "in": 11.0,
-      "out": 179.0,
-      "fade": 2.0
+      "playlist": "f1"
     },
     "singapore": {
-      "file": "f1.mp3",
-      "artist": "Hans Zimmer",
-      "title": "F1",
-      "url": "https://www.youtube.com/watch?v=YhX_Woa3kVA&list=RDYhX_Woa3kVA",
-      "in": 11.0,
-      "out": 179.0,
-      "fade": 2.0
+      "playlist": "f1"
+    },
+    "frost": {
+      "playlist": "frost"
+    },
+    "harbor": {
+      "playlist": "harbor"
+    },
+    "monument": {
+      "playlist": "monument"
+    },
+    "starport": {
+      "playlist": "starport"
+    },
+    "lobbies": {
+      "file": "lobbies.mp3",
+      "artist": "Mario Kart Wii",
+      "title": "Competition Menu",
+      "url": "https://www.youtube.com/watch?v=rDKFvQe_1pw"
     }
+  },
+  "playlists": {
+    "frost": [
+      {
+        "file": "eight.mp3",
+        "artist": "Qumu",
+        "title": "Snow Mountain",
+        "url": "https://www.youtube.com/watch?v=pwpEt9rS-tU",
+        "out": 163.0,
+        "fade": 2.5
+      },
+      {
+        "file": "frost-sherbet.mp3",
+        "artist": "Qumu",
+        "title": "Frappe Snowland / Sherbet Land",
+        "url": "https://www.youtube.com/watch?v=sKtaEp0gOVw"
+      },
+      {
+        "file": "frost-cafe.mp3",
+        "artist": "Joshua Morse",
+        "title": "Frappe Cafe Vibe",
+        "url": "https://www.youtube.com/watch?v=Ln1pzz9l5p0"
+      }
+    ],
+    "harbor": [
+      {
+        "file": "harbor-docks.mp3",
+        "artist": "Qumu",
+        "title": "Dire, Dire Docks",
+        "url": "https://www.youtube.com/watch?v=j7YG5ojRDFM"
+      },
+      {
+        "file": "aquatic.mp3",
+        "artist": "Qumu",
+        "title": "Aquatic Ambiance",
+        "url": "https://www.youtube.com/watch?v=92hDJYrt_wg"
+      },
+      {
+        "file": "harbor-ocean.mp3",
+        "artist": "Qumu",
+        "title": "The Ocean",
+        "url": "https://www.youtube.com/watch?v=9kE3QaUlaK4"
+      },
+      {
+        "file": "harbor-galleon.mp3",
+        "artist": "Super Smash Bros. Ultimate",
+        "title": "Gang-Plank Galleon",
+        "url": "https://www.youtube.com/watch?v=FaOqgboY-BA"
+      }
+    ],
+    "monument": [
+      {
+        "file": "monument-japes.mp3",
+        "artist": "Qumu",
+        "title": "Jungle Japes",
+        "url": "https://www.youtube.com/watch?v=aH5duyhfSHE"
+      },
+      {
+        "file": "monument-stickerbush.mp3",
+        "artist": "Qumu",
+        "title": "Stickerbush Symphony",
+        "url": "https://www.youtube.com/watch?v=h_GYlzhMFBg"
+      },
+      {
+        "file": "aquatic.mp3",
+        "artist": "Qumu",
+        "title": "Aquatic Ambiance",
+        "url": "https://www.youtube.com/watch?v=92hDJYrt_wg"
+      }
+    ],
+    "starport": [
+      {
+        "file": "spiral.mp3",
+        "artist": "Qumu",
+        "title": "Buoy Base Galaxy",
+        "url": "https://www.youtube.com/watch?v=Rv3SOWZjT3A",
+        "weight": 3
+      },
+      {
+        "file": "starport-gusty.mp3",
+        "artist": "Qumu",
+        "title": "Gusty Garden Galaxy",
+        "url": "https://www.youtube.com/watch?v=KgJtpH3_4Hk"
+      },
+      {
+        "file": "starport-egg.mp3",
+        "artist": "Qumu",
+        "title": "Egg Planet",
+        "url": "https://www.youtube.com/watch?v=f7xHLspxZac"
+      }
+    ],
+    "rainbow": [
+      {
+        "file": "rainbow.mp3",
+        "artist": "Panman10",
+        "title": "Wii Rainbow Road",
+        "url": "https://www.youtube.com/watch?v=7UHCfeeKZz4",
+        "fade": 2.5
+      },
+      {
+        "file": "rainbow-64.mp3",
+        "artist": "Qumu",
+        "title": "Rainbow Road (N64)",
+        "url": "https://www.youtube.com/watch?v=94E-qYyKF48"
+      }
+    ],
+    "f1": [
+      {
+        "file": "f1.mp3",
+        "artist": "Hans Zimmer",
+        "title": "F1",
+        "url": "https://www.youtube.com/watch?v=YhX_Woa3kVA&list=RDYhX_Woa3kVA",
+        "in": 11.0,
+        "out": 179.0,
+        "fade": 2.0
+      },
+      {
+        "file": "mutecity.mp3",
+        "artist": "Qumu",
+        "title": "Mute City",
+        "url": "https://www.youtube.com/watch?v=XqFtfRyCwi4"
+      },
+      {
+        "file": "f1-neobowser.mp3",
+        "artist": "Mario Kart 8",
+        "title": "Neo Bowser City",
+        "url": "https://www.youtube.com/watch?v=P3s_kl9tACQ"
+      },
+      {
+        "file": "f1-thunderstruck.mp3",
+        "artist": "AC/DC",
+        "title": "Thunderstruck",
+        "url": "https://www.youtube.com/watch?v=lhg9bYNLvOg"
+      },
+      {
+        "file": "f1-rallyhouse.mp3",
+        "artist": "prod. DTM",
+        "title": "Rally House",
+        "url": "https://www.youtube.com/watch?v=vg4JGLfF33w"
+      },
+      {
+        "file": "f1-rallyfunk.mp3",
+        "artist": "SLOWYMANE",
+        "title": "RALLY FUNK",
+        "url": "https://www.youtube.com/watch?v=ZRL3I0--ad0"
+      },
+      {
+        "file": "f1-senna.mp3",
+        "artist": "Mannequin, prod. DTM",
+        "title": "SENNA",
+        "url": "https://www.youtube.com/watch?v=V8xhj37QZY0"
+      },
+      {
+        "file": "f1-flyingrally.mp3",
+        "artist": "prod. DTM",
+        "title": "Flying Rally",
+        "url": "https://www.youtube.com/watch?v=eiTAr-6lSw0"
+      }
+    ]
   }
 }

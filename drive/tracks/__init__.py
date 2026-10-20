@@ -23,8 +23,7 @@ takes a `Builder` and lays the road. Everything else is optional:
     order       where it sits in the pool. Default 500, ties broken by slug.
     closed      True for a lap: the finish line *is* the start line, and
                 `solver` closes the ribbon on itself. Default False.
-    exposed     True to declare that running wide is *meant* to be unrecoverable,
-                so `test_barriers_are_opt_in` stops asking for barriers.
+    exposed     True to declare that running wide is *meant* to be unrecoverable.
     scenery     True if the folder ships a `scenery.js`. Checked, so a typo in
                 the filename is an error rather than a track with no building.
     medals      ``(gold, silver, bronze)`` in seconds, cut from the board by

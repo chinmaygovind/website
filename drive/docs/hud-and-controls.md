@@ -342,6 +342,17 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
     lands at -17.31 rather than -17.00, because its peak reached the ceiling
     before its loudness reached the target; 0.3 LU is inaudible and clipping is
     not.
+- **A track can have a playlist instead of a song** (`{"playlist": "f1"}`,
+  songs under the manifest's top-level `playlists`). The first song is a
+  weighted random pick (`weight`, default 1), and each crossfade goes to a
+  different song rather than looping, so the idle deck is cued with the *next*
+  song, not the same one. A song change crossfades over `SWITCH_FADE` (4s) on
+  a linear ramp; the loop seam's short exponential ramp sounded like a cut
+  between two different songs. **`setSong` with the same playlist name is a no-op**,
+  which is what keeps the eight real circuits on one song as you drive between
+  them; that replaced the three circuits sharing `f1.mp3`. A deck that hits the
+  end in a background tab advances too. The now-playing card shows each new
+  song through `onsong`.
 - **The now-playing card is a credit before it is a feature.** The music is
   other people's work, so `#nowPlaying` names the artist and title from the
   manifest and the whole card is an anchor back to the video, `target=_blank`
@@ -362,8 +373,10 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
 - **The menu pages get the menu song, and it carries across navigations.**
   `menumusic.js` is on every page via `base.html` and **self-gates like
   `portal.js`**: the play page defines `window.DRIVE_TRACK` and owns its own
-  music, and two AudioContexts on one page is two songs at once. These are
-  separate page loads rather than an SPA, so "carries on" is reconstructed -
+  music, and two AudioContexts on one page is two songs at once. **`/lobbies`
+  plays `lobbies` instead** (MKWii's Competition Menu), with its own resume key
+  so walking between it and the other menus does not carry one song's position
+  into the other. These are separate page loads rather than an SPA, so "carries on" is reconstructed -
   each page writes where the song had got to and when into `sessionStorage`,
   and the next resumes at that point plus the wall-clock gap, wrapped back into
   the song's own `in`..`out` window. Nothing starts until the page is clicked,
