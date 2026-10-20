@@ -79,6 +79,8 @@ def script_json(obj):
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
+# Werkzeug caps a form field at 500KB; Approve carries a cover PNG as base64.
+app.config["MAX_FORM_MEMORY_SIZE"] = 2_000_000
 
 _cookie_domain = os.environ.get("SESSION_COOKIE_DOMAIN")
 if _cookie_domain:

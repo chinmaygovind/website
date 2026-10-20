@@ -250,7 +250,8 @@ def test_approving_a_daily_in_review_keeps_its_picture(env, tmp_path, monkeypatc
         row.doc_json = json.dumps(dict(row.doc, generated=True))
         A.db.session.commit()
     _login(c, _admin(A))
-    c.post("/admin/review/" + slug, data={"action": "approve", "cover": _png_url()})
+    r = c.post("/admin/review/" + slug, data={"action": "approve", "cover": _png_url(b"x" * 900_000)})
+    assert r.status_code == 302
     with A.app.app_context():
         new = A.DriveUserTrack.query.filter_by(status="live").first().slug
     assert new.startswith("daily-") and (tmp_path / (new + ".png")).exists()
