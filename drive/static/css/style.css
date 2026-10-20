@@ -146,11 +146,42 @@ a:hover { text-decoration: underline; }
    about 1.5:1, which is not a contrast failure so much as a strip nobody can
    read. Dark on pale is 12:1 and keeps the stamped look the nav already has. */
 .newsbar {
-  background: #ffb070; color: var(--ink);
+  background: linear-gradient(100deg, #959ca7, #e3e7ec 28%, #8a919c 50%, #eef1f5 72%, #a0a7b1);
+  color: var(--ink);
   font-family: var(--sans); font-size: .82rem; font-weight: 700;
   letter-spacing: .04em; text-transform: uppercase; text-align: center;
   padding: .4rem 1.1rem;
   border-bottom: 2px solid var(--line);
+  position: relative; overflow: hidden; isolation: isolate;
+}
+/* the shine sweeping across, and the sparkles twinkling over it - both behind the text */
+.newsbar::before, .newsbar::after {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+}
+.newsbar::before {
+  background: linear-gradient(100deg, transparent 35%, rgba(255,255,255,.85) 50%, transparent 65%);
+  transform: translateX(-100%);
+  animation: newsbar-shine 3.2s ease-in-out infinite;
+}
+.newsbar::after {
+  background:
+    radial-gradient(circle at 6% 30%, #fff 0 2px, rgba(255,255,255,.5) 2.5px, transparent 5px),
+    radial-gradient(circle at 14% 72%, #fff 0 1.5px, rgba(255,255,255,.5) 2.0px, transparent 4.0px),
+    radial-gradient(circle at 23% 28%, #fff 0 2.5px, rgba(255,255,255,.5) 3.0px, transparent 6.0px),
+    radial-gradient(circle at 31% 66%, #fff 0 1.5px, rgba(255,255,255,.5) 2.0px, transparent 4.0px),
+    radial-gradient(circle at 44% 22%, #fff 0 2px, rgba(255,255,255,.5) 2.5px, transparent 5px),
+    radial-gradient(circle at 55% 74%, #fff 0 2.5px, rgba(255,255,255,.5) 3.0px, transparent 6.0px),
+    radial-gradient(circle at 68% 30%, #fff 0 1.5px, rgba(255,255,255,.5) 2.0px, transparent 4.0px),
+    radial-gradient(circle at 76% 70%, #fff 0 2px, rgba(255,255,255,.5) 2.5px, transparent 5px),
+    radial-gradient(circle at 87% 26%, #fff 0 2.5px, rgba(255,255,255,.5) 3.0px, transparent 6.0px),
+    radial-gradient(circle at 95% 62%, #fff 0 1.5px, rgba(255,255,255,.5) 2.0px, transparent 4.0px);
+  animation: newsbar-twinkle 1.6s ease-in-out infinite alternate;
+}
+@keyframes newsbar-shine { 60%, 100% { transform: translateX(100%); } }
+@keyframes newsbar-twinkle { from { opacity: .15; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .newsbar::before, .newsbar::after { animation: none; }
+  .newsbar::before { display: none; }
 }
 .newsbar a { color: var(--ink); text-decoration: underline; text-underline-offset: .18em; }
 .newsbar a:hover { color: var(--red); }

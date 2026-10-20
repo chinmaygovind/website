@@ -958,7 +958,7 @@ shadows from a winter scene, and molten orange is most of what separates a lava
 field from a dark field.
 
 
-### Animated water (`pal.water`, Harbor and Monument)
+### Animated water (`pal.water`: Harbor, Monument, Sandy Cove, Marina Bay)
 
 **A sea modelled in `scenery.js` reads as a sculpture however well it is
 faceted**, because everything there is baked into one static buffer. Water reads
@@ -981,7 +981,12 @@ so nothing swims, and is warped denser in the middle.
   and Monument's `scenery.js`), and anything meant to be seen *below* the
   waterline needs a hole (`pal.water.holes`, up to two circles). Nothing uses
   one now; Harbor's whirlpool was drawn under the sea and was taken out.
-- **Keys**: `deck`, `lift`, `reach`, `chop` (scales every wave), `waves`
+- **A track with its own sea already drawn names its height as `y`** and the
+  animated surface floats over it with its troughs `lift` (default 0.1) above,
+  so the old surface never shows through. Sandy Cove's is the shore's sea under
+  the sand; Marina Bay's is `SEA`, which only its `scenery.js` knows, so it
+  sets `pal.water.y` from there. Neither turns its old sea off.
+- **Keys**: `y`, `deck`, `lift`, `reach`, `chop` (scales every wave), `waves`
   (`[dx, dz, steepness, wavelength]` x4), `deep`, `shallow`, `horizon`/`zenith`
   (override the sky's stops; Monument needs darker ones or a noon sky turns the
   river into ice), `glint`, `glintPower`, `foam`, `ripple`, `holes`.

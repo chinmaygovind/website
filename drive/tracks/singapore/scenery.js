@@ -545,6 +545,9 @@
     // and the bridges' approaches stand up out of it.
     for (let q = 0; q < H.length; q++) H[q] = Math.min(H[q], LAND);
     const SEA = LAND - 2.4;
+    // The animated sea (`pal.water`) floats over the faceted one drawn below;
+    // only this file knows where that is.
+    if (pal.water) pal.water.y = SEA;
 
     // The water: the bay, the river and the Kallang Basin, warped, scan-filled
     // into the grid. A cell under the road stays dry unless the road there is a
@@ -776,7 +779,7 @@
           waves(ax, az, CELLQ, SUB, e.p[0], e.p[2], (u, v) => sw[u * SUB + v] === 1);
           continue;
         }
-        if (near < 300 && rMisc() < (near < 60 ? 0.6 : 1.2 - near / 300)) sparkle(ax + rMisc() * CELLQ, az + rMisc() * CELLQ, near < 60);
+        if (!pal.water && near < 300 && rMisc() < (near < 60 ? 0.6 : 1.2 - near / 300)) sparkle(ax + rMisc() * CELLQ, az + rMisc() * CELLQ, near < 60);
         if (DR[q] > 300) {
           bright.quad([ax, SEA, az], [ax, SEA, az + CELLQ], [ax + CELLQ, SEA, az + CELLQ], [ax + CELLQ, SEA, az], mixC(FAR, DEEP, rMisc() * 0.3));
           continue;

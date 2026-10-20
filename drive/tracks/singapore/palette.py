@@ -33,6 +33,10 @@ PALETTE = {
 "gravel": 0x6a6660,
 "fog": 0x0d1424,
 "legs": 0,
+# The animated sea, over the bay's own facets (its height is set from
+# scenery.js), in the bay's colours with a floodlight glint.
+"water": {"chop": 0.2, "lift": 0.36, "deep": 0x04202c, "shallow": 0x116070,
+          "glint": 0xf0c878, "foam": 0},
 "sky": {
   # u=0 is straight down, 0.5 the horizon, 1.0 the zenith. **One blue, top to
   # bottom.** A warm light-pollution band under a blue dome was tried and

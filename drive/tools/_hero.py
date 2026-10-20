@@ -329,11 +329,11 @@ FRAMES = {
     # the side everyone photographs it. Picked off a `--sweep` at az 5.0. The
     # castle was tried first and does not hold the middle of a wide frame at
     # any azimuth: its corners are too tight, and the rest is rooftops.
-    # **The Esplanade, from over the bay side.** Both durians, the waterfront
-    # grandstand, the field on Esplanade Drive, the CBD behind and the Flyer at
-    # the edge of the frame - the scan's own pick was the Turns 1-3 interchange,
-    # which from above is a knot of expressway decks.
-    "singapore": dict(at=0.66, azimuth=5.00, pitch=0.34, span=0.09, pad=0.30,
+    # **The bay, from high over the water.** The field on the bridge over the
+    # floodlit bay, the colonial district and the CBD behind - Monument's kind
+    # of shot, picked by eye off a nudge sweep round az 2.0; one Esplanade dome
+    # stays at the right edge.
+    "singapore": dict(at=0.60, azimuth=2.40, pitch=0.42, span=0.12, pad=0.42,
                       cars=12, air=0.0, liveryFrom=11),
     "baku": dict(at=0.74, azimuth=5.00, pitch=0.40, pad=0.30,
                  cars=12, air=0.0, liveryFrom=11),

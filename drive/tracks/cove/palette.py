@@ -7,7 +7,9 @@ import math
 # line and the pier is the one thing that crosses it, so the number belongs to the
 # geometry - and while the palette was a JavaScript object it existed twice, in two
 # languages, held together by a test that scraped trackmesh.js with a regex.
-from tracks.cove.track import SHORE_AMP, SHORE_WAVE, SHORE_Z
+from tracks.cove.track import SHORE_AMP, SHORE_WAVE, SHORE_Z, ground
+
+SEA_DROP = 3.0   # the sea under the sand, shared by `shore` and `water`
 
 PALETTE = { "road": 0x6b6f78, "kerb": 0xfffaf0, "kerb2": 0x2ab7c8,
 "ground": 0xffe87a, "rail": 0xfff6e8, "prop": 0x3f7d4a, "deco": 0xffb03a,
@@ -22,7 +24,12 @@ PALETTE = { "road": 0x6b6f78, "kerb": 0xfffaf0, "kerb2": 0x2ab7c8,
 # authored against this line, so a drift inland floods it.
 "shore": { "axis": 'z', "at": SHORE_Z, "amp": SHORE_AMP,
          "wave": SHORE_WAVE, "reach": 900,
-         "sea": 0x1f7fa8, "deep": 0x11527a, "foam": 0x9fe0ea, "drop": 3.0 },
+         "sea": 0x1f7fa8, "deep": 0x11527a, "foam": 0x9fe0ea, "drop": SEA_DROP },
+# The animated sea, over the flat one above, in its colours.
+# A blue reflection rather than the sky's near-white horizon, or the sea
+# goes white in the distance.
+"water": { "y": ground - SEA_DROP, "chop": 0.45, "deep": 0x11527a, "shallow": 0x1f7fa8,
+           "horizon": 0x4a9cc4, "zenith": 0x2f7ac4 },
 "sky": {
   "stops": [
     [0.00, 0x8fb6c4], [0.40, 0xbfe0e8], [0.50, 0xd8eef2],

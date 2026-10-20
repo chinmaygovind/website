@@ -1585,7 +1585,11 @@ class Water {
     // islands, piers and pyramid down to exactly that plane, so a trough under
     // it opens a gap beneath them. The kill line stays where it is; the sea
     // just stands a little above it.
-    this.y = minY - deck + Math.max(c.lift != null ? c.lift : 0.6, crest + 0.15);
+    // A track with its own sea already drawn (Sandy Cove, Marina Bay) names
+    // that sea's height as `y` instead, and the troughs stay `lift` above it so
+    // the old surface never shows through.
+    this.y = c.y != null ? c.y + (c.lift != null ? c.lift : 0.1) + crest
+                         : minY - deck + Math.max(c.lift != null ? c.lift : 0.6, crest + 0.15);
     this.uniforms = THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
       uTime: { value: 0 },
       uWave: { value: waves.map(w => new THREE.Vector4(w[0], w[1], w[2] * chop, w[3])) },
