@@ -2733,34 +2733,49 @@ function addBlast(p, radius, blue) {
 }
 
 /**
- * A grapple's rope: one line from the car that threw it to the car it hooked,
- * redrawn every frame between the two as this screen draws them, until the
- * pull is over. The pull itself is each car's own, in `item_grapple`.
+ * A grapple's rope: the hook flies out of the thrower's car for `ROPE_SHOOT_MS`
+ * and latches onto the car it hooked, trailing a rope redrawn every frame
+ * between the two as this screen draws them, until the pull is over. The pull
+ * itself is each car's own, in `item_grapple`.
  */
+const ROPE_SHOOT_MS = 180;
+
 function addRope(owner, pid, ms) {
   if (!S.renderer) return;
-  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(
-    [new THREE.Vector3(), new THREE.Vector3()]),
-    new THREE.LineBasicMaterial({ color: 0xff8a2a }));
-  line.frustumCulled = false;
-  S.renderer.scene.add(line);
-  (S.ropes = S.ropes || []).push({ owner, pid, until: performance.now() + ms, line });
+  // A tube rather than a `Line`: WebGL draws every line one pixel wide, and a
+  // near-black pixel is gone at any distance. Unit length along +Z, from the
+  // car, so `lookAt` and `scale.z` are all a frame has to set.
+  const rope = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.08, 1, 5, 1, true).translate(0, 0.5, 0).rotateX(Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: 0x1c1c1c }));
+  rope.frustumCulled = false;
+  const hook = shotMesh('grapple');
+  hook.scale.setScalar(0.7);
+  S.renderer.scene.add(rope, hook);
+  const now = performance.now();
+  (S.ropes = S.ropes || []).push({ owner, pid, from: now, until: now + ms, rope, hook });
 }
+
+const _ropeA = new THREE.Vector3(), _ropeB = new THREE.Vector3();
 
 function moveRopes(now) {
   if (!S.ropes) return;
   for (let i = S.ropes.length - 1; i >= 0; i--) {
     const r = S.ropes[i], a = drawnCar(r.owner), b = drawnCar(r.pid);
     if (now >= r.until || !a || !b) {
-      S.renderer.scene.remove(r.line);
-      r.line.geometry.dispose(); r.line.material.dispose();
+      S.renderer.scene.remove(r.rope, r.hook);
+      r.rope.geometry.dispose(); r.rope.material.dispose();
       S.ropes.splice(i, 1);
       continue;
     }
-    const at = r.line.geometry.attributes.position;
-    at.setXYZ(0, a.pos.x, a.pos.y + 0.6, a.pos.z);
-    at.setXYZ(1, b.pos.x, b.pos.y + 0.6, b.pos.z);
-    at.needsUpdate = true;
+    _ropeA.set(a.pos.x, a.pos.y + 0.6, a.pos.z);
+    _ropeB.set(b.pos.x, b.pos.y + 0.6, b.pos.z);
+    _ropeB.lerpVectors(_ropeA, _ropeB, Math.min(1, (now - r.from) / ROPE_SHOOT_MS));
+    r.hook.position.copy(_ropeB);
+    r.hook.lookAt(_ropeA);
+    r.rope.position.copy(_ropeA);
+    r.rope.lookAt(_ropeB);
+    r.rope.scale.z = Math.max(0.01, _ropeA.distanceTo(_ropeB));
   }
 }
 

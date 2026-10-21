@@ -3423,15 +3423,14 @@ def _boxes_for(track):
 # a shield in front, a red in the pack, and a star, a boost or a bomb at the
 # back, which is where catching up has to actually be possible.
 ITEM_ODDS = {
-    # Out in front: things to defend with, and only the occasional red.
+    # Out in front: bananas and shells, and no boost - see `_roll_item`.
     #
-    # **The shield is the rare one here even though defence is the theme**, and
-    # the difference is who has to do something. A banana or a green defends a
-    # place only if you put it somewhere useful, and you can be wrong about
-    # where; a shield defends it by existing, and at one box in four the leader
-    # simply has one nearly all the time, which takes the point out of hitting
-    # them at all.
-    "front": {"banana": 34, "green": 18, "red": 16, "boost": 18, "shield": 14},
+    # **The shield is three in a hundred here even though defence is the
+    # theme**, and the difference is who has to do something. A banana or a
+    # green defends a place only if you put it somewhere useful, and you can be
+    # wrong about where; a shield defends it by existing, and a leader who has
+    # one often takes the point out of hitting them at all.
+    "front": {"banana": 45, "green": 25, "red": 27, "shield": 3},
     # In the pack: everything, weighted toward what makes a move.
     "mid": {"red": 24, "banana": 14, "boost": 20, "green": 10, "bomb": 12,
             "shield": 8, "star": 8, "blue": 4, "grapple": 8},
@@ -3461,20 +3460,30 @@ def _roll_item(r, pid):
         no.add("star")
     if r["phase"] != "racing":
         return random.choice([i for i in PRACTICE_ITEMS if i not in no])
+    # **A boost is for the back half of the field only.** The bands are thirds,
+    # so the pack straddles the middle, and a car just ahead of it drawing a
+    # boost was a leader pulling further clear.
+    if _race_place(r, pid) < 0.5:
+        no.add("boost")
     odds = ITEM_ODDS[_race_band(r, pid)]
     items = [i for i in odds if i not in no]
     return random.choices(items, weights=[odds[i] for i in items])[0]
 
 
+def _race_place(r, pid):
+    """0 at the front of the running order, 1 at the back, 0.5 alone."""
+    live = [c for p, c in r["cars"].items() if not c.get("gone")]
+    if len(live) < 2:
+        return 0.5
+    mine = r["cars"].get(pid)
+    ahead = sum(1 for c in live if c is not mine and c["prog"] > (mine or {}).get("prog", 0))
+    return ahead / float(len(live) - 1)
+
+
 def _race_band(r, pid):
     """`front`, `mid` or `back` - which third of the running order this car is
     in. One car is its own leader, and a two-car race has no middle."""
-    live = [c for p, c in r["cars"].items() if not c.get("gone")]
-    if len(live) < 2:
-        return "mid"
-    mine = r["cars"].get(pid)
-    ahead = sum(1 for c in live if c is not mine and c["prog"] > (mine or {}).get("prog", 0))
-    place = ahead / float(len(live) - 1)        # 0 at the front, 1 at the back
+    place = _race_place(r, pid)
     if place <= 0.34:
         return "front"
     return "back" if place >= 0.67 else "mid"

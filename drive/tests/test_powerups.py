@@ -1175,17 +1175,22 @@ def test_the_leader_rarely_draws_a_shield(A):
     r = _room(A, "racing")
     pids = _field(A, r, [900.0, 600.0, 300.0, 10.0])
     # **Twenty thousand rolls, not a thousand, and the count is load bearing.**
-    # The leader's shield is 14 of 100 by weight, against a ceiling here of 16.
-    # At n=1000 the standard error is 0.011, so the true value sits 1.8 sd
-    # below the bound and this fails about one run in twenty-nine - which it
-    # duly did, in CI, on the commit that moved the weight from 10 to 14. At
-    # n=20000 the error is 0.0025 and 0.14 is eight sd clear, so the assertion
-    # tests the weights rather than the weather. Raise the ceiling only if the
-    # *weight* is meant to go up; it is cheap to sample instead.
+    # The leader's shield is 3 of 100 by weight; at n=20000 the standard error
+    # is 0.0012, so both bounds are eight sd clear and the assertion tests the
+    # weights rather than the weather. It is cheap to sample instead.
     rolls = [A._roll_item(r, pids[0]) for _ in range(20000)]
     share = rolls.count("shield") / float(len(rolls))
-    assert 0.04 < share < 0.16, share
-    assert rolls.count("banana") > rolls.count("shield") * 2
+    assert 0.02 < share < 0.04, share
+    shells = sum(rolls.count(i) for i in ("banana", "green", "red"))
+    assert shells / float(len(rolls)) > 0.9
+
+
+def test_a_boost_is_only_for_the_back_half(A):
+    r = _room(A, "racing")
+    pids = _field(A, r, [800.0, 700.0, 600.0, 500.0, 400.0, 300.0, 200.0, 10.0])
+    for p in pids[:4]:
+        assert "boost" not in {A._roll_item(r, p) for _ in range(400)}, p
+    assert "boost" in {A._roll_item(r, pids[4]) for _ in range(400)}
 
 
 def _ring():

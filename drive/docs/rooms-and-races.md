@@ -571,6 +571,12 @@ with how late it was and what the rooms were doing.
     *for*: bananas and a shield in front, a red in the pack, and a star, a
     boost or a bomb at the back, which is the only place the odds can make
     catching up possible.
+    **First place draws bananas and shells, and almost never a shield** -
+    `front` is 45/25/27 banana/green/red and a shield is 3 in 100, because a
+    leader holding one takes the point out of hitting them. **And a boost is
+    for the back half only** (`_race_place` < 0.5 strikes it, whatever the
+    band): the bands are thirds, so the pack straddles the middle, and boosts
+    were landing on cars already clear.
     **The back is now over half boosts and stars** (30 and 28 of 100), because
     they make up road on their own where a red or a bomb needs somebody in
     range; its green went entirely and it gets the **occasional shield** (8),
