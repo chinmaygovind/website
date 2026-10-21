@@ -1,4 +1,22 @@
 {
+ "baku": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.848
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.95
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.02
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.9212
+  }
+ },
  "bigred": {
   "easy": {
    "line": "relaxed",
@@ -43,6 +61,24 @@
   "medium": {
    "line": "relaxed",
    "pace": 0.8531
+  }
+ },
+ "citadel": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.7598
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.9167
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 0.9384
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.9533
   }
  },
  "costco": {
@@ -117,6 +153,24 @@
    "pace": 0.8782
   }
  },
+ "frost": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.8498
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.95
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.02
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.926
+  }
+ },
  "gauntlet": {
   "easy": {
    "line": "relaxed",
@@ -133,6 +187,24 @@
   "medium": {
    "line": "relaxed",
    "pace": 0.922
+  }
+ },
+ "harbor": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.8464
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.95
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.0159
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.9265
   }
  },
  "heights": {
@@ -187,6 +259,24 @@
   "medium": {
    "line": "relaxed",
    "pace": 0.929
+  }
+ },
+ "monument": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.8616
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.95
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.02
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.9344
   }
  },
  "monza": {
@@ -297,6 +387,24 @@
    "pace": 0.9115
   }
  },
+ "sepang": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.8309
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.95
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.0
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.9095
+  }
+ },
  "shroom": {
   "easy": {
    "line": "hotlap",
@@ -331,6 +439,24 @@
   "medium": {
    "line": "relaxed",
    "pace": 0.9151
+  }
+ },
+ "singapore": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.8464
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.95
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.02
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.9204
   }
  },
  "skyline": {
@@ -385,6 +511,24 @@
   "medium": {
    "line": "relaxed",
    "pace": 0.9
+  }
+ },
+ "starport": {
+  "easy": {
+   "line": "relaxed",
+   "pace": 0.8497
+  },
+  "hard": {
+   "line": "hotlap",
+   "pace": 0.95
+  },
+  "max": {
+   "line": "hotlap",
+   "pace": 1.017
+  },
+  "medium": {
+   "line": "relaxed",
+   "pace": 0.9221
   }
  },
  "sunrise": {
