@@ -220,9 +220,6 @@ export class Run {
     // it alone: a run is restarted a dozen times a session and the race it is
     // part of is still the same length.
     this.laps = 1;
-    // A room race lets a lap through with one checkpoint missed, as long as it
-    // was not the last one before the line. The caller sets it, like `laps`.
-    this.forgive = false;
     // Where each gate sits along the ribbon, so progress can be held at the
     // next gate the car still owes - see `capS`.
     const sOf = (g) => {
@@ -245,7 +242,6 @@ export class Run {
     this.time = 0;               // ms
     this.splits = [];
     this.nextCp = 0;
-    this._skipped = false;
     this.missed = false;
     this.distance = 0;
     this.ghost = [];
@@ -298,7 +294,6 @@ export class Run {
     this.time = 0;
     this.splits = [];
     this.nextCp = 0;
-    this._skipped = false;
     this.lap = 0;
     this.sLap = 0;
     this._lastS = null;
@@ -703,16 +698,7 @@ export class Run {
       for (let i = 0; i < this.cps.length; i++) {
         const gate = this.cps[i];
         check(gate, () => {
-          // The forgiving case: this is the gate after the one you are due, and
-          // you have not skipped one yet this lap. The last checkpoint can
-          // never be the one skipped, because nothing after it but the line.
-          const skip = this.forgive && !this._skipped && i === this.nextCp + 1;
-          if (i !== this.nextCp && !skip) return;
-          if (skip) {
-            this._skipped = true;
-            this.nextCp++;
-            this.splits.push(Math.round(this.time));
-          }
+          if (i !== this.nextCp) return;
           this.nextCp++;
           this.splits.push(Math.round(this.time));
           this.respawnGate = gate;
@@ -731,8 +717,7 @@ export class Run {
               // exactly how a checkpoint goes silently missing.
               this.lap++;
               this.nextCp = 0;
-              this._skipped = false;
-              this._sides.clear();
+                        this._sides.clear();
               this.respawnGate = this.finish;
               events.push('lap');
             } else {

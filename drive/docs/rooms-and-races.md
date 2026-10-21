@@ -423,11 +423,14 @@ with how late it was and what the rooms were doing.
     had counted - shown second for most of race 339 while really last. The
     server's `Watcher.prog` is unchanged: it is a bound on the claim, and the
     claim is what is capped.
-  - **A room race forgives one missed checkpoint a lap**, never the last one
-    before the line (`Run.forgive`, set for a race you are in and for every
-    bot). Crossing the gate after the one you owe credits both. Solo and
-    qualifying are untouched, and nothing it credits reaches the board. A
-    reload does not remember a skip already spent that lap.
+  - **The running order goes by checkpoints first, distance second**
+    (`_gates`, the furthest `Run.cpIndex` a car has reported in `r["splits"]`,
+    and snapshot field 16 for `orderFromSnapshot`). A car through lap two's
+    fifth gate is ahead of one owing it wherever the two are on the road.
+    `on_split` used to bound `cp` by one lap's gate count, which dropped every
+    split after lap one - so a reload on lap two came back on lap one. It is
+    bounded by the race now, and by no more than a lap past the server's own
+    `Watcher.lap`.
   - **`nearest_station` wraps its window on a circuit.** Clipped at the last
     station it held a car that had just crossed the line on the old end of the
     ribbon until it was `CORRIDOR` away - a 60-unit freeze on every lap. Wrapped,

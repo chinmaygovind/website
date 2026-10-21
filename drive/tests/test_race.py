@@ -405,7 +405,7 @@ def test_the_trailing_fields_are_appended_not_inserted(env):
     row = A._snapshot(r)["cars"]["a"]
     assert row[:3] == [1.0, 2.0, 3.0] and row[7:10] == [0, 0, -40.0]
     assert row[10] == 12.5 and row[11] == 2
-    assert len(row) == 16
+    assert len(row) == 17 and row[16] == 0      # gates passed, for the order
 
 
 def test_a_client_cannot_claim_a_tow_it_does_not_have(env):
@@ -942,6 +942,38 @@ def test_the_lap_count_is_the_hosts_and_only_between_races(live):
     _as_host(A, A.on_start_race, {"code": "LIVE"})
     _as_host(A, A.on_set_setting, {"code": "LIVE", "key": "laps", "value": 6})
     assert r["settings"]["laps"] == 1, "changed under a live session"
+
+
+def test_a_lap_two_checkpoint_is_recorded(env, monkeypatch):
+    """`cp` counts over the race, so lap two's gates are past one lap's count.
+    Dropping them is what sent a reload on lap two back to lap one."""
+    A = env
+    monkeypatch.setattr(A.socketio, "emit", lambda *a, **k: None)
+    r = _room(A)
+    r["settings"]["laps"] = 3
+    ring = A.tracks_mod.get("silverstone")
+    monkeypatch.setattr(A, "_hot_track", lambda room: ring)
+    _add_car(A, r, "a")
+    r["t0"] = A._now_ms() - 60000
+    stride = ring["checkpoints"] + 1
+    A._watch(r, "a").lap = 1
+    _split(A, "TEST", "a", stride + 2, 40000)
+    assert A._lap_progress(r, "a") == {"lap": 1, "cp": 2}
+    _split(A, "TEST", "a", 3 * stride + 2, 41000)     # two laps further on
+    assert 3 * stride + 2 not in r["splits"]["a"]
+
+
+def test_the_order_goes_by_checkpoints_before_distance(env):
+    """Through more gates is ahead, whatever the distance says."""
+    A = env
+    r = _room(A)
+    _add_car(A, r, "behind")
+    _add_car(A, r, "ahead")
+    r["cars"]["behind"]["prog"] = 900.0
+    r["cars"]["ahead"]["prog"] = 850.0
+    r["splits"] = {"behind": {1: 1, 2: 2, 3: 3, 4: 4}, "ahead": {k: k for k in range(1, 6)}}
+    assert A._race_state(r)["order"][:2] == ["ahead", "behind"]
+    assert A._race_place(r, "ahead") == 0.0
 
 
 def test_a_reload_comes_back_on_the_lap_it_left(env, monkeypatch):

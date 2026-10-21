@@ -325,26 +325,7 @@ def test_crossing_the_line_with_a_checkpoint_missed_banks_nothing(rt, slug):
     assert out["best"] <= out["last"] + 1e-6, out
 
 
-def test_a_room_race_forgives_one_missed_checkpoint_a_lap(rt):
-    out = rt.call(
-        "(function () { var c = makeRun('suzuka'); c.run.forgive = true;"
-        " var cps = c.run.cps, r = {};"
-        " through(c, cps[1]); r.skipOne = c.run.nextCp;"           # missed cps[0]
-        " through(c, cps[3]); r.skipTwo = c.run.nextCp;"           # missed cps[2] too
-        " through(c, cps[2]); r.back = c.run.nextCp;"
-        " return r; })()")
-    assert out == {"skipOne": 2, "skipTwo": 2, "back": 3}, out
-
-
-def test_the_last_checkpoint_is_never_forgiven(rt):
-    ev = rt.call(
-        "(function () { var c = makeRun('suzuka'); c.run.forgive = true;"
-        " c.run.nextCp = c.run.cps.length - 1;"
-        " return through(c, c.course.finishGate()); })()")
-    assert "missed" in ev and "finish" not in ev, ev
-
-
-def test_solo_forgives_nothing(rt):
+def test_a_missed_checkpoint_is_never_skipped(rt):
     got = rt.call(
         "(function () { var c = makeRun('suzuka');"
         " through(c, c.run.cps[1]); return c.run.nextCp; })()")

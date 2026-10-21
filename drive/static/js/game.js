@@ -4950,7 +4950,6 @@ function applyPhase() {
   // race you are actually in: somebody who walked in after the lights is
   // practising on the same road and drives one lap like anyone else.
   S.run.laps = (S.raceMode && S.racePhase === 'racing') ? raceLaps() : 1;
-  S.run.forgive = S.raceMode && S.racePhase === 'racing';
   const p = S.previewPhase || S.racePhase;      // `?panel=qual|racing`
   const [text, racing] = PHASE_LABEL[p] || PHASE_LABEL.free;
   setMode(text, racing);
@@ -6959,13 +6958,16 @@ function orderFromSnapshot(snap) {
   for (const pid in snap.cars) {
     const a = snap.cars[pid];
     const age = (a.length > 13 ? a[13] : 0) / 1000;
-    out.push({ pid, s: a[10] + Math.hypot(a[7], a[8], a[9]) * age });
+    out.push({ pid, g: a.length > 16 ? a[16] : 0,
+               s: a[10] + Math.hypot(a[7], a[8], a[9]) * age });
   }
   // Ties broken by pid, not by enumeration order: `prog` is rounded to 0.1 on
   // the wire, so two cars genuinely abreast do tie, and the pair of screens has
   // to break it the same way or the whole point is lost on the one case the
   // whole thing is for.
-  out.sort((x, y) => (y.s - x.s) || (x.pid < y.pid ? -1 : 1));
+  // Checkpoints first, distance second: a car through more gates is ahead
+  // whatever the extrapolated distance says.
+  out.sort((x, y) => (y.g - x.g) || (y.s - x.s) || (x.pid < y.pid ? -1 : 1));
   return out;
 }
 

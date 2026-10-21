@@ -3470,13 +3470,30 @@ def _roll_item(r, pid):
     return random.choices(items, weights=[odds[i] for i in items])[0]
 
 
+def _gates(r, pid):
+    """The furthest gate this car has reported this race (`Run.cpIndex`).
+
+    The running order goes by this first and distance second, so a car through
+    lap two's fifth checkpoint is ahead of one owing it wherever the two cars
+    are on the road.
+    """
+    taken = (r.get("splits") or {}).get(pid)
+    return max(taken) if taken else 0
+
+
+def _place_key(r, pid, c):
+    return (_gates(r, pid), c["prog"])
+
+
 def _race_place(r, pid):
     """0 at the front of the running order, 1 at the back, 0.5 alone."""
     live = [c for p, c in r["cars"].items() if not c.get("gone")]
     if len(live) < 2:
         return 0.5
     mine = r["cars"].get(pid)
-    ahead = sum(1 for c in live if c is not mine and c["prog"] > (mine or {}).get("prog", 0))
+    me = _place_key(r, pid, mine) if mine else (0, 0.0)
+    ahead = sum(1 for p, c in r["cars"].items()
+                if not c.get("gone") and c is not mine and _place_key(r, p, c) > me)
     return ahead / float(len(live) - 1)
 
 
@@ -3883,6 +3900,9 @@ def _snapshot(r):
     owns - fold them together and overstating your ping quietly buys projected
     distance on the board, which is precisely the number the order exists to
     make trustworthy.
+
+    Field 16 is the furthest gate the car has reported (`_gates`), which the
+    running order sorts by before distance.
     """
     now = _now_ms()
     cars = {}
@@ -3893,7 +3913,7 @@ def _snapshot(r):
                      round(c["q"][0], 3), round(c["q"][1], 3), round(c["q"][2], 3), round(c["q"][3], 3),
                      round(c["v"][0], 2), round(c["v"][1], 2), round(c["v"][2], 2),
                      round(c["prog"], 1), c["cp"], c["flags"], max(0, now - c["ts"]),
-                     round(c.get("sl", 0.0), 2), round(c["up"])]
+                     round(c.get("sl", 0.0), 2), round(c["up"]), _gates(r, pid)]
     # Shells and bananas ride the pose channel rather than getting one of their
     # own: they move every tick like a car does, and a client that misses one
     # frame of them wants the next frame, not the one it missed.
@@ -4164,7 +4184,8 @@ def _race_state(r):
             "finish": r["finish"], "qual": _qual_state(r),
             "settings": dict(r["settings"]), "pole": _pole_meta(r),
             "order": [pid for pid, _ in sorted(r["cars"].items(),
-                                               key=lambda kv: -kv[1]["prog"])]}
+                                               key=lambda kv: _place_key(r, *kv),
+                                               reverse=True)]}
 
 
 def _live(r):
@@ -5679,8 +5700,14 @@ def on_split(data=None):
     # unbounded one shows five other people a leader who is forty seconds up the
     # road and not there. `cp` past the last checkpoint is not a checkpoint, and
     # `ms` cannot be longer than the race has been running.
+    # `cp` is `Run.cpIndex`, counted over the whole race, so lap two's gates
+    # are past one lap's worth. Bounding it by one lap threw every one of them
+    # away, and a reload on lap two came back on lap one (`_lap_progress`). Nor
+    # may it be on a lap the server has not seen the car start.
     track = _hot_track(r)
-    if track and cp > len(track.get("gates") or []):
+    stride = int((track or {}).get("checkpoints") or 0) + 1
+    if track and (cp > _race_laps(r, track) * stride
+                  or cp // stride > max(0, _watch(r, pid).lap) + 1):
         return
     if ms > _now_ms() - (r.get("t0") or 0) + FINISH_CLOCK_SLACK_MS:
         return
