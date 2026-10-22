@@ -33,7 +33,7 @@ FIRST_TURN_DEG = 25.0
 # what keeps the window clear of a road passing overhead: a car on the upper
 # level sits at the crossing clearance above the gate, so the roof stays that
 # far below it.
-GATE_CEIL_MAX = 14.0
+GATE_CEIL_MAX = 30.0
 GATE_CEIL_MIN = 5.0
 GATE_CEIL_MARGIN = 4.0
 
@@ -185,6 +185,17 @@ def gate_ceiling(track):
     """
     line = track["line"]
     clears = [abs(line[i]["p"][1] - line[j]["p"][1]) for i, j in crossings(track)]
+    # `crossings` skips airborne stations, so it misses road that passes over a
+    # gate's mouth without being a pier crossing (Costco's travelator, 19 over
+    # a checkpoint). Measure what is directly over each gate as well.
+    for g in track.get("gates", []):
+        for st in line:
+            q = st["p"]
+            ahead = sum((q[k] - g["p"][k]) * g["f"][k] for k in range(3))
+            side = (q[0] - g["p"][0]) * g["r"][0] + (q[2] - g["p"][2]) * g["r"][2]
+            up = q[1] - g["p"][1]
+            if abs(ahead) < 20 and abs(side) < g["hw"] + 2.5 + st["hw"] and up > CROSS_CLEAR:
+                clears.append(up)
     if not clears:
         return GATE_CEIL_MAX
     return round(max(GATE_CEIL_MIN, min(GATE_CEIL_MAX,

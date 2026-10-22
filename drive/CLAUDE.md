@@ -192,7 +192,7 @@ before touching it.
   is only reachable from inside the terrain branch, and a flat track has no height
   field for it.
 - **The rooftop deck is the only crossing**, and it clears the floor by the whole
-  of `DECK` (19), which is why `gate_ceil` comes out at its full 14. Both
+  of `DECK` (19), which is why `gate_ceil` comes out at 15 (19 less the 4-unit margin). Both
   travelators climb along the one row of the building with no aisle under it, so
   nothing is ever over anything else part-way up.
 - **`SHELL_CEIL` and `DECK` move together.** The roof-hole test needs a real gap
