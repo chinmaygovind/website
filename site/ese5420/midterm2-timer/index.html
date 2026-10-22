@@ -9,25 +9,25 @@
   color-scheme: light;
   --ink: #1b120c;
   --paper: #fff8ea;
-  --yellow: #ffd23f;
-  --orange: #f07f2a;
-  --red: #d8402a;
+  --yellow: #ffa62b;
+  --orange: #7b3fa0;
+  --red: #c8282d;
   --rust: #9c3d1c;
   --muted: #6b5645;
 }
 html, body { height: 100%; overflow: hidden; }
 body {
   margin: 0;
-  background: linear-gradient(#f5a06a 0%, #f9c27d 38%, #fde2a6 70%, #fff1cf 100%);
+  background: linear-gradient(#120a24 0%, #2e1650 40%, #5e2a6e 68%, #c4572a 100%);
   color: var(--ink);
   font-family: "xkcd Script", "Comic Sans MS", "Comic Neue", cursive;
   user-select: none;
 }
-body.done { background: linear-gradient(#5b4b8a 0%, #b76f8e 40%, #f19a6b 72%, #fcd08f 100%); transition: background 2s; }
+body.done { background: linear-gradient(#05030c 0%, #1a0d33 45%, #3d1a52 75%, #8a3a2a 100%); transition: background 2s; }
 .sun {
   position: fixed; right: 3%; top: 3%; width: 12vmin; height: 12vmin; border-radius: 50%;
-  background: conic-gradient(#c8612b var(--used, 0deg), #ffcf4a 0); border: 5px solid var(--ink);
-  box-shadow: 0 0 0 3vmin rgba(255, 207, 74, .3), 0 0 0 7vmin rgba(255, 207, 74, .14);
+  background: conic-gradient(#2e1650 var(--used, 0deg), #f4e9c1 0); border: 5px solid var(--ink);
+  box-shadow: 0 0 0 3vmin rgba(244, 233, 193, .18), 0 0 0 7vmin rgba(244, 233, 193, .08);
   transition: transform 3s ease-in;
 }
 body.running .sun { width: 26vmin; height: 26vmin; }
@@ -188,7 +188,7 @@ button:focus-visible { outline: 5px dashed var(--ink); outline-offset: 8px; }
       <p>Pass your exam + answer sheet toward the aisle, <span class="hl">answer sheet on top of your exam</span>.</p>
     </div>
     <h2 class="thanks inked wobble" data-split>THANK YOU!</h2>
-    <div class="caption fall pop">Enjoy your fall break!</div>
+    <div class="caption fall pop">Happy Halloween! 🎃</div>
     <button id="again" class="quiet" type="button" hidden>Back to start</button>
   </section>
 </div>
@@ -276,13 +276,13 @@ $("test").onclick = () => start(true);
 $("again").onclick = () => show("pre");
 
 const cv = $("leaves"), g2 = cv.getContext("2d");
-const COLORS = ["#d8402a", "#f07f2a", "#e8a33a", "#9c3d1c", "#c8612b", "#b5832c"];
+const COLORS = ["#ff7a1a", "#ffa62b", "#7b3fa0", "#c8282d", "#e85d1a", "#5a2a7a"];
 let W, H, leafBoost = 1;
 const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const leaves = Array.from({ length: 140 }, (_, i) => ({
   x: Math.random(), y: Math.random(), s: 14 + Math.random() * 16, r: Math.random() * 6.3,
   vr: (Math.random() - .5) * .04, vy: .0006 + Math.random() * .0012, ph: Math.random() * 6.3,
-  c: COLORS[i % COLORS.length], on: i < 45,
+  c: COLORS[i % COLORS.length], on: i < 45, bat: i % 3 === 0, vx: (i % 2 ? 1 : -1) * (.0008 + Math.random() * .0012),
 }));
 function size() {
   const d = devicePixelRatio || 1;
@@ -298,12 +298,49 @@ function leaf(l) {
   g2.beginPath(); g2.moveTo(0, -s * .7); g2.lineTo(0, s * 1.15); g2.lineWidth = 2; g2.stroke();
   g2.restore();
 }
+function bat(l, t) {
+  const s = l.s * 1.5, f = Math.sin(t / 80 + l.ph);
+  g2.save(); g2.translate(l.x * W, l.y * H);
+  g2.fillStyle = "#0b0614"; g2.strokeStyle = "rgba(244, 233, 193, .55)"; g2.lineWidth = 1.5;
+  g2.beginPath();
+  for (const side of [-1, 1]) {
+    g2.moveTo(0, 0);
+    g2.quadraticCurveTo(side * s * .5, -s * .7 * f - s * .2, side * s * 1.2, -s * .4 * f);
+    g2.quadraticCurveTo(side * s * .95, s * .05, side * s * .8, s * .25);
+    g2.quadraticCurveTo(side * s * .6, s * .05, side * s * .4, s * .3);
+    g2.quadraticCurveTo(side * s * .25, s * .1, 0, s * .2);
+  }
+  g2.moveTo(-s * .15, -s * .1); g2.lineTo(-s * .12, -s * .35); g2.lineTo(-s * .03, -s * .2);
+  g2.lineTo(s * .03, -s * .2); g2.lineTo(s * .12, -s * .35); g2.lineTo(s * .15, -s * .1);
+  g2.fill(); g2.stroke();
+  g2.beginPath(); g2.ellipse(0, s * .05, s * .17, s * .28, 0, 0, 6.3); g2.fill();
+  g2.restore();
+}
+function pumpkin(x, y, r) {
+  g2.save(); g2.translate(x, y - r * .8);
+  g2.lineWidth = 4; g2.strokeStyle = "#1b120c";
+  g2.fillStyle = "#3d6b1f"; g2.fillRect(-r * .1, -r * 1.05, r * .2, r * .35); g2.strokeRect(-r * .1, -r * 1.05, r * .2, r * .35);
+  g2.fillStyle = "#f07f1a";
+  for (const dx of [-.45, .45, 0]) { g2.beginPath(); g2.ellipse(dx * r, 0, r * .62, r * .8, 0, 0, 6.3); g2.fill(); g2.stroke(); }
+  g2.fillStyle = "#ffe066"; g2.lineWidth = 2.5;
+  for (const side of [-1, 1]) {
+    g2.beginPath(); g2.moveTo(side * r * .45, -r * .1); g2.lineTo(side * r * .2, -r * .1); g2.lineTo(side * r * .32, -r * .38); g2.closePath(); g2.fill(); g2.stroke();
+  }
+  g2.beginPath(); g2.moveTo(-r * .55, r * .2);
+  for (let k = 1; k <= 6; k++) g2.lineTo(-r * .55 + k * r * .183, r * (k % 2 ? .3 : .2));
+  g2.quadraticCurveTo(0, r * .7, -r * .55, r * .2); g2.fill(); g2.stroke();
+  g2.restore();
+}
+const HILLS = [[.15, .55, .8, "#1c0f2c"], [.8, .6, .84, "#2a1240"]];
+const hillY = ([cx, rx, top], x) => H * top + H * .3 - H * .3 * Math.sqrt(Math.max(0, 1 - ((x - cx) / rx) ** 2));
 function hills() {
   g2.lineWidth = 5; g2.strokeStyle = "#1b120c";
-  for (const [cx, rx, top, col] of [[.15, .55, .8, "#c8612b"], [.8, .6, .84, "#9c3d1c"]]) {
+  for (const [cx, rx, top, col] of HILLS) {
     g2.beginPath(); g2.ellipse(cx * W, H * top + H * .3, rx * W, H * .3, 0, Math.PI, 0);
     g2.fillStyle = col; g2.fill(); g2.stroke();
   }
+  const r = H * .04;
+  for (const [h, x] of [[0, .05], [0, .13], [1, .93], [1, .86]]) pumpkin(x * W, hillY(HILLS[h], x) + r * .3, h ? r : r * .8);
 }
 function frame(t) {
   g2.clearRect(0, 0, W, H);
@@ -313,6 +350,13 @@ function frame(t) {
     if (i >= n && l.y > 1.05) { l.on = false; return; }
     if (i < n) l.on = true;
     if (!l.on) return;
+    if (l.bat) {
+      if (!still) {
+        l.x += l.vx; l.y += Math.sin(t / 700 + l.ph) * .0012;
+        if (l.x > 1.1 || l.x < -.1) { l.x = l.vx > 0 ? -.08 : 1.08; l.y = .05 + Math.random() * .55; }
+      }
+      bat(l, t); return;
+    }
     if (!still) {
       l.y += l.vy * (leafBoost > 1 ? 1.6 : 1); l.r += l.vr;
       l.x += Math.sin(t / 900 + l.ph) * .0008;
