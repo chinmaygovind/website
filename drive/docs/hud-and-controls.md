@@ -851,13 +851,13 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   the code could have fixed it. `/` sits beside the arrow keys, so a driver
   holding the item with their left hand looks behind with their right.
 
-- **Tap to throw, hold to trail** (`itemDown`/`itemUp`): holding the use
-    button puts a banana, green or red *behind* the car instead of throwing it,
-    and letting go throws it - so a tap is exactly what a tap always was. The
-    boost is the exception and has to be, because it is spammed rather than
-    held. What is being trailed is drawn from the server's word (`setHeld`,
-    `moveHeld`), so what protects you and what everybody can see are the same
-    object.
+- **A banana, green or red trails behind the car on its own** (`_tick_hold`
+    in `app.py`) as soon as it is the front slot and its roulette has stopped,
+    and `X` throws it - forwards, or backwards while holding back. It used to
+    need the button *held*, which a phone with one thumb on the X could not
+    do while steering. What is being trailed is drawn from the server's word
+    (`setHeld`, `moveHeld`), so what protects you and what everybody can see
+    are the same object.
   - **The star sings for as long as it lasts** (`STAR_BAR_MS` in
     `expireItems`): one fanfare at the start is a fanfare you have forgotten by
     the second corner, and the point of the item is knowing - and everybody

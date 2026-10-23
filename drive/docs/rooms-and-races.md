@@ -701,7 +701,9 @@ with how late it was and what the rooms were doing.
     `_tick_bot_items`, which is the whole of its judgement: it sits on an item
     for a second or three so a field of them does not fire in unison, and it
     **holds a shell it has nothing to aim at** rather than throwing it away -
-    which is what a person does with one too. Everything after that is
+    which is what a person does with one too - and **a bot in the front third
+    keeps a banana or a green trailing as a shield** for as long as it is
+    there, rather than spending it. Everything after that is
     `_spend_item`, the same call the socket handler makes, because two versions
     of "what this item does" is how a bot's blue shell comes to behave
     differently from yours.
@@ -726,6 +728,21 @@ with how late it was and what the rooms were doing.
     shot's `until` asked `back` rather than the item, so a green thrown
     backwards lived `BANANA_MS` and bounced around the track for forty-five
     seconds.
+  - **A trailed item guards your back and nothing else.** A banana, green or
+    red in the front slot rides behind the car by itself (`_tick_hold`), and a
+    shell or a peel stopped by it is one that reached the car *from behind*
+    (`_from_behind`, on the shot's motion relative to the car) - one driven
+    into nose first hits you and leaves the item alone. A car that rear-ends a
+    trailed item is hit and its own trailed item, being behind it, is
+    untouched (`_tick_held`). A bomb, a blue or a star goes through: the item
+    breaks and you are hit anyway.
+  - **A blue can be dodged with a boost tap** in the `BLUE_DODGE_MS` (0.4s)
+    before it comes down - Mario Kart's mushroom dodge. The tap is stamped in
+    `_spend_item` on server time, so its trip here is inside the window, and
+    only the blue's own target is spared; anybody else in the blast is not.
+  - **Blues are rare unless somebody is running away**: under `BLUE_LEAD`
+    (150 units, 3s) between first and second, `_roll_item` cuts the blue's
+    weight to a fifth (`BLUE_CLOSE`).
   - **And what the shove is, in one place: `hitByItem`.** A hop, a tumble about
     the car's `right`, and then no speed: 15% of the velocity kept and 5.5
     units of air, down from 16, which was a launch that took the camera with

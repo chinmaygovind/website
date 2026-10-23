@@ -297,6 +297,16 @@ so there is nothing to measure yet.
 
 ## Things learned the hard way in the driver
 
+- **In traffic the line puts bots into checkpoint posts** - it clips a gate as
+  tight as the record does, and a car alongside shoves it the last metre. So
+  `gateKeep` clamps the aim to 3 units inside the posts, **only** with another
+  car within `GATE_RIVAL` (9) and the next gate under `GATE_NEAR` (30) ahead,
+  and only while the aim is on the gate's own straight (`GATE_STRAIGHT`) - the
+  first version without that last clause aimed at the gate's centre after the
+  road had turned and cost Sepang five seconds. Measured over 8-car fields,
+  8 seeds a track: post hits 181 to 79 with an all-max field, and no track's
+  race time worse than noise. A lone bot never meets the condition, so its lap
+  is identical to the millisecond. Set `TUNE.gateKeep` to 0 to turn it off.
 - **A stall goes back to the last checkpoint** (`STALL_DIST`/`STALL_GIVE_UP_S`
   in `bot.js`): ten units of movement in two seconds or it respawns. The other
   four triggers missed bots wedged on a wall, because backing off it resets

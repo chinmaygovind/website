@@ -1037,7 +1037,7 @@ def test_a_held_item_takes_the_hit_and_is_gone(A, bend, monkeypatch):
     r = _room(A)
     c = _car(A, r, "a", at=(35.0, 0.0, 0.0))
     c["q"] = [0.0, -0.7071, 0.0, 0.7071]             # along the road
-    _car(A, r, "b", at=(75.0, 0.0, 0.0))
+    _car(A, r, "b", at=(75.0, 0.0, 0.0), facing=c["q"])   # driving away
     A._item_queue(r, "b").append("banana")
     r.setdefault("held", {})["b"] = "banana"
     seen = []
@@ -1053,6 +1053,46 @@ def test_a_held_item_takes_the_hit_and_is_gone(A, bend, monkeypatch):
     assert "item_hit" not in kinds, "hit anyway, holding or not"
     assert r["shots"] == [], "the shell survived being blocked"
     assert A._item_queue(r, "b") == [] and not r["held"].get("b")
+
+
+def test_a_trailed_item_does_not_cover_your_nose(A, bend, monkeypatch):
+    """It rides behind the car, so a shell met head on goes straight past it."""
+    r = _room(A)
+    c = _car(A, r, "a", at=(35.0, 0.0, 0.0))
+    c["q"] = [0.0, -0.7071, 0.0, 0.7071]
+    _car(A, r, "b", at=(75.0, 0.0, 0.0), facing=[0.0, 0.7071, 0.0, 0.7071])
+    A._item_queue(r, "b").append("banana")
+    r.setdefault("held", {})["b"] = "banana"
+    seen = []
+    monkeypatch.setattr(A.socketio, "emit", lambda ev, d, **k: seen.append((ev, d)))
+    A._fire(r, "a", "green")
+    now = A._now_ms()
+    for step in range(1, 60):
+        A._tick_shots(r, now + step * 33)
+        if not r["shots"]:
+            break
+    assert ("item_hit", {"item": "green", "pid": "b", "owner": "a"}) in seen
+    assert r["held"]["b"] == "banana", "the item at the back took a hit at the front"
+
+
+def test_the_front_slot_trails_itself_once_it_stops_spinning(A, boxes, monkeypatch):
+    r = _room(A)
+    _car(A, r, "a")
+    monkeypatch.setattr(A, "_roll_item", lambda r, pid: "banana")
+    seen = []
+    monkeypatch.setattr(A.socketio, "emit", lambda ev, d, **k: seen.append((ev, d)))
+    now = A._now_ms()
+    A._claim_box(r, "a", 0, now)
+    A._tick_hold(r, now + 100)
+    assert not r["held"].get("a"), "trailed before the roulette had shown it"
+    A._tick_hold(r, now + A.ROULETTE_MS)
+    assert r["held"]["a"] == "banana"
+    assert ("item_held", {"pid": "a", "item": "banana"}) in seen
+    # Thrown, it is gone from behind the car; a boost behind it is not trailed.
+    A._item_queue(r, "a").append("boost")
+    A._item_queue(r, "a").pop(0)
+    A._tick_hold(r, now + A.ROULETTE_MS + 33)
+    assert not r["held"].get("a")
 
 
 def test_only_a_thing_on_the_road_can_be_held(A):
@@ -1084,6 +1124,56 @@ def test_driving_into_somebody_with_a_star_spins_them(A, monkeypatch):
     assert seen == []
     A._tick_stars(r, now + A.STAR_AGAIN_MS + 1)
     assert [d["pid"] for ev, d in seen if ev == "item_hit"] == ["b"]
+
+
+def test_a_star_goes_through_a_trailed_item(A, monkeypatch):
+    r = _room(A)
+    _car(A, r, "a")["flags"] = A.racecheck.FLAG_STAR
+    _car(A, r, "b", at=(0.0, 0.0, -2.0))
+    A._item_queue(r, "b").append("banana")
+    r.setdefault("held", {})["b"] = "banana"
+    seen = []
+    monkeypatch.setattr(A.socketio, "emit", lambda ev, d, **k: seen.append((ev, d)))
+    A._tick_stars(r, A._now_ms())
+    assert [d["pid"] for ev, d in seen if ev == "item_hit"] == ["b"]
+    assert r["held"] == {} and A._item_queue(r, "b") == []
+
+
+def test_a_boost_tap_just_before_a_blue_lands_dodges_it(A, monkeypatch):
+    r = _room(A)
+    _car(A, r, "lead")
+    _car(A, r, "near", at=(2.0, 0.0, 0.0))
+    seen = []
+    monkeypatch.setattr(A.socketio, "emit", lambda ev, d, **k: seen.append((ev, d)))
+    A._item_queue(r, "lead").append("boost")
+    now = A._now_ms()
+    A._spend_item(r, "lead")
+    blue = {"item": "blue", "p": [0.0, 0.0, 0.0], "owner": "b", "target": "lead"}
+    A._blast(r, blue, now + A.BLUE_DODGE_MS - 50, A.BLUE_BLAST)
+    hit = [d["pid"] for ev, d in seen if ev == "item_hit"]
+    assert hit == ["near"], "the target was hit, or the dodge spared everybody"
+    seen.clear()
+    A._blast(r, blue, now + A.BLUE_DODGE_MS + 50, A.BLUE_BLAST)
+    assert "lead" in [d["pid"] for ev, d in seen if ev == "item_hit"], "tapped too early"
+
+
+def test_blues_are_rare_when_the_leader_is_not_clear(A, monkeypatch):
+    r = _room(A)
+    for pid, prog in (("lead", 1000.0), ("second", 950.0), ("me", 0.0)):
+        _car(A, r, pid)["prog"] = prog
+    monkeypatch.setattr(A, "_race_band", lambda r, pid: "back")
+    weights = {}
+    monkeypatch.setattr(A.random, "choices",
+                        lambda items, weights=None: weights_out(items, weights))
+
+    def weights_out(items, w):
+        weights.update(zip(items, w))
+        return [items[0]]
+    A._roll_item(r, "me")
+    assert weights["blue"] == A.ITEM_ODDS["back"]["blue"] * A.BLUE_CLOSE
+    r["cars"]["lead"]["prog"] = 950.0 + A.BLUE_LEAD + 1
+    A._roll_item(r, "me")
+    assert weights["blue"] == A.ITEM_ODDS["back"]["blue"]
 
 
 def test_two_stars_pass_through_each_other(A, monkeypatch):
@@ -1153,8 +1243,8 @@ def test_your_own_trailed_item_cannot_hit_you(A, monkeypatch):
     assert seen == [] and r["held"]["a"] == "green"
 
 
-def test_two_trailed_items_take_each_other_out(A, monkeypatch):
-    """Neither driver is hit: the two objects met, not the two cars."""
+def test_rear_ending_a_trailed_item_hits_you_whatever_you_trail(A, monkeypatch):
+    """You drove into it nose first; what you trail is behind you."""
     r = _room(A)
     _car(A, r, "a")
     _car(A, r, "b", at=(0.0, 0.0, A.HELD_BACK))
@@ -1164,8 +1254,8 @@ def test_two_trailed_items_take_each_other_out(A, monkeypatch):
     seen = []
     monkeypatch.setattr(A.socketio, "emit", lambda ev, d, **k: seen.append((ev, d)))
     A._tick_held(r, A._now_ms())
-    assert not [d for ev, d in seen if ev == "item_hit"], "somebody got hit"
-    assert r["held"] == {}
+    assert [d["pid"] for ev, d in seen if ev == "item_hit"] == ["b"]
+    assert r["held"] == {"b": "banana"}
 
 
 def test_the_leader_rarely_draws_a_shield(A):
@@ -1532,3 +1622,33 @@ def test_a_reload_in_practice_is_a_fresh_start_but_not_mid_race(A, monkeypatch):
     A._sid_room["sid-2"] = ("ITEM", "p1")
     A._drop("sid-2", hard=False)
     assert A._item_queue(r, "p1") == ["red"]
+
+
+def test_a_leading_bot_keeps_its_banana_as_a_shield(A, monkeypatch):
+    r = _room(A)
+    r["bots"] = {"bot": {}}
+    monkeypatch.setattr(A, "_bot_pids", lambda r: ["bot"])
+    spent = []
+    monkeypatch.setattr(A, "_spend_item", lambda r, pid, back=False: spent.append(pid))
+    for band, want in (("front", []), ("back", ["bot"])):
+        monkeypatch.setattr(A, "_race_band", lambda r, pid, b=band: b)
+        r["items"] = {"bot": ["banana"]}
+        r["bot_item_at"] = {"bot": 0}
+        spent.clear()
+        A._tick_bot_items(r, A._now_ms())
+        assert spent == want, band
+
+
+def test_a_leading_bot_keeps_its_red_as_a_shield(A, monkeypatch):
+    """Nobody ahead to aim at, so it trails behind the leader instead."""
+    r = _room(A)
+    r["bots"] = {"bot": {}}
+    _car(A, r, "bot")["prog"] = 500.0
+    _car(A, r, "chaser")["prog"] = 400.0
+    monkeypatch.setattr(A, "_bot_pids", lambda r: ["bot"])
+    spent = []
+    monkeypatch.setattr(A, "_spend_item", lambda r, pid, back=False: spent.append(pid))
+    r["items"] = {"bot": ["red"]}
+    r["bot_item_at"] = {"bot": 0}
+    A._tick_bot_items(r, A._now_ms())
+    assert spent == []

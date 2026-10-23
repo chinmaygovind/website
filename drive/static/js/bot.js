@@ -121,6 +121,9 @@ const TUNE = {
   // happening at all and the times fall back to the no-handbrake baseline.
   driftOn: 1.30,
   driftOff: 1.01,
+  // How far inside a checkpoint's posts to keep the aim, in units, **only with
+  // a car alongside and the gate close** - see `gateKeep`. 0 turns it off.
+  gateKeep: 3.0,
 };
 
 // Pedal control.
@@ -196,6 +199,12 @@ const LOST_GIVE_UP_S = 2.5;
 const FELL_BELOW = 4.0;
 const FELL_GIVE_UP_S = 1.2;
 const RELOCK_DIST = 30.0;         // past this, stop walking the line and re-find it
+
+// `gateKeep`: how close the next checkpoint has to be, along its own heading,
+// and how close another car, before the aim is held off the posts.
+const GATE_NEAR = 30.0;
+const GATE_RIVAL = 9.0;
+const GATE_STRAIGHT = 12.0;
 
 const NEUTRAL = { throttle: 0, brake: 0, steer: 0, handbrake: false };
 
@@ -636,7 +645,7 @@ class Bot {
     const bias = this.slot * merge +
                  ((this.aiming ? 0 : this.wander()) +
                   this.racecraft(loc, ctx)) * (1 - merge);
-    const steer = this.steerOnPath(loc, bias, j);
+    const steer = this.steerOnPath(loc, this.gateKeep(j, bias, ctx), j);
 
     // How fast to be going. `vmin` is a floor the pace is not allowed to scale -
     // it is what gets the car over the gaps the quick line jumps.
@@ -1042,6 +1051,50 @@ class Bot {
       if (Math.abs(turn) > 0.02) return (turn > 0 ? 1 : -1) * 1.2 * aggr;
     }
     return 0;
+  }
+
+  /**
+   * Hold the aim off a checkpoint's posts while somebody is close enough to
+   * shove us into one.
+   *
+   * The line clips the gates as tight as a record does, which is fine alone
+   * and is a post in the door once another car leans on you. So with a rival
+   * within `GATE_RIVAL` and the next gate under `GATE_NEAR` ahead, the aim
+   * point is clamped to `gateKeep` inside the posts. Nothing else changes: a
+   * clean lap never gets here, and the clamp moves only an aim that was
+   * already near the edge.
+   */
+  gateKeep(j, bias, ctx) {
+    const keep = this.k.gateKeep;
+    const rivals = ctx.rivals;
+    if (!keep || !rivals || !rivals.length) return bias;
+    const g = this.run.cps[this.run.nextCp];
+    if (!g) return bias;
+    const car = this.car, p = car.pos;
+    const ahead = (g.p[0] - p.x) * g.f[0] + (g.p[1] - p.y) * g.f[1] + (g.p[2] - p.z) * g.f[2];
+    if (ahead < 0 || ahead > GATE_NEAR) return bias;
+    let close = false;
+    for (let k = 0; k < rivals.length && !close; k++) {
+      const o = rivals[k];
+      close = Math.hypot(o.x - p.x, o.y - p.y, o.z - p.z) < GATE_RIVAL;
+    }
+    if (!close) return bias;
+    // The aim's sideways axis, the same one `aimAt` moves it along.
+    const tan = this.line.tangent(j, this._c);
+    const u = car.up;
+    const lx = tan[1] * u.z - tan[2] * u.y;
+    const ly = tan[2] * u.x - tan[0] * u.z;
+    const lz = tan[0] * u.y - tan[1] * u.x;
+    const l = Math.hypot(lx, ly, lz);
+    if (l < 1e-4) return bias;
+    const t = this.line.p[j];
+    // Only while the aim is on the gate's own straight: past it the road may
+    // already be turning, and the gate's centre is no longer the road's.
+    const along = (t[0] - g.p[0]) * g.f[0] + (t[1] - g.p[1]) * g.f[1] + (t[2] - g.p[2]) * g.f[2];
+    if (Math.abs(along) > GATE_STRAIGHT) return bias;
+    const off = ((t[0] - g.p[0]) * lx + (t[1] - g.p[1]) * ly + (t[2] - g.p[2]) * lz) / l;
+    const lim = Math.max(0, g.hw - keep);
+    return clamp(off + bias, -lim, lim) - off;
   }
 
   /**

@@ -269,7 +269,6 @@ const S = {
   shots: null,             // the shells and bananas off the pose snapshot
   shotById: null,          // id -> mesh, so one shell keeps one mesh
   held: null,              // pid -> the item that car is trailing
-  holdingAt: 0,            // when the use button went down, or 0
   blasts: null,            // the bombs going off right now
   mapBlasts: null,         // and their rings on the minimap
   itemUntil: {},           // when each held-item timer must be gone by: see
@@ -1244,7 +1243,7 @@ function bindInput() {
     // does is either a driving key or already opens something - but it sits with
     // K, L, O and P, which is where the panel keys live.
     if (e.code === 'KeyJ' && savesEnabled()) { e.preventDefault(); toggleSaves(); }
-    if (e.code === 'KeyX' && !e.repeat) { e.preventDefault(); itemDown(); }
+    if (e.code === 'KeyX' && !e.repeat) { e.preventDefault(); useItem(); }
     if (e.code === 'KeyK') setGhostMode(nextGhostMode());
     // G is the car. A toggle rather than a cycle, because there are two states
     // and landing on the one you wanted should not depend on where you started.
@@ -1253,7 +1252,6 @@ function bindInput() {
   window.addEventListener('keyup', (e) => {
     const k = KEYMAP[e.code];
     if (k) keys.delete(k);
-    if (e.code === 'KeyX') itemUp();
   });
   window.addEventListener('blur', () => {
     keys.clear();
@@ -1322,7 +1320,7 @@ function bindInput() {
   };
   const hold = (id) => tb(id, () => { touchDown.add(id); syncTouch(); },
                               () => { touchDown.delete(id); syncTouch(); });
-  tb('tItem', () => itemDown(), () => itemUp());
+  tb('tItem', () => useItem(), () => {});
   // Held exactly like a pedal, because that is what it is: press to look, let
   // go to drive. `hold` is what writes `touchKeys`, which `viewKeys` reads.
   hold('tRear');
@@ -2617,7 +2615,7 @@ function moveShots(dt) {
 /**
  * Draw what a car is trailing, or stop drawing it.
  *
- * The held item is the room's - see `on_hold_item` - so this only ever follows
+ * The held item is the room's - see `_tick_hold` - so this only ever follows
  * what the server says. It rides behind the car it belongs to, which is the
  * position it will be hit in, so what protects you and what you can see are
  * the same object.
@@ -2867,35 +2865,6 @@ function updateItemRing() {
 const BOOST_WINDOW_MS = 7000;
 
 /**
- * The use button going down.
- *
- * **Holding it trails the item behind you instead of throwing it**, for the
- * three that are objects - a banana, a green, a red - and that is a shield
- * made of the thing you have not thrown yet. It costs you the throw for as
- * long as you keep it, which is the trade. Letting go throws it (`itemUp`),
- * so a tap is still exactly what a tap was.
- *
- * The boost is the exception and has to be: it is spammed, not held, so it
- * goes off on the press like it always did.
- */
-function itemDown() {
-  if (!canUseItem()) return;
-  if (HOLDABLE.includes(S.items[0])) {
-    S.holdingAt = performance.now();
-    S.socket.emit('hold_item', { on: true });
-    return;
-  }
-  useItem();
-}
-
-function itemUp() {
-  if (!S.holdingAt) return;
-  S.holdingAt = 0;
-  if (!canUseItem()) { S.socket && S.socket.emit('hold_item', { on: false }); return; }
-  useItem();
-}
-
-/**
  * On a phone, the item slots belong in the row with the button that spends
  * them - so move them there.
  *
@@ -2917,9 +2886,6 @@ function moveItemsToPad() {
   if (map && $('place')) map.appendChild($('place'));
   if (row && hud) row.insertBefore(hud, row.firstChild);
 }
-
-/** The three you can hold out behind you. Mirrors `HOLDABLE` in `app.py`. */
-const HOLDABLE = ['banana', 'green', 'red'];
 
 function canUseItem() {
   return !!(S.socket && S.items.length && S.settings.powerups && contactOn() &&

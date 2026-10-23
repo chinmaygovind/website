@@ -3248,6 +3248,9 @@ BLUE_RISE_MS = 600        # climbing to that off the thrower's roof
 BLUE_REACH = 14.0         # this close to its man it stops chasing and circles
 BLUE_ORBIT_MS = 1200      # circling before it comes down
 BLUE_BLAST = 7.0          # and what the explosion catches
+# A boost tap this close before a blue comes down dodges it, Mario Kart's
+# mushroom dodge. Server time, so the tap's trip here is inside the window.
+BLUE_DODGE_MS = 400
 # Even closing on the leader at 120 units a second, HOMING_MS is barely 1000
 # units of road - a blue from the back of a long track timed out and vanished.
 BLUE_MS = 20000
@@ -3465,9 +3468,26 @@ def _roll_item(r, pid):
     # boost was a leader pulling further clear.
     if _race_place(r, pid) < 0.5:
         no.add("boost")
-    odds = ITEM_ODDS[_race_band(r, pid)]
+    odds = dict(ITEM_ODDS[_race_band(r, pid)])
+    if "blue" in odds and _lead(r) < BLUE_LEAD:
+        odds["blue"] *= BLUE_CLOSE
     items = [i for i in odds if i not in no]
     return random.choices(items, weights=[odds[i] for i in items])[0]
+
+
+# **A blue is for a runaway leader.** With the field together a blue mostly
+# hands the win to second, so under `BLUE_LEAD` of road between first and
+# second (3s at `MAX_SPEED`) it is still in the box, just at a fifth of its odds.
+BLUE_LEAD = 150.0
+BLUE_CLOSE = 0.2
+
+
+def _lead(r):
+    """How far, in road units, the leader on the road is clear of second."""
+    racing = sorted((c["prog"] for c in r["cars"].values()
+                     if not c.get("gone") and c.get("ms") is None and not c.get("dnf")),
+                    reverse=True)
+    return racing[0] - racing[1] if len(racing) > 1 else 0.0
 
 
 def _gates(r, pid):
@@ -4014,7 +4034,7 @@ def _tick_shots(r, now):
         if hit and s["item"] == "bomb":
             _blast(r, s, now)
             continue
-        if hit and _drop_held(r, hit):
+        if hit and _from_behind(r["cars"][hit], s) and _drop_held(r, hit):
             # **The thing you were holding took it.** Not a hit at all: the
             # shell is spent and the car is untouched, which is the whole of
             # why anybody would give up a throw to trail a banana around.
@@ -4038,6 +4058,20 @@ def _tick_shots(r, now):
         else:
             keep.append(s)
     r["shots"] = keep
+
+
+def _from_behind(c, s):
+    """Did this shot reach the car from its back? Only then does what it is
+    trailing - which rides behind it - get in the way. Judged on the shot's
+    motion relative to the car, so a banana sitting on the road is driven into
+    nose first, and falls back to where the shot is for one with no motion."""
+    f = _forward(c["q"])
+    v = c.get("v") or [0.0, 0.0, 0.0]
+    rel = [(s.get("pv") or [0.0, 0.0, 0.0])[i] - v[i] for i in range(3)]
+    d = sum(rel[i] * f[i] for i in range(3))
+    if abs(d) < 1.0:
+        d = -sum((s["p"][i] - c["p"][i]) * f[i] for i in range(3))
+    return d > 0
 
 
 def _blue_arrived(s, track):
@@ -4080,6 +4114,9 @@ def _blast(r, s, now, radius=BOMB_BLAST):
     for pid, c in r["cars"].items():
         if c.get("gone"):
             continue
+        if s["item"] == "blue" and pid == s.get("target") and \
+                now - (r.get("boost_tap") or {}).get(pid, -BLUE_DODGE_MS - 1) <= BLUE_DODGE_MS:
+            continue                          # boosted out from under it
         if sum((c["p"][i] - p[i]) ** 2 for i in range(3)) <= radius ** 2:
             # A blast goes through whatever you are holding: it breaks, and
             # you are hit anyway. Held items only stop a shell or a banana.
@@ -4640,6 +4677,7 @@ def _tick(r, idle):
     _tick_bot_items(r, now_ms)
     _tick_bot_boxes(r, now_ms)
     _tick_items(r, now_ms)
+    _tick_hold(r, now_ms)
     _tick_held(r, now_ms)
     _tick_lost(r, now_ms)
     _tick_stars(r, now_ms)
@@ -5789,6 +5827,9 @@ def _claim_box(r, pid, i, now=None):
         return None
     item = _roll_item(r, pid)
     q.append(item)
+    if len(q) == 1:
+        # Not trailed until the browser's roulette has finished showing it.
+        r.setdefault("spin_until", {})[pid] = now + ROULETTE_MS
     _tally(item, "given")
     until = now + BOX_RESPAWN_MS
     r.setdefault("box_until", {})[i] = until
@@ -5797,40 +5838,38 @@ def _claim_box(r, pid, i, now=None):
     return item
 
 
-# The three you can hold out behind you instead of throwing. They are the ones
-# that are *objects* - a thing on the road that another car can run into - so
-# holding one is simply not having thrown it yet.
+# The three that trail behind you as soon as they are the front slot. They are
+# the ones that are *objects* - a thing on the road another car can run into -
+# so trailing one is simply not having thrown it yet.
 HOLDABLE = ("banana", "green", "red")
+# The browser's `ROULETTE_MS`: an item is not on the road behind you while the
+# slot is still spinning, or every screen would see it before you did.
+ROULETTE_MS = 1100
 
 
-@socketio.on("hold_item")
-def on_hold_item(data=None):
-    """The use button held down rather than tapped: trail the item behind you.
+def _tick_hold(r, now):
+    """A banana, green or red in the front slot is trailed behind the car.
 
-    It is a shield made of the thing you have not thrown yet, and it costs you
-    the throw for as long as you keep it - which is the trade. The server has
-    to own it for the same reason it owns the queue: what protects you has to
-    be the same object everybody else can see, or a shell hits a car that its
-    owner's browser thinks is covered.
+    **Automatic, not a held button**, so a phone - one thumb on the X - gets
+    the same shield a keyboard does. `X` throws it (`_spend_item`), and the
+    next item in the queue is picked up here on the following tick. The server
+    owns it for the reason it owns the queue: what protects you has to be the
+    object everybody else can see.
     """
-    ent = _sid_room.get(request.sid)
-    if not ent:
-        return
-    code, pid = ent
-    r = _rooms.get(code)
-    if not r or not _powerups_live(r):
-        return
     held = r.setdefault("held", {})
-    q = _item_queue(r, pid)
-    on = bool((data or {}).get("on")) and bool(q) and q[0] in HOLDABLE
-    was = held.get(pid)
-    if on:
-        held[pid] = q[0]
-    else:
-        held.pop(pid, None)
-    if held.get(pid) != was:
-        socketio.emit("item_held", {"pid": pid, "item": held.get(pid)},
-                      room="room:" + code)
+    live = _powerups_live(r)
+    spin = r.get("spin_until") or {}
+    for pid in set(held) | set(r["items"]):
+        q = r["items"].get(pid) or []
+        want = (q[0] if live and q and q[0] in HOLDABLE
+                and now >= spin.get(pid, 0) else None)
+        if held.get(pid) == want:
+            continue
+        if want:
+            held[pid] = want
+        else:
+            held.pop(pid, None)
+        socketio.emit("item_held", {"pid": pid, "item": want}, room="room:" + r["code"])
 
 
 def _drop_held(r, pid, blocked=True):
@@ -5904,6 +5943,7 @@ def _spend_item(r, pid, back=False):
     item = q[0]
     now = _now_ms()
     if item == "boost":
+        r.setdefault("boost_tap", {})[pid] = now
         ends = r.setdefault("boost_until", {})
         until = ends.get(pid)
         if not until or now >= until:
@@ -6029,8 +6069,7 @@ def _tick_stars(r, now):
             if now < seen.get(key, 0):
                 continue
             seen[key] = now + STAR_AGAIN_MS
-            if _drop_held(r, other):
-                continue
+            _drop_held(r, other, blocked=False)       # a star goes through it
             _tally("star", "hit")
             socketio.emit("item_hit", {"item": "star", "pid": other, "owner": pid},
                           room="room:" + r["code"])
@@ -6119,20 +6158,18 @@ def _tick_held(r, now):
                 continue
             if sum((o["p"][i] - p[i]) ** 2 for i in range(3)) > HELD_REACH ** 2:
                 continue
-            # Whoever hit it wears it - unless *they* are holding something, in
-            # which case the two items take each other out, which is the answer
-            # a trailing banana deserves from another trailing banana.
-            if not _drop_held(r, other):
-                _tally(item, "hit")
-                socketio.emit("item_hit", {"item": item, "pid": other, "owner": pid},
-                              room="room:" + r["code"])
-                if other in _bot_pids(r):
-                    w = _bot_world(r)
-                    if w:
-                        try:
-                            w.hit(other)
-                        except Exception:
-                            app.logger.exception("bot held hit failed in %s", r["code"])
+            # Whoever hit it wears it, nose first - so what *they* trail,
+            # which is behind them, is no help and is not touched.
+            _tally(item, "hit")
+            socketio.emit("item_hit", {"item": item, "pid": other, "owner": pid},
+                          room="room:" + r["code"])
+            if other in _bot_pids(r):
+                w = _bot_world(r)
+                if w:
+                    try:
+                        w.hit(other)
+                    except Exception:
+                        app.logger.exception("bot held hit failed in %s", r["code"])
             _drop_held(r, pid)
             break
 
@@ -6202,6 +6239,12 @@ def _tick_bot_items(r, now):
         if q[0] in ("red", "blue") and not _shell_target(r, pid, q[0] == "blue"):
             continue                       # nothing to aim at yet: keep hold of it
         if q[0] == "grapple" and not _grapple_target(r, pid):
+            continue
+        # **Out in front a banana or a green is a shield, not a throw**: it
+        # trails behind the bot (`_tick_hold`) and stops the shells everybody
+        # behind is sending, which a leader has more use for than a shot.
+        if q[0] in ("banana", "green") and _race_band(r, pid) == "front" \
+                and r["phase"] == "racing":
             continue
         # A bot drops its bananas rather than lobbing them: it is defending a
         # place, which is what the item is for, and forwards is a throw that
