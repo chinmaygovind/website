@@ -1,0 +1,89 @@
+name: Daily reel
+
+# Films the next daily not yet posted (its record lap), puts the mp4 at
+# drive.cgovind.com/static/reels/<slug>.mp4 and posts it to Instagram.
+# See drive/tools/shoot_daily.py and drive/tools/post_reel.py.
+on:
+  schedule:
+    # 05:10 UTC is just past midnight Eastern in both EST and EDT.
+    - cron: "10 5 * * *"
+  workflow_dispatch:
+    inputs:
+      slug:
+        description: "daily-N to film (blank: the next one to post)"
+        required: false
+      count:
+        description: "How many of the queue to film and post, oldest first (a backlog)"
+        default: "1"
+      post:
+        description: "Post it to Instagram"
+        type: boolean
+        default: true
+
+concurrency:
+  group: daily-reel
+  cancel-in-progress: false
+
+jobs:
+  reel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            drive/tools
+            drive/static/fonts
+            drive/static/img
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install renderer
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+          pip install playwright==1.62.0
+          playwright install --with-deps chromium
+      - name: Film
+        id: film
+        run: |
+          SLUGS="${{ inputs.slug }}"
+          [ -n "$SLUGS" ] || SLUGS="$(python drive/tools/shoot_daily.py --queue ${{ inputs.count || 1 }})"
+          echo "filming: ${SLUGS:-nothing, caught up}"
+          # Three at once: software GL is a core each, and the runner has four.
+          printf '%s\n' $SLUGS | xargs -r -P 3 -I{} python drive/tools/shoot_daily.py {} --out reels
+          for s in $SLUGS; do [ -f "reels/$s.mp4" ] || { echo "missing $s.mp4"; exit 1; }; done
+          echo "slug=$SLUGS" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        if: steps.film.outputs.slug != ''
+        with:
+          name: reel
+          path: reels/
+      - name: Publish to the box
+        if: steps.film.outputs.slug != ''
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "reels/*"
+          target: /home/ubuntu/website/drive/static
+      - name: Post to Instagram
+        if: steps.film.outputs.slug != '' && (github.event_name == 'schedule' || inputs.post)
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          IG_TOKEN: ${{ secrets.IG_TOKEN }}
+          SLUG: ${{ steps.film.outputs.slug }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: IG_TOKEN,SLUG
+          # Instagram takes ~30-60s to process each one; a backlog is many.
+          command_timeout: 90m
+          script: |
+            set -e
+            # The secret only seeds the token; post_reel.py renews it in place.
+            F=/home/ubuntu/data/ig_token
+            if [ ! -s "$F" ]; then (umask 077; printf %s "$IG_TOKEN" > "$F"); fi
+            # Oldest first, so the newest ends up top of the grid.
+            for s in $SLUG; do python3 /home/ubuntu/website/drive/tools/post_reel.py "$s"; done

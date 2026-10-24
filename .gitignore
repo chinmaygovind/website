@@ -90,3 +90,7 @@ kot/.pytest-file-times
 
 # Copies of the prod database. They hold emails and password hashes: never commit.
 backups/
+
+# Daily reels: rendered by .github/workflows/daily-reel.yml, never committed
+drive/static/reels/
+drive/media/video/daily/
