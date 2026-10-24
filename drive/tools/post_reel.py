@@ -36,11 +36,18 @@ def call(method, path, **params):
         req = urllib.request.Request(url + "?" + data.decode())
     else:
         req = urllib.request.Request(url, data=data, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=60) as r:
-            return json.load(r)
-    except urllib.error.HTTPError as e:
-        raise SystemExit("%s %s: %s" % (method, path, e.read().decode()[:500]))
+    # A dev-mode app's hourly request limit came up 21 posts into the backlog;
+    # Instagram marks that transient, so wait it out rather than give up.
+    for wait in (60, 120, 300, 600, 900, None):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return json.load(r)
+        except urllib.error.HTTPError as e:
+            body = e.read().decode()
+            if wait is None or '"is_transient":true' not in body:
+                raise SystemExit("%s %s: %s" % (method, path, body[:500]))
+            print("  rate limited, retrying in %ds" % wait)
+            time.sleep(wait)
 
 
 def renewed(token):
