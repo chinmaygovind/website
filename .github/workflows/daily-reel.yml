@@ -25,9 +25,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  reel:
+  queue:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    outputs:
+      slugs: ${{ steps.q.outputs.slugs }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: drive/tools
+      - id: q
+        run: |
+          SLUGS="${{ inputs.slug }}"
+          [ -n "$SLUGS" ] || SLUGS="$(python3 drive/tools/shoot_daily.py --queue ${{ inputs.count || 1 }})"
+          echo "filming: ${SLUGS:-nothing, caught up}"
+          echo "slugs=$(printf '%s\n' $SLUGS | jq -Rsc 'split("\n") | map(select(. != ""))')" >> "$GITHUB_OUTPUT"
+
+  # One runner per reel: a reel is ~15 minutes of software GL on a whole
+  # runner, and three sharing one took 35-60 minutes each.
+  film:
+    needs: queue
+    if: needs.queue.outputs.slugs != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        slug: ${{ fromJSON(needs.queue.outputs.slugs) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,23 +66,37 @@ jobs:
           sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
           pip install playwright==1.62.0
           playwright install --with-deps chromium
-      - name: Film
-        id: film
-        run: |
-          SLUGS="${{ inputs.slug }}"
-          [ -n "$SLUGS" ] || SLUGS="$(python drive/tools/shoot_daily.py --queue ${{ inputs.count || 1 }})"
-          echo "filming: ${SLUGS:-nothing, caught up}"
-          # Three at once: software GL is a core each, and the runner has four.
-          printf '%s\n' $SLUGS | xargs -r -P 3 -I{} python drive/tools/shoot_daily.py {} --out reels
-          for s in $SLUGS; do [ -f "reels/$s.mp4" ] || { echo "missing $s.mp4"; exit 1; }; done
-          echo "slug=$SLUGS" >> "$GITHUB_OUTPUT"
+      - run: python drive/tools/shoot_daily.py ${{ matrix.slug }} --out reels
       - uses: actions/upload-artifact@v4
-        if: steps.film.outputs.slug != ''
         with:
-          name: reel
+          name: reel-${{ matrix.slug }}
           path: reels/
+
+  post:
+    needs: [queue, film]
+    # Whatever filmed gets posted; a failed reel is just left in the queue.
+    if: always() && needs.queue.outputs.slugs != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: reel-*
+          merge-multiple: true
+          path: reels
+      - id: got
+        run: |
+          # Oldest first, so the newest ends up top of the grid. Stop at the
+          # first gap: last-posted.txt only moves forward, so posting #5
+          # without #4 would skip #4 for good.
+          OUT=""
+          for s in $(echo '${{ needs.queue.outputs.slugs }}' | jq -r '.[]'); do
+            [ -f "reels/$s.mp4" ] || { echo "missing $s.mp4, stopping there"; break; }
+            OUT="$OUT $s"
+          done
+          echo "slug=$OUT" >> "$GITHUB_OUTPUT"
       - name: Publish to the box
-        if: steps.film.outputs.slug != ''
+        if: steps.got.outputs.slug != ''
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -68,11 +105,11 @@ jobs:
           source: "reels/*"
           target: /home/ubuntu/website/drive/static
       - name: Post to Instagram
-        if: steps.film.outputs.slug != '' && (github.event_name == 'schedule' || inputs.post)
+        if: steps.got.outputs.slug != '' && (github.event_name == 'schedule' || inputs.post)
         uses: appleboy/ssh-action@v1.0.3
         env:
           IG_TOKEN: ${{ secrets.IG_TOKEN }}
-          SLUG: ${{ steps.film.outputs.slug }}
+          SLUG: ${{ steps.got.outputs.slug }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
@@ -85,5 +122,4 @@ jobs:
             # The secret only seeds the token; post_reel.py renews it in place.
             F=/home/ubuntu/data/ig_token
             if [ ! -s "$F" ]; then (umask 077; printf %s "$IG_TOKEN" > "$F"); fi
-            # Oldest first, so the newest ends up top of the grid.
             for s in $SLUG; do python3 /home/ubuntu/website/drive/tools/post_reel.py "$s"; done
