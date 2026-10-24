@@ -1,0 +1,85 @@
+name: World record reel
+
+# Every six hours between the dailies: the next lap off the world-record queue,
+# filmed and posted to Instagram. See drive/tools/wr_queue.py.
+on:
+  schedule:
+    # The daily reel has 05:10; these are the other three six-hour slots.
+    - cron: "10 11,17,23 * * *"
+  workflow_dispatch:
+    inputs:
+      post:
+        description: "Post it to Instagram"
+        type: boolean
+        default: true
+
+concurrency:
+  group: wr-reel
+  cancel-in-progress: false
+
+jobs:
+  reel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            drive/tools
+            drive/static/fonts
+            drive/static/img
+      - id: plan
+        run: |
+          NEXT="$(python3 drive/tools/wr_queue.py --out reels)"
+          echo "next: ${NEXT:-nothing queued}"
+          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v5
+        if: steps.plan.outputs.next != ''
+        with:
+          python-version: "3.12"
+      - name: Install renderer
+        if: steps.plan.outputs.next != ''
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+          pip install playwright==1.62.0
+          playwright install --with-deps chromium
+      - name: Film
+        id: film
+        if: steps.plan.outputs.next != ''
+        run: |
+          read SLUG LAP RANK <<< "${{ steps.plan.outputs.next }}"
+          python drive/tools/shoot_daily.py "$SLUG" --lap "$LAP" --rank "$RANK" --out reels
+          echo "name=$SLUG-$LAP" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wr-reel
+          path: reels/
+      - name: Publish to the box
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "reels/*"
+          target: /home/ubuntu/website/drive/static
+      - name: Post to Instagram
+        if: github.event_name == 'schedule' || inputs.post
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          IG_TOKEN: ${{ secrets.IG_TOKEN }}
+          NAME: ${{ steps.film.outputs.name }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: IG_TOKEN,NAME
+          command_timeout: 60m
+          script: |
+            set -e
+            F=/home/ubuntu/data/ig_token
+            if [ ! -s "$F" ]; then (umask 077; printf %s "$IG_TOKEN" > "$F"); fi
+            R=/home/ubuntu/website/drive/static/reels
+            if [ -n "$NAME" ]; then python3 /home/ubuntu/website/drive/tools/post_reel.py "$NAME"; fi
+            # Only once Instagram has it, so a failed post re-plans the same lap.
+            # With nothing to film this still saves any new records it noticed.
+            mv "$R/wr-state.next.json" "$R/wr-state.json"

@@ -93,6 +93,8 @@ def main():
                 access_token=token)
     link = call("GET", "/" + post["id"], fields="permalink", access_token=token)
     print("  posted: %s" % link.get("permalink"))
+    if not slug.startswith("daily-"):
+        return
     # Where `shoot_daily.next_up` resumes. Never backwards, so re-posting an old
     # one by hand does not send the queue round again.
     mark = os.path.join(os.path.dirname(HERE), "static", "reels", "last-posted.txt")

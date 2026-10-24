@@ -25,10 +25,15 @@ whole graph is rendered once the last frame is in. No music: the songs are
 other people's, and a reel with them in gets muted.
 
 Writes `<slug>.mp4` (1080x1920, AAC) and `<slug>.txt` (the caption).
+
+**It also films the world-record reels**: any pool track, with `--lap` naming
+the lap off its board (written as `<slug>-<lap>.mp4`) and `--rank` the place on
+the card. `wr_queue.py` decides which.
 """
 
 import argparse
 import base64
+import html
 import json
 import math
 import os
@@ -63,19 +68,22 @@ CARD_PAGE = """
            align-items:center; justify-content:center; gap:34px;
            font-family:"T",sans-serif; font-weight:900; color:#fff;
            text-shadow:0 4px 18px rgba(0,0,0,.55); padding-bottom:180px; }}
-  .day {{ font-size:150px; text-transform:uppercase; letter-spacing:.03em; line-height:.9; }}
+  .day {{ font-size:150px; text-transform:uppercase; letter-spacing:.03em; line-height:.9;
+          width:100%; padding:0 60px; text-align:center; }}
   .rec {{ font-size:84px; color:#ffd96b; }}
+  .who {{ font-size:64px; margin-top:-14px; }}
   .url {{ font-size:58px; margin-top:60px; display:flex; align-items:center; gap:22px; }}
 </style>
 <div class="shot">
   <div class="day">{day}</div>
-  <div class="rec">Record: {time}</div>
-  <div class="url">{wheel}<span>drive.cgovind.com/daily</span></div>
+  <div class="rec">{label}: {time}</div>
+  <div class="who">by {holder}</div>
+  <div class="url">{wheel}<span>{url}</span></div>
 </div>
 """
 
 # Across the top for the whole lap. 150px down, because the top of a reel is the
-# platform's own chrome.
+# platform's own chrome. 277px was tried and looked worse; Chinmay chose 150.
 BANNER_PAGE = """
 <!doctype html><meta charset="utf-8">
 <style>
@@ -163,13 +171,21 @@ def next_up(count=1):
     return ["daily-%d" % n for n in range(last + 1, min(last + 1 + count, int(today[6:])))]
 
 
-def caption(name, holder, ms):
-    # Seeded by the name, so a re-run of one daily says the same thing.
-    flair = random.Random(name).choice("🏁 🏎️ 🔥 ⚡ 🏆 💨 🚀 👑".split())
-    return ("%s record: %s by %s %s\n\n"
-            "Play a new track every day: drive.cgovind.com/daily\n\n"
-            "#racinggame #browsergame #indiegame #gaming #speedrun"
-            % (name, fmt(ms), holder, flair))
+def caption(name, holder, ms, slug, rank=1):
+    # Seeded by the name, so a re-run of one reel says the same thing.
+    flair = random.Random(name + ("" if rank == 1 else str(rank))).choice("🏁 🏎️ 🔥 ⚡ 🏆 💨 🚀 👑".split())
+    tags = "#racinggame #browsergame #indiegame #gaming #speedrun"
+    if slug.startswith("daily-"):
+        return ("%s record: %s by %s %s\n\n"
+                "Play a new track every day: drive.cgovind.com/daily\n\n%s"
+                % (name, fmt(ms), holder, flair, tags))
+    what = "world record" if rank == 1 else "#%d all time" % rank
+    nudge = random.Random(name + holder).choice([
+        "Your turn:", "Beat it here:", "Can you go faster?",
+        "Free in your browser, no download:", "Race this ghost:",
+        "Drive the same track:", "Record's up for grabs:"])
+    return ("%s %s: %s by %s %s\n\n%s drive.cgovind.com/solo/%s\n\n%s"
+            % (name, what, fmt(ms), holder, flair, nudge, slug, tags))
 
 
 def still(browser, tmpl, out, **kw):
@@ -222,6 +238,9 @@ def main():
     ap.add_argument("slug", nargs="?")
     ap.add_argument("--queue", type=int, metavar="N",
                     help="print the next N slugs to post, and film nothing")
+    ap.add_argument("--lap", type=int, help="film this lap off the board, not the top one")
+    ap.add_argument("--rank", type=int, help="the place to put on the card, if not where "
+                    "the lap is now: a world record stays one after it is beaten")
     ap.add_argument("--out", default=os.path.join(DRIVE, "media", "video", "daily"))
     args = ap.parse_args()
     if args.queue:
@@ -232,13 +251,19 @@ def main():
         print("caught up: nothing to film")
         return
     track = get("/api/track/" + slug)
-    lap = next((r for r in get("/api/board/" + slug)["rows"] if r["has_ghost"]), None)
+    rows = get("/api/board/" + slug)["rows"]
+    lap = next((r for r in rows if r["has_ghost"] and (args.lap in (None, r["id"]))), None)
     if not lap:
         raise SystemExit("%s has no lap with a replay" % slug)
+    rank = args.rank or rows.index(lap) + 1
+    daily = slug.startswith("daily-")
+    label = "Record" if daily else "World Record" if rank == 1 else "#%d All Time" % rank
+    url = "drive.cgovind.com/daily" if daily else "drive.cgovind.com/solo/" + slug
+    name = slug if args.lap is None else "%s-%d" % (slug, lap["id"])
     print("%s: %s %s (lap %d)" % (track["name"], lap["name"], fmt(lap["time_ms"]), lap["id"]))
 
     os.makedirs(args.out, exist_ok=True)
-    work = os.path.join(args.out, ".frames-" + slug)
+    work = os.path.join(args.out, ".frames-" + name)
     shutil.rmtree(work, ignore_errors=True)
     os.makedirs(work)
     from playwright.sync_api import sync_playwright
@@ -247,13 +272,13 @@ def main():
         try:
             card, banner = os.path.join(work, "card.png"), os.path.join(work, "banner.png")
             still(browser, CARD_PAGE, card, day=track["name"], time=fmt(lap["time_ms"]),
-                  wheel=_light_wheel(70))
+                  label=label, url=url, holder=html.escape(lap["name"]), wheel=_light_wheel(70))
             still(browser, BANNER_PAGE, banner, day=track["name"])
             n = film(browser, slug, lap["id"], lap["time_ms"] / 1000.0, work)
         finally:
             browser.close()
 
-    dst = os.path.join(args.out, slug + ".mp4")
+    dst = os.path.join(args.out, name + ".mp4")
     # The banner for the lap, then the card over the held flag frame.
     _run(["ffmpeg", "-v", "error", "-y", "-framerate", str(FPS), "-i", os.path.join(work, "f%04d.png"),
           "-loop", "1", "-i", banner, "-loop", "1", "-i", card,
@@ -270,8 +295,8 @@ def main():
           "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p",
           "-crf", "19", "-preset", "slow", "-r", str(FPS),
           "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", dst])
-    with open(os.path.join(args.out, slug + ".txt"), "w") as f:
-        f.write(caption(track["name"], lap["name"], lap["time_ms"]))
+    with open(os.path.join(args.out, name + ".txt"), "w") as f:
+        f.write(caption(track["name"], lap["name"], lap["time_ms"], slug, rank))
     shutil.rmtree(work)
     print("  -> %s (%.1f MB)" % (dst, os.path.getsize(dst) / 1e6))
 
