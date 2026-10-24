@@ -166,10 +166,10 @@ def next_up(count=1):
 def caption(name, holder, ms):
     # Seeded by the name, so a re-run of one daily says the same thing.
     flair = random.Random(name).choice("🏁 🏎️ 🔥 ⚡ 🏆 💨 🚀 👑".split())
-    return ("%s record: %s by %s " + flair + "\n\n"
+    return ("%s record: %s by %s %s\n\n"
             "Play a new track every day: drive.cgovind.com/daily\n\n"
             "#racinggame #browsergame #indiegame #gaming #speedrun"
-            % (name, fmt(ms), holder))
+            % (name, fmt(ms), holder, flair))
 
 
 def still(browser, tmpl, out, **kw):
