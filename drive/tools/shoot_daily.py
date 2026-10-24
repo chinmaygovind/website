@@ -164,7 +164,7 @@ def next_up(count=1):
 
 def caption(name, holder, ms):
     return ("%s record: %s by %s 🏁\n\n"
-            "A new track every day, free in your browser: drive.cgovind.com/daily\n\n"
+            "Play a new track every day: drive.cgovind.com/daily\n\n"
             "#racinggame #browsergame #indiegame #gaming #speedrun"
             % (name, fmt(ms), holder))
 
