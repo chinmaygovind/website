@@ -1430,7 +1430,7 @@ def test_a_respawn_hands_it_back_at_once():
 
 RESUME_STUB = """
 var S = {raceMode: false, raceDone: true, raceT0: null, cdT0: null,
-         standings: null, clockOffset: 0};
+         standings: null, clockOffset: 0, started: false, resumeAt: null};
 function serverNow() { return 1000000; }
 var performance = {now: () => 500};
 """
@@ -1466,6 +1466,23 @@ def test_the_restored_clock_is_the_green_light_and_not_now():
     ctx = _resume_ctx()
     ctx.eval("resumeRace({in_race: true, race: {phase: 'racing', t0: 970000}})")
     assert ctx.eval("S.raceT0") == 500 - 30000
+
+
+def test_a_reload_keeps_where_it_had_got_to():
+    ctx = _resume_ctx()
+    ctx.eval("resumeRace({in_race: true, lap_at: {lap: 1, cp: 3}, "
+             "race: {phase: 'racing', t0: 1000000}})")
+    assert ctx.eval("S.resumeAt && S.resumeAt.lap") == 1
+
+
+def test_a_blip_mid_race_leaves_nothing_for_the_next_race():
+    """A socket reconnect with the run already going used to park its lap here,
+    and nothing applies it until the next green light - so the next race began
+    a lap in and said Finished after two of three."""
+    ctx = _resume_ctx()
+    ctx.eval("S.started = true; resumeRace({in_race: true, lap_at: {lap: 1, cp: 3}, "
+             "race: {phase: 'racing', t0: 1000000}})")
+    assert ctx.eval("S.resumeAt") is None
 
 
 @pytest.mark.parametrize("payload", [

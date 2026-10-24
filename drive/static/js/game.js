@@ -8996,7 +8996,10 @@ function resumeRace(d) {
   // Where the room says this car had got to. Kept rather than applied: the run
   // has not started yet, and `Run.start` - which is a frame away, off `raceT0`
   // being in the past - clears exactly these two. See `Run.resumeAt`.
-  S.resumeAt = d.lap_at || null;
+  // Only while that start is still to come: a socket that blinks mid-race lands
+  // here with the run already going, nothing would apply the answer, and it
+  // waited for the *next* race's green light - which then began a lap or two in.
+  S.resumeAt = S.started ? null : (d.lap_at || null);
   if (d.race.t0) S.raceT0 = S.cdT0 = performance.now() + (d.race.t0 - serverNow());
   S.standings = (d.race.finish || []).slice();
   return true;
