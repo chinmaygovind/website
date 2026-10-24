@@ -32,6 +32,7 @@ import base64
 import json
 import math
 import os
+import random
 import shutil
 import sys
 import urllib.error
@@ -163,7 +164,9 @@ def next_up(count=1):
 
 
 def caption(name, holder, ms):
-    return ("%s record: %s by %s 🏁\n\n"
+    # Seeded by the name, so a re-run of one daily says the same thing.
+    flair = random.Random(name).choice("🏁 🏎️ 🔥 ⚡ 🏆 💨 🚀 👑".split())
+    return ("%s record: %s by %s " + flair + "\n\n"
             "Play a new track every day: drive.cgovind.com/daily\n\n"
             "#racinggame #browsergame #indiegame #gaming #speedrun"
             % (name, fmt(ms), holder))
