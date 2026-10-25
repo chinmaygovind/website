@@ -171,14 +171,17 @@ def next_up(count=1):
     return ["daily-%d" % n for n in range(last + 1, min(last + 1 + count, int(today[6:])))]
 
 
-def caption(name, holder, ms, slug, rank=1):
+def caption(name, holder, ms, slug, rank=1, podium=()):
     # Seeded by the name, so a re-run of one reel says the same thing.
     flair = random.Random(name + ("" if rank == 1 else str(rank))).choice("🏁 🏎️ 🔥 ⚡ 🏆 💨 🚀 👑".split())
     tags = "#racinggame #browsergame #indiegame #gaming #speedrun"
     if slug.startswith("daily-"):
-        return ("%s record: %s by %s %s\n\n"
+        # The top three by name, so more of the board sees itself in the post.
+        top = "".join("%s %s %s\n" % (m, r["name"], fmt(r["time_ms"]))
+                      for m, r in zip("🥇🥈🥉", podium))
+        return ("%s record: %s by %s %s\n\n%s"
                 "Play a new track every day: drive.cgovind.com/daily\n\n%s"
-                % (name, fmt(ms), holder, flair, tags))
+                % (name, fmt(ms), holder, flair, top + "\n" if top else "", tags))
     what = "world record" if rank == 1 else "#%d all time" % rank
     nudge = random.Random(name + holder).choice([
         "Your turn:", "Beat it here:", "Can you go faster?",
@@ -296,7 +299,7 @@ def main():
           "-crf", "19", "-preset", "slow", "-r", str(FPS),
           "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", dst])
     with open(os.path.join(args.out, name + ".txt"), "w") as f:
-        f.write(caption(track["name"], lap["name"], lap["time_ms"], slug, rank))
+        f.write(caption(track["name"], lap["name"], lap["time_ms"], slug, rank, rows[:3]))
     shutil.rmtree(work)
     print("  -> %s (%.1f MB)" % (dst, os.path.getsize(dst) / 1e6))
 
