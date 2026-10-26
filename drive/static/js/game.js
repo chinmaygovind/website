@@ -6188,7 +6188,7 @@ function frame(now) {
     // piece of the HUD it has kept - and a race's place and lap, which are
     // about the recording too.
     drawMinimap();
-    if ((S.hudTick = (S.hudTick + 1) % 3) === 0) replayPlace();
+    if ((S.hudTick = (S.hudTick + 1) % 3) === 0) { replayPlace(); replaySlots(); }
     S.renderer.render(dt);
     return;
   }
@@ -6778,6 +6778,31 @@ function replayPlace() {
   const done = (w.cars[w.at].gates.laps || []).filter(t => t <= at).length;
   $('lapNum').style.display = laps > 1 ? '' : 'none';
   if (laps > 1) $('lapNum').textContent = 'LAP ' + Math.min(done + 1, laps) + '/' + laps;
+}
+
+/**
+ * The camera car's item slots in a race replay, off the `slots` events the
+ * recorder writes whenever a car's slots change. A race recorded before those
+ * existed has none, and shows no slots rather than two empty ones.
+ */
+function replaySlots() {
+  const w = S.watch, hud = $('itemHud');
+  const ev = w && w.items && w.items.events;
+  if (!hud || !ev) return;
+  if (w.slotsRecorded == null) w.slotsRecorded = ev.some(e => e[1] === 'slots');
+  hud.style.display = w.slotsRecorded ? '' : 'none';
+  if (!w.slotsRecorded) return;
+  const pid = w.cars[w.at].pid;
+  let slots = [];
+  for (const e of ev) {
+    if (e[0] / 1000 > w.t) break;
+    if (e[1] === 'slots' && e[2] === pid) slots = e[3];
+  }
+  for (let i = 0; i < 2; i++) {
+    $('item' + i + 'art').innerHTML = itemIcon(slots[i]);
+    $('item' + i).classList.remove('spinning');
+    $('item' + i).classList.toggle('empty', !slots[i]);
+  }
 }
 
 function hud(now) {

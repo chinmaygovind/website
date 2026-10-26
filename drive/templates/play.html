@@ -121,7 +121,7 @@
       {% endif %}
     </div>
     <div class="slotrow">
-    {% if mode == 'room' %}
+    {% if mode in ('room', 'replay') %}
     <div class="item-hud" id="itemHud" aria-label="Items" style="display:none">
       <div class="item-slot big" id="item0"><span class="item-art" id="item0art"></span>
         <svg class="item-ring" id="itemRing" viewBox="0 0 54 54" aria-hidden="true">

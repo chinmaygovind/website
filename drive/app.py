@@ -4773,11 +4773,21 @@ def _record_race(r):
             [round(s["p"][i] + s.get("pv", (0, 0, 0))[i] * back, 1) for i in range(3)]
             for s in r.get("shots", ())])
         rec["n"] += 1
+    # Every car's item slots whenever they change - a box driven through, an
+    # item spent, a held one knocked off - so the replay can show what the car
+    # the camera is on was carrying. Sampled here rather than at each of those
+    # because there are half a dozen of them and one place that sees them all.
+    last = rec.setdefault("slots", {})
+    for pid in rec["cars"]:
+        q = list((r.get("items") or {}).get(pid) or [])
+        if last.get(pid, []) != q:
+            last[pid] = q
+            _rec_event(r, "slots", pid, q)
 
 
 def _rec_event(r, *ev):
-    """A blast or a hit, for the replay: milliseconds from the green light,
-    then what it was."""
+    """A blast, a hit or a car's item slots, for the replay: milliseconds from
+    the green light, then what it was."""
     rec = r.get("rec")
     if rec and r["phase"] == "racing":
         rec.setdefault("events", []).append([int(_now_ms() - rec["t0"])] + list(ev))

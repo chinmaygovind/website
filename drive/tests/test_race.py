@@ -1647,3 +1647,17 @@ def test_recent_races_are_listed_without_their_frames(env):
         assert races[0]["id"] == rid
         assert [c["ms"] for c in races[0]["cars"]] == [41000, 41050]
         assert "ghost" not in races[0]["cars"][0]
+
+
+def test_a_car_s_item_slots_are_recorded_when_they_change(env):
+    """What the replay shows in the camera car's item slots: a pickup and a
+    use each change the slots, and an unchanged tick records nothing."""
+    A = env
+    r = _recording(A)
+    r["items"] = {"a": ["banana"]}
+    A._record_race(r)
+    A._record_race(r)
+    r["items"]["a"] = []
+    A._record_race(r)
+    slots = [e[2:] for e in r["rec"]["events"] if e[1] == "slots"]
+    assert slots == [["a", ["banana"]], ["a", []]]
