@@ -19,7 +19,9 @@ them are filmed at once, one runner each, and posted in the order they were
 set - so a burst of records keeps up rather than queueing behind each other.
 The first run, with no state at all, fills the queue with each track's record.
 
-**Records only.** The queue used to interleave each track's best lap by
+**The backlog is current records only.** A queued record that has been beaten
+since is dropped rather than posted late as one - its beater posted as it
+happened. The queue used to interleave each track's best lap by
 somebody else, posted as "#2 All Time"; Chinmay dropped those, and `plan`
 throws away any still queued.
 
@@ -218,7 +220,10 @@ def plan(state, b, races=(), look=None, urgent=False, posted_already=lambda name
             found += [(at[i], [slug, i, ms, 1]) for i, ms in records_since(rows, state["seen"].get(slug))]
         state["seen"][slug] = [rows[0][1]["id"], rows[0][1]["time_ms"]]
     new += [q for _, q in sorted(found, key=lambda f: f[0])]
-    queue = [q for q in state["queue"] if q[3] == 1]
+    # The backlog is records as they stand: one beaten since it was queued is
+    # dropped (a record posts as it happens, beaten or not - see `new`).
+    top = {slug: [rows[0][1]["id"], rows[0][1]["time_ms"]] for slug, rows in b.items() if rows}
+    queue = [q for q in state["queue"] if q[3] == 1 and top.get(q[0]) == q[1:3]]
     races_done, n = state.get("races", []), state.get("n", 0)
     on_board = lambda q: any(r["id"] == q[1] and r["time_ms"] == q[2] for _, r in b.get(q[0], []))
     out = [q for q in new if on_board(q) and not posted_already(name_of(q))]
@@ -293,8 +298,9 @@ def _check():
     items4, _ = plan(json.loads(json.dumps(st2)), b, urgent=True,
                      posted_already=lambda n: n == "a-9-98")
     assert items4 == [["a", 1, 97, 1]], items4
-    # #2-all-time laps left in an old queue are dropped.
-    old = {"seen": st3["seen"], "queue": [["b", 4, 205, 2], ["b", 3, 200, 1]]}
+    # #2-all-time laps left in an old queue are dropped, and so is a record
+    # beaten since it was queued.
+    old = {"seen": st3["seen"], "queue": [["b", 4, 205, 2], ["a", 9, 98, 1], ["b", 3, 200, 1]]}
     assert plan(old, b)[0] == [["b", 3, 200, 1]]
     # Every third post is the best race between people, never twice.
     car = lambda n, ms, bot=False: {"name": n, "ms": ms, "bot": bot}
