@@ -106,6 +106,17 @@ BANNER_PAGE = """
 
 SR = 48000
 
+# A race reel keeps the HUD that tells the race - the minimap, the place and
+# the lap - and loses everything that is about operating a replay. Filmed at
+# half the size and twice the density, so the HUD is the size it is on a phone.
+RACE_HUD = """
+  .hud-tl, .hud-tr, .mapbtns, .hud-bc, .hud-br, #watchBar, #toast, #startHint
+    { display: none !important; }
+  /* Below the banner and the platform's own chrome over the top of a reel. */
+  .hud { top: 140px !important; }
+  * { cursor: none !important; }
+"""
+
 # Before any of the page's scripts run.
 OFFLINE_AUDIO = """(() => {
   window.__audioT = 0;
@@ -217,9 +228,13 @@ def still(browser, tmpl, out, **kw):
 
 def film(browser, path, secs, d, start=0.0, hz=15, follow=None):
     """Every frame of `secs` from `start` of the replay at `path` into `d`, and
-    its sound to `d/audio.wav`. `follow` is a race's car to hold the camera.
-    Returns the frame count."""
-    page = browser.new_page(viewport={"width": W, "height": H})
+    its sound to `d/audio.wav`. `follow` is a race's car to hold the camera,
+    and a race is filmed with its HUD (`RACE_HUD`). Returns the frame count."""
+    if follow is None:
+        page = browser.new_page(viewport={"width": W, "height": H})
+    else:
+        page = browser.new_page(viewport={"width": W // 2, "height": H // 2},
+                                device_scale_factor=2)
     no_tags(page)
     page.add_init_script(OFFLINE_AUDIO % (int((secs + CARD + 10) * SR), SR))
     try:
@@ -230,7 +245,7 @@ def film(browser, path, secs, d, start=0.0, hz=15, follow=None):
             names = page.eval_on_selector_all("button.wcar span:nth-child(2)",
                                               "els => els.map(e => e.textContent)")
             page.click('button.wcar[data-cam="%d"]' % names.index(follow))
-        page.add_style_tag(content=HIDE)
+        page.add_style_tag(content=HIDE if follow is None else RACE_HUD)
         page.evaluate(PUMP)
         page.evaluate(CLOCK)
         page.wait_for_timeout(200)
@@ -277,8 +292,8 @@ def lap_shot(slug, lap_id, rank):
                                None if daily else lap.get("at"))}
 
 
-# The end of a race, up to the flag: a reel holds a close finish, not a
-# four-minute Monaco.
+# A race with no comeback in it is filmed as its run to the flag, this long.
+# One with a comeback is filmed whole, however long that is.
 RACE_SECS = 30.0
 
 
@@ -294,12 +309,11 @@ def race_shot(race_id):
     cb = comeback(race, track["line"], track["closed"], {c["name"] for c in race["cars"] if c.get("bot")})
     gap = (done[1]["ms"] - done[0]["ms"]) / 1000.0
     if cb:
+        # The whole comeback: from just before the first car passed to the flag.
         climb, follow, frm, to, passes = cb
         end = next(c["ms"] for c in race["cars"] if c["name"] == follow) / 1000.0 + 0.8
-        secs = min(RACE_SECS, end)
-        # The window with the most passes in it, the later of equals.
-        start = max((sum(t <= p <= t + secs for p in passes), t)
-                    for t in [x * 0.5 for x in range(int((end - secs) * 2) + 1)])[1]
+        start = max(0.0, passes[0] - 4.0)
+        secs = end - start
         rec, who = "P%d to P%d" % (frm, to), "by " + html.escape(follow)
     else:
         for secs in (min(RACE_SECS, done[0]["ms"] / 1000.0), 20.0, 12.0):
@@ -316,7 +330,7 @@ def race_shot(race_id):
           % (race_id, track["name"], rec, follow, start, secs))
     return {"name": "race-%d" % race_id, "path": "/race/%d" % race_id, "secs": secs,
             "start": start, "hz": race["hz"], "follow": follow,
-            "banner": "Online race", "url": "drive.cgovind.com",
+            "banner": "Multiplayer", "url": "drive.cgovind.com",
             "card": {"day": track["name"], "rec": rec, "who": who, "when": ""},
             "caption": race_caption(race_id, track["name"], done, cb)}
 

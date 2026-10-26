@@ -52,7 +52,8 @@ jobs:
     needs: plan
     if: needs.plan.outputs.reels != '[]'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
+    # A race reel is the whole comeback, two or three minutes of film.
     strategy:
       fail-fast: false
       matrix:

@@ -4547,7 +4547,8 @@ async function openRaceReplay() {
   } catch (e) { d = null; }
   if (!d || !d.cars || !d.cars.length) { toast('That replay is not there'); return; }
   startReplay(d.cars.map(c => ({
-    frames: c.frames, hz: d.hz, name: c.name, color: c.color, ms: c.ms, pid: c.pid,
+    frames: c.frames, hz: d.hz, name: c.name, color: c.color, livery: c.livery,
+    ms: c.ms, pid: c.pid,
   })), {
     title: 'Race replay',
     items: d.items, hz: d.hz,
@@ -6184,8 +6185,10 @@ function frame(now) {
     // `updateHud` is below the early return and none of it is true here, but the
     // map is: it is the track and where the cars on it are, which is exactly as
     // true of somebody else's lap as of your own. So the replay draws the one
-    // piece of the HUD it has kept.
+    // piece of the HUD it has kept - and a race's place and lap, which are
+    // about the recording too.
     drawMinimap();
+    if ((S.hudTick = (S.hudTick + 1) % 3) === 0) replayPlace();
     S.renderer.render(dt);
     return;
   }
@@ -6744,6 +6747,37 @@ function hudFast() {
   // and it belongs out on the road where the car it is aimed at can see it.)
   $('speedFill').classList.toggle('catchup', car.catchupBoost > 0.05);
   $('time').textContent = fmt(run.state === 'ready' ? 0 : run.time);
+}
+
+/**
+ * A race replay's place and lap for the car the camera is on, off the
+ * checkpoint times `replayGates` already found for every car. Over the line is
+ * ahead of everybody still driving, in finishing order; otherwise more gates
+ * is ahead, and of two on the same gate the one there first. Called from the
+ * watch branch of the loop, which `hud()` is below the return of.
+ */
+function replayPlace() {
+  const w = S.watch;
+  if (!w || w.cars.length < 2) return;
+  const at = w.t;
+  const key = (c) => {
+    if (c.ms && at * 1000 >= c.ms) return [0, c.ms, 0];
+    const n = c.gates.filter(t => t <= at).length;
+    return [1, -n, n ? c.gates[n - 1] : 0];
+  };
+  const me = key(w.cars[w.at]);
+  const place = 1 + w.cars.filter((c, i) => {
+    if (i === w.at) return false;
+    const k = key(c);
+    return k[0] < me[0] || (k[0] === me[0] && (k[1] < me[1] || (k[1] === me[1] && k[2] < me[2])));
+  }).length;
+  $('place').style.display = '';
+  $('placeNum').textContent = ordinal(place);
+  $('place').className = place <= 3 ? 'p' + place : '';
+  const laps = Math.max(...w.cars.map(c => (c.gates.laps || []).length));
+  const done = (w.cars[w.at].gates.laps || []).filter(t => t <= at).length;
+  $('lapNum').style.display = laps > 1 ? '' : 'none';
+  if (laps > 1) $('lapNum').textContent = 'LAP ' + Math.min(done + 1, laps) + '/' + laps;
 }
 
 function hud(now) {
