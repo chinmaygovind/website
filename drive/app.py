@@ -1840,7 +1840,8 @@ def api_race(race_id):
                      # which the renderer reads as "just the colour" - so an old
                      # replay plays back on the car it was driven in.
                      "livery": c.get("livery"), "ms": c.get("ms"),
-                     "dnf": c.get("dnf"), "frames": frames})
+                     "dnf": c.get("dnf"), "bot": bool(c.get("bot")),
+                     "frames": frames})
     row = DriveRaceItems.query.get(race.id)
     try:
         items = json_mod.loads(row.items_json) if row else None
@@ -1849,6 +1850,24 @@ def api_race(race_id):
     return jsonify({"ok": True, "id": race.id, "track": race.track,
                     "hz": race.hz or REPLAY_HZ, "ms": race.ms,
                     "why": race.why, "cars": cars, "items": items})
+
+
+@app.route("/api/races")
+def api_races():
+    """Recent finished races, no frames - what `tools/wr_queue.py` picks race
+    reels from, since it runs in an Action with nothing but a URL."""
+    limit = max(1, min(request.args.get("limit", 50, type=int), REPLAY_KEEP))
+    # In SQL for the reason `_recent_races` gives: `cars_json` is mostly ghosts.
+    rows = db.session.execute(db.text(
+        "SELECT r.id, r.track, json_extract(c.value, '$.name'),"
+        " json_extract(c.value, '$.ms'), json_extract(c.value, '$.bot')"
+        " FROM (SELECT * FROM drive_races ORDER BY id DESC LIMIT :n) r,"
+        " json_each(r.cars_json) c ORDER BY r.id DESC"), {"n": limit}).fetchall()
+    races = {}
+    for rid, slug, name, ms, bot in rows:
+        races.setdefault(rid, {"id": rid, "track": slug, "cars": []})["cars"].append(
+            {"name": name, "ms": ms, "bot": bool(bot)})
+    return jsonify({"races": list(races.values())})
 
 
 @app.route("/install")
@@ -2821,6 +2840,9 @@ def api_board(slug):
     return jsonify({"rows": [{"id": r.id, "name": r.user.display if r.user else "?",
                               "time_ms": r.time_ms, "medal": r.medal_shown,
                               "splits": r.splits, "has_ghost": bool(r.ghost),
+                              # When this time was set: `updated_at` moves only
+                              # when the lap improves. The record reels date it.
+                              "at": (r.updated_at or r.created_at).isoformat() + "Z",
                               "me": bool(user and r.user_id == user.id)}
                              for r in rows]})
 

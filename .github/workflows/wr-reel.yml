@@ -1,15 +1,23 @@
 name: World record reel
 
-# Every six hours between the dailies: the next lap off the world-record queue,
-# filmed and posted to Instagram. See drive/tools/wr_queue.py.
+# Every ten minutes: any world record set since the last look, filmed and posted
+# to Instagram as soon as it is seen - all of a burst at once, one runner each,
+# posted in the order they were set. Every six hours between the dailies, also
+# the next record off the queue, or every third time a room race.
+# See drive/tools/wr_queue.py.
 on:
   schedule:
+    - cron: "*/10 * * * *"
     # The daily reel has 05:10; these are the other three six-hour slots.
     - cron: "10 11,17,23 * * *"
   workflow_dispatch:
     inputs:
+      urgent:
+        description: "Only new world records (skip the queue and races)"
+        type: boolean
+        default: false
       post:
-        description: "Post it to Instagram"
+        description: "Post to Instagram"
         type: boolean
         default: true
 
@@ -18,9 +26,37 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  reel:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      reels: ${{ steps.plan.outputs.reels }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: drive/tools
+      - id: plan
+        run: |
+          URGENT=""
+          if [ "${{ github.event.schedule }}" = "*/10 * * * *" ] || [ "${{ inputs.urgent }}" = true ]; then URGENT=--urgent; fi
+          REELS="$(python3 drive/tools/wr_queue.py --out reels $URGENT)"
+          echo "filming: $REELS"
+          echo "reels=$REELS" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wr-state
+          path: reels/wr-state.next.json
+
+  # One runner per reel: ~15 minutes of software GL each, and sharing a runner
+  # made them 35-60 minutes each - a burst would fall behind.
+  film:
+    needs: plan
+    if: needs.plan.outputs.reels != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        reel: ${{ fromJSON(needs.plan.outputs.reels) }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,32 +64,46 @@ jobs:
             drive/tools
             drive/static/fonts
             drive/static/img
-      - id: plan
-        run: |
-          NEXT="$(python3 drive/tools/wr_queue.py --out reels)"
-          echo "next: ${NEXT:-nothing queued}"
-          echo "next=$NEXT" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@v5
-        if: steps.plan.outputs.next != ''
         with:
           python-version: "3.12"
       - name: Install renderer
-        if: steps.plan.outputs.next != ''
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
           pip install playwright==1.62.0
           playwright install --with-deps chromium
-      - name: Film
-        id: film
-        if: steps.plan.outputs.next != ''
-        run: |
-          read SLUG LAP RANK <<< "${{ steps.plan.outputs.next }}"
-          python drive/tools/shoot_daily.py "$SLUG" --lap "$LAP" --rank "$RANK" --out reels
-          echo "name=$SLUG-$LAP" >> "$GITHUB_OUTPUT"
+      - run: python drive/tools/shoot_daily.py ${{ matrix.reel.args }} --out reels
       - uses: actions/upload-artifact@v4
         with:
-          name: wr-reel
+          name: reel-${{ matrix.reel.name }}
           path: reels/
+
+  post:
+    needs: [plan, film]
+    # Whatever filmed gets posted. A run with nothing to film has nothing to
+    # save either: no new record means the state did not move.
+    if: always() && needs.plan.outputs.reels != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: reel-*
+          merge-multiple: true
+          path: reels
+      - uses: actions/download-artifact@v4
+        with:
+          name: wr-state
+          path: reels
+      - id: got
+        run: |
+          # In the planned order, which is the order the records were set.
+          OUT="" ALL=1
+          for n in $(echo '${{ needs.plan.outputs.reels }}' | jq -r '.[].name'); do
+            if [ -f "reels/$n.mp4" ]; then OUT="$OUT $n"; else echo "missing $n.mp4"; ALL=0; fi
+          done
+          echo "names=$OUT" >> "$GITHUB_OUTPUT"
+          echo "all=$ALL" >> "$GITHUB_OUTPUT"
       - name: Publish to the box
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -67,19 +117,20 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         env:
           IG_TOKEN: ${{ secrets.IG_TOKEN }}
-          NAME: ${{ steps.film.outputs.name }}
+          NAMES: ${{ steps.got.outputs.names }}
+          ALL: ${{ steps.got.outputs.all }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          envs: IG_TOKEN,NAME
-          command_timeout: 60m
+          envs: IG_TOKEN,NAMES,ALL
+          command_timeout: 90m
           script: |
             set -e
             F=/home/ubuntu/data/ig_token
             if [ ! -s "$F" ]; then (umask 077; printf %s "$IG_TOKEN" > "$F"); fi
             R=/home/ubuntu/website/drive/static/reels
-            if [ -n "$NAME" ]; then python3 /home/ubuntu/website/drive/tools/post_reel.py "$NAME"; fi
-            # Only once Instagram has it, so a failed post re-plans the same lap.
-            # With nothing to film this still saves any new records it noticed.
-            mv "$R/wr-state.next.json" "$R/wr-state.json"
+            for n in $NAMES; do python3 /home/ubuntu/website/drive/tools/post_reel.py "$n"; done
+            # Only once every one is up, so a failed reel is planned again;
+            # the ones that did post have a .posted marker and are skipped.
+            if [ "$ALL" = 1 ]; then mv "$R/wr-state.next.json" "$R/wr-state.json"; fi

@@ -1628,3 +1628,22 @@ def test_the_race_grace_outlasts_the_clients_own_reload(env):
     assert A.LOST_GRACE_MS >= dead * 2, (
         "a car is retired %dms after its socket went, and its own browser does "
         "not even begin reloading until %dms" % (A.LOST_GRACE_MS, dead))
+
+
+def test_recent_races_are_listed_without_their_frames(env):
+    """What the race reels pick from, off a URL: who finished when, no ghosts."""
+    A = env
+    with A.app.app_context():
+        game = A.DriveGame(code="REC", track="sunrise")
+        A.db.session.add(game)
+        A.db.session.commit()
+        r = _recording(A)
+        r["cars"]["b"]["ms"], r["cars"]["a"]["ms"] = 41000, 41050
+        A._record_race(r)
+        standings = [{"pid": "b", "name": "b", "ms": 41000, "color": "#fff"},
+                     {"pid": "a", "name": "a", "ms": 41050, "color": "#fff"}]
+        rid = A._store_replay(r, game, standings, "all in")
+        races = A.app.test_client().get("/api/races").get_json()["races"]
+        assert races[0]["id"] == rid
+        assert [c["ms"] for c in races[0]["cars"]] == [41000, 41050]
+        assert "ghost" not in races[0]["cars"][0]

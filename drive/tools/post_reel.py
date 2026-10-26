@@ -93,6 +93,9 @@ def main():
                 access_token=token)
     link = call("GET", "/" + post["id"], fields="permalink", access_token=token)
     print("  posted: %s" % link.get("permalink"))
+    # What `wr_queue.posted_already` looks for, so a re-run never posts it twice.
+    with open(os.path.join(os.path.dirname(HERE), "static", "reels", slug + ".posted"), "w") as f:
+        f.write(link.get("permalink") or "")
     if not slug.startswith("daily-"):
         return
     # Where `shoot_daily.next_up` resumes. Never backwards, so re-posting an old
