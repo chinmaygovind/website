@@ -8873,6 +8873,13 @@ async function switchTrack(slug, opts = {}) {
     }
     if ($('raceOver')) $('raceOver').style.display = 'none';
     loadTrack(t, { switched: true });
+    // `loadTrack` builds a new car, unfrozen, at the spawn - so lights that
+    // went on while this was loading would be lights you could drive through.
+    // Not a narrow window: `painted` waits on rAF, which a background tab never
+    // runs, so a host who switches and starts while you are on another tab
+    // lands the whole countdown inside it. Put the new car where the old one was.
+    if (S.raceMode && S.raceGrid) { placeOnGrid(S.raceGrid); S.car.frozen = true; }
+    else if (S.racePhase === 'qual_countdown') S.car.frozen = true;
     toast('Track: ' + t.name);
     // Solo, the URL is one more thing naming the track, and the one people copy
     // out of the bar. `/solo/<slug>` stays a real link, so it has to name the
@@ -9029,6 +9036,7 @@ function onRaceStart(d) {
   showSide(false);
   applyPhase();
   $('raceOver').style.display = 'none';
+  S.raceGrid = d;
   placeOnGrid(d);
   S.run.reset();
   S.started = false;
