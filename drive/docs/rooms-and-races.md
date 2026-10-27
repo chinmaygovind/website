@@ -34,6 +34,14 @@ none of that code knows a TV exists.
 - **The sweep leaves an empty room alone while a TV watches it, and for its
   first minute**: without the minute, a sweep landing between `/tv` and the
   TV's socket connecting deleted the room, and the TV bounced to a new one.
+- **The TV shows a QR code of the `/pad/` link** (`static/js/vendor/qrcode.js`),
+  and the lobbies page has **Join TV** on touch screens only: the phone's camera
+  reads that QR in the page (`vendor/jsQR.js`, loaded when the sheet opens),
+  with a box to type the code instead. It exists because **iOS opens a scanned
+  link in Safari, never in a home-screen app**, and nothing a site does changes
+  that; Join TV keeps an installed player in the app. Android's installed app
+  already takes in-scope links from other apps, and `handle_links: preferred`
+  in the manifest asks Chrome to prefer it.
 - **`?pad=1` draws nothing**: the phone still simulates the car and shows the
   HUD and the touch pedals, but skips the GPU draw, since the picture is on
   the TV.

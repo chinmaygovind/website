@@ -15,7 +15,17 @@
 <canvas id="gl"></canvas>
 {% if tv %}
 <div id="tvViews"></div>
-<div class="tv-join"><span>{{ request.host }}/pad/</span><b>{{ room.code }}</b></div>
+<div class="tv-join"><div class="tv-qr" id="tvQr"></div>
+  <div><span>{{ request.host }}/pad/</span><b>{{ room.code }}</b></div></div>
+<script src="{{ url_for('static', filename='js/vendor/qrcode.js') }}"></script>
+<script>
+  (function () {
+    var q = qrcode(0, 'M');
+    q.addData({{ (request.host_url ~ 'pad/' ~ room.code)|tojson }});
+    q.make();
+    document.getElementById('tvQr').innerHTML = q.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+  })();
+</script>
 {% endif %}
 
 <div class="hud">

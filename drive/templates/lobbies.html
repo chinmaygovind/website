@@ -44,6 +44,7 @@
 
     <div class="mp-create">
       <button class="mp-go" id="btnCreate" onclick="createRoom()">Create room</button>
+      <button class="mp-go mp-tv" id="btnTv" onclick="openTv()">Join TV</button>
       <div class="mp-flash">
         {% if mine %}
         <a class="mp-rejoin" href="/room/{{ mine.code }}">You're in room <b>{{ mine.code }}</b> <span>Rejoin ›</span></a>
@@ -182,6 +183,25 @@ render({{ games|tojson }});
 </div>
 {% endblock %}
 {% block scripts %}
+{# Join TV: the phone's way into a `/tv` room from inside the installed app,
+   since iOS opens a scanned link in Safari and never in a home-screen app. #}
+<div class="overlay mp-ov" id="tvOv" style="display:none">
+  <div class="sheet mp-tv-sheet" role="dialog" aria-modal="true" aria-labelledby="tvTitle">
+    <div class="sheet-head">
+      <h2 id="tvTitle">Join TV</h2>
+      <button class="sheet-x" id="btnTvClose" title="Close" aria-label="Close">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="mp-tv-cam"><video id="tvCam" playsinline muted></video></div>
+    <form class="mp-tv-code" id="tvForm">
+      <input id="tvCode" maxlength="6" autocomplete="off" autocapitalize="characters"
+             spellcheck="false" placeholder="TV code" aria-label="TV code"/>
+      <button class="btn" type="submit">Join</button>
+    </form>
+  </div>
+</div>
+
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script>
 const err = document.getElementById('err');
@@ -248,6 +268,59 @@ ov.querySelectorAll('[data-track]').forEach(c => c.onclick = () => {
   ov.querySelectorAll('[data-track]').forEach(x => x.classList.toggle('active', x === c));
   socket.emit('set_track', {code: room, track: c.dataset.track});
 });
+const tvOv = document.getElementById('tvOv'), cam = document.getElementById('tvCam');
+const grab = document.createElement('canvas'), gctx = grab.getContext('2d', {willReadFrequently: true});
+let camStream = null;
+function joinTv(code){ location.href = '/pad/' + encodeURIComponent(code.trim().toUpperCase()); }
+function loadJsQR(){
+  return window.jsQR ? Promise.resolve() : new Promise((ok, no) => {
+    const s = document.createElement('script');
+    s.src = '/static/js/vendor/jsQR.js'; s.onload = ok; s.onerror = no;
+    document.head.appendChild(s);
+  });
+}
+async function openTv(){
+  tvOv.style.display = '';
+  document.body.style.overflow = 'hidden';
+  try {
+    const [stream] = await Promise.all([
+      navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment'}}), loadJsQR()]);
+    if (tvOv.style.display === 'none') return stream.getTracks().forEach(t => t.stop());
+    camStream = cam.srcObject = stream;
+    await cam.play();
+    requestAnimationFrame(scanTv);
+  } catch (e) {
+    // No camera, or it was refused: the code box is the way in.
+    document.getElementById('tvCode').focus();
+  }
+}
+function scanTv(){
+  if (!camStream) return;
+  if (cam.readyState >= 2 && cam.videoWidth) {
+    const w = 480, h = Math.round(w * cam.videoHeight / cam.videoWidth);
+    grab.width = w; grab.height = h;
+    gctx.drawImage(cam, 0, 0, w, h);
+    const q = jsQR(gctx.getImageData(0, 0, w, h).data, w, h, {inversionAttempts: 'dontInvert'});
+    const m = q && /\/(?:pad|j)\/([A-Z0-9]+)/i.exec(q.data);
+    if (m) { closeTv(); return joinTv(m[1]); }
+  }
+  requestAnimationFrame(scanTv);
+}
+function closeTv(){
+  if (camStream) camStream.getTracks().forEach(t => t.stop());
+  camStream = cam.srcObject = null;
+  tvOv.style.display = 'none';
+  document.body.style.overflow = '';
+}
+document.getElementById('btnTvClose').onclick = closeTv;
+tvOv.onclick = (e) => { if (e.target === tvOv) closeTv(); };
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && tvOv.style.display !== 'none') closeTv(); });
+document.getElementById('tvForm').onsubmit = (e) => {
+  e.preventDefault();
+  const code = document.getElementById('tvCode').value;
+  if (/^[A-Z0-9]{4,8}$/i.test(code.trim())) joinTv(code);
+};
+
 async function config(body){
   const [ok,d] = await post('/room/' + room + '/config', body);
   if (!ok) return showErr(d.error || 'Could not change that.');
