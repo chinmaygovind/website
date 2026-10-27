@@ -110,8 +110,10 @@ def borrow(rng, look):
 
 
 def _arc(rng, turn, radii, first=False, deg=None):
-    rad = rng.choice(radii)
-    deg = deg or (rng.uniform(45.0, 150.0) if first else rng.uniform(28.0, 165.0))
+    # The tighter of two draws: "more tight turns" was the review note, and a
+    # bias keeps the spread `checks` wants where a smaller set would lose it.
+    rad = min(rng.choice(radii), rng.choice(radii))
+    deg = deg or (rng.uniform(45.0, 150.0) if first else rng.uniform(40.0, 175.0))
     # A hairpin needs a small radius and a fast sweep a big one; the other two
     # combinations are a corner nobody can see the end of and a kink.
     if deg > 110.0:
@@ -143,13 +145,13 @@ def _length(m):
 
 # What each kind of daily may throw in down a straight, by weight. A stunt
 # track is mostly set pieces; a circuit is mostly road with a few.
-CIRCUIT_TRICKS = (("jump", 3), ("crest", 3), ("hump", 2), ("boost", 2),
-                  ("sweeper", 3), ("pipe", 1), ("chicane", 3),
+CIRCUIT_TRICKS = (("jump", 6), ("crest", 3), ("hump", 2), ("boost", 2),
+                  ("sweeper", 2), ("pipe", 1), ("chicane", 4),
                   ("esses", 3), ("rollers", 2), ("wallride", 2), ("bounce", 1),
                   ("narrows", 2))
-STUNT_TRICKS = (("wall", 3), ("jump", 3), ("gap", 3),
+STUNT_TRICKS = (("wall", 3), ("jump", 5), ("gap", 4),
                 ("pipe", 2), ("dive", 2), ("sweeper", 2), ("boost", 1),
-                ("bounce", 3), ("helix", 2), ("stairs", 2), ("leap", 2),
+                ("bounce", 3), ("helix", 2), ("stairs", 2), ("leap", 4),
                 ("wallride", 2), ("esses", 1))
 
 def _pick(rng, table):
@@ -182,12 +184,18 @@ def _trick(rng, kind, turn, radii, stunt):
     """The moves for one set piece. Returns `(moves, height_change, turn)`."""
     if kind == "jump":
         drop = round(rng.uniform(0.0, 8.0 if stunt else 4.0), 1)
-        out = []
-        if rng.random() < 0.5:
+        # Out of a tight corner, onto a pad, off the lip: how far it carries
+        # depends on how the corner went. Rickety Rails' winze and Tokyo
+        # Drift's roof jump are both built this way, and Rickety Rails is the
+        # track people have ground hardest for its length.
+        turn = -turn
+        out = [{"t": "arc", "deg": round(rng.uniform(90.0, 160.0) * turn, 1),
+                "rad": min(radii), "rise": 0.0}]
+        if rng.random() < 0.8:
             out += [{"t": "boost", "len": 12.0},
                     {"t": "straight", "len": round(rng.uniform(24.0, 40.0), 1)}]
-        out.append({"t": "jump", "rise": round(rng.uniform(3.0, 5.5), 1),
-                    "gap": round(rng.uniform(14.0, 26.0 if stunt else 20.0), 1),
+        out.append({"t": "jump", "rise": round(rng.uniform(4.0, 7.0), 1),
+                    "gap": round(rng.uniform(18.0, 34.0 if stunt else 28.0), 1),
                     "drop": drop})
         return out, -drop, turn
     if kind == "gap":
@@ -357,7 +365,7 @@ def generate(seed, looks, secs=None, look=None):
     look = look or rng.choice(looks)
     stunt = is_void(look)
     pal = borrow(rng, look)
-    width = rng.choice((12.0, 13.0, 14.0) if stunt else (10.0, 11.0, 11.0, 12.0, 13.0))
+    width = rng.choice((11.0, 12.0, 13.0) if stunt else (9.5, 10.0, 11.0, 12.0))
     # **No barriers by default, on either kind.** An edge you can go off is
     # what makes a stunt track a stunt track - Playground, Rainbow Road and
     # Cloudbreak are all `exposed` - and a circuit has grass to run onto.
@@ -377,7 +385,7 @@ def generate(seed, looks, secs=None, look=None):
     # so the walk is pulled back towards zero rather than being free.
     y = 0.0
     table, sig = _flavour(rng, STUNT_TRICKS if stunt else CIRCUIT_TRICKS)
-    tricks = rng.randint(6, 8) if stunt else rng.randint(4, 6)
+    tricks = rng.randint(6, 8) if stunt else rng.randint(5, 7)
     gap_after = 1 if stunt else 2
     since = 0
 
@@ -414,8 +422,8 @@ def generate(seed, looks, secs=None, look=None):
         # **Two draws and not one**, because the pool's median straight is 17
         # units: a real track is mostly short connectors with a few proper
         # straights among them.
-        run = (rng.uniform(12.0, 26.0) if rng.random() < 0.72
-               else rng.uniform(42.0, 88.0))
+        run = (rng.uniform(12.0, 26.0) if rng.random() < 0.85
+               else rng.uniform(36.0, 60.0))
         run = min(run, max(18.0, left))
         rise = 0.0
         if rng.random() < (0.45 if stunt else 0.34):

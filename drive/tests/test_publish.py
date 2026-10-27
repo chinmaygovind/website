@@ -560,6 +560,18 @@ def test_a_lap_on_a_draft_is_reported_and_a_pool_lap_is_not():
     assert "/api/make/drove" in body
 
 
+def test_a_draft_lap_reports_before_the_lap_handler_gives_up_on_it():
+    """A draft never counts for the board, so `onFinish` returns early for it.
+    The report sat after the `/api/run` call, which a draft never makes, and the
+    gate never ticked for anybody (Oct 2026)."""
+    src = open(os.path.join(os.path.dirname(__file__), "..", "static", "js",
+                            "game.js")).read()
+    fin = src[src.index("async function onFinish("):]
+    early = fin.index("if (!countsForTheBoard()) {")
+    assert early < fin.index("reportDraftLap(run.time)") \
+        < fin.index("return;", early)
+
+
 # --------------------------------------------------------------------- adopting
 
 def test_adopting_a_track_writes_a_folder_that_builds_the_same_road(env):

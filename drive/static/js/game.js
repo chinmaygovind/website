@@ -7701,6 +7701,11 @@ async function onFinish() {
   // attempt - see countsForTheBoard. The session ghost above still gets it,
   // because that is what the room is for.
   if (!countsForTheBoard()) {
+    // A draft lap goes nowhere near a board, but it is the one thing the submit
+    // gate wants: proof this exact road can be driven from the start line to the
+    // flag. Told to the server keyed on the geometry, not the slug, so driving
+    // it and then moving a corner does not count.
+    reportDraftLap(run.time);
     // The lap does not go on the board, but it was still driven. This is the one
     // place a *finished* lap reports through `/api/activity` rather than
     // `/api/run`: a room lap never reaches `/api/run` at all, so without this an
@@ -7708,7 +7713,8 @@ async function onFinish() {
     reportActivity('room lap');
     if (!racing && !qualifying) {
       showResults({ time: run.time, medal, pb: S.bestTime, wr: S.track.record_ms,
-                    note: 'Room lap - times set in a room stay in the room.' });
+                    note: CFG.draft ? 'Driven - back in the editor, it is ticked off.'
+                                    : 'Room lap - times set in a room stay in the room.' });
     }
     return;
   }
@@ -7765,11 +7771,6 @@ async function onFinish() {
       }
     } else {
       if (improved) { S.bestTime = run.time; localBest(run.time); }
-    // A draft lap goes nowhere near a board, but it is the one thing the submit
-    // gate wants: proof this exact road can be driven from the start line to the
-    // flag. Told to the server keyed on the geometry, not the slug, so driving
-    // it and then moving a corner does not count.
-    reportDraftLap(run.time);
       // A guest's lap is kept whole - replay and all - so that logging in later
       // puts it on the board rather than asking them to drive it again.
       if (d.guest && window.DrivePending) {

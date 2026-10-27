@@ -124,12 +124,14 @@ def test_the_palette_is_borrowed_whole():
                 "seed %d altered %r, which borrowing must not do" % (seed, k)
 
 
-def test_no_keeper_has_a_shortcut(kept):
-    """Nothing reaches the queue with road a car can leave and rejoin further
-    on without passing a checkpoint - across the grass or off a higher stretch
-    onto a lower one. `judge` repairs what it can and drops the rest."""
+def test_no_keeper_has_a_big_shortcut(kept):
+    """Nothing reaches the queue with a cut worth `gen_daily.CUT_CLOSE` units
+    or more - across the grass or off a higher stretch onto a lower one.
+    `judge` repairs what it can and drops the rest. Smaller cuts are left in
+    on purpose: they are what a record is found in."""
     for seed, _doc, track in kept:
-        assert checks.shortcuts(track) == [], "seed %d has a shortcut" % seed
+        assert checks.shortcuts(track, min_gain=gen_daily.CUT_CLOSE) == [], \
+            "seed %d has a shortcut" % seed
 
 
 def test_the_shortcut_check_sees_playgrounds_drops():

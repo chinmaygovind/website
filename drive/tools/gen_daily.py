@@ -175,6 +175,13 @@ def bot_laps(track, levels=("max", "easy"), max_t=None):
 # itself too much - better dropped than fenced.
 MAX_WALLED = 0.4
 
+# Only a cut that skips this much road is closed. Smaller ones are left in,
+# because finding them is what people grind a track for: Rickety Rails closes
+# only its 100-unit chords, and its record is 0.80 of the bot's ideal lap
+# against 0.86-0.89 for the tracks with nothing to find. Closing every cut over
+# `checks.CUT_MIN_GAIN` made dailies with nothing to find.
+CUT_CLOSE = 70.0
+
 # A pad at the top of a climb is a pad on a crest: the road levels off under
 # it, the car goes light, and only a car on the right line touches it at all.
 # Daily #9's last pad had a 30% grade ending at it and "you have to get a
@@ -222,7 +229,7 @@ def judge(doc, bot=True):
         # road: up to eight repairs, and a track that still has one is dropped.
         for _ in range(9):
             rough = tracks_mod.from_document(slug, doc, timed=False)
-            cuts = checks.shortcuts(rough)
+            cuts = checks.shortcuts(rough, min_gain=CUT_CLOSE)
             if not cuts:
                 break
             if not repair(doc, cuts[0]):

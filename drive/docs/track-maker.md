@@ -380,7 +380,15 @@ feel the same" was the note. The signature is in `generated.signature`, and
 neighbours in the queue differ, and the first few avoid `--avoid` (the looks of
 the dailies already scheduled - "same theme as daily #1" was a review note).
 
-**Shortcuts are closed or the seed is dropped.** `checks.shortcuts` finds road a
+**Small cuts stay in; big ones are closed or the seed is dropped** (Oct 2026).
+Closing every cut made dailies with nothing to find. "Rickety is fun cuz
+there's lots of cuts" was the note, and the board agrees: a pool record sits at
+0.72-0.80 of the bot's ideal lap where there are lines to find, against
+0.86-0.89 where there are none. So `judge` passes `gen_daily.CUT_CLOSE` (70
+units) to `checks.shortcuts`, not its own 30. The same Oct note asked for
+"cool jumps and tight turns": corners take the tighter of two radius draws, and
+a jump comes out of the track's tightest hairpin onto a pad (Rickety's winze,
+Tokyo's roof jump) and is bigger. `checks.shortcuts` finds road a
 car can leave and rejoin further on with no checkpoint between: across the
 grass on a circuit, or through the air off a higher stretch onto a lower one,
 which is how every top Playground time skips the Climb. `gen_daily.repair`
@@ -422,7 +430,9 @@ generates dailies has no browser to photograph them in and could not afford one:
 long side across, sky off, background set to the ground's own colour so the
 slab's edge vanishes) with no cars, at the share card's 1200x630, and it rides
 on the Approve press (the
-`cover` field; saved under the `daily-N` slug approval gives it). A live daily
+`cover` field; saved under the `daily-N` slug approval gives it). That PNG data URL is
+over 1MB on a busy track, so the drive vhost needs `client_max_body_size 20m`
+(set by hand Oct 2026, after Approve 413'd at nginx's 1MB default). A live daily
 with none gets one the first time an admin opens it in solo (`maybeSnapCover` →
 `/api/cover/<slug>`, which never overwrites). They are written to
 `static/img/tracks/` beside the pool's covers, untracked and gitignored, so a
