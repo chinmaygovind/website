@@ -560,6 +560,12 @@ def confirm_email():
 # Getting back in
 # ---------------------------------------------------------------------------
 
+# Each game's "Forgot your password?" link says where it came from, so the email
+# can name the game. Anything else is ignored rather than echoed into a letter.
+RESET_FROM = {"conductor": "Conductor", "ers": "Egyptian Rat Screw",
+              "kot": "King of Tokyo", "drive": "Drive"}
+
+
 @bp.route("/forgot", methods=["GET", "POST"])
 def forgot():
     """Ask for a reset link.
@@ -569,7 +575,8 @@ def forgot():
     email addresses have accounts here.
     """
     if request.method == "GET":
-        return render_template("accounts/forgot.html")
+        return render_template("accounts/forgot.html",
+                               game=request.args.get("from") if request.args.get("from") in RESET_FROM else None)
 
     ident = (request.form.get("username") or "").strip()
     user = User.query.filter(or_(User.username == ident,
@@ -577,7 +584,8 @@ def forgot():
     if user and user.email and not user.is_bot:
         link = url_for("accounts.reset", t=tokens.make_reset(_secret(), user),
                        _external=True)
-        mail.password_reset(user.email, user.display, link)
+        mail.password_reset(user.email, user.display, link,
+                            RESET_FROM.get(request.form.get("from")))
 
     return render_template("accounts/message.html", title="Check your email",
                            body="If there's an account for %s, a link to set a new "
@@ -612,9 +620,7 @@ def reset():
     db.session.commit()
     _sign_in(user)                       # straight in, rather than back to a form
     return render_template("accounts/message.html", title="Password set",
-                           body="You're logged in. The same password works on "
-                                "Conductor, Egyptian Rat Screw, King of "
-                                "Tokyo and Drive.",
+                           body="You're logged in.",
                            link=url_for("accounts.profile", username=user.username),
                            link_text="Go to your profile")
 

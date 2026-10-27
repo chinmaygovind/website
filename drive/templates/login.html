@@ -22,12 +22,9 @@
   {% elif is_guest %}
     <h1>Make an account</h1>
     <p class="muted">Racing as {{ effective_name }}. An account puts your times on
-    the leaderboard and keeps them - the same one works on Conductor,
-    Egyptian Rat Screw and King of Tokyo.</p>
+    the leaderboard and keeps them.</p>
   {% else %}
     <h1>Log in</h1>
-    <p class="muted">Your cgovind.com account works here - the same one as Ticket to
-    Ride, Egyptian Rat Screw and King of Tokyo.</p>
   {% endif %}
   <div class="error" id="err"></div>
 
@@ -44,7 +41,7 @@
       <div class="field"><label>Username or email</label><input id="lu" autocomplete="username"/></div>
       <div class="field"><label>Password</label><input id="lp" type="password" autocomplete="current-password"/></div>
       <button class="btn" style="width:100%" onclick="doLogin()">Log in</button>
-      <p class="muted" style="font-size:.9rem"><a href="{{ site_url }}/accounts/forgot" target="_blank" rel="noopener noreferrer">Forgot your password?</a> &nbsp;·&nbsp; No account? <a href="#" onclick="show('reg');return false">Register</a></p>
+      <p class="muted" style="font-size:.9rem"><a href="{{ site_url }}/accounts/forgot?from=drive" target="_blank" rel="noopener noreferrer">Forgot your password?</a> &nbsp;·&nbsp; No account? <a href="#" onclick="show('reg');return false">Register</a></p>
     </div>
 
     <div id="regForm"{% if not signup %} style="display:none"{% endif %}>

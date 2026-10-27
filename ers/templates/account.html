@@ -31,9 +31,6 @@
       <div class="stat"><div class="v">{{ (stats.false_slaps if stats else 0) or 0 }}</div><div class="l">False slaps</div></div>
       <div class="stat"><div class="v">{% if stats and stats.best_place %}#{{ stats.best_place }}{% else %}-{% endif %}</div><div class="l">Best finish</div></div>
     </div>
-    <p class="muted" style="font-size:.85rem;margin-top:1.2rem">
-      Same account plays <a href="https://conductor.cgovind.com" style="color:var(--wood-2);font-weight:700">Conductor</a> - stats are kept separately.
-    </p>
   </div>
 </div>
 {% endblock %}

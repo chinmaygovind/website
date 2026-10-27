@@ -74,18 +74,17 @@ def _indent(text):
 # a reset email is the only part that matters to the person who did not ask
 # for it.
 
-def password_reset(to, name, link):
+def password_reset(to, name, link, game=None):
+    """`game` is the one the visitor came from, named only when we know it."""
     return send(
         to, "Reset your cgovind.com password",
         "Hi %s,\n\n"
-        "Someone asked to reset the password on your cgovind.com account - the "
-        "one you use for Conductor, Egyptian Rat Screw, King of Tokyo and "
-        "Drive.\n\n"
+        "Someone asked to reset the password on your cgovind.com account%s.\n\n"
         "Set a new password here:\n%s\n\n"
         "The link works once and expires in an hour.\n\n"
         "If this wasn't you, you can ignore this email. Your password has not "
         "changed and the link above is useless to anyone who doesn't get it.\n"
-        % (name, link))
+        % (name, ", the one you use for %s" % game if game else "", link))
 
 
 def confirm_new_email(to, name, link):

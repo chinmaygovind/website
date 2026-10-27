@@ -518,6 +518,17 @@ def test_no_mail_goes_to_an_address_with_no_account(client, capsys):
     assert "Reset your cgovind.com password" not in capsys.readouterr().err
 
 
+def test_the_reset_email_names_the_game_only_when_it_came_from_one(client, make_user, capsys):
+    make_user("racer", email="racer@example.com")
+    assert 'value="drive"' in body(client.get("/accounts/forgot?from=drive"))
+    assert 'name="from"' not in body(client.get("/accounts/forgot?from=<b>evil</b>"))
+
+    client.post("/accounts/forgot", data={"username": "racer", "from": "drive"})
+    assert "cgovind.com account, the one you use for Drive." in capsys.readouterr().err
+    client.post("/accounts/forgot", data={"username": "racer", "from": "nonsense"})
+    assert "on your cgovind.com account.\n" in capsys.readouterr().err
+
+
 def test_a_reset_link_sets_a_password_and_logs_you_in(client, make_user, db, capsys):
     uid = make_user("forgetful", email="forgetful@example.com")
     client.post("/accounts/forgot", data={"username": "forgetful"})

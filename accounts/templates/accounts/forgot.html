@@ -7,11 +7,11 @@
   <h2>Forgot your password</h2>
   <p class="muted" style="margin-bottom:1.2rem">
     Tell us your username or the email address on the account and we'll send a
-    link to set a new one. It works for all four games — they share the one
-    account.
+    link to set a new one.
   </p>
 
   <form method="post">
+    {% if game %}<input type="hidden" name="from" value="{{ game }}"/>{% endif %}
     <div class="field">
       <label for="u">Username or email</label>
       <input type="text" id="u" name="username" autocomplete="username" required autofocus/>
