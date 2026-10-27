@@ -13,6 +13,10 @@
 
 {% block body %}
 <canvas id="gl"></canvas>
+{% if tv %}
+<div id="tvViews"></div>
+<div class="tv-join"><span>{{ request.host }}/pad/</span><b>{{ room.code }}</b></div>
+{% endif %}
 
 <div class="hud">
   <!-- The left-hand side is ONE column, top to bottom, and that is load-bearing
@@ -1270,7 +1274,9 @@
        `maybeSnapCover`. The same rule as the admin routes it posts to. #}
     coverAdmin: {{ 'true' if is_admin else 'false' }},
     maxBots: {{ max_bots }},
-    maxRoom: {{ max_room }}
+    maxRoom: {{ max_room }},
+    tv: {{ 'true' if tv else 'false' }},
+    pad: /[?&]pad=1/.test(location.search)
   };
   {% if pb_ms %}window.DRIVE_CFG.pbs["{{ track.slug }}"] = {{ pb_ms }};{% endif %}
 

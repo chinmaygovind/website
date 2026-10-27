@@ -54,6 +54,45 @@ the track cards, `/account`, `/leaderboard`, the nav, or the in-game board panel
     a second in, every time, and never with the video blocked. `.hero-in` and
     `.hero-more` carry `will-change: transform` so that layer exists from the
     first paint. Taking it off brings the blank back; check it with the video.
+- **`/lobbies` is the home page's title screen with the places instead of the
+  racing** (Oct 2026). Behind the whole page, fixed, is `static/video/lobbies.mp4`:
+  `tools/shoot_video.py scenic`, eight `fly` shots with `cars=0`, six seconds
+  each, dissolved together, and the first shot played again and dissolved into
+  at the end so the wrap is just another dissolve. It opens on Starport, the
+  road in orbit over the Earth. Copy it from `media/video/scenic.mp4`
+  re-encoded at CRF 32, and `lobbies.jpg` is its first frame, as with `home.*`.
+  Over it: a big **Create room**, then open rooms on the left and **Recent
+  races** (each a link to `/race/<id>`) with **Online now** under it on the
+  right, the multiplayer tier beside anybody who has raced. A small live count
+  sits top right and is absent when it would be zero.
+  - **Create room makes the room at once and opens a sheet over it**: the
+    switcher's own track cards (`.tcard2`, drawn server side, Sprints and
+    Circuits only, as in a room) taking most of it, and on the right the
+    `/j/<code>` invite link, max players (2 to `MAX_ROOM`, 12, default 12) and
+    Public/Private. The room has to exist for the link to be real, so the page
+    holds the seat over its socket (`join_room_`) while you choose - without
+    that the sweep vacates a host with no socket after `SEAT_GRACE_S` and the
+    room closes under the sheet. The track goes over `set_track`, size and
+    privacy over `/room/<code>/config`. Closing the sheet emits `leave`, which
+    closes the room.
+  - **Join by code is gone.** Nobody used it, and a private room is joined
+    through its `/j/<code>` link, which skips the passcode anyway - so
+    "Private" just means unlisted.
+  - **Nothing on it may move once it has painted.** Open rooms are a panel of
+    fixed height that scrolls inside itself, so neither the first room nor the
+    tenth moves anything. The room cards are built by an inline script
+    straight after `#openList` rather than after socket.io loads, which is
+    what used to drop them in a beat after first paint; `?closed=` is printed
+    by the server for the same reason. `.mp` pins `line-height` because
+    `normal` is measured from the active font and grew every heading 11px
+    when Titillium swapped in - that fix is what kills the shift, not
+    `font-display`. Check with a `layout-shift` PerformanceObserver.
+  - **The picker's `.tgrid` needs `grid-auto-rows: max-content`**, the switcher's
+    trap again: a grid of definite height shares it among its rows and every
+    card came out a picture with no name under it.
+  - **Recent races are read in SQL with `json_each`**, never through
+    `DriveRace.cars`: `cars_json` holds every car's ghost (~100KB a race) and the
+    page wants three fields of it.
 - **Solo is `/solo`, and the track is something you change from inside it.** There is
   no "pick a track" page any more: `/solo` opens whatever you were last driving (kept
   in the session, so the first paint is right) and the **track switcher** - the map

@@ -45,6 +45,10 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
   <meta name="apple-mobile-web-app-title" content="Drive"/>
   <meta name="mobile-web-app-capable" content="yes"/>
+  {# 600 and 900 are inlined in style.css; these two are files, and without a
+     preload they arrive after first paint and the nav grows when they swap in. #}
+  <link rel="preload" href="{{ url_for('static', filename='fonts/titillium-400.woff2') }}" as="font" type="font/woff2" crossorigin/>
+  <link rel="preload" href="{{ url_for('static', filename='fonts/titillium-700.woff2') }}" as="font" type="font/woff2" crossorigin/>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ asset_version }}"/>
   {# Are we inside somebody else's page? A portal frames the game rather than
      hosting it, and two things then differ enough to need saying in CSS: the

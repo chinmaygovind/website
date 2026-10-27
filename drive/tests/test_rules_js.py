@@ -1684,7 +1684,7 @@ def test_the_lap_count_is_one_on_a_track_that_is_not_a_circuit():
 
 # --- the grid has road under it ---------------------------------------------
 
-#: The field this pool is built to line up. Bigger than `MAX_ROOM` (8) on
+#: The field this pool is built to line up. Matches `MAX_ROOM` (12) on
 #: purpose: the room's ceiling is a decision about a room and the road is poured
 #: once, so the cheap thing is to pour enough that raising the ceiling is a
 #: one-line change rather than a re-survey of twenty-one tracks.

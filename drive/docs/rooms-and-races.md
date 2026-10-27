@@ -11,6 +11,33 @@ enough that every client timed the server out at once. The last one left no
 trace at all until `_hub_watchdog` was written; it logs `event loop stalled`
 with how late it was and what the rooms were doing.
 
+**Big Drive (`/tv`) is an ordinary room watched by a screen with no seat in it**
+(Oct 2026, Celia's idea). A laptop on the TV opens `/tv`, which makes a
+private room of `TV_PLAYERS` (4) with nobody in it and shows
+`<host>/pad/<code>`. Phones open that link, which is `/j/<code>` landing on
+`/room/<code>?pad=1`, so each one is a real seat: physics, items, contact,
+finishing, ELO and the replay all happen exactly as in any other room, and
+none of that code knows a TV exists.
+- **The TV joins over `tv_watch`, not `join_room_`.** It is in the room's
+  broadcast and in `_tv_sids`, never in `_sid_room`, so it has no car, sends
+  no pose and is on no grid. `game.js` runs its frame loop as the early
+  `CFG.tv` branch: `updateRemotes`, then `tvRender`, which draws one viewport
+  per *person* in seat order (bots get none) by swapping a camera and
+  `Renderer.follow`'s smoothing state in around each call. All of it is in
+  `game.js` on purpose: a new method on `Renderer` would be a call into a
+  `render.js` that can be an hour stale - see the deploy section of
+  `drive/CLAUDE.md`.
+- **The first person into an empty room hosts it** (`_add_player`), which is
+  only ever a TV room, so the host's phone has Start race and the track
+  switcher. **A host leaving a TV-watched room hands the controls on** instead of
+  closing it (`_vacate`), because the TV is the room.
+- **The sweep leaves an empty room alone while a TV watches it, and for its
+  first minute**: without the minute, a sweep landing between `/tv` and the
+  TV's socket connecting deleted the room, and the TV bounced to a new one.
+- **`?pad=1` draws nothing**: the phone still simulates the car and shows the
+  HUD and the touch pedals, but skips the GPU draw, since the picture is on
+  the TV.
+
 - **A room has its own anti-cheat, and it is a different question from the
   board's.** `racecheck.py`, and its preamble is the long version. The short
   one: `runcheck.validate` asks whether a submitted replay is self-consistent

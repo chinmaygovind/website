@@ -1,85 +1,183 @@
 {% extends "base.html" %}
 {% block title %}Multiplayer | Drive{% endblock %}
 {% set active_page = 'lobbies' %}
+
+{# One card of the create-room sheet's track picker: the switcher's own card
+   (`.tcard2`, built by `renderTrackCards` in game.js), drawn here on the server
+   so the sheet is whole the moment it opens. #}
+{% macro pick(t) %}
+  {% set pb = pbs.get(t.slug) %}{% set rank = ranks.get(t.slug) %}
+  <button type="button" class="tcard2{% if t.slug == last %} active{% endif %}" data-track="{{ t.slug }}">
+    <span class="tcard2-img" style="background-image:url('/static/img/tracks/{{ t.slug }}.png?v={{ asset_version }}')"></span>
+    <span class="tcard2-body">
+      <span class="tcard2-top">
+        <b>{{ t.name }}</b>
+        <span class="diff d{{ t.difficulty }}">{% for i in range(5) %}<span class="pip{% if i < t.difficulty %} on{% endif %}"></span>{% endfor %}</span>
+      </span>
+      <span class="tcard2-foot">
+        <span class="medal {{ pb.medal_shown or 'none' if pb else 'none' }}"></span>
+        <span>{% if pb %}{{ '%d:%06.3f'|format((pb.time_ms // 60000), (pb.time_ms % 60000) / 1000) }}{% if rank %} (#{{ rank }}){% endif %}{% else %}not driven{% endif %}</span>
+      </span>
+    </span>
+  </button>
+{% endmacro %}
+
 {% block body %}
 {% include "_nav.html" %}
-<div class="wrap">
-  {% if mine %}
-  <div class="panel row" style="margin-bottom:1.2rem">
-    <span>You're in room <b>{{ mine.code }}</b>.</span>
-    <a class="btn" style="margin-left:auto" href="/room/{{ mine.code }}">Rejoin</a>
-  </div>
-  {% endif %}
+{# The home page's title screen, with the places instead of the racing: slow
+   flyovers of the tracks with nobody on them (`shoot_video.py scenic`), fixed
+   behind the whole page so the rooms sit over it rather than under it. #}
+<div class="mp">
+  <video class="mp-bg" src="/static/video/lobbies.mp4?v={{ asset_version }}"
+         poster="/static/video/lobbies.jpg?v={{ asset_version }}"
+         autoplay muted loop playsinline preload="auto" aria-hidden="true"></video>
 
-  <h1>Multiplayer</h1>
-  <p class="lede">Everyone in a room drives the same track. Practice whenever you
-  like; the host starts the countdown when you're ready.</p>
+  <div class="mp-wrap">
+    {% if live or in_drive %}
+    <div class="mp-live"><span class="dot"></span>
+      {%- if live %}{{ live }} race{{ 's' if live != 1 }} live{% endif %}
+      {%- if live and in_drive %} · {% endif %}
+      {%- if in_drive %}{{ in_drive }} driving{% endif %}</div>
+    {% endif %}
 
-  <div class="error" id="err"></div>
+    <h1 class="mp-title">Multiplayer</h1>
 
-  <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:1.2rem" class="lobby-grid">
-    <div class="panel">
-      <h2 style="margin-top:0">Open rooms</h2>
-      <div id="openList">
-        {% if games %}
-        {% for g in games %}
-        <div class="row" style="border-bottom:1px dashed #ddd;padding:.5rem 0">
-          <b style="font-family:var(--mono)">{{ g.code }}</b>
-          <span class="muted">{{ g.track_name }} · {{ g.player_count }}/{{ g.max_players }}</span>
-          <button class="btn" style="margin-left:auto" onclick="joinGame('{{ g.code }}')">Join</button>
-        </div>
-        {% endfor %}
-        {% else %}
-        <p class="muted" id="emptyMsg">No open rooms right now - make one.</p>
+    <div class="mp-create">
+      <button class="mp-go" id="btnCreate" onclick="createRoom()">Create room</button>
+      <div class="mp-flash">
+        {% if mine %}
+        <a class="mp-rejoin" href="/room/{{ mine.code }}">You're in room <b>{{ mine.code }}</b> <span>Rejoin ›</span></a>
+        {% endif %}
+        {% set closed = request.args.get('closed', '')[:120] %}
+        <div class="error{% if closed %} notice show{% endif %}" id="err">{{ closed }}</div>
+      </div>
+    </div>
+
+    <div class="mp-cols">
+      <section class="mp-panel mp-rooms-panel">
+        <h2 class="mp-h">Open rooms</h2>
+        <div class="mp-rooms" id="openList"></div>
+        <script>
+const esc = (s) => (s + '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const PHASE = {free: 'Practice', qual_countdown: 'Qualifying', qualifying: 'Qualifying',
+               countdown: 'Racing', racing: 'Racing'};
+const V = {{ asset_version|tojson }};
+function render(games){
+  const el = document.getElementById('openList');
+  if (!games.length) { el.innerHTML = '<p class="mp-none">No open rooms right now.</p>'; return; }
+  el.innerHTML = games.map(g => {
+    const seats = Array.from({length: g.max_players}, (_, i) => {
+      const p = g.players[i];
+      return p ? `<i style="background:${esc(p.color)}" title="${esc(p.name)}"></i>` : '<i></i>';
+    }).join('');
+    const ph = PHASE[g.phase] || 'Practice';
+    return `<button class="mp-room" onclick="joinGame('${esc(g.code)}')"
+        style="background-image:url('/static/img/tracks/${esc(g.track)}.png?v=${esc(V)}')">
+      <span class="mp-phase ${ph.toLowerCase()}">${ph}</span>
+      <span class="mp-room-in">
+        <b class="mp-code">${esc(g.code)}</b>
+        <span class="mp-track">${esc(g.track_name)}</span>
+        <span class="mp-seats">${seats}<em>${g.player_count}/${g.max_players}</em></span>
+      </span>
+    </button>`;
+  }).join('');
+}
+render({{ games|tojson }});
+        </script>
+      </section>
+
+      <div class="mp-side">
+        <section class="mp-panel">
+          <h2 class="mp-h">Recent races</h2>
+          {% for r in recent %}
+          <a class="mp-race" href="/race/{{ r.id }}">
+            <span class="mp-thumb" style="background-image:url('/static/img/tracks/{{ r.track }}.png?v={{ asset_version }}')"></span>
+            <span class="mp-race-in">
+              <b>{{ r.track_name }}</b>
+              <span class="mp-field">{% for c in r.cars %}<i style="background:{{ c.color }}"></i>{% endfor %}</span>
+            </span>
+            <span class="mp-race-win">
+              <span>★ {{ r.winner.name }}</span>
+              <small>{{ r.ago }}</small>
+            </span>
+          </a>
+          {% else %}
+          <p class="mp-none">No races yet.</p>
+          {% endfor %}
+        </section>
+
+        {# Who is around, across all four games rather than just this one. The
+           question a lobby actually raises is "is there anybody to race", and
+           somebody in the middle of King of Tokyo is somebody you can ask. #}
+        {% if online %}
+        <section class="mp-panel">
+          <h2 class="mp-h">Online now</h2>
+          {# New tab, like every link that leaves Drive - see the note on
+             `icon_out` in account.html. #}
+          {% for p in online %}
+          <a class="mp-person" href="{{ site_url }}/accounts/{{ p.username }}"
+             target="_blank" rel="noopener noreferrer">
+            <span class="dot"></span>
+            <b>{{ p.username }}</b>
+            {% if p.tier %}<span class="mp-tier" title="Rating {{ p.elo }}">{{ p.tier }}</span>{% endif %}
+            <span class="mp-where{% if p.service == 'drive' %} here{% endif %}">{{ p.label }}</span>
+          </a>
+          {% endfor %}
+        </section>
         {% endif %}
       </div>
+    </div>
+  </div>
+</div>
 
-      <h3>Join by code</h3>
-      <div class="row">
-        <div class="field" style="margin:0;flex:1"><input id="jc" placeholder="ABC123" maxlength="6" style="text-transform:uppercase"/></div>
-        <button class="btn secondary" onclick="joinByCode()">Join</button>
+{# The new room's sheet. The room exists from the moment it opens - that is what
+   makes the link real - and this page holds its seat over the socket until you
+   go in, so it is not swept while you choose. Closing it leaves the room, which
+   closes it. #}
+<div class="overlay mp-ov" id="createOv" style="display:none">
+  <div class="sheet mp-sheet" role="dialog" aria-modal="true" aria-labelledby="createTitle">
+    <div class="sheet-head">
+      <h2 id="createTitle">New room <span class="mp-sheet-code" id="newCode"></span></h2>
+      <button class="sheet-x" id="btnCreateClose" title="Close" aria-label="Close">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="mp-sheet-body">
+      <div class="mp-pick">
+        <div class="ttabs" role="tablist">
+          <button type="button" class="ttab on" data-tab="sprint" role="tab">Sprints <i>{{ sprints|length }}</i></button>
+          <button type="button" class="ttab" data-tab="circuit" role="tab">Circuits <i>{{ circuits|length }}</i></button>
+        </div>
+        <div class="tgrid" data-tab="sprint">{% for t in sprints %}{{ pick(t) }}{% endfor %}</div>
+        <div class="tgrid" data-tab="circuit" hidden>{% for t in circuits %}{{ pick(t) }}{% endfor %}</div>
+      </div>
+
+      <div class="mp-set">
+        <div class="mp-set-row">
+          <span class="mp-set-label">Invite link</span>
+          <div class="mp-link">
+            <input id="newLink" readonly aria-label="Invite link">
+            <button type="button" class="btn" id="btnCopy">Copy</button>
+          </div>
+        </div>
+        <div class="mp-set-row">
+          <span class="mp-set-label">Max players</span>
+          <div class="mp-step">
+            <button type="button" class="btn secondary" data-step="-1" aria-label="Fewer">&minus;</button>
+            <b id="newMax">{{ max_room }}</b>
+            <button type="button" class="btn secondary" data-step="1" aria-label="More">+</button>
+          </div>
+        </div>
+        <div class="mp-set-row">
+          <span class="mp-set-label">Visibility</span>
+          <div class="mp-seg" role="radiogroup">
+            <button type="button" class="on" data-private="0" role="radio" aria-checked="true">Public</button>
+            <button type="button" data-private="1" role="radio" aria-checked="false">Private</button>
+          </div>
+        </div>
+        <button type="button" class="mp-go mp-enter" id="btnEnter">Enter room</button>
       </div>
     </div>
-
-    <div class="panel">
-      <h2 style="margin-top:0">New room</h2>
-      <div class="field">
-        <label for="tsel">Starting track</label>
-        <select id="tsel" style="font-family:var(--display);font-size:1.05rem;padding:.45rem;border:2px solid var(--line);border-radius:8px;width:100%">
-          {% for t in tracks %}<option value="{{ t.slug }}">{{ t.name }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="field">
-        <label><input type="checkbox" id="priv" style="width:auto"/> Private (passcode)</label>
-        <input id="pass" placeholder="Passcode" style="margin-top:.4rem;display:none"/>
-      </div>
-      <button class="btn big" style="width:100%" onclick="createRoom()">Create room</button>
-      <p class="muted" style="font-size:.9rem">Up to 8 cars. You can change the track from inside the room.</p>
-    </div>
-
-    <!-- Who is around, across all four games rather than just this one. The
-         question a lobby actually raises is "is there anybody to race", and
-         somebody in the middle of King of Tokyo is somebody you can ask - so
-         the row says what they are doing rather than pretending they are
-         waiting here. Absent entirely when nobody is on, because an empty
-         panel headed "Online now" is a worse answer than no panel. -->
-    {% if online %}
-    <div class="panel online-now">
-      <h2 style="margin-top:0">Online now</h2>
-      {% for p in online %}
-      {# New tab, like every link that leaves Drive - see the note on
-         `icon_out` in account.html. A whole row is an easy thing to click by
-         accident, and inside a portal's frame this one would replace the game
-         with the main site. #}
-      <a class="row online-row" href="{{ site_url }}/accounts/{{ p.username }}"
-         target="_blank" rel="noopener noreferrer">
-        <span class="dot"></span>
-        <b>{{ p.username }}</b>
-        <span class="muted" style="margin-left:auto">{{ p.label }}</span>
-      </a>
-      {% endfor %}
-    </div>
-    {% endif %}
   </div>
 </div>
 {% endblock %}
@@ -87,57 +185,84 @@
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script>
 const err = document.getElementById('err');
-function showErr(m){ err.textContent = m; err.classList.add('show'); }
-// Why you are looking at this page rather than the room you were in. The room
-// says it on the way out (`room_closed`) and hands it over in the URL, because
-// the only thing that survives the redirect is the URL - and a room vanishing
-// with nothing said reads as a glitch rather than as the host leaving.
-{
-  const closed = new URLSearchParams(location.search).get('closed');
-  // Same box, without the red: nothing has gone wrong and nobody did anything
-  // wrong - the room ended, and this is the sentence that says so.
-  if (closed) { err.classList.add('notice'); showErr(closed.slice(0, 120)); }
-}
-document.getElementById('priv').onchange = e => {
-  document.getElementById('pass').style.display = e.target.checked ? 'block' : 'none';
-};
+function showErr(m){ err.classList.remove('notice'); err.textContent = m; err.classList.add('show'); }
 async function post(url, body){
   const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
   return [r.ok, await r.json().catch(()=>({}))];
 }
-async function createRoom(){
-  const [ok,d] = await post('/create', {
-    track: document.getElementById('tsel').value,
-    is_private: document.getElementById('priv').checked,
-    passcode: document.getElementById('pass').value });
-  ok ? location.href = '/room/' + d.code : showErr(d.error || 'Could not create the room.');
-}
-async function joinGame(code, passcode){
-  const [ok,d] = await post('/join', {code, passcode: passcode || ''});
+async function joinGame(code){
+  const [ok,d] = await post('/join', {code});
   ok ? location.href = '/room/' + d.code : showErr(d.error || 'Could not join.');
 }
-async function joinByCode(){
-  const code = document.getElementById('jc').value.trim().toUpperCase();
-  if(!code) return;
-  const [ok,d] = await post('/join', {code});
-  if (ok) location.href = '/room/' + d.code;
-  else if (d.error && d.error.toLowerCase().includes('passcode')) {
-    const pc = prompt('Passcode for ' + code + ':');
-    if (pc !== null) joinGame(code, pc);
-  } else showErr(d.error || 'Could not join.');
-}
-const esc = (s) => (s + '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const socket = io();
-socket.on('connect', () => socket.emit('join_lobbies'));
-socket.on('lobbies_update', (d) => {
-  const el = document.getElementById('openList');
-  if (!d.games.length) { el.innerHTML = '<p class="muted">No open rooms right now - make one.</p>'; return; }
-  el.innerHTML = d.games.map(g => `
-    <div class="row" style="border-bottom:1px dashed #ddd;padding:.5rem 0">
-      <b style="font-family:var(--mono)">${esc(g.code)}</b>
-      <span class="muted">${esc(g.track_name)} · ${g.player_count}/${g.max_players}</span>
-      <button class="btn" style="margin-left:auto" onclick="joinGame('${esc(g.code)}')">Join</button>
-    </div>`).join('');
+socket.on('connect', () => {
+  socket.emit('join_lobbies');
+  if (room) socket.emit('join_room_', {code: room});
+});
+socket.on('lobbies_update', (d) => render(d.games));
+socket.on('room_error', (d) => showErr(d.error));
+
+const ov = document.getElementById('createOv');
+const MAX = {{ max_room }};
+let room = null, max = MAX;
+async function createRoom(){
+  const btn = document.getElementById('btnCreate');
+  btn.disabled = true;
+  const [ok,d] = await post('/create', {max_players: MAX});
+  btn.disabled = false;
+  if (!ok) return showErr(d.error || 'Could not create the room.');
+  room = d.code; max = MAX;
+  socket.emit('join_room_', {code: room});
+  document.getElementById('newCode').textContent = room;
+  document.getElementById('newLink').value = location.origin + '/j/' + room;
+  document.getElementById('newMax').textContent = max;
+  ov.querySelectorAll('.mp-seg button').forEach(b => {
+    b.classList.toggle('on', b.dataset.private === '0');
+    b.setAttribute('aria-checked', b.dataset.private === '0');
+  });
+  ov.style.display = '';
+  document.body.style.overflow = 'hidden';
+}
+function closeSheet(){
+  if (room) socket.emit('leave');
+  room = null;
+  ov.style.display = 'none';
+  document.body.style.overflow = '';
+}
+document.getElementById('btnCreateClose').onclick = closeSheet;
+ov.onclick = (e) => { if (e.target === ov) closeSheet(); };
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && room) closeSheet(); });
+document.getElementById('btnEnter').onclick = () => { location.href = '/room/' + room; };
+document.getElementById('btnCopy').onclick = (e) => {
+  const link = document.getElementById('newLink');
+  link.select();
+  (navigator.clipboard ? navigator.clipboard.writeText(link.value) : Promise.reject())
+    .catch(() => document.execCommand('copy'))
+    .finally(() => { e.target.textContent = 'Copied'; setTimeout(() => e.target.textContent = 'Copy', 1500); });
+};
+ov.querySelectorAll('.ttab').forEach(t => t.onclick = () => {
+  ov.querySelectorAll('.ttab').forEach(x => x.classList.toggle('on', x === t));
+  ov.querySelectorAll('.tgrid').forEach(g => g.hidden = g.dataset.tab !== t.dataset.tab);
+});
+ov.querySelectorAll('[data-track]').forEach(c => c.onclick = () => {
+  ov.querySelectorAll('[data-track]').forEach(x => x.classList.toggle('active', x === c));
+  socket.emit('set_track', {code: room, track: c.dataset.track});
+});
+async function config(body){
+  const [ok,d] = await post('/room/' + room + '/config', body);
+  if (!ok) return showErr(d.error || 'Could not change that.');
+  max = d.max_players;
+  document.getElementById('newMax').textContent = max;
+}
+ov.querySelectorAll('[data-step]').forEach(b => b.onclick = () => {
+  const n = Math.max(2, Math.min(MAX, max + +b.dataset.step));
+  if (n !== max) { max = n; document.getElementById('newMax').textContent = n; config({max_players: n}); }
+});
+ov.querySelectorAll('.mp-seg button').forEach(b => b.onclick = () => {
+  ov.querySelectorAll('.mp-seg button').forEach(x => {
+    x.classList.toggle('on', x === b); x.setAttribute('aria-checked', x === b);
+  });
+  config({is_private: b.dataset.private === '1'});
 });
 </script>
 {% endblock %}

@@ -1870,3 +1870,48 @@ def test_a_guest_who_signs_up_stops_being_a_guest_in_the_room_they_are_sitting_i
         assert seat.user_id == user.id, "still rated, tallied and badged as a guest"
         assert seat.name == "dave"
         assert env._roster(game)[0]["guest"] is False
+
+
+def test_only_the_host_shapes_a_new_room_and_its_size_is_clamped(env):
+    """The lobbies page's create-room sheet: size and privacy, host only."""
+    host, other = env.app.test_client(), env.app.test_client()
+    host.post("/guest", json={"name": "Host"})
+    other.post("/guest", json={"name": "Other"})
+    code = host.post("/create", json={}).get_json()["code"]
+    assert other.post("/room/%s/config" % code, json={"is_private": True}).status_code == 403
+    d = host.post("/room/%s/config" % code, json={"max_players": 99, "is_private": True}).get_json()
+    assert (d["max_players"], d["is_private"]) == (env.MAX_ROOM, True)
+    assert host.post("/room/%s/config" % code, json={"max_players": 1}).get_json()["max_players"] == 2
+    with env.app.app_context():
+        assert env.DriveGame.query.filter_by(code=code).first().max_players == 2
+
+
+def test_a_tv_room_is_hosted_by_the_first_phone_and_survives_its_host(env):
+    """Big Drive: `/tv` opens a room with no seat in it, the TV watches it over
+    its own socket, the first phone in hosts it, and that phone leaving hands
+    the controls on rather than closing the room under the TV."""
+    tv = env.app.test_client()
+    code = tv.get("/tv").headers["Location"].rstrip("/").split("/")[-1]
+    assert tv.get("/tv/" + code).status_code == 200
+    watch = env.socketio.test_client(env.app, flask_test_client=tv)
+    watch.emit("tv_watch", {"code": code})
+    hello = [e["args"][0] for e in watch.get_received() if e["name"] == "room_hello"]
+    assert hello and hello[0]["me"] is None and hello[0]["players"] == []
+
+    phones = []
+    for name in ("Celia", "Chinmay"):
+        c = env.app.test_client()
+        c.post("/guest", json={"name": name})
+        r = c.get("/pad/" + code)
+        assert r.headers["Location"].endswith("/room/%s?pad=1" % code)
+        phones.append(c)
+    with env.app.app_context():
+        game = env.DriveGame.query.filter_by(code=code).first()
+        assert [(p.name, p.is_host) for p in game.players] == [("Celia", True), ("Chinmay", False)]
+        env._sweep_once()                     # a seat with no socket is not swept yet
+        game = env.DriveGame.query.filter_by(code=code).first()
+        env._vacate(game, next(p for p in game.players if p.is_host))
+        game = env.DriveGame.query.filter_by(code=code).first()
+        assert game, "the host leaving closed the TV's room"
+        assert [(p.name, p.is_host) for p in game.players] == [("Chinmay", True)]
+    watch.disconnect()

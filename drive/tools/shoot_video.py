@@ -75,6 +75,7 @@ ASPECTS = {
     "landscape": (1920, 1080),
     "portrait": (1080, 1620),
     "web": (1280, 720),
+    "reel": (1080, 1920),
 }
 
 # ---------------------------------------------------------------------------
@@ -124,9 +125,33 @@ def _loop_beat(slug, how, secs=4.0):
 
 LOOP = [_loop_beat(s, h) for s, h in _LOOP]
 
+# 13.0s for Instagram Reels: no cover open, because a reel is decided in its
+# first second - it starts mid-air and only says what it is at the end.
+REEL = [
+    dict(name="air", kind="race", slug="jumpcity", secs=1.8, pick="air"),
+    dict(name="launch", kind="race", slug="citadel", secs=1.6, pick="start"),
+    dict(name="cockpit", kind="race", slug="monaco", secs=1.6, pick="pack", view="first"),
+    dict(name="m-dino", kind="fly", slug="dino", secs=0.5, push=0.25),
+    dict(name="m-costco", kind="fly", slug="costco", secs=0.5, push=0.25),
+    dict(name="m-boo", kind="fly", slug="boo", secs=0.5, push=0.25),
+    dict(name="m-shroom", kind="fly", slug="shroom", secs=0.5, push=0.25),
+    dict(name="pack", kind="race", slug="sepang", secs=1.8, pick="pack"),
+    dict(name="bigair", kind="race", slug="bigred", secs=1.6, pick="air"),
+    dict(name="flag", kind="race", slug="suzuka", secs=2.6, pick="finish", title="in"),
+]
+
+# 48s less the dissolves: the multiplayer page's background. The home loop is
+# the racing; this is the places, so no cars, longer shots, a slow drift and
+# a dissolve between each rather than a cut.
+_SCENIC = ["starport", "cove", "pillars", "bigred", "dino", "monaco", "rainbow", "spa"]
+SCENIC = [dict(name=s, kind="fly", slug=s, secs=6.0, push=0.10, orbit=0.30,
+               rise=0.03, over=dict(cars=0)) for s in _SCENIC]
+
 CUTS = {
     "trailer": dict(beats=TRAILER, aspects=["landscape", "portrait"], crf=19),
     "loop": dict(beats=LOOP, aspects=["web"], crf=30),
+    "scenic": dict(beats=SCENIC, aspects=["web"], crf=30, xfade=1.2),
+    "reel": dict(beats=REEL, aspects=["reel"], crf=19),
 }
 
 # What comes off the frame on a replay: everything but the world. The HUD is
@@ -512,12 +537,30 @@ def assemble(cut, aspect):
     lst = os.path.join(OUT, "beats", cut, aspect, "concat.txt")
     with open(lst, "w") as f:
         f.writelines("file '%s'\n" % p for p in parts)
-    dst = os.path.join(OUT, "drive-%s.mp4" % aspect if cut == "trailer" else "loop.mp4")
-    _run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", lst,
-          "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p",
-          "-crf", str(spec["crf"]), "-preset", "slow", "-an", "-movflags", "+faststart", dst])
-    mb = os.path.getsize(dst) / 1048576.0
+    dst = os.path.join(OUT, "drive-%s.mp4" % aspect if cut == "trailer" else cut + ".mp4")
+    enc = ["-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p",
+           "-crf", str(spec["crf"]), "-preset", "slow", "-an", "-movflags", "+faststart", dst]
+    xf = spec.get("xfade")
     total = sum(b["secs"] for b in spec["beats"])
+    if xf:
+        # Dissolves, and a seamless loop: the first beat is played again at the
+        # end and dissolved into, and both ends are cut at `xf` into it - so the
+        # last frame is the first frame and the wrap is just another dissolve.
+        ins = parts + parts[:1]
+        g = "[0:v]trim=start=%.3f,setpts=PTS-STARTPTS[x0];" % xf
+        t = spec["beats"][0]["secs"] - xf
+        for i in range(1, len(ins)):
+            off = t - xf
+            g += "[x%d][%d:v]xfade=transition=fade:duration=%.3f:offset=%.3f[x%d];" % (
+                i - 1, i, xf, off, i)
+            t = off + (spec["beats"][i % len(parts)]["secs"])
+        total = off + xf
+        g += "[x%d]trim=end=%.3f[v]" % (len(ins) - 1, total)
+        _run(["ffmpeg", "-v", "error", "-y"] + sum([["-i", p] for p in ins], []) +
+             ["-filter_complex", g, "-map", "[v]"] + enc)
+    else:
+        _run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", lst] + enc)
+    mb = os.path.getsize(dst) / 1048576.0
     print("  -> %s  %.1fs  %.1f MB" % (dst, total, mb))
     if cut == "trailer" and (mb > 50 or total > 20):
         print("     OVER the store's limits (20s, 50MB)")
@@ -567,7 +610,7 @@ def main():
             for aspect in aspects:
                 w, h = ASPECTS[aspect]
                 print("%s %s (%dx%d)" % (args.cut, aspect, w, h))
-                if args.cut == "trailer":
+                if args.cut not in ("loop", "scenic"):
                     write_overlay(browser, w, h, os.path.join(OUT, "wordmark-%s.png" % aspect))
                 for b in todo:
                     d = frames_dir(args.cut, aspect, b["name"])

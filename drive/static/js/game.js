@@ -412,6 +412,13 @@ function boot() {
       try { review.elements.cover.value = snapCover(); } catch (_) {}
     }
   });
+  if (CFG.tv) {
+    // Big Drive: this screen watches the room and drives nothing.
+    document.body.classList.add('tv');
+    S.car.frozen = true;
+    S.view.setVisible(false);
+  }
+  if (CFG.pad) document.body.classList.add('pad');
   if (CFG.mode === 'room') connect();
   if (CFG.mode === 'replay') {
     // Straight away, not when the cars arrive: the HUD is about a run of yours
@@ -1740,7 +1747,7 @@ function bindInput() {
     $('btnLapsDown').onclick = () => stepLaps(-1);
     $('btnLapsUp').onclick = () => stepLaps(1);
     renderSettings();
-    showSide(true);           // you arrive in a lobby, so start with it open
+    showSide(!CFG.tv);        // you arrive in a lobby, so start with it open
   }
 }
 
@@ -6193,6 +6200,13 @@ function frame(now) {
     return;
   }
 
+  if (CFG.tv) {
+    updateRemotes(dt);
+    tvRender(dt);
+    drawMinimap();
+    return;
+  }
+
   // Across the line in a race, the car is not yours any more - see `autopilot`.
   const inp = raceIsRun() ? autopilot() : readInput();
   // Still smoking from a hit: the engine is off the pace until it clears.
@@ -6505,8 +6519,76 @@ function render(dt, now) {
     ghostAir(null, null, null, dt);
   }
 
-  S.renderer.render(dt);
+  // A phone driving a TV room is the controller, and the TV is the picture.
+  if (!CFG.pad) S.renderer.render(dt);
   void now;
+}
+
+/**
+ * Big Drive's split screen: one viewport per person in the room, in seat
+ * order, each with a camera of its own. `Renderer.follow` keeps its smoothing
+ * on the renderer, so each view's camera and that state are swapped in around
+ * its own call. Bots are on the road but get no screen.
+ */
+const TV_CAM = ['camera', 'camPos', 'camUp', 'camLook', 'camFwd', 'mode', 'started', 'shake'];
+
+function tvRects(n, w, h) {
+  if (n === 1) return [[0, 0, w, h]];
+  // Two stack rather than sit side by side: a racing line wants width.
+  if (n === 2) return [[0, h / 2, w, h / 2], [0, 0, w, h / 2]];
+  return [[0, h / 2, w / 2, h / 2], [w / 2, h / 2, w / 2, h / 2],
+          [0, 0, w / 2, h / 2], [w / 2, 0, w / 2, h / 2]].slice(0, n);
+}
+
+function tvRender(dt) {
+  const R = S.renderer, gl = R.renderer;
+  const people = (S.roster || []).filter(p => !p.bot && S.remotes.has(p.pid)).slice(0, 4);
+  tvLabels(people);
+  if (!people.length) {
+    R.follow(S.car, dt);
+    R.render(dt);
+    return;
+  }
+  S.tvCams = S.tvCams || {};
+  const size = gl.getSize(new THREE.Vector2());
+  const rects = tvRects(people.length, size.x, size.y);
+  const mine = {};
+  for (const k of TV_CAM) mine[k] = R[k];
+  gl.setScissorTest(true);
+  people.forEach((p, i) => {
+    let cam = S.tvCams[p.pid];
+    if (!cam) {
+      cam = S.tvCams[p.pid] = {
+        camera: R.camera.clone(), camPos: new THREE.Vector3(), camUp: new THREE.Vector3(0, 1, 0),
+        camLook: new THREE.Vector3(), camFwd: new THREE.Vector3(0, 0, -1),
+        mode: 'chase', started: false, shake: 0 };
+    }
+    const [x, y, w, h] = rects[i];
+    for (const k of TV_CAM) R[k] = cam[k];
+    if (R.camera.aspect !== w / h) { R.camera.aspect = w / h; R.camera.updateProjectionMatrix(); }
+    R.follow(S.remotes.get(p.pid), dt);
+    gl.setViewport(x, y, w, h);
+    gl.setScissor(x, y, w, h);
+    // The first view also moves the weather and the particles on, once a frame.
+    if (i === 0) R.render(dt); else gl.render(R.scene, R.camera);
+    for (const k of TV_CAM) cam[k] = R[k];
+  });
+  for (const k of TV_CAM) R[k] = mine[k];
+  gl.setScissorTest(false);
+  gl.setViewport(0, 0, size.x, size.y);
+}
+
+/** A name in the corner of each view, so you can find your own. */
+function tvLabels(people) {
+  const box = $('tvViews');
+  if (!box) return;
+  const key = people.map(p => p.pid).join() + '|' + people.length;
+  if (box.dataset.key !== key) {
+    box.dataset.key = key;
+    box.className = 'tv-n' + people.length;
+    box.innerHTML = people.map(p =>
+      `<div class="tv-view"><span class="tv-name" style="--c:${esc(p.color)}">${esc(p.name)}</span></div>`).join('');
+  }
 }
 
 /**
@@ -7988,7 +8070,7 @@ function connect() {
     clearTimeout(S.netSay);
     // Only worth saying if it was ever worth saying it had gone.
     if (say()) { say(null); toast('Reconnected'); }
-    socket.emit('join_room_', { code: CFG.room });
+    socket.emit(CFG.tv ? 'tv_watch' : 'join_room_', { code: CFG.room });
     for (let i = 0; i < 5; i++) {
       setTimeout(() => {
         const d = { c: Date.now() };
@@ -8270,6 +8352,7 @@ function connect() {
   // that teleports you somewhere without a word is indistinguishable from a
   // bug, and "the host left" is the one thing that explains it.
   socket.on('room_closed', (d) => {
+    if (CFG.tv) { location.href = '/tv'; return; }
     const why = (d && d.reason) || '';
     location.href = '/lobbies' + (why ? '?closed=' + encodeURIComponent(why) : '');
   });
@@ -8804,7 +8887,7 @@ function renderBotControls(players, fromRoster) {
   if (!S.isHost || !CFG.bots) { box.style.display = 'none'; return; }
   box.style.display = '';
   const bots = players.filter(p => p.bot).length;
-  const full = players.length >= (CFG.maxRoom || 8);
+  const full = players.length >= (CFG.maxRoom || 12);
   const capped = bots >= (CFG.maxBots || 7);
   const live = ['qual_countdown', 'qualifying', 'countdown', 'racing']
     .includes(S.racePhase);

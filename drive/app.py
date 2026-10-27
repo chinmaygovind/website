@@ -284,7 +284,11 @@ def _car_livery(user):
     return _livery_for(user, name=get_effective_name())
 
 
-MAX_ROOM = 8
+# The grid is laid for twelve (`test_the_grid_has_road_under_every_car`), and a
+# room's own `max_players` is anything from two up to this.
+MAX_ROOM = 12
+# A TV room is split-screen, and a screen splits four ways.
+TV_PLAYERS = 4
 
 # In-memory per-room locks (single eventlet worker, like ERS/KoT).
 _locks = {}
@@ -1681,10 +1685,54 @@ def lobbies():
     for p in _my_players(get_session_key()):
         mine = {"code": p.game.code}
         break
-    return render_template("lobbies.html", games=payload["games"],
-                           tracks=tracks_mod.summaries(), mine=mine,
-                           online=_online_now(),
+    live = [r for r in _rooms.values() if r.get("phase") in LIVE_PHASES]
+    online = _online_now()
+    pool = tracks_mod.summaries()
+    pbs = _my_pb_map()
+    return render_template("lobbies.html", games=payload["games"], mine=mine,
+                           sprints=[t for t in pool if not t["closed"]],
+                           circuits=[t for t in pool if t["closed"]],
+                           pbs=pbs, ranks=_my_rank_map(pbs), max_room=MAX_ROOM,
+                           last=_last_track(),
+                           online=online, recent=_recent_races(),
+                           live=len(live),
+                           in_drive=sum(1 for p in online if p["service"] == "drive"),
                            user=get_current_user(), name=get_effective_name())
+
+
+def _recent_races(limit=6):
+    """The last few races that somebody finished, for the lobbies page.
+
+    In SQL rather than through `DriveRace.cars`, because `cars_json` carries
+    every car's ghost - 100KB a race on average - and this wants three fields
+    of it. SQLite's `json_each` walks it in C in about 2ms for six races.
+    """
+    rows = db.session.execute(db.text(
+        "SELECT r.id, r.track, r.created_at, json_extract(c.value, '$.name'),"
+        " json_extract(c.value, '$.color'), json_extract(c.value, '$.ms'),"
+        " json_extract(c.value, '$.bot')"
+        " FROM (SELECT * FROM drive_races ORDER BY id DESC LIMIT :scan) r,"
+        " json_each(r.cars_json) c ORDER BY r.id DESC"), {"scan": limit * 4}).fetchall()
+    races = {}
+    for rid, slug, at, name, color, ms, bot in rows:
+        r = races.setdefault(rid, {"id": rid, "track": slug, "at": at, "cars": []})
+        r["cars"].append({"name": name, "color": color, "ms": ms, "bot": bool(bot)})
+    out = []
+    for r in races.values():
+        done = sorted((c for c in r["cars"] if c["ms"]), key=lambda c: c["ms"])
+        if not done:
+            continue
+        t = tracks_mod.get(r["track"])
+        at = r["at"] if isinstance(r["at"], datetime) else datetime.fromisoformat(str(r["at"]))
+        mins = int((datetime.utcnow() - at).total_seconds() // 60)
+        r.update(winner=done[0], track_name=t["name"] if t else r["track"],
+                 humans=sum(1 for c in r["cars"] if not c["bot"]),
+                 ago="just now" if mins < 1 else "%dm ago" % mins if mins < 60
+                 else "%dh ago" % (mins // 60) if mins < 1440 else "%dd ago" % (mins // 1440))
+        out.append(r)
+        if len(out) == limit:
+            break
+    return out
 
 
 def _online_now():
@@ -1696,7 +1744,13 @@ def _online_now():
     they are so the answer is honest about what they are already doing.
     """
     rows = visits.online_now(db.session.connection(), limit=12)
+    stats = {s.user_id: s for s in
+             DriveStats.query.filter(DriveStats.user_id.in_([r["user_id"] for r in rows]))}
     for r in rows:
+        s = stats.get(r["user_id"])
+        # Only somebody who has raced has a rating worth showing.
+        r["tier"] = s.elo_tier if s and s.races else None
+        r["elo"] = s.elo if s and s.races else None
         r["label"] = PRESENCE_LABEL.get(r["service"], "Online")
         if r["service"] == "drive" and r["detail"]:
             r["label"] = r["detail"]
@@ -1721,17 +1775,41 @@ def room(code):
                                     session_key=get_session_key()).first())
     if not me:
         return redirect(url_for("lobbies"))
+    return _room_page(game, me.to_dict(_livery_for(me.linked_user, name=me.name)))
+
+
+@app.route("/tv")
+def tv_new():
+    """Big Drive: the laptop on the TV opens a room it watches without a seat,
+    and up to four phones join it from `/pad/<code>` and drive. The first phone
+    in is the host - see `_add_player`."""
+    game = DriveGame(code=_make_code(), status="waiting", track=_last_track(),
+                     max_players=TV_PLAYERS, is_private=True,
+                     last_activity_at=datetime.utcnow())
+    db.session.add(game)
+    db.session.commit()
+    return redirect(url_for("tv", code=game.code))
+
+
+@app.route("/tv/<code>")
+def tv(code):
+    game = DriveGame.query.filter_by(code=code.upper()).first()
+    if not game:
+        return redirect(url_for("tv_new"))
+    return _room_page(game, None, tv=True)
+
+
+def _room_page(game, me, tv=False):
     track = tracks_mod.get(game.track) or tracks_mod.TRACKS[0]
     _remember_track(track["slug"])
     user = get_current_user()
     pb = DriveTime.query.filter_by(user_id=user.id, track=track["slug"]).first() if user else None
     return render_template(
-        "play.html", mode="room", track=track,
+        "play.html", mode="room", track=track, max_room=game.max_players,
         track_json=script_json(_track_payload(track["slug"])),
         track_scenery=tracks_mod.scenery_source(track["slug"]),
-        tuning_json=tuning.as_json(), room=game,
-        me_json=script_json(me.to_dict(_livery_for(me.linked_user,
-                                                   name=me.name))),
+        tuning_json=tuning.as_json(), room=game, tv=tv,
+        me_json=script_json(me),
         roster_json=script_json(_roster(game)),
         name=get_effective_name(), user=user,
         pb_ms=(pb.time_ms if pb else None), next_slug=_next_slug(track["slug"]),
@@ -1751,6 +1829,7 @@ def room(code):
 
 
 @app.route("/j/<code>")
+@app.route("/pad/<code>")
 @require_name
 def join_link(code):
     """The share link: open it and you are in the room.
@@ -1776,7 +1855,9 @@ def join_link(code):
         _leave_other_rooms(sk)
         _add_player(game)
         _broadcast_lobbies()
-    return redirect(url_for("room", code=game.code))
+    # `/pad/` is a phone joining a TV room: the same seat, drawn as a controller.
+    return redirect(url_for("room", code=game.code,
+                            pad=1 if request.path.startswith("/pad/") else None))
 
 
 @app.route("/race/<int:race_id>")
@@ -3021,7 +3102,9 @@ def _add_player(game, host=False):
     seat = max((p.seat_order for p in game.players), default=-1) + 1
     p = DrivePlayer(game_id=game.id, user_id=(user.id if user else None),
                     session_key=sk, name=name,
-                    color=color, seat_order=seat, is_host=host)
+                    color=color, seat_order=seat,
+                    # Only a TV room is ever without a person in it.
+                    is_host=host or not any(not q.is_bot for q in game.players))
     db.session.add(p)
     db.session.commit()
     _repaint_bots(game)
@@ -3032,13 +3115,16 @@ def _add_player(game, host=False):
 @require_name
 def create():
     data = request.json or {}
-    slug = data.get("track") or tracks_mod.TRACKS[0]["slug"]
+    # The lobbies page sends none: a room opens on whatever you last drove, and
+    # the host changes it with the switcher from inside.
+    slug = data.get("track")
     if not tracks_mod.get(slug):
-        slug = tracks_mod.TRACKS[0]["slug"]
+        slug = _last_track()
     sk = get_session_key()
     _leave_other_rooms(sk)
     game = DriveGame(code=_make_code(), status="waiting", track=slug,
-                     max_players=MAX_ROOM, is_private=bool(data.get("is_private")),
+                     max_players=_room_size(data.get("max_players")),
+                     is_private=bool(data.get("is_private")),
                      passcode=((data.get("passcode", "") or "").strip()[:20] or None),
                      last_activity_at=datetime.utcnow())
     db.session.add(game)
@@ -3046,6 +3132,36 @@ def create():
     _add_player(game, host=True)
     _broadcast_lobbies()
     return jsonify({"ok": True, "code": game.code})
+
+
+def _room_size(n):
+    try:
+        return max(2, min(MAX_ROOM, int(n)))
+    except (TypeError, ValueError):
+        return MAX_ROOM
+
+
+@app.route("/room/<code>/config", methods=["POST"])
+@require_name
+def room_config(code):
+    """The create-room sheet on the lobbies page: size and privacy, host only.
+    The track goes over the socket (`set_track`), which already does it right."""
+    game = DriveGame.query.filter_by(code=code.upper()).first()
+    if not game:
+        return jsonify({"ok": False, "error": "That room has closed."}), 404
+    me = DrivePlayer.query.filter_by(game_id=game.id, session_key=get_session_key()).first()
+    if not me or not me.is_host:
+        return jsonify({"ok": False, "error": "Only the host can change that."}), 403
+    data = request.json or {}
+    if "max_players" in data:
+        game.max_players = max(len(game.players), _room_size(data["max_players"]))
+    if "is_private" in data:
+        game.is_private = bool(data["is_private"])
+    game.last_activity_at = datetime.utcnow()
+    db.session.commit()
+    _broadcast_lobbies()
+    return jsonify({"ok": True, "max_players": game.max_players,
+                    "is_private": game.is_private})
 
 
 @app.route("/join", methods=["POST"])
@@ -3151,6 +3267,15 @@ def _vacate(game, player):
     was_host = player.is_host
     db.session.delete(player)
     db.session.commit()
+    if game.code in set(_tv_sids.values()):
+        # The TV is the room, so a phone leaving hands the controls on rather
+        # than closing it under everybody else.
+        nxt = next((p for p in game.players if not p.is_bot), None)
+        if was_host and nxt:
+            nxt.is_host = True
+            db.session.commit()
+        _broadcast_roster(game)
+        return
     if was_host:
         _close_room(game, "The host left, so the room closed.")
     elif not any(not p.is_bot for p in game.players):
@@ -3354,6 +3479,7 @@ RACE_ITEMS = PRACTICE_ITEMS + ("blue", "star")
 
 _rooms = {}       # code -> live room state
 _sid_room = {}    # socket id -> (code, pid)
+_tv_sids = {}     # socket id -> code, for a TV watching a room it has no seat in
 
 
 def _room(code):
@@ -4976,6 +5102,28 @@ def on_join_room(data=None):
                             and c["ms"] is None and not c["dnf"]),
                         "server_ms": _now_ms()})
     _broadcast_roster(game)
+
+
+@socketio.on("tv_watch")
+def on_tv_watch(data=None):
+    """A TV joins the room's broadcast without a seat: it sees every car and
+    drives none."""
+    code = (data or {}).get("code", "").upper()
+    game = DriveGame.query.filter_by(code=code).first()
+    if not game:
+        emit("room_closed", {"reason": "That room has closed."})
+        return
+    join_room("room:" + code)
+    _tv_sids[request.sid] = code
+    r = _room(code)
+    _sync_bots(r, game)
+    _ensure_pump(code)
+    emit("room_hello", {"track": game.track, "me": None,
+                        "players": _roster(game), "race": _race_state(r),
+                        "settings": dict(r["settings"]), "items": [],
+                        "boxes": _boxes(r), "held": dict(r.get("held") or {}),
+                        "lap_at": None, "in_race": False,
+                        "server_ms": _now_ms()})
 
 
 @socketio.on("clock")
@@ -6833,6 +6981,7 @@ def on_leave(data=None):
 
 @socketio.on("disconnect")
 def on_disconnect():
+    _tv_sids.pop(request.sid, None)
     _drop(request.sid, hard=False)
 
 
@@ -7015,6 +7164,8 @@ def _sweep_once():
         cutoff = now - IDLE_LIMIT
         empty_cutoff = now - EMPTY_LIMIT
         held = {code for code, _ in _sid_room.values()}
+        tvs = set(_tv_sids.values())
+        held |= tvs
         seated = set(_sid_room.values())
         clock = time.time()
         for key in [k for k in _away if k in seated]:
@@ -7041,7 +7192,11 @@ def _sweep_once():
             busy = bool(live and _humans(live))
             humans = [p for p in game.players if not p.is_bot]
             deserted = game.code not in held and seen and seen < empty_cutoff
-            if not humans or (not busy and (deserted or (seen and seen < cutoff))):
+            # A TV waiting for its phones is a room with nobody in it yet - and so
+            # is one whose TV has not connected its socket yet.
+            empty = (not humans and game.code not in tvs
+                     and game.created_at < now - timedelta(minutes=1))
+            if empty or (not busy and (deserted or (seen and seen < cutoff))):
                 socketio.emit("room_closed", {"reason": "Room expired."},
                               room="room:" + game.code)
                 _delete_game(game)
