@@ -1915,3 +1915,78 @@ def test_a_tv_room_is_hosted_by_the_first_phone_and_survives_its_host(env):
         assert game, "the host leaving closed the TV's room"
         assert [(p.name, p.is_host) for p in game.players] == [("Chinmay", True)]
     watch.disconnect()
+
+
+def test_the_newest_client_on_a_seat_drives_and_the_old_one_is_sent_away(env):
+    """One person is one car. The same account joining from a second device
+    takes its seat over rather than adding a second car, and a second tab on
+    one seat replaces the first rather than both steering it."""
+    uid = _user(env, "twice")
+    phone, laptop = env.app.test_client(), env.app.test_client()
+    for c, sk in ((phone, "sk-phone"), (laptop, "sk-laptop")):
+        with c.session_transaction() as s:
+            s["session_key"], s["user_id"] = sk, uid
+    code = phone.post("/create", json={}).get_json()["code"]
+    old = env.socketio.test_client(env.app, flask_test_client=phone)
+    old.emit("join_room_", {"code": code})
+    old.get_received()
+
+    assert laptop.post("/join", json={"code": code}).get_json()["ok"]
+    with env.app.app_context():
+        game = env.DriveGame.query.filter_by(code=code).first()
+        assert [p.session_key for p in game.players] == ["sk-laptop"], "two cars, or the seat stayed put"
+        pid = game.players[0].pid
+    assert any(e["name"] == "replaced" for e in old.get_received())
+    assert ("%s" % code, pid) not in [v for v in env._sid_room.values()]
+
+    # Two tabs on the laptop's one seat: the second drives.
+    tab1 = env.socketio.test_client(env.app, flask_test_client=laptop)
+    tab1.emit("join_room_", {"code": code})
+    tab1.get_received()
+    tab2 = env.socketio.test_client(env.app, flask_test_client=laptop)
+    tab2.emit("join_room_", {"code": code})
+    assert any(e["name"] == "replaced" for e in tab1.get_received())
+    assert list(env._sid_room.values()).count((code, pid)) == 1
+    # The old tab going away later costs the new one nothing.
+    tab1.disconnect()
+    assert (code, pid) in env._sid_room.values()
+    with env.app.app_context():
+        assert env.DriveGame.query.filter_by(code=code).first().players
+    tab2.disconnect()
+    old.disconnect()
+
+
+def test_webrtc_signalling_goes_pad_to_tv_and_back_and_nowhere_else(env):
+    """The server relays the handshake between a pad and its TV and reads none
+    of it: a pad's offer reaches the room's TV with the pad's pid on it, the
+    TV's answer reaches that pad only, and anything else is dropped."""
+    tv = env.app.test_client()
+    code = tv.get("/tv").headers["Location"].rstrip("/").split("/")[-1]
+    tvs = env.socketio.test_client(env.app, flask_test_client=tv)
+    tvs.emit("tv_watch", {"code": code})
+    pads = []
+    for name in ("Celia", "Chinmay"):
+        c = env.app.test_client()
+        c.post("/guest", json={"name": name})
+        c.get("/pad/" + code)
+        s = env.socketio.test_client(env.app, flask_test_client=c)
+        s.emit("join_room_", {"code": code})
+        pads.append(s)
+    for s in [tvs] + pads:
+        s.get_received()
+
+    offer = {"type": "offer", "sdp": "v=0"}
+    pads[0].emit("rtc", {"code": code, "sdp": offer})
+    got = [e["args"][0] for e in tvs.get_received() if e["name"] == "rtc"]
+    pid = got[0]["pid"]
+    assert got == [{"sdp": offer, "pid": pid}]
+
+    tvs.emit("rtc", {"code": code, "pid": pid, "ice": {"candidate": "c"}})
+    assert [e["args"][0] for e in pads[0].get_received() if e["name"] == "rtc"] == [{"ice": {"candidate": "c"}}]
+    assert not [e for e in pads[1].get_received() if e["name"] == "rtc"], "the answer went to the wrong pad"
+
+    pads[1].emit("rtc", {"code": code, "sdp": "not a dict", "evil": {"x": 1}})
+    pads[1].emit("rtc", {"code": code, "sdp": {"sdp": "x" * 20000}})
+    assert not [e for e in tvs.get_received() if e["name"] == "rtc"]
+    for s in [tvs] + pads:
+        s.disconnect()

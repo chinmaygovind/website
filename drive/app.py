@@ -18,7 +18,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from flask import (Flask, render_template, request, jsonify, Response,
-                   redirect, url_for, session, send_from_directory, abort)
+                   redirect, url_for, session, send_from_directory, abort,
+                   has_request_context)
 from flask_socketio import SocketIO, join_room, emit
 from sqlalchemy import func
 
@@ -1770,9 +1771,7 @@ def room(code):
     game = DriveGame.query.filter_by(code=code.upper()).first()
     if not game:
         return redirect(url_for("lobbies"))
-    me = _refresh_seat(
-        DrivePlayer.query.filter_by(game_id=game.id,
-                                    session_key=get_session_key()).first())
+    me = _refresh_seat(_my_seat(game))
     if not me:
         return redirect(url_for("lobbies"))
     return _room_page(game, me.to_dict(_livery_for(me.linked_user, name=me.name)))
@@ -1849,7 +1848,7 @@ def join_link(code):
     if not game:
         return redirect(url_for("lobbies"))
     sk = get_session_key()
-    if not DrivePlayer.query.filter_by(game_id=game.id, session_key=sk).first():
+    if not _my_seat(game):
         if len(game.players) >= game.max_players:
             return redirect(url_for("lobbies"))
         _leave_other_rooms(sk)
@@ -2980,15 +2979,52 @@ def api_board(slug):
 # ---------------------------------------------------------------------------
 
 def _my_players(sk):
+    """This browser's seats, and an account's seats from any other browser:
+    one person is one car, wherever they last sat down."""
+    mine = DrivePlayer.session_key == sk
+    uid = session.get("user_id") if has_request_context() else None
+    if uid:
+        mine = db.or_(mine, DrivePlayer.user_id == uid)
     return (DrivePlayer.query.join(DriveGame, DrivePlayer.game_id == DriveGame.id)
-            .filter(DrivePlayer.session_key == sk, DriveGame.status != "ended").all())
+            .filter(mine, DriveGame.status != "ended").all())
+
+
+def _my_seat(game):
+    """This browser's seat in `game`. **The newest client wins**: an account
+    already seated here from another browser or device has that seat moved to
+    this one, and the old client is sent away (`_replace_clients`) rather than
+    the two of them driving one car."""
+    sk = get_session_key()
+    seat = DrivePlayer.query.filter_by(game_id=game.id, session_key=sk).first()
+    uid = session.get("user_id")
+    if seat or not uid:
+        return seat
+    seat = DrivePlayer.query.filter_by(game_id=game.id, user_id=uid).first()
+    if seat:
+        seat.session_key = sk
+        db.session.commit()
+        _replace_clients(game.code, seat.pid)
+    return seat
+
+
+def _replace_clients(code, pid, keep_sid=None):
+    """Send away every socket driving this seat but `keep_sid`. Unmapped before
+    anything else, so the old socket's disconnect, when it comes, is nobody's
+    and cannot take the car off the road under the new one."""
+    for sid, ent in list(_sid_room.items()):
+        if ent == (code, pid) and sid != keep_sid:
+            del _sid_room[sid]
+            socketio.emit("replaced", {}, to=sid)
+            socketio.server.leave_room(sid, "room:" + code, namespace="/")
 
 
 def _leave_other_rooms(sk, keep_code=None):
     for p in list(_my_players(sk)):
         g = p.game
         if g.code != keep_code:
-            # Creating or joining another room is leaving this one.
+            # Creating or joining another room is leaving this one - from any
+            # device the account is signed in on.
+            _replace_clients(g.code, p.pid)
             _vacate(g, p)
 
 
@@ -3078,7 +3114,7 @@ def _refresh_seat(p):
 
 def _add_player(game, host=False):
     sk = get_session_key()
-    existing = DrivePlayer.query.filter_by(game_id=game.id, session_key=sk).first()
+    existing = _my_seat(game)
     if existing:
         return _refresh_seat(existing)
     user = get_current_user()
@@ -3174,7 +3210,7 @@ def join():
     game = DriveGame.query.filter_by(code=code).first()
     if not game:
         return jsonify({"ok": False, "error": "No room with that code."}), 404
-    already = DrivePlayer.query.filter_by(game_id=game.id, session_key=sk).first()
+    already = _my_seat(game)
     if not already:
         if len(game.players) >= game.max_players:
             # **A person takes a bot's seat.** A room that has filled its grid
@@ -3294,6 +3330,11 @@ def _vacate(game, player):
 # None of this is ever written to the database.
 
 TICK_HZ = 30
+# A TV room ticks twice as fast: everybody is watching one screen a server away
+# from their hands, so the half-tick a pose waits there is felt in the steering.
+TV_TICK_HZ = 60
+# The most one WebRTC handshake message may be: an SDP is a few kilobytes.
+RTC_MAX = 16000
 POSE_STALE_MS = 6000
 # The most of a one-way trip anybody is credited with, in ms. A client measures
 # its own round trip and reports it (`on_clock`); this is the ceiling on half of
@@ -4834,7 +4875,7 @@ def _pump(code):
     """
     idle = 0
     while True:
-        eventlet.sleep(1.0 / TICK_HZ)
+        eventlet.sleep(1.0 / (_rooms.get(code) or {}).get("hz", TICK_HZ))
         r = _rooms.get(code)
         if not r:
             return
@@ -4890,9 +4931,10 @@ def _tick(r, idle):
         # An empty room in the middle of a race is a race that can never
         # end by itself, and the room it strands is still there when
         # somebody comes back to it. Let it go before the pump does.
-        if idle == TICK_HZ * 8 and r["phase"] in LIVE_PHASES:
+        hz = r.get("hz", TICK_HZ)
+        if idle == hz * 8 and r["phase"] in LIVE_PHASES:
             _abort_race(code, "Everyone left.")
-        if idle > TICK_HZ * 20:      # nobody has sent a pose in 20s
+        if idle > hz * 20:           # nobody has sent a pose in 20s
             r["loop_stop"] = True
             return idle
     if snap["cars"]:
@@ -5044,6 +5086,8 @@ def on_join_room(data=None):
         return
     join_room("room:" + code)
     _sid_room[request.sid] = (code, me.pid)
+    # A second tab on the same seat: this one drives, the other goes.
+    _replace_clients(code, me.pid, keep_sid=request.sid)
     r = _room(code)
     c = _car(r, me.pid)
     # The livery decides the colour, not the column - the same rule `to_dict`
@@ -5116,6 +5160,9 @@ def on_tv_watch(data=None):
     join_room("room:" + code)
     _tv_sids[request.sid] = code
     r = _room(code)
+    r["hz"] = TV_TICK_HZ
+    # Any pad already seated offers this TV a direct channel.
+    emit("rtc_restart", {}, room="room:" + code, include_self=False)
     _sync_bots(r, game)
     _ensure_pump(code)
     emit("room_hello", {"track": game.track, "me": None,
@@ -5124,6 +5171,29 @@ def on_tv_watch(data=None):
                         "boxes": _boxes(r), "held": dict(r.get("held") or {}),
                         "lap_at": None, "in_race": False,
                         "server_ms": _now_ms()})
+
+
+@socketio.on("rtc")
+def on_rtc(data=None):
+    """WebRTC signalling between a pad and the TV watching its room, relayed
+    and never read: a pad's offer and candidates go to the room's TVs with its
+    pid on them, and a TV's answer and candidates go to that one pad."""
+    d = data if isinstance(data, dict) else {}
+    out = {k: d[k] for k in ("sdp", "ice") if isinstance(d.get(k), dict)}
+    if not out or len(json_mod.dumps(out)) > RTC_MAX:
+        return
+    tv = _tv_sids.get(request.sid)
+    if tv:
+        for sid, ent in list(_sid_room.items()):
+            if ent == (tv, d.get("pid")):
+                socketio.emit("rtc", out, to=sid)
+        return
+    ent = _sid_room.get(request.sid)
+    if not ent:
+        return
+    for sid, code in list(_tv_sids.items()):
+        if code == ent[0]:
+            socketio.emit("rtc", dict(out, pid=ent[1]), to=sid)
 
 
 @socketio.on("clock")

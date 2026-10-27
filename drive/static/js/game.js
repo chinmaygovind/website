@@ -418,7 +418,13 @@ function boot() {
     S.car.frozen = true;
     S.view.setVisible(false);
   }
-  if (CFG.pad) document.body.classList.add('pad');
+  if (CFG.pad && CFG.me) {
+    // The phone is the controller: no picture, just who you are and where.
+    document.body.classList.add('pad');
+    S.poseHz = 2 * POSE_HZ;
+    document.body.style.setProperty('--me', CFG.me.color);
+    $('padName').textContent = CFG.me.name;
+  }
   if (CFG.mode === 'room') connect();
   if (CFG.mode === 'replay') {
     // Straight away, not when the cars arrive: the HUD is about a run of yours
@@ -6368,7 +6374,7 @@ function frame(now) {
   // The clock and the speed move every frame; everything else in the HUD is
   // cheap to look at but expensive to draw, so it stays on the slow tick.
   hudFast();
-  if ((S.hudTick = (S.hudTick + 1) % 3) === 0) hud(now);
+  if ((S.hudTick = (S.hudTick + 1) % 3) === 0) { hud(now); if (CFG.pad) padView(); }
   sendPose(now);
 }
 
@@ -6522,6 +6528,14 @@ function render(dt, now) {
   // A phone driving a TV room is the controller, and the TV is the picture.
   if (!CFG.pad) S.renderer.render(dt);
   void now;
+}
+
+/** The controller's big place and lap, read off the HUD the phone is not showing. */
+function padView() {
+  const place = $('place'), lap = $('lapNum');
+  $('padPlace').textContent = place.style.display === 'none' ? '' : $('placeNum').textContent;
+  $('padPlace').className = place.className;
+  $('padLap').textContent = lap.style.display === 'none' ? '' : lap.textContent;
 }
 
 /**
@@ -8111,6 +8125,7 @@ function connect() {
     for (const pid in (d.held || {})) setHeld(pid, d.held[pid]);
     S.racePhase = d.race ? d.race.phase : 'free';
     S.pole = (d.race && d.race.pole) || null;
+    padRtc();
     resumeRace(d);
     applyPhase();
     // Walking in on a session already running: show it rather than pretending
@@ -8126,6 +8141,9 @@ function connect() {
     if (d.track && d.track !== S.track.slug) switchTrack(d.track);
   });
   socket.on('poses', onPoses);
+  socket.on('rtc', onRtc);
+  // A TV has just arrived (or come back): offer it a channel.
+  socket.on('rtc_restart', () => padRtc());
   socket.on('item_box_taken', (d) => { if (d) takeItemBox(d.i, d.until); });
   socket.on('item_box_miss', (d) => {
     if (!d) return;
@@ -8352,6 +8370,12 @@ function connect() {
   // The reason is carried to the lobby list and said there, because a page
   // that teleports you somewhere without a word is indistinguishable from a
   // bug, and "the host left" is the one thing that explains it.
+  // The same seat was taken up in another tab or on another device, and the
+  // newest one drives. Off the socket first, or its reconnect takes it back.
+  socket.on('replaced', () => {
+    socket.disconnect();
+    location.href = '/lobbies?closed=' + encodeURIComponent('You joined from somewhere else.');
+  });
   socket.on('room_closed', (d) => {
     if (CFG.tv) { location.href = '/tv'; return; }
     const why = (d && d.reason) || '';
@@ -8453,7 +8477,8 @@ function connect() {
 }
 
 function sendPose(now) {
-  if (!S.socket || now - S.lastPose < 1000 / POSE_HZ) return;
+  // A phone driving a TV sends twice as often (`S.poseHz`): see `TV_TICK_HZ` in app.py.
+  if (!S.socket || now - S.lastPose < 1000 / (S.poseHz || POSE_HZ)) return;
   // Mid-switch, this car is on a track the room has left. See `applyTrackChange`.
   if (S.switching) return;
   S.lastPose = now;
@@ -8471,6 +8496,78 @@ function sendPose(now) {
     // half of it worth watching is the second and a half it spends filling.
     sl: c.slipBoost > 0 ? c.slipBoost / T.SLIP_BOOST : c.slipCharge,
   });
+  if (S.rtcDc && S.rtcDc.readyState === 'open') {
+    S.rtcDc.send(JSON.stringify([serverNow(), c.pos.x, c.pos.y, c.pos.z,
+      c.quat.x, c.quat.y, c.quat.z, c.quat.w, c.vel.x, c.vel.y, c.vel.z, c.flags()]));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Big Drive over WebRTC
+// ---------------------------------------------------------------------------
+// A pad's pose goes to the server as always - the race, the order and the
+// checks all live there - and *also* straight to the TV over a data channel,
+// which on the same wifi is a LAN hop instead of a round trip to the box. The
+// server only relays the handshake (`rtc`). Where no direct path can be found
+// the channel never opens and the TV simply keeps drawing from the snapshots.
+const RTC_ICE = [{ urls: 'stun:stun.l.google.com:19302' }];
+const RTC_FRESH_MS = 300;
+
+function rtcPeer(onIce) {
+  const pc = new RTCPeerConnection({ iceServers: RTC_ICE });
+  pc.onicecandidate = (e) => { if (e.candidate) onIce(e.candidate); };
+  return pc;
+}
+
+/** The pad's side: offer a channel to whichever TV is watching. */
+function padRtc() {
+  if (!CFG.pad || !window.RTCPeerConnection) return;
+  if (S.rtc) S.rtc.close();
+  const pc = S.rtc = rtcPeer((ice) => S.socket.emit('rtc', { code: CFG.room, ice }));
+  S.rtcDc = pc.createDataChannel('pose', { ordered: false, maxRetransmits: 0 });
+  pc.createOffer().then(o => pc.setLocalDescription(o))
+    .then(() => S.socket.emit('rtc', { code: CFG.room, sdp: pc.localDescription }))
+    .catch(() => {});
+}
+
+/** Both sides of the handshake, as relayed by the server. */
+async function onRtc(d) {
+  if (!d) return;
+  try {
+    if (CFG.tv) {
+      S.rtcPeers = S.rtcPeers || new Map();
+      let pc = S.rtcPeers.get(d.pid);
+      if (d.sdp) {
+        if (pc) pc.close();
+        pc = rtcPeer((ice) => S.socket.emit('rtc', { code: CFG.room, pid: d.pid, ice }));
+        pc.ondatachannel = (e) => { e.channel.onmessage = (m) => rtcPose(d.pid, m.data); };
+        S.rtcPeers.set(d.pid, pc);
+        await pc.setRemoteDescription(d.sdp);
+        await pc.setLocalDescription(await pc.createAnswer());
+        S.socket.emit('rtc', { code: CFG.room, pid: d.pid, sdp: pc.localDescription });
+      } else if (d.ice && pc) {
+        await pc.addIceCandidate(d.ice);
+      }
+    } else if (S.rtc) {
+      if (d.sdp) await S.rtc.setRemoteDescription(d.sdp);
+      else if (d.ice) await S.rtc.addIceCandidate(d.ice);
+    }
+  } catch (e) { /* no direct path: the snapshots carry on */ }
+}
+
+/** A pad's pose, straight from the pad. Read exactly as `onPoses` reads one. */
+function rtcPose(pid, raw) {
+  const r = S.remotes.get(pid);
+  if (!r) return;
+  let a;
+  try { a = JSON.parse(raw); } catch (e) { return; }
+  if (!Array.isArray(a) || a.length < 12) return;
+  r.packetT = a[0];
+  r.px = a[1]; r.py = a[2]; r.pz = a[3];
+  r.q.set(a[4], a[5], a[6], a[7]);
+  r.vel.set(a[8], a[9], a[10]);
+  r.flags = a[11];
+  r.rtcAt = r.lastSeen = performance.now();
 }
 
 function onPoses(snap) {
@@ -8498,11 +8595,16 @@ function onPoses(snap) {
     // the second term every rival is short by its own upstream leg, on every
     // screen but its own. They stay separate on the wire because the running
     // order wants only the half the server owns: see `orderFromSnapshot`.
-    r.packetT = snap.t - (a.length > 13 ? a[13] : 0) - (a.length > 15 ? a[15] : 0);
-    r.px = a[0]; r.py = a[1]; r.pz = a[2];
-    r.q.set(a[3], a[4], a[5], a[6]);
-    r.vel.set(a[7], a[8], a[9]);
-    r.prog = a[10]; r.cp = a[11]; r.flags = a[12];
+    // On a TV, a pad's own pose straight over WebRTC is newer than this one
+    // whenever it is arriving at all - see `rtcPose`.
+    if (!(r.rtcAt && performance.now() - r.rtcAt < RTC_FRESH_MS)) {
+      r.packetT = snap.t - (a.length > 13 ? a[13] : 0) - (a.length > 15 ? a[15] : 0);
+      r.px = a[0]; r.py = a[1]; r.pz = a[2];
+      r.q.set(a[3], a[4], a[5], a[6]);
+      r.vel.set(a[7], a[8], a[9]);
+      r.flags = a[12];
+    }
+    r.prog = a[10]; r.cp = a[11];
     // The tow level, guarded the same way the age above it is: a client left
     // open across a deploy simply has no tow to draw rather than a NaN one.
     r.tow = a.length > 14 ? a[14] : 0;

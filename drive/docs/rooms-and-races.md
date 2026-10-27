@@ -42,9 +42,35 @@ none of that code knows a TV exists.
   that; Join TV keeps an installed player in the app. Android's installed app
   already takes in-scope links from other apps, and `handle_links: preferred`
   in the manifest asks Chrome to prefer it.
-- **`?pad=1` draws nothing**: the phone still simulates the car and shows the
-  HUD and the touch pedals, but skips the GPU draw, since the picture is on
-  the TV.
+- **`?pad=1` is a controller, not the game with the picture off.** The phone
+  still simulates the car but skips the GPU draw, hides every HUD column but
+  the button bar, and shows `#padView`: name, place and lap over a gradient in
+  the seat's colour, which `padView()` copies off the hidden HUD every third
+  frame. The gradient is on `#padView` at `z-index: -1` and not on `body`,
+  because the body has no height of its own here and `html` paints over it.
+- **A TV room runs at 60Hz both ways** (`TV_TICK_HZ`, and the pad's
+  `S.poseHz`): everybody steers on one screen a server away, so the half-tick
+  a pose waits for the snapshot is felt in the hands.
+- **And a pad also sends its pose straight to the TV over WebRTC**, which on
+  the same wifi is a LAN hop instead of a round trip to the box. The server
+  still gets every pose as before - the race, the order and the checks all live
+  there - and only relays the handshake (`on_rtc`, which reads nothing and
+  caps each message at `RTC_MAX`). The TV draws a car from the direct pose
+  while one has arrived in the last `RTC_FRESH_MS` and from the snapshot
+  otherwise, so a network that blocks the direct path (there is STUN but no
+  TURN server) just means the old behaviour. A TV arriving or reloading sends
+  `rtc_restart`, and every pad offers it a fresh channel.
+- **Once somebody is driving, the TV's join box is small**; tapping it makes
+  it big again, with an x to put it back.
+
+**One person is one car, and the newest client drives it** (`_my_seat`,
+`_replace_clients`). A second tab on the same seat, or the same account joining
+from another device, takes the seat over: the seat's `session_key` moves to the
+new browser, and the old socket gets `replaced`, is unmapped from `_sid_room`
+first (so its eventual disconnect cannot take the car off the road under the new
+one), and goes to the lobbies with a notice. `_my_players` matches the account
+as well as the browser, so joining a room on one device leaves the account's
+room on another. Guests have no account, so for them it is tabs only.
 
 - **A room has its own anti-cheat, and it is a different question from the
   board's.** `racecheck.py`, and its preamble is the long version. The short

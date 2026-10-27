@@ -3827,10 +3827,33 @@ body.tv #startHint { display: none !important; }
 .tv-join { display: flex; align-items: center; gap: .8rem; }
 .tv-qr { width: 64px; height: 64px; flex: none; }
 .tv-qr svg { display: block; width: 100%; height: 100%; border-radius: 4px; }
-#tvViews.tv-n0 ~ .tv-join { flex-direction: column; }
-#tvViews.tv-n0 ~ .tv-join .tv-qr { width: min(42vh, 360px); height: min(42vh, 360px); }
-#tvViews.tv-n0 ~ .tv-join { top: 50%; transform: translate(-50%, -50%);
+#tvViews.tv-n0 ~ .tv-join, .tv-join.big { flex-direction: column; }
+#tvViews.tv-n0 ~ .tv-join .tv-qr, .tv-join.big .tv-qr { width: min(42vh, 360px); height: min(42vh, 360px); }
+.tv-join { cursor: pointer; }
+#tvViews.tv-n0 ~ .tv-join, .tv-join.big { top: 50%; transform: translate(-50%, -50%);
   font-size: 2.6rem; padding: 1.4rem 2rem; }
-#tvViews.tv-n0 ~ .tv-join b { font-size: 4rem; }
+#tvViews.tv-n0 ~ .tv-join b, .tv-join.big b { font-size: 4rem; }
+.tv-x { display: none; position: absolute; top: .5rem; right: .5rem; width: 2.6rem; height: 2.6rem;
+  border: 0; border-radius: 50%; background: rgba(255,255,255,.15); color: #fff;
+  font: 400 2rem/1 var(--font, inherit); cursor: pointer; }
+.tv-x:hover { background: rgba(255,255,255,.3); }
+#tvViews:not(.tv-n0) ~ .tv-join.big .tv-x { display: block; }
+/* The phone in a TV room is a controller: no road and none of the HUD about
+   it, just your name in your colour, your place, and big buttons. */
 body.pad #gl { visibility: hidden; }
-body.pad { background: #111; }
+body.pad .hud > :not(.hud-tr) { display: none !important; }
+#padView { display: none; }
+body.pad #padView { display: block; position: fixed; inset: 0; z-index: -1; pointer-events: none; color: #fff;
+  background: radial-gradient(110% 90% at 50% 45%,
+    color-mix(in srgb, var(--me, #e8453c) 30%, #101116), #0b0c0f 75%);
+  text-align: center; font-family: var(--display); font-weight: 900; text-transform: uppercase; }
+#padName { position: absolute; top: 12%; left: 0; right: 0; font-size: clamp(1.2rem, 6vh, 2rem);
+  letter-spacing: .08em; color: var(--me); text-shadow: 0 2px 14px rgba(0,0,0,.5); }
+#padPlace { position: absolute; top: 46%; left: 0; right: 0; transform: translateY(-50%);
+  font-size: clamp(3rem, 22vh, 7rem); line-height: 1; }
+#padPlace.p1 { color: #ffd76a; } #padPlace.p2 { color: #d8dde6; } #padPlace.p3 { color: #e0a06a; }
+#padLap { position: absolute; top: 66%; left: 0; right: 0; font-size: clamp(.9rem, 4.5vh, 1.4rem);
+  letter-spacing: .12em; color: rgba(255,255,255,.7); }
+body.pad .tbtn { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.3); backdrop-filter: none; }
+body.pad .tbtn:not(.small) { width: clamp(84px, 26vh, 140px); height: clamp(84px, 26vh, 140px); }
+body.pad .tbtn.down { background: var(--me); border-color: var(--me); color: #fff; }
