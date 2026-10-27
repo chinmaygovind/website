@@ -2508,6 +2508,50 @@ _SWEEP_EVERY = timedelta(minutes=5)
 _last_sweep = None
 
 
+
+# ---------------------------------------------------------------------------
+# World record reels
+# ---------------------------------------------------------------------------
+
+# A fine-grained token that may start workflows on the website repo, in the box
+# `.env`. Without one this does nothing, which is every checkout but prod.
+REEL_TOKEN = os.environ.get("GH_DISPATCH_TOKEN", "")
+REEL_WORKFLOW = ("https://api.github.com/repos/chinmaygovind/website/actions/"
+                 "workflows/wr-reel.yml/dispatches")
+_reel_asked = [0.0]
+
+
+def _maybe_wr_reel(slug, time_ms):
+    """A lap that has just gone on a pool track's board as its record starts the
+    world-record reel straight away, rather than at GitHub's next ten-minute
+    tick - which in practice is late by anything up to hours.
+
+    Fire and forget, off the request: the run plans every record set since it
+    last looked, so one ask a minute is plenty, and one that fails is caught
+    by the next tick anyway.
+    """
+    if not REEL_TOKEN or not any(t["slug"] == slug for t in tracks_mod.TRACKS):
+        return
+    best = DriveTime.query.filter_by(track=slug).order_by(DriveTime.time_ms.asc()).first()
+    if not best or best.time_ms != time_ms or time.time() - _reel_asked[0] < 60:
+        return
+    _reel_asked[0] = time.time()
+    eventlet.spawn_n(_ask_for_reel)
+
+
+def _ask_for_reel():
+    import urllib.request
+    req = urllib.request.Request(
+        REEL_WORKFLOW, method="POST",
+        data=json_mod.dumps({"ref": "main", "inputs": {"urgent": "true"}}).encode(),
+        headers={"Authorization": "Bearer " + REEL_TOKEN,
+                 "Accept": "application/vnd.github+json"})
+    try:
+        urllib.request.urlopen(req, timeout=20).close()
+    except Exception as e:                      # the next tick picks it up
+        app.logger.warning("wr reel dispatch failed: %s", e)
+
+
 def _apply_check(c):
     """Act on a verdict, once. A pass becomes the driver's time; a fail is filed.
 
@@ -2546,6 +2590,7 @@ def _apply_check(c):
     # When it was driven, not when it was judged: a lap at 11:59pm checked at
     # 12:01am belongs to the day it was driven on.
     _note_daily(c.user_id, c.track, c.time_ms, c.queued_at)
+    _maybe_wr_reel(c.track, c.time_ms)
 
 
 def _note_daily(user_id, slug, time_ms, at=None):
@@ -2733,6 +2778,8 @@ def api_run():
     _floor_starts(user.id, track["slug"], row.runs or 0)
     _note_daily(user.id, track["slug"], time_ms)
     db.session.commit()
+    if improved:
+        _maybe_wr_reel(track["slug"], time_ms)
 
     # Re-read the record: this run may have just become it.
     best = DriveTime.query.filter_by(track=track["slug"]).order_by(DriveTime.time_ms.asc()).first()

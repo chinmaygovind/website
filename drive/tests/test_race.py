@@ -1661,3 +1661,29 @@ def test_a_car_s_item_slots_are_recorded_when_they_change(env):
     A._record_race(r)
     slots = [e[2:] for e in r["rec"]["events"] if e[1] == "slots"]
     assert slots == [["a", ["banana"]], ["a", []]]
+
+
+def test_a_new_record_asks_for_its_reel_once(env, monkeypatch):
+    """A lap that is now the track's best starts the world-record reel; a
+    slower one does not, nor a second record inside a minute, nor anything
+    at all without a token."""
+    A = env
+    asked = []
+    monkeypatch.setattr(A.eventlet, "spawn_n", lambda f: asked.append(f))
+    with A.app.app_context():
+        u = A.User(username="alice", email="a@example.com")
+        A.db.session.add(u)
+        A.db.session.flush()
+        A.db.session.add(A.DriveTime(user_id=u.id, track="sunrise", time_ms=17000))
+        A.db.session.commit()
+        A._maybe_wr_reel("sunrise", 17000)
+        assert asked == [], "no token, no reel"
+        monkeypatch.setattr(A, "REEL_TOKEN", "t")
+        monkeypatch.setattr(A, "_reel_asked", [0.0])
+        A._maybe_wr_reel("sunrise", 18000)
+        assert asked == [], "not the record"
+        A._maybe_wr_reel("sunrise", 17000)
+        A._maybe_wr_reel("sunrise", 17000)
+        assert len(asked) == 1
+        A._maybe_wr_reel("daily-1", 17000)
+        assert len(asked) == 1, "not a pool track"

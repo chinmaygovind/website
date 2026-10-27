@@ -43,8 +43,9 @@ With no race good enough the slot goes to the next lap as usual.
 queued, and the card says what it was when it was set.
 
 Prints the reels to film as one JSON list, and writes the state as it will be
-once they are all posted to `<out>/wr-state.next.json`. The Action swaps it in
-only if every one posted, so a failed run re-plans rather than losing a lap;
+once they are all posted to `<out>/wr-state.next.json`. Each reel posts as soon
+as it is filmed and the ones before it are up. The Action swaps the state in
+only once every one has posted, so a failed run re-plans rather than losing a lap;
 the ones that did post leave a `.posted` marker and are not posted twice.
 """
 
@@ -257,10 +258,13 @@ def main():
     os.makedirs(args.out, exist_ok=True)
     with open(os.path.join(args.out, "wr-state.next.json"), "w") as f:
         json.dump(after, f)
-    # One JSON list for the Action's matrix: the reel's name and how to film it.
-    print(json.dumps([{"name": name_of(q), "args": (
+    # One JSON list for the Action's matrix: the reel's name, how to film it, and
+    # the reels that post before it - each posts as soon as it is filmed and
+    # those are up, so the order holds without waiting on the slowest film.
+    names = [name_of(q) for q in items]
+    print(json.dumps([{"name": names[k], "after": names[:k], "args": (
         "--race %d" % q[1] if q[0] == "race" else "%s --lap %d --rank %d" % (q[0], q[1], q[3]))
-        + " --name " + name_of(q)} for q in items]))
+        + " --name " + names[k]} for k, q in enumerate(items)]))
 
 
 def posted_already(name):

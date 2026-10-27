@@ -1,8 +1,10 @@
 name: World record reel
 
-# Every ten minutes: any world record set since the last look, filmed and posted
-# to Instagram as soon as it is seen - all of a burst at once, one runner each,
-# posted in the order they were set. Every six hours between the dailies, also
+# Started by Drive itself the moment a lap becomes a record (`_maybe_wr_reel`),
+# and every ten minutes as a backstop: any world record set since the last
+# look, filmed and posted to Instagram as soon as it is seen - all of a burst at
+# once, one runner each, each posted as soon as it and the ones set before it
+# are filmed. Every six hours between the dailies, also
 # the next record off the queue, or every third time a room race.
 # See drive/tools/wr_queue.py.
 on:
@@ -52,8 +54,9 @@ jobs:
     needs: plan
     if: needs.plan.outputs.reels != '[]'
     runs-on: ubuntu-latest
-    timeout-minutes: 180
-    # A race reel is the whole comeback, two or three minutes of film.
+    timeout-minutes: 300
+    # A race reel is the whole comeback, two or three minutes of film, and a
+    # reel may then wait on the films before it.
     strategy:
       fail-fast: false
       matrix:
@@ -78,33 +81,6 @@ jobs:
         with:
           name: reel-${{ matrix.reel.name }}
           path: reels/
-
-  post:
-    needs: [plan, film]
-    # Whatever filmed gets posted. A run with nothing to film has nothing to
-    # save either: no new record means the state did not move.
-    if: always() && needs.plan.outputs.reels != '[]'
-    runs-on: ubuntu-latest
-    timeout-minutes: 100
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: reel-*
-          merge-multiple: true
-          path: reels
-      - uses: actions/download-artifact@v4
-        with:
-          name: wr-state
-          path: reels
-      - id: got
-        run: |
-          # In the planned order, which is the order the records were set.
-          OUT="" ALL=1
-          for n in $(echo '${{ needs.plan.outputs.reels }}' | jq -r '.[].name'); do
-            if [ -f "reels/$n.mp4" ]; then OUT="$OUT $n"; else echo "missing $n.mp4"; ALL=0; fi
-          done
-          echo "names=$OUT" >> "$GITHUB_OUTPUT"
-          echo "all=$ALL" >> "$GITHUB_OUTPUT"
       - name: Publish to the box
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -113,25 +89,76 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           source: "reels/*"
           target: /home/ubuntu/website/drive/static
-      - name: Post to Instagram
+      # Posted the moment it is filmed, once every record set before it is up -
+      # so the order holds and nobody waits on the slowest film in the batch.
+      # A reel before it that failed leaves a .failed marker rather than a
+      # .posted one, and is not waited for.
+      - name: Post to Instagram, in order
         if: github.event_name == 'schedule' || inputs.post
         uses: appleboy/ssh-action@v1.0.3
         env:
           IG_TOKEN: ${{ secrets.IG_TOKEN }}
-          NAMES: ${{ steps.got.outputs.names }}
-          ALL: ${{ steps.got.outputs.all }}
+          NAME: ${{ matrix.reel.name }}
+          AFTER: ${{ join(matrix.reel.after, ' ') }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          envs: IG_TOKEN,NAMES,ALL
-          command_timeout: 90m
+          envs: IG_TOKEN,NAME,AFTER
+          command_timeout: 180m
           script: |
             set -e
             F=/home/ubuntu/data/ig_token
             if [ ! -s "$F" ]; then (umask 077; printf %s "$IG_TOKEN" > "$F"); fi
             R=/home/ubuntu/website/drive/static/reels
-            for n in $NAMES; do python3 /home/ubuntu/website/drive/tools/post_reel.py "$n"; done
-            # Only once every one is up, so a failed reel is planned again;
-            # the ones that did post have a .posted marker and are skipped.
-            if [ "$ALL" = 1 ]; then mv "$R/wr-state.next.json" "$R/wr-state.json"; fi
+            rm -f "$R/$NAME.failed"
+            for a in $AFTER; do
+              until [ -f "$R/$a.posted" ] || [ -f "$R/$a.failed" ]; do sleep 20; done
+            done
+            [ -f "$R/$NAME.posted" ] || python3 /home/ubuntu/website/drive/tools/post_reel.py "$NAME"
+      - name: Let the reels after this one go
+        if: failure()
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          NAME: ${{ matrix.reel.name }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: NAME
+          script: touch "/home/ubuntu/website/drive/static/reels/$NAME.failed"
+
+  save:
+    needs: [plan, film]
+    # A run with nothing to film has nothing to save: no new record means the
+    # state did not move.
+    if: always() && needs.plan.outputs.reels != '[]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: wr-state
+          path: reels
+      - name: Publish the state to the box
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "reels/wr-state.next.json"
+          target: /home/ubuntu/website/drive/static
+      - name: Swap it in once every reel is up
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          NAMES: ${{ join(fromJSON(needs.plan.outputs.reels).*.name, ' ') }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: NAMES
+          script: |
+            R=/home/ubuntu/website/drive/static/reels
+            # Only once every one is up, so a failed reel is planned again; the
+            # ones that did post have a .posted marker and are skipped.
+            for n in $NAMES; do [ -f "$R/$n.posted" ] || { echo "$n not posted, state kept"; exit 0; }; done
+            mv "$R/wr-state.next.json" "$R/wr-state.json"
