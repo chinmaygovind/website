@@ -6208,6 +6208,10 @@ function frame(now) {
 
   if (CFG.tv) {
     updateRemotes(dt);
+    // The parts of `render` that are the world rather than your own car.
+    moveRopes(now);
+    animateItemBoxes(now);
+    moveShots(dt);
     tvRender(dt);
     drawMinimap();
     return;
@@ -8498,7 +8502,10 @@ function sendPose(now) {
   });
   if (S.rtcDc && S.rtcDc.readyState === 'open') {
     S.rtcDc.send(JSON.stringify([serverNow(), c.pos.x, c.pos.y, c.pos.z,
-      c.quat.x, c.quat.y, c.quat.z, c.quat.w, c.vel.x, c.vel.y, c.vel.z, c.flags()]));
+      c.quat.x, c.quat.y, c.quat.z, c.quat.w, c.vel.x, c.vel.y, c.vel.z, c.flags(),
+      // The boosts, which no rival is ever sent (see `Draft.update`) - but on the
+      // TV the camera is *in* this car, so the air and the FOV punch are owed.
+      c.padBoost, c.itemBoost]));
   }
 }
 
@@ -8567,6 +8574,8 @@ function rtcPose(pid, raw) {
   r.q.set(a[4], a[5], a[6], a[7]);
   r.vel.set(a[8], a[9], a[10]);
   r.flags = a[11];
+  r.padBoost = +a[12] || 0;
+  r.itemBoost = +a[13] || 0;
   r.rtcAt = r.lastSeen = performance.now();
 }
 
@@ -8598,6 +8607,7 @@ function onPoses(snap) {
     // On a TV, a pad's own pose straight over WebRTC is newer than this one
     // whenever it is arriving at all - see `rtcPose`.
     if (!(r.rtcAt && performance.now() - r.rtcAt < RTC_FRESH_MS)) {
+      r.padBoost = r.itemBoost = 0;
       r.packetT = snap.t - (a.length > 13 ? a[13] : 0) - (a.length > 15 ? a[15] : 0);
       r.px = a[0]; r.py = a[1]; r.pz = a[2];
       r.q.set(a[3], a[4], a[5], a[6]);
@@ -8837,7 +8847,8 @@ function rivalSound() {
 function contactOn() {
   if (CFG.mode !== 'room') return false;
   return S.racePhase === 'free' || S.racePhase === 'countdown'
-      || (S.raceMode && S.racePhase === 'racing');
+      // A TV is in no race of its own, but it is showing the one that is on.
+      || ((S.raceMode || CFG.tv) && S.racePhase === 'racing');
 }
 
 /**
