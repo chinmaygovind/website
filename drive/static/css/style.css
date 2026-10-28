@@ -1937,6 +1937,8 @@ button.set-cell.on:active .pill::after, .pill-btn.on:active .pill::after { trans
    while `S.watch` is up), so what is on the screen is a readout of somebody
    else's hands in the shape the reader's own hands know. */
 body.watching .hud-bc, body.watching #startHint { display: none; }
+/* And a race you walked in on (`spectateRace`): the clock is your own run's. */
+body.spectating .hud-bc { display: none; }
 /* The pad is a replay's, and only a desktop's - the phone has the pedals, which
    are the same byte in the shape that phone's own hands use.
 

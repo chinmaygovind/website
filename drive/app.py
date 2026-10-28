@@ -4358,6 +4358,7 @@ def _blast(r, s, now, radius=BOMB_BLAST):
             # you are hit anyway. Held items only stop a shell or a banana.
             _drop_held(r, pid, blocked=False)
             _tally(s["item"], "hit")
+            _rec_event(r, "hit", s["item"], pid)
             socketio.emit("item_hit", {"item": s["item"], "pid": pid, "owner": s["owner"]},
                           room="room:" + r["code"])
             if pid in _bot_pids(r):
@@ -5129,7 +5130,7 @@ def on_join_room(data=None):
                         # the lights still on - see the `room_hello` handler in
                         # `game.js`. It is not the same question as the phase:
                         # somebody who walks into a room while a race is on is
-                        # driving but is not *in* it, and handing them a race
+                        # spectating it, not *in* it, and handing them a race
                         # clock and a set of items would be a race they are not
                         # scored in. So it is asked of the grid, which is
                         # exactly who lined up, and of their own car.

@@ -772,7 +772,7 @@ function showStartHint() {
   const el = $('startHint');
   let seen = S.hintShown;
   try { seen = seen || sessionStorage.getItem('drive.hint') === '1'; } catch (e) {}
-  el.style.display = seen ? 'none' : '';
+  el.style.display = seen || S.spectating ? 'none' : '';
 }
 
 function markHintSeen() {
@@ -4545,6 +4545,19 @@ function drawReplayItems(w, step, dt) {
 }
 
 /**
+ * Whether the car the replay is following was hit in the last `HIT_HOLD_S`,
+ * so the camera keeps its own frame through the tumble as it does live (see
+ * `hitByItem`). Read off the recording's events rather than counted down, so
+ * a scrub into the middle of a hit holds too.
+ */
+function replayHitHold(w) {
+  const pid = w.cars && w.cars[w.at] && w.cars[w.at].pid;
+  if (pid == null || !w.items) return false;
+  return (w.items.events || []).some(e => e[1] === 'hit' && e[3] === pid &&
+                                         w.t - e[0] / 1000 >= 0 && w.t - e[0] / 1000 < HIT_HOLD_S);
+}
+
+/**
  * The replay page: a whole race, from any car in it.
  *
  * The cars are fetched rather than rendered into the page because eight
@@ -4928,7 +4941,7 @@ function applyPhase() {
   // a reload landing mid-race - and every way out of one does too, so there is
   // no path that leaves a practice lap thinking it is three laps long. Only a
   // race you are actually in: somebody who walked in after the lights is
-  // practising on the same road and drives one lap like anyone else.
+  // spectating it (`spectateRace`), with a parked car that is never sent.
   S.run.laps = (S.raceMode && S.racePhase === 'racing') ? raceLaps() : 1;
   const p = S.previewPhase || S.racePhase;      // `?panel=qual|racing`
   const [text, racing] = PHASE_LABEL[p] || PHASE_LABEL.free;
@@ -5221,6 +5234,28 @@ function showFinish(ms) {
   flash.style.animation = 'none';
   void flash.offsetWidth;
   flash.style.animation = '';
+  flash.style.display = $('finWait').style.display = '';
+  el.style.display = '';
+}
+
+/**
+ * Walking into a room mid-race: watch it rather than drive among it.
+ *
+ * It is the finisher's state - `raceIsRun()`, so the camera goes to whoever is
+ * still out there and the arrows step through them - with no FINISH! and no
+ * car: nothing is sent, so nobody racing meets a parked car on the road, and
+ * your own is not drawn or in the order. `updateSpec` ends it with the race.
+ */
+function spectateRace() {
+  S.spectating = true;
+  S.raceMode = true;
+  S.raceDone = true;
+  S.car.frozen = true;
+  S.spec = null;
+  $('startHint').style.display = 'none';
+  const el = $('finishBanner');
+  if (!el) return;
+  el.querySelector('.fin-flash').style.display = $('finWait').style.display = 'none';
   el.style.display = '';
 }
 
@@ -5243,7 +5278,8 @@ function racersLeft() {
 
 /** You first, then everybody still racing in running order; null is you. */
 function cycleSpec(by) {
-  const ring = [null].concat(racersLeft().map((e) => e.pid));
+  const ring = (S.spectating ? [] : [null]).concat(racersLeft().map((e) => e.pid));
+  if (!ring.length) return;
   const i = Math.max(0, ring.indexOf(S.spec));
   S.spec = ring[((i + by) % ring.length + ring.length) % ring.length];
   S.specLost = 0;
@@ -5253,7 +5289,10 @@ function updateSpec(now) {
   const watch = $('finWatch');
   if (!watch) return;
   const left = raceIsRun() ? racersLeft() : [];
+  if (!raceIsRun()) S.spectating = false;
+  document.body.classList.toggle('spectating', !!S.spectating);
   if (!raceIsRun()) S.spec = null;
+  else if (S.spectating && !S.spec && left.length) S.spec = left[0].pid;
   else if (S.spec && !left.some((e) => e.pid === S.spec)) {
     // Gone from the list: finished, or retired. Stay for the line, then move
     // on to the next one still racing, or back to you.
@@ -6190,7 +6229,7 @@ function frame(now) {
     // The views work on a replay too, because there is nothing about them that
     // needs the car to be yours: a lap you are watching is exactly where you
     // want to see what the driver could see.
-    S.renderer.follow(S.watch.subject, dt, viewKeys());
+    S.renderer.follow(S.watch.subject, dt, { ...viewKeys(), hold: replayHitHold(S.watch) });
     // Watching is not driving, and it takes the field with it: the room is
     // still going round out there, but a camera on somebody else's lap is not
     // where any of it is happening, so hearing it from here would be noise.
@@ -6475,7 +6514,10 @@ function render(dt, now) {
   shellWarning(now);
   const watched = S.spec && S.remotes.get(S.spec);
   S.renderer.follow(watched || car, dt,
-                    { ...viewKeys(), hold: !watched && S.hitHold > 0 });
+                    // A remote's smoke starts on the server's word and outlasts
+                    // `HIT_HOLD_S`, which covers its tumble arriving a round
+                    // trip later on its poses.
+                    { ...viewKeys(), hold: watched ? watched.hitSmoke > 0 : S.hitHold > 0 });
   // The ears ride the camera, so they are moved the moment it has been - and
   // the field is spatialised against where it has just gone rather than where
   // it was last frame. Your own car stays out of this: it is the thing you are
@@ -6492,7 +6534,7 @@ function render(dt, now) {
     // own car's lamps and the ones every rival sees are the same lamps.
     ...lampsOf(car.flags()),
   });
-  S.view.setVisible(car.respawnIn <= 0);
+  S.view.setVisible(car.respawnIn <= 0 && !S.spectating);
   S.renderer.draft(car, dt);
 
   // the ghost you are chasing, in its owner's colour and showing its lamps
@@ -7111,7 +7153,7 @@ function liveOrder() {
   // The pace each row is doing, which is what turns a gap in metres into a gap
   // in seconds - see `gapLabel`. Your own comes off the car, everybody else's
   // off the velocity in their last pose, which is on the wire already.
-  const out = [{ name: CFG.name, color: CFG.me ? CFG.me.color : '#e8453c', pid: mine,
+  const out = S.spectating ? [] : [{ name: CFG.name, color: CFG.me ? CFG.me.color : '#e8453c', pid: mine,
                  s: at(mine, S.run.bestS), self: true, speed: S.car.speed,
                  ms: S.run.state === 'done' ? S.run.time : null }];
   for (const [pid, r] of S.remotes) {
@@ -8130,7 +8172,7 @@ function connect() {
     S.racePhase = d.race ? d.race.phase : 'free';
     S.pole = (d.race && d.race.pole) || null;
     padRtc();
-    resumeRace(d);
+    if (!resumeRace(d) && d.me && ['countdown', 'racing'].includes(S.racePhase)) spectateRace();
     applyPhase();
     // Walking in on a session already running: show it rather than pretending
     // the room is idle until the next message happens to arrive.
@@ -8484,7 +8526,7 @@ function sendPose(now) {
   // A phone driving a TV sends twice as often (`S.poseHz`): see `TV_TICK_HZ` in app.py.
   if (!S.socket || now - S.lastPose < 1000 / (S.poseHz || POSE_HZ)) return;
   // Mid-switch, this car is on a track the room has left. See `applyTrackChange`.
-  if (S.switching) return;
+  if (S.switching || S.spectating) return;
   S.lastPose = now;
   const c = S.car;
   S.socket.emit('pose', {
@@ -9246,7 +9288,7 @@ async function applyTrackChange(slug, attempt = 0) {
  *
  * `in_race` is the server's own answer to "are you in the race that is
  * running", asked of the grid rather than of the phase, so somebody who walked
- * in after the lights - driving, but not scored - stays in practice as before.
+ * in after the lights is not resumed but spectates - see `spectateRace`.
  *
  * The elapsed clock is restored to the green light rather than to now, so the
  * time this browser spent away is in the lap. That is the honest reading of it:

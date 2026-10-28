@@ -263,7 +263,10 @@ room on another. Guests have no account, so for them it is tabs only.
   asking twice. `resumeRace` is that half, off a new `in_race` in `room_hello`:
   the server's own answer to "are you in the race that is running", asked of
   the **grid** rather than of the phase, so somebody who walked in after the
-  lights is still driving and still not scored. The clock is restored to the
+  lights is not resumed. **They spectate instead** (`spectateRace`, Oct 2026):
+  the finisher's camera on whoever is still racing, no FINISH!, their own car
+  hidden and its poses not sent, so nobody racing meets a parked car. It used
+  to be practice on the same road, driving among a race they were not in. The clock is restored to the
   green light and not to now, so the time spent away is in the lap - what is
   lost is lost, and what is not lost is the race. `room_hello` also seeds
   `clockOffset` off its own `server_ms` when nothing better has been measured,
