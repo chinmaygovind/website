@@ -5289,10 +5289,10 @@ function updateSpec(now) {
   const watch = $('finWatch');
   if (!watch) return;
   const left = raceIsRun() ? racersLeft() : [];
-  if (!raceIsRun()) S.spectating = false;
-  document.body.classList.toggle('spectating', !!S.spectating);
-  if (!raceIsRun()) S.spec = null;
-  else if (S.spectating && !S.spec && left.length) S.spec = left[0].pid;
+  if (!raceIsRun()) {
+    S.spec = null;
+    S.spectating = false;
+  } else if (S.spectating && !S.spec && left.length) S.spec = left[0].pid;
   else if (S.spec && !left.some((e) => e.pid === S.spec)) {
     // Gone from the list: finished, or retired. Stay for the line, then move
     // on to the next one still racing, or back to you.
@@ -6965,6 +6965,7 @@ function hud(now) {
   const fin = $('finishBanner');
   if (fin && !raceIsRun() && fin.style.display !== 'none') fin.style.display = 'none';
   updateSpec(now);
+  $('hudBc').classList.toggle('spectating', !!S.spectating);
 
   // Race positions - but not during qualifying, which is not a race: running
   // order by distance means nothing when everybody is on their own lap, and
