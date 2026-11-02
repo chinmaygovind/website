@@ -174,13 +174,17 @@ def _length(m):
 
 # What each kind of daily may throw in down a straight, by weight. A stunt
 # track is mostly set pieces; a circuit is mostly road with a few.
+# **No `bounce`** (Nov 2026): it is always drawn as a toadstool over the road,
+# which fits Shroom Street and BOO! and nowhere a daily goes - "rethink
+# mushrooms" and then "the mushrooms embedded in the road are horrible" were
+# the notes. `_trick` still knows how to lay one.
 CIRCUIT_TRICKS = (("jump", 6), ("crest", 3), ("hump", 2), ("boost", 2),
                   ("sweeper", 2), ("pipe", 1), ("chicane", 4),
-                  ("esses", 3), ("rollers", 2), ("wallride", 2), ("bounce", 1),
+                  ("esses", 3), ("rollers", 2), ("wallride", 2),
                   ("narrows", 2))
 STUNT_TRICKS = (("wall", 3), ("jump", 5), ("gap", 4),
                 ("pipe", 2), ("dive", 2), ("sweeper", 2), ("boost", 1),
-                ("bounce", 3), ("helix", 2), ("stairs", 2), ("leap", 4),
+                ("helix", 2), ("stairs", 2), ("leap", 4),
                 ("wallride", 2), ("esses", 1))
 
 def _pick(rng, table):
