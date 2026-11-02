@@ -380,6 +380,26 @@ feel the same" was the note. The signature is in `generated.signature`, and
 neighbours in the queue differ, and the first few avoid `--avoid` (the looks of
 the dailies already scheduled - "same theme as daily #1" was a review note).
 
+**The week is a difficulty curve** (Nov 2026, `generate.TIERS`/`WEEK`):
+Monday tier 1 (24-31s, wider, always a circuit), Tue-Wed 2, Thu-Fri 3, Saturday
+4 (38-48s), Sunday the boss (55-68s, narrower, always a stunt track). The tier
+is the card's difficulty. `gen_daily.py N --start YYYY-MM-DD` gives day `k`
+that weekday's tier and writes `generated.day`, and approving takes **that day**
+if it is still free and not past (`maker._day_for`), else the next free one -
+so a skip or a send-back cannot slide Sunday's boss onto Monday. A
+reworked/late one can land out of number order; that is fine.
+**The signature builds to a finale**: every time it comes round it is bigger
+(`generate._size`, `big` 0..1 along each draw's range), and the biggest - the
+tier's `finale` size - is the last thing before the flag. Without `--start`
+nothing is tiered and it behaves as before.
+**Some days keep one big shortcut** (one a week: the first tier 3+ stunt day
+of it): `judge` keeps the biggest drop cut up to `CUT_KEEP_MAX`
+open and closes the rest, or drops the seed if there is none. It is recorded in
+`generated.cut` (stations and gain). Only on void tracks, where missing it is a
+respawn - a grass cut costs nothing to try. Not every day: he asked for that.
+**Four looks are dailies-only** (`tracks/daily_looks.py`: autumn, blossom,
+savanna, neon), dealt alongside the pool's.
+
 **Small cuts stay in; big ones are closed or the seed is dropped** (Oct 2026).
 Closing every cut made dailies with nothing to find. "Rickety is fun cuz
 there's lots of cuts" was the note, and the board agrees: a pool record sits at

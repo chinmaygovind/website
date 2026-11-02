@@ -1102,8 +1102,23 @@ def _approve(row):
     # days of dailies, in the order they were approved, with no second screen
     # and nothing to remember.
     if row.doc.get("generated") and row.daily_on is None:
-        row.daily_on = _next_free_daily()
+        row.daily_on = _day_for(row)
         _number_daily(row)
+
+
+def _day_for(row):
+    """The day a generated track was made for, if it is still free and not past,
+    else the next free one. Since Nov 2026 each daily is generated for a
+    weekday's difficulty (`generate.TIERS`), so a send-back or a skip must not
+    slide Sunday's boss track onto Monday."""
+    gen = row.doc.get("generated")
+    want = gen.get("day") if isinstance(gen, dict) else None
+    if want:
+        day = date.fromisoformat(want)
+        if day >= max(daily_date(), DAILIES_START) and not (
+                DriveUserTrack.query.filter_by(daily_on=day).first()):
+            return day
+    return _next_free_daily()
 
 
 # ---- reviewing the dailies ------------------------------------------------

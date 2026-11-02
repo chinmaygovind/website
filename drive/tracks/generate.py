@@ -45,6 +45,35 @@ from tracks import look
 TARGET_LOW = 30.0
 TARGET_HIGH = 40.0
 
+# **The week is a difficulty curve** (Nov 2026): Monday is short, wide and on
+# the ground; Sunday is the boss, a long open-edged stunt track over the void.
+# "make harder" kept coming back as a review note, and a fixed 30-40s band
+# could only ever answer it the same way every day. A tier sets the lap time
+# band, the road's width, how big the signature set piece gets and which kind
+# of look it may have (`gen_daily.look_order`). It is also the card's
+# difficulty, so the pips say the same thing the track does.
+TIERS = {
+    #     secs band     width  finale  kind
+    1: dict(secs=(24.0, 31.0), width=1.5, finale=0.7, kind="circuit"),
+    2: dict(secs=(29.0, 36.0), width=0.5, finale=0.8, kind=None),
+    3: dict(secs=(32.0, 40.0), width=0.0, finale=0.9, kind=None),
+    4: dict(secs=(38.0, 48.0), width=-0.5, finale=1.0, kind=None),
+    5: dict(secs=(55.0, 68.0), width=-1.5, finale=1.0, kind="stunt"),
+}
+WEEK = (1, 2, 2, 3, 3, 4, 5)   # Monday .. Sunday, `date.weekday()`
+
+
+def tier_for(day):
+    return WEEK[day.weekday()]
+
+
+def target(doc):
+    """The lap time band a document was generated for. A document from before
+    the tiers has none and is held to the old 30-40s."""
+    t = (doc.get("generated") or {}).get("tier")
+    return TIERS[t]["secs"] if t else (TARGET_LOW, TARGET_HIGH)
+
+
 # Units of road per second of ideal lap, measured across the pool: twenty-five
 # tracks run 40.3 to 50.3 with a mean of 43.4. So a walk is asked for length
 # rather than for time - pricing a lap costs ~550ms and laying a ribbon ~5ms,
@@ -173,17 +202,31 @@ SIGNATURE = 4
 SIDES = 2
 
 
-def _flavour(rng, table):
-    sig = _pick(rng, table)
+# Set pieces that are no finale: a bigger bump is still a bump.
+NO_FINALE = ("boost", "hump")
+
+
+def _flavour(rng, table, finale=False):
+    sig = _pick(rng, [kw for kw in table if not (finale and kw[0] in NO_FINALE)])
     rest = [kw for kw in table if kw[0] != sig]
     sides = rng.sample(rest, min(SIDES, len(rest)))
     return ((sig, dict(table)[sig] * SIGNATURE),) + tuple(sides), sig
 
 
-def _trick(rng, kind, turn, radii, stunt):
-    """The moves for one set piece. Returns `(moves, height_change, turn)`."""
+def _size(rng, lo, hi, big):
+    """A draw from `lo..hi`, or, for a signature set piece, the point `big` of
+    the way along it - so each one is bigger than the last (see `generate`)."""
+    if big is None:
+        return rng.uniform(lo, hi)
+    return lo + (hi - lo) * min(1.0, max(0.0, big + rng.uniform(-0.06, 0.06)))
+
+
+def _trick(rng, kind, turn, radii, stunt, big=None):
+    """The moves for one set piece. Returns `(moves, height_change, turn)`.
+    `big` (0..1) sizes a signature one; `None` draws as before."""
+    u = lambda lo, hi: _size(rng, lo, hi, big)
     if kind == "jump":
-        drop = round(rng.uniform(0.0, 8.0 if stunt else 4.0), 1)
+        drop = round(u(0.0, 8.0 if stunt else 4.0), 1)
         # Out of a tight corner, onto a pad, off the lip: how far it carries
         # depends on how the corner went. Rickety Rails' winze and Tokyo
         # Drift's roof jump are both built this way, and Rickety Rails is the
@@ -194,25 +237,25 @@ def _trick(rng, kind, turn, radii, stunt):
         if rng.random() < 0.8:
             out += [{"t": "boost", "len": 12.0},
                     {"t": "straight", "len": round(rng.uniform(24.0, 40.0), 1)}]
-        out.append({"t": "jump", "rise": round(rng.uniform(4.0, 7.0), 1),
-                    "gap": round(rng.uniform(18.0, 34.0 if stunt else 28.0), 1),
+        out.append({"t": "jump", "rise": round(u(4.0, 7.0), 1),
+                    "gap": round(u(18.0, 34.0 if stunt else 28.0), 1),
                     "drop": drop})
         return out, -drop, turn
     if kind == "gap":
-        drop = round(rng.uniform(2.0, 14.0), 1)
+        drop = round(u(2.0, 14.0), 1)
         return ([{"t": "boost", "len": 14.0},
                  {"t": "straight", "len": round(rng.uniform(30.0, 46.0), 1)},
-                 {"t": "gap", "len": round(rng.uniform(14.0, 28.0), 1),
+                 {"t": "gap", "len": round(u(14.0, 28.0), 1),
                   "drop": drop},
                  {"t": "straight", "len": 24.0}], -drop, turn)
     if kind == "crest":
-        rise = round(rng.uniform(4.0, 7.0), 1)
+        rise = round(u(4.0, 7.0), 1)
         return ([{"t": "crest", "rise": rise,
                   "len": round(rng.uniform(22.0, 30.0), 1)},
                  {"t": "straight", "len": round(rng.uniform(34.0, 56.0), 1),
                   "rise": -rise}], 0.0, turn)
     if kind == "hump":
-        return ([{"t": "hump", "rise": round(rng.uniform(3.0, 4.6), 1),
+        return ([{"t": "hump", "rise": round(u(3.0, 4.6), 1),
                   "len": round(rng.uniform(26.0, 34.0), 1)}], 0.0, turn)
     if kind == "boost":
         return ([{"t": "boost", "len": 12.0},
@@ -220,7 +263,7 @@ def _trick(rng, kind, turn, radii, stunt):
                 0.0, turn)
     if kind == "sweeper":
         turn = -turn if rng.random() < 0.7 else turn
-        deg = rng.uniform(70.0, 160.0)
+        deg = u(70.0, 160.0)
         rad = rng.choice([r for r in radii if r >= 26.0] or [32.0])
         return ([{"t": "arc", "deg": round(deg * turn, 1), "rad": rad,
                   "rise": 0.0, "bank": round(rng.uniform(12.0, 26.0) * turn, 1)}],
@@ -246,13 +289,13 @@ def _trick(rng, kind, turn, radii, stunt):
                           "deg": round(rng.uniform(50.0, 110.0) * turn, 1),
                           "rad": rng.choice([r for r in radii if r >= 21.0] or [26.0]),
                           "rise": 0.0})
-        return ([{"t": "pipe", "depth": round(rng.uniform(3.5, 6.0), 1),
+        return ([{"t": "pipe", "depth": round(u(3.5, 6.0), 1),
                   "floor": round(rng.uniform(0.25, 0.4), 2), "side": "lr"}]
                 + inner + [{"t": "flat"}, {"t": "straight", "len": 16.0}],
                 0.0, turn)
     if kind == "wall":
         turn = -turn if rng.random() < 0.6 else turn
-        rise = round(rng.uniform(8.0, 18.0), 1)
+        rise = round(u(8.0, 18.0), 1)
         # `Builder.wall` needs twice the ramp in arc, and a ramp under about
         # eighty units rolls the road out from under the car before it is
         # tilted far enough to stick - so the arc is sized to the ramp.
@@ -277,7 +320,7 @@ def _trick(rng, kind, turn, radii, stunt):
                  {"t": "straight", "len": 12.0, "w": None}], 0.0, turn)
     if kind == "esses":
         out = []
-        for _ in range(rng.randint(3, 4)):
+        for _ in range(rng.randint(3, 4) if big is None else 3 + round(big * 2)):
             turn = -turn
             out.append({"t": "arc", "deg": round(rng.uniform(35.0, 70.0) * turn, 1),
                         "rad": rng.choice([r for r in radii if r >= 21.0] or [26.0]),
@@ -285,17 +328,17 @@ def _trick(rng, kind, turn, radii, stunt):
         return out, 0.0, turn
     if kind == "rollers":
         out = []
-        for _ in range(rng.randint(2, 3)):
-            out.append({"t": "hump", "rise": round(rng.uniform(2.5, 4.0), 1),
+        for _ in range(rng.randint(2, 3) if big is None else 2 + round(big * 2)):
+            out.append({"t": "hump", "rise": round(u(2.5, 4.0), 1),
                         "len": round(rng.uniform(24.0, 32.0), 1)})
         return out, 0.0, turn
     if kind == "wallride":
         # One wall, on the outside of a long corner: a high line to take.
         turn = -turn
-        return ([{"t": "pipe", "depth": round(rng.uniform(5.0, 7.5), 1),
+        return ([{"t": "pipe", "depth": round(u(5.0, 7.5), 1),
                   "floor": round(rng.uniform(0.3, 0.45), 2),
                   "side": "l" if turn > 0 else "r"},
-                 {"t": "arc", "deg": round(rng.uniform(90.0, 170.0) * turn, 1),
+                 {"t": "arc", "deg": round(u(90.0, 170.0) * turn, 1),
                   "rad": rng.choice([r for r in radii if r >= 26.0] or [32.0]),
                   "rise": 0.0},
                  {"t": "flat"}, {"t": "straight", "len": 16.0}], 0.0, turn)
@@ -312,7 +355,7 @@ def _trick(rng, kind, turn, radii, stunt):
         # Climbing only, for the walls' reason: one that descends puts its exit
         # under itself and dropping off the top skips it.
         turn = -turn if rng.random() < 0.5 else turn
-        rise = round(rng.uniform(20.0, 28.0), 1)
+        rise = round(u(20.0, 28.0), 1)
         return ([{"t": "boost", "len": 14.0},
                  {"t": "straight", "len": 30.0},
                  {"t": "arc", "deg": round(rng.uniform(330.0, 400.0) * turn, 1),
@@ -322,8 +365,8 @@ def _trick(rng, kind, turn, radii, stunt):
     if kind == "stairs":
         out, dy = [{"t": "boost", "len": 14.0},
                    {"t": "straight", "len": round(rng.uniform(26.0, 36.0), 1)}], 0.0
-        for _ in range(rng.randint(2, 3)):
-            drop = round(rng.uniform(4.0, 8.0), 1)
+        for _ in range(rng.randint(2, 3) if big is None else 2 + round(big * 2)):
+            drop = round(u(4.0, 8.0), 1)
             out += [{"t": "gap", "len": round(rng.uniform(10.0, 16.0), 1),
                      "drop": drop},
                     {"t": "straight", "len": round(rng.uniform(22.0, 30.0), 1)}]
@@ -333,8 +376,8 @@ def _trick(rng, kind, turn, radii, stunt):
         # A big one: off a steep crease, over a long hole, well below. The bow
         # matches the kick so the racing line does not read the lip as a corner
         # (Rickety Rails' `_bow`).
-        length = round(rng.uniform(40.0, 60.0), 1)
-        drop = round(rng.uniform(14.0, 24.0), 1)
+        length = round(u(40.0, 60.0), 1)
+        drop = round(u(14.0, 24.0), 1)
         grade = 0.12
         return ([{"t": "boost", "len": 14.0},
                  {"t": "straight", "len": round(rng.uniform(30.0, 40.0), 1)},
@@ -345,27 +388,43 @@ def _trick(rng, kind, turn, radii, stunt):
                  {"t": "straight", "len": 34.0},
                  {"t": "cp"}], -drop + 24.0 * grade, turn)
     if kind == "dive":
-        drop = round(rng.uniform(12.0, 24.0), 1)
+        drop = round(u(12.0, 24.0), 1)
         return ([{"t": "straight", "len": round(rng.uniform(50.0, 80.0), 1),
                   "rise": -drop}], -drop, turn)
     raise ValueError(kind)
 
 
-def generate(seed, looks, secs=None, look=None):
+def generate(seed, looks, secs=None, look=None, tier=None, cut=False):
     """A document, from a number. Same seed and look, same track, forever.
 
     `looks` is `[{"slug", "name", "pal"}]` - every pool track's look. `look`
     pins which one (the caller rotates them so neighbouring days differ);
     otherwise one is drawn. A look with a `below` makes a stunt track over the
     void, and one without makes a circuit on the ground.
+
+    `tier` (1-5, see `TIERS`) sets the size of everything; `cut` marks a day
+    that keeps one big shortcut on purpose, which `gen_daily.judge` honours.
+
+    **The signature set piece builds to a finale.** Each time it comes round
+    it is bigger than the last (`_size`), and the biggest one is the last thing
+    before the flag. A random walk had no shape - nothing built up - and the
+    tracks people come back to (Big Red's hairpin-jump-hairpin-jump-flag) end
+    on their best bit.
     """
     rng = random.Random(seed)
+    tiered = TIERS.get(tier)
+    if tiered:
+        lo, hi = tiered["secs"]
+        # The finale and the run to the flag are laid after the walk.
+        secs = secs or rng.uniform(lo + 0.5, hi - 3.0)
     secs = secs or rng.uniform(TARGET_LOW + 1.0, TARGET_HIGH - 4.0)
     want = secs * UNITS_PER_SEC
     look = look or rng.choice(looks)
     stunt = is_void(look)
     pal = borrow(rng, look)
     width = rng.choice((11.0, 12.0, 13.0) if stunt else (9.5, 10.0, 11.0, 12.0))
+    if tiered:
+        width = max(8.5, width + tiered["width"])
     # **No barriers by default, on either kind.** An edge you can go off is
     # what makes a stunt track a stunt track - Playground, Rainbow Road and
     # Cloudbreak are all `exposed` - and a circuit has grass to run onto.
@@ -384,8 +443,14 @@ def generate(seed, looks, secs=None, look=None):
     # How much height is in hand. A track that only ever climbs ends in orbit,
     # so the walk is pulled back towards zero rather than being free.
     y = 0.0
-    table, sig = _flavour(rng, STUNT_TRICKS if stunt else CIRCUIT_TRICKS)
+    table, sig = _flavour(rng, STUNT_TRICKS if stunt else CIRCUIT_TRICKS,
+                          finale=bool(tiered))
     tricks = rng.randint(6, 8) if stunt else rng.randint(5, 7)
+    if tiered:
+        tricks = round(tricks * secs / 35.0)
+        want -= 150.0   # the finale's share
+    finale = tiered["finale"] if tiered else None
+    ladder = 0
     gap_after = 1 if stunt else 2
     since = 0
 
@@ -411,7 +476,12 @@ def generate(seed, looks, secs=None, look=None):
         if (tricks and since >= gap_after and left > 140.0
                 and rng.random() < (0.55 if stunt else 0.3) + 0.12 * since):
             kind = _pick(rng, table)
-            got, dy, turn = _trick(rng, kind, turn, radii, stunt)
+            big = None
+            if finale and kind == sig:
+                # Each one bigger than the last, all smaller than the finale.
+                big = min(finale - 0.2, 0.05 * tier + 0.2 * ladder)
+                ladder += 1
+            got, dy, turn = _trick(rng, kind, turn, radii, stunt, big)
             moves += got
             laid += sum(_length(m) for m in got)
             y += dy
@@ -444,6 +514,16 @@ def generate(seed, looks, secs=None, look=None):
         for at in reversed(sorted(set(picks))):
             moves.insert(at + 1, {"t": "cp"})
 
+    if finale:
+        # The biggest one, then the flag. A corner first, so it is not bolted
+        # straight onto whatever the walk ended on.
+        turn = -turn
+        moves.append(_arc(rng, turn, radii))
+        moves.append({"t": "straight", "len": 24.0})
+        got, dy, turn = _trick(rng, sig, turn, radii, stunt, finale)
+        moves += got
+        y += dy
+
     # End level and on a straight: the flag on a corner is a lottery.
     moves.append({"t": "straight", "len": round(rng.uniform(40.0, 70.0), 1),
                   "rise": round(-y, 1)})
@@ -466,11 +546,11 @@ def generate(seed, looks, secs=None, look=None):
         "ground": None if stunt else 0.0,
         "exposed": stunt,
         "rails": rails,
-        "difficulty": (4 if stunt else (2 if max(radii) >= 40 else 3)),
+        "difficulty": tier or (4 if stunt else (2 if max(radii) >= 40 else 3)),
         "pal": pal,
         "generated": {"seed": seed, "look": look["slug"],
                       "kind": "stunt" if stunt else "circuit",
-                      "signature": sig},
+                      "signature": sig, "tier": tier, "cut": bool(cut)},
     }
 
 

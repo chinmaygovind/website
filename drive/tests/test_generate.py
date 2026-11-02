@@ -215,3 +215,41 @@ def test_a_pad_at_the_top_of_a_climb_is_refused():
     flat = tracks_mod.from_document("daily-x", doc(0.0), timed=False)
     assert gen_daily.pads_on_climbs(climb)
     assert gen_daily.pads_on_climbs(flat) == []
+
+
+def test_the_signature_builds_to_the_finale():
+    """Each signature set piece is bigger than the last and the biggest is the
+    last thing before the flag - a random walk had no shape."""
+    looks = [l for l in gen_daily.pool_looks() if generate.is_void(l)]
+    seed = 0
+    while True:
+        doc = generate.generate(seed, looks, look=looks[0], tier=4)
+        if doc["generated"]["signature"] == "jump":
+            break
+        seed += 1
+    gaps = [m["gap"] for m in doc["moves"] if m["t"] == "jump"]
+    assert len(gaps) >= 2 and gaps[-1] == max(gaps), gaps
+    assert doc["difficulty"] == 4 and doc["generated"]["tier"] == 4
+
+
+def test_the_week_is_a_difficulty_curve():
+    """Monday is the easy one, on the ground; Sunday the long stunt track."""
+    from datetime import date
+    assert generate.tier_for(date(2026, 11, 9)) == 1      # a Monday
+    assert generate.tier_for(date(2026, 11, 8)) == 5      # a Sunday
+    looks = gen_daily.pool_looks()
+    kinds = ["circuit", None, None, None, None, None, "stunt"] * 3
+    order = gen_daily.look_order(looks, len(kinds), kinds=kinds)
+    for want, l in zip(kinds, order):
+        if want:
+            assert (want == "stunt") == generate.is_void(l), (want, l["slug"])
+    assert generate.target({"generated": {"tier": 5}})[0] > 50
+    assert generate.target({}) == (generate.TARGET_LOW, generate.TARGET_HIGH)
+
+
+def test_a_cut_day_keeps_only_a_drop_in_range():
+    cuts = [{"i": 0, "j": 90, "kind": "grass", "gain": 120.0},
+            {"i": 5, "j": 80, "kind": "drop", "gain": 400.0},
+            {"i": 9, "j": 60, "kind": "drop", "gain": 150.0}]
+    assert gen_daily.keepable(cuts)["gain"] == 150.0
+    assert gen_daily.keepable(cuts[:2]) is None

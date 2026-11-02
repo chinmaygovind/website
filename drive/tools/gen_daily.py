@@ -57,9 +57,10 @@ def pool_looks():
     """Every look in the pool. A void one makes a stunt track and a grounded one
     a circuit (`generate.is_void`); keys tied to one track's own layout are
     stripped by `generate.borrow`."""
+    from tracks import daily_looks
     return [{"slug": t["slug"], "name": t["name"], "pal": t.get("pal") or {}}
             for t in tracks_mod.TRACKS
-            if t.get("pal") and t["slug"] not in INDOOR_LOOKS]
+            if t.get("pal") and t["slug"] not in INDOOR_LOOKS] + daily_looks.LOOKS
 
 
 # Looks that are a building rather than a place: without its warehouse the
@@ -68,7 +69,7 @@ def pool_looks():
 INDOOR_LOOKS = ("costco",)
 
 
-def look_order(looks, n, avoid=(), seed=0):
+def look_order(looks, n, avoid=(), seed=0, kinds=None):
     """Which look each of `n` dailies gets, in queue order.
 
     The queue is approved oldest first and each approval takes the next free
@@ -76,18 +77,48 @@ def look_order(looks, n, avoid=(), seed=0):
     must differ from the dailies already scheduled (`avoid`) - "same theme as
     daily #1" was a review note. Every look is used once before any is used
     twice.
+
+    `kinds[k]`, when given, is "stunt", "circuit" or None for day `k`: a tier
+    that has to be one or the other (`generate.TIERS`) is dealt the freshest
+    look of that kind instead of the next card.
     """
     import random
     rng = random.Random(seed)
     avoid = list(avoid)
     out = []
-    while len(out) < n:
-        deck = looks[:]
-        rng.shuffle(deck)
+    deck = []
+    kinds = kinds or [None] * n
+    for k in range(n):
+        if not deck:
+            deck = looks[:]
+            rng.shuffle(deck)
+            # The dailies-only looks are four in thirty-odd, and they are the
+            # new thing - so every third day leads with one.
+            from tracks import daily_looks
+            own = {l["slug"] for l in daily_looks.LOOKS}
+            mine = [l for l in deck if l["slug"] in own]
+            rest = [l for l in deck if l["slug"] not in own]
+            deck = []
+            while mine or rest:
+                if mine and len(deck) % 3 == 0:
+                    deck.append(mine.pop())
+                elif rest:
+                    deck.append(rest.pop())
+                else:
+                    deck.append(mine.pop())
         recent = (avoid + [l["slug"] for l in out])[-min(8, len(looks) - 1):]
         deck.sort(key=lambda l: l["slug"] in recent)
-        out += deck
-    return out[:n]
+        want = kinds[k]
+        fits = [l for l in deck if want is None
+                or (want == "stunt") == generate.is_void(l)]
+        if not fits:
+            fits = [l for l in looks if (want == "stunt") == generate.is_void(l)]
+            fits.sort(key=lambda l: l["slug"] in recent)
+        pick = fits[0]
+        if pick in deck:
+            deck.remove(pick)
+        out.append(pick)
+    return out
 
 
 def _move_at(doc, station):
@@ -182,6 +213,26 @@ MAX_WALLED = 0.4
 # `checks.CUT_MIN_GAIN` made dailies with nothing to find.
 CUT_CLOSE = 70.0
 
+# **Some days keep one big shortcut on purpose** (Nov 2026): a drop off a high
+# stretch onto a lower one, on a track over the void, so it saves a couple of
+# seconds landed and costs a respawn missed. Only some days - a cut every day
+# is a gimmick, so one a week, on the first tier 3+ stunt day of it - and only
+# on stunt tracks, because a cut across the grass is no
+# risk at all. Up to this much road skipped; more is a different track.
+CUT_KEEP_MAX = 260.0
+
+
+def _same_cut(a, b):
+    return abs(a["i"] - b["i"]) <= 25 and abs(a["j"] - b["j"]) <= 25
+
+
+def keepable(cuts):
+    """The cut a designed-shortcut day keeps: the biggest drop in range."""
+    for c in cuts:
+        if c["kind"] == "drop" and c["gain"] <= CUT_KEEP_MAX:
+            return c
+    return None
+
 # A pad at the top of a climb is a pad on a crest: the road levels off under
 # it, the car goes light, and only a car on the right line touches it at all.
 # Daily #9's last pad had a 30% grade ending at it and "you have to get a
@@ -227,9 +278,16 @@ def judge(doc, bot=True):
     try:
         # Shortcuts first, on the untimed ribbon, because closing one moves the
         # road: up to eight repairs, and a track that still has one is dropped.
+        want_cut = (doc.get("generated") or {}).get("cut")
+        kept = None
         for _ in range(9):
             rough = tracks_mod.from_document(slug, doc, timed=False)
             cuts = checks.shortcuts(rough, min_gain=CUT_CLOSE)
+            if want_cut:
+                kept = keepable(cuts)
+                if kept is None:
+                    return None, ["no drop cut to keep"]
+                cuts = [c for c in cuts if not _same_cut(c, kept)]
             if not cuts:
                 break
             if not repair(doc, cuts[0]):
@@ -237,6 +295,9 @@ def judge(doc, bot=True):
                               "be closed" % (cuts[0]["kind"], cuts[0]["gain"])]
         else:
             return None, ["still a shortcut after eight repairs"]
+        if kept:
+            doc["generated"]["cut"] = {"i": kept["i"], "j": kept["j"],
+                                       "gain": kept["gain"]}
         generate.settle_ground(doc, rough)
         track = tracks_mod.from_document(slug, doc, timed=True)
     except Exception as e:
@@ -280,9 +341,10 @@ def judge(doc, bot=True):
     ideal = track.get("ideal")
     if ideal is None:
         why.append("no lap time")
-    elif not (generate.TARGET_LOW <= ideal <= generate.TARGET_HIGH):
-        why.append("%.1fs, wanted %.0f-%.0f"
-                   % (ideal, generate.TARGET_LOW, generate.TARGET_HIGH))
+    else:
+        lo, hi = generate.target(doc)
+        if not (lo <= ideal <= hi):
+            why.append("%.1fs, wanted %.0f-%.0f" % (ideal, lo, hi))
 
     med = track.get("medals")
     if not med or not (med["gold"] < med["silver"] < med["bronze"]):
@@ -303,14 +365,31 @@ def judge(doc, bot=True):
     return track, why
 
 
-def propose(n, first_seed=0, verbose=True, avoid=(), per_look=80):
-    """`n` documents that pass everything, one per look in `look_order`."""
+def propose(n, first_seed=0, verbose=True, avoid=(), per_look=80, start=None):
+    """`n` documents that pass everything, one per look in `look_order`.
+
+    With `start` (a date), day `k` is `start + k`: it gets that weekday's tier
+    and the date is written into the document, so approving it lands it on the
+    day it was made for (`maker._day_for`) rather than the next free one."""
+    from datetime import timedelta
     looks = pool_looks()
+    days = [start + timedelta(days=k) for k in range(n)] if start else [None] * n
+    tiers = [generate.tier_for(d) if d else None for d in days]
+    kinds = [generate.TIERS[t]["kind"] if t else None for t in tiers]
+    cut_weeks = set()
     kept, seed, tried = [], first_seed, 0
-    for look in look_order(looks, n, avoid, seed=first_seed):
+    for look, day, tier in zip(look_order(looks, n, avoid, seed=first_seed,
+                                          kinds=kinds), days, tiers):
+        week = day.isocalendar()[:2] if day else None
+        cut = bool(tier and tier >= 3 and generate.is_void(look)
+                   and week not in cut_weeks)
+        if cut:
+            cut_weeks.add(week)
         for _ in range(per_look):
             tried += 1
-            doc = generate.generate(seed, looks, look=look)
+            doc = generate.generate(seed, looks, look=look, tier=tier, cut=cut)
+            if day:
+                doc["generated"]["day"] = day.isoformat()
             seed += 1
             # Neighbouring days lean on different set pieces, as they get
             # different looks - the same signature twice running reads as the
@@ -322,9 +401,12 @@ def propose(n, first_seed=0, verbose=True, avoid=(), per_look=80):
             if not why:
                 kept.append((seed - 1, doc, track))
                 if verbose:
-                    print("  keep  seed %-8d %5.1fs  %-7s %s"
-                          % (seed - 1, track["ideal"], doc["generated"]["kind"],
-                             look["slug"]), flush=True)
+                    g = doc["generated"]
+                    print("  keep  seed %-8d %5.1fs  %-7s %-12s %s tier %s %s%s"
+                          % (seed - 1, track["ideal"], g["kind"], look["slug"],
+                             g.get("day") or "", tier or "-", g["signature"],
+                             "  cut %.0f" % g["cut"]["gain"] if g.get("cut") else ""),
+                          flush=True)
                 break
             if verbose and tried <= 12:
                 print("  drop  seed %-8d %s" % (seed - 1, "; ".join(why)), flush=True)
@@ -402,6 +484,9 @@ def main(argv=None):
     ap.add_argument("--avoid", default="",
                     help="comma-separated looks the first few must not use: "
                          "the ones on the dailies already scheduled")
+    ap.add_argument("--start", help="first day these are for (YYYY-MM-DD): "
+                                    "each gets its weekday's tier and is "
+                                    "scheduled on that day when approved")
     ap.add_argument("--save", help="write the keepers to this JSON file instead "
                                    "of the database (generate on a laptop)")
     ap.add_argument("--load", help="queue the keepers from a --save file (on "
@@ -420,8 +505,10 @@ def main(argv=None):
         if seed is None:
             import time
             seed = int(time.time()) % 1_000_000 * 1000
+        from datetime import date
         kept = propose(a.count, seed,
-                       avoid=[x for x in a.avoid.split(",") if x])
+                       avoid=[x for x in a.avoid.split(",") if x],
+                       start=date.fromisoformat(a.start) if a.start else None)
     if a.save:
         with open(a.save, "w") as f:
             json_mod.dump([{"seed": sd, "doc": doc} for sd, doc, _ in kept], f)
