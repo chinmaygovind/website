@@ -178,7 +178,7 @@ def test_a_generated_track_is_stored_with_no_name_of_its_own(env):
     A = env
     _user(A, "chinmay")
     import gen_daily
-    kept = gen_daily.propose(1, 395874002, verbose=False)
+    kept = gen_daily.propose(1, 395874000, verbose=False)
     slug, = gen_daily.store(kept)
     row = _row(A, slug)
     assert slug == "daily-draft-%d" % kept[0][0]
