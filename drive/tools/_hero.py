@@ -471,6 +471,9 @@ FRAMES = {
     # thing over the road is sixty years abandoned.
     "monza": dict(at=0.62, azimuth=3.50, pitch=0.28, pad=0.38, span=0.10,
                   cars=13, air=0.0, liveryFrom=10),
+    # **Sahara: the pyramid from the approach.** The scan finds the climb, which is
+    # inside the shell, and photographs a wall of steps from an inch away.
+    "sahara": dict(at=0.33, azimuth=3.50, pitch=0.18, pad=0.85, span=0.10),
     "playground": dict(at=0.88, azimuth=2.05, pitch=0.42, pad=0.56, span=0.10,
                        cars=12, carFrom=0.22, carTo=0.80, air=0.0,
                        liveryFrom=13),

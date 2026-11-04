@@ -15,7 +15,7 @@
 {% set icon_build %}<path d="M4 20.4h4.2L20 8.6l-4.2-4.2L4 16.2z"/><path d="M14.4 6l3.6 3.6"/>{% endset %}
 {% set icon_in %}<path d="M11 4.6H6.1A1.6 1.6 0 0 0 4.5 6.2v11.6A1.6 1.6 0 0 0 6.1 19.4H11"/><path d="M14.6 8.4 18.2 12l-3.6 3.6"/><path d="M18.2 12H8.8"/>{% endset %}
 {# ---------------------------------------------------------------------------
-   The announcement banner: the red strip above the nav. **This dict is the
+   The announcement banner: the strip above the nav. **This dict is the
    whole of it** - change the three strings to announce something else, and set
    `banner` to `none` to take it down. It renders as "<before> <link> <after>",
    with only the link clickable and underlined, so the eye lands on the name of
@@ -27,7 +27,7 @@
    of losing the lap.
 
    `after` may be empty; `href` is an ordinary path on this site. #}
-{% set banner = none %}
+{% set banner = {"before": "NEW TRACK:", "after": "", "links": [["SAHARA", "/solo/sahara"]]} %}
 {% if banner %}
 <div class="newsbar">
   {{ banner.before }} {% for name, href in banner.links %}{% if loop.last and not loop.first %}&amp; {% endif %}<b><a href="{{ href }}">{{ name }}</a></b>{% if not loop.last %}, {% endif %}{% endfor %}{% if banner.after %} {{ banner.after }}{% endif %}

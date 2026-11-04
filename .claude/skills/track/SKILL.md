@@ -160,6 +160,17 @@ is seven minutes of watching tests about garage badges pass. Run the full suite
 **once**, after step 6, before pushing. Same for `validate_track.py`: it boots a
 browser *and* runs pytest, so it belongs at the end and not in the loop.
 
+### 2.5. Drive it for kicks
+
+```bash
+cd drive && venv/bin/python tools/kick_check.py <slug>
+```
+
+The track test judges crests at 40 u/s and a real car does 50-65, so a ribbon
+that passes can still throw the driver off its hills. This drives the real
+physics round the lap and lists every hop the ribbon did not ask for. **Zero
+kicks before handing a track over** - Chinmay found four on Sahara by driving it.
+
 ### 3. Measure it against the sixteen that are already good
 
 ```bash

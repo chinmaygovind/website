@@ -3645,6 +3645,15 @@ def _boxes_for(track):
         for f in lanes:
             out.append([st["p"][j] + st["lat"][j] * f * hw + st["n"][j] * BOX_HEIGHT
                         for j in range(3)])
+    # A secret lane off the ribbon gets one box of its own, halfway along it.
+    # The lane is two lap fractions in `pal.building.lane` - the same pair the
+    # track's scenery.js cuts it from, turned into stations the same way.
+    lane = ((track.get("pal") or {}).get("building") or {}).get("lane")
+    if lane:
+        a, b = (line[int(round(f * last))]["p"] for f in lane)
+        floor = track.get("ground")
+        y = (floor if floor is not None else (a[1] + b[1]) / 2) + BOX_HEIGHT
+        out.append([(a[0] + b[0]) / 2, y, (a[2] + b[2]) / 2])
     return out
 
 

@@ -911,3 +911,83 @@ New entries, unsorted, until somebody files them. One line is enough.
   spanned the full beam above the deck - drawn, not collided, so the car went
   through a wall. Cut an entry port the full height with no lintel; same for a
   bow you fly off.
+
+- **An interior lit by the same sun as the desert outside it is not an interior.**
+  Sahara's first hall was mid-tone stone under the midday key light and
+  read as a covered car park; "should feel darker". There is no per-region
+  lighting, so darkness indoors is albedo: near-black walls and floor, a dark
+  road overlay in `scenery.js`, and `lamps` plus `bright` torches for the light.
+- **The set piece a track is named after has to be most of the lap.** The
+  pyramid was 25% of Sahara and the desert loop the rest; "much more
+  driving in the pyramid". Budget the length before laying the outside.
+- **Four checkpoints on a 3100-unit lap is too far apart to feel.** Chinmay
+  wants roughly one every 250 units; the pool's median is 5.5 on a lap two
+  thirds the length.
+- **A crest the track test passes can still throw the car.**
+  `test_hills_are_eased_but_kickers_are_not` judges every crest at 40 u/s; a
+  car on a straight does 50, and 65 off a pad. Sahara's ramps passed and kicked
+  Chinmay off them in four places. An eased rise crests at a radius of
+  `length^2 / (6 rise)` and the car stays down while `v^2 / radius < 30` - about
+  85 flat out, 140 boosted. A gate in the middle of a climb splits it into two
+  short hills, and a pad in front of a crest is the worst case.
+  `tools/kick_check.py <slug>` drives the real physics round the lap and lists
+  every hop the ribbon did not ask for; run it before handing a track over.
+- **The engine's trestle cross-beam stood out of steep diagonal ramps** - a
+  wedge in the middle of the road, on every daily with a diagonal climb. It was
+  a world-axis box sized from the two leg tops, so on a road at 45 degrees it was
+  as long along the road as across it. Fixed in `trackmesh.js` (built across the
+  road now); written down because anything else "level" under a ramp - a slab,
+  a beam, a cap - pokes out of the slope the same way.
+- **Scenery inside a building has to be capped by the building.** Sahara's
+  tunnels ran their roofs up 17 units beside a face that leans in, and came out
+  through the south face of the pyramid in full view of the grid. Cap a roof by
+  the headroom at its own kerbs.
+- **A door is cut to what passes through it, and framed.** Knocking whole wall
+  blocks out round a much narrower tunnel left a ragged hole with the dark
+  showing round it ("looks terrible"); so did a raw gap in a tunnel wall for a
+  side lane. Cut exactly, and put a portal or a lintel on it.
+- **Moving obstacles in a tunnel read as a gimmick** - Sahara's sliding stones
+  were rejected outright in favour of a tighter, more technical road.
+- **Decoration less than about 0.1 off the surface behind it flickers in
+  motion.** Sahara's tunnel friezes stood 0.06 off the wall and its glyphs were
+  coplanar with the band behind them; the whole frieze shimmered. Layer each
+  thing 0.15 off the one behind - wall, band, glyph.
+- **A raised road between walls needs a floor to the walls.** Sahara's tunnels
+  stood their walls 1.4 off the kerb, and up to 8 on the outside of a bend for
+  the camera, with nothing in between; running wide on a ramp dropped the car
+  through the slot. Probe the collider for ground between kerb and wall.
+- **A flat one-colour ground plate reads as untextured, however good the
+  scenery on it.** Sahara's sand was "untextured ugglo". There are no image
+  textures in scenery, so put the texture in the vertices: a sheet of `quadV`
+  cells coloured by smooth noise and long streaks. Colour only: drawn ripple
+  lines and sharp pale crests were rejected ("the lines look ass") while the
+  varying colour was liked.
+- **Raised road on a ground track wants an embankment, not a wall.** Kerb
+  parapets on Sahara's dunes read as brown walls; sand berms at about 1 in 3.5,
+  coloured like the ground, read as the road sitting in the desert. Steeper
+  than that and the slope facing away from the sun goes dark.
+- **Flat sand reads as bland however it is coloured; sand is shape.** Mario
+  Kart 8's desert (the reference Chinmay named) rolls right up to the track and
+  its contrast is lit slope against shaded slope. Sahara's sand became a dune
+  field built in `scenery.js` - flat within reach of the road and under
+  anything standing on it, rising away from it, collided as off-road - with the
+  sun lowered so one face of each dune is lit and one is not.
+- **A yellow authored to look right in the file lands as khaki.** Vertex colour
+  is lifted on the way out, which takes saturation with it. Sahara's sand came
+  right at 0xffb432 / 0xc8701c - orange in the file, sand on the screen.
+- **A collider quad faces one way, and the ground query only counts the up
+  side.** Sahara's sand berms were added with one winding; on the right-hand
+  side of the road that made them face down, so they were drawn and not there -
+  every wheel off the right kerb fell 1.2 to the plate and kicked back up onto
+  the road edge. Add ground quads in both windings when the side flips them.
+- **Anything solid under a road that climbs is a launcher.** Sahara's support
+  piers were collided, flat-topped 0.9 under their own station - and on a ramp
+  the road on the downhill side of a pier is lower than that, so a car sagging
+  on its suspension touched a wall face pointing straight up, off-centre only,
+  every few stations. Nothing could reach the piers from below; they did not
+  need colliding at all.
+- **"Kicks" have to be driven off the racing line to be found.** The bot drives
+  one line and passed clean while Chinmay was being thrown about; driving the
+  whole lap at offsets across the road (0, +-0.25, +-0.55, +-0.85, +-0.95 of the
+  half-width) found both of the above. `tools/kick_check.py` drives the line;
+  do the sweep as well before calling a track smooth.

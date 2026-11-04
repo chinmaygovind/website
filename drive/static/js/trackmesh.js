@@ -1185,11 +1185,31 @@ export function buildTrack(track, T) {
       solid.box(p[0], base + drop / 2, p[2], 0.62, drop / 2, 0.62,
                 shade(pal.prop, -0.08));
     }
-    // a cross-beam under the deck so the pair reads as one trestle
+    // A cross-beam under the deck so the pair reads as one trestle - built
+    // **across the road**, not as a world-axis box. An axis-aligned box sized
+    // from the two leg tops is as long *along* a diagonal road as it is wide
+    // across it, nine units on a twelve-wide road at 45 degrees, and on a steep
+    // ramp nine units of level beam centred just under the surface comes
+    // several units out through the uphill side: a wedge standing in the
+    // middle of the road. Every daily with a diagonal climb had one.
     const l = edge(e, -0.7), r = edge(e, 0.7);
-    solid.box((l[0] + r[0]) / 2, e.p[1] - THICK - 0.5, (l[2] + r[2]) / 2,
-              Math.abs(r[0] - l[0]) / 2 + 0.4, 0.32,
-              Math.abs(r[2] - l[2]) / 2 + 0.4, shade(pal.prop, -0.2));
+    const span = Math.hypot(r[0] - l[0], r[2] - l[2]) || 1;
+    const ux = (r[0] - l[0]) / span, uz = (r[2] - l[2]) / span;
+    const cx = (l[0] + r[0]) / 2, cy = e.p[1] - THICK - 0.5, cz = (l[2] + r[2]) / 2;
+    const hu = span / 2 + 0.4, hf = 0.4, hy = 0.32;
+    // Corners in the beam's own frame: u across the road, y up, f = u x y, so
+    // the frame has the same handedness as x, y, z and `box`'s winding holds.
+    const B = (su, sy, sf) => [cx + ux * su * hu - uz * sf * hf, cy + sy * hy,
+                               cz + uz * su * hu + ux * sf * hf];
+    const v = [B(-1, -1, -1), B(1, -1, -1), B(1, -1, 1), B(-1, -1, 1),
+               B(-1, 1, -1), B(1, 1, -1), B(1, 1, 1), B(-1, 1, 1)];
+    const beam = shade(pal.prop, -0.2);
+    solid.quad(v[4], v[7], v[6], v[5], beam);
+    solid.quad(v[0], v[1], v[2], v[3], beam);
+    solid.quad(v[0], v[4], v[5], v[1], beam);
+    solid.quad(v[1], v[5], v[6], v[2], beam);
+    solid.quad(v[2], v[6], v[7], v[3], beam);
+    solid.quad(v[3], v[7], v[4], v[0], beam);
   }
   // ---- gates --------------------------------------------------------------
   // Positions come from tracks.py, so the thing you drive through and the thing
