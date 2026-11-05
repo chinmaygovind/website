@@ -36,6 +36,8 @@ def A():
 def _room(A, phase="racing"):
     r = A._room("ITEM")
     r["phase"] = phase
+    # No game row behind it: what `_hot_track` caches for one.
+    r["trk"] = False
     return r
 
 
@@ -643,6 +645,25 @@ def test_a_bot_keeps_tapping_a_boost_until_its_window_closes(A, world):
     assert len(world.used) >= 4, "tapped once and then sat on it"
     A._tick_items(r, now + A.BOOST_WINDOW_MS + 1)
     assert A._item_queue(r, "b1") == [], "the window closed and left the item"
+
+
+def test_a_bot_saves_its_boost_for_the_secret_lane(A, world):
+    """On Sahara a boost is held until the crack's fork, then pressed there."""
+    import tracks
+    r = _room(A)
+    r["trk"] = tracks.get("sahara")
+    fork, total = A._lane_fork_s("sahara")
+    car = _bot(A, r)
+    A._item_queue(r, "b1").append("boost")
+    now = A._now_ms() + max(A.BOT_ITEM_WAIT) + 1
+    car["prog"] = fork - 300.0
+    A._tick_bot_items(r, now)
+    A._tick_bot_items(r, now + 1)
+    assert world.used == [], "pressed it with the fork still to come"
+    car["prog"] = total + fork - 20.0            # the next lap's fork counts too
+    A._tick_bot_items(r, now + 2)
+    assert world.used, "never pressed it at the fork"
+    assert A._boost_window(r, "b1")
 
 
 def test_a_bot_holds_a_shell_it_has_nothing_to_aim_at(A, world, bend):

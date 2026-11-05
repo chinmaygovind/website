@@ -526,6 +526,19 @@
     const roofOf = (e, f, i) => (nearDoor[i] || nearDoor[i + 1]) ? roofH(e)
       : Math.max(5.5, Math.min(roofH(e), headroom(e), headroom(f)));
     const LINTEL = 8.5;                     // the lane's doorway, over the hall floor
+    // The corridor the lane runs in, road to road: the crack's own section.
+    const LZ = (lz(c0) + lz(c1)) / 2, LW = cfg.laneHW + 0.6;
+    // The parts of a wall segment outside the corridor, as [t0, t1] pairs.
+    const outsideLane = (a, b) => {
+      const dz = b[2] - a[2];
+      if (Math.abs(dz) < 1e-6) return Math.abs(a[2] - LZ) < LW ? [] : [[0, 1]];
+      let t1 = (LZ - LW - a[2]) / dz, t2 = (LZ + LW - a[2]) / dz;
+      if (t1 > t2) [t1, t2] = [t2, t1];
+      const out = [];
+      if (t1 > 0) out.push([0, Math.min(1, t1)]);
+      if (t2 < 1) out.push([Math.max(0, t2), 1]);
+      return out.filter(([u, v]) => v - u > 1e-4);
+    };
     const inLane = (i, s) => {
       const e = line[i], f = line[i + 1];
       if (e.p[1] > 1) return false;
@@ -571,9 +584,18 @@
           quadN(solid, off(a, LL), off(b, LL), off(b, LL + 0.5), off(a, LL + 0.5), cfg.cap, NI);
           quadN(solid, up(a, LL), up(b, LL), [b[0] - NI[0] * 1.4, b[1] + 1.2 + LL, b[2] - NI[2] * 1.4],
                 [a[0] - NI[0] * 1.4, a[1] + 1.2 + LL, a[2] - NI[2] * 1.4], cfg.dark2, [0, -1, 0]);
-          for (const [j, q] of [[i - 1, a], [i + 1, b]]) {
-            if (j < 0 || j >= n - 1 || inLane(j, s)) continue;
-            wallBox(q[0] - NI[0] * 0.5, q[1] + 1.2 + LL / 2, q[2] - NI[2] * 0.5, 0.7, LL / 2 + 0.6, 0.7, cfg.cap);
+          // Below it, the opening is only as wide as the corridor behind it.
+          const at = (t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+          for (const [u, v] of outsideLane(a, b)) {
+            const pu = at(u), pv = at(v);
+            quadN(solid, pu, pv, up(pv, LL), up(pu, LL), cfg.dark, NI);
+            quadN(solid, pu, pv, up(pv, LL), up(pu, LL), cfg.dark2, [-NI[0], 0, -NI[2]]);
+            col.addQuad(pu, pv, up(pv, LL), up(pu, LL), KIND.WALL);
+            for (const t of [u, v]) {
+              if (t <= 0 || t >= 1) continue;
+              const q = at(t);
+              wallBox(q[0] - NI[0] * 0.5, q[1] + 1.2 + LL / 2, q[2] - NI[2] * 0.5, 0.7, LL / 2 + 0.6, 0.7, cfg.cap);
+            }
           }
           continue;
         }
@@ -664,6 +686,49 @@
       }
     }
 
+    // ---- the lane's corridor across the hall ------------------------------------------
+    // From each doorway to the crack, walls at the crack's width and a roof at
+    // the lintel, so the shortcut is one tunnel from road to road rather than a
+    // dash across the open hall. Each wall runs to where it meets the road's.
+    {
+      const roadWallX = (zl, fromChamber) => {
+        let best = null;
+        for (let i = 0; i < n - 1; i++) {
+          const e = line[i], f = line[i + 1];
+          if (e.p[1] > 1 || !isTunnel(e) || !isTunnel(f)) continue;
+          for (const s of [-1, 1]) {
+            const oa = wallOff(i, s), ob = wallOff(i + 1, s);
+            const ax = e.p[0] + e.lat[0] * s * oa, az = e.p[2] + e.lat[2] * s * oa;
+            const bx = f.p[0] + f.lat[0] * s * ob, bz = f.p[2] + f.lat[2] * s * ob;
+            if ((az - zl) * (bz - zl) > 0 || az === bz) continue;
+            const x = ax + (bx - ax) * (zl - az) / (bz - az);
+            if (laneD(x, zl) > LW + 1) continue;
+            if (fromChamber < 0 ? x < c0 && (best === null || x > best)
+                                : x > c1 && (best === null || x < best)) best = x;
+          }
+        }
+        return best;
+      };
+      const RY = G + LINTEL;
+      for (const end of [-1, 1]) {
+        let lo = Infinity, hi = -Infinity;
+        for (const sd of [-1, 1]) {
+          const zl = LZ + sd * LW;
+          const x = roadWallX(zl, end);
+          if (x === null) continue;
+          const xa = end < 0 ? x : c1, xb = end < 0 ? c0 : x;
+          lo = Math.min(lo, xa); hi = Math.max(hi, xb);
+          wallBox((xa + xb) / 2, (G + RY + 1) / 2, zl + sd * 0.5, (xb - xa) / 2, (RY + 1 - G) / 2, 0.5, cfg.dark);
+          for (let x2 = xa + 3; x2 < xb - 3; x2 += 6) {
+            const z = zl - sd * 0.18;
+            quadN(bright, [x2, G + 2.4, z], [x2 + 2.0, G + 2.4, z], [x2 + 2.0, G + 4.0, z],
+                  [x2, G + 4.0, z], (x2 / 6 | 0) % 2 ? cfg.glyph : cfg.glyph2, [0, 0, -sd]);
+          }
+        }
+        if (lo < hi) solid.box((lo + hi) / 2, RY + 0.5, LZ, (hi - lo) / 2, 0.5, LW + 1, cfg.dark);
+      }
+    }
+
     // ---- what the raised road stands on --------------------------------------------
     // A pier at each kerb every few stations, down to the floor - inside and
     // out, one design. Skipped wherever another road passes underneath.
@@ -675,7 +740,7 @@
       for (const s of [-1, 1]) {
         const o = e.hw - 1.6;
         const x = e.p[0] + e.lat[0] * s * o, z = e.p[2] + e.lat[2] * s * o;
-        if (roadBelow(x, z, e.p[1], 3.5)) continue;
+        if (roadBelow(x, z, e.p[1], 3.5) || laneD(x, z) < cfg.laneHW + 3) continue;
         // Not collided. Nothing can reach one - the tunnel walls are between it
         // and the hall floor - and a collided top, flat at its own station's
         // height under a road that climbs, came within a car's sag of the
@@ -695,7 +760,7 @@
         const off = e.hw + 8;
         const x = e.p[0] + e.lat[0] * s * off, z = e.p[2] + e.lat[2] * s * off;
         if (x > c0 - 4 && x < c1 + 4 && z > c2 - 4 && z < c3 + 4) continue;
-        if (toRoad(x, z) < e.hw + 5) continue;
+        if (toRoad(x, z) < e.hw + 5 || laneD(x, z) < cfg.laneHW + 8) continue;
         const ceil = G + SLOPE * (k.depth(x, z) - TH) - 4;
         const top = Math.min(ceil, G + 30);
         if (top < G + 12) continue;
@@ -707,7 +772,7 @@
     for (let q = 0, tries = 0; q < 6 && tries < 300; tries++) {
       const x = CX + (rnd() * 2 - 1) * (B - 50), z = CZ + (rnd() * 2 - 1) * (B - 50);
       if (x > c0 - 6 && x < c1 + 6 && z > c2 - 6 && z < c3 + 6) continue;
-      if (toRoad(x, z) < 20) continue;
+      if (toRoad(x, z) < 20 || laneD(x, z) < 20) continue;
       const top = G + SLOPE * (k.depth(x, z) - TH);
       if (top < G + 40) continue;
       soft.box(x, (G + top) / 2, z, 0.7, (top - G) / 2, 0.7, cfg.sandfall);
@@ -907,6 +972,9 @@
     // Where it meets the pyramid, the pyramid wins.
     {
       const SL = 3.5;                          // run per unit of height: a drift, lit like the flat
+      // Which segments got a berm, per side, and where its foot landed - so a
+      // berm that stops (at the jump, at the pyramid) can be closed off.
+      const drawn = { [-1]: new Array(n).fill(null), [1]: new Array(n).fill(null) };
       for (let i = 0; i < n - 1; i++) {
         const e = line[i], f = line[i + 1];
         if (e.air || f.air || insidePyr(e.p) || insidePyr(f.p)) continue;
@@ -939,6 +1007,31 @@
           // plate and kicked back up onto the road edge.
           col.addQuad(ta, tb, fb, fa, KIND.OFFROAD);
           col.addQuad(ta, fa, fb, tb, KIND.OFFROAD);
+          drawn[s][i] = [ta, fa, tb, fb];
+        }
+      }
+      // **The ends.** A berm is an open slope, so where it stops - each side of
+      // the jump out of the pyramid - it showed its own underside and the dark
+      // under the road, a hole in the dune seen from the air. Close each end
+      // with its cross-section: road edge, foot, and down the middle of the road.
+      const cut = (e, top, foot) => {
+        const c0 = [e.p[0], e.p[1] - 0.05, e.p[2]], c1 = [e.p[0], G + 0.1, e.p[2]];
+        const kc = grain(shade(sandAt(e.p[0], e.p[2]), -0.12), e.p[0], e.p[2]);
+        solid.quad(c0, top, foot, c1, kc);
+        solid.quad(c0, c1, foot, top, kc);
+        // Not collided: its top edge is the road's own, and a wall face there
+        // kicked every car rolling over the pyramid's doors.
+      };
+      const closed = !!ctx.track.closed;
+      const wrap = (i) => closed ? (i + n - 1) % (n - 1) : i;
+      for (const s of [-1, 1]) {
+        const d = drawn[s];
+        for (let i = 0; i < n - 1; i++) {
+          if (!d[i]) continue;
+          const before = i > 0 || closed ? d[wrap(i - 1)] : null;
+          const after = i < n - 2 || closed ? d[wrap(i + 1)] : null;
+          if (!before) cut(line[i], d[i][0], d[i][1]);
+          if (!after) cut(line[i + 1], d[i][2], d[i][3]);
         }
       }
     }

@@ -9,7 +9,8 @@ import time
 import uuid
 import random
 import string
-from functools import wraps
+from functools import lru_cache, wraps
+import math
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from urllib import parse as urlparse
@@ -3646,9 +3647,9 @@ def _boxes_for(track):
     # A secret lane off the ribbon gets one box of its own, halfway along it.
     # The lane is two lap fractions in `pal.building.lane` - the same pair the
     # track's scenery.js cuts it from, turned into stations the same way.
-    lane = ((track.get("pal") or {}).get("building") or {}).get("lane")
+    lane = bots_mod.lane_ends(track)
     if lane:
-        a, b = (line[int(round(f * last))]["p"] for f in lane)
+        a, b = lane
         floor = track.get("ground")
         y = (floor if floor is not None else (a[1] + b[1]) / 2) + BOX_HEIGHT
         out.append([(a[0] + b[0]) / 2, y, (a[2] + b[2]) / 2])
@@ -6520,6 +6521,39 @@ BOT_ITEM_WAIT = (1200, 3200)
 BOT_BOOST_TAP = 900
 
 
+# How far before a secret lane's fork a bot starts saving its boost for it, and
+# how close it is when it presses. The press opens a seven-second window, which
+# is the whole crack at any speed; it has to land before the fork, because
+# `bot.js` only turns in once the boost is already burning.
+LANE_SAVE = 700.0
+LANE_PRESS = 45.0
+
+
+def _to_lane(r, pid):
+    """Units of road between this car and the lane's fork, or None if no lane."""
+    track = _hot_track(r)
+    ends = bots_mod.lane_ends(track) if track else None
+    if not ends:
+        return None
+    fork, total = _lane_fork_s(track["slug"])
+    if not total:
+        return None
+    return (fork - _car(r, pid)["prog"]) % total
+
+
+@lru_cache(maxsize=None)
+def _lane_fork_s(slug):
+    """The fork's distance along the ribbon, and the ribbon's length."""
+    track = tracks_mod.get(slug)
+    line = track["line"]
+    lane = track["pal"]["building"]["lane"]
+    fork = int(round(lane[0] * (len(line) - 1)))
+    s = [0.0]
+    for i in range(1, len(line)):
+        s.append(s[-1] + math.dist(line[i - 1]["p"], line[i]["p"]))
+    return s[fork], s[-1]
+
+
 def _tick_bot_items(r, now):
     """Bots take their boxes at a checkpoint like anybody else; this is them
     pressing X.
@@ -6536,6 +6570,18 @@ def _tick_bot_items(r, now):
         if not q:
             due.pop(pid, None)
             continue
+        # **A boost is saved for the secret lane** when the fork is coming up:
+        # the sand is only worth taking with one, so the bot holds it and
+        # presses at the fork, and `bot.js` takes the crack while it burns.
+        # Ahead of the reaction delay, which would otherwise carry it past.
+        if q[0] == "boost" and not _boost_window(r, pid):
+            ahead = _to_lane(r, pid)
+            if ahead is not None and ahead < LANE_SAVE:
+                if ahead > LANE_PRESS:
+                    continue
+                _spend_item(r, pid)
+                due[pid] = now + BOT_BOOST_TAP
+                continue
         if pid not in due:
             due[pid] = now + random.randint(*BOT_ITEM_WAIT)
             continue

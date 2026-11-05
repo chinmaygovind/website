@@ -991,3 +991,13 @@ New entries, unsorted, until somebody files them. One line is enough.
   whole lap at offsets across the road (0, +-0.25, +-0.55, +-0.85, +-0.95 of the
   half-width) found both of the above. `tools/kick_check.py` drives the line;
   do the sweep as well before calling a track smooth.
+- **Anything placed by "is there road under it" forgets a lane that is not
+  ribbon.** Sahara's ramp piers skipped any road below them but came straight
+  down through the crack, so the shortcut was a slot with a pier in it and the
+  camera inside a glyph band. Every scatter on that track checks `laneD` now;
+  look down a lane with the car parked in it, not just from the fork.
+- **An open slope shows its underside where it stops.** Sahara's berms ended
+  dead at each side of the jump out of the pyramid, so from the air you looked
+  into them - brown undersides and the dark under the road, read as holes in
+  the dunes. Close a berm's ends with its cross-section, and do not collide the
+  cap: its top edge is the road's, and a wall face there kicks every car over it.

@@ -208,6 +208,50 @@ const GATE_STRAIGHT = 12.0;
 
 const NEUTRAL = { throttle: 0, brake: 0, steer: 0, handbrake: false };
 
+// A secret lane (Sahara's crack): how far before the fork a burning boost turns
+// the car in, how far past the rejoin it goes back to its own line, and the
+// speed it is braked down to for the turn onto the road at the far end.
+const LANE_TURN_IN = 60.0;
+const LANE_CLEAR = 20.0;
+const LANE_EXIT_V = 24.0;
+const LANE_BRAKE = 40.0;
+
+/**
+ * The line with a secret lane cut into it: straight from the fork to the
+ * rejoin, flat out, and braked down for the turn back onto the road. `data.lane`
+ * is the two ends, from `bots.lane_ends`. Null when there is no lane.
+ */
+function laneLine(data) {
+  if (!data.lane) return null;
+  const [A, B] = data.lane, p = data.p;
+  const nearest = (q) => {
+    let bi = 0, bd = Infinity;
+    for (let i = 0; i < p.length; i++) {
+      const d = (p[i][0] - q[0]) ** 2 + (p[i][1] - q[1]) ** 2 + (p[i][2] - q[2]) ** 2;
+      if (d < bd) { bd = d; bi = i; }
+    }
+    return bi;
+  };
+  const ia = nearest(A), ib = nearest(B);
+  if (ib <= ia + 1) return null;
+  const a = p[ia], b = p[ib];
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+  const m = Math.max(2, Math.ceil(len / 2));
+  let top = 0;
+  for (const v of data.v) if (v > top) top = v;
+  const end = Math.min(data.v[ib], LANE_EXIT_V);
+  const pts = [], vs = [], zero = [];
+  for (let k = 1; k < m; k++) {
+    const t = k / m;
+    pts.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]);
+    vs.push(Math.min(top, Math.sqrt(end * end + 2 * LANE_BRAKE * len * (1 - t))));
+    zero.push(0);
+  }
+  const cut = (arr, mid) => arr ? arr.slice(0, ia + 1).concat(mid, arr.slice(ib)) : null;
+  return { p: cut(p, pts), v: cut(data.v, vs), air: cut(data.air, zero),
+           vmin: cut(data.vmin, zero), closed: data.closed };
+}
+
 /** Deterministic per-bot randomness. Same seed, same mistakes, every time. */
 function mulberry32(a) {
   return function () {
@@ -484,6 +528,8 @@ class Bot {
     this.course = course;
     this.run = run;
     this.line = line;
+    this.main = line;
+    this.lane = null;
     this.prof = prof || {};
     this.rnd = mulberry32((this.prof.seed | 0) || 1);
     // The level's gains over the defaults, resolved once. `prof.tune` is last
@@ -526,6 +572,33 @@ class Bot {
     this._t = [0, 0, 0];
     this._l = [0, 0, 0];
     this._c = [0, 0, 0];
+  }
+
+  /** Learn the track's secret lane, if `data` (the raw line) names one. */
+  useLane(data) {
+    const alt = laneLine(data);
+    if (!alt) return;
+    const line = new BotLine(alt);
+    const [A, B] = data.lane;
+    this.lane = { line, fork: this.main.relock(A[0], A[1], A[2]).i,
+                  out: line.relock(B[0], B[1], B[2]).i,
+                  len: Math.hypot(B[0] - A[0], B[2] - A[2]) };
+  }
+
+  /** Into the lane if a boost is burning at the fork; back onto the road after it. */
+  pickLane() {
+    const L = this.lane, car = this.car, p = car.pos;
+    if (this.line === this.main) {
+      if (!(car.itemBoost > 0)) return;
+      const d = this.main.s[L.fork] - this.main.s[this.hint];
+      if (d < 0 || d > LANE_TURN_IN) return;
+      this.line = L.line;
+    } else {
+      const past = this.line.s[this.hint] - this.line.s[L.out];
+      if (past < LANE_CLEAR && past > -L.len - 40) return;
+      this.line = this.main;
+    }
+    this.hint = this.line.relock(p.x, p.y, p.z).i;
   }
 
   /** Put the driver back to a known state: a respawn, a grid slot, a new race. */
@@ -603,6 +676,7 @@ class Bot {
       this.launched = true;
     }
 
+    if (this.lane) this.pickLane();
     const p = car.pos;
     let loc = this.line.near(p.x, p.y, p.z, this.hint);
     if (loc.d > RELOCK_DIST) loc = this.line.relock(p.x, p.y, p.z);

@@ -63,6 +63,7 @@ class BotWorld {
       input: { throttle: 0, brake: 0, steer: 0, handbrake: false },
       started: false, finished: null, splits: [], events: [],
     };
+    bot.brain.useLane(line);
     bot.brain.reset();
     this.bots.push(bot);
     return bot;

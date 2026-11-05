@@ -501,6 +501,25 @@ The failure was also unusually quiet for something this total. `solve` returns
 the message for a track with no record to aim at - so a level that could not get
 round at all read as a level with nothing to do. It now says so.
 
+## A secret lane, with a boost
+
+Sahara's crack through the burial chamber is not ribbon, so no line goes
+through it. **A bot takes it only with a boost burning**, which is the only way
+it pays for the sand. Two halves:
+
+- `app._tick_bot_items` saves a held boost once the fork is within `LANE_SAVE`
+  of road and presses it within `LANE_PRESS` - ahead of the bot's usual reaction
+  delay, which would otherwise carry it past the fork.
+- `bot.js` gets the lane's two ends on the line (`bots.lane_ends`, from
+  `pal.building.lane`), splices a straight through them (`laneLine`), and
+  `pickLane` swaps onto it inside `LANE_TURN_IN` of the fork when `itemBoost`
+  is live, then back to its own line `LANE_CLEAR` past the rejoin.
+
+Measured in QuickJS with the boost forced on at the fork: every level stays
+inside the crack, no respawns, and the lap beats the same boost spent on the
+road (easy 93.5s against 95.05s, max 77.0s against 77.13s). Solo laps carry no
+items, so the calibrator and `bots_pace.json` do not see any of it.
+
 ## What a bot must never touch
 
 - **ELO, wins and podiums.** True by construction: a bot has no `user_id`, and

@@ -374,10 +374,30 @@ def line_for(slug, level, force=None):
         hot = hotlap(slug)
         if hot and hot.get("p"):
             track = tracks_mod.get(slug)
-            return {"p": hot["p"], "v": hot["v"], "air": hot.get("air"),
-                    "vmin": hot.get("vmin"),
-                    "closed": bool(track.get("closed"))}, "hotlap"
-    return relaxed_line(slug), "relaxed"
+            return _with_lane(slug, {"p": hot["p"], "v": hot["v"], "air": hot.get("air"),
+                                     "vmin": hot.get("vmin"),
+                                     "closed": bool(track.get("closed"))}), "hotlap"
+    return _with_lane(slug, relaxed_line(slug)), "relaxed"
+
+
+def lane_ends(track):
+    """A secret lane's fork and rejoin as two ribbon points, or None.
+
+    The lane is two lap fractions in `pal.building.lane`, turned into stations
+    the way `scenery.js` and `app._boxes_for` do it: `round(f * (n - 1))`.
+    """
+    lane = ((track.get("pal") or {}).get("building") or {}).get("lane")
+    if not lane:
+        return None
+    line = track["line"]
+    last = len(line) - 1
+    return [list(line[int(round(f * last))]["p"]) for f in lane]
+
+
+def _with_lane(slug, line):
+    """The line, plus the lane's ends for `bot.js` to splice a boosted cut through."""
+    ends = lane_ends(tracks_mod.get(slug))
+    return dict(line, lane=ends) if ends else line
 
 
 # Driver gains that one track needs different from the rest of the pool.
