@@ -1157,10 +1157,8 @@ def _track_cards():
     return out
 
 
-# How many past dailies the switcher's Dailies tab carries. A month is enough to
-# catch up on one you missed and few enough that the tab is a list rather than an
-# archive; everything older keeps working at its own `/solo/<slug>` for ever, it
-# is just not in the menu.
+# How many past dailies the home page lists. The switcher's Dailies tab is not
+# capped: it carries every past daily.
 DAILY_SHELF = 30
 
 _COVER_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -1204,7 +1202,7 @@ def _community_cards(pbs, ranks):
         # daily is scheduled every day for ever, so a single `limit` shared with
         # the community tracks would quietly starve them out inside four months
         # - the menu would still look fine, and Community would just be empty.
-        # Bounding each separately is what stops that being possible.
+        # Dailies are unbounded; only Community carries a limit.
         dailies = (DriveUserTrack.query
                    .filter(DriveUserTrack.status == "live",
                            DriveUserTrack.daily_on.isnot(None),
@@ -1214,7 +1212,7 @@ def _community_cards(pbs, ranks):
                            # days of dailies and today's would mean nothing.
                            DriveUserTrack.daily_on <= daily_date())
                    .order_by(DriveUserTrack.daily_on.desc())
-                   .limit(DAILY_SHELF).all())
+                   .all())
         community = (DriveUserTrack.query
                      .filter(DriveUserTrack.status == "live",
                              DriveUserTrack.daily_on.is_(None))
