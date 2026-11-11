@@ -255,3 +255,24 @@ def test_approving_a_daily_in_review_keeps_its_picture(env, tmp_path, monkeypatc
     with A.app.app_context():
         new = A.DriveUserTrack.query.filter_by(status="live").first().slug
     assert new.startswith("daily-") and (tmp_path / (new + ".png")).exists()
+
+
+def test_todays_daily_hides_other_ghosts_until_it_ends(env):
+    A = env
+    slug = _daily(A, "Foggy Ridge", day=A.daily_date())
+    ada, bob = A.app.test_client(), A.app.test_client()
+    _login(ada, _user(A, "ada"))
+    _login(bob, _user(A, "bob"))
+    with A.app.app_context():
+        payload = _run_payload(A, slug)
+    assert ada.post("/api/run", json=payload).get_json()["ok"]
+    lap = ada.get("/api/board/" + slug).get_json()["rows"][0]
+    assert lap["has_ghost"]                                    # her own
+    assert ada.get("/api/ghost/%s?who=%d" % (slug, lap["id"])).get_json()["ghost"]
+    assert not bob.get("/api/board/" + slug).get_json()["rows"][0]["has_ghost"]
+    for who in (str(lap["id"]), "wr"):
+        assert bob.get("/api/ghost/%s?who=%s" % (slug, who)).get_json()["ghost"] is None
+    with A.app.app_context():                                  # the day is over
+        A.DriveUserTrack.query.filter_by(slug=slug).first().daily_on -= timedelta(days=1)
+        A.db.session.commit()
+    assert bob.get("/api/ghost/%s?who=wr" % slug).get_json()["ghost"]

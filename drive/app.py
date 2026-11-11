@@ -1358,7 +1358,7 @@ def _shared_lap(slug):
     there" is worse than the generic one.
     """
     who = request.args.get("watch", "")
-    if not who.isdigit():
+    if not who.isdigit() or _ghosts_sealed(slug):
         return None
     return (DriveTime.query.filter_by(id=int(who), track=slug)
             .filter(DriveTime.ghost.isnot(None)).first())
@@ -1992,9 +1992,11 @@ def track_board(slug):
     starts = {r.id: max(started.get(r.user_id, 0), r.runs or 0) for r in rows}
     # The same shape the in-game board uses, so a lap opens the same way in both
     # places rather than each growing its own idea of what a lap is.
+    sealed, user = _ghosts_sealed(slug), get_current_user()
     laps = [{"id": r.id, "name": r.user.display if r.user else "?",
              "time_ms": r.time_ms, "splits": r.splits,
-             "medal": r.medal_shown, "has_ghost": bool(r.ghost)} for r in rows]
+             "medal": r.medal_shown, "has_ghost": _ghost_shown(r, sealed, user)}
+            for r in rows]
     return render_template("track.html", track=track, rows=rows, laps=laps,
                            starts=starts, tracks=tracks_mod.summaries(),
                            **_track_og(track),
@@ -2897,6 +2899,16 @@ def _uncount_medal(st, medal):
         setattr(st, f, max(0, (getattr(st, f) or 0) - 1))
 
 
+def _ghosts_sealed(slug):
+    """Today's daily hides everybody's ghost but your own until the day ends,
+    so the line cannot be copied before the day's board is final."""
+    return slug == daily_slug()
+
+
+def _ghost_shown(row, sealed, user):
+    return bool(row.ghost) and not (sealed and not (user and row.user_id == user.id))
+
+
 @app.route("/api/ghost/<slug>")
 def api_ghost(slug):
     """Fetch a ghost to race.
@@ -2930,7 +2942,7 @@ def api_ghost(slug):
         user = get_current_user()
         if user:
             row = DriveTime.query.filter_by(user_id=user.id, track=slug).first()
-    if not row or not row.ghost:
+    if not row or not _ghost_shown(row, _ghosts_sealed(slug), get_current_user()):
         return jsonify({"ok": True, "ghost": None})
     # A ghost is somebody's lap, so it is driven in their car - and in the car
     # they drive *now*, not the one they drove then: a livery is not recorded
@@ -2963,9 +2975,11 @@ def api_board(slug):
     rows = (DriveTime.query.filter_by(track=slug)
             .order_by(DriveTime.time_ms.asc()).limit(50).all())
     user = get_current_user()
+    sealed = _ghosts_sealed(slug)
     return jsonify({"rows": [{"id": r.id, "name": r.user.display if r.user else "?",
                               "time_ms": r.time_ms, "medal": r.medal_shown,
-                              "splits": r.splits, "has_ghost": bool(r.ghost),
+                              "splits": r.splits,
+                              "has_ghost": _ghost_shown(r, sealed, user),
                               # When this time was set: `updated_at` moves only
                               # when the lap improves. The record reels date it.
                               "at": (r.updated_at or r.created_at).isoformat() + "Z",
