@@ -114,6 +114,20 @@ def test_a_logged_in_visit_carries_the_account(client, logged_in, wipe):
     assert rows(wipe)[-1]["user_id"] == uid
 
 
+def test_a_merged_shell_is_logged_out(client, logged_in, wipe):
+    """A cookie from before a merge cannot be revoked, so the next request
+    signs it out instead of letting it write to the empty shell."""
+    uid = logged_in()
+    wipe.session.execute(text("UPDATE users SET email = :e WHERE id = :id"),
+                         {"e": "merged-into-eobard-%d@cgovind.invalid" % uid, "id": uid})
+    wipe.session.commit()
+    client.get("/accounts/")
+    client.get("/accounts/")
+    assert rows(wipe)[-1]["user_id"] is None
+    with client.session_transaction() as s:
+        assert "user_id" not in s
+
+
 def test_a_crawler_is_flagged_and_kept(client, wipe):
     """Flagged rather than dropped: a bot this misses is a row with is_bot 0,
     which is recoverable, where a bot it wrongly filters is a visit that never
