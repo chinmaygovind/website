@@ -183,3 +183,29 @@ def test_a_generated_track_is_stored_with_no_name_of_its_own(env):
     row = _row(A, slug)
     assert slug == "daily-draft-%d" % kept[0][0]
     assert row.name == row.doc["name"] == "Daily (in review)"
+
+
+def test_numbers_follow_the_calendar_not_the_approval_order(env):
+    """Approving a daily for an earlier day than ones already scheduled gives
+    it their first number and moves them up; nothing ends up out of order."""
+    from datetime import timedelta
+    A = env
+    c = A.app.test_client()
+    _login(c, _user(A, "ada"))
+    slugs = _queued_dailies(A, c, ["Foggy Ridge", "Misty Gap", "Stony Bend"])
+    with A.app.app_context():
+        today = max(A.daily_date(), A.maker.DAILIES_START)
+        for slug, ahead in zip(slugs, (3, 1, 2)):
+            row = A.DriveUserTrack.query.filter_by(slug=slug).first()
+            day = (today + timedelta(days=ahead)).isoformat()
+            row.doc_json = json.dumps(dict(row.doc, generated={"seed": 1, "look": "sunrise", "day": day}))
+        A.db.session.commit()
+    _login(c, _user(A, "chinmay"))
+    for slug in slugs:
+        c.post("/admin/review/%s" % slug, data={"action": "approve"})
+    with A.app.app_context():
+        rows = (A.DriveUserTrack.query.filter(A.DriveUserTrack.daily_on.isnot(None))
+                .order_by(A.DriveUserTrack.daily_on).all())
+        assert [r.slug for r in rows] == ["daily-1", "daily-2", "daily-3"]
+        assert [r.name for r in rows] == ["Daily #1", "Daily #2", "Daily #3"]
+        assert all(json.loads(r.doc_json)["slug"] == r.slug for r in rows)

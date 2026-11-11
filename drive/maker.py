@@ -1229,22 +1229,49 @@ def api_cover(slug):
 
 
 def _number_daily(row):
-    """Rename a generated track to `Daily #N` at `daily-N`, the next number.
+    """Rename a generated track to `Daily #N` at `daily-N`, in calendar order.
 
-    A generated track's own name is only a label for the queue. Numbered from
-    the highest `daily-N` slug there has ever been rather than by counting, so
-    a deleted daily (which keeps its slug as a tombstone) never lets a number
-    be handed out twice. Safe to re-slug here because nothing has been driven
-    on it yet: the review drives it under the draft slug.
+    A generated track's own name is only a label for the queue. A new number is
+    the highest `daily-N` slug there has ever been plus one, so a deleted daily
+    (which keeps its slug as a tombstone) never lets a number be handed out
+    twice. But approval order is not day order - `_day_for` puts a daily on the
+    day it was made for - so when this one lands before dailies already
+    scheduled, it takes the first of their numbers and they each move up one.
+    Only days after today ever move, so nothing anybody has seen is renamed.
     """
     got = [int(s[6:]) for (s,) in db.session.query(DriveUserTrack.slug)
            .filter(DriveUserTrack.slug.like("daily-%")) if s[6:].isdigit()]
-    n = max(got, default=0) + 1
-    _forget_track(row.slug)
-    row.slug = "daily-%d" % n
-    row.name = "Daily #%d" % n
+    later = [r for r in DriveUserTrack.query
+             .filter(DriveUserTrack.daily_on > row.daily_on,
+                     DriveUserTrack.slug.like("daily-%"))
+             .order_by(DriveUserTrack.daily_on) if r.slug[6:].isdigit()]
+    nums = sorted(int(r.slug[6:]) for r in later) + [max(got, default=0) + 1]
+    # Highest first, so every slug written is already free.
+    for r, n in reversed(list(zip([row] + later, nums))):
+        _reslug(r, "daily-%d" % n)
+
+
+def _reslug(row, slug):
+    """Move a daily to another slug: its row, everything keyed on the slug,
+    and its cover. Callers make sure `slug` is free."""
+    from models import (DriveTime, DriveStart, DriveRunCheck, DriveRace,
+                        DriveCheatFlag, DriveSave, DriveGame, DriveDailyTime)
+    old = row.slug
+    for m in (DriveTime, DriveStart, DriveRunCheck, DriveRace, DriveCheatFlag,
+              DriveSave, DriveGame, DriveDailyTime):
+        m.query.filter_by(track=old).update({"track": slug})
+    row.slug = slug
+    if slug.startswith("daily-") and slug[6:].isdigit():
+        row.name = "Daily #%s" % slug[6:]
     row.doc_json = json_mod.dumps(dict(row.doc, slug=row.slug, name=row.name),
                                   separators=(",", ":"))
+    db.session.flush()
+    src = os.path.join(_COVER_DIR, old + ".png")
+    if os.path.exists(src):
+        os.replace(src, os.path.join(_COVER_DIR, slug + ".png"))
+    for s in (old, slug):
+        _forget_track(s)
+        _COVERS.pop(s, None)
 
 
 # The first day there is a daily at all. Chinmay launched them on the 27th, so

@@ -175,8 +175,8 @@ def test_the_page_has_all_five_boards_and_the_countdown(env):
 def test_an_approved_daily_is_not_out_before_its_day(env):
     A = env
     today = A.daily_date()
-    later = _daily(A, "Foggy Ridge", day=today + timedelta(days=2))
     now = _daily(A, "Misty Gap", day=today)
+    later = _daily(A, "Foggy Ridge", day=today + timedelta(days=2))
     c = A.app.test_client()
     assert c.get("/solo/%s" % now).status_code == 200
     assert c.get("/solo/%s" % later).status_code != 200, "tomorrow's daily is not drivable today"
