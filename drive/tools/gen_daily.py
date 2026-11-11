@@ -369,8 +369,8 @@ def propose(n, first_seed=0, verbose=True, avoid=(), per_look=80, start=None):
     """`n` documents that pass everything, one per look in `look_order`.
 
     With `start` (a date), day `k` is `start + k`: it gets that weekday's tier
-    and the date is written into the document, so approving it lands it on the
-    day it was made for (`maker._day_for`) rather than the next free one."""
+    and the date is written into the document. Approving still puts it on the
+    next free day, so the days have no holes; the date only picks the tier."""
     from datetime import timedelta
     looks = pool_looks()
     days = [start + timedelta(days=k) for k in range(n)] if start else [None] * n

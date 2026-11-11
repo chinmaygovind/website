@@ -1102,23 +1102,8 @@ def _approve(row):
     # days of dailies, in the order they were approved, with no second screen
     # and nothing to remember.
     if row.doc.get("generated") and row.daily_on is None:
-        row.daily_on = _day_for(row)
+        row.daily_on = _next_free_daily()
         _number_daily(row)
-
-
-def _day_for(row):
-    """The day a generated track was made for, if it is still free and not past,
-    else the next free one. Since Nov 2026 each daily is generated for a
-    weekday's difficulty (`generate.TIERS`), so a send-back or a skip must not
-    slide Sunday's boss track onto Monday."""
-    gen = row.doc.get("generated")
-    want = gen.get("day") if isinstance(gen, dict) else None
-    if want:
-        day = date.fromisoformat(want)
-        if day >= max(daily_date(), DAILIES_START) and not (
-                DriveUserTrack.query.filter_by(daily_on=day).first()):
-            return day
-    return _next_free_daily()
 
 
 # ---- reviewing the dailies ------------------------------------------------
@@ -1234,9 +1219,9 @@ def _number_daily(row):
     A generated track's own name is only a label for the queue. A new number is
     the highest `daily-N` slug there has ever been plus one, so a deleted daily
     (which keeps its slug as a tombstone) never lets a number be handed out
-    twice. But approval order is not day order - `_day_for` puts a daily on the
-    day it was made for - so when this one lands before dailies already
-    scheduled, it takes the first of their numbers and they each move up one.
+    twice. When this one fills a hole before dailies already scheduled (one was
+    deleted or unscheduled), it takes the first of their numbers and they each
+    move up one.
     Only days after today ever move, so nothing anybody has seen is renamed.
     """
     got = [int(s[6:]) for (s,) in db.session.query(DriveUserTrack.slug)
