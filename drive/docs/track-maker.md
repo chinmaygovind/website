@@ -384,10 +384,11 @@ the dailies already scheduled - "same theme as daily #1" was a review note).
 Monday tier 1 (24-31s, wider, always a circuit), Tue-Wed 2, Thu-Fri 3, Saturday
 4 (38-48s), Sunday the boss (55-68s, narrower, always a stunt track). The tier
 is the card's difficulty. `gen_daily.py N --start YYYY-MM-DD` gives day `k`
-that weekday's tier and writes `generated.day`, and approving takes **that day**
-if it is still free and not past (`maker._day_for`), else the next free one -
-so a skip or a send-back cannot slide Sunday's boss onto Monday. A
-reworked/late one can land out of number order; that is fine.
+that weekday's tier and writes `generated.day`, but approving always takes the
+**next free day** and numbers by date (`maker._number_daily`). Honoring
+`generated.day` left a hole every time one was sent back or skipped, and Chinmay
+would rather a boss land on a Monday than have a day with no daily. A cover over
+`COVER_MAX_BYTES` (open water does it) is shot again smaller by `snapCover`.
 **The signature builds to a finale**: every time it comes round it is bigger
 (`generate._size`, `big` 0..1 along each draw's range), and the biggest - the
 tier's `finale` size - is the last thing before the flag. Without `--start`

@@ -6760,7 +6760,14 @@ function snapCover() {
   cam.position.copy(pos);
   cam.quaternion.copy(quat);
   cam.up.copy(up);
-  return out.toDataURL('image/png');
+  let png = out.toDataURL('image/png');
+  for (let w = 1080; png.length > 1.3e6 && w >= 600; w -= 120) {
+    const small = document.createElement('canvas');
+    small.width = w; small.height = Math.round(w * 630 / 1200);
+    small.getContext('2d').drawImage(out, 0, 0, small.width, small.height);
+    png = small.toDataURL('image/png');
+  }
+  return png;
 }
 
 function maybeSnapCover() {
