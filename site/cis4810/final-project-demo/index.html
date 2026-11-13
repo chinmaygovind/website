@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>REV11 Cone Mapping</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#07090d; --panel:rgba(13,17,25,.66); --line:rgba(255,255,255,.09); --text:#e8edf5; --mute:#8b95a7; --red:#e0262b; --blue:#2f7cf6; --yellow:#f5c518; --orange:#ff7a1a; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font:14px/1.4 Inter, system-ui, sans-serif; overflow:hidden; }
+  #view { position:fixed; inset:0; }
+  .glass { background:var(--panel); border:1px solid var(--line); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); border-radius:14px; box-shadow:0 10px 40px rgba(0,0,0,.35); }
+  #brand { position:fixed; top:18px; left:18px; padding:14px 18px; }
+  #brand h1 { margin:0; font-size:15px; letter-spacing:.14em; text-transform:uppercase; font-weight:700; }
+  #brand h1 b { color:var(--red); }
+  #brand p { margin:3px 0 10px; color:var(--mute); font-size:12px; }
+  .pills { display:flex; gap:6px; flex-wrap:wrap; }
+  #runs { appearance:none; -webkit-appearance:none; width:100%; min-width:230px; border:1px solid var(--line); border-radius:10px; padding:8px 32px 8px 11px; font:500 13px Inter, sans-serif; color:var(--text); cursor:pointer;
+    background:rgba(255,255,255,.05) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23aab' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 12px center; }
+  #runs:hover { background-color:rgba(255,255,255,.1); }
+  #runs option, #runs optgroup { background:#141922; color:#e8ecf3; }
+  .pill { border:1px solid var(--line); background:rgba(255,255,255,.04); color:var(--text); padding:6px 11px; border-radius:999px; font:500 12px Inter, sans-serif; cursor:pointer; transition:background .15s, color .15s; }
+  .pill:hover { background:rgba(255,255,255,.1); }
+  .pill.on { background:var(--text); color:#0b0e14; border-color:var(--text); }
+  #stats { position:fixed; top:18px; right:18px; padding:14px 16px; display:grid; grid-template-columns:repeat(4,auto); gap:4px 22px; }
+  .stat .k { color:var(--mute); font-size:11px; text-transform:uppercase; letter-spacing:.08em; }
+  .stat .v { font:500 22px 'JetBrains Mono', monospace; font-variant-numeric:tabular-nums; }
+  .stat .v small { font-size:12px; color:var(--mute); margin-left:3px; }
+  #cams { position:fixed; left:18px; bottom:96px; padding:8px; }
+  #legend { position:fixed; left:18px; bottom:146px; padding:10px 14px; font-size:12px; color:var(--mute); display:flex; gap:14px; align-items:center; }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+  #video { position:fixed; right:18px; bottom:96px; width:min(420px, 38vw); padding:8px; }
+  #video .wrap { position:relative; border-radius:9px; overflow:hidden; background:#000; aspect-ratio:16/9; }
+  #video video, #video canvas { position:absolute; top:0; left:0; width:100%; height:100%; }
+  #video .cap { display:flex; justify-content:space-between; color:var(--mute); font-size:11px; padding:6px 4px 0; letter-spacing:.04em; }
+  #video .live { color:#ff5a5f; font-weight:600; }
+  #timeline { position:fixed; left:18px; right:18px; bottom:18px; padding:12px 16px; display:flex; gap:14px; align-items:center; }
+  #play { width:38px; height:38px; border-radius:50%; border:none; background:var(--text); color:#0b0e14; font-size:14px; cursor:pointer; flex:none; }
+  #bar { position:relative; flex:1; height:30px; cursor:pointer; touch-action:none; }
+  #bar .track { position:absolute; left:0; right:0; top:13px; height:4px; border-radius:2px; background:rgba(255,255,255,.08); }
+  #bar .chap { position:absolute; top:13px; height:4px; border-radius:2px; background:rgba(255,255,255,.22); }
+  #bar .fill { position:absolute; left:0; top:13px; height:4px; border-radius:2px; background:linear-gradient(90deg, var(--red), #ff6b4a); will-change:width; }
+  #bar .knob { position:absolute; top:7px; width:16px; height:16px; margin-left:-8px; border-radius:50%; background:#fff; box-shadow:0 0 0 4px rgba(224,38,43,.35); will-change:left; }
+  #bar canvas { position:absolute; left:0; top:0; width:100%; height:12px; }
+  #clock { font:500 13px 'JetBrains Mono', monospace; color:var(--mute); min-width:112px; text-align:right; }
+  #boot { position:fixed; inset:0; display:grid; place-items:center; background:var(--bg); z-index:10; transition:opacity .6s; }
+  #boot .box { width:min(380px, 80vw); text-align:center; }
+  #boot h2 { font-size:13px; letter-spacing:.2em; text-transform:uppercase; margin:0 0 14px; color:var(--mute); font-weight:600; }
+  #boot .pb { height:3px; background:rgba(255,255,255,.08); border-radius:2px; overflow:hidden; }
+  #boot .pb div { height:100%; width:0; background:var(--red); transition:width .2s; }
+  #boot p { color:var(--mute); font-size:12px; margin-top:10px; }
+  #help { position:fixed; left:50%; bottom:96px; transform:translateX(-50%); padding:7px 14px; font-size:11.5px; color:var(--mute); white-space:nowrap; }
+  kbd { font:500 11px 'JetBrains Mono', monospace; background:rgba(255,255,255,.08); border:1px solid var(--line); border-radius:4px; padding:1px 5px; color:var(--text); }
+  @media (max-width: 1100px) { #help { display:none; } }
+  @media (max-width: 900px) { #stats { grid-template-columns:repeat(2,auto); } #legend { display:none; } #video { width:44vw; } }
+</style>
+</head>
+<body>
+<div id="view"></div>
+<div id="boot"><div class="box"><h2>REV11 · Cone Mapping</h2><div class="pb"><div id="pb"></div></div><p id="bootMsg">Loading the car…</p></div></div>
+<div id="brand" class="glass"><h1>REV<b>11</b> · Cone Mapping</h1><p id="sub">GoPro + ResNet cone detector + car log, rebuilt in 3D</p><select id="runs" aria-label="Run"></select></div>
+<div id="stats" class="glass">
+  <div class="stat"><div class="k">Speed</div><div class="v" id="sSpeed">0<small>km/h</small></div></div>
+  <div class="stat"><div class="k">In view</div><div class="v" id="sView">0</div></div>
+  <div class="stat"><div class="k">Pass estimates</div><div class="v" id="sSight">0</div></div>
+  <div class="stat"><div class="k">Cones mapped</div><div class="v" id="sCones">0</div></div>
+</div>
+<div id="legend" class="glass"><span><i class="dot" style="background:var(--blue)"></i>blue</span><span><i class="dot" style="background:var(--yellow)"></i>yellow</span><span><i class="dot" style="background:var(--orange)"></i>orange</span><span>dot = one pass's estimate · a cone appears once it is confirmed on 2 passes</span></div>
+<div id="cams" class="glass pills"></div>
+<div id="help" class="glass"><kbd>space</kbd> play · <kbd>1</kbd>–<kbd>5</kbd> camera · <kbd>←</kbd><kbd>→</kbd> 10 s · <kbd>V</kbd> video · drag to look around</div>
+<div id="video" class="glass"><div class="wrap"><video id="vid" muted playsinline preload="auto"></video><canvas id="ov"></canvas></div><div class="cap"><span>GOPRO · LIVE DETECTIONS</span><span id="vidState" class="live">● SYNCED</span></div></div>
+<div id="timeline" class="glass">
+  <button id="play" aria-label="play">▶</button>
+  <div id="bar"><canvas id="marks"></canvas><div class="track"></div><div id="chaps"></div><div class="fill" id="fill"></div><div class="knob" id="knob"></div></div>
+  <div id="speeds" class="pills"></div>
+  <div id="clock">00:00 / 00:00</div>
+</div>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
+
+const $ = id => document.getElementById(id);
+const HEX = [0x2f7cf6, 0xf5c518, 0xff7a1a], STRIPE = [0xffffff, 0x151515, 0xffffff];
+const COLS = HEX.map(h => new THREE.Color(h)), CSS = HEX.map(h => '#' + h.toString(16).padStart(6, '0'));
+const NAMES = { may12: '5/12 endurance', may2: '5/2 endurance', apr9: '4/9 endurance', mar22_jc: '3/22 driver selection · JC', mar22_leshinskie: '3/22 driver selection · Leshinskie',
+  mar22_theo: '3/22 driver selection · Theo', mar22_owen: '3/22 driver selection · Owen', jun9_skidpad: '6/9 skidpad', jun11_skidpad: '6/11 skidpad' };
+const ORDER = ['may12', 'may2', 'apr9', 'mar22_jc', 'mar22_leshinskie', 'mar22_theo', 'mar22_owen', 'jun9_skidpad', 'jun11_skidpad'];
+const GROUPS = [['Endurance · GoPro', n => !/^mar22|skidpad/.test(n)], ['Driver selection · phone', n => /^mar22/.test(n)], ['Skidpad · Ray-Ban Meta glasses', n => /skidpad/.test(n)]];
+const SUBS = { gopro: 'GoPro + ResNet cone detector + car log, rebuilt in 3D', glasses: "Driver's Ray-Ban Meta glasses + cone detector + car log, rebuilt in 3D" };
+
+// ---------- renderer + scene (no post-processing, no shadow maps: the glow and shadow are baked into cheap materials) ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5)); renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.25; renderer.outputColorSpace = THREE.SRGBColorSpace;
+$('view').appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = .6;
+scene.background = new THREE.Color(0x1b2231); scene.fog = new THREE.Fog(0x1b2231, 70, 300);
+scene.add(new THREE.HemisphereLight(0xd2e0ff, 0x2a2c33, 1.05));
+const sun = new THREE.DirectionalLight(0xfff1de, 2.4); sun.position.set(30, 50, 20); scene.add(sun);
+
+// asphalt: one small noise texture, tiled
+{ const c = document.createElement('canvas'); c.width = c.height = 256; const x = c.getContext('2d'), im = x.createImageData(256, 256);
+  for (let i = 0; i < im.data.length; i += 4) { const n = 54 + Math.random() * 20 + (Math.random() < .03 ? 26 : 0); im.data[i] = n; im.data[i + 1] = n + 2; im.data[i + 2] = n + 7; im.data[i + 3] = 255; }
+  x.putImageData(im, 0, 0); x.fillStyle = 'rgba(190,205,230,.16)'; x.fillRect(0, 0, 256, 2); x.fillRect(0, 0, 2, 256); /* one tile = 4 m */ const tex = new THREE.CanvasTexture(c); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(375, 375); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(1500, 1500), new THREE.MeshLambertMaterial({ map: tex, color: 0xa8aeb8 }));
+  ground.rotation.x = -Math.PI / 2; scene.add(ground); }
+const radial = (inner, outer, a = 1) => { const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d'), g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, `rgba(${inner},${a})`); g.addColorStop(1, `rgba(${outer},0)`); x.fillStyle = g; x.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); };
+
+// ---------- camera ----------
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, .05, 1200); camera.position.set(0, 60, 80);
+const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.dampingFactor = .08; controls.maxPolarAngle = Math.PI * .49;
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+
+// ---------- the car: REV11 from car-explorer, livery baked in, slimmed to ~130k triangles (tools/lighten.mjs) ----------
+const boot = (p, msg) => { $('pb').style.width = (p * 100).toFixed(0) + '%'; if (msg) $('bootMsg').textContent = msg; };
+const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
+const car = new THREE.Group(), body = new THREE.Group(); car.add(body); scene.add(car);
+let carModel = null, carCZ = 0, wheelSpin = 0, lastT = null;
+const WHEELS = [[.584, -.051], [-.584, -.051], [.588, 1.4795], [-.588, 1.4795]], WHEEL_Y = .159, WHEEL_R = .205;   // measured off the CAD (Hoosier 16 in tyre); +x = left
+const QS = new URLSearchParams(location.search), GOPRO_Z = +(QS.get('camz') ?? 0);   // gopro position along the car, metres from the rear axle (CAD frame)
+const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: radial('255,70,70', '255,40,40', 1), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); halo.position.set(0, 1, 0); car.add(halo);
+{ const g = (await loader.loadAsync('assets/rev11_light.glb', e => e.total && boot(.8 * e.loaded / e.total, 'Loading the REV11…'))).scene;
+  const wheel = (await loader.loadAsync('assets/rev11_wheel.glb')).scene;
+  for (const m of [g, wheel]) m.traverse(o => { if (!o.isMesh) return; if (!o.geometry.attributes.normal) o.geometry = toCreasedNormals(o.geometry, THREE.MathUtils.degToRad(35)); o.material.side = THREE.DoubleSide; });
+  // the 4 wheels (CAD frame: +x = left, +z = nose): each is steer group (front only) > spin group > the wheel, centred and mirrored to its side
+  const wc = new THREE.Box3().setFromObject(wheel, true).getCenter(new THREE.Vector3()); wheel.position.sub(wc);
+  window.__wheels = WHEELS.map(([x, z]) => { const steer = new THREE.Group(), spin = new THREE.Group(), w = wheel.clone();
+    if (Math.sign(x) !== Math.sign(wc.x)) w.scale.x = -1, w.position.x *= -1;
+    steer.position.set(x, WHEEL_Y, z); steer.add(spin); spin.add(w); g.add(steer); return { steer, spin, front: z > 1, left: x > 0 }; });
+  const bb = new THREE.Box3().setFromObject(g, true), c = bb.getCenter(new THREE.Vector3());   // precise: quantised meshes' rotated boxes overshoot by 0.4 m
+  g.position.set(-c.x, -bb.min.y, 0); body.add(g); carModel = g; carCZ = c.z;   // +z = nose; z = 0 is the rear axle
+  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 3.9), new THREE.MeshBasicMaterial({ map: radial('0,0,0', '0,0,0', .75), transparent: true, depthWrite: false }));
+  shadow.rotation.x = -Math.PI / 2; shadow.position.y = .01; car.add(shadow); window.__shadow = shadow; }
+
+// ---------- cone: FSAE small cone with its stripe, shared by every instance ----------
+const coneGeo = (() => { const prof = [[0, 0], [.114, 0], [.114, .025], [.1, .025], [.1, .03], [.025, .325], [0, .325]].map(([r, y]) => new THREE.Vector2(r, y));
+  const g = new THREE.LatheGeometry(prof, 20), base = new THREE.BoxGeometry(.228, .025, .228).translate(0, .0125, 0).toNonIndexed(), gg = g.toNonIndexed();
+  const pos = new Float32Array([...gg.attributes.position.array, ...base.attributes.position.array]), out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(pos, 3)); out.computeVertexNormals();
+  const st = new Float32Array(pos.length / 3); for (let i = 0; i < st.length; i++) { const y = pos[i * 3 + 1]; st[i] = y > .12 && y < .2 ? 1 : 0; }
+  out.setAttribute('stripe', new THREE.BufferAttribute(st, 1)); return out; })();
+const coneMat = c => { const m = new THREE.MeshLambertMaterial({ color: HEX[c] });   // aGlow: per-instance glow while a cone pops in
+  m.onBeforeCompile = s => { s.vertexShader = s.vertexShader.replace('#include <common>', '#include <common>\nattribute float stripe; attribute float aGlow; varying float vS; varying float vG;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvS = stripe; vG = aGlow;');
+    s.fragmentShader = s.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vS; varying float vG;').replace('#include <color_fragment>', `#include <color_fragment>\ndiffuseColor.rgb = mix(diffuseColor.rgb, vec3(${new THREE.Color(STRIPE[c]).toArray().map(v => v.toFixed(3))}), vS);`)
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += (diffuseColor.rgb + .35) * vG * 2.5;'); };
+  return m; };
+
+// ---------- run state ----------
+let R = null, T = 0, playing = false, rate = 1, mode = 'chase', lastFrame = -1;
+addEventListener('resize', () => { if (R) R.sightMat.uniforms.uScale.value = innerHeight * renderer.getPixelRatio() / 2; });
+const runGroup = new THREE.Group(); scene.add(runGroup);
+const v3 = new THREE.Vector3(), q0 = new THREE.Quaternion(), m4 = new THREE.Matrix4(), s3 = new THREE.Vector3();
+const vid = $('vid'), ov = $('ov'), octx = ov.getContext('2d');
+const lowerBound = (a, x) => { let lo = 0, hi = a.length; while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] < x) lo = m + 1; else hi = m; } return lo; };
+const pose = t => { const P = R.path, i = Math.min(Math.max(lowerBound(P.t, t), 1), P.t.length - 1), a = P.t[i - 1], b = P.t[i];
+  const u = b > a ? Math.min(Math.max((t - a) / (b - a), 0), 1) : 0, L = k => P[k][i - 1] + (P[k][i] - P[k][i - 1]) * u;
+  return { x: L('x'), z: L('z'), yaw: L('yaw'), pitch: L('pitch'), v: L('v'), sl: P.sl ? L('sl') : 0, sr: P.sr ? L('sr') : 0 }; };
+const videoTime = t => { for (const [a, b, o] of R.chapters) if (t - o >= a && t - o < b) return t - o; return null; };
+const TRAIL = 160;   // points (10 Hz -> 16 s)
+
+async function loadRun(name) {
+  playing = false; $('play').textContent = '▶';
+  $('boot').style.display = ''; $('boot').style.opacity = 1; boot(.9, 'Loading ' + (NAMES[name] || name) + '…');
+  R = await fetch(`data/${name}.json`).then(r => r.json());
+  for (const c of [...runGroup.children]) { runGroup.remove(c); c.geometry?.dispose(); c.material?.dispose?.(); }
+  const P = R.path; R.t0 = P.t[0]; R.t1 = P.t[P.t.length - 1]; T = R.t0; lastFrame = -1;
+  // every lap as a faint ribbon on the ground: where laps overlap, the track surface appears
+  { const pos = [], col = []; const W = 1.7;
+    for (let i = 1; i < P.t.length; i++) { if (P.t[i] - P.t[i - 1] > 1) continue; const dx = P.x[i] - P.x[i - 1], dz = P.z[i] - P.z[i - 1], l = Math.hypot(dx, dz); if (l < .05) continue;
+      const nx = -dz / l * W, nz = dx / l * W, a = [P.x[i - 1] + nx, .015, P.z[i - 1] + nz], b = [P.x[i - 1] - nx, .015, P.z[i - 1] - nz], c = [P.x[i] + nx, .015, P.z[i] + nz], d = [P.x[i] - nx, .015, P.z[i] - nz];
+      pos.push(...a, ...b, ...c, ...b, ...d, ...c); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    runGroup.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0x9fb3d6, transparent: true, opacity: .045, depthWrite: false, blending: THREE.AdditiveBlending })));
+    const lp = []; for (let i = 1; i < P.t.length; i++) if (P.t[i] - P.t[i - 1] < 1) lp.push(P.x[i - 1], .03, P.z[i - 1], P.x[i], .03, P.z[i]);
+    const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
+    runGroup.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0xaab8d0, transparent: true, opacity: .12, depthWrite: false }))); }
+  // trail ribbon behind the car (pre-allocated, rewritten in place each frame)
+  { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL * 2 * 3), 3)); g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(TRAIL * 2 * 4), 4));
+    const idx = []; for (let i = 0; i < TRAIL - 1; i++) { const a = 2 * i; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); } g.setIndex(idx);
+    R.trail = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    R.trail.frustumCulled = false; runGroup.add(R.trail); }
+  // sightings: one draw call, revealed by time in the shader, glowing while fresh
+  { const S = R.sightings, n = S.x.length, pos = new Float32Array(n * 3), col = new Float32Array(n * 3), tt = new Float32Array(n);
+    for (let i = 0; i < n; i++) { pos[i * 3] = S.x[i]; pos[i * 3 + 1] = .06; pos[i * 3 + 2] = S.z[i]; COLS[S.c[i]].toArray(col, i * 3); tt[i] = S.t[i]; }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setAttribute('t', new THREE.BufferAttribute(tt, 1));
+    R.sightMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { uT: { value: 0 }, uScale: { value: innerHeight * renderer.getPixelRatio() / 2 } },
+      vertexShader: `attribute float t; attribute vec3 color; uniform float uT, uScale; varying vec3 vC; varying float vA;
+        void main(){ float age = uT - t; vA = age < 0. ? 0. : .9 * exp(-age * 2.2); vC = color;
+          vec4 mv = modelViewMatrix * vec4(position, 1.); gl_PointSize = age < 0. || vA < .01 ? 0. : (.12 + .4 * exp(-age * 2.5)) * uScale / -mv.z; gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: `varying vec3 vC; varying float vA; void main(){ float d = length(gl_PointCoord - .5); if (d > .5) discard; gl_FragColor = vec4(vC * 1.3, vA * smoothstep(.5, 0., d)); }` });
+    const pts = new THREE.Points(g, R.sightMat); pts.frustumCulled = false; runGroup.add(pts); }
+  // one dot per cone per pass: the 1/range^2-weighted estimate of that pass (gopro_map.tracks)
+  { const K = R.tracks, n = K.x.length, pos = new Float32Array(n * 3), col = new Float32Array(n * 3), tt = new Float32Array(n);
+    for (let i = 0; i < n; i++) { pos[i * 3] = K.x[i]; pos[i * 3 + 1] = .05; pos[i * 3 + 2] = K.z[i]; COLS[K.c[i]].toArray(col, i * 3); tt[i] = K.t[i]; }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setAttribute('t', new THREE.BufferAttribute(tt, 1));
+    R.trackMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, uniforms: { uT: { value: 0 }, uScale: R.sightMat.uniforms.uScale },
+      vertexShader: `attribute float t; attribute vec3 color; uniform float uT, uScale; varying vec3 vC; varying float vA, vF;
+        void main(){ float age = uT - t; vC = color; vA = age < 0. ? 0. : 1.; vF = age < 0. ? 0. : exp(-age * 4.);
+          vec4 mv = modelViewMatrix * vec4(position, 1.); gl_PointSize = age < 0. ? 0. : max(3., (.16 + .35 * vF) * uScale / -mv.z); gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: `varying vec3 vC; varying float vA, vF; void main(){ float d = length(gl_PointCoord - .5); if (d > .5) discard;
+        vec3 c = mix(vC, vec3(1.), .25 * vF + .3 * smoothstep(.32, .5, d)); gl_FragColor = vec4(c, vA * (.85 * smoothstep(.5, .4, d))); }` });
+    const pts = new THREE.Points(g, R.trackMat); pts.frustumCulled = false; runGroup.add(pts); }
+  // cones: one instanced mesh per colour; a cone only exists once it is confirmed, then pops in glowing
+  { const C = R.cones; R.coneSets = [0, 1, 2].map(c => { const idx = []; C.c.forEach((cc, i) => cc === c && idx.push(i));
+      const g = coneGeo.clone(), glow = new THREE.InstancedBufferAttribute(new Float32Array(Math.max(idx.length, 1)), 1); g.setAttribute('aGlow', glow);
+      const solid = new THREE.InstancedMesh(g, coneMat(c), Math.max(idx.length, 1));
+      solid.count = idx.length; solid.frustumCulled = false; runGroup.add(solid); return { idx, solid, glow, state: new Int8Array(idx.length).fill(-1) }; });
+    // a soft ring flashes on the ground when a cone is confirmed
+    R.rings = new THREE.InstancedMesh(new THREE.PlaneGeometry(1.6, 1.6).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: radial('255,255,255', '255,255,255', .9), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }), 64);
+    R.rings.count = 0; R.rings.frustumCulled = false; runGroup.add(R.rings); }
+  // confirmed cones as screen-space beacons: tiny real cones vanish from 200 m away, these do not
+  { const C = R.cones, n = C.x.length, pos = new Float32Array(n * 3), col = new Float32Array(n * 3), tc = new Float32Array(n);
+    for (let i = 0; i < n; i++) { pos[i * 3] = C.x[i]; pos[i * 3 + 1] = .3; pos[i * 3 + 2] = C.z[i]; COLS[C.c[i]].toArray(col, i * 3); tc[i] = C.conf[i]; }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setAttribute('t', new THREE.BufferAttribute(tc, 1));
+    R.beaconMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, uniforms: { uT: { value: 0 } },
+      vertexShader: `attribute float t; attribute vec3 color; uniform float uT; varying vec3 vC; varying float vA; void main(){ vC = color; vec4 mv = modelViewMatrix * vec4(position, 1.);
+        float far = smoothstep(25., 70., -mv.z); vA = uT >= t ? far : 0.; gl_PointSize = vA > 0. ? 6. : 0.; gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: `varying vec3 vC; varying float vA; void main(){ float d = length(gl_PointCoord - .5); if (d > .5) discard; gl_FragColor = vec4(mix(vec3(1.), vC, smoothstep(.15, .35, d)), vA * smoothstep(.5, .35, d)); }` });
+    const pts = new THREE.Points(g, R.beaconMat); pts.frustumCulled = false; runGroup.add(pts); }
+  // rays from the gopro to the cones it is seeing right now
+  { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(120 * 6), 3)); g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(120 * 6), 3));
+    R.rays = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })); R.rays.frustumCulled = false; runGroup.add(R.rays); }
+  // what the gopro can see, on the ground
+  if (R.fov) car.remove(R.fov);
+  { const f = R.camera.f, hf = Math.atan(320 / f), L = 14, s = new THREE.Shape(); s.moveTo(0, 0); for (let a = -hf; a <= hf + 1e-6; a += hf / 10) s.lineTo(Math.sin(a) * L, Math.cos(a) * L); s.lineTo(0, 0);
+    R.fov = new THREE.Mesh(new THREE.ShapeGeometry(s).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x7fd6ff, transparent: true, opacity: .06, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+    R.fov.position.set(0, .02, R.camera.dx); car.add(R.fov); }
+  // timeline: chapters and a tick per confirmed cone
+  $('chaps').innerHTML = ''; const span = R.t1 - R.t0;
+  for (const [a, b, o] of R.chapters) { const d = document.createElement('div'); d.className = 'chap'; d.style.left = (100 * (a + o - R.t0) / span) + '%'; d.style.width = (100 * (b - a) / span) + '%'; $('chaps').appendChild(d); }
+  { const cv = $('marks'), w = cv.width = cv.clientWidth * 2, x = cv.getContext('2d'); cv.height = 24; x.clearRect(0, 0, w, 24);
+    R.cones.conf.forEach((t, i) => { x.fillStyle = CSS[R.cones.c[i]]; x.fillRect(w * (t - R.t0) / span, 6, 2, 12); }); }
+  // camera presets for this run
+  let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9; for (let i = 0; i < P.x.length; i += 5) { x0 = Math.min(x0, P.x[i]); x1 = Math.max(x1, P.x[i]); z0 = Math.min(z0, P.z[i]); z1 = Math.max(z1, P.z[i]); }
+  R.center = new THREE.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2); R.size = Math.max(x1 - x0, z1 - z0);
+  // the video panel shows only the real picture: crop pillarboxed uploads to their content, size the box to its aspect
+  { const [cx, cw] = R.camera.content || [0, 1], asp = R.camera.aspect || cw * 16 / 9; R.camera.content = [cx, cw]; R.camera.frame ||= [0, 8 / 360, 1, 352 / 360];
+    vid.style.width = 100 / cw + '%'; vid.style.left = -100 * cx / cw + '%'; $('video').querySelector('.wrap').style.aspectRatio = asp;
+    $('video').style.width = asp < 1 ? `min(${Math.round(400 * asp) + 16}px, 30vw)` : ''; $('video').querySelector('.cap span').textContent = R.kind === 'glasses' ? "DRIVER'S GLASSES" : asp < 1 ? 'PHONE · DETECTIONS' : 'GOPRO · LIVE DETECTIONS';
+    resizeOverlay(); }
+  vid.src = R.video; vid.load();
+  carModel.position.z = R.camera.dx - (R.camera.mount_z ?? GOPRO_Z); window.__shadow.position.z = carModel.position.z + carCZ; halo.position.z = carModel.position.z + carCZ;
+  setMode(mode); resizeOverlay();
+  $('boot').style.opacity = 0; setTimeout(() => $('boot').style.display = 'none', 600);
+  $('runs').value = name; $('sub').textContent = SUBS[R.kind || 'gopro'];
+}
+
+// ---------- per frame ----------
+const tmpC = new THREE.Color(), camPos = new THREE.Vector3(), fwd = new THREE.Vector3(), want = new THREE.Vector3(), look = new THREE.Vector3(), sCam = new THREE.Vector3(), sLook = new THREE.Vector3();
+let camInit = false, ringList = []; const POP = 1.5;   // seconds a newly confirmed cone pops and glows
+function update(dt) {
+  if (playing) { T += dt * rate; if (T >= R.t1) { T = R.t1; playing = false; $('play').textContent = '▶'; } }
+  const p = pose(T);
+  car.position.set(p.x, 0, p.z); car.rotation.y = Math.PI - p.yaw; body.rotation.x = -p.pitch;   // yaw is cw from north; model +z is the nose
+  // wheels roll at the gps speed; each front wheel steers to its own angle (path.sl / path.sr, + = right): read off the GoPro
+  // video where the wheels are in shot, else the bicycle model with Ackermann (see gopro_map.steering)
+  if (window.__wheels) { const dT = lastT === null ? 0 : THREE.MathUtils.clamp(T - lastT, -.2, .2); lastT = T; wheelSpin += p.v * dT / WHEEL_R;
+    for (const w of window.__wheels) { w.spin.rotation.x = wheelSpin; if (w.front) w.steer.rotation.y = -(w.left ? p.sl : p.sr); } }
+  R.sightMat.uniforms.uT.value = T; R.beaconMat.uniforms.uT.value = T; R.trackMat.uniforms.uT.value = T;
+  { const d = camera.position.distanceTo(car.position); halo.scale.setScalar(Math.max(2.5, d * .05)); halo.material.opacity = THREE.MathUtils.smoothstep(d, 15, 60); }
+  // trail
+  { const P = R.path, i1 = lowerBound(P.t, T), pos = R.trail.geometry.attributes.position, col = R.trail.geometry.attributes.color; let n = 0;
+    const put = (x, z, px, pz, a) => { const dx = x - px, dz = z - pz, l = Math.hypot(dx, dz); if (l < .03) return; const w = .012 + .035 * a, nx = -dz / l * w, nz = dx / l * w;
+      pos.setXYZ(2 * n, x + nx, .04, z + nz); pos.setXYZ(2 * n + 1, x - nx, .04, z - nz); col.setXYZW(2 * n, 1, .04 + .1 * a, .06, .75 * a); col.setXYZW(2 * n + 1, 1, .04 + .1 * a, .06, .75 * a); n++; };
+    for (let i = Math.max(1, i1 - TRAIL + 1); i < i1 && n < TRAIL - 1; i++) { if (P.t[i] - P.t[i - 1] > 1) { n = 0; continue; } put(P.x[i], P.z[i], P.x[i - 1], P.z[i - 1], Math.max(0, 1 - (T - P.t[i]) / 16)); }
+    if (n) put(p.x, p.z, pos.getX(2 * n - 2) * .5 + pos.getX(2 * n - 1) * .5, pos.getZ(2 * n - 2) * .5 + pos.getZ(2 * n - 1) * .5, 1);
+    R.trail.geometry.setDrawRange(0, Math.max(0, (n - 1) * 6)); pos.needsUpdate = col.needsUpdate = true; }
+  // cones: only touch instances whose state changes, plus the ones still popping
+  const C = R.cones; let mapped = 0;
+  for (const set of R.coneSets) { let dirty = false;
+    for (let k = 0; k < set.idx.length; k++) { const ci = set.idx[k], st = T >= C.conf[ci] ? 2 : 0, age = T - C.conf[ci], live = st === 2 && age < POP; if (st) mapped++;
+      if (st === set.state[k] && !live) continue;
+      if (live && set.state[k] !== 2 && ringList.length < 64) ringList.push([C.x[ci], C.z[ci], C.conf[ci]]);
+      set.state[k] = st; dirty = true; v3.set(C.x[ci], 0, C.z[ci]);
+      // springs up from nothing with an overshoot, glowing white-hot and fading to its own colour
+      const pop = st ? (live ? 1 - Math.exp(-age * 7) * Math.cos(age * 13) : 1) : 1e-4;
+      set.solid.setMatrixAt(k, m4.compose(v3, q0, s3.setScalar(Math.max(pop, 1e-4)))); set.glow.setX(k, live ? Math.exp(-age * 3) : 0); }
+    if (dirty) set.solid.instanceMatrix.needsUpdate = set.glow.needsUpdate = true; }
+  ringList = ringList.filter(r => T - r[2] < 1 && T >= r[2]);  // POP s of glow, 1 s of ground ring R.rings.count = ringList.length;
+  ringList.forEach((r, i) => { const a = T - r[2]; R.rings.setMatrixAt(i, m4.compose(v3.set(r[0], .03, r[1]), q0, s3.setScalar(.4 + a * 2.2))); R.rings.setColorAt(i, tmpC.setScalar(1 - a)); });
+  if (ringList.length) { R.rings.instanceMatrix.needsUpdate = true; if (R.rings.instanceColor) R.rings.instanceColor.needsUpdate = true; }
+  // rays to this frame's sightings
+  const S = R.sightings, j1 = lowerBound(S.t, T + .05), j0 = lowerBound(S.t, T - .15), rp = R.rays.geometry.attributes.position, rc = R.rays.geometry.attributes.color;
+  camPos.set(0, R.camera.h, R.camera.dx).applyAxisAngle(THREE.Object3D.DEFAULT_UP, car.rotation.y).add(car.position);
+  let n = 0; for (let j = j0; j < j1 && n < 120; j++, n++) { const c = COLS[S.c[j]];
+    rp.setXYZ(2 * n, camPos.x, camPos.y, camPos.z); rp.setXYZ(2 * n + 1, S.x[j], .17, S.z[j]); rc.setXYZ(2 * n, c.r * .1, c.g * .1, c.b * .1); rc.setXYZ(2 * n + 1, c.r * 1.5, c.g * 1.5, c.b * 1.5); }
+  R.rays.geometry.setDrawRange(0, 2 * n); rp.needsUpdate = rc.needsUpdate = true;
+  // hud
+  $('sSpeed').innerHTML = Math.round(p.v * 3.6) + '<small>km/h</small>'; $('sView').textContent = n; $('sSight').textContent = lowerBound(R.tracks.t, T).toLocaleString(); $('sCones').textContent = mapped;
+  const span = R.t1 - R.t0, f = (100 * (T - R.t0) / span).toFixed(2) + '%'; $('fill').style.width = f; $('knob').style.left = f;
+  const mmss = s => String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(Math.floor(s % 60)).padStart(2, '0'); $('clock').textContent = mmss(T - R.t0) + ' / ' + mmss(span);
+  syncVideo(); drawBoxes(); moveCamera(p, dt);
+}
+function syncVideo() {
+  const tv = videoTime(T);
+  if (tv == null) { if ($('vidState').className) { $('vidState').textContent = '○ NOT RECORDED'; $('vidState').className = ''; } if (!vid.paused) vid.pause(); return; }
+  if (!$('vidState').className) { $('vidState').textContent = '● SYNCED'; $('vidState').className = 'live'; }
+  if (playing && rate <= 4) { if (vid.playbackRate !== rate) vid.playbackRate = rate; if (vid.paused) vid.play().catch(() => {}); if (Math.abs(vid.currentTime - tv) > .4 && !vid.seeking) vid.currentTime = tv; }
+  else { if (!vid.paused) vid.pause(); if (Math.abs(vid.currentTime - tv) > (playing ? .8 : .05) && !vid.seeking) vid.currentTime = tv; }
+}
+function resizeOverlay() { ov.width = ov.clientWidth * devicePixelRatio; ov.height = ov.clientHeight * devicePixelRatio; lastFrame = -1; }
+addEventListener('resize', resizeOverlay);
+function drawBoxes() {
+  const tv = videoTime(T), fr = tv == null ? -2 : Math.round(tv * 10); if (fr === lastFrame) return; lastFrame = fr;
+  const w = ov.width, h = ov.height; octx.clearRect(0, 0, w, h); if (tv == null) return;
+  // detector pixels (640x352) -> where that image sits in the video frame -> the visible content box
+  const D = R.dets, a = lowerBound(D.t, fr / 10 - .049), b = lowerBound(D.t, fr / 10 + .049), [fx, fy, fw, fh] = R.camera.frame, [cx, cw] = R.camera.content;
+  const X = u => (fx + u / 640 * fw - cx) / cw * w, Y = v => (fy + v / 352 * fh) * h, k = fw / 640 / cw * w;
+  octx.lineWidth = 2 * devicePixelRatio;
+  for (let i = a; i < b; i++) { const hh = D.h[i], u = D.u[i], v = D.v[i]; octx.strokeStyle = CSS[D.c[i]]; octx.strokeRect(X(u) - .36 * hh * k, Y(v - hh), .72 * hh * k, Y(v) - Y(v - hh)); }
+}
+let sYaw = null;
+function moveCamera(p, dt) {
+  const k = 1 - Math.exp(-dt * 4);
+  if (sYaw === null || !camInit) sYaw = p.yaw; sYaw += (p.yaw - sYaw) * Math.min(1, (1 - Math.exp(-dt * 3)) * Math.sqrt(playing ? rate : 1));
+  fwd.set(Math.sin(sYaw), 0, -Math.cos(sYaw));
+  const d = mode === 'overview' || mode === 'orbit' ? camera.position.distanceTo(controls.target) : mode === 'top' ? 36 : 8; scene.fog.near = d * 1.2 + 40; scene.fog.far = d * 3 + 220;
+  if (mode === 'orbit') { v3.set(p.x, .5, p.z).sub(controls.target); controls.target.add(v3); camera.position.add(v3); controls.update(); return; }
+  if (mode === 'overview') { controls.update(); return; }
+  if (mode === 'chase') { want.copy(fwd).multiplyScalar(-6.5).add(v3.set(p.x, 2.5, p.z)); look.copy(fwd).multiplyScalar(5).add(v3.set(p.x, .5, p.z)); }
+  if (mode === 'onboard') { fwd.set(Math.sin(p.yaw), 0, -Math.cos(p.yaw)); want.set(0, R.camera.h, R.camera.dx).applyAxisAngle(THREE.Object3D.DEFAULT_UP, car.rotation.y).add(car.position); look.copy(fwd).multiplyScalar(10).add(want); look.y -= 10 * Math.tan(R.camera.pitch + p.pitch); }
+  if (mode === 'top') { want.set(p.x, 36, p.z + .01); look.set(p.x, 0, p.z); }
+  camInit = true; camera.position.copy(want); camera.lookAt(look);
+}
+function setMode(m) {
+  mode = m; camInit = false; camera.fov = m === 'onboard' ? THREE.MathUtils.radToDeg(2 * Math.atan(176 / R.camera.f)) : 55; camera.updateProjectionMatrix();
+  controls.enabled = m === 'orbit' || m === 'overview';
+  if (m === 'overview') { controls.target.copy(R.center); camera.position.copy(R.center).add(v3.set(R.size * .2, R.size * .55, R.size * .45)); }
+  if (m === 'orbit') { const p = pose(T); controls.target.set(p.x, .5, p.z); camera.position.set(p.x + 5, 3, p.z + 5); }
+  for (const b of $('cams').children) b.classList.toggle('on', b.dataset.mode === m);
+}
+
+// ---------- ui ----------
+const MODES = [['chase', 'Chase'], ['onboard', 'Onboard'], ['orbit', 'Orbit'], ['top', 'Top'], ['overview', 'Overview']];
+MODES.forEach(([m, label], i) => { const b = document.createElement('button'); b.className = 'pill'; b.textContent = `${i + 1} ${label}`; b.dataset.mode = m; b.onclick = () => setMode(m); $('cams').appendChild(b); });
+[[.25, '¼×'], [.5, '½×'], [1, '1×'], [2, '2×'], [4, '4×']].forEach(([s, label]) => { const b = document.createElement('button'); b.className = 'pill' + (s === rate ? ' on' : ''); b.textContent = label; b.onclick = () => { rate = s; for (const x of $('speeds').children) x.classList.toggle('on', x === b); }; $('speeds').appendChild(b); });
+const togglePlay = () => { if (T >= R.t1) T = R.t0; playing = !playing; $('play').textContent = playing ? '❚❚' : '▶'; };
+$('play').onclick = togglePlay;
+const seekTo = e => { const r = $('bar').getBoundingClientRect(); T = R.t0 + Math.min(Math.max((e.clientX - r.left) / r.width, 0), 1) * (R.t1 - R.t0); camInit = false; for (const s of R.coneSets) s.state.fill(-1); };
+$('bar').addEventListener('pointerdown', e => { seekTo(e); const mv = ev => seekTo(ev); addEventListener('pointermove', mv); addEventListener('pointerup', () => removeEventListener('pointermove', mv), { once: true }); });
+addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+  if (/^Digit[1-5]$/.test(e.code)) setMode(MODES[+e.code.slice(5) - 1][0]);
+  if (e.code === 'ArrowRight' || e.code === 'ArrowLeft') { T = Math.min(R.t1, Math.max(R.t0, T + (e.code === 'ArrowRight' ? 10 : -10))); for (const s of R.coneSets) s.state.fill(-1); }
+  if (e.code === 'KeyV') $('video').style.display = $('video').style.display === 'none' ? '' : 'none'; });
+const runs = await fetch('data/runs.json').then(r => r.json()).catch(() => ['may12']);
+for (const [label, test] of GROUPS) { const g = document.createElement('optgroup'); g.label = label;
+  for (const name of runs.filter(test).sort((a, b) => (ORDER.indexOf(a) + 1 || 99) - (ORDER.indexOf(b) + 1 || 99))) { const o = document.createElement('option'); o.value = name; o.textContent = NAMES[name] || name; g.appendChild(o); }
+  if (g.children.length) $('runs').appendChild(g); }
+$('runs').onchange = e => { loadRun(e.target.value); e.target.blur(); };
+await loadRun(runs.includes('may12') ? 'may12' : runs[0]);
+T = R.t0 + 30; togglePlay();
+window.__viz = { renderer, camera, car, body, get model() { return carModel; }, get R() { return R; }, setMode, seek: t => { T = R.t0 + t; playing = false; $('play').textContent = '▶'; }, frame: dt => { update(dt); renderer.render(scene, camera); } };   // for profiling from the console
+let last = performance.now();
+renderer.setAnimationLoop(() => { const now = performance.now(), dt = Math.min((now - last) / 1000, .1); last = now; update(dt); renderer.render(scene, camera); });
+</script>
+</body>
+</html>
