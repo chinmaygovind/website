@@ -299,26 +299,33 @@ function update(dt) {
   $('sSpeed').innerHTML = Math.round(p.v * 3.6) + '<small>km/h</small>'; $('sView').textContent = n; $('sSight').textContent = lowerBound(R.tracks.t, T).toLocaleString(); $('sCones').textContent = mapped;
   const span = R.t1 - R.t0, f = (100 * (T - R.t0) / span).toFixed(2) + '%'; $('fill').style.width = f; $('knob').style.left = f;
   const mmss = s => String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(Math.floor(s % 60)).padStart(2, '0'); $('clock').textContent = mmss(T - R.t0) + ' / ' + mmss(span);
-  syncVideo(); drawBoxes(); moveCamera(p, dt);
+  syncVideo(); if (!vid.requestVideoFrameCallback || videoTime(T) == null) drawBoxes(vid.currentTime); moveCamera(p, dt);
 }
 function syncVideo() {
   const tv = videoTime(T);
   if (tv == null) { if ($('vidState').className) { $('vidState').textContent = '○ NOT RECORDED'; $('vidState').className = ''; } if (!vid.paused) vid.pause(); return; }
   if (!$('vidState').className) { $('vidState').textContent = '● SYNCED'; $('vidState').className = 'live'; }
-  if (playing && rate <= 4) { if (vid.playbackRate !== rate) vid.playbackRate = rate; if (vid.paused) vid.play().catch(() => {}); if (Math.abs(vid.currentTime - tv) > .4 && !vid.seeking) vid.currentTime = tv; }
-  else { if (!vid.paused) vid.pause(); if (Math.abs(vid.currentTime - tv) > (playing ? .8 : .05) && !vid.seeking) vid.currentTime = tv; }
+  const err = tv - vid.currentTime;
+  if (playing && rate <= 4) {   // keep the video on the 3D clock by nudging its speed (a seek per correction would stutter); jump only if far off
+    if (vid.paused) vid.play().catch(() => {});
+    if (Math.abs(err) > .5 && !vid.seeking) vid.currentTime = tv;
+    else { const want = rate * (1 + THREE.MathUtils.clamp(err * 2, -.25, .25)); if (Math.abs(vid.playbackRate - want) > .01) vid.playbackRate = want; }
+  }
+  else { if (!vid.paused) vid.pause(); if (Math.abs(err) > (playing ? .8 : .02) && !vid.seeking) vid.currentTime = tv; }
 }
-function resizeOverlay() { ov.width = ov.clientWidth * devicePixelRatio; ov.height = ov.clientHeight * devicePixelRatio; lastFrame = -1; }
+function resizeOverlay() { ov.width = ov.clientWidth * devicePixelRatio; ov.height = ov.clientHeight * devicePixelRatio; lastFrame = -1; drawBoxes(vid.currentTime); }
 addEventListener('resize', resizeOverlay);
-function drawBoxes() {
-  const tv = videoTime(T), fr = tv == null ? -2 : Math.round(tv * 10); if (fr === lastFrame) return; lastFrame = fr;
-  const w = ov.width, h = ov.height; octx.clearRect(0, 0, w, h); if (tv == null) return;
-  // detector pixels (640x352) -> where that image sits in the video frame -> the visible content box
-  const D = R.dets, a = lowerBound(D.t, fr / 10 - .049), b = lowerBound(D.t, fr / 10 + .049), [fx, fy, fw, fh] = R.camera.frame, [cx, cw] = R.camera.content;
+// boxes are drawn for the frame the browser is actually showing (its own media time), not the 3D clock: a close cone moves a box
+// width per frame, so even one frame of skew shows. dets are every 30 fps video frame, keyed by frame index.
+function drawBoxes(mt) {
+  const w = ov.width, h = ov.height, fr = R && videoTime(T) != null && vid.readyState >= 2 ? Math.round(mt * 30) : -2;
+  if (fr === lastFrame) return; lastFrame = fr; octx.clearRect(0, 0, w, h); if (fr < 0) return;
+  const D = R.dets, a = lowerBound(D.f, fr), b = lowerBound(D.f, fr + 1), [fx, fy, fw, fh] = R.camera.frame, [cx, cw] = R.camera.content;
   const X = u => (fx + u / 640 * fw - cx) / cw * w, Y = v => (fy + v / 352 * fh) * h, k = fw / 640 / cw * w;
   octx.lineWidth = 2 * devicePixelRatio;
   for (let i = a; i < b; i++) { const hh = D.h[i], u = D.u[i], v = D.v[i]; octx.strokeStyle = CSS[D.c[i]]; octx.strokeRect(X(u) - .36 * hh * k, Y(v - hh), .72 * hh * k, Y(v) - Y(v - hh)); }
 }
+if (vid.requestVideoFrameCallback) { const onFrame = (_, meta) => { drawBoxes(meta.mediaTime); vid.requestVideoFrameCallback(onFrame); }; vid.requestVideoFrameCallback(onFrame); }
 let sYaw = null;
 function moveCamera(p, dt) {
   const k = 1 - Math.exp(-dt * 4);
@@ -360,7 +367,7 @@ for (const [label, test] of GROUPS) { const g = document.createElement('optgroup
 $('runs').onchange = e => { loadRun(e.target.value); e.target.blur(); };
 await loadRun(runs.includes('may12') ? 'may12' : runs[0]);
 T = R.t0 + 30; togglePlay();
-window.__viz = { renderer, camera, car, body, get model() { return carModel; }, get R() { return R; }, setMode, seek: t => { T = R.t0 + t; playing = false; $('play').textContent = '▶'; }, frame: dt => { update(dt); renderer.render(scene, camera); } };   // for profiling from the console
+window.__viz = { renderer, camera, car, body, get model() { return carModel; }, get R() { return R; }, get T() { return T; }, videoTime: t => videoTime(t), setMode, seek: t => { T = R.t0 + t; playing = false; $('play').textContent = '▶'; }, frame: dt => { update(dt); renderer.render(scene, camera); } };   // for profiling from the console
 let last = performance.now();
 renderer.setAnimationLoop(() => { const now = performance.now(), dt = Math.min((now - last) / 1000, .1); last = now; update(dt); renderer.render(scene, camera); });
 </script>
