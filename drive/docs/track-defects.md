@@ -147,6 +147,9 @@ find by looking at a bad picture.
 
 ## Custom `scenery.js`
 
+- **A station's `lat` is rounded to three places**, so a straight on a diagonal
+  dots to only 0.99996 with itself. Harvest's tunnel finder used 0.99999 and
+  found no straight there at all; 0.9999 still rejects a 120-radius arc.
 - **The collider is missing on one path and nowhere else.** Scenery reaches the
   game three ways — inlined by the play page, fetched by the switcher, bundled
   into QuickJS for the anti-cheat. Miss one and that path builds the track

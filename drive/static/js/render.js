@@ -1522,6 +1522,340 @@ class Rain {
   }
 }
 
+// Leaves
+//
+// Turned on by a `leaves` block in a palette (Harvest). Piles of fallen leaves
+// lie on the road; the car the camera follows bursts one as it drives through,
+// the leaves tumble up and flutter down, a few land on the lens and slide off,
+// and the pile grows back. A light drift of leaves falls round the camera the
+// whole time. It lives here beside `Rain` for rain's reason - it moves - and it
+// is visual only: nothing is in the collider and `verify.py` has no renderer,
+// so no lap and no medal moves.
+//
+// One InstancedMesh for every flying leaf and one for every pile, so the whole
+// effect is two draw calls. The leaf on the lens is the same outline as the
+// leaf in the world, drawn as an SVG over the canvas.
+const LEAF_PTS = [[50, 2], [58, 22], [72, 14], [68, 36], [92, 30], [82, 46], [98, 54],
+  [74, 62], [80, 78], [58, 70], [53, 98], [47, 98], [42, 70], [20, 78], [26, 62],
+  [2, 54], [18, 46], [8, 30], [32, 36], [28, 14], [42, 22]];
+const LEAF_SVG = (c) => '<svg viewBox="0 0 100 100" width="100%" height="100%">'
+  + '<path fill="' + c + '" d="M' + LEAF_PTS.map(p => p.join(' ')).join('L') + 'Z"/>'
+  + '<path stroke="rgba(60,20,5,.45)" stroke-width="2.5" fill="none" '
+  + 'd="M50 96L50 30M50 62L24 46M50 62L76 46M50 48L36 24M50 48L64 24"/></svg>';
+
+class Leaves {
+  constructor(scene, cfg, line, canvas) {
+    const c = cfg || {};
+    this.scene = scene;
+    this.canvas = canvas || null;
+    this.drift = c.drift != null ? c.drift : 10;
+    this.hex = c.colors || [0xc8321e, 0xe0661c, 0xf0a020, 0x9a3a1a];
+    this.colors = this.hex.map(h => new THREE.Color(h));
+    let s = 0x6c656166;
+    this.rnd = () => {
+      s = (s + 0x6d2b79f5) | 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const rnd = this.rnd;
+
+    // Piles every `every` units, jittered, off the grid and never in the air.
+    this.piles = [];
+    const every = c.every || 55;
+    let d = 0, next = c.skip != null ? c.skip : 80;
+    for (let i = 1; line && i < line.length; i++) {
+      const a = line[i - 1].p, b = line[i].p;
+      d += Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+      if (d < next) continue;
+      next = d + every * (0.7 + rnd() * 0.6);
+      const e = line[i];
+      if (e.air) continue;
+      const o = (rnd() * 2 - 1) * e.hw * 0.55;
+      this.piles.push({ x: e.p[0] + e.lat[0] * o, y: e.p[1] + e.lat[1] * o,
+                        z: e.p[2] + e.lat[2] * o, yaw: rnd() * 6.28,
+                        s: 1.3 + rnd() * 0.5, out: 0, grow: 1 });
+    }
+    // A mound: a squashed icosahedron, each facet its own shade, tinted per pile.
+    const mound = new THREE.IcosahedronGeometry(1, 1).toNonIndexed();
+    const pos = mound.attributes.position;
+    const vc = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i += 3) {
+      const k = 0.7 + rnd() * 0.5;
+      for (let j = 0; j < 3; j++) vc.set([k, k, k], (i + j) * 3);
+    }
+    mound.setAttribute('color', new THREE.BufferAttribute(vc, 3));
+    this.moundGeo = mound;
+    this.pileMesh = new THREE.InstancedMesh(mound, new THREE.MeshLambertMaterial({
+      vertexColors: true, flatShading: true }), Math.max(1, this.piles.length));
+    this.pileMesh.count = this.piles.length;
+    this.piles.forEach((p, i) => this.pileMesh.setColorAt(i, this.colors[i % this.colors.length]));
+    this.pileMesh.frustumCulled = false;
+    scene.add(this.pileMesh);
+
+    // The flying leaves.
+    const shape = new THREE.Shape();
+    LEAF_PTS.forEach(([x, y], i) => (i ? shape.lineTo : shape.moveTo)
+      .call(shape, (x - 50) / 100, (50 - y) / 100));
+    this.leafGeo = new THREE.ShapeGeometry(shape);
+    this.N = 500;
+    this.leafMesh = new THREE.InstancedMesh(this.leafGeo, new THREE.MeshLambertMaterial({
+      side: THREE.DoubleSide }), this.N);
+    this.leafMesh.frustumCulled = false;
+    this.leaf = [];
+    for (let i = 0; i < this.N; i++) {
+      this.leaf.push({ life: 0, max: 1, p: new THREE.Vector3(), v: new THREE.Vector3(),
+                       q: new THREE.Quaternion(), w: new THREE.Vector3(), size: 1, floor: -Infinity,
+                       ph: rnd() * 6.28 });
+      this.leafMesh.setColorAt(i, this.colors[i % this.colors.length]);
+    }
+    this.next = 0;
+    this.carry = 0;
+    scene.add(this.leafMesh);
+
+    // The leaves lying on each pile, so a pile reads as leaves and not as a
+    // painted rock. Fixed poses, hidden with their pile when it bursts.
+    const R = 16;
+    this.rest = [];
+    this.restMesh = new THREE.InstancedMesh(this.leafGeo, new THREE.MeshLambertMaterial({
+      side: THREE.DoubleSide }), Math.max(1, this.piles.length * R));
+    this.restMesh.count = this.piles.length * R;
+    this.restMesh.frustumCulled = false;
+    const tilt = new THREE.Quaternion();
+    for (const p of this.piles) {
+      for (let k = 0; k < R; k++) {
+        const a = rnd() * 6.28, u = Math.sqrt(rnd()) * 1.15;
+        const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd() * 6.28);
+        tilt.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2 + (rnd() - 0.5) * 0.9);
+        q.multiply(tilt);
+        this.rest.push({ p, dx: Math.cos(a) * u * p.s, dz: Math.sin(a) * u * p.s,
+                         dy: 0.55 * p.s * 0.6 * Math.max(0, 1 - u * u) + 0.04,
+                         q, size: 0.55 + rnd() * 0.35 });
+        this.restMesh.setColorAt(this.rest.length - 1, this.colors[Math.floor(rnd() * this.colors.length)]);
+      }
+    }
+    scene.add(this.restMesh);
+    this.m = new THREE.Matrix4();
+    this.sc = new THREE.Vector3();
+    this.dq = new THREE.Quaternion();
+    this.up = new THREE.Vector3(0, 1, 0);
+    this.fwd = new THREE.Vector3();
+    this.at = new THREE.Vector3();
+    this.eu = new THREE.Euler();
+    this.flat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+    this.drawPiles();
+  }
+
+  spawn(x, y, z, vx, vy, vz, life, size, floor) {
+    const L = this.leaf[this.next = (this.next + 1) % this.N], r = this.rnd;
+    L.p.set(x, y, z);
+    L.v.set(vx, vy, vz);
+    L.q.setFromEuler(this.eu.set(r() * 6.28, r() * 6.28, r() * 6.28));
+    L.w.set(r() - 0.5, r() - 0.5, r() - 0.5).multiplyScalar(14);
+    L.life = L.max = life;
+    L.size = size;
+    L.floor = floor;
+    L.lens = null;
+    return L;
+  }
+
+  burst(p, car, camera) {
+    const r = this.rnd, cv = car.vel || { x: 0, y: 0, z: 0 };
+    for (let k = 0; k < 40; k++) {
+      const a = r() * 6.28, d = r() * p.s * 0.8;
+      this.spawn(p.x + Math.cos(a) * d, p.y + 0.4 + r() * 0.6, p.z + Math.sin(a) * d,
+                 cv.x * 0.45 + Math.cos(a) * (2 + r() * 5), 6 + r() * 9,
+                 cv.z * 0.45 + Math.sin(a) * (2 + r() * 5),
+                 3 + r() * 2.5, 0.5 + r() * 0.4, p.y + 0.05);
+    }
+    for (let k = 12 + Math.floor(r() * 7); k > 0; k--) this.toLens(p, camera);
+  }
+
+  /**
+   * One leaf out of the burst and onto the lens, as one continuous motion.
+   *
+   * The flight is worked out in *camera* space, because the camera is moving
+   * at racing speed and a world-space throw would never catch it. It starts
+   * where the pile is, arcs up, and ends just in front of the lens at the
+   * screen spot, size and angle the leaf on the glass will have - so when the
+   * 3D leaf is swapped for the flat one nothing on screen jumps.
+   */
+  toLens(p, camera) {
+    if (!this.canvas || typeof document === 'undefined') return;
+    const r = this.rnd;
+    const rect = this.canvas.getBoundingClientRect();
+    if (!rect.height) return;
+    const px = rect.height * (0.2 + r() * 0.25), angle = r() * 6.28;
+    const nx = (r() * 2 - 1) * 0.95, ny = (r() * 2 - 1) * 0.9;
+    const size = 0.55 + r() * 0.3;
+    const tan = Math.tan(camera.fov * Math.PI / 360);
+    const depth = size * rect.height / (2 * tan * px);
+    const end = new THREE.Vector3(nx * depth * tan * camera.aspect, ny * depth * tan, -depth);
+    const a = r() * 6.28, d = r() * p.s * 0.6;
+    const start = camera.worldToLocal(new THREE.Vector3(
+      p.x + Math.cos(a) * d, p.y + 0.6, p.z + Math.sin(a) * d));
+    const mid = start.clone().lerp(end, 0.5);
+    mid.y += 2.5 + r() * 2.5;
+    const L = this.spawn(0, 0, 0, 0, 0, 0, 10, size, -Infinity);
+    L.lens = { t: 0, T: 0.45 + r() * 0.25, start, mid, end, angle, px, nx, ny,
+               q0: L.q.clone(), hex: this.hex[Math.floor(r() * this.hex.length)] };
+    this.leafMesh.setColorAt(this.leaf.indexOf(L), new THREE.Color(L.lens.hex));
+    this.leafMesh.instanceColor.needsUpdate = true;
+  }
+
+  flyLens(L, dt, camera) {
+    const f = L.lens;
+    f.t = Math.min(1, f.t + dt / f.T);
+    const t = f.t, u = 1 - t;
+    // A quadratic through the arc, eased so it speeds up toward the glass.
+    const e = t * t * (3 - 2 * t) * 0.35 + t * t * 0.65;
+    const w = 1 - e;
+    this.at.set(w * w * f.start.x + 2 * w * e * f.mid.x + e * e * f.end.x,
+                w * w * f.start.y + 2 * w * e * f.mid.y + e * e * f.end.y,
+                w * w * f.start.z + 2 * w * e * f.mid.z + e * e * f.end.z);
+    L.p.copy(camera.localToWorld(this.at));
+    // Tumbling on the way, flat to the lens and at its final angle on arrival.
+    this.dq.setFromAxisAngle(new THREE.Vector3(0, 0, 1), f.angle);
+    const face = camera.quaternion.clone().multiply(this.dq);
+    L.q.copy(f.q0).slerp(face, Math.min(1, e * 1.15));
+    if (t >= 1) {
+      L.life = 0;
+      this.splat(f);
+    }
+  }
+
+  // A leaf on the lens: it lands where its flight ended, clings, and slides off.
+  splat(f) {
+    if (typeof document === 'undefined' || !document.body) return;
+    if (!this.box) {
+      this.box = document.createElement('div');
+      this.box.style.cssText = 'position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:4';
+      document.body.appendChild(this.box);
+    }
+    const r = this.rnd, rect = this.canvas.getBoundingClientRect();
+    const el = document.createElement('div');
+    const x = rect.left + (f.nx + 1) / 2 * rect.width;
+    const y = rect.top + (1 - f.ny) / 2 * rect.height;
+    // three turns a leaf anticlockwise for a positive angle, CSS clockwise.
+    const rot = -f.angle * 180 / Math.PI;
+    el.innerHTML = LEAF_SVG('#' + f.hex.toString(16).padStart(6, '0'));
+    el.style.cssText = 'position:absolute;width:' + f.px + 'px;height:' + f.px + 'px;left:'
+      + (x - f.px / 2) + 'px;top:' + (y - f.px / 2) + 'px;'
+      + 'filter:drop-shadow(0 3px 4px rgba(0,0,0,.35))';
+    this.box.appendChild(el);
+    const slide = 120 + r() * 160, dx = (r() - 0.5) * 80;
+    const T = (x, y, a, s) => `translate(${x}px,${y}px) rotate(${a}deg) scale(${s})`;
+    if (!el.animate) { setTimeout(() => el.remove(), 8000); return; }
+    // The first frame is exactly the 3D leaf's last one; then a long cling,
+    // and a slow slide off.
+    el.animate([
+      { transform: T(0, 0, rot, 1), opacity: 1 },
+      { transform: T(dx * 0.1, 12, rot + 3, 1), opacity: 1, offset: 0.75 },
+      { transform: T(dx, slide, rot + 35, 1), opacity: 0 },
+    ], { duration: 6000 + r() * 3000, easing: 'ease-in' }).onfinish = () => el.remove();
+  }
+
+  drawPiles() {
+    this.piles.forEach((p, i) => {
+      const g = p.out > 0 ? 0.001 : p.grow;
+      this.dq.setFromAxisAngle(this.up, p.yaw);
+      this.sc.set(p.s * g, 0.33 * p.s * g, p.s * g);
+      this.m.compose(this.at.set(p.x, p.y - 0.15, p.z), this.dq, this.sc);
+      this.pileMesh.setMatrixAt(i, this.m);
+    });
+    this.pileMesh.instanceMatrix.needsUpdate = true;
+    if (this.pileMesh.instanceColor) this.pileMesh.instanceColor.needsUpdate = true;
+    this.rest.forEach((L, i) => {
+      const p = L.p, g = p.out > 0 ? 0 : p.grow;
+      this.at.set(p.x + L.dx * g, p.y - 0.15 + L.dy * g + 0.12, p.z + L.dz * g);
+      this.sc.setScalar(L.size * g);
+      this.m.compose(this.at, L.q, this.sc);
+      this.restMesh.setMatrixAt(i, this.m);
+    });
+    this.restMesh.instanceMatrix.needsUpdate = true;
+    if (this.restMesh.instanceColor) this.restMesh.instanceColor.needsUpdate = true;
+  }
+
+  update(dt, camera, car) {
+    if (!(dt > 0) || dt > 0.25) dt = 1 / 60;
+    const cp = car && car.pos;
+    let dirty = false;
+    for (const p of this.piles) {
+      if (p.out > 0) {
+        p.out -= dt;
+        if (p.out <= 0) { p.grow = 0.01; }
+        dirty = true;
+        continue;
+      }
+      if (p.grow < 1) { p.grow = Math.min(1, p.grow + dt * 0.8); dirty = true; }
+      if (!cp || (car.speed || 0) < 3) continue;
+      const dx = cp.x - p.x, dz = cp.z - p.z;
+      if (dx * dx + dz * dz < (p.s + 1.6) ** 2 && Math.abs(cp.y - p.y) < 3) {
+        this.burst(p, car, camera);
+        p.out = 7;
+        dirty = true;
+      }
+    }
+    if (dirty) this.drawPiles();
+
+    // The drift: a few leaves a second, falling round the car and ahead of it.
+    // Round the car rather than the camera, so a shot from overhead (the plan
+    // view, a cover) has no leaf in front of the lens.
+    const r = this.rnd;
+    this.carry = cp ? this.carry + this.drift * dt : 0;
+    camera.getWorldDirection(this.fwd);
+    const fl = Math.hypot(this.fwd.x, this.fwd.z) || 1;
+    const fx = this.fwd.x / fl, fz = this.fwd.z / fl;
+    while (this.carry >= 1) {
+      this.carry -= 1;
+      const ahead = r() * 70, side = (r() - 0.5) * 70;
+      this.spawn(cp.x + fx * ahead - fz * side, cp.y + 4 + r() * 14,
+                 cp.z + fz * ahead + fx * side,
+                 1.5 + r(), -1.5, 0.5, 8 + r() * 4, 0.45 + r() * 0.3, -Infinity);
+    }
+
+    const t = performance.now() / 1000;
+    for (let i = 0; i < this.N; i++) {
+      const L = this.leaf[i];
+      if (L.life <= 0) { this.m.makeScale(0, 0, 0); this.leafMesh.setMatrixAt(i, this.m); continue; }
+      if (L.lens) this.flyLens(L, dt, camera);
+      else L.life -= dt;
+      if (!L.lens && L.p.y > L.floor) {
+        // Gravity, then air: a leaf falls at a couple of units a second, swaying.
+        L.v.y -= 14 * dt;
+        L.v.multiplyScalar(1 - Math.min(0.9, 2.4 * dt));
+        if (L.v.y < -2.4) L.v.y = -2.4;
+        L.p.addScaledVector(L.v, dt);
+        L.p.x += Math.sin(t * 2.1 + L.ph) * 1.2 * dt;
+        L.p.z += Math.cos(t * 1.7 + L.ph) * 1.2 * dt;
+        this.dq.setFromEuler(this.eu.set(L.w.x * dt, L.w.y * dt, L.w.z * dt));
+        L.q.multiply(this.dq);
+        if (L.p.y <= L.floor) {
+          L.p.y = L.floor;
+          L.q.setFromAxisAngle(this.up, L.ph).multiply(this.flat);
+        }
+      }
+      const fade = Math.min(1, L.life / 0.6);
+      this.sc.setScalar(L.size * fade);
+      this.m.compose(L.p, L.q, this.sc);
+      this.leafMesh.setMatrixAt(i, this.m);
+    }
+    this.leafMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  dispose() {
+    this.scene.remove(this.pileMesh);
+    this.scene.remove(this.leafMesh);
+    this.scene.remove(this.restMesh);
+    this.restMesh.material.dispose();
+    this.moundGeo.dispose();
+    this.leafGeo.dispose();
+    this.pileMesh.material.dispose();
+    this.leafMesh.material.dispose();
+    if (this.box) this.box.remove();
+  }
+}
+
 // Water
 //
 // A sea that moves, turned on by a `water` block in a palette. Every other
@@ -2357,6 +2691,9 @@ export class Renderer {
     // open air of the next one, at a world coordinate that means nothing there.
     if (this.lamps) { this.lamps.dispose(); this.lamps = null; }
     if (pal.lamps) this.lamps = new Lamps(this.scene, pal.lamps, built.line, built.collider);
+    if (this.leaves) { this.leaves.dispose(); this.leaves = null; }
+    if (pal.leaves) this.leaves = new Leaves(this.scene, pal.leaves, built.line,
+                                             this.renderer.domElement);
     const spec = (pal.sky && pal.sky.stops) ? pal.sky : null;
     // Fog is the haze the world dissolves into, so it has to be the colour of
     // the sky at the horizon or the join shows.
@@ -2450,6 +2787,7 @@ export class Renderer {
    * only thing both keys at once could sensibly mean.
    */
   follow(car, dt, opts = {}) {
+    this.target = car;
     const speed = car.speed;
     const first = !!opts.first;
     const dir = opts.rear ? -1 : 1;
@@ -2629,6 +2967,7 @@ export class Renderer {
     this._ghostsNear(dt);
     this.particles.update(dt, this.camera);
     if (this.rain) this.rain.update(dt, this.camera);
+    if (this.leaves) this.leaves.update(dt, this.camera, this.target);
     if (this.lamps) this.lamps.update(this.camera, dt);
     if (this.storm) this.storm.update(dt, this.camera);
     if (this.water) this.water.update(dt, this.camera);

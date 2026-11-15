@@ -57,6 +57,9 @@ KNOWN = REQUIRED + (
                       # to be the track's own statement rather than something
                       # `Renderer._ghostsNear` infers from proximity. Without
                       # it Dino Park's herd laughed like Boos.
+    "leaves",         # leaf piles on the road that burst as you drive
+                      # through, and a drift of falling leaves. render.js
+                      # beside `rain`; visual only, never in the collider.
     "rain",           # falling rain: the only animated scenery there is, so it
                       # lives in render.js and not in a track's scenery.js
     "storm",          # lightning: a flash on the scene's own two lights and a

@@ -1363,7 +1363,10 @@ export function buildTrack(track, T) {
     drawTerrain(solid, col, terrain, pal, APRON,
                 pal.terrain.gravel != null ? pal.terrain.gravel : 22);
     addApron(solid, col, track, pal, terrain, pal.terrain, GRASS_DROP);
-    armcoRuns = addArmco(solid, col, track, pal, terrain, pal.terrain, GRASS_DROP);
+    // `armco: 0` is an opt-out for a track that builds its own barrier in
+    // `scenery.js` (Harvest's post-and-rail fence).
+    armcoRuns = pal.terrain.armco === 0 ? []
+      : addArmco(solid, col, track, pal, terrain, pal.terrain, GRASS_DROP);
     killY = minY - 40;
     if (pal.furniture) {
       const keepOut = addFurniture(solid, bright, signs, track, pal, terrain,
