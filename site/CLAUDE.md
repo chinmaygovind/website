@@ -20,10 +20,10 @@ below.
   (`site/fonts/xkcd-script.woff2`, from ipython/xkcd-font — see **The font** below).
   Below it are **two
   labelled tile rows** — `<section class="tilerow">` each holding an
-  `<h2 class="rowlabel">` and its tiles, `ABOUT ME` over resume, poker, whales,
-  racing, music, settings and `GAMES` over drive, ttr, ers, kot. Each row is its
-  own `repeat(6, --tile)` grid, so the two line up as they did when they shared
-  one twelve-slot grid, and **six is still the row width**: a seventh tile in a
+  `<h2 class="rowlabel">` and its tiles, `ABOUT ME` over resume, whales,
+  racing, music, settings and `GAMES` over drive, ttr, ers, kot, poker. Each row is its
+  own `repeat(5, --tile)` grid, so the two line up as they did when they shared
+  one twelve-slot grid, and **five is the row width**: a sixth tile in a
   row wraps *within that row* rather than into the row below. **Keep `settings`
   last in the top row** — it opens the panel, not a page about Chinmay, so it
   sits at the end (see **The settings panel**) — and add new games to the

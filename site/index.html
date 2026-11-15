@@ -229,7 +229,7 @@
         max-width: 100%;
         margin: 0 auto;
         display: grid;
-        grid-template-columns: repeat(6, var(--tile));
+        grid-template-columns: repeat(5, var(--tile));
         gap: 1vw;
         align-items: center;
       }
@@ -1662,19 +1662,6 @@
         <span class="tile-label">RESUME</span>
       </button>
 
-      <button class="tile" data-modal="modal-poker">
-        <span class="tile-art">
-          <img
-            class="tile-img"
-            src="assets/icons/poker.png"
-            data-still="assets/icons/poker.png"
-            data-anim="assets/icons/poker.gif"
-            alt="Poker"
-          />
-        </span>
-        <span class="tile-label">POKER</span>
-      </button>
-
       <button class="tile" data-modal="modal-whale">
         <span class="tile-art">
           <img
@@ -1780,6 +1767,19 @@
           />
         </span>
         <span class="tile-label">KING OF TOKYO</span>
+      </button>
+
+      <button class="tile" data-modal="modal-poker">
+        <span class="tile-art">
+          <img
+            class="tile-img"
+            src="assets/icons/poker.png"
+            data-still="assets/icons/poker.png"
+            data-anim="assets/icons/poker.gif"
+            alt="Poker"
+          />
+        </span>
+        <span class="tile-label">POKER</span>
       </button>
       </section>
     </main>
@@ -1907,6 +1907,7 @@
             <img class="modal-icon" src="assets/icons/poker.gif" alt="" aria-hidden="true" />
             <h2 class="pane-title">poker</h2>
             <p class="pane-text">I like to play cards. I may not be the best, but I do get pretty lucky.</p>
+            <p class="pane-text">I also built a poker trainer where you can play hands against bots and see how close you are to game theory optimal. Go to <a class="here-link" href="https://gto.cgovind.com" target="_blank" rel="noopener">gto.cgovind.com</a> to play!</p>
             <p class="pane-text">Here are some resources I used when I first started to play poker. I'm still not very good, but they helped me learn the basics.</p>
             <ul class="link-list">
               <li>
@@ -1921,6 +1922,14 @@
             </ul>
           </div>
           <div class="pane pane-right">
+            <div class="media">
+              <div class="media-frame">
+                <a href="https://gto.cgovind.com" target="_blank" rel="noopener">
+                  <img class="media-img" src="assets/poker/gto-trainer.jpg" alt="A hand at the GTO trainer's table, against five bots" loading="lazy" />
+                </a>
+              </div>
+              <p class="pane-caption">click <a class="here-link" href="https://gto.cgovind.com" target="_blank" rel="noopener">here</a> to play the poker trainer</p>
+            </div>
             <div class="video-wrap">
               <iframe
                 class="video-frame"
@@ -1977,8 +1986,14 @@
             <img class="modal-icon" src="assets/icons/racing.gif" alt="" aria-hidden="true" />
             <h2 class="pane-title">racing</h2>
             <p class="pane-text">At Penn, I am a software lead for <a class="per-link" href="https://www.pennelectricracing.com/" target="_blank" rel="noopener">Penn Electric Racing</a>. The software team works on the embedded firmware and controls on the car as well as our cloud-based telemetry and data storage systems. If you are interested in joining the software team, please reach out!</p>
+            <p class="pane-text">Check out my <a class="here-link" href="https://rev11.pennelectricracing.com" target="_blank" rel="noopener">visualizer</a> of REV 11!</p>
           </div>
           <div class="pane pane-right">
+            <div class="media">
+              <div class="media-frame">
+                <a href="https://rev11.pennelectricracing.com" target="_blank" rel="noopener"><img class="media-img" src="assets/racing/rev11.jpg" alt="REV 11 in the 3D visualizer" /></a>
+              </div>
+            </div>
             <div class="media">
               <div class="media-frame">
                 <img class="media-img" src="assets/racing/teamphoto.jpeg" alt="My racing team" />
