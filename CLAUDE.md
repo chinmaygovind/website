@@ -86,6 +86,9 @@ It has its own CI and is not tested from this repo.
 
 ## Conventions / gotchas
 
+- **Never use a middle dot (`·`) as a separator in visible text, anywhere on the
+  site.** Chinmay hates it ("CIS 1600 · Christmas 2026" was rejected). Use a
+  line break, a comma, or two separate elements instead.
 - **Conductor is never reverse-proxied.** Its templates hardcode root-absolute
   paths (`/lobbies`, `/login`, `/static/…`) and connect Socket.IO at root, so it
   only runs at a host's root. `/conductor` redirects. Change the target via

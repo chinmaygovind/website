@@ -734,6 +734,43 @@ for `site/random` by name in the sparse checkout, as it does for `/ese2100`.
   whose sidebar text and reading links come from the `BOXES` object in the
   page's script.
 
+## `/cis-1600/secret-santa-26`
+
+CIS 1600's 2026 Secret Santa, `noindex`, linked from nothing. The page is
+static; its endpoints (`api/status`, `api/signup`, `api/draw`) are the `santa`
+blueprint in `accounts/santa.py`, table `santa_signups`. Anyone signs up with a
+name and email and gets a confirmation email.
+
+- **An admin (`ADMIN_USERNAMES`) is put on the list just by opening the page**,
+  once, under their account's email, and sees "You're on the list" instead of
+  the form, plus the full list with emails and a **Draw names / Redraw** button.
+- **Drawing shows the pairs on the page and emails nobody.** It can be redrawn
+  freely. A sign-up after a draw clears it, so a draw never leaves someone out.
+- **The assignment emails are sent only by hand, when Chinmay tells Claude to**,
+  never from a route:
+  `ssh ubuntu@54.157.20.148 'cd /home/ubuntu/website && set -a && . ./.env && set +a && ./venv/bin/python -c "import app; from accounts.santa import mail_assignments; app.app.app_context().push(); mail_assignments()"'`
+  It mails the current draw one person at a time, prints `sent`/`FAILED` per
+  person, and stamps `emailed_at`, so a rerun only retries the failures. After
+  that, sign-ups and redraws are closed and the public page says names have
+  been drawn. Check the box `.env` has `SMTP_*` first: without it `mail.send`
+  only logs the letter and still reports success.
+
+**The art is real Peanuts art, never drawn or AI-generated** (a
+hand-drawn SVG version and the AI "3D Snoopy" PNGs that flood image searches
+were both rejected). Woodstock is Wikipedia's infobox PNG and Snoopy on his
+doghouse is from pngmart.com; the tree is an ordinary decorated tree with
+presents, also pngmart. **Each character appears once, and the scene is just
+the tree on the left and the doghouse on the right**: the gang sitting in the
+middle and the special's drooping tree were tried and rejected. White fills
+shipped transparent, so the cutouts were flood-filled white inside their
+outlines. The snow is six-armed flakes drawn on a canvas, not dots. **Every piece of text is old Microsoft WordArt**, by request: the title is
+an SVG arched along a `textPath` with a rainbow gradient and a stacked-copy
+extrusion, `CIS 1600` is gold tilted back in perspective, `Christmas 2026` is
+chrome italic Times, and labels, buttons and messages are gradient text
+(`background-clip: text`) in Anton and Archivo Black from Google Fonts. The
+extrusion on HTML text is `filter: drop-shadow` chains, because `text-shadow`
+paints over a `background-clip: text` fill.
+
 ## The settings panel
 
 The settings tile used to open a placeholder. It is now a device settings screen

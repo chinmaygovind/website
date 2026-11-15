@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>CIS 1600 Secret Santa</title>
+<link rel="icon" href="img/woodstock.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo+Black&display=block" rel="stylesheet">
+<style>
+:root {
+  --sky1: #5d6c98; --sky2: #8e9cc2; --sky3: #c3cbe2;
+  --snow: #fbfbfd; --snow-shade: #dfe3f0; --ink: #1d1d1d;
+  --red: #d22f27; --blue: #2c55a6; --yellow: #f7d23e; --paper: #fffef9;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; overflow-x: clip; }
+body {
+  font-family: "Archivo Black", "Arial Black", sans-serif; color: var(--ink);
+  background: linear-gradient(180deg, var(--sky1) 0%, var(--sky2) 55%, var(--sky3) 100%) fixed;
+  min-height: 100vh; overflow-x: hidden;
+}
+#snow { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+.page { position: relative; z-index: 1; min-height: 100vh; display: flex; flex-direction: column; align-items: center; }
+
+.titlecard { text-align: center; margin: 30px 16px 26px; }
+.titlecard .course {
+  font-family: "Arial Black", "Helvetica Neue", Arial, sans-serif; font-weight: 900;
+  color: var(--blue); font-size: 30px; letter-spacing: 1px; line-height: 1;
+  text-shadow: 0 2px 0 rgba(255,255,255,.55);
+}
+.titlecard h1 {
+  font-family: "Mountains of Christmas", "xkcd", cursive; font-weight: 700;
+  color: var(--red); font-size: 84px; line-height: .95; margin: 2px 0 0;
+  -webkit-text-stroke: 1.5px #fff; paint-order: stroke fill;
+  text-shadow: 0 3px 0 rgba(120,20,20,.25);
+}
+.titlecard .year { font-size: 22px; color: #fff; margin-top: 4px; text-shadow: 0 1px 2px rgba(0,0,0,.25); }
+
+.card {
+  position: relative; z-index: 2; width: min(420px, calc(100vw - 32px));
+  background: var(--paper); border: 3px solid var(--ink);
+  border-radius: 18px 10px 20px 12px / 12px 20px 10px 18px;
+  box-shadow: 0 10px 0 rgba(30,40,80,.25);
+}
+.card .stripe { height: 30px; background: var(--yellow); border-bottom: 3px solid var(--ink); border-radius: 15px 7px 0 0; overflow: hidden; }
+.card .stripe svg { display: block; width: 100%; height: 100%; }
+.card .woodstock { position: absolute; width: 74px; top: -58px; right: 14px; transform: rotate(6deg); }
+.inner { padding: 20px 26px 26px; text-align: center; }
+label { display: block; text-align: left; font-size: 19px; margin: 10px 0 4px; }
+input {
+  width: 100%; font: inherit; font-size: 19px; padding: 10px 14px; background: #fff;
+  border: 2.5px solid var(--ink); border-radius: 12px 5px 14px 6px / 6px 14px 5px 12px; outline: none;
+}
+input:focus { box-shadow: 0 0 0 4px rgba(247,210,62,.7); }
+button {
+  margin-top: 20px; width: 100%; font: inherit; font-size: 24px; cursor: pointer; color: #fff;
+  background: var(--red); border: 3px solid var(--ink); padding: 10px 14px;
+  border-radius: 14px 6px 16px 6px / 6px 16px 6px 14px; box-shadow: 0 4px 0 var(--ink);
+  transition: transform .08s, box-shadow .08s;
+}
+button:hover { filter: brightness(.93); }
+button:active { transform: translateY(4px); box-shadow: 0 0 0 var(--ink); }
+button:disabled { opacity: .6; cursor: default; }
+.err { color: var(--red); min-height: 1.3em; margin: 10px 0 0; font-size: 18px; }
+.card.yay .woodstock { animation: flutter .5s ease-in-out infinite alternate; }
+@keyframes flutter { from { transform: translateY(0) rotate(6deg); } to { transform: translateY(-14px) rotate(-6deg); } }
+.done h2 { font-size: 30px; margin: 10px 0 6px; color: var(--blue); }
+.done p { font-size: 19px; margin: 4px 0; }
+.count { margin: 16px 0 0; font-size: 18px; color: #555; }
+
+.admin { margin: 28px 0 8px; }
+.admin h3 { margin: 6px 0 10px; }
+.rows { list-style: none; margin: 0 0 8px; padding: 0; text-align: left; }
+.rows li { padding: 8px 2px; border-bottom: 2px dashed #d9d4c4; font-size: 17px; line-height: 1.25; }
+.rows li:last-child { border-bottom: 0; }
+.rows small { display: block; font-family: Arial, sans-serif; font-size: 13px; color: #6a6a6a; overflow-wrap: anywhere; }
+.pairs li { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; }
+.pairs .arrow { color: var(--red); font-size: 20px; }
+.pairs li span:last-child { text-align: right; }
+.admin button { background: var(--blue); margin-top: 8px; }
+.state { margin: 12px 0 0; font-size: 16px; color: #555; }
+[hidden] { display: none !important; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.titlecard h1 { margin: -6px 0 calc(-.075 * min(560px, 92vw)); font-size: 0; }
+.titlecard .arch { display: block; width: min(560px, 92vw); height: auto; margin: 0 auto; }
+.titlecard .course {
+  font-family: Anton, Impact, sans-serif; font-weight: 400; font-size: 46px; letter-spacing: 3px; line-height: 1.05;
+  background: linear-gradient(180deg, #fffbd0 0%, #ffd23a 40%, #ff8a00 70%, #b34700 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  -webkit-text-stroke: 1.2px #5a2a00; text-shadow: none;
+  filter: drop-shadow(1px 1px 0 #5a2a00) drop-shadow(1px 1px 0 #5a2a00) drop-shadow(1px 1px 0 #3a1a00) drop-shadow(2px 3px 2px rgba(0,0,0,.35));
+  transform: perspective(240px) rotateX(18deg); display: inline-block;
+}
+.titlecard .year {
+  font-family: "Times New Roman", Times, serif; font-weight: 700; font-style: italic; font-size: 38px; margin-top: 2px;
+  background: linear-gradient(180deg, #ffffff 0%, #c9d8ff 35%, #2b4fae 52%, #9fbaff 70%, #ffffff 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  -webkit-text-stroke: 1px #0d1d55; text-shadow: none;
+  filter: drop-shadow(3px 3px 0 rgba(10,20,60,.55));
+  display: inline-block; transform: skewX(-12deg) scaleY(1.15);
+}
+.wa, label, .done h2, .admin h3, .count {
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+label {
+  font-size: 20px; display: table; background-image: linear-gradient(180deg, #9cff7a, #13a02a 55%, #04561a);
+  -webkit-text-stroke: .6px #033a10; filter: drop-shadow(1px 1px 0 #033a10) drop-shadow(1px 1px 0 rgba(0,0,0,.3));
+}
+button {
+  font-family: Anton, Impact, sans-serif; font-size: 28px; letter-spacing: 2px; color: #ffef4a;
+  text-shadow: 1px 1px 0 #7a0000, 2px 2px 0 #7a0000, 3px 3px 0 #4a0000, 4px 4px 2px rgba(0,0,0,.4);
+}
+.admin button { color: #d8f3ff; text-shadow: 1px 1px 0 #0a2366, 2px 2px 0 #0a2366, 3px 3px 0 #061440; }
+.done h2, .admin h3 {
+  font-family: Anton, Impact, sans-serif; font-weight: 400; font-size: 34px; letter-spacing: 1px; display: inline-block;
+  background-image: linear-gradient(90deg, #ff1a1a, #ff9a00, #ffee00, #2ccf3a, #2f6bff, #a033d6);
+  -webkit-text-stroke: 1px #1b1450; filter: drop-shadow(2px 2px 0 #2a1d55) drop-shadow(1px 1px 0 #2a1d55);
+}
+.count {
+  font-size: 19px; display: inline-block; background-image: linear-gradient(180deg, #e2a8ff, #7a22c9 60%, #3d0a73);
+  -webkit-text-stroke: .5px #2a0650; filter: drop-shadow(1px 1px 0 rgba(42,6,80,.6));
+}
+.done p { font-size: 17px; }
+input { font-family: "Archivo Black", "Arial Black", sans-serif; }
+
+
+.ground { position: relative; z-index: 0; width: 100%; margin-top: auto; height: 190px; pointer-events: none; }
+.bank { position: absolute; left: 0; right: 0; bottom: 0; height: 120px; background: var(--snow); }
+.lump { position: absolute; background: var(--snow); border-radius: 50%; }
+.tree { position: absolute; left: max(2vw, calc(50% - 640px)); bottom: 60px; height: 280px; z-index: 1; }
+.doghouse { position: absolute; right: max(4vw, calc(50% - 580px)); bottom: 84px; height: 270px; z-index: 1; }
+@media (max-width: 640px) {
+  .ground { height: 170px; }
+  .bank { height: 70px; }
+  .tree { height: 140px; bottom: 22px; left: 2vw; }
+  .doghouse { height: 150px; bottom: 34px; right: 6vw; }
+}
+@media (max-width: 480px) {
+  .titlecard { margin-top: 24px; margin-bottom: 40px; }
+  .titlecard .year { font-size: 32px; }
+  .rows li { font-size: 15px; }
+  .inner { padding: 18px 18px 22px; }
+  .titlecard h1 { font-size: 64px; }
+  .titlecard .course { font-size: 24px; }
+  .card .woodstock { width: 60px; top: -47px; }
+}
+@media (prefers-reduced-motion: reduce) { .card.yay .woodstock { animation: none; } }
+</style>
+</head>
+<body>
+<canvas id="snow"></canvas>
+<div class="page">
+  <header class="titlecard">
+    <div class="course">CIS 1600</div>
+    <h1>
+      <span class="sr">Secret Santa</span>
+      <svg class="arch" viewBox="0 0 640 200" aria-hidden="true">
+        <defs>
+          <linearGradient id="rainbow" gradientUnits="userSpaceOnUse" x1="60" y1="0" x2="580" y2="0">
+            <stop offset="0" stop-color="#ff1a1a"/><stop offset=".2" stop-color="#ff9a00"/><stop offset=".4" stop-color="#ffee00"/>
+            <stop offset=".6" stop-color="#2ccf3a"/><stop offset=".8" stop-color="#2f6bff"/><stop offset="1" stop-color="#a033d6"/>
+          </linearGradient>
+          <path id="arc" d="M 30 190 Q 320 -10 610 190"/>
+        </defs>
+        <g font-family="Anton, Impact, sans-serif" font-size="92" text-anchor="middle" letter-spacing="3">
+          <g fill="#2a1d55">
+            <text transform="translate(7 8)"><textPath href="#arc" startOffset="50%">Secret Santa</textPath></text>
+            <text transform="translate(6 7)"><textPath href="#arc" startOffset="50%">Secret Santa</textPath></text>
+            <text transform="translate(5 6)"><textPath href="#arc" startOffset="50%">Secret Santa</textPath></text>
+            <text transform="translate(4 5)"><textPath href="#arc" startOffset="50%">Secret Santa</textPath></text>
+            <text transform="translate(3 4)"><textPath href="#arc" startOffset="50%">Secret Santa</textPath></text>
+            <text transform="translate(2 2)"><textPath href="#arc" startOffset="50%">Secret Santa</textPath></text>
+          </g>
+          <text fill="url(#rainbow)" stroke="#1b1450" stroke-width="2.5" paint-order="stroke"><textPath href="#arc" startOffset="50%">Secret Santa</textPath></text>
+        </g>
+      </svg>
+    </h1>
+    <div class="year">Christmas 2026</div>
+  </header>
+
+  <div class="card">
+    <img class="woodstock" src="img/woodstock.png" alt="">
+    <div class="stripe">
+      <svg viewBox="0 0 420 30" preserveAspectRatio="none" aria-hidden="true">
+        <polyline points="0,9 30,22 60,9 90,22 120,9 150,22 180,9 210,22 240,9 270,22 300,9 330,22 360,9 390,22 420,9" fill="none" stroke="#1d1d1d" stroke-width="6"/>
+      </svg>
+    </div>
+    <div class="inner">
+      <form id="form" novalidate>
+        <label for="name">Your name</label>
+        <input id="name" autocomplete="name" maxlength="60" required>
+        <label for="email">Your email</label>
+        <input id="email" type="email" autocomplete="email" maxlength="120" required>
+        <button id="go" type="submit">Sign me up!</button>
+        <p class="err" id="err" role="alert"></p>
+      </form>
+
+      <div class="done" id="done" hidden>
+        <h2 id="doneTitle"></h2>
+        <div id="doneNote">
+          <p>Check your email for a confirmation.</p>
+          <p>Your assignment comes by email once names are drawn.</p>
+        </div>
+      </div>
+
+      <div class="done" id="closed" hidden>
+        <h2>Names have been drawn!</h2>
+        <p>Check your email for who you got.</p>
+      </div>
+
+      <p class="count" id="count"></p>
+    </div>
+  </div>
+
+  <div class="card admin" id="admin" hidden>
+    <div class="inner">
+      <h3>The list</h3>
+      <ol class="rows" id="people"></ol>
+      <h3 id="pairsTitle" hidden>The draw</h3>
+      <ol class="rows pairs" id="pairs" hidden></ol>
+      <button id="draw" type="button"></button>
+      <p class="state" id="drawMsg" role="status"></p>
+    </div>
+  </div>
+
+  <div class="ground" aria-hidden="true">
+    <div class="lump" style="left:-6%;bottom:60px;width:44%;height:130px"></div>
+    <div class="lump" style="left:28%;bottom:70px;width:48%;height:110px"></div>
+    <div class="lump" style="right:-8%;bottom:56px;width:46%;height:140px"></div>
+    <div class="bank"></div>
+    <img class="tree" src="img/tree.png" alt="">
+    <img class="doghouse" src="img/doghouse.png" alt="">
+  </div>
+</div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var api = function (path, body) {
+    return fetch("api/" + path, body ? {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body), credentials: "same-origin"
+    } : { credentials: "same-origin" }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) { j._status = r.status; return j; });
+    });
+  };
+
+  function el(tag, text, cls) { var e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; }
+
+  function show(s) {
+    $("count").textContent = s.count ? s.count + (s.count === 1 ? " person" : " people") + " signed up" : "";
+    if (s.me) {
+      $("form").hidden = true; $("done").hidden = false; $("doneNote").hidden = true;
+      $("doneTitle").textContent = "You're on the list, " + s.me + "!";
+    } else if (s.sent && $("done").hidden) { $("form").hidden = true; $("closed").hidden = false; }
+    if (!s.admin) return;
+    $("admin").hidden = false;
+    var ol = $("people"); ol.innerHTML = "";
+    (s.people || []).forEach(function (p) { var li = el("li", p.name); li.appendChild(el("small", p.email)); ol.appendChild(li); });
+    var pairs = s.pairs || [], pl = $("pairs"); pl.innerHTML = "";
+    pairs.forEach(function (p) { var li = el("li"); li.appendChild(el("span", p.from)); li.appendChild(el("span", "\u2192", "arrow")); li.appendChild(el("span", p.to)); pl.appendChild(li); });
+    $("pairsTitle").hidden = pl.hidden = !pairs.length;
+    $("draw").hidden = s.sent;
+    $("draw").textContent = pairs.length ? "Redraw" : "Draw names";
+    $("drawMsg").textContent = s.sent ? "Emails sent" : pairs.length ? "Not emailed yet" : "";
+  }
+  function refresh() { return api("status").then(show); }
+
+  $("form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    $("err").textContent = ""; $("go").disabled = true;
+    api("signup", { name: $("name").value, email: $("email").value }).then(function (j) {
+      $("go").disabled = false;
+      if (!j.ok) { $("err").textContent = j.error || "Something went wrong. Try again?"; return; }
+      $("form").hidden = true; $("done").hidden = false; $("form").closest(".card").classList.add("yay");
+      $("doneTitle").textContent = (j.already ? "You're already on the list, " : "You're on the list, ") + j.name + "!";
+      refresh();
+    }, function () { $("go").disabled = false; $("err").textContent = "Couldn't reach the North Pole. Try again?"; });
+  });
+
+  $("draw").addEventListener("click", function () {
+    var b = $("draw"); b.disabled = true;
+    api("draw", {}).then(function (j) {
+      b.disabled = false;
+      if (!j.ok) { $("drawMsg").textContent = j.error || "That didn't work."; return; }
+      refresh();
+    });
+  });
+
+  refresh();
+
+  var c = $("snow"), x = c.getContext("2d"), flakes = [], W, H, dpr = Math.min(devicePixelRatio || 1, 2);
+  function size() { W = innerWidth; H = innerHeight; c.width = W * dpr; c.height = H * dpr; x.setTransform(dpr, 0, 0, dpr, 0, 0); }
+  size(); addEventListener("resize", size);
+  for (var i = 0; i < 70; i++) flakes.push({ x: Math.random() * W, y: Math.random() * H, r: 4 + Math.random() * 9, s: .25 + Math.random() * .7, d: Math.random() * 6, a: Math.random() * 6.283, spin: (Math.random() - .5) * .01 });
+  function flake(f) {
+    x.save(); x.translate(f.x, f.y); x.rotate(f.a);
+    x.beginPath();
+    for (var k = 0; k < 6; k++) {
+      x.moveTo(0, 0); x.lineTo(0, -f.r);
+      x.moveTo(0, -f.r * .55); x.lineTo(-f.r * .28, -f.r * .8);
+      x.moveTo(0, -f.r * .55); x.lineTo(f.r * .28, -f.r * .8);
+      x.rotate(Math.PI / 3);
+    }
+    x.lineWidth = Math.max(1.2, f.r / 6); x.stroke(); x.restore();
+  }
+  var still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  x.strokeStyle = "#fff"; x.lineCap = "round";
+  (function tick(t) {
+    x.clearRect(0, 0, W, H); x.strokeStyle = "#fff"; x.lineCap = "round";
+    flakes.forEach(function (f) {
+      if (!still) { f.y += f.s; f.x += Math.sin(t / 1800 + f.d) * .35; f.a += f.spin; if (f.y > H + 15) { f.y = -15; f.x = Math.random() * W; } }
+      flake(f);
+    });
+    if (!still) requestAnimationFrame(tick);
+  })(0);
+})();
+</script>
+</body>
+</html>

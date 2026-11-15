@@ -98,6 +98,9 @@ def init_app(app: Flask):
     from .admin import bp as admin_bp
     app.register_blueprint(admin_bp)
 
+    from .santa import bp as santa_bp
+    app.register_blueprint(santa_bp)
+
     with app.app_context():
         # Creates `user_profiles` and nothing else that isn't already there -
         # CREATE TABLE IF NOT EXISTS, so the shared `users` table is untouched,
