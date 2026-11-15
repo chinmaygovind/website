@@ -154,7 +154,7 @@ a:hover { text-decoration: underline; }
   border-bottom: 2px solid var(--line);
   position: relative; overflow: hidden; isolation: isolate;
 }
-/* the shine sweeping across, and the sparkles twinkling over it - both behind the text */
+/* the shine sweeping across, and leaves falling through it - both behind the text */
 .newsbar::before, .newsbar::after {
   content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
 }
@@ -164,21 +164,11 @@ a:hover { text-decoration: underline; }
   animation: newsbar-shine 3.2s ease-in-out infinite;
 }
 .newsbar::after {
-  background:
-    radial-gradient(circle at 6% 30%, #fff 0 2px, rgba(255,255,255,.5) 2.5px, transparent 5px),
-    radial-gradient(circle at 14% 72%, #fff 0 1.5px, rgba(255,255,255,.5) 2.0px, transparent 4.0px),
-    radial-gradient(circle at 23% 28%, #fff 0 2.5px, rgba(255,255,255,.5) 3.0px, transparent 6.0px),
-    radial-gradient(circle at 31% 66%, #fff 0 1.5px, rgba(255,255,255,.5) 2.0px, transparent 4.0px),
-    radial-gradient(circle at 44% 22%, #fff 0 2px, rgba(255,255,255,.5) 2.5px, transparent 5px),
-    radial-gradient(circle at 55% 74%, #fff 0 2.5px, rgba(255,255,255,.5) 3.0px, transparent 6.0px),
-    radial-gradient(circle at 68% 30%, #fff 0 1.5px, rgba(255,255,255,.5) 2.0px, transparent 4.0px),
-    radial-gradient(circle at 76% 70%, #fff 0 2px, rgba(255,255,255,.5) 2.5px, transparent 5px),
-    radial-gradient(circle at 87% 26%, #fff 0 2.5px, rgba(255,255,255,.5) 3.0px, transparent 6.0px),
-    radial-gradient(circle at 95% 62%, #fff 0 1.5px, rgba(255,255,255,.5) 2.0px, transparent 4.0px);
-  animation: newsbar-twinkle 1.6s ease-in-out infinite alternate;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='60'%3E%3Cdefs%3E%3Cpath id='l' d='M50 2L58 22L72 14L68 36L92 30L82 46L98 54L74 62L80 78L58 70L53 98L47 98L42 70L20 78L26 62L2 54L18 46L8 30L32 36L28 14L42 22Z'/%3E%3C/defs%3E%3Cuse href='%23l' fill='%239a2a10' transform='translate%2820 12%29 rotate%2820%29 scale%280.24%29 translate%28-50 -50%29'/%3E%3Cuse href='%23l' fill='%23b8261a' transform='translate%2875 40%29 rotate%28-35%29 scale%280.19%29 translate%28-50 -50%29'/%3E%3Cuse href='%23l' fill='%237a3a12' transform='translate%28120 18%29 rotate%2860%29 scale%280.26%29 translate%28-50 -50%29'/%3E%3Cuse href='%23l' fill='%23f2c040' transform='translate%28170 46%29 rotate%28-10%29 scale%280.21%29 translate%28-50 -50%29'/%3E%3C/svg%3E"), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='150' height='80'%3E%3Cdefs%3E%3Cpath id='l' d='M50 2L58 22L72 14L68 36L92 30L82 46L98 54L74 62L80 78L58 70L53 98L47 98L42 70L20 78L26 62L2 54L18 46L8 30L32 36L28 14L42 22Z'/%3E%3C/defs%3E%3Cuse href='%23l' fill='%23c8321e' transform='translate%2840 60%29 rotate%28140%29 scale%280.21%29 translate%28-50 -50%29'/%3E%3Cuse href='%23l' fill='%238a3418' transform='translate%28100 25%29 rotate%28-70%29 scale%280.24%29 translate%28-50 -50%29'/%3E%3Cuse href='%23l' fill='%23ffd060' transform='translate%28135 70%29 rotate%2815%29 scale%280.18%29 translate%28-50 -50%29'/%3E%3C/svg%3E");
+  animation: newsbar-leaves 7s linear infinite;
 }
+@keyframes newsbar-leaves { from { background-position: 0 0, 0 0; } to { background-position: 200px 120px, -150px 160px; } }
 @keyframes newsbar-shine { 60%, 100% { transform: translateX(100%); } }
-@keyframes newsbar-twinkle { from { opacity: .15; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .newsbar::before, .newsbar::after { animation: none; }
   .newsbar::before { display: none; }
