@@ -1729,8 +1729,10 @@ class Leaves {
     if (typeof document === 'undefined' || !document.body) return;
     if (!this.box) {
       this.box = document.createElement('div');
-      this.box.style.cssText = 'position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:4';
-      document.body.appendChild(this.box);
+      // Straight after the canvas and at z-index 0, so the HUD, which comes
+      // later in the page, paints over the leaves.
+      this.box.style.cssText = 'position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:0';
+      this.canvas.after(this.box);
     }
     const r = this.rnd, rect = this.canvas.getBoundingClientRect();
     const el = document.createElement('div');
@@ -1841,6 +1843,12 @@ class Leaves {
       this.leafMesh.setMatrixAt(i, this.m);
     }
     this.leafMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  // Every leaf on the lens and every one still flying at it, gone at once.
+  wipe() {
+    if (this.box) this.box.replaceChildren();
+    for (const L of this.leaf) if (L.lens) { L.lens = null; L.life = 0; }
   }
 
   dispose() {
@@ -2890,6 +2898,11 @@ export class Renderer {
 
   /** A tow effect for somebody else's car, to be disposed of with it. */
   makeDraft() { return new Draft(this.scene, RIVAL_STREAKS); }
+
+  /** Clear every leaf off the lens: a restart starts with a clean screen. */
+  wipeLens() {
+    if (this.leaves) this.leaves.wipe();
+  }
 
   smoke(pos, vel, kind) {
     if (kind === 'spark') {

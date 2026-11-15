@@ -755,6 +755,8 @@ function resetToStart() {
   if (S.ghost) S.ghost.t = 0;
   showStartHint();
   clearDelta();
+  // Optional call: render.js is untokened and may be an older cached copy.
+  S.renderer.wipeLens?.();
   // `Run.reset` lifted the taint, so the badge goes with it. Shift+R is how you
   // get back to a lap that counts, and it has to *look* like it worked.
   updatePracticeTag();
