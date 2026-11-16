@@ -424,7 +424,7 @@ def _drive_recent(conn, uid, limit):
                 slug = race.get("track") or ""
                 out.append({
                     "when": _when(race.get("t")),
-                    "what": "Race · " + DRIVE_TRACKS.get(slug, slug or "unknown track"),
+                    "what": "Race, " + DRIVE_TRACKS.get(slug, slug or "unknown track"),
                     "kind": "race",
                     "place": idx + 1, "of": len(standings),
                     "detail": _ms(ms) if ms else "DNF", "medal": None,
@@ -479,7 +479,7 @@ def _gto(conn, uid):
 
     return {
         "elo": None,
-        "headline": "%s hand%s · %s" % ("{:,}".format(hands),
+        "headline": "%s hand%s | %s" % ("{:,}".format(hands),
                                         "" if hands == 1 else "s", rate),
         "played": hands, "won": s["pots"],
         "cells": [

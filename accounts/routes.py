@@ -85,7 +85,7 @@ def _shortdate(value):
 
 @bp.app_template_filter("shortstamp")
 def _shortstamp(value):
-    """8/2 · 14:23:05 - the date, and the clock time it actually happened at.
+    """8/2 | 14:23:05 - the date, and the clock time it actually happened at.
 
     A list of recent games is read for its order, which the date alone gives -
     but two games on the same evening are the same row twice without the time,
@@ -100,7 +100,7 @@ def _shortstamp(value):
     """
     if not value:
         return ""
-    return "%s · %02d:%02d:%02d" % (_shortdate(value), value.hour,
+    return "%s | %02d:%02d:%02d" % (_shortdate(value), value.hour,
                                     value.minute, value.second)
 
 

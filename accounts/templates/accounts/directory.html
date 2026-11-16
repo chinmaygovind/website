@@ -1,6 +1,6 @@
 {% extends "accounts/base.html" %}
 {% import "accounts/_bits.html" as bits with context %}
-{% block title %}Players · cgovind{% endblock %}
+{% block title %}Players | cgovind{% endblock %}
 
 {% block body %}
 <div class="card">
@@ -34,7 +34,7 @@
       </div>
       <div class="person-sub">
         {% if row.status and row.status.online %}{{ row.status.text }}
-        {% else %}@{{ row.user.username }} · joined {{ row.user.created_at|usdate }}{% endif %}
+        {% else %}@{{ row.user.username }} | joined {{ row.user.created_at|usdate }}{% endif %}
       </div>
     </div>
     {# Four columns whether or not they are filled: a dash in the KoT column is

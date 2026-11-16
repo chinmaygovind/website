@@ -22,10 +22,10 @@
     </div>
   </div>
   <p class="muted tiny" style="margin-top:1rem">
-    {{ ad.when(started) }} → {{ ad.when(ended) }} ·
+    {{ ad.when(started) }} → {{ ad.when(ended) }} |
     <span title="{{ hits[0].user_agent }}">{{ hits[0].agent }}</span>
-    {%- if hits[0].referrer %} · arrived from {{ hits[0].referrer }}{% endif %}
-    · <span class="mono dim">{{ session_id }}</span>
+    {%- if hits[0].referrer %} | arrived from {{ hits[0].referrer }}{% endif %}
+    | <span class="mono dim">{{ session_id }}</span>
   </p>
 </div>
 

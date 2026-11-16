@@ -11,11 +11,11 @@
   <div class="tiles">
     <div class="cell">
       <b>{{ stats.accounts|commas }}</b>
-      <span>accounts{% if stats.bots %} · {{ stats.bots }} bot{{ '' if stats.bots == 1 else 's' }}{% endif %}</span>
+      <span>accounts{% if stats.bots %} | {{ stats.bots }} bot{{ '' if stats.bots == 1 else 's' }}{% endif %}</span>
     </div>
     <div class="cell">
       <b>{{ stats.new_week|commas }}</b>
-      <span>new this week{% if stats.new_today %} · {{ stats.new_today }} today{% endif %}</span>
+      <span>new this week{% if stats.new_today %} | {{ stats.new_today }} today{% endif %}</span>
     </div>
     <div class="cell">
       <b>{{ stats.games|commas }}</b>
@@ -32,7 +32,7 @@
        exists for - "did that post work" - has a date. #}
     <div class="cell">
       <b>{{ stats.drivers.players|commas }}</b>
-      <span>drove a lap{% if stats.drivers.signed_in %} · {{ stats.drivers.signed_in }} signed in{% endif %}</span>
+      <span>drove a lap{% if stats.drivers.signed_in %} | {{ stats.drivers.signed_in }} signed in{% endif %}</span>
     </div>
     <div class="cell">
       <b>{{ stats.visitors|commas }}</b>
@@ -40,7 +40,7 @@
     </div>
     <div class="cell">
       <b>{{ stats.visits|commas }}</b>
-      <span>page views{% if stats.bot_visits %} · {{ stats.bot_visits|commas }} crawler{% endif %}</span>
+      <span>page views{% if stats.bot_visits %} | {{ stats.bot_visits|commas }} crawler{% endif %}</span>
     </div>
     <div class="cell">
       <b>{{ stats.sessions|commas }}</b>
@@ -205,7 +205,7 @@
         {% endfor %}
         </tbody>
       </table>
-      {% if paths %}<p class="muted tiny">views · visitors</p>{% endif %}
+      {% if paths %}<p class="muted tiny">views | visitors</p>{% endif %}
     </div>
     <div>
       <h3>Sent here by</h3>

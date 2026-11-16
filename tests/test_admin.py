@@ -516,15 +516,15 @@ def test_an_empty_database_still_renders_every_page(client, as_admin, admin_rout
 
 @pytest.mark.parametrize("ua, expected", [
     ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
-     " (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36", "Chrome 130 · macOS"),
+     " (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36", "Chrome 130 | macOS"),
     ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
      " like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
-     "Edge 129 · Windows"),
+     "Edge 129 | Windows"),
     ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15"
      " (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-     "Safari 17 · iPhone"),
+     "Safari 17 | iPhone"),
     ("Mozilla/5.0 (X11; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0",
-     "Firefox 120 · Linux"),
+     "Firefox 120 | Linux"),
     ("", "—"),
 ])
 def test_a_user_agent_is_read_down_to_the_two_words_worth_showing(ua, expected):

@@ -119,7 +119,7 @@ p { margin: 0; }
 }
 .hero-handle { font-size: 1.25rem; color: var(--muted); margin-top: .45rem; }
 .hero-meta { margin-top: .55rem; font-size: 1.1rem; color: var(--charcoal); }
-.hero-meta span + span::before { content: " · "; color: var(--hair); }
+.hero-meta span + span::before { content: " | "; color: var(--hair); }
 
 /* --- where somebody is, right now ----------------------------------------
    A dot and a sentence. The dot is the only thing on these pages that is not
@@ -326,7 +326,7 @@ p { margin: 0; }
 .recent h4 { margin: 0 0 .5rem; font-size: 1.15rem; font-weight: normal; color: var(--muted); }
 /* The first column is a fixed width rather than `auto` because every row is its
    own grid, so nothing lines any of them up except the number written here. It
-   holds a date and a clock time now (8/2 · 14:23:05), which is what widened it
+   holds a date and a clock time now (8/2 | 14:23:05), which is what widened it
    - and it has to fit the widest one, which is a stamp from another year. */
 .rec {
   display: grid;
@@ -623,7 +623,7 @@ input[type=file] { font: inherit; font-size: 1rem; max-width: 100%; }
   .hero-text { padding-right: 3rem; }
   /* One fact per line rather than a run separated by middots. On a phone the
      run wraps, which both splits a phrase across two lines and leaves a
-     dangling "·" at the end of the first one, reading as a typo. */
+     dangling "|" at the end of the first one, reading as a typo. */
   .hero-meta span { display: block; }
   .hero-meta span + span::before { content: none; }
   .grid { grid-template-columns: repeat(3, 1fr); }
@@ -670,7 +670,7 @@ input[type=file] { font: inherit; font-size: 1rem; max-width: 100%; }
 /* ---- tiles -------------------------------------------------------------- */
 
 /* Four across rather than the profile's five: these labels are phrases
-   ("page views · 3,910 crawler") where a profile's are single words. */
+   ("page views | 3,910 crawler") where a profile's are single words. */
 .tiles {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

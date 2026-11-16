@@ -114,7 +114,7 @@ def test_a_recent_result_says_what_time_of_day_it_happened(client, make_user, db
     db.session.commit()
 
     page = body(client.get("/accounts/driver?game=drive"))
-    assert "3/4/24 \u00b7 14:23:05" in page, "the date, and the clock time it happened at"
+    assert "3/4/24 | 14:23:05" in page, "the date, and the clock time it happened at"
     assert 'datetime="2024-03-04T14:23:05Z"' in page, "which the script rewrites from"
 
 
@@ -733,7 +733,7 @@ def test_the_trainer_shows_a_win_rate_where_the_games_show_a_rating(client, make
     _gto_rows(db, uid)
     page = body(client.get("/accounts/grinder?game=gto"))
     assert "bb/100" in page
-    assert "rating None" not in page and "None ·" not in page
+    assert "rating None" not in page and "None |" not in page
     assert "200 hands" in page
 
 

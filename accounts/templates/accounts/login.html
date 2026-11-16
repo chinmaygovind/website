@@ -1,5 +1,5 @@
 {% extends "accounts/base.html" %}
-{% block title %}{{ 'Create an account' if mode == 'register' else 'Log in' }} · cgovind{% endblock %}
+{% block title %}{{ 'Create an account' if mode == 'register' else 'Log in' }} | cgovind{% endblock %}
 {% block pageclass %} narrow{% endblock %}
 
 {% block body %}
@@ -51,7 +51,7 @@
   </form>
   <p class="muted tiny" style="margin-top:1rem">
     <a href="{{ url_for('accounts.forgot') }}">Forgot your password?</a>
-    &nbsp;·&nbsp;
+    &nbsp;|&nbsp;
     No account? <a href="{{ url_for('accounts.register', next=next) }}">Create one</a>.
   </p>
   {% endif %}

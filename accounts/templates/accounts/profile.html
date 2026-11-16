@@ -1,6 +1,6 @@
 {% extends "accounts/base.html" %}
 {% import "accounts/_bits.html" as bits with context %}
-{% block title %}{{ user.display }} · cgovind{% endblock %}
+{% block title %}{{ user.display }} | cgovind{% endblock %}
 
 {% block body %}
 
@@ -62,7 +62,7 @@
       {%- if not b.played -%}
         not played yet
       {%- elif b.elo -%}
-        {{ b.tier }} · {{ b.played }} played
+        {{ b.tier }} | {{ b.played }} played
       {%- else -%}
         hands played
       {%- endif -%}
@@ -91,7 +91,7 @@
     {%- if not b.played -%}
       nothing here yet — <a href="{{ b.url }}">play a game</a>
     {%- elif b.elo -%}
-      rating {{ b.elo }} · {{ b.tier }}
+      rating {{ b.elo }} | {{ b.tier }}
     {%- else -%}
       {{ b.headline }}
     {%- endif -%}
@@ -225,7 +225,7 @@
     var d = new Date(el.getAttribute('datetime'));
     if (isNaN(d.getTime())) return;
     var year = d.getFullYear() === thisYear ? '' : '/' + pad(d.getFullYear() % 100);
-    el.textContent = (d.getMonth() + 1) + '/' + d.getDate() + year + ' · ' +
+    el.textContent = (d.getMonth() + 1) + '/' + d.getDate() + year + ' | ' +
       pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
     el.title = d.toString();
   });

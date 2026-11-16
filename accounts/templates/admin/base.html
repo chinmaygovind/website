@@ -1,6 +1,6 @@
 {% extends "accounts/base.html" %}
 {% block pageclass %} admin{% endblock %}
-{% block title %}{% block heading %}Console{% endblock %} · admin{% endblock %}
+{% block title %}{% block heading %}Console{% endblock %} | admin{% endblock %}
 
 {% block head %}
   {# Nothing here is for anybody but the one account that can see it, and a
@@ -38,7 +38,7 @@
     var d = new Date(el.getAttribute('datetime'));
     if (isNaN(d.getTime())) return;
     var year = d.getFullYear() === thisYear ? '' : '/' + pad(d.getFullYear() % 100);
-    el.textContent = (d.getMonth() + 1) + '/' + d.getDate() + year + ' · ' +
+    el.textContent = (d.getMonth() + 1) + '/' + d.getDate() + year + ' | ' +
       pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
     el.title = d.toString();
   });

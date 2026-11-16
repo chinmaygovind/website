@@ -194,7 +194,7 @@ _PLATFORMS = (
 
 
 def _agent(ua):
-    """``Chrome 130 · macOS`` out of ninety characters of Mozilla cosplay.
+    """``Chrome 130 | macOS`` out of ninety characters of Mozilla cosplay.
 
     Deliberately a dozen patterns rather than a user-agent library: this is a
     convenience for reading a table, nothing is filtered or counted by it, and
@@ -208,7 +208,7 @@ def _agent(ua):
                     for m in [re.search(pat, ua)] if m), None)
     platform = next((name for name, pat in _PLATFORMS if re.search(pat, ua)), None)
     if browser and platform:
-        return "%s · %s" % (browser, platform)
+        return "%s | %s" % (browser, platform)
     if browser or platform:
         return browser or platform
     return ua[:40]

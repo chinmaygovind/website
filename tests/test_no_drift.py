@@ -99,7 +99,7 @@ def _ladder(text):
     ("drive", ("drive", "models.py"), "DriveStats"),
 ])
 def test_tiers_match_the_games(key, path, class_name):
-    """A profile says "1108 · Engineer". The number comes from the game's table
+    """A profile says "1108 | Engineer". The number comes from the game's table
     and the word from a copy of the game's ladder, so if the game retunes its
     ladder and this does not follow, the profile calls somebody something the
     game itself no longer would."""
