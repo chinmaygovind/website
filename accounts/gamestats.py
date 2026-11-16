@@ -99,6 +99,13 @@ DRIVE_TRACKS = {
     "baku": "Baku",
     "sepang": "Sepang",
     "citadel": "Citadel",
+    "frost": "Frost",
+    "harbor": "Harbor",
+    "harvest": "Harvest",
+    "monument": "Monument",
+    "sahara": "Sahara",
+    "singapore": "Marina Bay",
+    "starport": "Starport",
 }
 
 
