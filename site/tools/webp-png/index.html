@@ -55,6 +55,8 @@ a.back{color:var(--faint);text-decoration:none}
 a.back:hover{color:var(--accent)}
 h1{margin:1rem 0 1.4rem;font-weight:bold;line-height:1;font-size:clamp(2.4rem,7vw,3.6rem)}
 h1 span{color:var(--accent)}
+.top{display:flex;align-items:baseline;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.safe{margin:0 0 1.4rem;color:var(--faint);font-size:clamp(1rem,2.4vw,1.2rem)}
 .drop{
   display:flex;align-items:center;justify-content:center;
   height:min(52vh,380px);width:100%;
@@ -90,7 +92,10 @@ input{display:none}
 <body>
 <div class="wrap">
   <a class="back" href="/">&#8592; cgovind.com</a>
-  <h1>webp <span>&#8594;</span> png</h1>
+  <div class="top">
+    <h1>webp <span>&#8594;</span> png</h1>
+    <p class="safe">nothing is uploaded</p>
+  </div>
   <button class="drop" id="drop">drop, paste, or click</button>
   <input type="file" id="pick" accept="image/*" multiple>
   <div class="out" id="out"></div>
