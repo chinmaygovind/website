@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebP to PNG Converter - Free, No Upload</title>
+<meta name="description" content="Convert WebP to PNG instantly. Drop, paste or pick images; they never leave your browser. Free, no upload, no ads, no signup.">
+<link rel="canonical" href="https://cgovind.com/tools/webp-png/">
+<meta property="og:title" content="WebP to PNG">
+<meta property="og:description" content="Drop or paste a WebP, get a PNG. Nothing is uploaded.">
+<meta property="og:url" content="https://cgovind.com/tools/webp-png/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="cgovind.com">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="WebP to PNG">
+<meta name="twitter:description" content="Drop or paste a WebP, get a PNG. Nothing is uploaded.">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101114" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../../favicon.ico">
+<link rel="preload" href="../../fonts/xkcd-script.woff2" as="font" type="font/woff2" crossorigin>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"WebApplication","name":"WebP to PNG Converter","alternateName":["WebP to PNG","Convert WebP to PNG","WebP Converter"],"url":"https://cgovind.com/tools/webp-png/","applicationCategory":"MultimediaApplication","operatingSystem":"Any","browserRequirements":"Requires JavaScript","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"description":"Convert WebP images to PNG in your browser. Files are never uploaded.","featureList":["Convert WebP to PNG","Batch conversion","Paste from clipboard","Drag and drop","Keeps transparency","Works offline, no upload"],"inLanguage":"en","author":{"@type":"Person","name":"Chinmay Govind","url":"https://cgovind.com/"}}
+</script>
+<style>
+@font-face {
+  font-family: "xkcd Script";
+  src: url("../../fonts/xkcd-script.woff2") format("woff2"),
+       url("../../fonts/xkcd-script.woff") format("woff");
+  font-display: block;
+}
+:root{
+  color-scheme: light;
+  --bg:#ffffff; --fg:#000000;
+  --hair: rgba(0,0,0,0.18); --wash: rgba(0,0,0,0.03);
+  --faint: rgba(0,0,0,0.4);
+  --accent:#2f6fde; --bad:#c0392b;
+}
+html[data-theme="dark"]{
+  color-scheme: dark;
+  --bg:#101114; --fg:#ececec;
+  --hair: rgba(255,255,255,0.2); --wash: rgba(255,255,255,0.04);
+  --faint: rgba(255,255,255,0.42);
+  --accent:#6fa3ff; --bad:#ff7a6b;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--bg); color:var(--fg);
+  font-family:"xkcd Script","Comic Sans MS",cursive;
+  min-height:100vh;
+}
+.wrap{max-width:720px;margin:0 auto;padding:2rem 16px 4rem}
+a.back{color:var(--faint);text-decoration:none}
+a.back:hover{color:var(--accent)}
+h1{margin:1rem 0 1.4rem;font-weight:bold;line-height:1;font-size:clamp(2.4rem,7vw,3.6rem)}
+h1 span{color:var(--accent)}
+.drop{
+  display:flex;align-items:center;justify-content:center;
+  height:min(52vh,380px);width:100%;
+  border:3px dashed var(--hair);border-radius:22px;
+  background:var(--wash);color:var(--faint);
+  font:inherit;font-size:clamp(1.3rem,3.5vw,1.7rem);
+  cursor:pointer;transition:border-color .15s,color .15s,transform .12s;
+}
+.drop:hover,.drop:focus-visible,.drop.over{border-color:var(--accent);color:var(--accent);outline:none}
+.drop.over{transform:scale(1.01)}
+.out{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:14px;margin-top:1.4rem}
+.out a{
+  display:block;text-decoration:none;color:var(--fg);
+  border:2px solid var(--hair);border-radius:14px;padding:8px;
+  transition:border-color .15s,transform .12s;
+}
+.out a:hover{border-color:var(--accent);transform:translateY(-2px)}
+.out img{display:block;width:100%;aspect-ratio:1;object-fit:contain;border-radius:8px;
+  background:repeating-conic-gradient(var(--wash) 0 25%,transparent 0 50%) 0 0/16px 16px}
+.out span{display:block;margin-top:6px;font-size:.85rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.out .bad{border-color:var(--bad);color:var(--bad)}
+input{display:none}
+</style>
+<script>
+(function(){
+  var d=document.documentElement,s={};
+  try{ s=JSON.parse(localStorage.getItem("cgovind:settings"))||{}; }catch(e){}
+  var dark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;
+  d.dataset.theme=s.theme||(dark?"dark":"light");
+})();
+</script>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="/">&#8592; cgovind.com</a>
+  <h1>webp <span>&#8594;</span> png</h1>
+  <button class="drop" id="drop">drop, paste, or click</button>
+  <input type="file" id="pick" accept="image/*" multiple>
+  <div class="out" id="out"></div>
+</div>
+<script>
+var drop=document.getElementById("drop"),pick=document.getElementById("pick"),out=document.getElementById("out");
+
+function convert(file){
+  var name=(file.name||"pasted").replace(/\.[^.]+$/,"")+".png";
+  var tile=document.createElement("a");
+  out.prepend(tile);
+  createImageBitmap(file).then(function(bmp){
+    var c=document.createElement("canvas");
+    c.width=bmp.width;c.height=bmp.height;
+    c.getContext("2d").drawImage(bmp,0,0);
+    c.toBlob(function(blob){
+      var url=URL.createObjectURL(blob);
+      tile.href=url;tile.download=name;
+      tile.innerHTML='<img alt=""><span></span>';
+      tile.querySelector("img").src=url;
+      tile.querySelector("span").textContent=name;
+      tile.click();
+    },"image/png");
+  }).catch(function(){
+    tile.className="bad";
+    tile.innerHTML="<span></span>";
+    tile.querySelector("span").textContent="can't read "+(file.name||"that");
+  });
+}
+function take(files){ [].forEach.call(files,function(f){ if(f.type.indexOf("image/")===0||/\.webp$/i.test(f.name)) convert(f); }); }
+
+drop.onclick=function(){ pick.click(); };
+pick.onchange=function(){ take(pick.files); pick.value=""; };
+["dragenter","dragover"].forEach(function(e){ window.addEventListener(e,function(ev){ ev.preventDefault(); drop.classList.add("over"); }); });
+["dragleave","drop"].forEach(function(e){ window.addEventListener(e,function(ev){ ev.preventDefault(); drop.classList.remove("over"); }); });
+window.addEventListener("drop",function(ev){ take(ev.dataTransfer.files); });
+window.addEventListener("paste",function(ev){ take(ev.clipboardData.files); });
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  The landing page, and nothing else.
+  The landing page, plus the one public tool under /tools/.
 
   It listed twelve URLs for a day: the old projects page, the Wii menu, and the
   standalone project and channel pages. Chinmay does not want those found, so
@@ -27,5 +27,8 @@
   <url>
     <loc>https://cgovind.com/</loc>
     <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://cgovind.com/tools/webp-png/</loc>
   </url>
 </urlset>
