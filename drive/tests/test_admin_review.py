@@ -142,12 +142,19 @@ def test_the_dashboard_counts_players_and_ignores_a_scanner(env):
         _visit(A, now, "scan%d" % i, "x%d" % i, "6.6.6.6", path="/.env.%d" % i, status=404)
     c = A.app.test_client()
     _login(c, _user(A, "chinmay"))
-    page = c.get("/admin").get_data(as_text=True)
-    tile = page.split("Players today</span><b>")[1].split("<")[0]
+    # The panel first: loading the shell is itself a Drive visit by a fourth
+    # browser, and the panel would rightly count it.
+    players = c.get("/admin.json?part=players").get_json()["html"]
+    tile = players.split("Players today</span>")[1].split("</b>")[0].split(">")[-1]
     assert tile == "3", "sixty cookieless one-request visitors from one address are a scanner"
-    assert "Recent sessions" in page and "Start reviewing" not in page
+    assert "Start reviewing" not in c.get("/admin.json?part=dailies").get_json()["html"]
+    for part in ("chart", "online", "sessions", "funnel", "mp"):
+        assert c.get("/admin.json?part=" + part).status_code == 200, part
+    assert c.get("/admin.json?part=nope").status_code == 404
+    assert "Recent sessions" in c.get("/admin").get_data(as_text=True)
     stranger = A.app.test_client()
     assert stranger.get("/admin").status_code == 404
+    assert stranger.get("/admin.json?part=players").status_code == 404
 
 
 # `regen` proposes a fresh track, and every candidate that passes the checks is

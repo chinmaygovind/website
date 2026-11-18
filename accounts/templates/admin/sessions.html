@@ -26,13 +26,13 @@
   {% if no_log %}
   <p class="empty">There's no readable visit log on this box, so there's nothing
   to list.</p>
-  {% else %}
-  <p class="muted tiny">{{ total|commas }} session{{ '' if total == 1 else 's' }}
-  in the last {{ days }} days{% if not bots %}, crawlers excluded{% endif %}.</p>
   {% endif %}
 </div>
 
 <div class="card">
+  {% call ad.lazy('rows', '1916px') %}
+  <p class="muted tiny">{{ total|commas }} session{{ '' if total == 1 else 's' }}
+  in the last {{ days }} days{% if not bots %}, crawlers excluded{% endif %}.</p>
   {{ ad.sessiontable(rows) }}
 
   {% if pages > 1 %}
@@ -48,5 +48,6 @@
     {% endif %}
   </div>
   {% endif %}
+  {% endcall %}
 </div>
 {% endblock %}

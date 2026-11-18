@@ -8,6 +8,7 @@
 {# ---- the numbers -------------------------------------------------------- #}
 <div class="card">
   <h2>cgovind.com, last {{ days }} days</h2>
+  {% call ad.lazy('stats', '207px', '354px') %}
   <div class="tiles">
     <div class="cell">
       <b>{{ stats.accounts|commas }}</b>
@@ -70,6 +71,7 @@
     </span>
   </div>
   {% endif %}
+  {% endcall %}
 </div>
 
 {% if no_log %}
@@ -82,11 +84,12 @@
 {% endif %}
 
 {# ---- traffic ------------------------------------------------------------ #}
-{% if chart %}
 <div class="card">
   <h2>Traffic</h2>
   <p class="muted tiny">One bar per day. The solid part is people, the pale top
   is crawlers.</p>
+  {% call ad.lazy('traffic', '162px') %}
+  {% if chart %}
   <div class="chart">
     {% for d in chart %}
     <div class="bar" title="{{ d.day }} — {{ d.humans }} view{{ '' if d.humans == 1 else 's' }}, {{ d.visitors }} visitor{{ '' if d.visitors == 1 else 's' }}, {{ d.bots }} crawler">
@@ -100,13 +103,14 @@
     <span>{{ chart[0].day.month }}/{{ chart[0].day.day }}</span>
     <span>today</span>
   </div>
+  {% endif %}
+  {% endcall %}
 </div>
-{% endif %}
 
 {# ---- who is here now ---------------------------------------------------- #}
-{% if online %}
 <div class="card">
   <h2>Online right now</h2>
+  {% call ad.lazy('online', '171px', '171px', '273px') %}
   <div class="people">
     {% for o in online %}
     <div class="person static">
@@ -121,16 +125,19 @@
       <div class="person-elos"><a class="btn tiny"
         href="{{ url_for('accounts.profile', username=o.user.username) }}">profile</a></div>
     </div>
+    {% else %}
+    <p class="empty">Nobody's on.</p>
     {% endfor %}
   </div>
+  {% endcall %}
 </div>
-{% endif %}
 
 {# ---- new accounts ------------------------------------------------------- #}
 <div class="card">
   <h2>Newest accounts</h2>
   <p class="muted tiny">The email address is here because this is the one page
   it belongs on - it is the only field of an account that was never public.</p>
+  {% call ad.lazy('newest', '621px') %}
   <table class="tbl">
     <thead><tr>
       <th>Who</th><th>Email</th><th>Joined</th><th class="num">Games</th><th>Last seen</th>
@@ -150,7 +157,8 @@
     {% endfor %}
     </tbody>
   </table>
-  <a class="more" href="{{ url_for('admin.account_list') }}">All {{ stats.accounts }} accounts →</a>
+  <a class="more" href="{{ url_for('admin.account_list') }}">All {{ accounts }} accounts →</a>
+  {% endcall %}
 </div>
 
 {# ---- recent sessions ---------------------------------------------------- #}
@@ -160,13 +168,16 @@
   with no half-hour gap in it. Crawlers are
   {% if bots %}shown{% else %}hidden{% endif %};
   <a href="{{ url_for('admin.overview', bots='' if bots else 1) }}">{{ 'hide' if bots else 'show' }} them</a>.</p>
+  {% call ad.lazy('recent', '583px') %}
   {{ ad.sessiontable(recent) }}
+  {% endcall %}
   <a class="more" href="{{ url_for('admin.session_list') }}">Every session →</a>
 </div>
 
 {# ---- recent games ------------------------------------------------------- #}
 <div class="card">
   <h2>Recent games</h2>
+  {% call ad.lazy('games', '583px') %}
   <table class="tbl">
     <thead><tr><th>Game</th><th>Code</th><th>Winner</th><th class="num">Players</th><th>When</th></tr></thead>
     <tbody>
@@ -184,6 +195,7 @@
     {% endfor %}
     </tbody>
   </table>
+  {% endcall %}
 </div>
 
 {# ---- where they go, where they came from -------------------------------- #}
@@ -191,6 +203,7 @@
   <div class="pair">
     <div>
       <h3>Most-read pages</h3>
+      {% call ad.lazy('paths', '441px') %}
       <table class="tbl compact">
         <tbody>
         {% for p in paths %}
@@ -205,10 +218,12 @@
         {% endfor %}
         </tbody>
       </table>
-      {% if paths %}<p class="muted tiny">views | visitors</p>{% endif %}
+      {% endcall %}
+      <p class="muted tiny">views | visitors</p>
     </div>
     <div>
       <h3>Sent here by</h3>
+      {% call ad.lazy('referrers', '371px') %}
       <table class="tbl compact">
         <tbody>
         {% for r in referrers %}
@@ -218,20 +233,21 @@
         {% endfor %}
         </tbody>
       </table>
-      {% if referrers %}<p class="muted tiny">cgovind.com's own pages are left
-      out - an internal referrer is somebody navigating, not a source.</p>{% endif %}
+      {% endcall %}
+      <p class="muted tiny">cgovind.com's own pages are left
+      out - an internal referrer is somebody navigating, not a source.</p>
     </div>
   </div>
 </div>
 
 {# ---- Drive's anti-cheat, which nothing has ever read --------------------- #}
-{% if flags %}
 <div class="card">
   <h2>Drive flagged laps</h2>
   <p class="muted tiny">A flag is not an accusation - the checks are tuned to be
   wrong in the harmless direction, and a flagged car keeps its place and is only
   left unrated. What is worth reading is the tally: a dozen of one rule is a bad
   connection, hundreds of one rule is somebody's own build of the game.</p>
+  {% call ad.lazy('flags', '495px') %}
   <table class="tbl">
     <thead><tr><th>Who</th><th>Track</th><th>Phase</th><th class="num">Strikes</th><th>Rules</th><th>When</th></tr></thead>
     <tbody>
@@ -245,10 +261,12 @@
       <td class="mono dim clip" title="{{ f.reasons }}">{{ f.reasons or '—' }}</td>
       <td>{{ ad.when(f.when) }}</td>
     </tr>
+    {% else %}
+    <tr><td colspan="6" class="empty">Nothing flagged.</td></tr>
     {% endfor %}
     </tbody>
   </table>
+  {% endcall %}
 </div>
-{% endif %}
 
 {% endblock %}

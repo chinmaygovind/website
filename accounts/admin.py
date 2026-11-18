@@ -37,8 +37,8 @@ import json
 import re
 from datetime import datetime, timedelta
 
-from flask import (Blueprint, abort, current_app, render_template, request,
-                   session)
+from flask import (Blueprint, abort, current_app, jsonify, render_template,
+                   request, session, url_for)
 
 from . import gamestats, presence
 from .gamestats import GAMES, GAME_BY_KEY, DRIVE_TRACKS
@@ -487,17 +487,25 @@ def traffic(conn, cut, days):
     return out
 
 
-# One query for the session list. The window functions give the aggregates on
-# every row of a session; taking `rn = 1` then hands back the aggregates *and*
-# the first row's own columns, which is where the landing page, the address and
-# the agent come from. The alternative - a GROUP BY plus a second query per
-# session for its first row - is one query per row on the page.
+# One query for the session list. `page` picks the sessions on this page first,
+# grouping only ids and timestamps; the window functions then run over just
+# those sessions' rows. Windowing the whole 30 days and keeping `rn = 1`
+# afterwards gave the same rows and was 3x slower, because it dragged every
+# row's agent and referrer through the sort. `rn = 1` hands back the aggregates
+# *and* the first row's own columns, which is where the landing page, the
+# address and the agent come from.
 #
 # `MAX(user_id)` is how a session that starts anonymous and then logs in gets
 # attributed to the person: the id appears partway through, and MAX over the
 # partition finds it wherever it is.
 _SESSION_SQL = """
-WITH windowed AS (
+WITH page AS (
+  SELECT session_id FROM site_visits
+   WHERE ts > :cut
+   GROUP BY session_id %s
+   ORDER BY MIN(ts) DESC
+   LIMIT :lim OFFSET :off
+), windowed AS (
   SELECT session_id, ts, path, query, ip, user_agent, referrer, service,
          ROW_NUMBER()  OVER (PARTITION BY session_id ORDER BY ts, id) AS rn,
          COUNT(*)      OVER (PARTITION BY session_id)                 AS hits,
@@ -505,14 +513,13 @@ WITH windowed AS (
          MAX(user_id)  OVER (PARTITION BY session_id)                 AS who,
          MAX(is_bot)   OVER (PARTITION BY session_id)                 AS botty
     FROM site_visits
-   WHERE ts > :cut
+   WHERE ts > :cut AND session_id IN (SELECT session_id FROM page)
 )
 SELECT session_id, ts AS started, ended, hits, who, botty,
        path AS entry, query, ip, user_agent, referrer, service
   FROM windowed
- WHERE rn = 1 %s
+ WHERE rn = 1
  ORDER BY started DESC
- LIMIT :lim OFFSET :off
 """
 
 
@@ -520,7 +527,7 @@ def sessions(conn, cut, limit, offset=0, bots=False):
     """Recent visits, one row per session, newest first."""
     if not _have_visits(conn):
         return []
-    sql = _SESSION_SQL % ("" if bots else "AND botty = 0")
+    sql = _SESSION_SQL % ("" if bots else "HAVING MAX(is_bot) = 0")
     rows = _rows(conn, sql, cut=_stamp(cut), lim=limit, off=offset)
 
     who = [r["who"] for r in rows if r["who"]]
@@ -721,43 +728,77 @@ def new_accounts(conn, limit=12):
 # there is no redirect to leak and the gate sees every request.
 # `test_the_console_never_redirects_a_stranger` pins it.
 
+# **The two slow pages arrive as a shell and fill in panel by panel.** Their
+# queries were a second or more before the first byte, so the page now renders
+# every card with its heading and an empty box of fixed height, and each box
+# fetches its own contents from the `.json` twin of the same view with
+# `?part=`. That request renders the same template with only that one panel
+# filled, the script in `admin/base.html` lifts it out, and the box never
+# changes size because its height is set in the template rather than by what
+# lands in it.
+#
+# The twin is `.json` because `visits.ASSET_RE` already skips that suffix:
+# eight panel fetches per load would otherwise be eight page views of /admin
+# in the very log this console reads, and `visits.py` cannot learn a new rule
+# without restarting all four games.
+
+def _part():
+    """Which panel this request is for, or None for the shell."""
+    return request.args.get("part") if request.path.endswith(".json") else None
+
+
+def _page(template, endpoint, loaders, **ctx):
+    part = _part()
+    if part is not None:
+        if part not in loaders:
+            abort(404)
+        ctx.update(loaders[part]())
+        return jsonify(html=render_template(template, part=part, **ctx))
+    return render_template(template, part=None,
+                           parts_url=url_for(endpoint, **request.args.to_dict()),
+                           **ctx)
+
+
 @bp.route("/", strict_slashes=False)
+@bp.route("/overview.json", endpoint="overview_part")
 def overview():
     days, cut = _window()
+    bots = _bots_wanted()
     conn = db.session.connection()
-    return render_template(
-        "admin/overview.html",
-        days=days,
-        stats=headline(conn, cut, days),
-        chart=traffic(conn, cut, days),
-        online=who_is_online(conn),
-        newest=new_accounts(conn),
-        recent=sessions(conn, cut, limit=12, bots=_bots_wanted()),
-        games=recent_games(conn),
-        paths=top_paths(conn, cut),
-        referrers=top_referrers(conn, cut),
-        flags=cheat_flags(conn),
-        game_list=GAMES,
-        bots=_bots_wanted(),
-        no_log=not _have_visits(conn),
-    )
+    loaders = {
+        "stats": lambda: {"stats": headline(conn, cut, days)},
+        "traffic": lambda: {"chart": traffic(conn, cut, days)},
+        "online": lambda: {"online": who_is_online(conn)},
+        "newest": lambda: {"newest": new_accounts(conn),
+                           "accounts": User.query.filter(User.is_bot.isnot(True)).count()},
+        "recent": lambda: {"recent": sessions(conn, cut, limit=12, bots=bots)},
+        "games": lambda: {"games": recent_games(conn)},
+        "paths": lambda: {"paths": top_paths(conn, cut)},
+        "referrers": lambda: {"referrers": top_referrers(conn, cut)},
+        "flags": lambda: {"flags": cheat_flags(conn)},
+    }
+    return _page("admin/overview.html", "admin.overview_part", loaders,
+                 days=days, bots=bots, game_list=GAMES,
+                 no_log=not _have_visits(conn))
 
 
 @bp.route("/sessions", strict_slashes=False)
+@bp.route("/sessions.json", endpoint="session_list_part")
 def session_list():
     days, cut = _window()
     page = _clamp(request.args.get("page"), 1, 10_000, 1)
     bots = _bots_wanted()
     conn = db.session.connection()
-    total = session_count(conn, cut, bots=bots)
-    rows = sessions(conn, cut, limit=SESSIONS_PER_PAGE,
-                    offset=(page - 1) * SESSIONS_PER_PAGE, bots=bots)
-    return render_template(
-        "admin/sessions.html", rows=rows, page=page, days=days, bots=bots,
-        total=total, per_page=SESSIONS_PER_PAGE,
-        pages=max(1, -(-total // SESSIONS_PER_PAGE)),
-        no_log=not _have_visits(conn),
-    )
+
+    def rows():
+        total = session_count(conn, cut, bots=bots)
+        return {"total": total, "pages": max(1, -(-total // SESSIONS_PER_PAGE)),
+                "rows": sessions(conn, cut, limit=SESSIONS_PER_PAGE,
+                                 offset=(page - 1) * SESSIONS_PER_PAGE, bots=bots)}
+
+    return _page("admin/sessions.html", "admin.session_list_part", {"rows": rows},
+                 page=page, days=days, bots=bots, per_page=SESSIONS_PER_PAGE,
+                 no_log=not _have_visits(conn))
 
 
 @bp.route("/sessions/<session_id>", strict_slashes=False)

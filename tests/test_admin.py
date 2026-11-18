@@ -17,6 +17,9 @@ distinctive values rather than on counts.
 
 from datetime import datetime, timedelta
 
+import html
+import re
+
 import pytest
 from flask import url_for
 from sqlalchemy import text
@@ -30,6 +33,19 @@ PASSWORD = "hunter2hunter2"
 
 def body(resp):
     return resp.data.decode()
+
+
+def full(client, url):
+    """A page as the browser ends up showing it: the shell, then every panel
+    it asks for. Each panel must answer 200 - a panel that 500s is a box that
+    says it could not load, which no assertion on the shell would notice."""
+    page = body(client.get(url))
+    parts = re.findall(r'data-src="([^"]+)"', page)
+    for src in parts:
+        resp = client.get(html.unescape(src))
+        assert resp.status_code == 200, "%s -> %s" % (src, resp.status_code)
+        page += resp.get_json()["html"]
+    return page
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +247,7 @@ def test_a_new_account_appears_with_the_one_thing_a_profile_hides(client, as_adm
                                                                   make_user):
     as_admin("chinmay")
     make_user("newbie", email="newbie@example.com")
-    page = body(client.get("/admin/"))
+    page = full(client, "/admin/")
     assert "newbie" in page
     # The email is the whole reason this list is not just the public directory.
     assert "newbie@example.com" in page
@@ -245,7 +261,7 @@ def test_visits_are_grouped_into_sessions(client, db, as_admin):
     visit(db, session_id="abc123", path="/assets/Chinmay_Govind_Resume.pdf",
           at=start + timedelta(seconds=90))
 
-    page = body(client.get("/admin/sessions"))
+    page = full(client, "/admin/sessions")
     assert "abc123" in page, "the session is not listed"
     # "Landed on" is the session's *first* request and not its last. The entry
     # has to be a path distinctive enough to find in the page, which "/" is not.
@@ -282,7 +298,7 @@ def test_a_session_is_credited_to_whoever_logged_in_during_it(client, db, as_adm
     visit(db, session_id="signedin", path="/accounts/settings", user_id=uid,
           at=start + timedelta(seconds=20))
 
-    page = body(client.get("/admin/sessions"))
+    page = full(client, "/admin/sessions")
     assert "latecomer" in page, "the session was left as anonymous"
 
 
@@ -294,11 +310,11 @@ def test_crawlers_are_hidden_until_you_ask_for_them(client, db, as_admin):
     visit(db, session_id="a-crawler", path="/robot-page", is_bot=1,
           user_agent="Googlebot/2.1")
 
-    without = body(client.get("/admin/sessions"))
+    without = full(client, "/admin/sessions")
     assert "a-person" in without
     assert "a-crawler" not in without, "a crawler was in the default view"
 
-    with_bots = body(client.get("/admin/sessions?bots=1"))
+    with_bots = full(client, "/admin/sessions?bots=1")
     assert "a-crawler" in with_bots, "asking for crawlers did not produce them"
     assert "a-person" in with_bots
 
@@ -308,8 +324,8 @@ def test_the_window_can_be_widened_and_cannot_be_absurd(client, db, as_admin):
     visit(db, session_id="last-year", path="/old",
           at=datetime.utcnow() - timedelta(days=60))
 
-    assert "last-year" not in body(client.get("/admin/sessions"))
-    assert "last-year" in body(client.get("/admin/sessions?days=90"))
+    assert "last-year" not in full(client, "/admin/sessions")
+    assert "last-year" in full(client, "/admin/sessions?days=90")
     # Out of range, not an error: a bad number falls back rather than 500ing.
     assert client.get("/admin/sessions?days=99999").status_code == 200
     assert client.get("/admin/sessions?days=nonsense").status_code == 200
@@ -359,7 +375,7 @@ def test_an_internal_referrer_is_not_a_source(client, db, as_admin):
     visit(db, session_id="from-outside", path="/b",
           referrer="https://news.ycombinator.com/item?id=1")
 
-    page = body(client.get("/admin/"))
+    page = full(client, "/admin/")
     assert "news.ycombinator.com" in page
     assert "Sent here by" in page
 
@@ -481,7 +497,7 @@ def test_drive_flagged_laps_are_finally_readable(client, db, as_admin):
         " 'flying', 14, '{\"airtime\": 9, \"jerk\": 5}', '2026-08-10 09:00:00')"))
     db.session.commit()
 
-    page = body(client.get("/admin/"))
+    page = full(client, "/admin/")
     assert "speedy" in page
     assert "Sunrise Circuit" in page, "the track slug was not given its name"
     assert "airtime" in page, "the per-rule tally is the point of the row"
@@ -502,6 +518,8 @@ def test_an_empty_database_still_renders_every_page(client, as_admin, admin_rout
     500s on an empty database is one you cannot use on the day you need it.
     """
     as_admin("chinmay")
+    full(client, "/admin/")
+    full(client, "/admin/sessions")
     for url in admin_routes:
         resp = client.get(url)
         # The session detail route is the one honest 404 here: it is asked for

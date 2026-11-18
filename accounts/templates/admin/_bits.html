@@ -65,3 +65,17 @@
   </tbody>
 </table>
 {% endmacro %}
+
+{# A panel that fills itself in after the page has drawn - see `admin._page`.
+   Its height is fixed here, in the shell, so nothing on the page moves when
+   the contents land: `h` above 1100px, `hn` up to it (the tiles go two
+   across), `hs` up to 640px (the pairs stack). Every line inside is kept to
+   one line by the CSS, so these depend on the breakpoint and not on the exact
+   width; anything that still does not fit scrolls inside its box. #}
+{% macro lazy(name, h, hn=none, hs=none) -%}
+<div class="lazy{{ ' ready' if part }}" data-part="{{ name }}"
+     style="--h: {{ h }}; --hn: {{ hn or h }}; --hs: {{ hs or hn or h }}"
+  {%- if not part %} data-src="{{ parts_url }}{{ '&' if '?' in parts_url else '?' }}part={{ name }}"{% endif %}>
+  {%- if part == name %}{{ caller() }}{% endif -%}
+</div>
+{%- endmacro %}

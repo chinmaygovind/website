@@ -1,4 +1,6 @@
-{% extends "accounts/base.html" %}
+{# A panel request renders the page bare - just the cards - and the script
+   below lifts its one filled panel out. See `admin._page`. #}
+{% extends "admin/_bare.html" if part else "accounts/base.html" %}
 {% block pageclass %} admin{% endblock %}
 {% block title %}{% block heading %}Console{% endblock %} | admin{% endblock %}
 
@@ -34,13 +36,33 @@
 (function () {
   var thisYear = new Date().getFullYear();
   function pad(n) { return n < 10 ? '0' + n : '' + n; }
-  document.querySelectorAll('time.lt[datetime]').forEach(function (el) {
-    var d = new Date(el.getAttribute('datetime'));
-    if (isNaN(d.getTime())) return;
-    var year = d.getFullYear() === thisYear ? '' : '/' + pad(d.getFullYear() % 100);
-    el.textContent = (d.getMonth() + 1) + '/' + d.getDate() + year + ' | ' +
-      pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
-    el.title = d.toString();
+  function localTimes(root) {
+    root.querySelectorAll('time.lt[datetime]').forEach(function (el) {
+      var d = new Date(el.getAttribute('datetime'));
+      if (isNaN(d.getTime())) return;
+      var year = d.getFullYear() === thisYear ? '' : '/' + pad(d.getFullYear() % 100);
+      el.textContent = (d.getMonth() + 1) + '/' + d.getDate() + year + ' | ' +
+        pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+      el.title = d.toString();
+    });
+  }
+  localTimes(document);
+
+  document.querySelectorAll('.lazy[data-src]').forEach(function (box) {
+    fetch(box.dataset.src, {credentials: 'same-origin'})
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (d) {
+        var t = document.createElement('template');
+        t.innerHTML = d.html;
+        var got = t.content.querySelector('.lazy[data-part="' + box.dataset.part + '"]');
+        box.innerHTML = got ? got.innerHTML : '';
+        localTimes(box);
+        box.classList.add('ready');
+      })
+      .catch(function () {
+        box.innerHTML = '<p class="empty">Couldn\'t load this. Reload to try again.</p>';
+        box.classList.add('ready');
+      });
   });
 })();
 </script>

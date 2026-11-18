@@ -1,7 +1,13 @@
-{% extends "base.html" %}
+{% extends "_bare.html" if part else "base.html" %}
 {% block title %}Admin | Drive{% endblock %}
 {% set active_page = 'admin' %}
-{% macro num(n) %}{{ '{:,}'.format(n) if n is not none else '—' }}{% endmacro %}
+{% macro lazy(name) -%}
+<div class="lazy{{ ' ready' if part }}" data-part="{{ name }}"
+  {%- if not part %} data-src="/admin.json?part={{ name }}"{% endif %}>
+  {%- if part == name %}{{ caller() }}{% endif -%}
+</div>
+{%- endmacro %}
+{% macro num(n) %}{{ '{:,}'.format(n) if n is number else '—' }}{% endmacro %}
 
 {% block head %}
 <style>
@@ -60,10 +66,16 @@
   .spark i { flex: 1; background: #bb6bd9; border-radius: 2px 2px 0 0; min-height: 2px; }
   .rules li { display: flex; font-size: 13px; padding: 3px 0; border-bottom: 1px solid #f0f0f0; }
   .rules li b { margin-left: auto; font-family: var(--mono); }
+  .lazy { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
+  .lazy:not(.ready) { border-radius: 8px; background: #f1f1ef; animation: lazy-pulse 1.1s ease-in-out infinite alternate; }
+  .tile b.lazy, .tile small.lazy { display: block; }
+  .tile .lazy:not(.ready) { color: transparent; }
+  @keyframes lazy-pulse { from { opacity: .45; } to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .lazy:not(.ready) { animation: none; } }
   @media (max-width: 1100px) {
     .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .grid { grid-template-columns: 1fr 1fr; grid-template-rows: none; }
-    .grid .dcard { max-height: 420px; }
+    .grid .dcard { height: 420px; }
   }
   @media (max-width: 640px) {
     .tiles { grid-template-columns: 1fr 1fr; }
@@ -83,19 +95,25 @@
   </div>
 
   {% set P = players %}
-  <div class="tiles">
-    <div class="tile"><span>Players today</span><b>{{ num(P.day if P) }}</b><small>last 24 hours</small></div>
-    <div class="tile"><span>This week</span><b>{{ num(P.week if P) }}</b><small>{{ num(P.signed_in if P) }} signed in</small></div>
-    <div class="tile"><span>30 days</span><b>{{ num(P.month if P) }}</b><small>unique browsers</small></div>
-    <div class="tile"><span>Returning</span><b>{{ P.returning_pct if P else '—' }}%</b><small>of this week's players</small></div>
-    <div class="tile"><span>New accounts</span><b>{{ num(P.new_accounts if P) }}</b><small>this week</small></div>
-    <div class="tile"><span>Laps this week</span><b>{{ num(P.laps if P) }}</b><small>{{ '%.0f'|format(P.hours) if P else '—' }} hours driven, all time</small></div>
+  {% macro tile(label, value, note) -%}
+  <div class="tile"><span>{{ label }}</span>
+    <b class="lazy{{ ' ready' if part }}" data-part="players">{{ value }}</b>
+    <small class="lazy{{ ' ready' if part }}" data-part="players">{{ note }}</small></div>
+  {%- endmacro %}
+  <div class="tiles"{% if not part %} data-src="/admin.json?part=players"{% endif %}>
+    {{ tile('Players today', num(P.day if P), 'last 24 hours') }}
+    {{ tile('This week', num(P.week if P), num(P.signed_in if P) ~ ' signed in') }}
+    {{ tile('30 days', num(P.month if P), 'unique browsers') }}
+    {{ tile('Returning', (P.returning_pct if P else '—') ~ '%', "of this week's players") }}
+    {{ tile('New accounts', num(P.new_accounts if P), 'this week') }}
+    {{ tile('Laps this week', num(P.laps if P), ('%.0f'|format(P.hours) if P else '—') ~ ' hours driven, all time') }}
   </div>
 
   <div class="grid">
     <section class="dcard chart span2">
       <h2>Players and laps, per day
         <span class="legend"><span><i class="sw-p"></i>players</span><span><i class="sw-l"></i>laps</span></span></h2>
+      {% call lazy('chart') %}
       {% if chart %}{% set C = chart %}
       <svg viewBox="0 0 640 196" preserveAspectRatio="xMidYMid meet" role="img"
            aria-label="Players and laps per day, last 30 days" font-size="10" style="font-family: var(--mono)">
@@ -116,10 +134,12 @@
         <text x="640" y="6" text-anchor="end" fill="#c0182b" font-size="9">laps</text>
       </svg>
       {% endif %}
+      {% endcall %}
     </section>
 
     <section class="dcard online">
       <h2>Online now</h2>
+      {% call lazy('online') %}
       {% if online %}
       <div class="kv">
         <span>Racing in rooms</span><b>{{ online.racers }} in {{ online.races }}</b>
@@ -133,10 +153,12 @@
         {% endfor %}
       </ul>
       {% endif %}
+      {% endcall %}
     </section>
 
     <section class="dcard">
       <h2>Dailies <a href="/admin/tracks">full queue</a></h2>
+      {% call lazy('dailies') %}
       {% set D = dailies %}
       {% if D %}
       <div class="kv">
@@ -153,10 +175,12 @@
       <p class="muted">Queue is empty. Ask Claude to run <code>gen_daily.py</code>.</p>
       {% endif %}
       {% endif %}
+      {% endcall %}
     </section>
 
     <section class="dcard span2">
       <h2>Recent sessions <a href="{{ site_url }}/admin/sessions">all sessions</a></h2>
+      {% call lazy('sessions') %}
       <div class="scroll">
         <table class="sess">
           <tr><th>Started (UTC)</th><th>Who</th><th class="n">Mins</th><th class="n">Pages</th>
@@ -174,10 +198,12 @@
           {% endfor %}
         </table>
       </div>
+      {% endcall %}
     </section>
 
     <section class="dcard">
       <h2>This week's funnel</h2>
+      {% call lazy('funnel') %}
       <div class="scroll">
       {% if funnel %}
       <div class="funnel">
@@ -200,10 +226,12 @@
       {% endfor %}
       {% endif %}
       </div>
+      {% endcall %}
     </section>
 
     <section class="dcard">
       <h2>Multiplayer and anti-cheat</h2>
+      {% call lazy('mp') %}
       <div class="scroll">
       {% if mp %}
       <div class="kv">
@@ -228,7 +256,36 @@
       </ul>
       {% endif %}
       </div>
+      {% endcall %}
     </section>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  document.querySelectorAll('[data-src]').forEach(function (src) {
+    var name = src.dataset.part || new URL(src.dataset.src, location.href).searchParams.get('part');
+    var boxes = document.querySelectorAll('.lazy[data-part="' + name + '"]');
+    fetch(src.dataset.src, {credentials: 'same-origin'})
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (d) {
+        var t = document.createElement('template');
+        t.innerHTML = d.html;
+        var got = t.content.querySelectorAll('.lazy[data-part="' + name + '"]');
+        boxes.forEach(function (box, i) {
+          box.innerHTML = got[i] ? got[i].innerHTML : '';
+          box.classList.add('ready');
+        });
+      })
+      .catch(function () {
+        boxes.forEach(function (box) {
+          box.innerHTML = '<span class="muted">Couldn\'t load this.</span>';
+          box.classList.add('ready');
+        });
+      });
+  });
+})();
+</script>
 {% endblock %}

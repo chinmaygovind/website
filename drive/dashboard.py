@@ -18,13 +18,22 @@ send ordinary browser strings, which is why it is not enough on its own.
 Every query is bounded (`WINDOW` days) and rides `ix_visits_ts`. SQLite-only
 where it uses `julianday`/`substr` on the text timestamps, which is what both
 the box and the suite run.
+
+**The page is a shell and each card fills itself in**, from `/admin.json?part=`.
+The queries are a second or more on the box, and this is the single eventlet
+worker every live race runs on, so the first byte used to wait for all of them.
+The cards are fixed-size boxes in the grid, so nothing moves as they land. The
+`.json` is so `visits.ASSET_RE` skips the fetches rather than logging seven
+page views of /admin per load. `_flood_keys` is cached for a minute because
+four of the panels need it and each is its own request now.
 """
 
 import json as json_mod
 import re
+import time
 from datetime import datetime, timedelta
 
-from flask import abort, render_template
+from flask import abort, jsonify, render_template, request
 from sqlalchemy import text
 
 from app import (app, get_current_user, get_effective_name, daily_date,
@@ -46,15 +55,22 @@ def _q(sql, **params):
     return db.session.execute(text(sql), params).fetchall()
 
 
+_floods = {"at": 0.0, "keys": []}
+
+
 def _flood_keys():
     """`ip|day` for every flood in the window. Tens of rows at most."""
-    return [r[0] for r in _q(
+    if time.monotonic() - _floods["at"] < 60:
+        return _floods["keys"]
+    _floods["keys"] = [r[0] for r in _q(
         "SELECT ip || '|' || substr(ts, 1, 10) FROM site_visits"
         " WHERE service = 'drive' AND ts >= :since"
         " GROUP BY ip, substr(ts, 1, 10)"
         " HAVING COUNT(DISTINCT visitor_id) >= :n"
         "    AND COUNT(DISTINCT visitor_id) >= 0.9 * COUNT(*)",
         since=_since(WINDOW), n=FLOOD_VISITORS)]
+    _floods["at"] = time.monotonic()
+    return _floods["keys"]
 
 
 def _real(floods):
@@ -281,22 +297,34 @@ def _safely(fn, *a):
 
 
 @app.route("/admin")
+@app.route("/admin.json", endpoint="admin_part")
 def admin_home():
     user = get_current_user()
     if not maker._is_admin(user) or maker._make_forbidden():
         abort(404)
-    floods = _safely(_flood_keys) or []
-    where, params = _real(floods)
-    series = _safely(_daily_series, where, params) or []
-    return render_template(
-        "admin_home.html", user=user, name=get_effective_name(),
-        active_page="admin",
-        players=_safely(_players, where, params),
-        chart=_chart(series) if series else None,
-        funnel=_safely(_funnel, where, params),
-        tracks=_safely(_tracks),
-        sessions=_safely(_sessions, where, params) or [],
-        online=_safely(_online),
-        mp=_safely(_multiplayer),
-        integrity=_safely(_integrity),
-        dailies=_safely(_dailies))
+    ctx = {"user": user, "name": get_effective_name(), "active_page": "admin"}
+    if not request.path.endswith(".json"):
+        return render_template("admin_home.html", part=None, **ctx)
+
+    part = request.args.get("part")
+
+    def real():
+        return _real(_safely(_flood_keys) or [])
+
+    def chart():
+        series = _safely(_daily_series, *real()) or []
+        return {"chart": _chart(series) if series else None}
+
+    loaders = {
+        "players": lambda: {"players": _safely(_players, *real())},
+        "chart": chart,
+        "online": lambda: {"online": _safely(_online)},
+        "dailies": lambda: {"dailies": _safely(_dailies)},
+        "sessions": lambda: {"sessions": _safely(_sessions, *real()) or []},
+        "funnel": lambda: {"funnel": _safely(_funnel, *real()), "tracks": _safely(_tracks)},
+        "mp": lambda: {"mp": _safely(_multiplayer), "integrity": _safely(_integrity)},
+    }
+    if part not in loaders:
+        abort(404)
+    ctx.update(loaders[part]())
+    return jsonify(html=render_template("admin_home.html", part=part, **ctx))

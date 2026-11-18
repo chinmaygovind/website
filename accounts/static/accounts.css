@@ -852,3 +852,33 @@ label.radio { display: flex; gap: .5rem; align-items: center; font-size: 1.1rem;
      ellipsis. */
   .card > .tbl { display: block; overflow-x: auto; white-space: nowrap; }
 }
+
+/* ---- panels that fill themselves in (admin._page) ----------------------- */
+
+/* The height is the box's, set per panel in the template, so a panel landing
+   never moves anything below it. */
+.lazy { height: var(--h); overflow: auto; }
+.lazy:not(.ready) {
+  border-radius: var(--wobble);
+  background: color-mix(in srgb, var(--hair) 45%, transparent);
+  animation: lazy-pulse 1.1s ease-in-out infinite alternate;
+}
+@keyframes lazy-pulse { from { opacity: .45; } to { opacity: 1; } }
+/* An avatar at full size made a signed-in row 65px against an anonymous
+   one's 41, so a table's height depended on who was in it. At 28px every row
+   is the same height and a panel's box can be sized once. */
+.tbl .who .av-sm { width: 28px; height: 28px; border-radius: 7px 9px 8px 9px; }
+.tbl .who .av-sm .av-default { font-size: 1rem; }
+.tbl .who .av-sm img { width: 24px; height: 24px; }
+.tbl .who { vertical-align: middle; }
+.lazy .tbl td { white-space: nowrap; }
+.lazy .tbl:not(.compact) tbody td { height: 44px; }
+.lazy .tbl.compact tbody td { height: 35px; }
+.lazy .tiles .cell span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lazy .tiles .cell { height: 69px; box-sizing: border-box; }
+.lazy .split { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.lazy .split .sp { flex: none; white-space: nowrap; }
+.lazy > .tbl:first-child, .lazy > .tiles:first-child { margin-top: 0; }
+@media (max-width: 1100px) { .lazy { height: var(--hn); } }
+@media (max-width: 640px) { .lazy { height: var(--hs); } }
+@media (prefers-reduced-motion: reduce) { .lazy:not(.ready) { animation: none; } }

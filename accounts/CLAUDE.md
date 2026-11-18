@@ -246,11 +246,36 @@ mounts outside `/accounts` and because a blueprint is what lets one
   own flag-don't-filter rule and adding the toggle: "recent activity" is
   otherwise mostly Googlebot, and every count prints the crawler figure beside
   it.
-- **One query for the session list**, using window functions over
-  `PARTITION BY session_id` and taking the `rn = 1` row, so the landing page
-  arrives with the aggregates instead of costing a query per row. `MAX(user_id)`
-  over the partition is what credits a visit that started anonymous and then
-  logged in to the person who logged in.
+- **One query for the session list**, which picks the page's session ids
+  first (`GROUP BY session_id ... LIMIT`) and only then runs the window
+  functions over `PARTITION BY session_id` on those sessions' rows, taking the
+  `rn = 1` row. Windowing all 30 days and filtering afterwards gave identical
+  rows 3x slower, because it sorted every row's agent and referrer.
+  `MAX(user_id)` over the partition is what credits a visit that started
+  anonymous and then logged in to the person who logged in.
+- **The overview and the session list arrive as a shell and fill in panel by
+  panel**, because their queries were 1-1.5s before the first byte locally and
+  several seconds on the box. Every card and heading renders at once with an
+  empty box of **fixed height** (`ad.lazy(name, h, hn, hs)` in
+  `admin/_bits.html`, one height per breakpoint: above 1100px, to 1100, to
+  640), and each box fetches `/admin/overview.json?part=<name>` (or
+  `sessions.json`). That request renders the same template with only that
+  panel filled, through `admin/_bare.html` instead of the site chrome, and the
+  script in `admin/base.html` lifts it out. **Chinmay will not accept a box
+  that changes size as it loads**, so the heights are measured, not guessed,
+  and three CSS rules make them hold: every table row inside a panel is pinned
+  (44px, or 35px compact), every cell is one line (`nowrap`, scrolling
+  sideways in the box when narrow), and avatars in tables are 28px - at full
+  size a signed-in row was 65px to an anonymous one's 41, so a table's height
+  depended on who was in it. **Change what a panel holds and re-measure it**:
+  render it at 1500, 1100, 640 and 390 with real data and set the box to what
+  it actually is. Drive's `/admin` (`drive/dashboard.py`) is the same idea in
+  its own template, where the grid already fixed the card sizes.
+- **The panel URLs end in `.json` so that `visits.py` skips them**
+  (`ASSET_RE`) - otherwise every load of the overview would log nine page views
+  of `/admin` into the log the console reads. Teaching `visits.py` a new rule
+  instead means copying it into all five services, which restarts all four
+  games on deploy.
 - **Every window is bounded** (30 days, `?days=` up to 365) and rides
   `ix_visits_ts`; an unbounded version would degrade quietly as the table grows
   rather than loudly.
