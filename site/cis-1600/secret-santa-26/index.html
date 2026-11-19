@@ -126,6 +126,45 @@ button {
 .done p { font-size: 17px; }
 input { font-family: "Archivo Black", "Arial Black", sans-serif; }
 
+.who { font-size: 18px; margin: 4px 0 0; }
+.who small, .hint { display: block; font-family: Arial, sans-serif; font-size: 14px; color: #6a6a6a; margin-top: 6px; }
+.who a, .hint a { color: var(--blue); }
+a.button {
+  display: block; margin-top: 18px; text-decoration: none; text-align: center; cursor: pointer;
+  font-family: Anton, Impact, sans-serif; font-size: 28px; letter-spacing: 2px; color: #ffef4a;
+  text-shadow: 1px 1px 0 #7a0000, 2px 2px 0 #7a0000, 3px 3px 0 #4a0000, 4px 4px 2px rgba(0,0,0,.4);
+  background: var(--red); border: 3px solid var(--ink); padding: 10px 14px;
+  border-radius: 14px 6px 16px 6px / 6px 16px 6px 14px; box-shadow: 0 4px 0 var(--ink);
+}
+a.button:hover { filter: brightness(.93); }
+.wish { margin: 28px 0 8px; }
+.wish h3 { margin: 6px 0 10px; }
+.wish h3, .wish .sub {
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  font-family: Anton, Impact, sans-serif; font-weight: 400; font-size: 34px; letter-spacing: 1px; display: inline-block;
+  background-image: linear-gradient(90deg, #ff1a1a, #ff9a00, #ffee00, #2ccf3a, #2f6bff, #a033d6);
+  -webkit-text-stroke: 1px #1b1450; filter: drop-shadow(2px 2px 0 #2a1d55) drop-shadow(1px 1px 0 #2a1d55);
+}
+.search { display: flex; gap: 8px; }
+.search input { flex: 1; min-width: 0; }
+.search button { width: auto; margin-top: 0; font-size: 20px; padding: 6px 14px; background: #ff9900; }
+.wish form button { background: #13a02a; }
+.wishes { list-style: none; margin: 14px 0 0; padding: 0; text-align: left; }
+.wishes li { display: flex; gap: 12px; align-items: center; padding: 10px 2px; border-bottom: 2px dashed #d9d4c4; }
+.wishes li:last-child { border-bottom: 0; }
+.wishes img, .wishes .noimg { width: 64px; height: 64px; object-fit: contain; flex: none; background: #fff; border: 2px solid var(--ink); border-radius: 10px 4px 12px 5px; }
+.wishes .noimg { display: grid; place-items: center; font-size: 30px; }
+.wishes .what { flex: 1; min-width: 0; }
+.wishes a.title { color: var(--ink); text-decoration: none; font-size: 16px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; cursor: pointer; }
+.wishes a.title:hover { color: var(--blue); text-decoration: underline; }
+.wishes small { display: block; font-family: Arial, sans-serif; font-size: 13px; color: #6a6a6a; margin-top: 3px; }
+.wishes .price { color: #13a02a; font-family: Arial, sans-serif; font-weight: 700; font-size: 14px; }
+.wishes button.x {
+  width: 34px; height: 34px; flex: none; margin: 0; padding: 0; font-size: 18px; line-height: 1; letter-spacing: 0;
+  background: #fff; color: var(--ink); text-shadow: none; box-shadow: 0 2px 0 var(--ink); border-width: 2px; border-radius: 50%;
+}
+.empty { font-family: Arial, sans-serif; font-size: 15px; color: #6a6a6a; margin: 14px 0 0; }
+
 
 .ground { position: relative; z-index: 0; width: 100%; margin-top: auto; height: 190px; pointer-events: none; }
 .bank { position: absolute; left: 0; right: 0; bottom: 0; height: 120px; background: var(--snow); }
@@ -189,11 +228,14 @@ input { font-family: "Archivo Black", "Arial Black", sans-serif; }
       </svg>
     </div>
     <div class="inner">
-      <form id="form" novalidate>
-        <label for="name">Your name</label>
-        <input id="name" autocomplete="name" maxlength="60" required>
-        <label for="email">Your email</label>
-        <input id="email" type="email" autocomplete="email" maxlength="120" required>
+      <div id="out" hidden>
+        <p class="who">Log in with your cgovind.com account to sign up and make a wishlist.</p>
+        <a class="button" id="loginLink" href="/accounts/login?next=/cis-1600/secret-santa-26/">Log in</a>
+        <p class="hint">No account? <a href="/accounts/register?next=/cis-1600/secret-santa-26/">Make one</a>, it takes a minute.</p>
+      </div>
+
+      <form id="form" novalidate hidden>
+        <p class="who">Signing up as <span id="whoName"></span><small>Your name and email come from your account.</small></p>
         <button id="go" type="submit">Sign me up!</button>
         <p class="err" id="err" role="alert"></p>
       </form>
@@ -203,6 +245,7 @@ input { font-family: "Archivo Black", "Arial Black", sans-serif; }
         <div id="doneNote">
           <p>Check your email for a confirmation.</p>
           <p>Your assignment comes by email once names are drawn.</p>
+          <p>Now add a few things to your wishlist below!</p>
         </div>
       </div>
 
@@ -212,6 +255,39 @@ input { font-family: "Archivo Black", "Arial Black", sans-serif; }
       </div>
 
       <p class="count" id="count"></p>
+    </div>
+  </div>
+
+  <div class="card wish" id="giftee" hidden>
+    <div class="inner">
+      <h3 id="gifteeTitle"></h3>
+      <ul class="wishes" id="gifteeWishes"></ul>
+      <p class="empty" id="gifteeEmpty" hidden>They haven't added anything yet. Check back later!</p>
+    </div>
+  </div>
+
+  <div class="card wish" id="wish" hidden>
+    <div class="inner">
+      <h3>My wishlist</h3>
+      <label for="q">Find something on Amazon</label>
+      <div class="search">
+        <input id="q" placeholder="cozy socks" maxlength="120">
+        <button id="qGo" type="button">Search</button>
+      </div>
+      <form id="addForm" novalidate>
+        <label for="url">Paste its Amazon link</label>
+        <input id="url" inputmode="url" placeholder="https://www.amazon.com/dp/..." maxlength="1000">
+        <div id="titleBox" hidden>
+          <label for="title">What is it?</label>
+          <input id="title" maxlength="300">
+        </div>
+        <label for="note">Size, color, anything else?</label>
+        <input id="note" maxlength="200" placeholder="optional">
+        <button id="add" type="submit">Add to my list</button>
+        <p class="err" id="addErr" role="alert"></p>
+      </form>
+      <ul class="wishes" id="wishes"></ul>
+      <p class="empty" id="wishEmpty" hidden>Nothing on your list yet.</p>
     </div>
   </div>
 
@@ -250,16 +326,48 @@ input { font-family: "Archivo Black", "Arial Black", sans-serif; }
 
   function el(tag, text, cls) { var e = document.createElement(tag); if (text != null) e.textContent = text; if (cls) e.className = cls; return e; }
 
+  function wishItem(w, mine) {
+    var li = el("li");
+    if (w.image) { var img = el("img"); img.src = w.image; img.alt = ""; img.loading = "lazy"; img.referrerPolicy = "no-referrer"; li.appendChild(img); }
+    else li.appendChild(el("span", "\uD83C\uDF81", "noimg"));
+    var what = el("div", null, "what"), a = el("a", w.title, "title");
+    a.href = w.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+    what.appendChild(a);
+    if (w.price) what.appendChild(el("span", w.price, "price"));
+    if (w.note) what.appendChild(el("small", w.note));
+    li.appendChild(what);
+    if (mine) {
+      var x = el("button", "\u2715", "x"); x.type = "button"; x.title = "Remove"; x.setAttribute("aria-label", "Remove " + w.title);
+      x.addEventListener("click", function () { x.disabled = true; api("wishlist/" + w.id + "/delete", {}).then(refresh); });
+      li.appendChild(x);
+    }
+    return li;
+  }
+  function list(ul, empty, wishes, mine) {
+    ul.innerHTML = ""; (wishes || []).forEach(function (w) { ul.appendChild(wishItem(w, mine)); });
+    empty.hidden = !!(wishes && wishes.length);
+  }
+
   function show(s) {
     $("count").textContent = s.count ? s.count + (s.count === 1 ? " person" : " people") + " signed up" : "";
+    $("out").hidden = $("form").hidden = true;
     if (s.me) {
-      $("form").hidden = true; $("done").hidden = false; $("doneNote").hidden = true;
+      $("done").hidden = false; $("closed").hidden = true;
+      if (!$("form").closest(".card").classList.contains("yay")) $("doneNote").hidden = true;
       $("doneTitle").textContent = "You're on the list, " + s.me + "!";
-    } else if (s.sent && $("done").hidden) { $("form").hidden = true; $("closed").hidden = false; }
+      $("wish").hidden = false; list($("wishes"), $("wishEmpty"), s.wishes, true);
+    } else if (s.sent) { $("closed").hidden = false; }
+    else if (s.user) { $("form").hidden = false; $("whoName").textContent = s.user; }
+    else { $("out").hidden = false; if (s.login) $("loginLink").href = s.login; }
+    if (s.giftee) {
+      $("giftee").hidden = false;
+      $("gifteeTitle").textContent = "You're Santa for " + s.giftee.name + "!";
+      list($("gifteeWishes"), $("gifteeEmpty"), s.giftee.wishes, false);
+    }
     if (!s.admin) return;
     $("admin").hidden = false;
     var ol = $("people"); ol.innerHTML = "";
-    (s.people || []).forEach(function (p) { var li = el("li", p.name); li.appendChild(el("small", p.email)); ol.appendChild(li); });
+    (s.people || []).forEach(function (p) { var li = el("li", p.name); li.appendChild(el("small", p.email + ", " + p.wishes + (p.wishes === 1 ? " wish" : " wishes"))); ol.appendChild(li); });
     var pairs = s.pairs || [], pl = $("pairs"); pl.innerHTML = "";
     pairs.forEach(function (p) { var li = el("li"); li.appendChild(el("span", p.from)); li.appendChild(el("span", "\u2192", "arrow")); li.appendChild(el("span", p.to)); pl.appendChild(li); });
     $("pairsTitle").hidden = pl.hidden = !pairs.length;
@@ -272,13 +380,37 @@ input { font-family: "Archivo Black", "Arial Black", sans-serif; }
   $("form").addEventListener("submit", function (e) {
     e.preventDefault();
     $("err").textContent = ""; $("go").disabled = true;
-    api("signup", { name: $("name").value, email: $("email").value }).then(function (j) {
+    api("signup", {}).then(function (j) {
       $("go").disabled = false;
+      if (j._status === 401 && j.login) { location.href = j.login; return; }
       if (!j.ok) { $("err").textContent = j.error || "Something went wrong. Try again?"; return; }
-      $("form").hidden = true; $("done").hidden = false; $("form").closest(".card").classList.add("yay");
-      $("doneTitle").textContent = (j.already ? "You're already on the list, " : "You're on the list, ") + j.name + "!";
-      refresh();
+      $("form").closest(".card").classList.add("yay"); $("doneNote").hidden = false;
+      refresh().then(function () {
+        $("doneTitle").textContent = (j.already ? "You're already on the list, " : "You're on the list, ") + j.name + "!";
+      });
     }, function () { $("go").disabled = false; $("err").textContent = "Couldn't reach the North Pole. Try again?"; });
+  });
+
+  function amazonSearch() {
+    var q = $("q").value.trim();
+    window.open("https://www.amazon.com/" + (q ? "s?k=" + encodeURIComponent(q) : ""), "_blank", "noopener");
+    $("url").focus();
+  }
+  $("qGo").addEventListener("click", amazonSearch);
+  $("q").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); amazonSearch(); } });
+
+  $("addForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var b = $("add"); $("addErr").textContent = "";
+    if (!$("url").value.trim()) { $("addErr").textContent = "Paste an Amazon link first."; return; }
+    b.disabled = true; b.textContent = "Checking Amazon...";
+    api("wishlist", { url: $("url").value, title: $("titleBox").hidden ? "" : $("title").value, note: $("note").value }).then(function (j) {
+      b.disabled = false; b.textContent = "Add to my list";
+      if (j.need_title) { $("titleBox").hidden = false; $("title").focus(); $("addErr").textContent = j.error; return; }
+      if (!j.ok) { $("addErr").textContent = j.error || "That didn't work. Try again?"; return; }
+      $("url").value = $("note").value = $("title").value = ""; $("titleBox").hidden = true;
+      refresh();
+    }, function () { b.disabled = false; b.textContent = "Add to my list"; $("addErr").textContent = "Couldn't reach the North Pole. Try again?"; });
   });
 
   $("draw").addEventListener("click", function () {

@@ -737,9 +737,24 @@ for `site/random` by name in the sparse checkout, as it does for `/ese2100`.
 ## `/cis-1600/secret-santa-26`
 
 CIS 1600's 2026 Secret Santa, `noindex`, linked from nothing. The page is
-static; its endpoints (`api/status`, `api/signup`, `api/draw`) are the `santa`
-blueprint in `accounts/santa.py`, table `santa_signups`. Anyone signs up with a
-name and email and gets a confirmation email.
+static; its endpoints (`api/status`, `api/signup`, `api/draw`, `api/wishlist`,
+`api/wishlist/<id>/delete`) are the `santa` blueprint in `accounts/santa.py`,
+tables `santa_signups` and `santa_wishes`. **Signing up takes a cgovind.com
+login** (the shared session cookie); the row gets the account's display name and
+email, and the person gets a confirmation email. A row from before logins were
+required is claimed by logging in with an account that has the same email.
+
+- **Wishlists are Amazon links.** The page has a search box that opens Amazon in
+  a new tab and a field to paste the product link (or the share text from the
+  app). `accounts/amazon.py` follows the link, refusing any hop that is not an
+  Amazon host, and reads the title, picture and price off the product page. There
+  is no Amazon API (PA-API needs an Associates account with sales). **Amazon
+  often answers the box's IP with a captcha**: then there is no title, the
+  route answers 422 `need_title`, and the page asks "What is it?". The link is
+  kept either way.
+- **Your Santa sees your list only after the assignment emails go out**, as a
+  "You're Santa for X" card above your own list. Before that a redraw could
+  change it, so nobody sees a giftee. The assignment email links the page.
 
 - **An admin (`ADMIN_USERNAMES`) is put on the list just by opening the page**,
   once, under their account's email, and sees "You're on the list" instead of
