@@ -96,14 +96,26 @@ tokens would not.
 - **The forgot box answers the same way whatever happens** — sent, not sent, no
   such account, mail server down. Anything else turns it into a way of asking
   which addresses have accounts here.
+- **An email with no account is mailed a "no account uses this address" letter**
+  with a link to register. Until Nov 2026 it got nothing, and Secret Santa
+  sign-ups (an email, no account) sat waiting for a reset link that was never
+  coming, which is what "forgot password doesn't work" turned out to mean. The
+  page still cannot say it; the mailbox's owner can be told. A journal line,
+  `[accounts] forgot: ...`, records which of the three things happened.
+- **Usernames match without regard to case** at login and in the forgot box
+  (`_find`), the rule registration already enforced for uniqueness.
 - **An email change waits for the new address** to open a link before anything
   moves, so a typo cannot lock somebody out of their own future resets, and the
   **old** address is told afterwards — a takeover changes the address first, so
   that notice is the only warning the owner would get.
-- Mail goes over the box's existing Gmail app password (the same account TTR has
-  been sending from). **Unconfigured is a supported state**: with no `SMTP_HOST`
-  the letter is printed to the log, link and all, which is how the flow stays
-  walkable locally and how the tests read it.
+- **Mail goes out through Amazon SES as `chinmay@cgovind.com`** (since Nov 2026;
+  before that a Gmail app password, signed `playtickettoride@gmail.com`). It is
+  still plain SMTP: `SMTP_*` and `ACCOUNTS_SMTP_FROM` in the box `.env`, with the
+  SES SMTP password derived from the `ses-smtp-daily-digest` IAM key. Conductor's
+  own `.env` points at the same place. Replies reach Chinmay only through the
+  ImprovMX forwarder on the domain's MX records. **Unconfigured is a supported
+  state**: with no `SMTP_HOST` the letter is printed to the log, link and all,
+  which is how the flow stays walkable locally and how the tests read it.
 - **TTR's `/account/update` used to change a username or an email outright** — no
   password, no confirmation. Both branches now refuse and point here. It had to
   be the *route*, not just the form: leaving it would have been a way round both

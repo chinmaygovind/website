@@ -515,7 +515,19 @@ def test_forgot_says_the_same_thing_whoever_asks(client, make_user):
 
 def test_no_mail_goes_to_an_address_with_no_account(client, capsys):
     client.post("/accounts/forgot", data={"username": "ghost@example.com"})
-    assert "Reset your cgovind.com password" not in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "Reset your cgovind.com password" not in err
+    # It is told there is no account instead, so nobody waits on a link.
+    assert "No cgovind.com account uses this address" in err
+    assert "/accounts/register" in err
+    client.post("/accounts/forgot", data={"username": "nobody"})
+    assert "would have sent" not in capsys.readouterr().err
+
+
+def test_usernames_are_found_whatever_the_case(client, make_user, capsys):
+    make_user("MixedCase", email="mixed@example.com")
+    client.post("/accounts/forgot", data={"username": "mixedcase"})
+    assert "Reset your cgovind.com password" in capsys.readouterr().err
 
 
 def test_the_reset_email_names_the_game_only_when_it_came_from_one(client, make_user, capsys):

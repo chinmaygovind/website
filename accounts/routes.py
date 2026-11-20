@@ -18,6 +18,7 @@ The session cookie is the games'. There is no separate accounts login state.
 """
 
 import os
+import sys
 from datetime import datetime
 
 from flask import (Blueprint, abort, current_app, jsonify, redirect,
@@ -45,6 +46,13 @@ def current_user():
 
 def _secret():
     return current_app.config["SECRET_KEY"]
+
+
+def _find(ident):
+    """The account a typed username-or-email means. Neither is case sensitive,
+    which is the rule registration already holds usernames to."""
+    return User.query.filter(or_(func.lower(User.username) == ident.lower(),
+                                 func.lower(User.email) == ident.lower())).first()
 
 
 def _avatar_dir():
@@ -264,8 +272,7 @@ def login():
 
     ident = (request.form.get("username") or "").strip()
     password = request.form.get("password") or ""
-    user = User.query.filter(or_(User.username == ident,
-                                 func.lower(User.email) == ident.lower())).first()
+    user = _find(ident)
     if not user or not user.check_password(password):
         return render_template("accounts/login.html", next=nxt, mode="login",
                                error="Wrong username or password.",
@@ -579,13 +586,25 @@ def forgot():
                                game=request.args.get("from") if request.args.get("from") in RESET_FROM else None)
 
     ident = (request.form.get("username") or "").strip()
-    user = User.query.filter(or_(User.username == ident,
-                                 func.lower(User.email) == ident.lower())).first()
+    user = _find(ident)
+    did = "nothing to send"
     if user and user.email and not user.is_bot:
         link = url_for("accounts.reset", t=tokens.make_reset(_secret(), user),
                        _external=True)
         mail.password_reset(user.email, user.display, link,
                             RESET_FROM.get(request.form.get("from")))
+        did = "sent a reset"
+    elif not user and not naming.check_email(ident):
+        # An address with no account still gets a letter, saying so. The page
+        # cannot (it would answer "who has an account?"), and silence left
+        # people waiting on a link that was never coming.
+        # ponytail: mails any address typed in, unthrottled, as the Secret
+        # Santa sign-up does. Add a per-address cooldown if it gets abused.
+        mail.no_account(ident, url_for("accounts.register", _external=True))
+        did = "no account, told the address"
+    # The visitor is told the same thing every time, so this line is the only
+    # place that says which of the three happened.
+    print("[accounts] forgot: %s" % did, file=sys.stderr, flush=True)
 
     return render_template("accounts/message.html", title="Check your email",
                            body="If there's an account for %s, a link to set a new "

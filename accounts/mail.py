@@ -1,9 +1,8 @@
 """Sending the four emails this site sends.
 
-Plain ``smtplib`` over the box's existing Gmail app password - the same account
-Conductor has been sending from for months - because adding a mail provider
-for four transactional emails would be more moving parts than the whole accounts
-feature. Configuration is the usual ``SMTP_*`` block in the box's ``.env``.
+Plain ``smtplib`` over Amazon SES's SMTP endpoint, signed chinmay@cgovind.com,
+because four transactional emails do not need a mail library. Configuration is
+the usual ``SMTP_*`` block in the box's ``.env``.
 
 **Unconfigured is a supported state, not an error.** With no ``SMTP_HOST`` there
 is no mail server in a development checkout and there is not going to be, so
@@ -85,6 +84,18 @@ def password_reset(to, name, link, game=None):
         "If this wasn't you, you can ignore this email. Your password has not "
         "changed and the link above is useless to anyone who doesn't get it.\n"
         % (name, ", the one you use for %s" % game if game else "", link))
+
+
+def no_account(to, link):
+    """To an address somebody typed into the forgot box that has no account."""
+    return send(
+        to, "No cgovind.com account uses this address",
+        "Hi,\n\n"
+        "Someone asked to reset a cgovind.com password using this email "
+        "address, but there is no account under it.\n\n"
+        "If that was you, you may have signed up with a different address, or "
+        "not made an account yet. You can make one here:\n%s\n\n"
+        "If it wasn't you, ignore this email.\n" % (link,))
 
 
 def confirm_new_email(to, name, link):
