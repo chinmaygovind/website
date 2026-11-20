@@ -356,3 +356,18 @@ def test_the_owner_can_see_that_their_lap_is_being_checked(env, laps):
     theirs = other.get("/account/chinmay").get_data(as_text=True)
     assert "Being checked" not in theirs, (
         "an unchecked lap of somebody else's is a claim, not news")
+
+
+def test_a_held_first_lap_can_be_shared_once_it_is_checked(env, laps):
+    """A first lap of a track has no row to link to while it is held, so the
+    finish sheet's Share button asks `/api/ghost?who=me` for the id when it is
+    pressed - and that has to settle the check itself, or the answer is "no
+    lap" until some other page happens to read a board."""
+    c = env.app.test_client()
+    _login(c, _user(env))
+    d = c.post("/api/run", json=payload(laps["honest"])).get_json()
+    assert d["pending"] and d["time_id"] is None
+    assert c.get("/api/ghost/sunrise?who=me").get_json()["ghost"] is None
+    assert _verify_everything(env)[0][0] == "pass"
+    g = c.get("/api/ghost/sunrise?who=me").get_json()
+    assert g["id"] and g["time_ms"] == laps["honest"]["time"]

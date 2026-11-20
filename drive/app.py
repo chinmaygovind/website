@@ -2941,6 +2941,7 @@ def api_ghost(slug):
     else:
         user = get_current_user()
         if user:
+            _settle_checks(user.id)   # a lap just cleared is the one being asked for
             row = DriveTime.query.filter_by(user_id=user.id, track=slug).first()
     if not row or not _ghost_shown(row, _ghosts_sealed(slug), get_current_user()):
         return jsonify({"ok": True, "ghost": None})

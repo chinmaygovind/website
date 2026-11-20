@@ -7788,6 +7788,20 @@ async function onFinish() {
     }
     return;
   }
+  // The lap, frozen now. `resetToStart` resets this same Run in place, so R
+  // pressed while the request is out would otherwise have everything below
+  // reading the *next* run's clock - a sheet, and a local PB, of 0.07s.
+  const lap = { track: S.track.slug, time_ms: run.time,
+                splits: run.splits, ghost: run.ghost,
+                distance: Math.round(run.distance),
+                // What the driver did, step by step. A lap near the top of the
+                // board is re-driven on the server before it goes up, and this
+                // is what it is re-driven from - see Run.noteStep.
+                verify: run.verifyPayload() };
+  // And a sheet that has been dismissed since is not put back by the answer.
+  const sheet = S.sheetGen;
+  const showAnswer = (r) => { if (!racing && S.sheetGen === sheet) showResults(r); };
+
   // Past here `/api/run` adds the time and distance itself, so claim the run now:
   // whatever ends it afterwards (R, switching track, closing the tab) must not
   // report it a second time.
@@ -7796,14 +7810,7 @@ async function onFinish() {
   try {
     const r = await fetch('/api/run', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ track: S.track.slug, time_ms: run.time,
-                             splits: run.splits, ghost: run.ghost,
-                             distance: Math.round(run.distance),
-                             // What the driver did, step by step. A lap near the
-                             // top of the board is re-driven on the server
-                             // before it goes up, and this is what it is
-                             // re-driven from - see Run.noteStep.
-                             verify: run.verifyPayload() }),
+      body: JSON.stringify(lap),
     });
     const d = await r.json();
     if (d.ok && d.stored) {
@@ -7813,16 +7820,15 @@ async function onFinish() {
       if (d.is_record && d.improved) S.sound.record();
       S.bestTime = d.pb_ms;
       if (CFG.pbs) CFG.pbs[S.track.slug] = d.pb_ms;
-      if (!racing) {
-        // `note` is nearly always absent. The one case that fills it is a lap
-        // quick enough to be re-driven on the server before it goes up (see
-        // /api/run): it is stored and it is yours, and the board has not got it
-        // yet - which is worth a sentence rather than a PB that appears to have
-        // been ignored.
-        showResults({ time: run.time, medal, rank: d.run_rank,
-                      pb: d.pb_ms, pbRank: d.rank, wr: d.record_ms,
-                      share: d.time_id, note: d.note || null });
-      }
+      // `note` is nearly always absent. The one case that fills it is a lap
+      // quick enough to be re-driven on the server before it goes up (see
+      // /api/run): it is stored and it is yours, and the board has not got it
+      // yet - which is worth a sentence rather than a PB that appears to have
+      // been ignored.
+      showAnswer({ time: lap.time_ms, medal, rank: d.run_rank,
+                   pb: d.pb_ms, pbRank: d.rank, wr: d.record_ms,
+                   share: d.time_id, held: !!d.pending,
+                   note: d.note || null });
       // Solo, a new PB is a new ghost - **but only if your own lap is the one
       // you asked to drive against.**
       //
@@ -7840,37 +7846,25 @@ async function onFinish() {
         else if (S.ghostMode === 'wr' && d.is_record) loadGhost('wr');
       }
     } else {
-      if (improved) { S.bestTime = run.time; localBest(run.time); }
+      if (improved) { S.bestTime = lap.time_ms; localBest(lap.time_ms); }
       // A guest's lap is kept whole - replay and all - so that logging in later
       // puts it on the board rather than asking them to drive it again.
       if (d.guest && window.DrivePending) {
-        window.DrivePending.save({
-          track: S.track.slug, time_ms: run.time, splits: run.splits,
-          ghost: run.ghost, distance: Math.round(run.distance),
-          verify: run.verifyPayload(),
-        });
+        window.DrivePending.save(lap);
       }
-      if (!racing) {
-        showResults({ time: run.time, medal, rank: d.run_rank, pb: S.bestTime,
-                      wr: d.record_ms, guest: !!d.guest,
-                      note: d.note || d.error || null });
-      }
+      showAnswer({ time: lap.time_ms, medal, rank: d.run_rank, pb: S.bestTime,
+                   wr: d.record_ms, guest: !!d.guest,
+                   note: d.note || d.error || null });
     }
   } catch (e) {
     // The request never landed, so nobody has this lap but us. Keep it in the
     // same place a guest's laps go and it will be handed over on a later page.
     if (window.DrivePending) {
-      window.DrivePending.save({
-        track: S.track.slug, time_ms: run.time, splits: run.splits,
-        ghost: run.ghost, distance: Math.round(run.distance),
-        verify: run.verifyPayload(),
-      });
+      window.DrivePending.save(lap);
     }
-    if (improved) { S.bestTime = run.time; localBest(run.time); }
-    if (!racing) {
-      showResults({ time: run.time, medal, pb: improved ? run.time : prev,
-                    note: 'Offline - saved, and sent when you reconnect.' });
-    }
+    if (improved) { S.bestTime = lap.time_ms; localBest(lap.time_ms); }
+    showAnswer({ time: lap.time_ms, medal, pb: improved ? lap.time_ms : prev,
+                 note: 'Offline - saved, and sent when you reconnect.' });
   }
   renderMedalTable();
   showPb();
@@ -7966,7 +7960,7 @@ function showResults(r) {
   $('resWr').textContent = r.wr != null ? fmt(r.wr) : '--:--.---';
   // Only ever a problem, never a summary - the numbers above are the summary.
   $('resNote').innerHTML = r.note ? `<div>${esc(r.note)}</div>` : '';
-  setShare(r.share, r.guest);
+  setShare(r.share, r.guest, r.held);
   // A first lap is finished and there is a sheet in front of it: the one moment
   // in the game where pointing at four buttons takes nothing away from anybody.
   // This runs twice per lap and `startTour` is idempotent, so it is on the first
@@ -7986,12 +7980,16 @@ function showResults(r) {
  * concrete and immediate. So the button stays lit and says what is missing,
  * rather than going grey with no explanation.
  */
-function setShare(id, guest) {
+function setShare(id, guest, held) {
   const b = $('btnShare');
   if (!b) return;                 // room and replay do not have one
   S.shareId = id || null;
-  b.disabled = !id && !guest;
-  b.textContent = id ? 'Share' : 'Log in to share';
+  // A first lap of a track that is quick enough to be re-driven has no row yet
+  // (every daily's first lap, nearly). `shareLap` asks for the id when pressed.
+  S.shareHeld = !id && !!held;
+  S.shareGuest = !!guest;
+  b.disabled = !id && !guest && !held;
+  b.textContent = guest ? 'Log in to share' : 'Share';
 }
 
 /**
@@ -8005,8 +8003,13 @@ function setShare(id, guest) {
  * what lands in a chat window is the lap rather than the word "Drive".
  */
 async function shareLap() {
+  if (!S.shareId && S.shareHeld) {
+    const d = await fetchGhost('me').catch(() => null);
+    if (!d) { toast('Still being checked - try again in a moment'); return; }
+    S.shareId = d.id;
+  }
   if (!S.shareId) {
-    location.href = '/login?next=' + encodeURIComponent(location.pathname);
+    if (S.shareGuest) location.href = '/login?next=' + encodeURIComponent(location.pathname);
     return;
   }
   const url = location.origin + '/solo/' + S.track.slug + '?watch=' + S.shareId;
@@ -8031,6 +8034,7 @@ async function shareLap() {
 // The marks point at buttons the sheet is what lit up; with the sheet gone
 // there is a road behind them again and they would be litter over it.
 function hideResults() {
+  S.sheetGen = (S.sheetGen | 0) + 1;      // see `showAnswer` in onFinish
   endTour();
   document.body.classList.remove('first-result');
   $('results').style.display = 'none';
