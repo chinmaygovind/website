@@ -106,6 +106,8 @@ def init_app(app: Flask):
         # CREATE TABLE IF NOT EXISTS, so the shared `users` table is untouched,
         # exactly as in the four games.
         db.create_all()
+        from .santa import add_columns
+        add_columns()
 
     return True
 

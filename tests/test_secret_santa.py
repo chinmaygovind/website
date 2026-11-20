@@ -167,6 +167,17 @@ def test_your_santa_sees_your_list_only_after_the_emails(client, logged_in, flas
     assert [w["title"] for w in g["wishes"]] == ["gift for " + g["name"]]
 
 
+def test_gift_idea_is_yours_to_set_and_reaches_the_admin(client, logged_in):
+    assert client.post(API + "idea", json={"idea": "x"}).status_code == 401
+    join(client, logged_in, "a")
+    assert client.post(API + "idea", json={"idea": "  warm socks  "}).json["idea"] == "warm socks"
+    assert client.get(API + "status").json["idea"] == "warm socks"
+    client.get("/accounts/logout")
+    logged_in("chinmay")
+    people = client.get(API + "status").json["people"]
+    assert [p["idea"] for p in people if p["name"] != "Chinmay"] == ["warm socks"]
+
+
 def test_amazon_parsing():
     assert amazon.asin_of("https://www.amazon.com/Some-Thing/dp/b0abcdef12/ref=sr_1_1?k=x") == "B0ABCDEF12"
     assert amazon.asin_of("https://www.amazon.co.uk/gp/product/B0ABCDEF12") == "B0ABCDEF12"

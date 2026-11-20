@@ -54,7 +54,9 @@ input {
   width: 100%; font: inherit; font-size: 19px; padding: 10px 14px; background: #fff;
   border: 2.5px solid var(--ink); border-radius: 12px 5px 14px 6px / 6px 14px 5px 12px; outline: none;
 }
-input:focus { box-shadow: 0 0 0 4px rgba(247,210,62,.7); }
+textarea { width: 100%; font: inherit; font-family: "Archivo Black", "Arial Black", sans-serif; font-size: 17px; padding: 10px 14px; background: #fff; resize: vertical; min-height: 84px;
+  border: 2.5px solid var(--ink); border-radius: 12px 5px 14px 6px / 6px 14px 5px 12px; outline: none; }
+textarea:focus, input:focus { box-shadow: 0 0 0 4px rgba(247,210,62,.7); }
 button {
   margin-top: 20px; width: 100%; font: inherit; font-size: 24px; cursor: pointer; color: #fff;
   background: var(--red); border: 3px solid var(--ink); padding: 10px 14px;
@@ -163,6 +165,7 @@ a.button:hover { filter: brightness(.93); }
   width: 34px; height: 34px; flex: none; margin: 0; padding: 0; font-size: 18px; line-height: 1; letter-spacing: 0;
   background: #fff; color: var(--ink); text-shadow: none; box-shadow: 0 2px 0 var(--ink); border-width: 2px; border-radius: 50%;
 }
+.idea { font-family: Arial, sans-serif; font-size: 16px; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0 0; }
 .empty { font-family: Arial, sans-serif; font-size: 15px; color: #6a6a6a; margin: 14px 0 0; }
 
 
@@ -261,6 +264,7 @@ a.button:hover { filter: brightness(.93); }
   <div class="card wish" id="giftee" hidden>
     <div class="inner">
       <h3 id="gifteeTitle"></h3>
+      <p class="idea" id="gifteeIdea" hidden></p>
       <ul class="wishes" id="gifteeWishes"></ul>
       <p class="empty" id="gifteeEmpty" hidden>They haven't added anything yet. Check back later!</p>
     </div>
@@ -269,6 +273,12 @@ a.button:hover { filter: brightness(.93); }
   <div class="card wish" id="wish" hidden>
     <div class="inner">
       <h3>My wishlist</h3>
+      <form id="ideaForm" novalidate>
+        <label for="idea">Gift idea</label>
+        <textarea id="idea" maxlength="500"></textarea>
+        <button id="ideaGo" type="submit">Save</button>
+        <p class="err" id="ideaErr" role="alert"></p>
+      </form>
       <label for="q">Find something on Amazon</label>
       <div class="search">
         <input id="q" placeholder="cozy socks" maxlength="120">
@@ -356,6 +366,7 @@ a.button:hover { filter: brightness(.93); }
       if (!$("form").closest(".card").classList.contains("yay")) $("doneNote").hidden = true;
       $("doneTitle").textContent = "You're on the list, " + s.me + "!";
       $("wish").hidden = false; list($("wishes"), $("wishEmpty"), s.wishes, true);
+      if (document.activeElement !== $("idea")) $("idea").value = s.idea || "";
     } else if (s.sent) { $("closed").hidden = false; }
     else if (s.user) { $("form").hidden = false; $("whoName").textContent = s.user; }
     else { $("out").hidden = false; if (s.login) $("loginLink").href = s.login; }
@@ -363,11 +374,13 @@ a.button:hover { filter: brightness(.93); }
       $("giftee").hidden = false;
       $("gifteeTitle").textContent = "You're Santa for " + s.giftee.name + "!";
       list($("gifteeWishes"), $("gifteeEmpty"), s.giftee.wishes, false);
+      $("gifteeIdea").textContent = s.giftee.idea || ""; $("gifteeIdea").hidden = !s.giftee.idea;
+      if (s.giftee.idea) $("gifteeEmpty").hidden = true;
     }
     if (!s.admin) return;
     $("admin").hidden = false;
     var ol = $("people"); ol.innerHTML = "";
-    (s.people || []).forEach(function (p) { var li = el("li", p.name); li.appendChild(el("small", p.email + ", " + p.wishes + (p.wishes === 1 ? " wish" : " wishes"))); ol.appendChild(li); });
+    (s.people || []).forEach(function (p) { var li = el("li", p.name); li.appendChild(el("small", p.email + ", " + p.wishes + (p.wishes === 1 ? " wish" : " wishes"))); if (p.idea) li.appendChild(el("small", p.idea)); ol.appendChild(li); });
     var pairs = s.pairs || [], pl = $("pairs"); pl.innerHTML = "";
     pairs.forEach(function (p) { var li = el("li"); li.appendChild(el("span", p.from)); li.appendChild(el("span", "\u2192", "arrow")); li.appendChild(el("span", p.to)); pl.appendChild(li); });
     $("pairsTitle").hidden = pl.hidden = !pairs.length;
@@ -376,6 +389,16 @@ a.button:hover { filter: brightness(.93); }
     $("drawMsg").textContent = s.sent ? "Emails sent" : pairs.length ? "Not emailed yet" : "";
   }
   function refresh() { return api("status").then(show); }
+
+  $("ideaForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var b = $("ideaGo"); b.disabled = true; $("ideaErr").textContent = "";
+    api("idea", { idea: $("idea").value }).then(function (j) {
+      b.disabled = false; b.textContent = j.ok ? "Saved!" : "Save";
+      if (!j.ok) $("ideaErr").textContent = j.error || "That didn't work.";
+    }, function () { b.disabled = false; $("ideaErr").textContent = "Couldn't reach the North Pole. Try again?"; });
+  });
+  $("idea").addEventListener("input", function () { $("ideaGo").textContent = "Save"; });
 
   $("form").addEventListener("submit", function (e) {
     e.preventDefault();

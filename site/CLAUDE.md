@@ -752,6 +752,11 @@ required is claimed by logging in with an account that has the same email.
   often answers the box's IP with a captcha**: then there is no title, the
   route answers 422 `need_title`, and the page asks "What is it?". The link is
   kept either way.
+- **A free-text gift idea sits above the wishlist** (`api/idea`, column
+  `santa_signups.idea`), for wishes that are not an Amazon link. It shows on the
+  giftee card and in the admin list. The column came after launch, so
+  `santa.add_columns()` ALTERs it in at startup: `create_all` never adds a
+  column to an existing table.
 - **Your Santa sees your list only after the assignment emails go out**, as a
   "You're Santa for X" card above your own list. Before that a redraw could
   change it, so nobody sees a giftee. The assignment email links the page.

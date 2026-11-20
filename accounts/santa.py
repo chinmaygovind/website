@@ -36,6 +36,14 @@ class SantaSignup(db.Model):
     giftee_id = db.Column(db.Integer, db.ForeignKey("santa_signups.id"))
     emailed_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    idea = db.Column(db.String(500))
+
+
+def add_columns():
+    """`create_all` never adds a column to an existing table, so add `idea` here once."""
+    if "idea" not in {c["name"] for c in db.inspect(db.engine).get_columns("santa_signups")}:
+        db.session.execute(db.text("ALTER TABLE santa_signups ADD COLUMN idea VARCHAR(500)"))
+        db.session.commit()
 
 
 class SantaWish(db.Model):
@@ -116,16 +124,18 @@ def status():
     if me:
         out["me"] = me.name
         out["wishes"] = _wishes(me)
+        out["idea"] = me.idea
         giftee = db.session.get(SantaSignup, me.giftee_id) if (sent and me.giftee_id) else None
         if giftee:
-            out["giftee"] = {"name": giftee.name, "wishes": _wishes(giftee)}
+            out["giftee"] = {"name": giftee.name, "idea": giftee.idea, "wishes": _wishes(giftee)}
     people = _people()
     out["count"] = len(people)
     if admin:
         by_id = {p.id: p for p in people}
         counts = dict(db.session.query(SantaWish.signup_id, db.func.count(SantaWish.id))
                       .group_by(SantaWish.signup_id).all())
-        out["people"] = [{"name": p.name, "email": p.email, "wishes": counts.get(p.id, 0)}
+        out["people"] = [{"name": p.name, "email": p.email, "idea": p.idea,
+                          "wishes": counts.get(p.id, 0)}
                          for p in people]
         out["pairs"] = [{"from": p.name, "to": by_id[p.giftee_id].name}
                         for p in people if p.giftee_id in by_id]
@@ -216,6 +226,17 @@ def add_wish():
     db.session.add(wish)
     db.session.commit()
     return jsonify(ok=True, wish=wish.as_json())
+
+
+@bp.post("/idea")
+def set_idea():
+    """Your free-text gift idea, for things that aren't an Amazon link."""
+    me, err = _my_signup_or_error()
+    if err:
+        return err
+    me.idea = ((request.get_json(silent=True) or {}).get("idea") or "").strip()[:500] or None
+    db.session.commit()
+    return jsonify(ok=True, idea=me.idea)
 
 
 @bp.post("/wishlist/<int:wish_id>/delete")
