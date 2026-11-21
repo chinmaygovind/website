@@ -120,8 +120,8 @@ It has its own CI and is not tested from this repo.
   second route onto the same 302 as `/conductor`.
   **The scans are still in the game repo's git history** - it was not rewritten -
   so a history purge is the open follow-up if Asmodee ever asks.
-- **`visits.py` is one file copied verbatim into five places** - the repo root,
-  `ers/`, `kot/`, `drive/`, `gto/`. `accounts/` has no copy; it is a blueprint on the
+- **`visits.py` is one file copied verbatim into six places** - the repo root,
+  `ers/`, `kot/`, `drive/`, `gto/` and Conductor (`ttr/`, commit it there and bump the pointer). `accounts/` has no copy; it is a blueprint on the
   root app and uses that one. Nothing in it may be service-specific, and a
   drifted copy fails `tests/test_no_drift.py`. **Fix by copying, never by
   merging.** What it does is in `accounts/CLAUDE.md`.

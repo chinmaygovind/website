@@ -154,6 +154,10 @@ def test_a_crawler_is_flagged_and_kept(client, wipe):
     "https://docs-cortex.paloaltonetworks.com/r/1/Cortex-Xpanse/Scanning-activity",
     "",                      # no User-Agent at all is never a browser
     "Mozilla/5.0",           # nor is the fossil on its own
+    # AppleWebKit with no KHTML: a scraper, ~400 fake visitors a day in Nov 2026
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0.0.0"
+    " Safari/537.36",
 ])
 def test_the_scanners_that_were_passing_as_people_are_flagged(agent):
     assert visits.is_crawler(agent), "%r still counts as a person" % agent
