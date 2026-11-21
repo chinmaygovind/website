@@ -2785,23 +2785,6 @@ def _daily_report_text(d):
 _MEDAL = {1: "\U0001F947", 2: "\U0001F948", 3: "\U0001F949"}
 
 
-def _week_report_text(days, day):
-    """The daily points for the week (Monday on) that `day` finished, top 10."""
-    ranked = _daily_points(days, day - timedelta(days=day.weekday()))
-    if not ranked:
-        return None
-    lines = ["**This week's daily leaderboard**\n"]
-    for e in ranked[:10]:
-        wins = " (%d win%s)" % (e["wins"], "" if e["wins"] == 1 else "s") \
-            if e["wins"] else ""
-        lines.append("%s %s %d pts%s" % (
-            _MEDAL.get(e["pos"], "%d." % e["pos"]), _md(e["user"].display),
-            e["points"], wins))
-    if len(ranked) > 10:
-        lines.append("...and %d more" % (len(ranked) - 10))
-    return "\n".join(lines)
-
-
 def _maybe_daily_report(now=None):
     """Post yesterday's daily report once it is safely over.
 
@@ -2814,13 +2797,11 @@ def _maybe_daily_report(now=None):
     day = daily_date((now - DAILY_REPORT_DELAY).replace(tzinfo=None)) - timedelta(days=1)
     if db.session.get(DriveDailyReport, day):
         return
-    days = _daily_days()
-    d = next((d for d in days if d["day"] == day), None)
+    d = next((d for d in _daily_days() if d["day"] == day), None)
     db.session.add(DriveDailyReport(day=day))
     db.session.commit()
     if d:
-        week = _week_report_text(days, day)
-        _discord(_daily_report_text(d), *([week] if week else []))
+        _discord(_daily_report_text(d))
 
 
 def _settle_checks(user_id=None):

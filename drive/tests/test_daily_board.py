@@ -308,7 +308,5 @@ def test_discord_hears_each_new_daily_record_and_one_report(env, monkeypatch):
         assert sent == []                         # too early: still the day before
         A._maybe_daily_report(start + timedelta(minutes=30))
         A._maybe_daily_report(start + timedelta(minutes=31))
-    assert len(sent) == 2 and "is finished! 2 drivers played." in sent[0], sent
+    assert len(sent) == 1 and "is finished! 2 drivers played." in sent[0], sent
     assert sent[0].index("bob") < sent[0].index("ada") and "+15" in sent[0]
-    assert "This week's daily leaderboard" in sent[1]
-    assert "bob 15 pts (1 win)" in sent[1] and "ada 12 pts" in sent[1]
