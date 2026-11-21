@@ -30,7 +30,7 @@ from models import (db, User, DriveStats, DriveTime, DriveStart, DriveRunCheck,
                     DriveGame, DrivePlayer, DriveRace, DriveRaceItems,
                     DriveGarage, DrivePrefs,
                     DriveCheatFlag, DriveUserTrack, DriveSave,
-                    DriveDailyTime)
+                    DriveDailyTime, DriveDailyReport)
 import portal as portal_mod
 import tracks as tracks_mod
 import tuning
@@ -2686,6 +2686,7 @@ def _note_daily(user_id, slug, time_ms, at=None):
     if not DriveUserTrack.query.filter_by(slug=slug, daily_on=day,
                                           status="live").first():
         return
+    _maybe_daily_record(user_id, slug, day, time_ms)
     row = db.session.get(DriveDailyTime, (day, user_id))
     if row is None:
         db.session.add(DriveDailyTime(day=day, user_id=user_id, track=slug,
@@ -2693,6 +2694,133 @@ def _note_daily(user_id, slug, time_ms, at=None):
     elif time_ms < row.time_ms:
         row.time_ms = time_ms
         row.set_at = datetime.utcnow()
+
+
+# ---------------------------------------------------------------------------
+# Discord: #dailies
+# ---------------------------------------------------------------------------
+
+# A channel webhook URL, in the box `.env`. Without one nothing posts, which is
+# every checkout but prod.
+DISCORD_DAILIES = os.environ.get("DISCORD_DAILIES_WEBHOOK", "")
+
+# How long after midnight Eastern the day's report waits: a lap driven at
+# 11:59pm can still be in the verifier queue, and it counts for the day it was
+# driven on.
+DAILY_REPORT_DELAY = timedelta(minutes=15)
+
+
+def _discord(*texts):
+    """Post each text to #dailies, in order, off the request. Fire and forget."""
+    if not DISCORD_DAILIES:
+        return
+
+    def send():
+        for text in texts:
+            post(text)
+
+    def post(text):
+        import urllib.request
+        req = urllib.request.Request(
+            DISCORD_DAILIES, method="POST",
+            data=json_mod.dumps({"content": text,
+                                 "allowed_mentions": {"parse": []}}).encode(),
+            headers={"Content-Type": "application/json",
+                     "User-Agent": "drive.cgovind.com"})
+        try:
+            urllib.request.urlopen(req, timeout=20).close()
+        except Exception as e:
+            app.logger.warning("discord post failed: %s", e)
+    eventlet.spawn_n(send)
+
+
+def _md(name):
+    """A display name with Discord's markdown characters escaped."""
+    return re.sub(r"([\\*_~`|>#\[\]()-])", r"\\\1", name)
+
+
+def _maybe_daily_record(user_id, slug, day, time_ms):
+    """Announce a lap that has just gone top of its day's daily board.
+
+    Called by `_note_daily` before it writes, so the board read here is the one
+    the lap is beating. Bots are on no daily board, so they announce nothing.
+    """
+    if not DISCORD_DAILIES:
+        return
+    user = db.session.get(User, user_id)
+    if user is None or user.is_bot:
+        return
+    best = (DriveDailyTime.query.join(User)
+            .filter(DriveDailyTime.day == day, User.is_bot.isnot(True))
+            .order_by(DriveDailyTime.time_ms, DriveDailyTime.set_at).first())
+    if best and time_ms >= best.time_ms:
+        return
+    track = DriveUserTrack.query.filter_by(slug=slug).first()
+    msg = "\U0001F3C1 **%s** set the %s on **%s**: `%s`" % (
+        _md(user.display), "first time" if best is None else "new record",
+        track.name if track else slug, fmt_ms(time_ms))
+    if best is not None:
+        msg += " (beat %s by %.3fs)" % (_md(best.user.display),
+                                       (best.time_ms - time_ms) / 1000.0)
+    _discord(msg + "\n<%s/solo/%s>" % (SELF_URL, slug))
+
+
+def _daily_report_text(d):
+    """The end-of-day message for one entry of `_daily_days()`."""
+    rows = d["rows"]
+    if not rows:
+        return "**%s** is finished! Nobody set a time." % d["name"]
+    lines = ["**%s** is finished! %d driver%s played.\n" % (
+        d["name"], len(rows), "" if len(rows) == 1 else "s")]
+    for r in rows[:10]:
+        lines.append("%s %s `%s` +%d" % (
+            _MEDAL.get(r["pos"], "%d." % r["pos"]), _md(r["user"].display),
+            fmt_ms(r["time_ms"]), r["points"]))
+    if len(rows) > 10:
+        lines.append("...and %d more" % (len(rows) - 10))
+    lines.append("\n<%s/leaderboard>" % SELF_URL)
+    return "\n".join(lines)
+
+
+_MEDAL = {1: "\U0001F947", 2: "\U0001F948", 3: "\U0001F949"}
+
+
+def _week_report_text(days, day):
+    """The daily points for the week (Monday on) that `day` finished, top 10."""
+    ranked = _daily_points(days, day - timedelta(days=day.weekday()))
+    if not ranked:
+        return None
+    lines = ["**This week's daily leaderboard**\n"]
+    for e in ranked[:10]:
+        wins = " (%d win%s)" % (e["wins"], "" if e["wins"] == 1 else "s") \
+            if e["wins"] else ""
+        lines.append("%s %s %d pts%s" % (
+            _MEDAL.get(e["pos"], "%d." % e["pos"]), _md(e["user"].display),
+            e["points"], wins))
+    if len(ranked) > 10:
+        lines.append("...and %d more" % (len(ranked) - 10))
+    return "\n".join(lines)
+
+
+def _maybe_daily_report(now=None):
+    """Post yesterday's daily report once it is safely over.
+
+    Only yesterday, never older: a first deploy, or a box down for a day, must
+    not dump a backlog of reports into the channel.
+    """
+    if not DISCORD_DAILIES or not DATABASE_URL:
+        return
+    now = now or datetime.now(timezone.utc)
+    day = daily_date((now - DAILY_REPORT_DELAY).replace(tzinfo=None)) - timedelta(days=1)
+    if db.session.get(DriveDailyReport, day):
+        return
+    days = _daily_days()
+    d = next((d for d in days if d["day"] == day), None)
+    db.session.add(DriveDailyReport(day=day))
+    db.session.commit()
+    if d:
+        week = _week_report_text(days, day)
+        _discord(_daily_report_text(d), *([week] if week else []))
 
 
 def _settle_checks(user_id=None):
@@ -7377,6 +7505,11 @@ def _stale_cleanup():
         # anything, and that only happens when there is something to close.
         eventlet.sleep(60)
         _sweep_once()
+        try:
+            with app.app_context():
+                _maybe_daily_report()
+        except Exception:
+            app.logger.exception("daily report failed")
 
 
 # **Not spawned under test, because it is spawned at import and the tests import

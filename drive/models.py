@@ -837,6 +837,15 @@ class DriveDailyTime(db.Model):
     user = db.relationship("User", lazy="joined")
 
 
+class DriveDailyReport(db.Model):
+    """A finished daily whose report has gone to Discord, so a restart after
+    midnight does not post it twice. Written by `_maybe_daily_report`."""
+    __tablename__ = "drive_daily_reports"
+
+    day       = db.Column(db.Date, primary_key=True)
+    posted_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 # ---------------------------------------------------------------------------
 # The one migration
 # ---------------------------------------------------------------------------

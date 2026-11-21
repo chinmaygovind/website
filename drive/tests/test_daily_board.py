@@ -276,3 +276,39 @@ def test_todays_daily_hides_other_ghosts_until_it_ends(env):
         A.DriveUserTrack.query.filter_by(slug=slug).first().daily_on -= timedelta(days=1)
         A.db.session.commit()
     assert bob.get("/api/ghost/%s?who=wr" % slug).get_json()["ghost"]
+
+
+def test_discord_hears_each_new_daily_record_and_one_report(env, monkeypatch):
+    A = env
+    sent = []
+    monkeypatch.setattr(A, "DISCORD_DAILIES", "https://discord.invalid/hook")
+    monkeypatch.setattr(A, "_discord", lambda *t: sent.extend(t))
+    today = A.daily_date()
+    slug = _daily(A, "Foggy Ridge", day=today)
+    ada, bob = _user(A, "ada"), _user(A, "bob")
+    with A.app.app_context():
+        for uid, ms in [(ada, 50000), (bob, 51000), (bob, 49000), (ada, 49500),
+                        (bob, 48512)]:
+            A._note_daily(uid, slug, ms)
+            A.db.session.commit()
+    assert len(sent) == 3, sent                   # ada's first, bob's two
+    assert "first time" in sent[0] and "new record" in sent[1]
+    assert "0:49.000" in sent[1] and "beat ada by 1.000s" in sent[1]
+    assert "beat bob by 0.488s" in sent[2]
+
+    # The report is for yesterday, posts once, and not before the delay.
+    sent.clear()
+    from datetime import timezone
+    with A.app.app_context():
+        A.DriveUserTrack.query.filter_by(slug=slug).first().daily_on = today - timedelta(days=1)
+        A.DriveDailyTime.query.update({"day": today - timedelta(days=1)})
+        A.db.session.commit()
+        start = A.daily_ends_at() - timedelta(days=1)   # today's midnight
+        A._maybe_daily_report(start + timedelta(minutes=5))
+        assert sent == []                         # too early: still the day before
+        A._maybe_daily_report(start + timedelta(minutes=30))
+        A._maybe_daily_report(start + timedelta(minutes=31))
+    assert len(sent) == 2 and "is finished! 2 drivers played." in sent[0], sent
+    assert sent[0].index("bob") < sent[0].index("ada") and "+15" in sent[0]
+    assert "This week's daily leaderboard" in sent[1]
+    assert "bob 15 pts (1 win)" in sent[1] and "ada 12 pts" in sent[1]
