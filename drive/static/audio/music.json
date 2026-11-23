@@ -179,6 +179,12 @@
     "snowynight": {
       "playlist": "frost"
     },
+    "superg": {
+      "file": "core_luge.mp3",
+      "artist": "Wii Fit U",
+      "title": "Core Luge",
+      "url": "https://www.youtube.com/watch?v=7c8Rn2sULuk"
+    },
     "casino": {
       "file": "waluigi_pinball.mp3",
       "artist": "MK8DX",
@@ -225,6 +231,12 @@
         "artist": "MK8DX",
         "title": "GCN Sherbet Land",
         "url": "https://www.youtube.com/watch?v=KH4ae0fBDKo"
+      },
+      {
+        "file": "core_luge.mp3",
+        "artist": "Wii Fit U",
+        "title": "Core Luge",
+        "url": "https://www.youtube.com/watch?v=7c8Rn2sULuk"
       }
     ],
     "harbor": [

@@ -4140,6 +4140,12 @@ function drawTerrain(buf, col, terr, pal, apron, gravelTo) {
   // colours mean the far side of the infield shimmers between two shades of the
   // same gravel instead of between gravel and grass.
   const gTo = gravelTo != null ? gravelTo : 0;
+  // `terrain.ice` paints the field's steep faces as glacier ice (Super-G): the
+  // cliffs between switchback legs, banded by height like a serac wall, with
+  // the odd cell pulled deep blue for a crevasse. Colour only, never collider.
+  const ice = pal.terrain && pal.terrain.ice;
+  const BANDS = ice ? [ice, shade(ice, 0.55), shade(ice, -0.1), shade(ice, 0.3)] : null;
+  const deep = ice ? shade(ice, -0.45) : 0;
   for (let ix = 0; ix + 1 < nx; ix++) {
     for (let iz = 0; iz + 1 < nz; iz++) {
       // Nothing is skipped near the road, and that is deliberate. Skipping the
@@ -4158,8 +4164,30 @@ function drawTerrain(buf, col, terr, pal, apron, gravelTo) {
       const a = P(ix, iz), b = P(ix, iz + 1), c = P(ix + 1, iz + 1), d = P(ix + 1, iz);
       const mid = (gridD[ix * nz + iz] + gridD[ix * nz + iz + 1] +
                    gridD[(ix + 1) * nz + iz] + gridD[(ix + 1) * nz + iz + 1]) / 4;
-      buf.quad(a, b, c, d, mid < gTo ? grit : pal.ground);
       col.addQuad(a, b, c, d, KIND.OFFROAD);
+      if (ice) {
+        const lo = Math.min(a[1], b[1], c[1], d[1]), hi = Math.max(a[1], b[1], c[1], d[1]);
+        if (hi - lo > CELL * 1.2) {
+          // A cliff is one cell of the field, so it is cut into k x k slices of
+          // its own bilinear patch to give the strata somewhere to be.
+          const k = Math.min(10, Math.ceil((hi - lo) / 5));
+          const L = (p, q, t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t,
+                                  p[2] + (q[2] - p[2]) * t];
+          const at = (u, v) => L(L(a, d, u), L(b, c, u), v);
+          for (let i = 0; i < k; i++) {
+            for (let j = 0; j < k; j++) {
+              const q0 = at(i / k, j / k), q1 = at(i / k, (j + 1) / k);
+              const q2 = at((i + 1) / k, (j + 1) / k), q3 = at((i + 1) / k, j / k);
+              const y = (q0[1] + q1[1] + q2[1] + q3[1]) / 4;
+              const h = ((ix * 73856093) ^ (iz * 19349663) ^ ((i + j) * 83492791)) >>> 0;
+              const band = Math.floor(y / 7) + (h % 5 === 0 ? 1 : 0);
+              buf.quad(q0, q1, q2, q3, h % 13 === 0 ? deep : BANDS[((band % 4) + 4) % 4]);
+            }
+          }
+          continue;
+        }
+      }
+      buf.quad(a, b, c, d, mid < gTo ? grit : pal.ground);
     }
   }
 }
