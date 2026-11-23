@@ -403,6 +403,7 @@ export class Movers {
    * runtimes: the only arithmetic on `k` is a remainder.
    */
   static pose(m, k) {
+    if (m.path) return Movers.follow(m, k);
     const p = m.period;
     let u = ((k + m.phase) % p + p) % p / p;      // 0..1 round the cycle
     const back = u >= 0.5;
@@ -425,9 +426,79 @@ export class Movers {
       if (!m.obj) continue;
       if (m.geyser) { Movers.erupt(m, k); continue; }
       const p = Movers.pose(m, k);
-      m.obj.position.set(p.x, p.y, p.z);
-      m.obj.rotation.y = p.yaw;
+      // Assigned rather than `set`: QuickJS's three stub has a plain object.
+      m.obj.rotation.order = 'YXZ';
+      if (m.spin) {
+        // A turntable: stands still and turns. Integer step times a rate.
+        m.obj.position.set(p.x, p.y, p.z);
+        m.obj.rotation.y = ((k + m.phase) * m.spin) % (Math.PI * 2);
+      } else if (m.tumble || m.roll || m.path) {
+        const t = Movers.turned(m, p);
+        m.obj.visible = p.live !== false;
+        m.obj.position.set(t.x, t.y, t.z);
+        m.obj.rotation.y = t.yaw;
+        m.obj.rotation.x = t.pitch;
+      } else {
+        m.obj.position.set(p.x, p.y, p.z);
+        m.obj.rotation.y = p.yaw;
+      }
     }
+  }
+
+  /**
+   * **A die tumbling end over end, or a ball rolling: where it is and how it
+   * is turned, for the picture and the collision alike.** One function, so
+   * what you see and what you hit are the same box.
+   *
+   * The heading is held fixed at a->b rather than flipping on the way home, so
+   * the rotation is a function of distance along the segment alone: walking
+   * back unrolls exactly what walking out rolled, with no pop at the turn.
+   *
+   * `tumble` is a cube's half-side `h`: it pivots a quarter-turn over its
+   * leading bottom edge every `2h` travelled, lifting as it goes over, and lands
+   * flat - which wants the segment to be a whole number of `2h`. `roll` is a
+   * ball's radius: a plain rotation of distance over radius. A `path` mover
+   * rolls by its own `r` along its own heading.
+   */
+  static turned(m, p) {
+    if (m.path) return { x: p.x, y: p.y, z: p.z, yaw: p.yaw, pitch: p.s / m.r };
+    const dx = m.bx - m.ax, dz = m.bz - m.az;
+    const L = Math.hypot(dx, dz) || 1, fx = dx / L, fz = dz / L;
+    const s = (p.x - m.ax) * fx + (p.z - m.az) * fz;     // distance along a->b
+    const yaw = Math.atan2(dx, dz);
+    if (m.roll) return { x: p.x, y: p.y, z: p.z, yaw: yaw, pitch: s / m.roll };
+    const h = m.tumble, q = s / (2 * h);
+    const n = Math.floor(q), th = (q - n) * Math.PI / 2;
+    const c = Math.cos(th), sn = Math.sin(th);
+    const along = n * 2 * h + h - h * c + h * sn;
+    return { x: m.ax + fx * along, y: m.y + h * (c + sn - 1), z: m.az + fz * along,
+             yaw: yaw, pitch: n * Math.PI / 2 + th };
+  }
+
+  /**
+   * A ball rolling a route: `path` is a flat list of points, `cum` their running
+   * distance, `len` the total. For the first `active` steps of every `period`
+   * it rolls from the first point to the last, gathering speed the way a ball
+   * running downhill does, drifting across the road from `off0` to `off1` of
+   * its half-width along `lat`; for the rest of the period it is parked out of
+   * the world (`live: false`) - not drawn and not solid. Integer `k` in, plain
+   * arithmetic out, so both runtimes put it in the same place.
+   */
+  static follow(m, k) {
+    const P = m.period;
+    const u = ((k + m.phase) % P + P) % P;
+    if (u >= m.active) return { x: m.path[0], y: -1e4, z: m.path[2], yaw: 0, s: 0, live: false };
+    const t = u / m.active;
+    const s = m.len * t * (m.v0 + (1 - m.v0) * t);
+    let lo = 0, hi = m.cum.length - 1;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (m.cum[mid] <= s) lo = mid; else hi = mid; }
+    const seg = (m.cum[hi] - m.cum[lo]) || 1, f = (s - m.cum[lo]) / seg;
+    const a = lo * 3, b = hi * 3, P2 = m.path, Lt = m.lat;
+    const off = (m.off0 + (m.off1 - m.off0) * (s / m.len)) * m.hw;
+    const x = P2[a] + (P2[b] - P2[a]) * f + (Lt[a] + (Lt[b] - Lt[a]) * f) * off;
+    const y = P2[a + 1] + (P2[b + 1] - P2[a + 1]) * f + m.r;
+    const z = P2[a + 2] + (P2[b + 2] - P2[a + 2]) * f + (Lt[a + 2] + (Lt[b + 2] - Lt[a + 2]) * f) * off;
+    return { x: x, y: y, z: z, yaw: Math.atan2(P2[b] - P2[a], P2[b + 2] - P2[a + 2]), s: s, live: true };
   }
 
   /**
@@ -438,8 +509,45 @@ export class Movers {
    */
   walls(k, x, y, z, r, cb) {
     for (const m of this.list) {
-      if (m.geyser) continue;
+      // `ghost`: scenery that moves and is never in the way (a wheel turning
+      // inside the road it is drawn under), so it has no box at all.
+      if (m.geyser || m.ghost) continue;
       const p = Movers.pose(m, k);
+      if (p.live === false) continue;
+      if (m.sphere) {
+        // A ball is a ball: sphere against sphere.
+        let dx = x - p.x, dy = y - p.y, dz = z - p.z;
+        const d = Math.hypot(dx, dy, dz);
+        if (d >= r + m.sphere) continue;
+        if (d < 1e-6) { cb(0, 1, 0, r + m.sphere); continue; }
+        cb(dx / d, dy / d, dz / d, r + m.sphere - d);
+        continue;
+      }
+      if (m.tumble) {
+        // The box where it is drawn: lifted, yawed and pitched over by
+        // `turned`, the same function the picture uses. Into its frame by the
+        // inverse of three's Y-then-X rotation, and back out by the forward one.
+        const t = Movers.turned(m, p);
+        const cy = Math.cos(t.yaw), sy = Math.sin(t.yaw), cp = Math.cos(t.pitch), sp = Math.sin(t.pitch);
+        const wx = x - t.x, wy = y - t.y, wz = z - t.z;
+        const ax = cy * wx - sy * wz, az = sy * wx + cy * wz;
+        const ly = cp * wy + sp * az, lz = -sp * wy + cp * az, lx = ax;
+        const h = m.tumble;
+        const qx = Math.max(-h, Math.min(h, lx)), qy = Math.max(-h, Math.min(h, ly)), qz = Math.max(-h, Math.min(h, lz));
+        let ox = lx - qx, oy = ly - qy, oz = lz - qz;
+        let d = Math.hypot(ox, oy, oz);
+        if (d > r) continue;
+        if (d < 1e-6) {
+          const ex = h - Math.abs(lx), ey = h - Math.abs(ly), ez = h - Math.abs(lz);
+          if (ex <= ey && ex <= ez) { ox = lx < 0 ? -1 : 1; oy = 0; oz = 0; }
+          else if (ey <= ez) { ox = 0; oy = ly < 0 ? -1 : 1; oz = 0; }
+          else { ox = 0; oy = 0; oz = lz < 0 ? -1 : 1; }
+          d = 0;
+        } else { ox /= d; oy /= d; oz /= d; }
+        const py = cp * oy - sp * oz, pz = sp * oy + cp * oz;
+        cb(cy * ox + sy * pz, py, -sy * ox + cy * pz, r - d);
+        continue;
+      }
       // Into the box's frame: yaw only, because a mover walks on the ground.
       const c = Math.cos(-p.yaw), s = Math.sin(-p.yaw);
       const dx = x - p.x, dy = y - p.y, dz = z - p.z;
@@ -1519,6 +1627,12 @@ export function buildTrack(track, T) {
       const buf = new MeshBuf();
       for (const b of (m.parts || [])) {
         buf.box(b[0], b[1], b[2], b[3], b[4], b[5], b[6]);
+      }
+      // Free quads in the mover's own frame, both windings - for a shape no
+      // stack of axis-aligned boxes makes, like a wheel's wedges. Visual only.
+      for (const q of (m.quads || [])) {
+        buf.quad(q[0], q[1], q[2], q[3], q[4]);
+        buf.quad(q[0], q[3], q[2], q[1], q[4]);
       }
       if (buf.pos.length) {
         const g = new THREE.Group();

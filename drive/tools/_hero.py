@@ -351,6 +351,10 @@ FRAMES = {
     # the four sides you stand on. This is the arrival instead: the sign, the
     # doors, and the road curving in past the parking bays. Nothing is airborne
     # in a car park.
+    # **The roulette wheel, with the craps table and the slot machine behind
+    # it.** The scan scores the spiral, but from the road's own side; from
+    # across the wheel the whole casino is in one frame - pockets, felt, dice.
+    "casino": dict(at=0.38, azimuth=2.4, pitch=0.5),
     "costco": dict(at=0.07, azimuth=3.50, pitch=0.25, pad=0.42, span=0.10,
                    cars=8, air=0.0, liveryFrom=11),
     # **Square onto the ski jump, with the field climbing it.** Mount Joy is one
