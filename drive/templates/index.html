@@ -11,7 +11,7 @@
       <div class="tshot" style="background-image:url('/static/img/tracks/{{ t.slug }}.png?v={{ asset_version }}')"></div>
       <div class="tcard-in">
         <div class="tcard-top">
-          <h3>{{ t.name }}{% if t.author %}<i class="tcard2-by">by {{ t.author }}</i>{% endif %}</h3>
+          <h3>{{ t.name }}</h3>
           <span class="diff d{{ t.difficulty }}" title="Difficulty {{ t.difficulty }}/5">
             {% for i in range(5) %}<span class="pip {% if i < t.difficulty %}on{% endif %}"></span>{% endfor %}
           </span>
