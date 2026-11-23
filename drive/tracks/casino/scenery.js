@@ -173,7 +173,7 @@
   }
 
   function props(ctx) {
-    const { solid, bright, signs, col, track, KIND, groundY, mulberry } = ctx;
+    const { solid, bright, signs, col, track, KIND, groundY, mulberry, shade } = ctx;
     const line = track.line, n = line.length;
     const G = groundY != null ? groundY : -1.2;
     const S = sections(line);
@@ -269,6 +269,7 @@
     const claim = (ax, az, bx, bz) => claimed.push([Math.min(ax, bx), Math.min(az, bz), Math.max(ax, bx), Math.max(az, bz)]);
     const isClaimed = (x, z, pad) => claimed.some((c) => x > c[0] - pad && x < c[2] + pad && z > c[1] - pad && z < c[3] + pad);
     const tops = [];
+    let bjExit = null;
     const onTable = (x, z) => tops.some((t) => t(x, z));
 
     // A stack of chips, edge spots and all, the top chip's face a picture.
@@ -523,6 +524,7 @@
     // The ramp is a playing card, and the card is wider than the road - so its
     // face is road too, collided exactly through the station edges. Drawn as
     // strips that follow the eased climb, the art cut to match.
+    const cards = [];
     const cardRamp = (idx, name, strips) => {
       if (idx.length < 4) return;
       const i0 = Math.max(0, idx[0] - 1), i1 = idx[idx.length - 1];
@@ -568,6 +570,7 @@
         quad2(solid, a2, b2, add(b2, [0, -1, 0], 0.45), add(a2, [0, -1, 0], 0.45), 0xe0dacc);
       }
       claim(A.p[0] - W2, A.p[2] - W2, Z.p[0] + W2, Z.p[2] + W2);
+      cards.push({ at: at, L: L, W2: W2 });
     };
     cardRamp(S.card1, 'ace', 12);
     cardRamp(S.card2, 'queen', 10);
@@ -659,8 +662,12 @@
       const i0 = S.landing[0], i1 = S.landing[S.landing.length - 1];
       const a = line[i0].p, b = line[i1].p, fy = a[1];
       const f = norm([b[0] - a[0], 0, b[2] - a[2]]), l = latOf(f);
-      const Lh = len(sub(b, a)) / 2 + 4, Wh = line[i0].hw + 1.5;
-      const c = [(a[0] + b[0]) / 2 + f[0] * 2, fy, (a[2] + b[2]) / 2 + f[2] * 2];
+      // From two units short of the landing to exactly the last station on the
+      // felt: any further and the table stands over the spiral, which is
+      // already dropping away under it - felt drawn over the road, and a felt
+      // collider a car rides on and then falls off.
+      const Lh = len(sub(b, a)) / 2 + 1, Wh = line[i0].hw + 1.5;
+      const c = [(a[0] + b[0]) / 2 - f[0] * 1, fy, (a[2] + b[2]) / 2 - f[2] * 1];
       const P = (fo, lo, y) => [c[0] + f[0] * fo + l[0] * lo, y, c[2] + f[2] * fo + l[2] * lo];
       // The layout reads from the wheel's end: 0 nearest the wheel.
       art('roulette-layout', 2.5, [c[0], fy + 0.03, c[2]], [-f[0], 0, -f[2]], [l[0], 0, l[2]], Lh, Wh, [0, 1, 0]);
@@ -745,10 +752,15 @@
         quad2(solid, [C[0], fy - 5, C[2]], [Ao[0], fy - 5, Ao[2]], [Bo[0], fy - 5, Bo[2]], [C[0], fy - 5, C[2]], WOOD_D);
       }
       railAlong(rim.map((q) => [q[0], q[2]]), fy, (x, z) => norm([C[0] - x, 0, C[2] - z]));
+      bjExit = { rim: rim[rim.length - 1], last: bjI[bjI.length - 1], out: out };
       // The dealer's side: a low padded rail along the straight edge, between
       // where the road comes on and goes off.
       const df = [-md[0], 0, -md[2]], dl = latOf(df);
-      const dr = Math.hypot(first.p[0] - C[0], first.p[2] - C[2]) - first.hw - 2;
+      // Stops short of the road at both ends, by the wider road: the first
+      // station is the queen's top (7.5 each side) and the last is the exit
+      // (10), and sizing it off the first left the rail's end half a unit into
+      // the road on the way off the table.
+      const dr = Math.hypot(first.p[0] - C[0], first.p[2] - C[2]) - Math.max(first.hw, last.hw, hwB) - 2.5;
       obox(solid, add([C[0], fy + 1.2, C[2]], df, 1.2), df, dl, dr, 1.2, 1.2, LEATHER);
       oboxCol([C[0] + df[0] * 1.2, fy + 1.2, C[2] + df[2] * 1.2], df, dl, dr, 1.2, 1.2);
       // Betting circles, one per seat along the road, the insurance line's
@@ -842,6 +854,94 @@
       }
     }
 
+    // --- rails round the cards, wherever a card's edge meets nothing ------------------
+    // A card is wider than the road and its whole face is drivable, but it is
+    // wider than the table it leans on too: the ace hangs thirty units past the
+    // craps table's end and the queen past the blackjack table's outer side.
+    // Up the card off-centre, then, was a drive off its top edge into the air -
+    // a gap in the track. The same low padded bumper with a brass cap the
+    // raised road has, along both long edges once they are off the floor and
+    // along any stretch of the top edge with no table beyond it. Inner face
+    // and top collided, so it only ever pushes a car back onto the card.
+    const edgeRail = (A, B, inward) => {
+      const H = 0.8, T = 0.8;
+      const P = (q, o, dy) => [q[0] + inward[0] * o, q[1] + dy, q[2] + inward[2] * o];
+      const v = [P(A, 0, -0.5), P(A, T, -0.5), P(A, T, H), P(A, 0, H),
+                 P(B, 0, -0.5), P(B, T, -0.5), P(B, T, H), P(B, 0, H)];
+      quad2(solid, v[0], v[1], v[5], v[4], LEATHER);
+      quad2(solid, v[1], v[5], v[6], v[2], LEATHER);
+      quad2(solid, v[3], v[7], v[4], v[0], LEATHER);
+      quad2(bright, v[2], v[6], v[7], v[3], GOLD);
+      col.addQuad(v[1], v[5], v[6], v[2], KIND.WALL);
+      col.addQuad(v[2], v[6], v[7], v[3], KIND.WALL);
+    };
+    for (const cd of cards) {
+      const SEG = 32;
+      for (let k = 0; k < SEG; k++) {
+        const A = cd.at(cd.L * k / SEG), B = cd.at(cd.L * (k + 1) / SEG);
+        if (B.p[1] < 1.0) continue;                      // still on the floor
+        for (const s2 of [-1, 1]) {
+          edgeRail(add(A.p, A.lat, cd.W2 * s2), add(B.p, B.lat, cd.W2 * s2), [-A.lat[0] * s2, 0, -A.lat[2] * s2]);
+        }
+      }
+      // The top edge, in pieces, wherever there is no table just past it.
+      const Z = cd.at(cd.L), Y = cd.at(cd.L - 2);
+      const fwd = norm([Z.p[0] - Y.p[0], 0, Z.p[2] - Y.p[2]]);
+      const PIECES = Math.ceil(cd.W2 * 2 / 4);
+      for (let k = 0; k < PIECES; k++) {
+        const o0 = -cd.W2 + 2 * cd.W2 * k / PIECES, o1 = -cd.W2 + 2 * cd.W2 * (k + 1) / PIECES;
+        const a2 = add(Z.p, Z.lat, o0), b2 = add(Z.p, Z.lat, o1);
+        const m = [(a2[0] + b2[0]) / 2 + fwd[0] * 2.5, 0, (a2[2] + b2[2]) / 2 + fwd[2] * 2.5];
+        if (onTable(m[0], m[2]) || roadDist(m[0], m[2], Z.p[1] - 3, Z.p[1] + 3) < 0) continue;
+        edgeRail(a2, b2, [-fwd[0], 0, -fwd[2]]);
+      }
+    }
+
+    // The corner off the blackjack table. The table's rail ends at the rim,
+    // seven units outside the road, and the exit road's own rail starts at its
+    // kerb: between them was open table edge with a nine-unit drop, and a car
+    // running wide off the felt went straight over it. Angled, from the rail's
+    // end to the exit's edge two stations on, so it funnels rather than stops.
+    if (bjExit) {
+      const e2 = line[Math.min(n - 1, bjExit.last + 2)];
+      const l2 = norm([e2.lat[0], 0, e2.lat[2]]);
+      const A = bjExit.rim, B = add([e2.p[0], e2.p[1], e2.p[2]], l2, (e2.hw + 1.4) * bjExit.out);
+      const d = norm([B[0] - A[0], 0, B[2] - A[2]]);
+      // inward: toward the road side of the segment
+      let inw = [-d[2], 0, d[0]];
+      const mid = [(A[0] + B[0]) / 2, 0, (A[2] + B[2]) / 2];
+      if ((e2.p[0] - mid[0]) * inw[0] + (e2.p[2] - mid[2]) * inw[2] < 0) inw = [-inw[0], 0, -inw[2]];
+      edgeRail([A[0], A[1], A[2]], B, inw);
+    }
+
+    // --- the road where a felt or card hands back to tarmac -------------------------------
+    // `trackmesh.js` draws a road segment only when the station it starts from
+    // is drawn, so the one segment from the last `skin` station to the first
+    // ordinary one had no surface at all: a hole three and a half units long
+    // off the end of the craps table onto the kicker, off the betting layout
+    // onto the spiral, and off the blackjack table onto the exit corner. Laid
+    // here at the drawn road's width (the narrower of the two), in its colour,
+    // with the slab's two sides under it. The collider was never missing - only
+    // the picture - so this adds no collision.
+    {
+      const pal = ctx.pal;
+      for (let i = 0; i + 1 < n; i++) {
+        const a = line[i], b = line[i + 1];
+        if (!a.skin || b.skin || b.air) continue;
+        const w = Math.min(a.hw, b.hw);
+        const E = (e, s2, dy) => [e.p[0] + e.lat[0] * w * s2 + e.n[0] * dy, e.p[1] + e.lat[1] * w * s2 + e.n[1] * dy,
+                                  e.p[2] + e.lat[2] * w * s2 + e.n[2] * dy];
+        quad2(solid, E(a, -1, 0.01), E(a, 1, 0.01), E(b, 1, 0.01), E(b, -1, 0.01), i % 8 < 4 ? pal.road : shade(pal.road, 0.045));
+        for (const s2 of [-1, 1]) {
+          quad2(solid, E(a, s2, 0.01), E(b, s2, 0.01), E(b, s2, -1.2), E(a, s2, -1.2), shade(pal.road, -0.3));
+          // the kerb the engine starts on the next station, carried back over the patch
+          const K = (e, o) => [e.p[0] + e.lat[0] * (w + o) * s2, e.p[1] + e.lat[1] * (w + o) * s2 + 0.02,
+                               e.p[2] + e.lat[2] * (w + o) * s2];
+          quad2(solid, K(a, -0.9), K(a, 0), K(b, 0), K(b, -0.9), pal.kerb);
+        }
+      }
+    }
+
     // --- an edge rail on every raised road that is not on a table ----------------------
     // The spiral and the run off the blackjack table stand nine to eleven units
     // over the carpet with nothing at their edge, so running wide was a drop
@@ -850,7 +950,7 @@
     // it can only ever push a car sideways - and not a ribbon `rail`, which a
     // ground track must carry none of.
     {
-      const BEAM_OUT = 0.9, BEAM_H = 0.8, BEAM_T = 0.8;
+      const BEAM_OUT = 1.4, BEAM_H = 0.8, BEAM_T = 0.8;   // inner face half a unit past the kerb
       const raised = (e) => e.p[1] > 1.5 && !e.skin && !e.air && !onTable(e.p[0], e.p[2]);
       for (let i = 1; i < n; i++) {
         const a = line[i - 1], b = line[i];
@@ -1025,7 +1125,9 @@
     const flat = S.craps.filter((i) => !line[i].curv);
     for (const part of runs(flat)) {
       if (part.length < 8) continue;
-      const picks = [0.18, 0.42, 0.66, 0.88];
+      // Clear of the last third, which is the jump's run-up: a die tumbling
+      // into you there throws the jump, not just the line.
+      const picks = [0.12, 0.33, 0.55];
       for (let q = 0; q < picks.length; q++) {
         const e = line[part[Math.floor(part.length * picks[q])]];
         const reach = 3 * H;
@@ -1033,40 +1135,52 @@
           ax: e.p[0] - e.lat[0] * reach, az: e.p[2] - e.lat[2] * reach,
           bx: e.p[0] + e.lat[0] * reach, bz: e.p[2] + e.lat[2] * reach,
           y: e.p[1] + H, hx: H, hy: H, hz: H,
-          period: [250, 310, 280, 340][q], phase: q * 131, glow: true, tumble: H,
+          period: [250, 310, 280][q], phase: q * 131, glow: true, tumble: H,
           parts: dieParts(),
         });
       }
     }
 
     if (S.spiral.length) {
-      // **The ball, rolling down the spiral now and then.** It drops off the
-      // end of the betting layout, runs down the bowl the road spirals round -
-      // drifting from the outside edge to the inside as it goes, the way a ball
-      // comes down a wheel - out along the run under the jump and into the slot
-      // machine, where it is gone; then the table is quiet until the next one.
-      // Same direction as the car and slower than it, so it is something you
-      // catch and get round, and it is a sphere in the collider, not a box.
-      if (S.landing.length && S.pad2.length) {
-        const from = Math.max(S.landing[0], S.landing[S.landing.length - 1] - 3);
+      // **The ball, rolling down the spiral now and then.** It jumps the rim
+      // of the wheel, lands on the spiral, runs down it - drifting from the
+      // inside edge to the outside as it goes - out along the run under the
+      // jump and into the slot machine, where it is gone; then the wheel is
+      // quiet until the next one. Same direction as the car and slower than it,
+      // so it is something you catch and get round, and it is a sphere in the
+      // collider, not a box.
+      //
+      // **It appears inside the wheel, never on the road.** It used to appear
+      // at the end of the betting layout, right after the checkpoint - so a car
+      // arriving that step had a ball materialise on top of it, and the shove
+      // came before the ball was ever drawn: a collision with nothing there.
+      if (S.spiral.length > 8 && S.pad2.length) {
+        const [wx0, wz0, wr0] = pivot(line, S.spiral);
+        const WR0 = wr0 - line[S.spiral[0]].hw - 4, rimY = G + 8.5 + 1.25;
+        // Join the road where it has come down to the rim's height.
+        let j = S.spiral[0];
+        for (const i of S.spiral) if (Math.abs(line[i].p[1] - rimY) < Math.abs(line[j].p[1] - rimY)) j = i;
         const to = Math.min(n - 1, S.pad2[0] + 10);
+        const ej = line[j], dir = norm([ej.p[0] - wx0, 0, ej.p[2] - wz0]);
+        const lj = norm([ej.lat[0], 0, ej.lat[2]]);
         const path = [], lat = [], cum = [];
         let run = 0;
-        for (let i = from; i <= to; i++) {
-          const e = line[i];
-          if (i > from) run += len(sub(e.p, line[i - 1].p));
-          const l = norm([e.lat[0], 0, e.lat[2]]);
-          path.push(e.p[0], e.p[1], e.p[2]);
-          lat.push(l[0], 0, l[2]);
-          cum.push(run);
-        }
+        const push = (p, l) => {
+          if (path.length) run += Math.hypot(p[0] - path[path.length - 3], p[1] - path[path.length - 2], p[2] - path[path.length - 1]);
+          path.push(p[0], p[1], p[2]); lat.push(l[0], 0, l[2]); cum.push(run);
+        };
+        // On the ball track, then over the rim, then down onto the road.
+        push([wx0 + dir[0] * WR0 * 0.86, rimY - 0.6, wz0 + dir[2] * WR0 * 0.86], [0, 0, 0]);
+        push([wx0 + dir[0] * (WR0 + 1), rimY + 0.4, wz0 + dir[2] * (WR0 + 1)], [0, 0, 0]);
+        for (let i = j; i <= to; i++) push(line[i].p, norm([line[i].lat[0], 0, line[i].lat[2]]));
+        void lj;
         const R = 2.6;
         out.push({
           ax: path[0], az: path[2], bx: path[0], bz: path[2], y: path[1] + R,
           hx: R, hy: R, hz: R, sphere: R, r: R,
           path: path, lat: lat, cum: cum, len: run,
-          hw: line[S.spiral[0]].hw, off0: 0.55, off1: -0.55, v0: 0.3,
-          period: 1500, active: 1000, phase: 0,
+          hw: line[S.spiral[0]].hw, off0: -0.55, off1: 0.5, v0: 0.3,
+          period: 1500, active: 900, phase: 0,
           quads: sphereQuads(0, 0, 0, R, 0xfffcf4, 18, 12),
         });
       }
