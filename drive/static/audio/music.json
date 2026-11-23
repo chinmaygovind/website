@@ -169,7 +169,7 @@
     },
     "lobbies": {
       "file": "lobbies.mp3",
-      "artist": "Mario Kart Wii",
+      "artist": "MKWii",
       "title": "Competition Menu",
       "url": "https://www.youtube.com/watch?v=rDKFvQe_1pw"
     },
@@ -379,7 +379,7 @@
       },
       {
         "file": "maple_treeway.mp3",
-        "artist": "Mario Kart Wii",
+        "artist": "MKWii",
         "title": "Maple Treeway",
         "url": "https://www.youtube.com/watch?v=rsIf_gUclJw"
       }
