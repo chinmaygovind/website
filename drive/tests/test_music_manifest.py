@@ -82,10 +82,12 @@ def test_the_written_loop_points_make_sense():
         assert e["out"] - start > fade * 2, "%s: too short for its own crossfade" % slug
 
 
-def test_the_real_circuits_share_one_playlist():
-    """Driving Spa to Monaco keeps the song going. `MusicPlayer.setSong` keeps
-    playing when the playlist name matches, so they must all name the same one."""
+def test_the_real_circuits_share_their_pool():
+    """Driving Spa to Monza keeps the song going. `MusicPlayer.setSong` keeps
+    playing when the playlist name matches, so each group must name one playlist:
+    the street circuits share `street`, the rest share `f1`."""
     t = _manifest()["tracks"]
-    named = {s: t[s].get("playlist") for s in ("spa", "silverstone", "monaco", "monza",
-                                               "suzuka", "sepang", "baku", "singapore") if s in t}
-    assert len(set(named.values())) == 1 and None not in named.values(), named
+    for pool, slugs in (("f1", ("spa", "silverstone", "monza", "suzuka", "sepang")),
+                        ("street", ("monaco", "baku", "singapore"))):
+        named = {s: t[s].get("playlist") for s in slugs if s in t}
+        assert set(named.values()) == {pool}, named

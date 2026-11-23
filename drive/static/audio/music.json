@@ -16,12 +16,7 @@
       "url": "https://www.youtube.com/watch?v=bSCCEQCp2vk"
     },
     "eight": {
-      "file": "eight.mp3",
-      "artist": "Qumu",
-      "title": "Snow Mountain",
-      "url": "https://www.youtube.com/watch?v=pwpEt9rS-tU",
-      "out": 163.0,
-      "fade": 2.5
+      "playlist": "frost"
     },
     "sunrise": {
       "file": "sunrise.mp3",
@@ -68,10 +63,7 @@
       "url": "https://www.youtube.com/watch?v=Rv3SOWZjT3A"
     },
     "gauntlet": {
-      "file": "gauntlet.mp3",
-      "artist": "Aacro X",
-      "title": "In The Final",
-      "url": "https://www.youtube.com/watch?v=faA3IMDbb5I"
+      "playlist": "gauntlet"
     },
     "cove": {
       "file": "cove.mp3",
@@ -95,7 +87,7 @@
       "playlist": "f1"
     },
     "monaco": {
-      "playlist": "f1"
+      "playlist": "street"
     },
     "monza": {
       "playlist": "f1"
@@ -158,10 +150,10 @@
       "url": "https://www.youtube.com/watch?v=xmf6Za0Tc9Q"
     },
     "baku": {
-      "playlist": "f1"
+      "playlist": "street"
     },
     "singapore": {
-      "playlist": "f1"
+      "playlist": "street"
     },
     "frost": {
       "playlist": "frost"
@@ -182,10 +174,22 @@
       "url": "https://www.youtube.com/watch?v=rDKFvQe_1pw"
     },
     "citadel": {
-      "file": "citadel.mp3",
-      "artist": "Mario Kart 8 Deluxe",
-      "title": "SNES Bowser Castle 3",
-      "url": "https://www.youtube.com/watch?v=KDJg4KijWik"
+      "playlist": "citadel"
+    },
+    "snowynight": {
+      "playlist": "frost"
+    },
+    "casino": {
+      "file": "waluigi_pinball.mp3",
+      "artist": "MK8DX",
+      "title": "DS Waluigi Pinball",
+      "url": "https://www.youtube.com/watch?v=rbw4fmHhFTw"
+    },
+    "sahara": {
+      "playlist": "sahara"
+    },
+    "harvest": {
+      "playlist": "harvest"
     }
   },
   "playlists": {
@@ -209,6 +213,18 @@
         "artist": "Joshua Morse",
         "title": "Frappe Cafe Vibe",
         "url": "https://www.youtube.com/watch?v=Ln1pzz9l5p0"
+      },
+      {
+        "file": "ice_ice_outpost.mp3",
+        "artist": "MK8DX",
+        "title": "Ice Ice Outpost",
+        "url": "https://www.youtube.com/watch?v=vudk2nlJlto"
+      },
+      {
+        "file": "sherbet_land.mp3",
+        "artist": "MK8DX",
+        "title": "GCN Sherbet Land",
+        "url": "https://www.youtube.com/watch?v=KH4ae0fBDKo"
       }
     ],
     "harbor": [
@@ -276,6 +292,12 @@
         "artist": "Qumu",
         "title": "Egg Planet",
         "url": "https://www.youtube.com/watch?v=f7xHLspxZac"
+      },
+      {
+        "file": "lunar_colony.mp3",
+        "artist": "MK8DX",
+        "title": "Lunar Colony",
+        "url": "https://www.youtube.com/watch?v=bCtrHqhDllE"
       }
     ],
     "rainbow": [
@@ -304,16 +326,73 @@
         "fade": 2.0
       },
       {
-        "file": "mutecity.mp3",
-        "artist": "Qumu",
-        "title": "Mute City",
-        "url": "https://www.youtube.com/watch?v=XqFtfRyCwi4"
+        "file": "f1-thunderstruck.mp3",
+        "artist": "AC/DC",
+        "title": "Thunderstruck",
+        "url": "https://www.youtube.com/watch?v=lhg9bYNLvOg"
       },
       {
-        "file": "f1-neobowser.mp3",
-        "artist": "Mario Kart 8",
-        "title": "Neo Bowser City",
-        "url": "https://www.youtube.com/watch?v=P3s_kl9tACQ"
+        "file": "excitebike_arena.mp3",
+        "artist": "MK8DX",
+        "title": "Excitebike Arena",
+        "url": "https://www.youtube.com/watch?v=LqyFsdi3BN8"
+      },
+      {
+        "file": "gba_mario_circuit.mp3",
+        "artist": "MK8DX",
+        "title": "GBA Mario Circuit",
+        "url": "https://www.youtube.com/watch?v=73-7ENHTYGY"
+      },
+      {
+        "file": "cloudtop_cruise.mp3",
+        "artist": "MK8DX",
+        "title": "Cloudtop Cruise",
+        "url": "https://www.youtube.com/watch?v=t1771Qo2CU8"
+      }
+    ],
+    "sahara": [
+      {
+        "file": "dry_dry_desert.mp3",
+        "artist": "MK8DX",
+        "title": "GCN Dry Dry Desert",
+        "url": "https://www.youtube.com/watch?v=AggNZ_4M1K8"
+      },
+      {
+        "file": "thwomp_ruins.mp3",
+        "artist": "MK8DX",
+        "title": "Thwomp Ruins",
+        "url": "https://www.youtube.com/watch?v=P45IbrhL-io"
+      }
+    ],
+    "harvest": [
+      {
+        "file": "animal_crossing_autumn.mp3",
+        "artist": "MK8DX",
+        "title": "Animal Crossing (Autumn)",
+        "url": "https://www.youtube.com/watch?v=rflCLskdZwE"
+      },
+      {
+        "file": "moo_moo_meadows.mp3",
+        "artist": "MK8DX",
+        "title": "Wii Moo Moo Meadows",
+        "url": "https://www.youtube.com/watch?v=irAb3lOPAYw"
+      },
+      {
+        "file": "maple_treeway.mp3",
+        "artist": "Mario Kart Wii",
+        "title": "Maple Treeway",
+        "url": "https://www.youtube.com/watch?v=rsIf_gUclJw"
+      }
+    ],
+    "street": [
+      {
+        "file": "f1.mp3",
+        "artist": "Hans Zimmer",
+        "title": "F1",
+        "url": "https://www.youtube.com/watch?v=YhX_Woa3kVA&list=RDYhX_Woa3kVA",
+        "in": 11.0,
+        "out": 179.0,
+        "fade": 2.0
       },
       {
         "file": "f1-thunderstruck.mp3",
@@ -322,28 +401,74 @@
         "url": "https://www.youtube.com/watch?v=lhg9bYNLvOg"
       },
       {
+        "file": "mutecity.mp3",
+        "artist": "Qumu",
+        "title": "Mute City",
+        "url": "https://www.youtube.com/watch?v=XqFtfRyCwi4"
+      },
+      {
+        "file": "neo_bowser_city.mp3",
+        "artist": "MK8DX",
+        "title": "3DS Neo Bowser City",
+        "url": "https://www.youtube.com/watch?v=oYJTvBcsuI4"
+      },
+      {
         "file": "f1-rallyhouse.mp3",
         "artist": "prod. DTM",
         "title": "Rally House",
         "url": "https://www.youtube.com/watch?v=vg4JGLfF33w"
       },
       {
-        "file": "f1-rallyfunk.mp3",
-        "artist": "SLOWYMANE",
-        "title": "RALLY FUNK",
-        "url": "https://www.youtube.com/watch?v=ZRL3I0--ad0"
-      },
-      {
-        "file": "f1-senna.mp3",
-        "artist": "Mannequin, prod. DTM",
-        "title": "SENNA",
-        "url": "https://www.youtube.com/watch?v=V8xhj37QZY0"
-      },
-      {
         "file": "f1-flyingrally.mp3",
         "artist": "prod. DTM",
         "title": "Flying Rally",
         "url": "https://www.youtube.com/watch?v=eiTAr-6lSw0"
+      },
+      {
+        "file": "moonview_highway.mp3",
+        "artist": "MK8DX",
+        "title": "Wii Moonview Highway",
+        "url": "https://www.youtube.com/watch?v=ksqD82e2hhQ"
+      }
+    ],
+    "citadel": [
+      {
+        "file": "citadel.mp3",
+        "artist": "MK8DX",
+        "title": "SNES Bowser Castle 3",
+        "url": "https://www.youtube.com/watch?v=KDJg4KijWik"
+      },
+      {
+        "file": "bowsers_castle.mp3",
+        "artist": "MK8DX",
+        "title": "Bowser's Castle",
+        "url": "https://www.youtube.com/watch?v=C2NaUU_wUyU"
+      },
+      {
+        "file": "grumble_volcano.mp3",
+        "artist": "MK8DX",
+        "title": "Wii Grumble Volcano",
+        "url": "https://www.youtube.com/watch?v=5TvsoGqZuJ0"
+      }
+    ],
+    "gauntlet": [
+      {
+        "file": "gauntlet.mp3",
+        "artist": "Aacro X",
+        "title": "In The Final",
+        "url": "https://www.youtube.com/watch?v=faA3IMDbb5I"
+      },
+      {
+        "file": "grumble_volcano.mp3",
+        "artist": "MK8DX",
+        "title": "Wii Grumble Volcano",
+        "url": "https://www.youtube.com/watch?v=5TvsoGqZuJ0"
+      },
+      {
+        "file": "citadel.mp3",
+        "artist": "MK8DX",
+        "title": "SNES Bowser Castle 3",
+        "url": "https://www.youtube.com/watch?v=KDJg4KijWik"
       }
     ]
   }

@@ -349,8 +349,8 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
   song, not the same one. A song change crossfades over `SWITCH_FADE` (4s) on
   a linear ramp; the loop seam's short exponential ramp sounded like a cut
   between two different songs. **`setSong` with the same playlist name is a no-op**,
-  which is what keeps the eight real circuits on one song as you drive between
-  them; that replaced the three circuits sharing `f1.mp3`. A deck that hits the
+  which is what keeps the real circuits on one song as you drive between
+  them (two pools, `street` and `f1`); that replaced the three circuits sharing `f1.mp3`. A deck that hits the
   end in a background tab advances too. The now-playing card shows each new
   song through `onsong`.
 - **The now-playing card is a credit before it is a feature.** The music is

@@ -670,8 +670,9 @@ instead, and the now-playing card in-game is the credit being shown.
   rather than given `"in": 1.0` because a cold deck has no metadata yet: `_seek`
   defers to `loadedmetadata` while `play()` has already started at 0:00, so an
   `in` is not reliably in force on the very first pass - which is the one pass
-  that matters here. The eight real circuits deliberately share
-  one `playlist`, which is what stops driving between them restarting it.
+  that matters here. The real circuits deliberately share two playlists - `street` for Monaco,
+  Baku and Singapore, `f1` for the other five - which is what stops driving
+  between two of a kind restarting it; crossing between the groups does.
   Any track can have a playlist instead of a song - see `docs/hud-and-controls.md`.
 - Getting them onto the box is **`python tools/sync_music.py`**, which rsyncs
   them and then checks the manifest against what actually landed.
