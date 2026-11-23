@@ -315,6 +315,9 @@ def _meta(mod, folder):
         "closed": bool(getattr(mod, "closed", False)),
         "exposed": bool(getattr(mod, "exposed", False)),
         "wants_scenery": bool(getattr(mod, "scenery", False)),
+        # Who made it, for a track adopted from a player: shown as "by X" on
+        # its card, the way a community track's is. None for our own.
+        "author": getattr(mod, "author", None),
         # A placement list, if the folder declares one. Drawn by `placeAll` in
         # `buildTrack`, which is the same interpreter a player's track goes
         # through - so a pool track can use the library too, and a community
@@ -472,6 +475,7 @@ def _one(e):
          # scenery before it builds. See `/scenery/<slug>.js` in app.py.
          "scenery": e["wants_scenery"],
          "placed": e.get("placed"),
+         "author": e.get("author"),
          # The three times cut from the board, or None to derive them below.
          "medal_times": e["medal_times"],
          "cell": CELL, "level": LEVEL, "station": STATION}
@@ -669,8 +673,9 @@ def summaries():
     that is a fact about the ribbon rather than a label anybody maintains. Four
     tracks in the pool are closed and the tab follows automatically.
     """
-    return [{k: t[k] for k in ("slug", "name", "difficulty", "ideal",
-                               "medals", "checkpoints", "scenery", "closed")}
+    return [dict({k: t[k] for k in ("slug", "name", "difficulty", "ideal",
+                                    "medals", "checkpoints", "scenery", "closed")},
+                 author=t.get("author"))
             for t in TRACKS]
 
 

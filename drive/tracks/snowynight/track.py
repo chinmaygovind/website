@@ -5,6 +5,7 @@ Adopted from a community track by Brumm.
 
 slug = 'snowynight'
 name = 'Snowy Night'
+author = 'Brumm'
 difficulty = 1
 # Derived from the ribbon when this was adopted, not cut from a board.
 # Re-cut with tools/set_medals.py once it has one worth cutting from.
