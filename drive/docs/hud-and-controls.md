@@ -303,7 +303,11 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
     place that sees both arriving and switching. A slug with no manifest entry
     - a draft out of the editor, anything user-made - stops the music rather
     than leaving the last track's song playing over a different one, which is
-    the failure actually worth preventing. Every track in the pool has an entry,
+    the failure actually worth preventing. **`music.json` is fetched with
+    `cache: 'no-cache'`** because nginx gives `/static/` an hour's `max-age`
+    and the manifest carries no `?v=`: without it, a song added for a track
+    stayed silent for anyone who had loaded Drive in the hour before, which
+    looks exactly like the file missing. Every track in the pool has an entry,
     so that case is a player's own track and not one of ours.
   - **Two `<audio>` decks, ping-ponged, rather than one with `loop = true`.**
     A looping element restarts at a hard cut, and a song trimmed to an

@@ -54,7 +54,7 @@ const ENABLE_TC = 0.3;
 let _manifest = null;
 export function loadManifest(url = MANIFEST_URL) {
   if (!_manifest) {
-    _manifest = fetch(url)
+    _manifest = fetch(url, { cache: 'no-cache' })
       .then((r) => (r.ok ? r.json() : null))
       .catch(() => null);
   }
