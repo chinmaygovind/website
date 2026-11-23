@@ -332,7 +332,11 @@ def main(argv):
     if slug in tracks_mod.BY_SLUG:
         raise SystemExit("adopt: the pool already has a %r." % slug)
     if order is None:
-        order = max(t.get("order", 0) for t in tracks_mod.TRACKS) + 5
+        # The pool's dicts do not carry `order`; its folders do, and TRACKS
+        # is sorted by it, so the last one's module has the highest.
+        import importlib
+        last = importlib.import_module("tracks.%s.track" % tracks_mod.TRACKS[-1]["slug"])
+        order = getattr(last, "order", 0) + 5
 
     lines = build_source(row["doc"])
     if dry:

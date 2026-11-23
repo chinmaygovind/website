@@ -627,7 +627,7 @@ def test_the_editor_draws_a_control_for_every_palette_key():
                # whose height is the track's own `deck`, not a swatch.
                "water", "reentry",
                # `leaves` for `rain`'s reason: an effect in render.js.
-               "leaves",
+               "leaves", "snowfall",
                # `moverVoice` is not colour either, and it is not even
                # geometry: it is a fact about what this track's movers *are* -
                # a chapel full of Boos rather than a herd of hadrosaurs - and

@@ -1522,6 +1522,118 @@ class Rain {
   }
 }
 
+// Snowfall
+//
+// Turned on by a `snowfall` block in a palette (`snow` is already the white
+// slab under Figure Eight). Rain's follow-box, but flakes rather than streaks:
+// sprites of a six-armed crystal drawn once on a canvas, falling slowly and
+// swaying on their own sine so the field flutters instead of dropping in step.
+// Visual only, like the rain.
+class Snowfall {
+  constructor(scene, cfg) {
+    const c = cfg || {};
+    this.count = Math.max(1, c.count != null ? c.count : 1200);
+    this.speed = c.speed != null ? c.speed : 4;
+    this.box = c.box != null ? c.box : 90;
+    this.high = c.high != null ? c.high : 50;
+    this.wind = c.wind || [1.5, 0.6];
+    this.sway = c.sway != null ? c.sway : 1.2;
+    this.head = new Float32Array(this.count * 3);
+    this.pos = new Float32Array(this.count * 3);
+    this.ph = new Float32Array(this.count);
+    let s = 0x5e0f1a4e;
+    const rnd = () => {
+      s = (s + 0x6d2b79f5) | 0;
+      let t = Math.imul(s ^ (s >>> 15), 1 | s);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    for (let i = 0; i < this.count; i++) {
+      this.head[i * 3] = (rnd() * 2 - 1) * this.box;
+      this.head[i * 3 + 1] = rnd() * this.high;
+      this.head[i * 3 + 2] = (rnd() * 2 - 1) * this.box;
+      this.ph[i] = rnd() * 6.283;
+    }
+    const geo = new THREE.BufferGeometry();
+    this.attr = new THREE.BufferAttribute(this.pos, 3);
+    this.attr.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('position', this.attr);
+    this.mesh = new THREE.Points(geo, new THREE.PointsMaterial({
+      map: Snowfall.flake(), color: c.color != null ? c.color : 0xffffff,
+      size: c.size != null ? c.size : 0.55, sizeAttenuation: true,
+      transparent: true, opacity: c.opacity != null ? c.opacity : 0.95,
+      depthWrite: false, alphaTest: 0.02,
+    }));
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 2;
+    this.geo = geo;
+    this.scene = scene;
+    this.t = 0;
+    scene.add(this.mesh);
+  }
+
+  /** A six-armed crystal with side branches, white on transparent. */
+  static flake() {
+    const N = 64, cv = document.createElement('canvas');
+    cv.width = cv.height = N;
+    const g = cv.getContext('2d');
+    g.translate(N / 2, N / 2);
+    g.strokeStyle = '#fff';
+    g.lineCap = 'round';
+    g.shadowColor = 'rgba(255,255,255,0.8)';
+    g.shadowBlur = 3;
+    const R = N * 0.42;
+    for (let k = 0; k < 6; k++) {
+      g.save();
+      g.rotate(k * Math.PI / 3);
+      g.lineWidth = 3.2;
+      g.beginPath(); g.moveTo(0, 0); g.lineTo(0, -R); g.stroke();
+      g.lineWidth = 2.2;
+      for (const [at, l] of [[0.45, 0.32], [0.72, 0.22]]) {
+        g.beginPath();
+        g.moveTo(-R * l, -R * at - R * l * 0.8); g.lineTo(0, -R * at);
+        g.lineTo(R * l, -R * at - R * l * 0.8);
+        g.stroke();
+      }
+      g.restore();
+    }
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+
+  update(dt, camera) {
+    if (!(dt > 0)) dt = 1 / 60;
+    this.t += dt;
+    const cam = camera.position, B = this.box, H = this.high, h = this.head, v = this.pos;
+    const fall = this.speed * dt, wx = this.wind[0] * dt, wz = (this.wind[1] || 0) * dt;
+    const t = this.t, sw = this.sway;
+    for (let i = 0; i < this.count; i++) {
+      const j = i * 3, f = this.ph[i];
+      let px = h[j] + wx, py = h[j + 1] - fall * (0.7 + 0.3 * Math.sin(f * 3)), pz = h[j + 2] + wz;
+      let o = px - cam.x;
+      if (o > B || o < -B) px -= Math.floor((o + B) / (2 * B)) * 2 * B;
+      o = pz - cam.z;
+      if (o > B || o < -B) pz -= Math.floor((o + B) / (2 * B)) * 2 * B;
+      o = py - (cam.y - H * 0.35);
+      if (o > H || o < 0) py -= Math.floor(o / H) * H;
+      h[j] = px; h[j + 1] = py; h[j + 2] = pz;
+      // The sway is drawn, not integrated, so it cannot accumulate into drift.
+      v[j] = px + Math.sin(t * 1.3 + f) * sw;
+      v[j + 1] = py;
+      v[j + 2] = pz + Math.cos(t * 1.1 + f * 1.7) * sw;
+    }
+    this.attr.needsUpdate = true;
+  }
+
+  dispose() {
+    this.scene.remove(this.mesh);
+    this.geo.dispose();
+    this.mesh.material.map.dispose();
+    this.mesh.material.dispose();
+  }
+}
+
 // Leaves
 //
 // Turned on by a `leaves` block in a palette (Harvest). Piles of fallen leaves
@@ -2694,6 +2806,12 @@ export class Renderer {
       this.rain = new Rain(this.scene, { ...pal.rain,
                                          count: Math.round(n * QUALITY[this.quality].rain) });
     }
+    if (this.snowfall) { this.snowfall.dispose(); this.snowfall = null; }
+    if (pal.snowfall) {
+      const n = pal.snowfall.count != null ? pal.snowfall.count : 1200;
+      this.snowfall = new Snowfall(this.scene, { ...pal.snowfall,
+                                                 count: Math.round(n * QUALITY[this.quality].rain) });
+    }
     // Same teardown rule as the rain, and for a sharper reason: a `PointLight`
     // left behind by the previous track is a pool of candlelight hanging in the
     // open air of the next one, at a world coordinate that means nothing there.
@@ -2980,6 +3098,7 @@ export class Renderer {
     this._ghostsNear(dt);
     this.particles.update(dt, this.camera);
     if (this.rain) this.rain.update(dt, this.camera);
+    if (this.snowfall) this.snowfall.update(dt, this.camera);
     if (this.leaves) this.leaves.update(dt, this.camera, this.target);
     if (this.lamps) this.lamps.update(this.camera, dt);
     if (this.storm) this.storm.update(dt, this.camera);

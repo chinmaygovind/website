@@ -65,8 +65,9 @@ def pool_looks():
 
 # Looks that are a building rather than a place: without its warehouse the
 # Costco's palette is a flat grey plain, and "make the theme more interesting"
-# was the review note on the one daily that had it.
-INDOOR_LOOKS = ("costco",)
+# was the review note on the one daily that had it. Tokyo is not indoor but is
+# out for the same reason: "delete this theme" (Nov 2026).
+INDOOR_LOOKS = ("costco", "tokyo")
 
 
 def look_order(looks, n, avoid=(), seed=0, kinds=None):

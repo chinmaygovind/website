@@ -358,7 +358,9 @@ def memoize_build_track(rt):
 # shortcut, which invalidated every lap it could be recut from. The line here
 # now is off a lap that drives the whole circuit - `hotlap.py` reports the air
 # in a lap it cuts, and this one has no gap wide enough to be one.
-NO_HOTLAP_YET = set()
+# Snowy Night is new: no board, so no record to take a line off. Run
+# tools/hotlap.py once somebody sets one, then empty this again.
+NO_HOTLAP_YET = {"snowynight"}
 
 # Waiting on a board deep enough to cut a standard from - five or so distinct
 # players. Drop the entry, then, on the box:

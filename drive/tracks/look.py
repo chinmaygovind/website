@@ -62,6 +62,8 @@ KNOWN = REQUIRED + (
                       # beside `rain`; visual only, never in the collider.
     "rain",           # falling rain: the only animated scenery there is, so it
                       # lives in render.js and not in a track's scenery.js
+    "snowfall",       # falling snowflakes: `rain`'s follow box with flake
+                      # sprites that sway. render.js, visual only.
     "storm",          # lightning: a flash on the scene's own two lights and a
                       # thunder crack after it, fired by the camera reaching an
                       # authored point rather than by lap progress. Nothing in
