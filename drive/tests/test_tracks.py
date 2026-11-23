@@ -136,7 +136,9 @@ def test_gates_have_straight_road_either_side(track):
             assert not e.get("air"), f"{label}: a gap runs through it"
             assert not e.get("curv"), f"{label}: a corner runs through it"
             assert abs(e["lat"][1]) < 0.15, f"{label}: the road is banked under it"
-            assert not e.get("pf"), f"{label}: the road is profiled under it"
+            # A zero-rise profile only subdivides a flat road (Super-G).
+            assert not any(r for _, r in e.get("pf") or ()), \
+                f"{label}: the road is profiled under it"
 
 
 @pytest.mark.parametrize("track", ALL, ids=IDS)

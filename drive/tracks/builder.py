@@ -366,6 +366,16 @@ class Builder:
 
     def _height(self, rise, u, length, ease):
         """(height offset, grade) a fraction ``u`` through a rising section."""
+        if isinstance(ease, (tuple, list)):
+            # Hermite with the grade given at each end, so a run of pieces can
+            # carry one continuous grade instead of flattening at every join.
+            # Super-G is why: see its track.py.
+            g0, g1 = ease
+            h = (rise * (3 * u * u - 2 * u ** 3) + length * g0 * (u - 2 * u * u + u ** 3)
+                 + length * g1 * (u ** 3 - u * u))
+            d = (rise * (6 * u - 6 * u * u) / length + g0 * (1 - 4 * u + 3 * u * u)
+                 + g1 * (3 * u * u - 2 * u))
+            return h, d
         if not rise:
             return 0.0, 0.0
         if ease:
@@ -878,8 +888,10 @@ class Builder:
         # `_withinGate` in course.js). Hang one across a pipe and its mouth is
         # the chord of a curve, so the car passes through the *posts* on the
         # walls and misses the gate - which is a checkpoint you cannot reach.
-        # Loud here beats undrivable later.
-        if e.get("pf"):
+        # Loud here beats undrivable later. A zero-depth `pipe` is still flat -
+        # it only subdivides the road across its width (see Super-G) - so a
+        # gate on one is a gate on a flat road.
+        if any(r for _, r in e.get("pf") or ()):
             raise ValueError("a gate cannot sit on a profiled station - "
                              "call flat() and run out the blend first")
         f = _norm(_cross(e["n"], e["lat"]))
