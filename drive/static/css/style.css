@@ -427,7 +427,14 @@ input[type=text], input[type=password], input[type=email], input:not([type]) {
    name tells you a track exists; a picture tells you which one. */
 .tshot {
   aspect-ratio: 16 / 9; background: #dfe4ea center/cover no-repeat;
-  border-bottom: 2px solid var(--line);
+  border-bottom: 2px solid var(--line); position: relative;
+}
+/* An adopted track's maker, over the picture rather than under the name, so
+   the card is the same height as every other one in its row. */
+.shot-by {
+  position: absolute; right: .35rem; bottom: .35rem;
+  background: rgba(0,0,0,.55); color: #fff; font-size: .62rem; font-weight: 600;
+  letter-spacing: .02em; padding: .1rem .35rem; border-radius: 4px;
 }
 .tcard-in { padding: .8rem 1rem .9rem; display: flex; flex-direction: column; gap: .4rem; flex: 1; }
 .tcard-top { display: flex; align-items: baseline; gap: .5rem; }

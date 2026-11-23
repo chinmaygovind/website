@@ -8,7 +8,7 @@
   {% set rank = ranks.get(t.slug) %}
   {% set rec = records.get(t.slug) %}
     <a class="tcard" href="/solo/{{ t.slug }}">
-      <div class="tshot" style="background-image:url('/static/img/tracks/{{ t.slug }}.png?v={{ asset_version }}')"></div>
+      <div class="tshot" style="background-image:url('/static/img/tracks/{{ t.slug }}.png?v={{ asset_version }}')">{% if t.author %}<span class="shot-by">by {{ t.author }}</span>{% endif %}</div>
       <div class="tcard-in">
         <div class="tcard-top">
           <h3>{{ t.name }}</h3>

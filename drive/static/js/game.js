@@ -4762,10 +4762,12 @@ function renderTrackCards() {
         <!-- The one you have just clicked, while it loads. Same corner as "Now",
              because they are the same fact a moment apart. -->
         <span class="tcard2-busy">Loading</span>
+        ${c.author && c.shelf === 'pool'
+          ? `<span class="shot-by">by ${esc(c.author)}</span>` : ''}
       </span>
       <span class="tcard2-body">
         <span class="tcard2-top">
-          <b>${esc(c.name)}${c.author
+          <b>${esc(c.name)}${c.author && c.shelf !== 'pool'
             ? `<i class="tcard2-by">by ${esc(c.author)}</i>` : ''}</b>
           <span class="diff d${c.difficulty}">${[0, 1, 2, 3, 4].map(i =>
             `<span class="pip${i < c.difficulty ? ' on' : ''}"></span>`).join('')}</span>
