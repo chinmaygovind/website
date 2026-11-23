@@ -6,7 +6,7 @@ Adopted from a community track by Brumm.
 slug = 'superg'
 name = 'Super-G'
 author = 'Brumm'
-difficulty = 1
+difficulty = 4
 # Derived from the ribbon when this was adopted, not cut from a board.
 # Re-cut with tools/set_medals.py once it has one worth cutting from.
 medals = (43.6, 46.9, 50.6)

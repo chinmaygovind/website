@@ -6,7 +6,7 @@ Adopted from a community track by Brumm.
 slug = 'snowynight'
 name = 'Snowy Night'
 author = 'Brumm'
-difficulty = 1
+difficulty = 3
 # Derived from the ribbon when this was adopted, not cut from a board.
 # Re-cut with tools/set_medals.py once it has one worth cutting from.
 medals = (28.2, 30.3, 32.8)
