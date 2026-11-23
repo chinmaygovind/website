@@ -2082,23 +2082,13 @@ def _account_page(user, is_me):
     # yours, so it goes on the end rather than quietly disappearing.
     rows += [_row(s) for s in dict.fromkeys(list(by_track) + sorted(starts))
              if s not in set(pool)]
-    # A lap being re-driven is not on the board and is not lost either, and the
-    # person who drove it is the one person who should be told which. Only ever
-    # your own: an unchecked lap of somebody else's is not news, it is a claim.
-    waiting = []
-    if is_me:
-        waiting = (DriveRunCheck.query
-                   .filter(DriveRunCheck.user_id == user.id,
-                           DriveRunCheck.applied_at.is_(None),
-                           DriveRunCheck.status.in_(("pending", "error")))
-                   .order_by(DriveRunCheck.id.asc()).all())
     # Totalled per track rather than kept in a counter of its own: a track can have
     # starts and no time (never finished) or a time and no starts (driven before
     # the counter existed), and the per-track clamp already knows what to do with
     # both, so summing it cannot disagree with the column underneath.
     return render_template("account.html", user=user, is_me=is_me,
                            stats=_stats(user, create=is_me),
-                           times=times, starts=starts, rows=rows, waiting=waiting,
+                           times=times, starts=starts, rows=rows,
                            total_starts=sum(starts.values()),
                            by_slug=tracks_mod.BY_SLUG,
                            tracks=tracks_mod.summaries(), name=get_effective_name())
@@ -2941,9 +2931,7 @@ def api_run():
                         # of a track, which is held with no row behind it.
                         "time_id": row.id if row else None,
                         "record_ms": best.time_ms if best else None,
-                        "is_record": False,
-                        "note": "Being checked - a lap this quick is re-driven on "
-                                "the server before it goes on the board."})
+                        "is_record": False})
 
     improved = False
     if row is None:

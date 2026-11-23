@@ -402,6 +402,24 @@ def time_window(n_frames):
             (n_frames + FRAME_SLACK) / GHOST_HZ * 1000.0)
 
 
+FLAG_RESPAWN = 4            # `FLAG.RESPAWN` in physics.js
+RESPAWN_NEAR = 45.0         # same slack as `racecheck.RESPAWN_NEAR`
+RESPAWN_FRAMES = int(T.RESPAWN_DELAY * GHOST_HZ) + 3
+
+
+def _respawning(f):
+    return len(f) > 7 and int(f[7]) & FLAG_RESPAWN
+
+
+def _respawn_lands(track, splits, t_ms, f):
+    """Is `f` on the start or a checkpoint the run had credited by `t_ms`?"""
+    cps, _ = _gates_of(track)
+    passed = sum(1 for s in splits if s <= t_ms)
+    pts = [track["spawn"]["p"]] + [g["p"] for g in cps[:passed]]
+    return any(((f[0] - p[0]) ** 2 + (f[1] - p[1]) ** 2 + (f[2] - p[2]) ** 2) ** 0.5
+               <= RESPAWN_NEAR for p in pts)
+
+
 def validate(track, time_ms, splits, frames):
     """(ok, reason). ``frames`` is the unpacked ghost, or None."""
     if not isinstance(time_ms, int) or time_ms <= 0:
@@ -435,6 +453,14 @@ def validate(track, time_ms, splits, frames):
     speeds = []
     for i in range(1, len(frames)):
         a, b = frames[i - 1], frames[i]
+        if _respawning(a) and not _respawning(b):
+            # A fall puts the car back on the last gate it crossed - a real
+            # jump, allowed only onto a gate the splits say it has reached.
+            # The frames either side of it are ordinary: a respawning car is
+            # frozen where it fell, so a flag cannot buy a run of free frames.
+            if not _respawn_lands(track, splits, i * dt * 1000.0, b):
+                return False, "replay contains a teleport"
+            continue
         d = ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2 + (b[2] - a[2]) ** 2) ** 0.5
         v = d / dt
         if v > SPEED_CEIL:
@@ -659,11 +685,22 @@ def leaves_course(track, frames):
         return False
     lim = CORRIDOR * CORRIDOR
     idx = 0
+    off = False                 # off the course, waiting to see if it is a fall
+    held = 0                    # frames in the current respawn
     for f in frames:
+        if _respawning(f):
+            held += 1
+            if held > RESPAWN_FRAMES:
+                return True     # longer than any respawn lasts
+            off = False         # it was a fall: the respawn takes it back
+            continue
+        held = 0
         best, idx = nearest_station(track, f, idx)
-        if best is None or best > lim:
-            return True
-    return False
+        out = best is None or best > lim
+        if off and not out:
+            return True         # came back on without respawning
+        off = off or out
+    return off
 
 
 def clamp_distance(track, claimed):

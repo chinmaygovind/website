@@ -120,7 +120,7 @@ def test_a_lap_near_the_top_is_held_out_of_the_board_until_it_is_checked(env, la
     d = c.post("/api/run", json=payload(laps["honest"])).get_json()
 
     assert d["ok"] and d["pending"] and not d["improved"]
-    assert d["note"], "the driver has to be told why their lap is not up yet"
+    assert "note" not in d, "a held lap reads like any other result"
     assert _board(env) == [], "a lap nobody has checked went on the board"
     with env.app.app_context():
         row = env.DriveRunCheck.query.one()
@@ -339,23 +339,6 @@ def test_a_check_nobody_answered_is_started_again(env, laps):
     env._last_sweep = None
     c.get("/leaderboard")
     assert env.spawned == [("--pending", "--again")]
-
-
-def test_the_owner_can_see_that_their_lap_is_being_checked(env, laps):
-    """The difference between "my lap is queued" and "my lap vanished"."""
-    c = env.app.test_client()
-    uid = _user(env)
-    _login(c, uid)
-    c.post("/api/run", json=payload(laps["honest"]))
-
-    mine = c.get("/account").get_data(as_text=True)
-    assert "Being checked" in mine
-
-    other = env.app.test_client()
-    _login(other, _user(env, name="somebodyelse"))
-    theirs = other.get("/account/chinmay").get_data(as_text=True)
-    assert "Being checked" not in theirs, (
-        "an unchecked lap of somebody else's is a claim, not news")
 
 
 def test_a_held_first_lap_can_be_shared_once_it_is_checked(env, laps):

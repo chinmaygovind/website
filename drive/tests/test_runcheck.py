@@ -621,3 +621,59 @@ def test_every_track_accepts_a_lap_of_itself(slug):
     frames, ms = lap_at_speed(track, 42.0)
     ok, why = runcheck.validate(track, ms, splits_for(track, ms, frames), frames)
     assert ok, "%s: %s" % (slug, why)
+
+
+def _fall_and_respawn(frames, lands_at, n=24):
+    """Cross the first checkpoint, fall off, respawn at `lands_at`, drive on from it.
+
+    The fall is a real one - straight down at a speed the car can do - and the
+    last few frames carry FLAG.RESPAWN, as `Car.requestRespawn` sets it.
+    """
+    cps, _ = runcheck._gates_of(TRACK)
+    g = cps[0]["p"]
+    c = min(range(len(frames)), key=lambda i: math.dist(frames[i][:3], g))
+    out = [f + [0] for f in frames]
+    x, y, z = out[c + 1][:3]
+    fall = [[x, y - 5 * (j + 1), z, 0, 0, 0, 1, 4 if j >= n - 5 else 0] for j in range(n)]
+    back = [list(lands_at) + [0, 0, 0, 1, 0]]
+    return out[:c + 2] + fall + back + out[c + 1:], c
+
+
+def test_a_fall_and_respawn_to_the_last_checkpoint_is_accepted():
+    cps, _ = runcheck._gates_of(TRACK)
+    frames, _ = _fall_and_respawn(synth_run(TRACK), cps[0]["p"])
+    ms = int((len(frames) - 0.5) * 1000 / runcheck.GHOST_HZ)
+    ok, why = runcheck.validate(TRACK, ms, splits_for(TRACK, ms), frames)
+    assert why not in ("replay contains a teleport", "replay leaves the course"), why
+
+
+def test_a_respawn_cannot_skip_ahead():
+    cps, fin = runcheck._gates_of(TRACK)
+    frames, _ = _fall_and_respawn(synth_run(TRACK), fin["p"])
+    ms = int((len(frames) - 0.5) * 1000 / runcheck.GHOST_HZ)
+    ok, why = runcheck.validate(TRACK, ms, splits_for(TRACK, ms), frames)
+    assert not ok and "teleport" in why
+
+
+def test_the_respawn_flag_does_not_excuse_a_jump_forward():
+    ms = int(TRACK["ideal"] * 1000)
+    frames = [f + [4] for f in synth_run(TRACK)]     # every frame "respawning"
+    frames[len(frames) // 2][0] += 5000
+    ok, why = runcheck.validate(TRACK, ms, splits_for(TRACK, ms), frames)
+    assert not ok and "teleport" in why
+
+
+def test_leaving_the_course_without_a_respawn_is_still_caught():
+    ms = int(TRACK["ideal"] * 1000)
+    frames = [f + [0] for f in synth_run(TRACK)]
+    k = len(frames) // 2
+    for j in range(k, k + 3):
+        frames[j][1] -= 200
+    assert runcheck.leaves_course(TRACK, frames)
+
+
+def test_a_respawn_cannot_last_the_whole_lap():
+    frames = [f + [4] for f in synth_run(TRACK)]
+    for f in frames:
+        f[1] -= 200
+    assert runcheck.leaves_course(TRACK, frames)

@@ -1654,10 +1654,10 @@ function bindInput() {
   $('btnCheckpoint').onclick = () => backToCheckpoint();
   $('btnRetry').onclick = () => resetToStart();
   // Wrapped rather than passed by name, like every other line here: this
-  // function is lifted whole into QuickJS by `test_touch.py`, where `shareLap`
+  // function is lifted whole into QuickJS by `test_touch.py`, where `replayLap`
   // is outside the slice - so naming it binds a reference that does not resolve,
   // while calling it from an arrow is only ever reached by a real click.
-  if ($('btnShare')) $('btnShare').onclick = () => shareLap();
+  if ($('btnShare')) $('btnShare').onclick = () => replayLap();
   // The manifest is fetched once and can land after `loadTrack` has already
   // run, so the card is also driven from the song actually changing - which is
   // what covers a cold load and the three circuits sharing one file.
@@ -3965,7 +3965,7 @@ function syncWatchUi() {
  * Copy a link, and say so.
  *
  * **The clipboard and not `navigator.share`**, which is the one place this
- * deliberately parts company with `shareLap`. That one is a lap of *yours* on a
+ * deliberately parts company with `replayLap`. That one is a lap of *yours* on a
  * results screen, where the OS sheet is what somebody on a phone means; these
  * two doors are marked with a copy glyph and the word Share, and a button that
  * shows a copy mark and then opens a sheet full of apps is a button that lied
@@ -7987,50 +7987,23 @@ function setShare(id, guest, held) {
   if (!b) return;                 // room and replay do not have one
   S.shareId = id || null;
   // A first lap of a track that is quick enough to be re-driven has no row yet
-  // (every daily's first lap, nearly). `shareLap` asks for the id when pressed.
+  // (every daily's first lap, nearly). `replayLap` asks for the id when pressed.
   S.shareHeld = !id && !!held;
   S.shareGuest = !!guest;
   b.disabled = !id && !guest && !held;
-  b.textContent = guest ? 'Log in to share' : 'Share';
+  b.textContent = guest ? 'Log in to replay' : 'Replay';
 }
 
-/**
- * Hand over a link to the lap on the board: `/solo/<slug>?watch=<id>`.
- *
- * Deliberately not a new kind of page. That URL is how the public board has
- * always handed a lap to the game - `openRequestedLap` watches it, and the
- * ghost is then there to chase - so what this adds is a way to *get* the link
- * from the one screen where somebody has just done something worth sending. The
- * server gives it a share card naming the track and the time (`_track_og`), so
- * what lands in a chat window is the lap rather than the word "Drive".
- */
-async function shareLap() {
-  if (!S.shareId && S.shareHeld) {
-    const d = await fetchGhost('me').catch(() => null);
-    if (!d) { toast('Still being checked - try again in a moment'); return; }
-    S.shareId = d.id;
-  }
-  if (!S.shareId) {
-    if (S.shareGuest) location.href = '/login?next=' + encodeURIComponent(location.pathname);
+/** Watch your lap on the board - the same replay the board's Watch button opens. */
+async function replayLap() {
+  if (!S.shareId && S.shareGuest) {
+    location.href = '/login?next=' + encodeURIComponent(location.pathname);
     return;
   }
-  const url = location.origin + '/solo/' + S.track.slug + '?watch=' + S.shareId;
-  try {
-    // The phone answer and the desktop one. `navigator.share` opens the OS
-    // sheet, which is what somebody on a phone means by sharing; everywhere it
-    // does not exist, the clipboard is the whole of it.
-    if (navigator.share) {
-      await navigator.share({ title: 'Drive - ' + S.track.name, url });
-      return;
-    }
-    await navigator.clipboard.writeText(url);
-    toast('Link copied - it opens your lap as a ghost');
-  } catch (e) {
-    // Dismissing the OS share sheet rejects, and a share nobody wanted is not a
-    // failure worth saying anything about.
-    if (e && e.name === 'AbortError') return;
-    toast(url);
-  }
+  const d = await fetchGhost(S.shareId || 'me').catch(() => null);
+  if (!d) { toast('Could not load that lap'); return; }
+  hideResults();
+  startWatching(d.ghost, d.hz || GHOST_RATE, d);
 }
 
 // The marks point at buttons the sheet is what lit up; with the sheet gone
