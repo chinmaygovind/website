@@ -591,7 +591,7 @@ function loadTrack(track, opts = {}) {
   // swaps worlds without a navigation, so this is the only place that sees
   // both arriving and switching. Announced only if the music is actually on -
   // a card naming a song nobody can hear is a card about nothing.
-  S.sound.setSong(track.slug);
+  S.sound.setSong(track.music || track.slug);
   if (S.sound.musicOn) showNowPlaying();
 
   S.built = buildTrack(track, T);

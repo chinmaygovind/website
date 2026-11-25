@@ -476,6 +476,7 @@ def _one(e):
          "scenery": e["wants_scenery"],
          "placed": e.get("placed"),
          "author": e.get("author"),
+         "music": e.get("music"),
          # The three times cut from the board, or None to derive them below.
          "medal_times": e["medal_times"],
          "cell": CELL, "level": LEVEL, "station": STATION}
@@ -819,6 +820,9 @@ def from_document(slug, doc, order=DEFAULT_ORDER, timed=True, spans=None):
         # track's board is too small and too self-selected to cut from.
         "medal_times": None,
         "pal": doc.get("pal"),
+        # A daily plays the music of the world it borrowed its look from.
+        "music": (doc["generated"].get("look")
+                  if isinstance(doc.get("generated"), dict) else None),
         "build": lambda b: moves.replay(doc, b, spans=spans),
         "module": None,
     }

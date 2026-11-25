@@ -110,7 +110,8 @@ def test_the_palette_is_borrowed_whole():
     It kept every relation between the colours and still made Figure Eight's
     snow lavender under a green sun. Only `density` may differ from the source,
     because density is per unit of area and the borrowed track is a different
-    size - see `generate.borrow`.
+    size - see `generate.borrow`. `terrain` is the hill-country switch the
+    generator adds on its own (`generate.HILLS`), not a borrowed colour.
     """
     looks = gen_daily.pool_looks()
     by_slug = {l["slug"]: l["pal"] for l in looks}
@@ -118,10 +119,24 @@ def test_the_palette_is_borrowed_whole():
         doc = generate.generate(seed, looks)
         src = by_slug[doc["generated"]["look"]]
         for k, v in doc["pal"].items():
-            if k == "density":
+            if k == "density" or (k == "terrain" and doc["generated"]["hills"]):
                 continue
             assert src.get(k) == v, \
                 "seed %d altered %r, which borrowing must not do" % (seed, k)
+
+
+def test_hill_country_is_only_ever_a_circuit():
+    """Terrain is a ground-track height field; a void track has no ground."""
+    looks = gen_daily.pool_looks()
+    seen = set()
+    for seed in range(40):
+        doc = generate.generate(seed, looks)
+        g = doc["generated"]
+        seen.add(g["hills"])
+        assert bool(doc["pal"].get("terrain")) == g["hills"]
+        if g["hills"]:
+            assert g["kind"] == "circuit"
+    assert seen == {True, False}
 
 
 def test_no_keeper_has_a_big_shortcut(kept):

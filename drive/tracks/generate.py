@@ -174,6 +174,9 @@ def _length(m):
 
 # What each kind of daily may throw in down a straight, by weight. A stunt
 # track is mostly set pieces; a circuit is mostly road with a few.
+# **No `helix`** (Nov 2026) either: a climbing banked corner bounces the car
+# about on the inside line - "hard for your car to ride the inside line, it
+# bounces awkward". `_trick` still knows how to lay one.
 # **No `bounce`** (Nov 2026): it is always drawn as a toadstool over the road,
 # which fits Shroom Street and BOO! and nowhere a daily goes - "rethink
 # mushrooms" and then "the mushrooms embedded in the road are horrible" were
@@ -181,11 +184,26 @@ def _length(m):
 CIRCUIT_TRICKS = (("jump", 6), ("crest", 3), ("hump", 2), ("boost", 2),
                   ("sweeper", 2), ("pipe", 1), ("chicane", 4),
                   ("esses", 3), ("rollers", 2), ("wallride", 2),
-                  ("narrows", 2))
+                  ("narrows", 2), ("valley", 3), ("swells", 3),
+                  ("slalom", 3), ("triple", 3))
 STUNT_TRICKS = (("wall", 3), ("jump", 5), ("gap", 4),
                 ("pipe", 2), ("dive", 2), ("sweeper", 2), ("boost", 1),
-                ("helix", 2), ("stairs", 2), ("leap", 4),
-                ("wallride", 2), ("esses", 1))
+                ("stairs", 2), ("leap", 4),
+                ("wallride", 2), ("esses", 1), ("hopscotch", 3),
+                ("skijump", 3), ("slingshot", 3), ("launch", 3),
+                ("bobsled", 3), ("slalom", 2))
+# The later additions (Nov 2026), after "the dailies are getting boring":
+# smooth ones - `valley`, `swells`, `bobsled`, `slalom` - long eased grades
+# and banked runs with nothing to bounce off; and loud ones - `hopscotch`,
+# `skijump`, `slingshot`, `launch`, `triple`. All are made of moves the
+# Builder already lays, so none is new geometry.
+
+# **Hill country** (Nov 2026): this share of circuits gets `pal.terrain`, the
+# height field Super-G and Harvest sit on, and the walk is let off its leash
+# on height - the land rises and falls with the road instead of the road
+# climbing off a flat plate on its own.
+HILLS = 0.4
+HILL_TERRAIN = {"apron": 30, "gravel": 12, "armco": 0, "clear": 30}
 
 def _pick(rng, table):
     total = sum(w for _, w in table)
@@ -391,6 +409,106 @@ def _trick(rng, kind, turn, radii, stunt, big=None):
                   "bow": round((drop + length * grade) / math.pi, 3)},
                  {"t": "straight", "len": 34.0},
                  {"t": "cp"}], -drop + 24.0 * grade, turn)
+    if kind == "valley":
+        # Down a long eased grade, a banked sweep across the bottom, and up
+        # the other side: all of it smooth, the height given back.
+        depth = round(u(8.0, 16.0), 1)
+        turn = -turn
+        return ([{"t": "straight", "len": round(rng.uniform(56.0, 76.0), 1),
+                  "rise": -depth},
+                 {"t": "arc", "deg": round(rng.uniform(50.0, 100.0) * turn, 1),
+                  "rad": rng.choice([r for r in radii if r >= 32.0] or [40.0]),
+                  "rise": 0.0, "bank": round(rng.uniform(10.0, 18.0) * turn, 1)},
+                 {"t": "straight", "len": round(rng.uniform(56.0, 76.0), 1),
+                  "rise": depth}], 0.0, turn)
+    if kind == "swells":
+        # Long rolling hills, eased at both ends: a hump is a bump, these are
+        # the road breathing. Ends where it began.
+        out, dy = [], 0.0
+        for k in range(rng.randint(3, 4) if big is None else 3 + round(big * 2)):
+            h = round(u(4.0, 8.0), 1) * (1 if k % 2 == 0 else -1)
+            out.append({"t": "straight", "len": round(rng.uniform(38.0, 52.0), 1),
+                        "rise": h})
+            dy += h
+        out.append({"t": "straight", "len": 40.0, "rise": round(-dy, 1)})
+        return out, 0.0, turn
+    if kind == "slalom":
+        # A deep half-pipe with the esses inside it: you can carve up the
+        # walls instead of braking for the corners.
+        out = [{"t": "pipe", "depth": round(u(5.0, 7.0), 1),
+                "floor": round(rng.uniform(0.3, 0.4), 2), "side": "lr"}]
+        for _ in range(rng.randint(4, 5) if big is None else 4 + round(big * 2)):
+            turn = -turn
+            out.append({"t": "arc", "deg": round(rng.uniform(40.0, 65.0) * turn, 1),
+                        "rad": rng.choice([r for r in radii if r >= 26.0] or [32.0]),
+                        "rise": round(rng.uniform(-3.0, 0.0), 1) if stunt else 0.0})
+        dy = sum(m.get("rise", 0.0) for m in out)
+        return out + [{"t": "flat"}, {"t": "straight", "len": 16.0}], dy, turn
+    if kind == "triple":
+        # Three kickers back to back off one pad: land, settle, go again.
+        out = [{"t": "boost", "len": 12.0}, {"t": "straight", "len": 26.0}]
+        for _ in range(3):
+            out += [{"t": "jump", "rise": round(u(3.0, 4.5), 1),
+                     "gap": round(u(12.0, 18.0), 1), "drop": 0.0},
+                    {"t": "straight", "len": round(rng.uniform(22.0, 30.0), 1)}]
+        return out, 0.0, turn
+    if kind == "hopscotch":
+        # Small holes on a zigzag: hop, flick, hop, flick, a little lower
+        # each time.
+        out, dy = [{"t": "boost", "len": 12.0}, {"t": "straight", "len": 26.0}], 0.0
+        for _ in range(rng.randint(3, 4) if big is None else 3 + round(big * 2)):
+            drop = round(u(1.0, 3.5), 1)
+            turn = -turn
+            out += [{"t": "gap", "len": round(rng.uniform(9.0, 14.0), 1), "drop": drop},
+                    {"t": "straight", "len": 20.0},
+                    {"t": "arc", "deg": round(rng.uniform(22.0, 40.0) * turn, 1),
+                     "rad": rng.choice([r for r in radii if r >= 26.0] or [32.0]),
+                     "rise": 0.0},
+                    {"t": "straight", "len": 14.0}]
+            dy -= drop
+        return out + [{"t": "cp"}], dy, turn
+    if kind == "skijump":
+        # Down a long steep in-run, up a short lip, and out over nothing:
+        # all the height you just lost comes back as airtime.
+        fall = round(u(16.0, 28.0), 1)
+        lip = round(rng.uniform(3.0, 5.0), 1)
+        drop = round(u(6.0, 14.0), 1)
+        length = round(u(34.0, 52.0), 1)
+        return ([{"t": "straight", "len": round(rng.uniform(70.0, 90.0), 1),
+                  "rise": -fall},
+                 {"t": "straight", "len": 18.0, "rise": lip, "ease": False},
+                 {"t": "gap", "len": length, "drop": drop,
+                  "bow": round((drop + lip) / math.pi, 3)},
+                 {"t": "straight", "len": 36.0},
+                 {"t": "cp"}], -fall + lip - drop, turn)
+    if kind == "slingshot":
+        # A wall of death straight into a leap: up round the wall, then
+        # thrown off the top and down a long way.
+        a, da, turn = _trick(rng, "wall", turn, radii, stunt, big)
+        b, db, turn = _trick(rng, "leap", turn, radii, stunt, big)
+        return a[:-1] + b[1:], da + db, turn
+    if kind == "launch":
+        # Two pads, a big kicker and a long way down.
+        drop = round(u(10.0, 20.0), 1)
+        return ([{"t": "boost", "len": 12.0}, {"t": "straight", "len": 14.0},
+                 {"t": "boost", "len": 12.0},
+                 {"t": "straight", "len": round(rng.uniform(26.0, 36.0), 1)},
+                 {"t": "jump", "rise": round(u(6.0, 8.5), 1),
+                  "gap": round(u(34.0, 46.0), 1), "drop": drop},
+                 {"t": "straight", "len": 34.0}, {"t": "cp"}], -drop, turn)
+    if kind == "bobsled":
+        # A run down a half-pipe, corner after banked corner, always falling:
+        # Super-G's chute, smooth and fast.
+        out, dy = [{"t": "pipe", "depth": round(u(5.5, 7.5), 1),
+                    "floor": round(rng.uniform(0.25, 0.35), 2), "side": "lr"}], 0.0
+        for _ in range(rng.randint(4, 5) if big is None else 4 + round(big * 2)):
+            turn = -turn
+            fall = round(u(3.0, 6.0), 1)
+            out.append({"t": "arc", "deg": round(rng.uniform(50.0, 90.0) * turn, 1),
+                        "rad": rng.choice([r for r in radii if r >= 26.0] or [32.0]),
+                        "rise": -fall})
+            dy -= fall
+        return out + [{"t": "flat"}, {"t": "straight", "len": 20.0}, {"t": "cp"}], dy, turn
     if kind == "dive":
         drop = round(u(12.0, 24.0), 1)
         return ([{"t": "straight", "len": round(rng.uniform(50.0, 80.0), 1),
@@ -426,6 +544,11 @@ def generate(seed, looks, secs=None, look=None, tier=None, cut=False):
     look = look or rng.choice(looks)
     stunt = is_void(look)
     pal = borrow(rng, look)
+    # Drawn last-but-independent of the rest so an existing seed keeps its
+    # road: a separate stream, not one more draw off `rng`.
+    hills = (not stunt and random.Random(seed ^ 0x4111).random() < HILLS)
+    if hills:
+        pal["terrain"] = dict(HILL_TERRAIN)
     width = rng.choice((11.0, 12.0, 13.0) if stunt else (9.5, 10.0, 11.0, 12.0))
     if tiered:
         width = max(8.5, width + tiered["width"])
@@ -465,8 +588,9 @@ def generate(seed, looks, secs=None, look=None, tier=None, cut=False):
         if rng.random() < 0.72:
             turn = -turn
         arc = _arc(rng, turn, radii, first=first)
-        if rng.random() < 0.3:
-            arc["rise"] = round(rng.uniform(-7.0, 7.0) - y * 0.18, 1)
+        if rng.random() < (0.5 if hills else 0.3):
+            hr = 12.0 if hills else 7.0
+            arc["rise"] = round(rng.uniform(-hr, hr) - y * (0.1 if hills else 0.18), 1)
         if rng.random() < 0.22:
             arc["bank"] = round(rng.uniform(4.0, 11.0) * turn, 1)
         moves.append(arc)
@@ -500,9 +624,11 @@ def generate(seed, looks, secs=None, look=None, tier=None, cut=False):
                else rng.uniform(36.0, 60.0))
         run = min(run, max(18.0, left))
         rise = 0.0
-        if rng.random() < (0.45 if stunt else 0.34):
-            span = 14.0 if stunt else 9.0
-            rise = round(rng.uniform(-span, span) - y * 0.22, 1)
+        if rng.random() < (0.45 if stunt else 0.6 if hills else 0.34):
+            span = 14.0 if stunt else 18.0 if hills else 9.0
+            rise = round(rng.uniform(-span, span) - y * (0.12 if hills else 0.22), 1)
+            if hills:
+                rise = round(max(-0.3 * run, min(0.3 * run, rise)), 1)
         moves.append({"t": "straight", "len": round(run, 1), "rise": rise})
         laid += run
         y += rise
@@ -554,7 +680,8 @@ def generate(seed, looks, secs=None, look=None, tier=None, cut=False):
         "pal": pal,
         "generated": {"seed": seed, "look": look["slug"],
                       "kind": "stunt" if stunt else "circuit",
-                      "signature": sig, "tier": tier, "cut": bool(cut)},
+                      "signature": sig, "tier": tier, "cut": bool(cut),
+                      "hills": hills},
     }
 
 

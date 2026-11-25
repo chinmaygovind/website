@@ -30,9 +30,20 @@ def _manifest():
 def test_every_slug_is_a_real_track():
     """A misspelled slug is silence on the track it was meant for and a song
     nothing ever asks for - neither of which fails anything at runtime."""
-    pool = {t["slug"] for t in tracks.TRACKS}
+    from tracks import daily_looks
+    # A daily plays its look's entry, and four looks are only the dailies'.
+    pool = {t["slug"] for t in tracks.TRACKS} | {l["slug"] for l in daily_looks.LOOKS}
     named = set(_manifest()["tracks"]) - MENUS
     assert named <= pool, "manifest names tracks that do not exist: %s" % sorted(named - pool)
+
+
+def test_every_daily_look_has_music():
+    """A daily plays the song of the look it wears (`track.music`), so a look
+    with no entry is a silent daily."""
+    from tracks import daily_looks
+    have = set(_manifest()["tracks"])
+    missing = [l["slug"] for l in daily_looks.LOOKS if l["slug"] not in have]
+    assert not missing, "daily looks with no music: %s" % missing
 
 
 def test_the_menu_has_a_song():

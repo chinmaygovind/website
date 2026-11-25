@@ -346,6 +346,12 @@ The site's own pages — the home page, `/solo`'s track switcher, `/account` and
     lands at -17.31 rather than -17.00, because its peak reached the ceiling
     before its loudness reached the target; 0.3 LU is inaudible and clipping is
     not.
+- **A daily plays its look's music, not its own slug's.** `from_document`
+  copies `generated.look` onto the track as `music`, and `loadTrack` asks for
+  `track.music || track.slug` - so a daily in Frost's colours plays the frost
+  playlist. The four daily-only looks (`autumn`, `blossom`, `savanna`, `neon`)
+  have entries of their own; `test_every_daily_look_has_music` fails if a new
+  look is added without one.
 - **A track can have a playlist instead of a song** (`{"playlist": "f1"}`,
   songs under the manifest's top-level `playlists`). The first song is a
   weighted random pick (`weight`, default 1), and each crossfade goes to a

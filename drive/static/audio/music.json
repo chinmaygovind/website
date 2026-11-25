@@ -196,6 +196,18 @@
     },
     "harvest": {
       "playlist": "harvest"
+    },
+    "autumn": {
+      "playlist": "harvest"
+    },
+    "blossom": {
+      "playlist": "spring"
+    },
+    "savanna": {
+      "playlist": "sahara"
+    },
+    "neon": {
+      "playlist": "neon"
     }
   },
   "playlists": {
@@ -481,6 +493,46 @@
         "artist": "MK8DX",
         "title": "SNES Bowser Castle 3",
         "url": "https://www.youtube.com/watch?v=KDJg4KijWik"
+      }
+    ],
+    "neon": [
+      {
+        "file": "mutecity.mp3",
+        "artist": "Qumu",
+        "title": "Mute City",
+        "url": "https://www.youtube.com/watch?v=XqFtfRyCwi4"
+      },
+      {
+        "file": "neo_bowser_city.mp3",
+        "artist": "MK8DX",
+        "title": "3DS Neo Bowser City",
+        "url": "https://www.youtube.com/watch?v=oYJTvBcsuI4"
+      },
+      {
+        "file": "moonview_highway.mp3",
+        "artist": "MK8DX",
+        "title": "Wii Moonview Highway",
+        "url": "https://www.youtube.com/watch?v=ksqD82e2hhQ"
+      },
+      {
+        "file": "skyline.mp3",
+        "artist": "Mesmonium",
+        "title": "Sky Chase Zone",
+        "url": "https://www.youtube.com/watch?v=ewDwizVpU9M"
+      }
+    ],
+    "spring": [
+      {
+        "file": "sunrise.mp3",
+        "artist": "MagicX",
+        "title": "Can You Feel the Sunshine",
+        "url": "https://www.youtube.com/watch?v=m7e4ZQyX0ec"
+      },
+      {
+        "file": "moo_moo_meadows.mp3",
+        "artist": "MK8DX",
+        "title": "Wii Moo Moo Meadows",
+        "url": "https://www.youtube.com/watch?v=irAb3lOPAYw"
       }
     ]
   }
