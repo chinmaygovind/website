@@ -647,6 +647,18 @@ def test_a_fall_and_respawn_to_the_last_checkpoint_is_accepted():
     assert why not in ("replay contains a teleport", "replay leaves the course"), why
 
 
+def test_back_to_checkpoint_off_a_cut_is_a_teleport():
+    """T pressed beside the road after a gap jump on daily-58 (eobard, Nov 2026)."""
+    cps, _ = runcheck._gates_of(TRACK)
+    frames, c = _fall_and_respawn(synth_run(TRACK), cps[0]["p"])
+    for f in frames[c + 2:c + 26]:
+        f[:3] = frames[c + 1][:3]           # frozen at road height, no fall
+        f[1] -= 1.5
+    ms = int((len(frames) - 0.5) * 1000 / runcheck.GHOST_HZ)
+    ok, why = runcheck.validate(TRACK, ms, splits_for(TRACK, ms), frames)
+    assert not ok and why == "replay contains a teleport"
+
+
 def test_a_respawn_cannot_skip_ahead():
     cps, fin = runcheck._gates_of(TRACK)
     frames, _ = _fall_and_respawn(synth_run(TRACK), fin["p"])

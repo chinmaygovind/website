@@ -5454,6 +5454,7 @@ function backToCheckpoint() {
   // the start of the bit you are trying to watch.
   if (S.watch) { watchLastCheckpoint(); return; }
   if (!S.started || raceIsRun()) return;
+  if (countsForTheBoard()) { S.run.tainted = 'teleport'; updatePracticeTag(); }
   S.car.requestRespawn();
 }
 
@@ -7764,8 +7765,9 @@ async function onFinish() {
     if (!racing && !qualifying) {
       showResults({ time: run.time, medal, pb: S.bestTime,
                     wr: S.track.record_ms,
-                    note: 'Practice run - restored from a save state, so it is ' +
-                          'not saved. Shift+R for a lap that counts.' });
+                    note: run.tainted === 'teleport' ? 'Replay contains a teleport'
+                      : 'Practice run - restored from a save state, so it is ' +
+                        'not saved. Shift+R for a lap that counts.' });
     }
     return;
   }

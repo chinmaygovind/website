@@ -2852,6 +2852,9 @@ def api_run():
 
     medal = runcheck.medal_for(track, time_ms)
     user = get_current_user()
+    if user and visits.is_crawler(request.headers.get("User-Agent")):
+        return jsonify({"ok": False, "error": "Laps from an automated browser "
+                        "do not go on the board."}), 403
     best = (DriveTime.query.filter_by(track=track["slug"])
             .order_by(DriveTime.time_ms.asc()).first())
 

@@ -114,6 +114,17 @@ def test_a_guest_run_is_not_stored_but_is_not_refused(env):
     assert d["run_rank"] == 1
 
 
+def test_a_headless_browser_cannot_post_to_the_board(env):
+    """An AI agent drove a daily to #1 in HeadlessChrome (astra, Nov 2026)."""
+    c = env.app.test_client()
+    _login(c, _user(env))
+    ua = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+          "(KHTML, like Gecko) HeadlessChrome/158.0.0.0 Safari/537.36")
+    r = c.post("/api/run", json=_run_payload(env), headers={"User-Agent": ua})
+    assert r.status_code == 403
+    assert c.get("/api/board/sunrise").get_json()["rows"] == []
+
+
 def test_the_same_run_posted_after_logging_in_reaches_the_board(env):
     """The whole point: a lap set before there was an account still counts.
 

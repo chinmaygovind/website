@@ -241,6 +241,32 @@ recording.
     the pool, against 6.9s. It cannot go lower without the run token, and a
     stolen replay is only fully answered by the re-simulation, since
     `/api/ghost` serves poses and has never served the input stream behind them.
+**A logged-in run from an automated browser is refused with a 403**, before
+anything is counted. "Automated" means `visits.is_crawler` on the User-Agent,
+the same test that sets `site_visits.is_bot`. In Nov 2026 an AI agent ("astra")
+signed up in Firefox and then drove daily #59 in HeadlessChrome to first place.
+It passed the replay check, because the replay check asks whether a lap is
+physically real, not whether a human drove it. Its time was removed by hand.
+The gate only stops agents that announce themselves: one that sends a plain
+browser UA gets through, and nothing on one request's headers can tell them
+apart. Guests are not gated, since they store nothing.
+
+**T (back to checkpoint) makes a lap not count**, and only a fall's respawn is
+forgiven. In Nov 2026 a gap jump off a rail-less corner on daily-58 landed
+beside checkpoint 1, under the road, and T put the car back on it about 1.5s
+ahead. On the client, T sets `run.tainted = 'teleport'`, which reuses the
+practice save-state gate: the PRACTICE badge lights, nothing is submitted, and
+the finish card says "Replay contains a teleport". The value is a string so the
+note can tell the two causes apart, and it rides on `tainted` because
+`Run.start` already clears that, even in an hour-old cached `course.js`. On the
+server, `runcheck._fell` accepts a respawn only if the car froze at least
+`FELL_BELOW` (4) under the nearest road station. A fall only respawns under
+`killY`, and the closest `killY` gets to a road is 4.4 under it (Harbor's lava).
+A T press freezes the car wherever it was, near road height. Before this, the
+verifier was the only thing refusing these laps, and only by accident: its
+input stream carries no T, so its replay drifts. That still protects the top 3
+against a modified client.
+
 ## The lap is re-driven on the server
 
 *(This section replaces `drive/VERIFICATION-PLAN.md`, which was the working plan

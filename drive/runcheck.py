@@ -420,6 +420,22 @@ def _respawn_lands(track, splits, t_ms, f):
                <= RESPAWN_NEAR for p in pts)
 
 
+FELL_BELOW = 4.0
+
+
+def _fell(track, f):
+    """Is a respawn frozen at `f` a fall, rather than T pressed near the road?
+
+    A fall only respawns under `killY`, which is never less than 4.4 below the
+    lowest road (Harbor's lava). T back to a checkpoint freezes wherever the
+    car was, and that is the one that was used to cut a corner.
+    """
+    if not track.get("line"):
+        return True
+    _, j = nearest_station(track, f)
+    return f[1] < track["line"][j]["p"][1] - FELL_BELOW
+
+
 def validate(track, time_ms, splits, frames):
     """(ok, reason). ``frames`` is the unpacked ghost, or None."""
     if not isinstance(time_ms, int) or time_ms <= 0:
@@ -458,7 +474,7 @@ def validate(track, time_ms, splits, frames):
             # jump, allowed only onto a gate the splits say it has reached.
             # The frames either side of it are ordinary: a respawning car is
             # frozen where it fell, so a flag cannot buy a run of free frames.
-            if not _respawn_lands(track, splits, i * dt * 1000.0, b):
+            if not (_fell(track, a) and _respawn_lands(track, splits, i * dt * 1000.0, b)):
                 return False, "replay contains a teleport"
             continue
         d = ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2 + (b[2] - a[2]) ** 2) ** 0.5

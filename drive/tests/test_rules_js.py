@@ -72,6 +72,8 @@ function raceIsRun() { return false; }
 var S = {started: false, car: {requestRespawn: () => calls.push('respawn')}};
 function resetToStart() { calls.push('reset'); }
 function toast(t) { calls.push('toast:' + t); }
+function countsForTheBoard() { return !!S.board; }
+function updatePracticeTag() { calls.push('tag'); }
 
 // The arming half. No timers in QuickJS, so `setTimeout` records the callback
 // instead of running it and `fire()` below is the clock running out - which is
@@ -134,6 +136,16 @@ def test_the_checkpoint_key_does_nothing_until_the_clock_is_running(started, wan
     ctx.eval(_fn("backToCheckpoint"))
     ctx.eval("S.started = %s; backToCheckpoint();" % ("true" if started else "false"))
     assert json.loads(ctx.eval("JSON.stringify(calls)")) == want
+
+
+def test_t_on_a_board_lap_means_the_lap_does_not_count():
+    """A gap jump then T was 1.5s off daily-58 (Nov 2026); see runcheck._fell."""
+    import json
+    ctx = _ctx(RESTART_STUB)
+    ctx.eval(_fn("backToCheckpoint"))
+    ctx.eval("S.started = true; S.board = true; S.run = {tainted: false}; backToCheckpoint();")
+    assert ctx.eval("S.run.tainted") == "teleport"
+    assert json.loads(ctx.eval("JSON.stringify(calls)")) == ["tag", "respawn"]
 
 
 def test_refusing_is_silent():
@@ -1327,6 +1339,8 @@ var S = {started: true, watch: null, raceMode: true, raceDone: true,
          saveActive: -1, car: {requestRespawn: () => calls.push('respawn')}};
 function resetToStart() { calls.push('reset'); }
 function toast(t) { calls.push('toast:' + t); }
+function countsForTheBoard() { return !!S.board; }
+function updatePracticeTag() { calls.push('tag'); }
 function restartCostsARace() { return false; }
 function armRestart() { return true; }
 function disarmRestart() {}
