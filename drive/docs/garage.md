@@ -22,8 +22,9 @@ over a rule that actually wants three is worse than no text at all.
 - **Four earned finishes** past matte and gloss, each different in a way flat
   shading keeps (`FINISH` in render.js): rusted (drive 20,000 km), chrome,
   glow and radiant (set 25, 50, 100 track records). **Records set, not held**:
-  `DriveStats.record_tracks` is every pool track the account has ever held the
-  record on, added by `_note_record` the moment a lap goes on the board and
+  `DriveStats.record_tracks` is every track with a board (pool, dailies and
+  players' tracks - the pool alone is too few for 50 and 100) the account has
+  ever held the record on, added by `_note_record` the moment a lap goes on the board and
   never removed, so a record somebody later beats still counts. It was
   backfilled once from lap timestamps (`tools/backfill_records.py`, which can
   miss a record held with a lap later improved on); records held now are the

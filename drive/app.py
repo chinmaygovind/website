@@ -2624,10 +2624,10 @@ def _note_record(user_id, slug, time_ms):
     Called the moment a lap goes on a board. If nobody else has a lap as fast,
     it is the record, and the track joins the account's `record_tracks` - which
     only grows, so the record finishes count every record ever set, not just
-    the ones still held. Pool tracks only, like `records_held`.
+    the ones still held. Any track with a board counts - the pool, the
+    dailies and players' own tracks - since the pool alone is too few tracks
+    for the 50 and 100 the finishes ask for.
     """
-    if slug not in tracks_mod.BY_SLUG:
-        return
     faster = DriveTime.query.filter(DriveTime.track == slug, DriveTime.user_id != user_id,
                                     DriveTime.time_ms <= time_ms).count()
     if faster:

@@ -23,15 +23,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def main():
     from app import app
-    import tracks as tracks_mod
     from models import db, DriveStats, DriveTime, User
 
     write = "--write" in sys.argv
     with app.app_context():
         laps = defaultdict(list)
+        # Every track with a board: the pool, the dailies and players' tracks.
         for t in DriveTime.query.all():
-            if t.track in tracks_mod.BY_SLUG:
-                laps[t.track].append(t)
+            laps[t.track].append(t)
         ever = defaultdict(set)
         for slug, rows in laps.items():
             rows.sort(key=lambda r: r.updated_at or r.created_at)

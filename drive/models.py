@@ -205,7 +205,7 @@ class DriveStats(db.Model):
     golds        = db.Column(db.Integer, default=0)
     silvers      = db.Column(db.Integer, default=0)
     bronzes      = db.Column(db.Integer, default=0)
-    # Every pool track this account has held the record on, at any point, as a
+    # Every track (pool, daily or player-made) this account has held the record on, as a
     # JSON list of slugs. Only ever grows: a record taken off you still counts
     # toward the record finishes. Backfilled from lap timestamps by
     # `tools/backfill_records.py`; exact from the day it was added.
