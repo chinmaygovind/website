@@ -847,7 +847,7 @@ def test_the_top_of_a_badge_is_the_end_nearest_the_windscreen(rt):
     not: it was `BADGE_Z - v`, which pointed every badge at the nose.
     """
     src = jsrt._read(RENDER_JS)
-    assert "BADGE_Z + v * STRETCH" in src, "the icon mapping is not tail-up"
+    assert "bz + v * STRETCH" in src, "the icon mapping is not tail-up"
     # And the same thing read off real geometry, so the constant above cannot be
     # right while the shape that uses it is wrong. The shield's one point is its
     # lowest coordinate, so it must be its most nose-ward vertex.
@@ -907,3 +907,72 @@ def test_the_decals_reach_the_ends_of_the_panels_they_are_on(rt):
         if roof:
             assert min(roof) >= ROOF[0] - 1e-9, f"{name} hangs off the roof front"
             assert max(roof) <= ROOF[1] + 1e-9, f"{name} hangs off the roof back"
+
+
+# ---------------------------------------------------------------------------
+# The other bodies
+# ---------------------------------------------------------------------------
+import garage as _garage
+
+BODIES = [m for m in _garage.MODELS if m != "classic"]
+
+
+def test_every_body_the_garage_offers_is_one_the_renderer_draws(rt):
+    """A model with no body falls back to the classic car silently, which looks
+    like a gate that never opened."""
+    drawn = set(rt.call("Object.keys(CAR_BODIES)"))
+    assert drawn == set(BODIES)
+
+
+@pytest.mark.parametrize("model", BODIES)
+def test_a_body_is_cheap_and_every_material_is_reachable(rt, model):
+    c = census(rt, f"{{model: '{model}', livery: 'fade', badge: 'crown', "
+                   f"rim_style: 'spoke5', roof: '#ffffff'}}")
+    assert c["untracked"] == 0
+    assert c["meshes"] <= 20, c
+
+
+@pytest.mark.parametrize("model", BODIES)
+def test_a_body_fills_the_hitbox_and_stands_on_the_road(rt, model):
+    """Contact is two 1.25 spheres along a 3.4 box, so a body past about 4 x 2.5
+    sinks into a rival before the bump; and a wheel off the road is a car
+    floating or sunk."""
+    b = rt.call(f"""(() => {{
+      const v = build({{model: '{model}'}}).view;
+      let x = 0, z = 0, y = 1e9;
+      for (const m of meshes(v.group)) {{
+        const a = m.geometry.attributes && m.geometry.attributes.position;
+        if (!a) continue;
+        const p = a.array;
+        for (let i = 0; i < p.length; i += 3) {{
+          x = Math.max(x, Math.abs(p[i])); z = Math.max(z, Math.abs(p[i + 2]));
+        }}
+      }}
+      for (const w of v.steered) {{
+        const r = CAR_BODIES['{model}'].wheels[0].r;
+        y = Math.min(y, w.position.y - r);
+      }}
+      return [x, z, y];
+    }})()""")
+    x, z, y = b
+    assert x <= 1.25, f"{model} is {2 * x:.2f} wide"
+    assert z <= 2.0, f"{model} is {2 * z:.2f} long"
+    assert abs(y + 0.02) < 1e-6, f"{model}'s wheels bottom out at {y}"
+
+
+@pytest.mark.parametrize("model", BODIES)
+@pytest.mark.parametrize("name", ["centre", "twin", "band", "hoop", "halves",
+                                  "fade", "pinstripe"])
+def test_a_livery_stays_on_its_body(rt, model, name):
+    """Every decal vertex within a hair of the body it is painted on: inside the
+    car's own footprint, and no higher than the loft under it. A stripe that
+    floats off a sloping bonnet or out past a wing fails here."""
+    pos = rt.call(f"decalMesh(liveryOf({{model: '{model}', livery: '{name}', badge: 'crown'}}),"
+                  f" CAR_BODIES['{model}'].panel).pos")
+    assert pos, f"{model} wears no {name} at all"
+    top = rt.call(f"""Math.max(...CAR_BODIES['{model}'].body.map((s) => Math.max(s[7], s[9])),
+                   ...(CAR_BODIES['{model}'].cabin || []).map((c) => c[3]))""")
+    for i in range(0, len(pos), 3):
+        x, y, z = pos[i:i + 3]
+        assert abs(x) <= 1.25 and abs(z) <= 2.0, (model, name, x, z)
+        assert 0 <= y <= top + 0.04, (model, name, y)

@@ -871,7 +871,10 @@
       <section class="set-sec">
         <div class="set-cap">Ghost</div>
         <div class="set-group">
-      <div class="set-cell stack">
+      {# One line in solo, where three choices fit beside the label; a room
+         adds a fourth and needs the second line. #}
+      <div class="set-cell{% if mode == 'room' %} stack{% endif %}">
+        {% if mode != 'room' %}<svg class="icn" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v16M5 8h14M5 16h14"/></svg>{% endif %}
         <span class="set-name">Splits</span>
         <div class="seg" id="ghostOpts">
           <button class="opt" data-ghost="off">Off</button>
@@ -919,9 +922,9 @@
       </div>
         </div>
       </section>
-      <section class="set-sec">
-        <div class="set-cap">HUD</div>
-        <div class="set-group">
+      <section class="set-sec set-wide">
+        <div class="set-cap">Display</div>
+        <div class="set-group set-grid">
       <div class="set-cell">
         <svg class="icn" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 17.7A8 8 0 1 1 19.5 17.7"/><path d="M12 15 9.3 10.4"/></svg>
         <span class="set-name">Speed Units</span>
@@ -952,11 +955,6 @@
         <span class="set-name">Ping Counter</span>
         <span class="sr" id="btnPingState">Off</span><span class="pill" aria-hidden="true"></span>
       </button>
-        </div>
-      </section>
-      <section class="set-sec">
-        <div class="set-cap">Display</div>
-        <div class="set-group">
       <div class="set-cell">
         <svg class="icn" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="11.5" rx="1.8"/><path d="M9 20h6M12 16.5V20"/></svg>
         <span class="set-name">Graphics</span>
@@ -975,18 +973,33 @@
           <button class="opt" data-fov="wide">Wide</button>
         </div>
       </div>
-      <button class="set-cell toggle" id="btnShake" aria-pressed="true">
-        <svg class="icn" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h2l2-5 3 10 3-12 3 10 2-3h3"/></svg>
-        <span class="set-name">Camera Shake</span>
-        <span class="pill" aria-hidden="true"></span>
-      </button>
-      <button class="set-cell toggle" id="btnSmoke" aria-pressed="true">
-        <svg class="icn" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18a4 4 0 0 1-.5-8A5.5 5.5 0 0 1 17 8.5a4.5 4.5 0 0 1 0 9.5z"/></svg>
-        <span class="set-name">Tire Smoke</span>
-        <span class="pill" aria-hidden="true"></span>
+        </div>
+      </section>
+      {# Account: you on the left, your car on the right. The garage opens over
+         the game and the car changes on the track, so trying another body is
+         not a trip to another page. #}
+      {% if user and mode == 'solo' and not draft_token and not back %}
+      <section class="set-sec set-wide">
+        <div class="set-cap">Account</div>
+        <div class="set-group set-pair">
+      <a class="set-cell" id="btnProfile" href="/account">
+        <svg class="icn" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="8.5" r="3.5"/><path d="M5 19.5a7 7 0 0 1 14 0"/>
+        </svg>
+        <span class="set-name">{{ user.username }}</span>
+        <svg class="icn" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+      </a>
+      <button class="set-cell" id="btnGarage">
+        <svg class="icn" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3.5 15.5v-3l2-4.5h10l3.5 4.5h1.5v3z"/>
+          <circle cx="7.5" cy="16.5" r="1.8"/><circle cx="16.5" cy="16.5" r="1.8"/>
+        </svg>
+        <span class="set-name">Customize Car</span>
+        <svg class="icn" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
       </button>
         </div>
       </section>
+      {% endif %}
     </div>
 
     {# The privacy notice, and this is the whole of how it appears in front of a
@@ -1069,6 +1082,14 @@
      track you are on - so there has to be somewhere that shows all of them and
      lets you throw them away. Every row is one track's; the active slot on the
      current track is the one R restores. -->
+{% if user and mode == 'solo' %}
+<div class="overlay" id="garageOv" style="display:none">
+  <iframe id="garageFrame" title="Garage"></iframe>
+  <button class="sheet-x" id="btnGarageClose" title="Close (Esc)" aria-label="Close">
+    <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+  </button>
+</div>
+{% endif %}
 <div class="overlay" id="savesOv" style="display:none">
   <div class="sheet">
     <div class="sheet-head">

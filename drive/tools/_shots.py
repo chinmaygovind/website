@@ -43,6 +43,13 @@ ROOT = os.path.dirname(HERE)
 # failure this tooling has, because nothing downstream can tell.
 GL_FLAGS = ["--use-gl=angle", "--use-angle=swiftshader",
             "--enable-unsafe-swiftshader"]
+# `DRIVE_GPU=1` renders on the machine's real GPU through ANGLE's Vulkan
+# backend instead: many times faster for video, on a machine that has one.
+# Not the default because CI and most servers have none, and the software path
+# above is the one that is known to work everywhere.
+if os.environ.get("DRIVE_GPU"):
+    GL_FLAGS = ["--use-gl=angle", "--use-angle=vulkan", "--enable-gpu",
+                "--ignore-gpu-blocklist"]
 
 # Where a Mac keeps a browser. Checked after PATH, because a `which` hit is
 # somebody's deliberate install.

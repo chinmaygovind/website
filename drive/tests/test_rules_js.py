@@ -1099,7 +1099,7 @@ def test_every_value_in_the_vocabulary_has_a_word_for_it():
     block = src[src.index("const TITLE = {"):]
     block = block[:block.index("};")]
     words = set(re.findall(r"(\w+):", block))
-    for group in ("FINISHES", "LIVERIES", "RIM_STYLES", "BADGES"):
+    for group in ("FINISHES", "LIVERIES", "RIM_STYLES", "BADGES", "MODELS"):
         for value in getattr(garage, group):
             assert value in words, "%s has no word in TITLE (%s)" % (value, group)
 
@@ -1115,7 +1115,7 @@ def test_no_word_is_left_over_for_something_nobody_offers():
     block = block[:block.index("};")]
     words = set(re.findall(r"(\w+):", block))
     known = set(garage.FINISHES) | set(garage.LIVERIES) | set(garage.RIM_STYLES) \
-        | set(garage.BADGES)
+        | set(garage.BADGES) | set(garage.MODELS)
     assert not (words - known), "TITLE has words for %s" % sorted(words - known)
 
 
@@ -1801,3 +1801,18 @@ def test_a_watched_car_that_finishes_is_held_for_the_line_then_the_next_is_picke
     ctx.eval("order[2].ms = 62000; updateSpec(10000); updateSpec(20000)")
     assert ctx.eval("S.spec") is None, "nobody left, and still not your own car"
     assert ctx.eval("$('finWatch').style.visibility") == "hidden"
+
+
+def test_the_unlock_popup_names_things_what_the_garage_calls_them():
+    """The pop-up's words are a copy on the server of `TITLE`, so a car renamed
+    in the garage and not here would be announced under its old name."""
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+    import garage
+    src = open(GARAGE_JS).read()
+    block = src[src.index("const TITLE = {"):]
+    block = block[:block.index("};")]
+    title = dict(re.findall(r"(\w+): '([^']*)'", block))
+    for gate, g in garage.GATES.items():
+        assert garage.UNLOCK_NAME[gate] == title[g["value"]], gate
+        assert g["slot"] in garage.UNLOCK_KIND, gate

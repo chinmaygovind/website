@@ -209,7 +209,8 @@ def color_for(username):
 # against each other, and three ways of saying "shiny" is two too many. A stored
 # `metallic` or `pearl` therefore fails `validate` and falls back to matte, which is
 # what every unknown value here has always done.
-FINISHES = ("matte", "gloss")
+FINISHES = ("matte", "gloss", "rusted", "chrome", "glow", "radiant")
+BOT_FINISHES = ("matte", "gloss")
 LIVERIES = ("none", "centre", "twin", "band", "hoop", "halves", "fade",
             "pinstripe")
 RIM_STYLES = ("stock", "spoke5", "spoke6", "mesh", "dish", "forged")
@@ -219,6 +220,12 @@ RIM_STYLES = ("stock", "spoke5", "spoke6", "mesh", "dish", "forged")
 # podiums, races, elo and distance, all written today, and `create_all` makes
 # tables and not columns, so a badge wanting a new counter would need a migration
 # by hand on the live box.
+# The body. `classic` is the box car every account had before there was a
+# choice, and so the default: an account with no row still drives it, and so
+# does every ghost and replay recorded before this. Purely drawn - the physics
+# car is the same box under every one of them (`render.js`, `CAR_BODIES`).
+MODELS = ("classic", "kart", "van", "pickup", "beetle", "gt", "sixties", "bubble", "rally",
+          "muscle", "monster", "proto", "bigrig", "f1")
 BADGES = ("none", "laurel", "checkers", "chevrons", "crown", "podium",
           "sunburst", "ribbon", "shield")
 
@@ -245,6 +252,7 @@ DEFAULTS = {
     "livery": "none",
     "rim_style": "stock",
     "badge": "none",
+    "model": "classic",
 }
 
 FREE_HEX = ("trim", "roof", "rim", "glass", "stripe", "badge_color")
@@ -289,6 +297,8 @@ def validate(raw):
         out["rim_style"] = raw["rim_style"]
     if raw.get("badge") in BADGES:
         out["badge"] = raw["badge"]
+    if raw.get("model") in MODELS:
+        out["model"] = raw["model"]
     return out
 
 
@@ -327,14 +337,14 @@ GATES = {
                   "text": "Set a track record",
                   "done": "setting a track record"},
     "checkers":  {"slot": "badge",     "value": "checkers",
-                  "text": "Win a multiplayer race",
-                  "done": "winning a multiplayer race"},
+                  "text": "Finish 10 tracks",
+                  "done": "finishing 10 tracks"},
     "podium":    {"slot": "badge",     "value": "podium",
-                  "text": "Finish 10 races in the top three",
-                  "done": "ten top-three finishes"},
+                  "text": "Drive 500 km",
+                  "done": "driving 500 km"},
     "chevrons":  {"slot": "badge",     "value": "chevrons",
-                  "text": "Reach Ace rating",
-                  "done": "reaching Ace rating"},
+                  "text": "A gold on any 15 tracks",
+                  "done": "a gold on any 15 tracks"},
     "sunburst":  {"slot": "badge",     "value": "sunburst",
                   "text": "A gold on every track",
                   "done": "a gold on every track"},
@@ -360,13 +370,58 @@ GATES = {
     "shield":    {"slot": "badge",     "value": "shield",
                   "text": "A gold on any 3 tracks",
                   "done": "a gold on any 3 tracks"},
+    # The bodies, one rung each, cheapest first. Several share a bar with a
+    # badge or a rim, which is allowed for `sunburst`'s reason.
+    "bubble":    {"slot": "model", "value": "bubble",
+                  "text": "Finish 8 tracks", "done": "finishing 8 tracks"},
+    "beetle":    {"slot": "model", "value": "beetle",
+                  "text": "Drive 2,500 km", "done": "driving 2,500 km"},
+    "kart":      {"slot": "model", "value": "kart",
+                  "text": "Drive 100 km", "done": "driving 100 km"},
+    "van":       {"slot": "model", "value": "van",
+                  "text": "Finish 5 tracks", "done": "finishing 5 tracks"},
+    "pickup":    {"slot": "model", "value": "pickup",
+                  "text": "Drive 1,000 km", "done": "driving 1,000 km"},
+    "gt":        {"slot": "model", "value": "gt",
+                  "text": "A gold on any 3 tracks",
+                  "done": "a gold on any 3 tracks"},
+    "sixties":   {"slot": "model", "value": "sixties",
+                  "text": "Drive 5,000 km", "done": "driving 5,000 km"},
+    "rally":     {"slot": "model", "value": "rally",
+                  "text": "Finish every track", "done": "finishing every track"},
+    "muscle":    {"slot": "model", "value": "muscle",
+                  "text": "A gold on any 10 tracks",
+                  "done": "a gold on any 10 tracks"},
+    "proto":     {"slot": "model", "value": "proto",
+                  "text": "A gold on any 15 tracks",
+                  "done": "a gold on any 15 tracks"},
+    # The finishes past matte and gloss, and the hardest things in the garage:
+    # distance nobody has driven yet, and records held. A record finish stays
+    # once earned (`KEPT`), like the laurel - losing the records later does not
+    # strip the paint off.
+    "rusted":     {"slot": "finish", "value": "rusted",
+                   "text": "Drive 20,000 km", "done": "driving 20,000 km"},
+    "chrome":     {"slot": "finish", "value": "chrome",
+                   "text": "Hold 10 track records", "done": "holding 10 track records"},
+    "glow":       {"slot": "finish", "value": "glow",
+                   "text": "Hold 25 track records", "done": "holding 25 track records"},
+    "radiant":    {"slot": "finish", "value": "radiant",
+                   "text": "Hold 50 track records", "done": "holding 50 track records"},
+    # The three long chases, by distance: nobody had driven 25,000 km when
+    # these were set (the most was under 15,000).
+    "monster":   {"slot": "model", "value": "monster",
+                  "text": "Drive 10,000 km", "done": "driving 10,000 km"},
+    "bigrig":    {"slot": "model", "value": "bigrig",
+                  "text": "Drive 15,000 km", "done": "driving 15,000 km"},
+    "f1":        {"slot": "model", "value": "f1",
+                  "text": "Drive 25,000 km", "done": "driving 25,000 km"},
 }
 
 # The gates whose condition can stop being true, and which are therefore written
 # down the first moment it is. Named here rather than in `app.py`, which used to
 # carry the literal `{"laurel"}` - the vocabulary belongs with the vocabulary, and
 # adding a second losable gate should not mean remembering a set in another file.
-KEPT = frozenset({"laurel", "crown"})
+KEPT = frozenset({"laurel", "crown", "chrome", "glow", "radiant"})
 
 # The bars for the counter gates. Out here because they are the numbers most
 # likely to want moving after somebody has actually played, and hunting them
@@ -374,6 +429,19 @@ KEPT = frozenset({"laurel", "crown"})
 ACE_ELO = 1250            # `DriveStats.elo_tier`'s own boundary for "Ace"
 PODIUMS_NEEDED = 10
 RIBBON_METRES = 100_000   # a lap is roughly 0.9-2.8 km, so this is ~50-100 runs
+KART_KM, PICKUP_KM, BEETLE_KM, SIXTIES_KM = 100, 1000, 2500, 5000
+BUBBLE_TRACKS = 8
+VAN_TRACKS, MUSCLE_GOLDS, PROTO_GOLDS = 5, 10, 15
+MONSTER_KM, BIGRIG_KM, F1_KM = 10000, 15000, 25000
+RUSTED_KM, CHROME_RECORDS, GLOW_RECORDS, RADIANT_RECORDS = 20000, 10, 25, 50
+CHECKERS_TRACKS, PODIUM_KM = 10, 500
+
+
+def _or_already(met, have, need):
+    """`(have, need)`, or full marks for somebody who met the gate's old
+    multiplayer condition. Nobody plays multiplayer, so those gates moved to solo
+    counters (Nov 2026) - and a badge somebody already earned stays earned."""
+    return (need, need) if met else (min(have, need), need)
 
 
 def _golds(user):
@@ -552,19 +620,22 @@ def _counts(user, holders, leaders):
     """
     n = len(tracks_mod.TRACKS)
     golds = _golds(user)
+    finished = _tracks_finished(user)
+    km = int(_stat(user, "distance", 0.0) // 1000)
+    records = holders.get(user.id, 0) if isinstance(holders, dict) else 0
     return {
         "shield":    (min(golds, 3), 3),
         "pinstripe": (min(golds, n), n),
-        "forged":    (_tracks_finished(user), n),
+        "forged":    (finished, n),
         # A thing you have or have not done, so 0 or 1 out of 1 - "0/1 records"
         # would be a worse sentence than the text already on the chip, and the
         # garage only shows a count when `need` is more than one.
         "laurel":    (1 if user.id in holders else 0, 1),
-        "checkers":  (min(_stat(user, "wins"), 1), 1),
-        "podium":    (min(_stat(user, "podiums"), PODIUMS_NEEDED), PODIUMS_NEEDED),
-        # Shown as a rating rather than as a distance from one, because Ace is a
-        # number people know: "(1180/1250)" says where you are.
-        "chevrons":  (min(_elo(user), ACE_ELO), ACE_ELO),
+        # These three asked for multiplayer results and were all but unreachable;
+        # they are solo now, and an old earn still counts (`_or_already`).
+        "checkers":  _or_already(_stat(user, "wins") >= 1, finished, CHECKERS_TRACKS),
+        "podium":    _or_already(_stat(user, "podiums") >= PODIUMS_NEEDED, km, PODIUM_KM),
+        "chevrons":  _or_already(_elo(user) >= ACE_ELO, golds, PROTO_GOLDS),
         "sunburst":  (min(golds, n), n),
         # In kilometres. Metres would put "(43102/100000)" on the chip, which is a
         # number nobody reads.
@@ -577,6 +648,23 @@ def _counts(user, holders, leaders):
         # placings added up, so a bar from 47 to 12 would be measuring a distance
         # that has nothing to do with how much driving is left in it.
         "crown":     (1 if user.id in leaders else 0, 1),
+        "bubble":    (min(finished, BUBBLE_TRACKS), BUBBLE_TRACKS),
+        "beetle":    (min(km, BEETLE_KM), BEETLE_KM),
+        "kart":      (min(km, KART_KM), KART_KM),
+        "van":       (min(finished, VAN_TRACKS), VAN_TRACKS),
+        "pickup":    (min(km, PICKUP_KM), PICKUP_KM),
+        "gt":        (min(golds, 3), 3),
+        "sixties":   (min(km, SIXTIES_KM), SIXTIES_KM),
+        "rally":     (finished, n),
+        "muscle":    (min(golds, MUSCLE_GOLDS), MUSCLE_GOLDS),
+        "proto":     (min(golds, PROTO_GOLDS), PROTO_GOLDS),
+        "monster":   (min(km, MONSTER_KM), MONSTER_KM),
+        "bigrig":    (min(km, BIGRIG_KM), BIGRIG_KM),
+        "f1":        (min(km, F1_KM), F1_KM),
+        "rusted":     (min(km, RUSTED_KM), RUSTED_KM),
+        "chrome":     (min(records, CHROME_RECORDS), CHROME_RECORDS),
+        "glow":       (min(records, GLOW_RECORDS), GLOW_RECORDS),
+        "radiant":    (min(records, RADIANT_RECORDS), RADIANT_RECORDS),
     }
 
 
@@ -661,6 +749,7 @@ def payload(user, livery, got, prog=None):
         "liveries": list(LIVERIES),
         "rim_styles": list(RIM_STYLES),
         "badges": list(BADGES),
+        "models": list(MODELS),
         "defaults": dict(DEFAULTS),
         "record_green": RECORD_GREEN,
         # Every gate, whether it is open, the words for it, and how far along it
@@ -731,6 +820,11 @@ BOT_CLASH_DE = 20.0
 BOT_PATTERNS = tuple(v for v in LIVERIES
                      if v != "none" and v != GATES["pinstripe"]["value"])
 BOT_RIMS = tuple(v for v in RIM_STYLES if v != GATES["forged"]["value"])
+# Bodies a bot may drive: everything but the top two rungs, so a prototype or a
+# Formula car on the grid still means a person earned it. The mid-tier bodies
+# are gated too, and bots get them anyway - a grid of box cars beside players
+# in vans and F1s looked like a different game.
+BOT_MODELS = tuple(m for m in MODELS if m not in ("monster", "proto", "bigrig", "f1"))
 
 
 def lab(hex_):
@@ -827,10 +921,44 @@ def bot_livery(seed, body):
     # ones that are far enough from the paint underneath.
     stripes = [c for c in NEUTRALS + BRIGHTS if delta_e(c, body) >= 35.0]
     out["stripe"] = rng.choice(stripes or NEUTRALS)
-    out["finish"] = rng.choice(FINISHES)
+    out["finish"] = rng.choice(BOT_FINISHES)
     out["rim_style"] = rng.choice(BOT_RIMS)
     out["rim"] = rng.choice(SWATCHES["rim"])
     if rng.random() < 0.35:
         roofs = [c for c in SWATCHES["roof"] if delta_e(c, body) >= 25.0]
         out["roof"] = rng.choice(roofs) if roofs else None
+    # Drawn last so every earlier draw, and so every bot's paint, is unchanged.
+    out["model"] = rng.choice(BOT_MODELS)
     return out
+
+
+# The unlock pop-up's words: what kind of thing it is and what it is called.
+# The names are the garage's (`TITLE` in garage.js); a test keeps the two equal.
+UNLOCK_KIND = {"model": "New car", "badge": "New badge", "livery": "New livery",
+               "rim_style": "New rims", "finish": "New finish"}
+UNLOCK_NAME = {
+    "pinstripe": "Pinstripe", "forged": "Split 5", "laurel": "Laurel",
+    "checkers": "Checkers", "podium": "Podium", "chevrons": "Chevrons",
+    "sunburst": "Sunburst", "ribbon": "Ribbon", "crown": "Crown", "shield": "Shield",
+    "kart": "Kart", "van": "Van", "pickup": "Pickup", "beetle": "Beetle", "gt": "GT",
+    "sixties": "60s Racer", "bubble": "Bubble", "rally": "Rally", "muscle": "Muscle",
+    "monster": "Monster Truck", "proto": "Prototype", "bigrig": "Big Rig", "f1": "Formula",
+    "rusted": "Rusted", "chrome": "Chrome", "glow": "Glow", "radiant": "Radiant",
+}
+
+
+def unlocks(got, seen):
+    """What to announce, and what counts as seen afterwards.
+
+    `seen` None is a player never checked before: everything they have is taken
+    as already known, **except the cars**, which were all new together - so the
+    first look after they shipped tells a long-time player which ones they had
+    already earned rather than leaving them to find out.
+    """
+    if seen is None:
+        seen = {g for g in got if GATES[g]["slot"] != "model"}
+    new = sorted(got - seen, key=list(GATES).index)
+    out = [{"id": g, "slot": GATES[g]["slot"], "value": GATES[g]["value"],
+            "kind": UNLOCK_KIND.get(GATES[g]["slot"], "Unlocked"),
+            "name": UNLOCK_NAME.get(g, g), "done": GATES[g]["done"]} for g in new]
+    return out, seen | got

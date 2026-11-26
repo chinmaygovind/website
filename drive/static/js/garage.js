@@ -35,11 +35,14 @@ const VIEWS = [
 
 const S = {
   livery: Object.assign({}, G.livery),
-  renderer: null, view: null,
+  renderer: null,
+  // The showroom: one car per body, the index in focus, the plinth rings, what
+  // the camera is framing and where it is looking now (eased).
+  cars: [], focus: 0, rings: [], discs: [], slot: 0, slotTo: 0, part: null, zoomTo: null, look: null, floor: null,
   // Framing. The distance itself is not stored, because it is not a constant:
   // it comes from the shape of the window (see `fitDist`) and this is what the
   // scroll wheel multiplies it by.
-  yaw: 2.45, pitch: 0.28, zoom: 1,
+  yaw: 2.45, pitch: 0.26, zoom: 1.4,
   // Where a preset is easing us to, or null when the camera is where it was put.
   target: null,
   spin: true,              // idle rotation, until you take hold of it
@@ -77,14 +80,214 @@ for (const g of G.gates || []) {
 // The car
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// The showroom
+// ---------------------------------------------------------------------------
+// Every body parked in a row on its own plinth, each wearing *your* paint, the
+// way the Chinese Rocket League shelves its cars. The arrows, the arrow keys or
+// a click on a car rolls along the row to it; landing on one you have earned
+// puts you in it, and one you have not is a translucent shell with its
+// requirement under it. Dragging turns the car on its turntable rather than
+// moving the camera, so the row always stays a row across the screen.
+
+const GAP = 6.4;                 // plinth to plinth
+// Laid out toward -x, which is screen-right from where the camera stands, so the
+// next car is to the right and the right arrow goes to it.
+//
+// **The row loops.** `S.slot` is where along an endless row the camera is, and
+// each car stands at whichever repeat of its own place is nearest to it - so
+// past the last car is the first one again, with no rewind across the row.
+const carSlot = (i) => {
+  const n = MODELS.length;
+  return i + n * Math.round((S.slot - i) / n);
+};
+const carX = (i) => -carSlot(i) * GAP;
+const CAM_YAW = Math.PI;         // the camera stands square in front of the row
+const MODELS = G.models && G.models.length ? G.models : ['classic'];
+const modelAt = (i) => MODELS[(i + MODELS.length) % MODELS.length];
+const isLocked = (m) => LOCKED.has('model|' + m);
+
+/** Where each tab points the camera: an offset on the car (its own frame), the
+ *  view angle round it, how high, and how close. Forza's trick - you are shown
+ *  the part you are changing. */
+const PARTS = {
+  body:      { at: [0, 0.62, 0],     yaw: 2.45, pitch: 0.26, zoom: 1.4 },
+  trim:      { at: [0, 0.95, 0.6],   yaw: 0.55, pitch: 0.42, zoom: 0.85 },
+  livery:    { at: [0, 0.7, 0],      yaw: 2.2,  pitch: 0.62, zoom: 1.15 },
+  rim_style: { at: 'wheel',          yaw: Math.PI / 2 + 0.3, pitch: 0.06, zoom: 0.42 },
+  glass:     { at: [0, 0.9, -0.3],   yaw: 2.7,  pitch: 0.16, zoom: 0.72 },
+  finish:    { at: [0, 0.62, 0],     yaw: 2.0,  pitch: 0.32, zoom: 1.1 },
+  badge:     { at: [0, 0.6, -1.2],   yaw: Math.PI, pitch: 0.8, zoom: 0.5 },
+};
+
+function disposeView(v) {
+  if (!v) return;
+  v.dispose();
+  v.group.traverse((o) => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material && o.material.map) o.material.map.dispose();
+    if (o.material) o.material.dispose();
+  });
+}
+
+// The last car is a secret until it is earned: a dark cloud on its plinth, and a "?" for a name. The requirement still shows, so there is
+// something to chase.
+const MYSTERY = 'f1';
+const mystery = (m) => m === MYSTERY && isLocked(m);
+
+// A cloud where a car should be: a cluster of low-poly puffs in dark gray,
+// a little see-through, each bobbing and swelling on its own slow cycle so the
+// fog never holds still long enough to show a shape. Seeded, so it is the same
+// cloud every time.
+function fog() {
+  const g = new THREE.Group();
+  let seed = 7;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const mat = new THREE.MeshLambertMaterial({ color: 0x6a707c, emissive: 0x1d2027,
+                                             transparent: true, opacity: 0.32,
+                                             depthWrite: false });
+  const geo = new THREE.IcosahedronGeometry(1, 2);
+  for (let i = 0; i < 34; i++) {
+    const puff = new THREE.Mesh(geo, mat);
+    const base = [(rnd() - 0.5) * 2.0, 0.3 + rnd() * 1.0, (rnd() - 0.5) * 3.6];
+    const r = 0.4 + rnd() * 0.5, ph = rnd() * 6.28, sp = 0.4 + rnd() * 0.5;
+    puff.rotation.set(rnd() * 6, rnd() * 6, rnd() * 6);
+    puff.onBeforeRender = () => {
+      const t = performance.now() / 1000 * sp + ph;
+      puff.position.set(base[0] + Math.sin(t) * 0.08, base[1] + Math.sin(t * 1.3) * 0.06,
+                        base[2] + Math.cos(t * 0.8) * 0.1);
+      puff.scale.setScalar(r * (1 + Math.sin(t * 0.9) * 0.08));
+      puff.rotation.y += 0.002;
+    };
+    puff.position.set(...base);
+    puff.scale.setScalar(r);
+    g.add(puff);
+  }
+  return g;
+}
+
+function buildCar(i) {
+  const m = MODELS[i];
+  disposeView(S.cars[i]);
+  if (mystery(m)) {
+    const v = new CarView(S.renderer.scene, { model: 'classic', body: '#34373e' });
+    v.group.children.forEach((c) => { c.visible = false; });
+    v.group.add(fog());
+    v.setLabel(null);
+    S.cars[i] = v;
+    return;
+  }
+  const v = new CarView(S.renderer.scene, Object.assign({}, S.livery, { model: m }),
+                        { ghost: isLocked(m) });
+  v.setLabel(null);
+  S.cars[i] = v;
+}
+
+/** Rebuilt on every change: the car in focus at once, the rest a moment later,
+ *  so dragging a colour picker repaints one car per move rather than ten. */
 function rebuild() {
-  if (S.view) S.view.dispose();
-  // Rebuilt wholesale on every change rather than poked material by material.
-  // It is one car on an empty scene, so there is nothing to save by being clever
-  // - and a rebuild cannot leave a stale material behind, which the clever
-  // version would do the first time a slot was added and not wired up.
-  S.view = new CarView(S.renderer.scene, S.livery);
-  S.view.setLabel(null);
+  buildCar(S.focus);
+  clearTimeout(rebuild._t);
+  rebuild._t = setTimeout(() => {
+    for (let i = 0; i < MODELS.length; i++) if (i !== S.focus) buildCar(i);
+  }, 220);
+}
+
+function plinths() {
+  const g = new THREE.Group();
+  const top = new THREE.MeshLambertMaterial({ color: 0x1b2029 });
+  S.rings = [];
+  S.discs = [];
+  for (let i = 0; i < MODELS.length; i++) {
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(2.45, 2.55, 0.12, 48), top);
+    disc.position.set(carX(i), -0.06, 0);
+    g.add(disc);
+    S.discs.push(disc);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(2.47, 2.55, 64),
+      new THREE.MeshBasicMaterial({ color: 0x262d3a }));
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(carX(i), 0.001, 0);
+    g.add(ring);
+    S.rings.push(ring);
+  }
+  return g;
+}
+
+/** Roll `d` cars along the loop, and sit in the one you land on if it is yours. */
+function step(d) {
+  if (!d) return;
+  S.slotTo += d;
+  focusCar(((S.slotTo % MODELS.length) + MODELS.length) % MODELS.length);
+}
+
+function focusCar(i) {
+  if (i === S.focus) return;
+  S.focus = i;
+  const m = MODELS[i];
+  S.said = null;
+  if (!isLocked(m) && S.livery.model !== m) {
+    S.livery.model = m;
+    save();
+  }
+  for (let k = 0; k < S.rings.length; k++) {
+    S.rings[k].material.color.setHex(k === i ? 0x56709e : 0x262d3a);
+  }
+  render();
+}
+
+/** Point the camera at what tab `t` edits. */
+function framePart(t) {
+  const P = PARTS[t] || PARTS.body;
+  S.target = { yaw: P.yaw, pitch: P.pitch };
+  S.zoomTo = P.zoom;
+  S.part = P;
+  S.spin = false;
+}
+
+/** The part's point in the world, on the car in focus as it is turned now. */
+function partPoint(carYaw) {
+  const P = S.part || PARTS.body;
+  let at = P.at;
+  if (at === 'wheel') {
+    const v = S.cars[S.focus];
+    const hub = v && v.steered.find((h) => h.position.x > 0);
+    at = hub ? [hub.position.x + 0.2, hub.position.y, hub.position.z] : [1, 0.4, -1.2];
+  }
+  const c = Math.cos(carYaw), s = Math.sin(carYaw);
+  return [carX(S.focus) + at[0] * c + at[2] * s, at[1], -at[0] * s + at[2] * c];
+}
+
+/** The car under a click, by its centre's place on screen. */
+function carAt(x, y) {
+  const c = S.renderer.renderer.domElement, r = c.getBoundingClientRect();
+  let best = -1, bd = 1e9;
+  for (let i = 0; i < MODELS.length; i++) {
+    const p = new THREE.Vector3(carX(i), 0.6, 0).project(S.renderer.camera);
+    if (p.z > 1) continue;
+    const sx = r.left + (p.x + 1) / 2 * r.width, sy = r.top + (1 - p.y) / 2 * r.height;
+    const d = Math.hypot(sx - x, sy - y);
+    if (d < bd) { bd = d; best = i; }
+  }
+  return bd < r.width * 0.12 ? best : -1;
+}
+
+/** A random car out of what you have earned: paint, pattern, wheels, finish. */
+function randomize() {
+  const pick = (a) => a[Math.floor(Math.random() * a.length)];
+  const open = (slot, list) => list.filter((v) => !LOCKED.has(slot + '|' + v));
+  const sw = (k) => (G.swatches && G.swatches[k]) || G.palette;
+  const L = S.livery;
+  L.body = pick(G.palette);
+  L.livery = pick(open('livery', G.liveries));
+  L.stripe = pick(sw('stripe'));
+  L.rim_style = pick(open('rim_style', G.rim_styles));
+  L.rim = pick(sw('rim'));
+  L.finish = pick(open('finish', G.finishes));
+  L.trim = Math.random() < 0.5 ? null : pick(sw('trim'));
+  L.roof = Math.random() < 0.6 ? null : pick(sw('roof'));
+  for (let i = 0; i < MODELS.length; i++) buildCar(i);
+  render();
+  save();
 }
 
 /**
@@ -122,50 +325,64 @@ function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(0.05, (now - (frame.last || now)) / 1000);
   frame.last = now;
+  const k = 1 - Math.pow(0.001, dt);
 
   if (S.target) {
-    // Eased rather than cut, because a preset is a request to *look* at the car
-    // from over there and the turn is what tells you which way it went round.
-    const k = 1 - Math.pow(0.001, dt);
+    // Eased rather than cut: the turn is what tells you which way it went round.
     const dy = shortest(S.yaw, S.target.yaw);
     S.yaw += dy * k;
     S.pitch += (S.target.pitch - S.pitch) * k;
     if (Math.abs(dy) < 0.002 && Math.abs(S.target.pitch - S.pitch) < 0.002) {
       S.yaw = S.target.yaw; S.pitch = S.target.pitch; S.target = null;
-      // Which view you are on is only true once the camera has arrived, and
-      // arriving is not something anybody clicked - so this is the one place
-      // the controls are redrawn by the frame loop rather than by an event.
-      // Without it the highlight was computed at the moment of the press, when
-      // the answer is still "none of them", and no view button ever lit up.
       render();
     }
   } else if (S.spin) {
     S.yaw += dt * 0.32;
   }
-  // The wheels turn with the turntable, because a car rotating on stationary
-  // wheels reads as a model and a car whose wheels are going reads as a car.
+  if (S.zoomTo != null) {
+    S.zoom += (S.zoomTo - S.zoom) * k;
+    if (Math.abs(S.zoomTo - S.zoom) < 0.002) { S.zoom = S.zoomTo; S.zoomTo = null; }
+  }
   S.wheel += dt * 0.32 * 4.0;
+
+  // `S.yaw` is the view angle round the car, as it always was; the camera now
+  // stays on its side of the row and it is the car that turns to give it.
+  S.slot += (S.slotTo - S.slot) * (1 - Math.pow(0.0004, dt));
+  if (Math.abs(S.slotTo - S.slot) < 1e-4) S.slot = S.slotTo;
+  for (let i = 0; i < S.discs.length; i++) {
+    S.discs[i].position.x = S.rings[i].position.x = carX(i);
+  }
+  const carYaw = CAM_YAW - S.yaw;
+  const want = partPoint(carYaw);
+  const r = 1 - Math.pow(0.0004, dt);
+  // The row's own position is eased already (`S.slot`), so only the part
+  // offset is eased here - easing x twice would lag behind the cars.
+  const off = [want[0] - carX(S.focus), want[1], want[2]];
+  S.lookOff = S.lookOff ? S.lookOff.map((v, n) => v + (off[n] - v) * r) : off;
+  S.look = [-S.slot * GAP + S.lookOff[0], S.lookOff[1], S.lookOff[2]];
 
   const cy = Math.cos(S.pitch), sy = Math.sin(S.pitch);
   const cam = S.renderer.camera;
-  // Recomputed every frame rather than on a resize event, because it is one
-  // divide and it then cannot be stale - rotating a phone, opening the dev
-  // tools and the address bar sliding away are all resizes, and only one of
-  // them fires the event reliably.
   const dist = fitDist() * S.zoom;
-  cam.position.set(Math.sin(S.yaw) * dist * cy, 0.80 + sy * dist,
-                   Math.cos(S.yaw) * dist * cy);
-  // Aimed a little above the car's middle, which puts the car itself a little
-  // below the middle of the frame - and the top of the frame is where the two
-  // control bars are.
-  cam.lookAt(0, 0.62, 0);
+  cam.position.set(S.look[0] + Math.sin(CAM_YAW) * dist * cy,
+                   S.look[1] + 0.18 + sy * dist,
+                   S.look[2] + Math.cos(CAM_YAW) * dist * cy);
+  cam.lookAt(S.look[0], S.look[1], S.look[2]);
   cam.updateProjectionMatrix();
+  if (S.floor) S.floor.position.x = S.look[0];
 
-  // The car sits at the origin with the floor at y=0, so its own contact shadow
-  // does the grounding - the same shadow it has on the road, which is why there
-  // is no separate studio floor shadow to get subtly wrong.
-  S.view.update(new THREE.Vector3(0, 0, 0), new THREE.Quaternion(),
-                { spin: S.wheel, groundY: 0, groundN: new THREE.Vector3(0, 1, 0) });
+  const up = new THREE.Vector3(0, 1, 0), N = new THREE.Vector3(0, 1, 0);
+  const rest = new THREE.Quaternion().setFromAxisAngle(up, CAM_YAW - 2.45);
+  for (let i = 0; i < S.cars.length; i++) {
+    const v = S.cars[i];
+    if (!v) continue;
+    const pos = new THREE.Vector3(carX(i), 0, 0);
+    const q = i === S.focus ? new THREE.Quaternion().setFromAxisAngle(up, carYaw) : rest;
+    v.update(pos, q, { spin: i === S.focus ? S.wheel : 0, groundY: 0, groundN: N });
+    // A neighbour the camera has backed into would fill the screen with its
+    // inside; it steps out of the way instead.
+    v.setVisible(i === S.focus || cam.position.distanceTo(pos) > 3.2);
+  }
   S.renderer.render(dt);
 }
 
@@ -173,6 +390,8 @@ function setView(id) {
   const v = VIEWS.find((x) => x[1] === id);
   if (!v) return;
   S.target = { yaw: v[2], pitch: v[3] };
+  S.part = PARTS.body;
+  S.zoomTo = 1.4;
   S.spin = false;
   render();
 }
@@ -182,9 +401,9 @@ function setView(id) {
 // ---------------------------------------------------------------------------
 
 function bindDrag(el) {
-  let down = false, lx = 0, ly = 0;
+  let down = false, lx = 0, ly = 0, ox = 0, oy = 0;
   const start = (x, y) => {
-    down = true; lx = x; ly = y; S.spin = false; S.target = null; render();
+    down = true; lx = x; ly = y; ox = x; oy = y; S.spin = false; S.target = null; render();
   };
   const move = (x, y) => {
     if (!down) return;
@@ -194,7 +413,14 @@ function bindDrag(el) {
     S.pitch = Math.max(-0.05, Math.min(1.1, S.pitch + (y - ly) * 0.006));
     lx = x; ly = y;
   };
-  const end = () => { down = false; };
+  // A press that did not drag is a click, and a click on another car goes to it.
+  const end = (e) => {
+    if (down && e && Math.hypot(e.clientX - ox, e.clientY - oy) < 6) {
+      const i = carAt(e.clientX, e.clientY);
+      if (i >= 0 && i !== S.focus) step(carSlot(i) - S.slotTo);
+    }
+    down = false;
+  };
 
   el.addEventListener('pointerdown', (e) => { el.setPointerCapture(e.pointerId);
                                               start(e.clientX, e.clientY); });
@@ -205,13 +431,15 @@ function bindDrag(el) {
     e.preventDefault();
     // A multiplier on whatever the window's own framing is, so a zoom survives
     // a resize instead of becoming a distance that means something else.
-    S.zoom = Math.max(0.55, Math.min(2.4, S.zoom * (e.deltaY > 0 ? 1.08 : 0.926)));
+    S.zoom = Math.max(0.4, Math.min(2.6, S.zoom * (e.deltaY > 0 ? 1.08 : 0.926)));
   }, { passive: false });
 }
 
 // ---------------------------------------------------------------------------
 // Saving
 // ---------------------------------------------------------------------------
+
+const EMBED = window.parent !== window;
 
 function save() {
   clearTimeout(S.saveTimer);
@@ -225,6 +453,9 @@ function save() {
       });
       const d = await r.json();
       if (d && d.ok) {
+        // Inside the game's settings: hand the game the car it should now be
+        // driving, as the server resolved it.
+        if (EMBED) parent.postMessage({ garage: d.livery }, location.origin);
         // The server's answer wins: it has applied the gates, so if something in
         // here was not earned this is where it goes back. Silently, because the
         // chip that offered it already says why it is locked.
@@ -266,6 +497,7 @@ const esc = (s) => (s + '').replace(/[&<>"]/g, (c) =>
 // `validate` turns a stored one into matte long before the garage sees it, and a
 // lie about what is in the cabinet. `test_rules_js.py` checks both directions.
 const TITLE = {
+  rusted: 'Rusted', chrome: 'Chrome', glow: 'Glow', radiant: 'Radiant',
   none: 'None', stock: 'Stock', matte: 'Matte', gloss: 'Gloss',
   centre: 'Center', twin: 'Twin',
   band: 'Band', hoop: 'Hoop', halves: 'Halves', fade: 'Fade',
@@ -277,6 +509,9 @@ const TITLE = {
   // race in tells you nothing about what is on the bonnet.
   laurel: 'Laurel', checkers: 'Checkers', chevrons: 'Chevrons', crown: 'Crown',
   podium: 'Podium', sunburst: 'Sunburst', ribbon: 'Ribbon', shield: 'Shield',
+  classic: 'Classic', bubble: 'Bubble', beetle: 'Beetle', kart: 'Kart', van: 'Van', pickup: 'Pickup', gt: 'GT', sixties: '60s Racer',
+  rally: 'Rally', muscle: 'Muscle', monster: 'Monster Truck', proto: 'Prototype',
+  bigrig: 'Big Rig', f1: 'Formula',
 };
 const label = (v) => TITLE[v] || v;
 
@@ -330,19 +565,22 @@ function chips(slot, values, current) {
  * `G.palette` is the fallback rather than the answer, so a slot nobody has
  * written a list for still works.
  */
-function colorSlot(slot, current, label = '', autoLabel = 'Auto') {
+function colorSlot(slot, current, label = '', autoLabel = 'Auto', off = false) {
   const list = (G.swatches && G.swatches[slot]) || G.palette;
   const custom = current && list.indexOf(current) < 0;
   const sw = list.map((c) => `<button class="gsw${current === c ? ' on' : ''}"
       data-slot="${esc(slot)}" data-value="${esc(c)}"
       style="background:${esc(c)}" title="${esc(c)}"></button>`).join('');
-  return `${label ? `<span class="gslot-label">${esc(label)}</span>` : ''}
+  // `off` keeps the row where it is and greys it, rather than removing it: a row
+  // that comes and goes with another choice resizes the bar under your cursor.
+  return `<span class="gslot${off ? ' off' : ''}">
+    ${label ? `<span class="gslot-label">${esc(label)}</span>` : ''}
     <button class="gopt${current ? '' : ' on'}" data-slot="${esc(slot)}"
             data-value="">${esc(autoLabel)}</button>
     <span class="gcolors">${sw}<button
       class="gsw gcustom${custom ? ' has' : ''}" data-pick="${esc(slot)}"
       title="Any other color"${custom ? ` style="--pick:${esc(current)}"` : ''}
-      ></button></span>`;
+      ></button></span></span>`;
 }
 
 const TABS = [
@@ -367,21 +605,17 @@ const TABS = [
   //
   // The only tab with two colour rows, and therefore the only one whose rows are
   // labelled - everywhere else the label repeated the name of the tab it was on.
-  ['trim', 'Detail', (L) =>
-    colorSlot('trim', L.trim, 'Spoiler') +
-    `<span class="gsep"></span>` +
-    colorSlot('roof', L.roof, 'Roof', 'Body')],
-  ['livery', 'Livery', (L) => chips('livery', G.liveries, L.livery) +
-    (L.livery && L.livery !== 'none'
-      ? `<span class="gsep"></span>` + colorSlot('stripe', L.stripe)
-      : '')],
+  ['trim', 'Detail', (L) => [
+    colorSlot('trim', L.trim, 'Spoiler'),
+    colorSlot('roof', L.roof, 'Roof', 'Body')]],
+  ['livery', 'Livery', (L) => [chips('livery', G.liveries, L.livery),
+    colorSlot('stripe', L.stripe, '', 'Auto', !L.livery || L.livery === 'none')]],
   // The Rim colour is offered for **every** style including stock, which is the
   // one that used to hide it. Stock has no rim face until you paint one, so here
   // Auto genuinely means "no lip" rather than "the standard silver" - which is
   // the honest reading of a slot whose absence is a real choice.
-  ['rim_style', 'Wheels', (L) => chips('rim_style', G.rim_styles, L.rim_style) +
-    `<span class="gsep"></span>` +
-    colorSlot('rim', L.rim, '', L.rim_style === 'stock' ? 'None' : 'Auto')],
+  ['rim_style', 'Wheels', (L) => [chips('rim_style', G.rim_styles, L.rim_style),
+    colorSlot('rim', L.rim, '', L.rim_style === 'stock' ? 'None' : 'Auto')]],
   ['glass', 'Glass', (L) => colorSlot('glass', L.glass)],
   // **Second to last, before Badge.** It was second in the list, next to Body,
   // which is where you would put it if a finish were a kind of paint. It is a
@@ -393,16 +627,9 @@ const TABS = [
   // `Auto` here means the badge's own colour - green for the three about records,
   // gold for the sunburst, bronze for the podium - so the meaning survives for
   // anybody who does not go looking.
-  ['badge', 'Badge', (L) => chips('badge', G.badges, L.badge) +
-    (L.badge && L.badge !== 'none'
-      ? `<span class="gsep"></span>` + colorSlot('badge_color', L.badge_color)
-      : '')],
+  ['badge', 'Badge', (L) => [chips('badge', G.badges, L.badge),
+    colorSlot('badge_color', L.badge_color, '', 'Auto', !L.badge || L.badge === 'none')]],
 ];
-
-/** Whether a tab holds anything this account has not earned yet. */
-function tabLocked(slot) {
-  return (G.gates || []).some((g) => !g.got && g.slot === slot);
-}
 
 /**
  * The one line under the bar, and what it is for.
@@ -463,9 +690,17 @@ function render() {
 
   $('gtabs').innerHTML = TABS.map(([slot, name]) =>
     `<button class="gtab${S.tab === slot ? ' on' : ''}" data-tab="${esc(slot)}"
-      >${esc(name)}${tabLocked(slot) ? '<i class="glockdot"></i>' : ''}</button>`
+      >${esc(name)}</button>`
   ).join('');
-  $('gopts').innerHTML = tab[2](L);
+  // One or two rows, centred in a bar of fixed size - so changing tab or choice
+  // never changes the shape of anything.
+  const rows = [].concat(tab[2](L));
+  $('gopts').innerHTML = rows.map((r) => `<div class="grow">${r}</div>`).join('');
+  const m = MODELS[S.focus];
+  const g = (G.gates || []).find((x) => x.slot === 'model' && x.value === m);
+  const want = isLocked(m) && g
+    ? `<span class="gname-lock">${esc(g.text)}${g.need > 1 ? ` (${g.have}/${g.need})` : ''}</span>` : '';
+  $('gname').innerHTML = `<b>${esc(mystery(m) ? '?' : label(m))}</b>${want}`;
   $('gearn').innerHTML = noteLine();
   $('gviews').innerHTML = VIEWS.map(([name, id, yaw, pitch]) =>
     `<button class="gview${!S.target && Math.abs(shortest(S.yaw, yaw)) < 0.01
@@ -473,7 +708,7 @@ function render() {
       >${esc(name)}</button>`).join('');
 
   for (const b of $('gtabs').querySelectorAll('button[data-tab]')) {
-    b.onclick = () => { S.tab = b.dataset.tab; render(); };
+    b.onclick = () => { S.tab = b.dataset.tab; framePart(S.tab); render(); };
   }
   for (const b of $('gviews').querySelectorAll('button[data-view]')) {
     b.onclick = () => setView(b.dataset.view);
@@ -761,7 +996,15 @@ function boot() {
   S.renderer.scene.background = new THREE.Color(BACKDROP);
   // No sky dome and no fog: both exist to sell distance, and there is none here.
   S.renderer.scene.fog = null;
-  S.renderer.scene.add(studioFloor());
+  S.floor = studioFloor();
+  S.floor.position.y = -0.12;
+  S.renderer.scene.add(S.floor);
+  S.renderer.scene.add(plinths());
+  // A cool rim from behind, so every car in the row has an edge against the
+  // dark - the studio's third light.
+  const rim = new THREE.DirectionalLight(0xbcd2ff, 0.9);
+  rim.position.set(20, 30, 80);
+  S.renderer.scene.add(rim);
 
   // A fill from the opposite side to the sun. The track's rig is one hard key
   // plus a hemisphere, which is right outdoors where the sky does most of the
@@ -783,9 +1026,22 @@ function boot() {
     if (v) { S.yaw = v[2]; S.pitch = v[3]; S.spin = false; }
   }
 
-  rebuild();
+  S.focus = Math.max(0, MODELS.indexOf(S.livery.model || 'classic'));
+  S.slot = S.slotTo = S.focus;
+  for (let i = 0; i < MODELS.length; i++) buildCar(i);
+  S.rings[S.focus].material.color.setHex(0x56709e);
+  S.look = null;
   render();
   bindDrag(canvas);
+  $('gprev').onclick = () => step(-1);
+  $('gnext').onclick = () => step(1);
+  $('grandom').onclick = randomize;
+  addEventListener('keydown', (e) => {
+    if (e.target.closest && e.target.closest('input, textarea')) return;
+    if (e.key === 'ArrowLeft' || e.code === 'KeyA') step(-1);
+    if (e.key === 'ArrowRight' || e.code === 'KeyD') step(1);
+    if (EMBED && e.key === 'Escape' && !S.pick) parent.postMessage({ garageClose: true }, location.origin);
+  });
   bindReset();
   bindPick();
   requestAnimationFrame(frame);

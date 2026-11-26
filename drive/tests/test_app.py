@@ -1013,17 +1013,21 @@ def test_the_garage_needs_a_login_and_comes_back_to_itself(env):
     assert c.get("/garage").status_code == 200
 
 
-def test_the_nav_offers_the_garage_and_the_account_page_offers_logging_out(env):
-    """The garage took `Log out`'s slot in the nav, so the way out has to be
-    somewhere - beside your own name, on the one page that is about you. Both
-    halves are checked because losing either is losing a door."""
+def test_the_garage_is_in_the_game_and_the_account_page_offers_logging_out(env):
+    """The garage is opened from the game's settings now, not the nav, so the
+    car changes without leaving the track. Log out lives beside your own name,
+    on the one page that is about you."""
     c = env.app.test_client()
     _login(c, _user(env, "quick"))
     # The nav is on the pages around the game, not on the play page - the HUD is
     # the play page's navigation.
     nav = c.get("/leaderboard").get_data(as_text=True)
-    assert 'href="/garage"' in nav
-    assert 'href="/logout"' not in nav, "the nav slot is the garage's now"
+    assert 'href="/garage"' not in nav
+    assert 'href="/logout"' not in nav
+    play = c.get("/solo/sunrise").get_data(as_text=True)
+    assert 'id="btnGarage"' in play and 'id="garageFrame"' in play
+    embed = c.get("/garage?embed=1").get_data(as_text=True)
+    assert '<nav class="nav">' not in embed and "menumusic.js" not in embed
 
     mine = c.get("/account").get_data(as_text=True)
     assert 'href="/logout"' in mine
@@ -1087,7 +1091,7 @@ def test_the_row_of_places_is_places_only_and_every_one_has_an_icon(env):
     destinations fit across 320px. A link added without one is a bald column
     that is invisible until somebody opens the site on a phone."""
     c = env.app.test_client()
-    _login(c, _user(env, "quick"))          # the nav at its fullest: six places
+    _login(c, _user(env, "quick"))          # the nav at its fullest: five places
     nav = re.search(r'<nav class="nav">.*?</nav>',
                     c.get("/leaderboard").get_data(as_text=True), re.S)
     assert nav, "no nav on the page"
@@ -1096,7 +1100,7 @@ def test_the_row_of_places_is_places_only_and_every_one_has_an_icon(env):
 
     assert "nav-user" not in row.group(1), "your name is not one of the places"
     links = re.findall(r"<a [^>]*>(.*?)</a>", row.group(1), re.S)
-    assert len(links) == 6, "solo, multiplayer, records, builder, account, garage"
+    assert len(links) == 5, "solo, multiplayer, records, builder, account"
     for link in links:
         assert 'class="icn"' in link, "no icon on: " + link.strip()
 

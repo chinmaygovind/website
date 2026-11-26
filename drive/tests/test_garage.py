@@ -341,11 +341,13 @@ def test_a_gate_only_locks_its_own_value():
     """`shield` is one of nine badges: locking the item must not lock the slot, or
     earning nothing would mean choosing nothing.
 
-    There are no gated *finishes* any more - the pearl gate moved to a badge when
-    metallic and pearl went - so every finish is free and the slot to check is the
-    badge."""
+    The same holds for finishes: matte and gloss are free whatever is gated,
+    and a gated finish is worn only once it is earned."""
+    gated = {g["value"] for g in garage.GATES.values() if g["slot"] == "finish"}
     for f in garage.FINISHES:
-        assert garage.resolve({"finish": f}, "x", set())["finish"] == f
+        want = "matte" if f in gated else f
+        assert garage.resolve({"finish": f}, "x", set())["finish"] == want
+        assert garage.resolve({"finish": f}, "x", {f})["finish"] == f
     assert garage.resolve({"badge": "shield"}, "x", set())["badge"] == "none"
     assert garage.resolve({"badge": "none"}, "x", set())["badge"] == "none"
 
@@ -354,7 +356,8 @@ def test_every_gate_names_a_real_slot_and_a_real_value():
     """A gate over a value nothing offers is a lock on a door that is not there
     - and, worse, silently unenforceable if the value is misspelled."""
     offered = {"finish": garage.FINISHES, "livery": garage.LIVERIES,
-               "rim_style": garage.RIM_STYLES, "badge": garage.BADGES}
+               "rim_style": garage.RIM_STYLES, "badge": garage.BADGES,
+               "model": garage.MODELS}
     for gid, g in garage.GATES.items():
         assert g["slot"] in garage.DEFAULTS, gid
         assert g["value"] in offered[g["slot"]], gid
@@ -439,14 +442,14 @@ def test_the_gold_gates_open_at_their_own_counts(env):
         env.User.query.get(uid).drive.golds = 3
         env.db.session.commit()
         got = garage.earned(env.User.query.get(uid), holders={}, leaders=set())
-        assert got == {"shield"}
+        assert got == {"shield", "gt"}
         env.User.query.get(uid).drive.golds = n
         env.db.session.commit()
         # `sunburst` on purpose: it shares `pinstripe`'s condition, because a gold
         # on every track is the thing the badge was asked for and two items are
         # allowed to want the same achievement.
         assert garage.earned(env.User.query.get(uid), holders={}, leaders=set()) == \
-            {"shield", "pinstripe", "sunburst"}
+            {"shield", "pinstripe", "sunburst", "gt", "muscle", "chevrons", "proto"}
 
 
 def test_an_old_author_medal_still_counts_as_a_gold(env):
@@ -607,3 +610,30 @@ def test_progress_and_the_gate_agree(env):
 
 def test_progress_of_a_stranger_is_nothing(env):
     assert garage.progress(None) == {}
+
+
+def test_a_badge_earned_in_multiplayer_is_kept_after_its_gate_went_solo(env):
+    """Checkers, podium and chevrons asked for multiplayer results until Nov 2026.
+    Somebody who won a race then still has the checkers."""
+    uid = _user(env)
+    _stats(env, uid, wins=1, podiums=10, elo=1300)
+    with env.app.app_context():
+        got = garage.earned(env.User.query.get(uid), holders={}, leaders=set())
+    assert {"checkers", "podium", "chevrons"} <= got
+
+
+def test_an_unlock_is_announced_once():
+    """New earns come back once and are then seen."""
+    out, seen = garage.unlocks({"kart", "ribbon"}, set())
+    assert [u["id"] for u in out] == ["ribbon", "kart"]
+    assert out[1]["kind"] == "New car" and out[1]["name"] == "Kart"
+    again, _ = garage.unlocks({"kart", "ribbon"}, seen)
+    assert again == []
+
+
+def test_the_first_look_announces_cars_and_nothing_older():
+    """A player never checked before is not told about a year of badges, but
+    is told which of the new cars they already have."""
+    out, seen = garage.unlocks({"ribbon", "laurel", "kart", "monster"}, None)
+    assert [u["id"] for u in out] == ["kart", "monster"]
+    assert seen == {"ribbon", "laurel", "kart", "monster"}

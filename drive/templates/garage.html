@@ -10,7 +10,7 @@
 {% block bodyclass %}garage-page{% endblock %}
 
 {% block body %}
-{% include "_nav.html" %}
+{% if not embed %}{% include "_nav.html" %}{% endif %}
 <div class="gstage">
   <canvas id="gcanvas"></canvas>
 
@@ -28,9 +28,21 @@
     <div id="gearn"></div>
   </div>
 
+  {# The showroom's controls: along the row, and the name of the car in focus
+     (with its requirement when it is not yours yet) in a slot of fixed size. #}
+  <button class="garrow gprev" id="gprev" aria-label="Previous car">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+  <button class="garrow gnext" id="gnext" aria-label="Next car">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+  <div class="gname" id="gname"></div>
+
   <div class="gfoot">
     <div class="gviews" id="gviews"></div>
-    <div class="ghint">Drag to spin &middot; scroll to zoom</div>
+    <div class="ghint">Drag to spin, scroll to zoom</div>
+    <button class="gbtn grandom" id="grandom">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="9" r="1.2"/><circle cx="15" cy="15" r="1.2"/><circle cx="15" cy="9" r="1.2"/><circle cx="9" cy="15" r="1.2"/></svg>
+      <span>Randomize</span>
+    </button>
     <button class="gbtn greset" id="greset">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
       <span id="gresetlabel">Reset</span>

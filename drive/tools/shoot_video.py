@@ -87,19 +87,19 @@ ASPECTS = {
 TRAILER = [
     dict(name="open", kind="fly", slug="spa", secs=2.5, push=0.30, rise=0.05,
          title="out"),
-    dict(name="launch", kind="race", slug="baku", secs=2.5, pick="start"),
+    dict(name="launch", kind="race", slug="superg", secs=2.5, pick="start"),
     dict(name="pack", kind="race", slug="suzuka", secs=2.0, pick="pack"),
     # The montage: the tracks that are a place rather than a road.
-    dict(name="m-costco", kind="fly", slug="costco", secs=0.6, push=0.25),
+    dict(name="m-casino", kind="fly", slug="casino", secs=0.6, push=0.25),
     dict(name="m-dino", kind="fly", slug="dino", secs=0.6, push=0.25),
+    dict(name="m-snowynight", kind="fly", slug="snowynight", secs=0.6, push=0.25),
+    dict(name="m-harvest", kind="fly", slug="harvest", secs=0.6, push=0.25),
+    dict(name="m-sahara", kind="fly", slug="sahara", secs=0.6, push=0.25),
     dict(name="m-boo", kind="fly", slug="boo", secs=0.6, push=0.25),
-    dict(name="m-tokyo", kind="fly", slug="tokyo", secs=0.6, push=0.25),
-    dict(name="m-playground", kind="fly", slug="playground", secs=0.6, push=0.25),
-    dict(name="m-shroom", kind="fly", slug="shroom", secs=0.6, push=0.25),
     dict(name="cockpit", kind="race", slug="monaco", secs=2.5, pick="pack", view="first"),
     dict(name="air", kind="race", slug="jumpcity", secs=2.0, pick="air"),
     dict(name="train", kind="race", slug="monza", secs=2.0, pick="pack"),
-    dict(name="flag", kind="race", slug="silverstone", secs=2.9, pick="finish",
+    dict(name="flag", kind="race", slug="rainbow", secs=2.9, pick="finish",
          title="in"),
 ]
 
@@ -107,11 +107,11 @@ TRAILER = [
 # each - a background wants fewer, longer shots than a trailer does. Ordered so
 # no two neighbours share a sky.
 _LOOP = [
-    ("pillars", "fly"), ("bigred", "air"), ("suzuka", "pack"),
-    ("monaco", "first"), ("spa", "pack"), ("boo", "fly"),
-    ("dino", "fly"), ("tokyo", "pack"), ("mountjoy", "air"),
-    ("rainbow", "first"), ("playground", "air"), ("railway", "first"),
-    ("costco", "fly"), ("cove", "first"), ("baku", "pack"),
+    ("pillars", "fly"), ("bigred", "air"), ("casino", "fly"),
+    ("monaco", "first"), ("snowynight", "pack"), ("boo", "fly"),
+    ("superg", "pack"), ("tokyo", "pack"), ("mountjoy", "air"),
+    ("harvest", "fly"), ("playground", "air"), ("railway", "first"),
+    ("sahara", "fly"), ("cove", "first"), ("baku", "pack"),
 ]
 
 
@@ -131,11 +131,11 @@ REEL = [
     dict(name="air", kind="race", slug="jumpcity", secs=1.8, pick="air"),
     dict(name="launch", kind="race", slug="citadel", secs=1.6, pick="start"),
     dict(name="cockpit", kind="race", slug="monaco", secs=1.6, pick="pack", view="first"),
-    dict(name="m-dino", kind="fly", slug="dino", secs=0.5, push=0.25),
-    dict(name="m-costco", kind="fly", slug="costco", secs=0.5, push=0.25),
-    dict(name="m-boo", kind="fly", slug="boo", secs=0.5, push=0.25),
-    dict(name="m-shroom", kind="fly", slug="shroom", secs=0.5, push=0.25),
-    dict(name="pack", kind="race", slug="sepang", secs=1.8, pick="pack"),
+    dict(name="m-casino", kind="fly", slug="casino", secs=0.5, push=0.25),
+    dict(name="m-snowynight", kind="fly", slug="snowynight", secs=0.5, push=0.25),
+    dict(name="m-harvest", kind="fly", slug="harvest", secs=0.5, push=0.25),
+    dict(name="m-sahara", kind="fly", slug="sahara", secs=0.5, push=0.25),
+    dict(name="pack", kind="race", slug="superg", secs=1.8, pick="pack"),
     dict(name="bigair", kind="race", slug="bigred", secs=1.6, pick="air"),
     dict(name="flag", kind="race", slug="suzuka", secs=2.6, pick="finish", title="in"),
 ]
@@ -198,9 +198,13 @@ FLY_FRAME = r"""
   for (const c of window.__coverSlots) {
     const { c0, u } = at(sA[c.i] + a.speed * a.phase);
     const A = L[c0], B = L[Math.min(c0 + 1, L.length - 1)];
+    // The heading blended between the two road points either side, not taken
+    // from the nearer one: that snapped at every point, and a car (and any
+    // camera riding with it) visibly ticked from one heading to the next.
     const i = u < 0.5 ? c0 : Math.min(c0 + 1, L.length - 1);
-    const p = L[Math.max(0, i - 2)], q = L[Math.min(i + 2, L.length - 1)];
-    const fwd = V(q.p).sub(V(p.p)).normalize();
+    const dirAt = (k) => V(L[Math.min(k + 2, L.length - 1)].p)
+      .sub(V(L[Math.max(0, k - 2)].p)).normalize();
+    const fwd = dirAt(c0).lerp(dirAt(Math.min(c0 + 1, L.length - 1)), u).normalize();
     const up = V(A.n).lerp(V(B.n), u).normalize();
     const lat = V(A.lat).lerp(V(B.lat), u).normalize();
     const hw = A.hw + (B.hw - A.hw) * u;
@@ -211,8 +215,11 @@ FLY_FRAME = r"""
     const rot = new THREE.Quaternion().setFromRotationMatrix(
       new THREE.Matrix4().makeBasis(right, up, back));
     rot.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), c.yaw));
+    // The contact shadow goes with the car, on the road under it: left where
+    // the car started, a moving car reads as hovering.
     c.view.update(pos, rot, { steer: c.pose.steer, lean: c.pose.lean,
-                              spin: c.pose.spin + a.phase * 26 });
+                              spin: c.pose.spin + a.phase * 26,
+                              groundY: pos.y - c.lift, groundN: up });
     c.view.shadow.visible = c.lift < 1.2 && !L[i].air;
   }
 
@@ -596,7 +603,15 @@ def main():
     ap.add_argument("--db", help="sqlite file holding the staged races")
     ap.add_argument("--port", type=int, default=5097)
     ap.add_argument("--cut-only", action="store_true", help="skip rendering")
+    ap.add_argument("--draft", metavar="DIR",
+                    help="a quick look: half size, 15fps, into DIR, nothing in media/ touched")
     args = ap.parse_args()
+    if args.draft:
+        global OUT, FPS, SUBSTEPS
+        OUT, FPS, SUBSTEPS = os.path.abspath(args.draft), 15, 2
+        for k, (w, h) in list(ASPECTS.items()):
+            ASPECTS[k] = (w // 4 * 2, h // 4 * 2)
+        os.makedirs(OUT, exist_ok=True)
     spec = CUTS[args.cut]
     aspects = args.aspect or spec["aspects"]
     todo = [b for b in spec["beats"] if not args.beat or b["name"] in args.beat]

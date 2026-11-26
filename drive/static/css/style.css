@@ -1614,10 +1614,21 @@ body:not(.touch) .touch-only.watch-only { display: none; }
 /* Each group stretches to its row partner's height and shares it out between
    its rows, so Ghost lines up with Audio and HUD with Display. */
 .set-sec { display: flex; flex-direction: column; min-width: 0; }
+.set-sec.set-wide { grid-column: 1 / -1; }
+.set-sec .set-group.set-pair { display: grid; grid-template-columns: 1fr 1fr; }
+.set-pair > .set-cell + .set-cell { border-left: 1px solid rgba(29, 29, 31, .1); }
+.set-pair > .set-cell + .set-cell::before { display: none; }
+/* Display: six rows as two columns of three, filled down then across. */
+.set-sec .set-group.set-grid { display: grid; grid-template-columns: 1fr 1fr; grid-auto-flow: column;
+                      grid-template-rows: repeat(3, auto); }
+.set-grid > .set-cell:nth-child(n+4) { border-left: 1px solid rgba(29, 29, 31, .1); }
+.set-grid > .set-cell:nth-child(4)::before { display: none; }
+a.set-cell { text-decoration: none; cursor: pointer; }
+a.set-cell:hover { background: #faf9f6; }
 .set-sec .set-group { flex: 1 1 auto; display: flex; flex-direction: column; }
 .set-group > .set-cell { flex: 1 1 auto; }
 .set-cap {
-  margin: .85rem 0 .3rem 1rem; font-size: .76rem; font-weight: 600;
+  margin: .3rem 0 .2rem 1rem; font-size: .76rem; font-weight: 600;
   letter-spacing: .04em; text-transform: uppercase; color: var(--ink-soft);
 }
 .set-sec:nth-child(-n+2) .set-cap { margin-top: .2rem; }
@@ -1625,7 +1636,7 @@ body:not(.touch) .touch-only.watch-only { display: none; }
 .set-cell {
   display: flex; align-items: center; gap: .7rem; width: 100%;
   min-height: max(42px, calc(42px + (100vh - 800px) * .1));
-  padding: .35rem .9rem; position: relative; text-align: left;
+  padding: .22rem .9rem; position: relative; text-align: left;
   font: inherit; font-size: 1rem; color: var(--ink); background: #fff; border: 0;
 }
 .set-cell + .set-cell::before {
@@ -2992,14 +3003,17 @@ body.garage-page .nav { flex: none; }
          overflow-x: auto; scrollbar-width: none; }
 .gtabs::-webkit-scrollbar { display: none; }
 .gopts {
-  display: flex; flex-wrap: wrap; align-items: center; gap: .4rem;
-  padding: .55rem .7rem;
-  /* So switching tabs does not walk the car up and down the screen behind the
-     bar. Back to one swatch row's worth: it went to 5rem while the detail slots
-     offered twenty-four colours and needed two. A phone still wraps, which is
-     what the media query below is for. */
-  min-height: 3.4rem; justify-content: center;
+  /* **One size whatever is in it**, sized for two rows and centring one:
+     changing tab or choice must never resize the bar, which is the thing under
+     your cursor. Optional rows are greyed in place (`.gslot.off`)
+     rather than added and removed. */
+  display: flex; flex-direction: column; justify-content: center; gap: .4rem;
+  padding: .5rem .7rem; box-sizing: border-box;
+  width: min(820px, 100%); height: 5.2rem;
 }
+.grow { display: flex; flex-wrap: nowrap; align-items: center; justify-content: center;
+        gap: .4rem; min-height: 26px; }
+.gslot.off { opacity: .28; pointer-events: none; }
 .gtab {
   font-family: var(--display); font-weight: 700; font-size: .82rem;
   letter-spacing: .02em; white-space: nowrap;
@@ -3008,9 +3022,6 @@ body.garage-page .nav { flex: none; }
 }
 .gtab:hover { color: #fff; background: rgba(255, 255, 255, .08); }
 .gtab.on { background: #fff; color: #14171e; }
-/* A tab holding something you have not earned says so without being opened. */
-.gtab .glockdot { display: inline-block; width: 5px; height: 5px; margin-left: .35rem;
-                  border-radius: 50%; background: #ffd96b; vertical-align: 2px; }
 
 /* --- chips ---------------------------------------------------------------- */
 .gopt {
@@ -3119,6 +3130,8 @@ body.garage-page .nav { flex: none; }
         background: var(--hud-line); }
 
 /* --- what is left to earn ------------------------------------------------- */
+/* A fixed slot, so a reply appearing moves nothing. */
+#gearn { height: 1.9rem; display: flex; align-items: center; }
 .gearn {
   font-size: .78rem; color: rgba(255, 255, 255, .66);
   background: var(--hud); border: 1px solid var(--hud-line);
@@ -3155,6 +3168,36 @@ body.garage-page .nav { flex: none; }
    "are you sure" overlay would cover the car you want to look at before
    answering it. `.armed` and its pulse are already defined up with those. */
 .gbtn.armed { background: var(--red); color: #fff; border-color: #fff; }
+/* As wide armed ("Sure?") as not ("Reset"). */
+.greset { min-width: 6.4rem; justify-content: center; }
+
+/* --- the showroom --------------------------------------------------------- */
+/* Arrows either side and the car's name above the footer, all fixed in place
+   and fixed in size: the name slot holds a requirement line or nothing. */
+.garrow {
+  position: absolute; top: 50%; transform: translateY(-50%); z-index: 4;
+  width: 46px; height: 46px; border-radius: 50%; cursor: pointer; padding: 0;
+  display: grid; place-items: center;
+  background: var(--hud); border: 1px solid var(--hud-line); color: #fff;
+  backdrop-filter: blur(8px);
+}
+.garrow:hover { background: rgba(40, 44, 56, .9); }
+.garrow svg { width: 22px; height: 22px; fill: none; stroke: currentColor;
+              stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.gprev { left: clamp(.6rem, 2vw, 1.1rem); }
+.gnext { right: clamp(.6rem, 2vw, 1.1rem); }
+.gname {
+  position: absolute; left: 50%; transform: translateX(-50%); z-index: 4;
+  bottom: calc(3.6rem + env(safe-area-inset-bottom, 0px));
+  height: 3.1rem; width: min(440px, 90%);
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+  pointer-events: none; color: #fff; text-align: center;
+}
+.gname b { font-family: var(--display); font-size: 1.35rem; letter-spacing: .02em;
+           text-shadow: 0 2px 12px rgba(0, 0, 0, .6); }
+.gname-lock { font-size: .78rem; color: #ffd96b; margin-top: .15rem; }
+.gbtn.grandom { margin-left: auto; }
+.grandom + .greset { margin-left: 0; }
 
 /* Silent until it has happened, then says so once and goes. A spinner on every
    drag of a colour picker would be the loudest thing on the screen. */
@@ -3171,8 +3214,10 @@ body.garage-page .nav { flex: none; }
    sentence and a button. */
 @media (max-width: 700px) {
   .ghint { display: none; }
-  .gopts { min-height: 3rem; padding: .45rem .5rem; }
+  .gopts { height: 6.6rem; padding: .45rem .5rem; overflow-y: auto; }
+  .grow { flex-wrap: wrap; }
   .gsw { width: 24px; height: 24px; }
+  .garrow { width: 40px; height: 40px; }
 }
 
 /* --- the multiplayer page ------------------------------------------------
@@ -3856,3 +3901,35 @@ body.pad #padView { display: block; position: fixed; inset: 0; z-index: -1; poin
 body.pad .tbtn { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.3); backdrop-filter: none; }
 body.pad .tbtn:not(.small) { width: clamp(84px, 26vh, 140px); height: clamp(84px, 26vh, 140px); }
 body.pad .tbtn.down { background: var(--me); border-color: var(--me); color: #fff; }
+
+/* The garage, inside the game's settings: the whole page in a frame over the
+   track, and the close button in the corner the garage leaves empty. */
+#garageOv { padding: 0; background: var(--bg, #f4f1ea); }
+#garageOv iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+#garageOv .sheet-x { position: absolute; top: .8rem; right: .8rem; z-index: 1;
+                     background: #fff; border: 2px solid var(--line); }
+
+/* The unlock pop-up: a HUD card like the track name's, a little picture of the
+   car wearing the new thing, an x, and it fades out by itself in four seconds. */
+#unlockToasts {
+  position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 60;
+  display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+  width: min(330px, calc(100vw - 32px));
+}
+.card.unlock-toast {
+  pointer-events: auto; display: flex; align-items: center; gap: .6rem;
+  padding: .35rem .45rem .35rem .4rem;
+  animation: unlock-in .25s ease-out; transition: opacity .4s, transform .4s;
+}
+.unlock-toast img { width: 72px; height: 44px; flex: none; }
+.unlock-text { flex: 1 1 auto; min-width: 0; cursor: pointer; }
+.unlock-name { font-family: var(--display); font-size: 1.05rem; font-weight: 700;
+               line-height: 1.15; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.unlock-toast .mode { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.unlock-x { flex: none; width: 26px; height: 26px; border: 0; border-radius: 6px;
+            background: none; color: #9fb0c6; cursor: pointer; display: grid; place-items: center; }
+.unlock-x:hover { background: rgba(255, 255, 255, .1); color: #fff; }
+.unlock-x svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4;
+                stroke-linecap: round; }
+.unlock-toast.out { opacity: 0; transform: translateY(-6px); }
+@keyframes unlock-in { from { opacity: 0; transform: translateY(-8px); } }

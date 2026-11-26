@@ -14,10 +14,10 @@ rather than a choice between them. A fully loaded car went from 20 meshes to 19.
 | | earns it | shape |
 |---|---|---|
 | `laurel` | set a track record | a scalloped ring around a **1**, record green |
-| `checkers` | win a multiplayer race | a 4x4 board, black and white |
-| `chevrons` | Ace rating (elo 1250) | three stacked V's, record green |
+| `checkers` | finish 10 tracks (or won a race before Nov 2026) | a 4x4 board, black and white |
+| `chevrons` | a gold on any 15 tracks (or reached Ace before Nov 2026) | three stacked V's, record green |
 | `crown` | top the Time Trials board | an arched circlet and a 3-point crest, curved, split by a gap, green |
-| `podium` | 10 podiums | three bars, tallest in the middle, bronze |
+| `podium` | 500 km driven (or 10 podiums before Nov 2026) | three bars, tallest in the middle, bronze |
 | `sunburst` | a gold on every track | 12 rays and a hub, gold |
 | `ribbon` | 100 km driven | a road's markings opening out toward you, grey |
 | `shield` | a gold on any 3 tracks | a crest, chief and field split by a gap, steel |

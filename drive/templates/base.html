@@ -139,7 +139,10 @@
      through `sound.js`, so this does nothing there. A module because it shares
      the engine with the game rather than reimplementing it, and modules are
      deferred by definition - it cannot block the paint. #}
+  {# Not in the garage inside the game: the game already has its own music. #}
+  {% if not embed %}
   <script type="module" src="{{ url_for('static', filename='js/menumusic.js') }}?v={{ asset_version }}"></script>
+  {% endif %}
   {% block scripts %}{% endblock %}
   <!-- The heartbeat behind the green dot on cgovind.com/accounts.
        Inline rather than a file of its own, and after the page's own scripts:

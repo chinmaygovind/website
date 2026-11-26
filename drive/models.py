@@ -483,6 +483,10 @@ class DriveGarage(db.Model):
     user_id     = db.Column(db.Integer, db.ForeignKey("users.id"), primary_key=True)
     livery_json = db.Column(db.Text, default="{}")
     earned_json = db.Column(db.Text, default="[]")
+    # Which earns the player has been *told* about, for the unlock pop-up. NULL
+    # is "never checked", which `/api/unlocks` treats as a baseline rather than
+    # announcing a year of old badges at once.
+    seen_json   = db.Column(db.Text, nullable=True)
     updated_at  = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship("User", backref=db.backref("garage", uselist=False,
@@ -899,6 +903,7 @@ class DriveItemStat(db.Model):
 
 
 _ADDED = {
+    "drive_garage": [("seen_json", "TEXT")],
     "drive_players": [
         ("is_bot", "BOOLEAN DEFAULT 0"),
         ("bot_level", "VARCHAR(10)"),

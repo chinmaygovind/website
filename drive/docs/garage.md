@@ -10,6 +10,31 @@ whole vocabulary - the palette, every slot, every gate and the sentence shown on
 a locked one. One module because a locked row promising "a gold on every track"
 over a rule that actually wants three is worse than no text at all.
 
+- **Each body has its own seat and its own engine.** `eye: [up, fwd]` on a
+  body's entry puts the first-person camera just behind its own windscreen
+  at head height; further back and the bottom of the screen looks through the
+  cabin floor (invisible from inside) at the road. The engine is `ENGINES` in
+  `sound.js`: a waveform built from the body's firing order (cylinder angles,
+  each one's loudness, pulse width), played at rpm/120 through its own rev
+  range and gears, so a cross-plane V8 burbles and a flat-plane one screams
+  rather than one sawtooth at different pitches. The car goes silent
+  (`Sound.hush`) while paused, in the garage, or when the window loses focus.
+- **Four earned finishes** past matte and gloss, each different in a way flat
+  shading keeps (`FINISH` in render.js): rusted (drive 20,000 km), chrome,
+  glow and radiant (hold 10, 25, 50 track records; kept once earned, in
+  `KEPT`). Radiant is a fragment-shader hue shift by viewing angle, one
+  colour per facet. Bots only ever get matte or gloss (`BOT_FINISHES`), which
+  also keeps every bot's existing paint.
+- **`bface: [z, y]`** on a body's panel stands its badge upright on a front
+  face (the box truck's grille, the bubble car's door) instead of on a bonnet.
+- **It is not in the nav any more; it is a button in the game's settings**
+  (Nov 2026). "Customize Car" opens `/garage?embed=1` in a frame over the
+  track: the same page without the nav or the menu music. Every save posts
+  the server-resolved livery to the game (`postMessage`, same origin only),
+  which rebuilds `S.view` and the engine voice on the spot, so closing the
+  garage is getting back in the new car. The frame is unloaded 2.5s after
+  closing, not at once, because the garage's save is debounced 700ms. Solo
+  and an account only: a room's car travels with the seat.
 - **It took `Log out`'s slot in the nav, and `Log out` moved next to your own
   name on your own account page.** That makes logging out two clicks instead of
   one, which is the trade: the nav slot buys a garage, and logging out is a
@@ -318,3 +343,73 @@ windscreen replaced the glass box it was made from, and the headlights replaced
 the bumper that came off. The seventh material is the lamps' own and is the only
 thing this front costs that the old one did not.
 
+
+## The bodies
+
+**Ten cars, and the simulation drives one of them.** `model` is a garage slot
+like the rims: `classic` (the box car above, and the default, so every account
+with no row, every ghost and every stored replay is unchanged) plus `kart`,
+`van`, `pickup`, `gt`, `sixties`, `rally`, `muscle`, `proto` and `f1`. The physics car
+under all nine is the same 3.4-long box, and nothing in `CAR_BODIES` is read by
+`Car`: a time set in the van is a time set in the classic car.
+
+- **Bodies fill the hitbox, on purpose.** Contact is two 1.25 spheres along the
+  box, so about 3.8 x 2.4 is as big as a body can be before rivals visibly sink
+  into each other ahead of the bump. The classic car is 1.9 wide; the new ones
+  are about 2.4, which makes running wide *look* like what it is. It does not
+  change the rule: the ground probe is one ray from the centre, so half the car
+  is over the edge when it falls whatever the body. `test_a_body_fills_the_
+  hitbox_and_stands_on_the_road` pins the size and that the tyres touch y = -0.02.
+  The kart is the exception in the other direction, a comedy car in the same box.
+- **A body is lofted, and its first version was prisms and was rejected.**
+  Side profiles extruded across the car gave slabs with fender blocks stacked on
+  the bonnet and tyres half-buried in the sides - "super ass". Now a body is a
+  list of cross-sections down the car (`[z, y0,w0, y1,w1, yb,wb, yf,wf, yt,wt]`,
+  five points up each side) joined face to face, plus a greenhouse loft whose
+  segment flags say glass, roof colour or body colour. Over a wheel `arch()`
+  tucks the sill in under the tyre and flares the shoulder out over it, so the
+  tyre sits fully visible in a real arch. The reference is real cars in low
+  poly: a 911, a Group B hatch, a '69 fastback, a GT40, a hypercar, an F1 car,
+  a pickup, a panel van. `parts` keeps convex prisms for wings, mirrors, lamps.
+- **Loft faces are wound from the edge, not from a centre.** A bonnet sitting
+  down between its wings is concave, and winding against the loft's axis got
+  those faces backwards, so every bonnet drew hollow. Each edge's outward side
+  is its own direction turned clockwise, the ring being anticlockwise.
+- **A tyre's outer face must not be coplanar with a fender's**, or it strobes
+  through the paint; `arch()` puts the lip 0.03 outboard of the tread.
+- **Liveries follow the loft** (`loftDecals`): deck stripes ride the bonnet and
+  deck from station to station, roof stripes every non-glass greenhouse top, flank
+  stripes the face between sill and shoulder, cut round every arch. A badge
+  takes its height from the bonnet at each point, so it lies on a slope. The
+  classic car keeps `CLASSIC_PANEL` and the flat path, byte-identical.
+- **Gates are the harder ladder**: kart 100 km, van 5 tracks finished, pickup 1,000 km,
+  beetle 2,500 km, GT 3 golds, 60s racer 5,000 km, bubble 8 tracks finished, rally every
+  track finished, muscle 10 golds,
+  prototype 15 golds, F1 20 golds. **No gate asks for anything multiplayer**,
+  badges included, because almost nobody plays it: checkers, podium and
+  chevrons moved to solo counters in Nov 2026, and `_or_already` keeps them on
+  anybody who met the old condition. All are counters the database
+  already keeps. Bots drive everything below the top two (`BOT_MODELS`):
+  a prototype or F1 on the grid still means a person earned it, but a grid of
+  box cars beside players in vans looked like a different game. The model is
+  drawn last in `bot_livery`, so no bot's paint moved.
+- Named `CAR_BODIES` rather than `MODELS` because `scenery_kit.js` already has
+  a `MODELS`, and the JS tests load both into one QuickJS context.
+- **The garage is a showroom.** Every body is parked on its own plinth in a
+  row (`carX`), each a `CarView` in your livery, the way Rocket League's Chinese
+  build shelves its cars; a column of thumbnails came first and was rejected.
+  The arrows, the arrow keys or a click on a car roll the camera along to it,
+  and landing on an earned one equips it - a locked one is a ghost with its
+  requirement under its name. The camera stays square in front of the row and
+  the *car* turns (drag, the view buttons, the idle turntable), so the row is
+  always a row across the screen; a neighbour the camera backs into hides.
+  Each tab frames the part it edits (`PARTS`: wheels to the front hub, badge
+  over the bonnet), Forza's trick. The focused car rebuilds on every change and
+  the other nine 220ms later, so a colour drag repaints one car, not ten.
+  Randomize rolls paint, pattern, wheels and finish out of what you have earned.
+- **Nothing in the garage changes shape when its content does.** `.gopts` is a
+  fixed box that centres one row or two; a row that only applies to some
+  choices (stripe colour, badge colour) is greyed in place by `.gslot.off`
+  rather than added and removed; the Reset button is as wide armed as not; and
+  the yellow "something locked in this tab" dot is gone. Asked for in so many
+  words, Nov 2026.

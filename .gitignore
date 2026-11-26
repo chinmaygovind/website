@@ -65,6 +65,13 @@ drive/media/video/probe/
 drive/media/video/*-sheet.png
 drive/media/video/loop.mp4
 drive/media/video/beats/loop/
+# The Instagram reel and its working files: social-only, posted from Downloads,
+# not served by anything, so not worth 17MB of history.
+drive/media/video/reel.mp4
+drive/media/video/wordmark-reel.png
+drive/media/video/beats/reel/
+drive/media/video/staged.db-shm
+drive/media/video/staged.db-wal
 
 # GTO trainer: the opponent avatars are photographs of real people and this
 # repo is public. They live outside the tree in prod (/home/ubuntu/gto-avatars,

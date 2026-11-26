@@ -1494,7 +1494,11 @@ def garage_page():
     got = _earned_for(user, row)
     data = garage_mod.payload(user, garage_mod.loads(row.livery_json if row else None),
                               got, garage_mod.progress(user))
+    # `?embed=1` is the same page inside the game's settings, without the nav:
+    # that is the only way in now, and it is how a car gets changed without
+    # leaving the track.
     return render_template("garage.html", user=user, name=get_effective_name(),
+                           embed=request.args.get("embed") == "1",
                            garage_json=script_json(data),
                            tracks=tracks_mod.summaries())
 
@@ -1522,6 +1526,28 @@ def api_garage():
     return jsonify(dict(garage_mod.payload(
         user, garage_mod.loads(row.livery_json if row else None), got,
         garage_mod.progress(user)), ok=True))
+
+
+@app.route("/api/unlocks", methods=["POST"])
+def api_unlocks():
+    """Anything earned since the last time this asked, for the game's pop-up.
+
+    POST because it writes: what it returns is marked seen, so each unlock is
+    announced once. Guests have nothing to earn and get an empty list.
+    """
+    user = get_current_user()
+    if not user:
+        return jsonify({"ok": True, "unlocks": []})
+    got = _earned_for(user)
+    row = _garage_row(user, create=True)
+    try:
+        seen = None if row.seen_json is None else set(json_mod.loads(row.seen_json))
+    except Exception:
+        seen = None
+    out, seen = garage_mod.unlocks(got, seen)
+    row.seen_json = json_mod.dumps(sorted(seen))
+    db.session.commit()
+    return jsonify({"ok": True, "unlocks": out})
 
 
 @app.route("/api/prefs", methods=["POST"])

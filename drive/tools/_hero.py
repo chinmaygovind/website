@@ -66,32 +66,35 @@ from _shots import GL_FLAGS, serving  # noqa: E402
 # a badge on the bonnet. The point is that a cover shows the game somebody
 # could actually turn up in, and a field of sixteen flat colours does not.
 # Bodies are the palette's ten in order, then six of them again in a different
-# build, so no two adjacent cars in any pack are the same colour.
+# build, so no two adjacent cars in any pack are the same colour - and the
+# car bodies are mixed, so a field shows the garage's range rather than one car.
 LIVERIES = [
-    dict(body="#e8453c", livery="centre",    stripe="#ffffff", finish="gloss",
+    dict(model="muscle", body="#e8453c", livery="centre", stripe="#ffffff", finish="gloss",
          rim_style="spoke5"),
-    dict(body="#3d8bfd", livery="twin",      stripe="#f2c94c", rim_style="mesh"),
-    dict(body="#f2c94c", livery="band",      stripe="#101216", finish="gloss",
+    dict(model="gt", body="#3d8bfd", livery="twin", stripe="#f2c94c", rim_style="mesh"),
+    dict(model="rally", body="#f2c94c", livery="band", stripe="#101216", finish="gloss",
          rim_style="dish", badge="checkers"),
-    dict(body="#27ae60", livery="none",      rim_style="spoke6", rim="#9aa3af"),
-    dict(body="#bb6bd9", livery="hoop",      stripe="#ffffff", finish="gloss"),
-    dict(body="#f2994a", livery="pinstripe", stripe="#101216", rim_style="forged",
-         rim="#967440"),
-    dict(body="#56ccf2", livery="halves",    roof="#101216", finish="gloss",
+    dict(model="classic", body="#27ae60", livery="none", rim_style="spoke6", rim="#9aa3af"),
+    dict(model="sixties", body="#bb6bd9", livery="hoop", stripe="#ffffff", finish="gloss"),
+    dict(model="proto", body="#f2994a", livery="pinstripe", stripe="#101216",
+         rim_style="forged", rim="#967440"),
+    dict(model="rally", body="#56ccf2", livery="halves", roof="#101216", finish="gloss",
          rim_style="spoke5"),
-    dict(body="#f178b6", livery="fade",      stripe="#ffffff", badge="ribbon"),
-    dict(body="#17bfa8", livery="centre",    stripe="#101216", finish="gloss",
+    dict(model="classic", body="#f178b6", livery="fade", stripe="#ffffff", badge="ribbon"),
+    dict(model="f1", body="#17bfa8", livery="centre", stripe="#101216", finish="gloss",
          rim_style="mesh"),
-    dict(body="#8195b0", livery="twin",      stripe="#e8453c", rim_style="dish",
+    dict(model="pickup", body="#8195b0", livery="twin", stripe="#e8453c", rim_style="dish",
          badge="chevrons"),
-    dict(body="#e8453c", livery="halves",    roof="#ffffff", rim_style="forged"),
-    dict(body="#3d8bfd", livery="none",      finish="gloss", trim="#101216",
+    dict(model="gt", body="#e8453c", livery="halves", roof="#ffffff", rim_style="forged",
+         finish="chrome"),
+    dict(model="monster", body="#3d8bfd", livery="none", finish="gloss", trim="#101216",
          rim="#c9ced6", badge="laurel"),
-    dict(body="#f2c94c", livery="hoop",      stripe="#3d8bfd", rim_style="spoke6"),
-    dict(body="#27ae60", livery="band",      stripe="#ffffff", finish="gloss",
+    dict(model="kart", body="#f2c94c", livery="hoop", stripe="#3d8bfd", rim_style="spoke6"),
+    dict(model="van", body="#27ae60", livery="band", stripe="#ffffff", finish="gloss",
          badge="crown"),
-    dict(body="#bb6bd9", livery="pinstripe", stripe="#f2c94c"),
-    dict(body="#f2994a", livery="twin",      stripe="#ffffff", finish="gloss",
+    dict(model="muscle", body="#bb6bd9", livery="pinstripe", stripe="#f2c94c",
+         finish="radiant"),
+    dict(model="bigrig", body="#f2994a", livery="twin", stripe="#ffffff", finish="gloss",
          rim_style="spoke5", badge="sunburst"),
 ]
 
@@ -621,7 +624,10 @@ async (a) => {
     // field over Mount Joy's ski jump rather than parked at the lip.
     const overGap = !!st.air;
     const flying = overGap || rnd() < a.air;
-    const lift = flying && !overGap ? 1.4 + rnd() * 4.5 : 0.55;
+    // On the road a car's origin goes on the surface: the models' tyres end at
+    // their origin, and the 0.55 this used to be left every grounded car
+    // hovering half a metre up - plain in any low shot.
+    const lift = flying && !overGap ? 1.4 + rnd() * 4.5 : 0.02;
     const pos = new THREE.Vector3(...st.p)
       .addScaledVector(lat, sl.lane * st.hw)
       .addScaledVector(up, lift);

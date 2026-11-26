@@ -208,8 +208,6 @@ const S = {
   // room, not the person, so they never go to the account.
   fov: ['narrow', 'normal', 'wide'].includes(lsGet('drive.fov')) ? lsGet('drive.fov') : 'normal',
   units: lsGet('drive.units') === 'mph' ? 'mph' : 'kmh',
-  shake: storedFlag('drive.shake', true),
-  tyreSmoke: storedFlag('drive.smoke', true),
   showMap: storedFlag('drive.minimap', true),
   sfxVolume: storedVolume('drive.sfxvol'),
   musicVolume: storedVolume('drive.musicvol'),
@@ -405,6 +403,8 @@ function boot() {
   S.renderer.onGhostNear = () => S.sound.ghost();
   loadTrack(S.track);
   bindInput();
+  wireGarage();
+  checkUnlocks();
   wireSaves();
   const review = document.querySelector('.review-card');
   if (review) review.addEventListener('submit', e => {
@@ -617,6 +617,7 @@ function loadTrack(track, opts = {}) {
   // else it comes down with the page. The colour behind it is the fallback for
   // a guest, who has no garage row and drives whatever their name hashes to.
   S.view = new CarView(S.renderer.scene, myLivery());
+  S.sound.setModel(S.view.model);
   wireCarEvents();
   resetToStart();
 
@@ -1160,6 +1161,11 @@ const KEYMAP = {
 
 function bindInput() {
   window.addEventListener('keydown', (e) => {
+    // A volume slider is an <input> but nobody is typing in it: Escape there
+    // still closes the sheet, rather than being swallowed until you click away.
+    if (e.target.type === 'range' && (e.code === 'Escape' || e.code === 'KeyO')) {
+      e.target.blur(); onEscape(); return;
+    }
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     S.sound.start(); S.sound.resume();
     // A replay takes the driving keys, because nothing is driving: the arrows
@@ -1698,10 +1704,8 @@ function bindInput() {
   wireChoice('unitOpts', 'units', setUnits);
   setFov(S.fov, { quiet: true });
   setUnits(S.units, { quiet: true });
-  $('btnShake').onclick = () => setSwitch('shake', !S.shake);
-  $('btnSmoke').onclick = () => setSwitch('tyreSmoke', !S.tyreSmoke);
   $('btnMap').onclick = () => setSwitch('showMap', !S.showMap);
-  for (const k of ['shake', 'tyreSmoke', 'showMap']) setSwitch(k, S[k], { quiet: true });
+  for (const k of ['showMap']) setSwitch(k, S[k], { quiet: true });
   for (const [k, id] of [['sfxVolume', 'sfxVol'], ['musicVolume', 'musicVol']]) {
     $(id).value = Math.round(S[k] * 100);
     $(id).oninput = () => setVolume(k, $(id).value / 100);
@@ -3272,9 +3276,6 @@ const FOV = { narrow: 58, normal: 66, wide: 76 };
 // The three local switches added with the grouped settings sheet: state key,
 // storage key, button, and what turning it applies to.
 const SWITCHES = {
-  shake: { key: 'drive.shake', btn: 'btnShake',
-           apply: (on) => { S.renderer.noShake = !on; } },
-  tyreSmoke: { key: 'drive.smoke', btn: 'btnSmoke', apply: () => {} },
   showMap: { key: 'drive.minimap', btn: 'btnMap',
              // The map's own card and not `.maprow`: on touch the race position
              // lives in that row too (`moveItemsToPad`).
@@ -3383,7 +3384,8 @@ function syncPaused() {
   const anyOpen = S.menuOpen || S.helpOpen ||
                   $('boardOv').style.display !== 'none' ||
                   $('tracksOv').style.display !== 'none' ||
-                  $('savesOv').style.display !== 'none';
+                  $('savesOv').style.display !== 'none' ||
+                  S.garageOpen;
   S.paused = anyOpen && CFG.mode === 'solo';
   // A portal wants to know when the player is actually playing rather than
   // reading a sheet, and this is already the one place that question is
@@ -6049,7 +6051,8 @@ function hostStart() {
 function onEscape() {
   // The result sheet first: it is over everything, and it is the thing you
   // have just finished reading.
-  if ($('raceOver') && $('raceOver').style.display !== 'none') closeRaceOver();
+  if (S.garageOpen) toggleGarage(false);
+  else if ($('raceOver') && $('raceOver').style.display !== 'none') closeRaceOver();
   else if ($('rateList') && $('rateList').style.display !== 'none') toggleRates(false);
   else if ($('boardOv').style.display !== 'none') toggleBoard(false);
   else if ($('tracksOv').style.display !== 'none') toggleTracks(false);
@@ -6161,6 +6164,9 @@ function frame(now) {
   const dt = Math.min(0.1, (now - lastFrame) / 1000);
   noteWarm(now - lastFrame);
   lastFrame = now;
+  // Paused (a panel, the garage) or another window in front: the car goes
+  // quiet. A hidden tab has no frames at all and is `visibilitychange`'s job.
+  S.sound.hush(S.paused || !document.hasFocus());
 
   // Above the early returns, so the counter keeps counting in a replay and while
   // a panel has the game paused - a frame rate that stopped updating the moment
@@ -6234,7 +6240,11 @@ function frame(now) {
     // The views work on a replay too, because there is nothing about them that
     // needs the car to be yours: a lap you are watching is exactly where you
     // want to see what the driver could see.
-    S.renderer.follow(S.watch.subject, dt, { ...viewKeys(), hold: replayHitHold(S.watch) });
+    // The watched car's own seat, not the Classic's: each body has its eye
+    // somewhere else, and the default left a strip of road under the bonnet.
+    const seen = S.watch.cars[S.watch.at];
+    S.renderer.follow(S.watch.subject, dt, { ...viewKeys(), hold: replayHitHold(S.watch),
+                                             eye: seen && seen.view ? seen.view.eye : null });
     // Watching is not driving, and it takes the field with it: the room is
     // still going round out there, but a camera on somebody else's lap is not
     // where any of it is happening, so hearing it from here would be noise.
@@ -6430,7 +6440,8 @@ function drive(inp) {
   const car = S.car;
   // Engine, tyres and wind, driven from the car's own state every frame.
   S.sound.engine(Math.min(1, car.speed / T.MAX_SPEED), inp.throttle, car.slip,
-                 !car.grounded);
+                 !car.grounded, Math.max(-1, Math.min(1, (car.fwd ? car.fwd.y : 0) * 4)),
+                 Math.min(1, (car.padBoost || 0) / T.PAD_BOOST));
   // The tow's own air, on the same tick: it fills with the charge and falls
   // away with the boost, so the whole thing is audible without being looked at.
   // The tow's rushing air is the same air a pad's boost makes, so the band
@@ -6462,7 +6473,7 @@ function tyreSmoke(car, kind) {
   const back = new THREE.Vector3().copy(car.pos)
     .addScaledVector(car.fwd, -1.3).addScaledVector(car.up, -0.3);
   const jitter = new THREE.Vector3((Math.random() - 0.5) * 2, 0.9, (Math.random() - 0.5) * 2);
-  if (S.tyreSmoke !== false) S.renderer.smoke(back, jitter, kind);
+  S.renderer.smoke(back, jitter, kind);
 }
 
 const REENTRY = [0xfff0b0, 0xffb347, 0xff6a1f, 0xff3b10];
@@ -6522,7 +6533,8 @@ function render(dt, now) {
                     // A remote's smoke starts on the server's word and outlasts
                     // `HIT_HOLD_S`, which covers its tumble arriving a round
                     // trip later on its poses.
-                    { ...viewKeys(), hold: watched ? watched.hitSmoke > 0 : S.hitHold > 0 });
+                    { ...viewKeys(), hold: watched ? watched.hitSmoke > 0 : S.hitHold > 0,
+                      eye: (watched ? watched.view : S.view).eye });
   // The ears ride the camera, so they are moved the moment it has been - and
   // the field is spatialised against where it has just gone rather than where
   // it was last frame. Your own car stays out of this: it is the thing you are
@@ -7665,7 +7677,7 @@ function reportActivity(why, opts = {}) {
     fetch('/api/activity', {
       method: 'POST', keepalive: true,
       headers: { 'Content-Type': 'application/json' }, body,
-    }).catch(() => {});
+    }).then(checkUnlocks).catch(() => {});
   } catch (e) { /* no network, no counter, no interruption */ }
 }
 
@@ -7817,6 +7829,7 @@ async function onFinish() {
       body: JSON.stringify(lap),
     });
     const d = await r.json();
+    if (d.ok && d.stored) checkUnlocks();
     if (d.ok && d.stored) {
       // `is_record` and `medal` both describe the stored PB row, which is not
       // this run unless this run beat it - so a slow lap by the record holder
@@ -8066,6 +8079,144 @@ function toggleMenu(force) {
   $('menu').style.display = on ? '' : 'none';
   $('btnSettings').classList.toggle('on', on);
   syncPaused();
+}
+
+// Something new earned: a car, a badge, a livery, rims. The server says what
+// has not been announced yet and marks it seen, so each one pops up once, as a
+// card in the corner like a chat message. Clicking it opens the garage where
+// there is one.
+function checkUnlocks() {
+  if (!CFG.loggedIn || typeof fetch !== 'function') return;
+  fetch('/api/unlocks', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+                          body: '{}' })
+    .then(r => r.json())
+    .then(d => {
+      const list = d.unlocks || [];
+      // A pile at once (the first look after new cars ship) is one card, not
+      // a column of them over the road.
+      if (list.length > 2) {
+        const names = list.slice(0, 3).map(u => u.name).join(', ');
+        unlockToast(Object.assign({}, list.find(u => u.slot === 'model') || list[0], {
+          kind: list.length + ' new unlocks',
+          name: names + (list.length > 3 ? ' and ' + (list.length - 3) + ' more' : ''),
+          done: null }));
+        return;
+      }
+      list.forEach((u, i) => setTimeout(() => unlockToast(u), i * 600));
+    })
+    .catch(() => {});
+}
+
+// A small picture of your car wearing the new thing, drawn once with a
+// throwaway renderer and kept as an image: the toast is gone in seconds, and
+// a second live WebGL context for that would be waste.
+function unlockPreview(u) {
+  try {
+    const base = typeof CFG.carLivery === 'object' && CFG.carLivery ? CFG.carLivery
+                                                                   : { body: myColor() };
+    const liv = Object.assign({}, base, { [u.slot]: u.value });
+    const r = new THREE.WebGLRenderer({ antialias: true, alpha: true,
+                                        preserveDrawingBuffer: true });
+    r.setSize(144, 88, false);
+    const scene = new THREE.Scene();
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x3a3f4a, 1.1));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+    sun.position.set(-5, 10, -6);
+    scene.add(sun);
+    const v = new CarView(scene, liv);
+    v.update(new THREE.Vector3(0, 0, 0), new THREE.Quaternion(), { groundY: 0 });
+    const cam = new THREE.PerspectiveCamera(30, 144 / 88, 0.1, 100);
+    const k = u.slot === 'badge' ? 0.2 : 0.25;
+    cam.position.set(-14 * k, (u.slot === 'badge' ? 14 : 9) * k, -20 * k);
+    cam.lookAt(0, 0.5, 0);
+    r.render(scene, cam);
+    const url = r.domElement.toDataURL();
+    v.dispose();
+    r.dispose();
+    r.forceContextLoss();
+    return url;
+  } catch (e) { return null; }
+}
+
+function unlockToast(u) {
+  let box = $('unlockToasts');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'unlockToasts';
+    box.setAttribute('aria-live', 'polite');
+    document.body.appendChild(box);
+  }
+  const t = document.createElement('div');
+  t.className = 'card unlock-toast';
+  const pic = unlockPreview(u);
+  if (pic) {
+    const img = document.createElement('img');
+    img.src = pic; img.alt = '';
+    t.appendChild(img);
+  }
+  const text = document.createElement('div');
+  text.className = 'unlock-text';
+  const name = document.createElement('div');
+  name.className = 'unlock-name';
+  name.textContent = u.name;
+  const kind = document.createElement('div');
+  kind.className = 'mode';
+  kind.textContent = u.kind;
+  text.append(name, kind);
+  const x = document.createElement('button');
+  x.className = 'unlock-x';
+  x.setAttribute('aria-label', 'Close');
+  x.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+  t.append(text, x);
+  const close = () => {
+    if (t.classList.contains('out')) return;
+    t.classList.add('out');
+    setTimeout(() => t.remove(), 400);
+  };
+  x.onclick = (e) => { e.stopPropagation(); close(); };
+  text.onclick = () => { close(); if ($('btnGarage')) toggleGarage(true); };
+  box.appendChild(t);
+  setTimeout(close, 4000);
+}
+
+// The garage, over the game. It is the garage page itself in a frame; every
+// save it makes posts the resolved livery back here, and the car on the track
+// is rebuilt from it there and then, so closing it is getting back in.
+function toggleGarage(on) {
+  const ov = $('garageOv'), fr = $('garageFrame');
+  if (!ov) return;
+  if (on) closeOtherPanels('garage');
+  S.garageOpen = on;
+  ov.style.display = on ? '' : 'none';
+  clearTimeout(toggleGarage.t);
+  if (on && !fr.getAttribute('src')) fr.setAttribute('src', '/garage?embed=1');
+  // Unloaded a little after closing rather than at once: the garage saves a
+  // moment after the last change, and a frame torn down first loses it.
+  if (!on) toggleGarage.t = setTimeout(() => fr.removeAttribute('src'), 2500);
+  // Keys go to whichever document has focus, so it has to come back out of
+  // the frame on close or the game hears nothing until you click on it.
+  if (on) setTimeout(() => fr.focus(), 0);
+  else { fr.blur(); window.focus(); }
+  syncPaused();
+}
+
+function wireGarage() {
+  if (!$('btnGarage')) return;
+  $('btnGarage').onclick = () => toggleGarage(true);
+  $('btnGarageClose').onclick = () => toggleGarage(false);
+  addEventListener('message', (e) => {
+    if (e.origin !== location.origin || !e.data) return;
+    if (e.data.garageClose) toggleGarage(false);
+    if (e.data.garage) {
+      CFG.carLivery = e.data.garage;
+      const shown = S.view.group.visible;
+      S.view.dispose();
+      S.view = new CarView(S.renderer.scene, CFG.carLivery);
+      S.view.update(S.car.pos, S.car.quat);
+      S.view.setVisible(shown);
+      S.sound.setModel(S.view.model);
+    }
+  });
 }
 
 function toggleHelp(force) {
@@ -8850,6 +9001,7 @@ function rivalSound() {
       // the bubble only answers once they are in shot: something untouchable
       // is coming, and from which side.
       star: !!(r.flags & FLAG.STAR),
+      model: r.view && r.view.model,
     });
   }
   out.sort((a, b) => a.d2 - b.d2);

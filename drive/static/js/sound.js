@@ -67,6 +67,126 @@ const IDLE_TC = 2.0;      // the fade: -8.7dB a second constant, gone by about 9
 const WAKE_TC = 0.02;     // and back inside a couple of frames
 const IDLE_SPEED = 0.02;  // of top speed: one unit a second, which is parked
 const IDLE_HZ = 260;      // where the lowpass ends up: the bottom of the engine
+
+// Each body has its own engine, and the difference is the engine, not the
+// pitch. A waveform is built from one full four-stroke cycle (720 degrees of
+// crank): an exhaust pulse at each cylinder's firing angle, at that cylinder's
+// loudness, followed by a reflected pulse off the pipe. The oscillator plays
+// that cycle at rpm/120, so what you hear is the firing pattern itself. A
+// cross-plane V8 burbles because its banks fire unevenly (L R R L R L L R); a
+// flat-plane one alternates cleanly and screams; a diesel's pulses are short
+// and hard and they clatter; a two-stroke single fires every turn and buzzes.
+//
+// `fire` is degrees, `amp` the loudness of each, `w` the pulse width as a
+// fraction of the gap between firings (narrow is harsh, wide is smooth),
+// `refl` the reflected pulse, `idle`/`red` the rev range, `gears` how many
+// shifts it climbs through, `f` how open the lowpass is above the firing
+// frequency, `h`/`g` the whine's multiple of firing frequency and its level
+// (a turbo's whistle, or gears). Only the sound moves; every body is the same
+// car underneath.
+const even = (n, step = 720 / n) => Array.from({ length: n }, (_, i) => i * step);
+const ENGINES = {
+  // A 60-degree V6: even, a little thick.
+  classic: { fire: even(6), amp: [1, .8, .95, .82, .98, .78], w: .5, refl: .35,
+             idle: 900, red: 7000, gears: 5, f: 3, h: 2, g: .6, pop: 0.4 },
+  // A boxer twin out of a motorcycle, the bubble car's: two pulses a turn
+  // apart and nothing else, a putter.
+  bubble:  { fire: [0, 360], amp: [1, .9], w: .18, refl: .45,
+             idle: 900, red: 6200, gears: 4, f: 3, h: 2, g: .3 },
+  // An air-cooled flat four: banks that do not match and long, open pulses,
+  // the chug, and the cooling fan's whine riding on top.
+  beetle:  { fire: even(4), amp: [1, .66, .9, .62], w: .32, refl: .5,
+             idle: 850, red: 5200, gears: 4, f: 2.4, h: 3, g: .9, pop: 0.3 },
+  // A blown big-block on methanol: a cross-plane V8 at its lumpiest, three
+  // gears, and the supercharger screaming on top.
+  monster: { fire: even(8), amp: [1, .4, .45, 1, .4, .95, 1, .45], w: .4, refl: .5,
+             idle: 1100, red: 7000, gears: 3, f: 2, h: 4, g: 1.2, pop: 1 },
+  // A big-rig diesel straight six: low, slow, knocking, ten gears to row
+  // through and the turbo whistling over all of it.
+  bigrig:  { fire: even(6), amp: [1, .9, .95, .88, .97, .9], w: .08, refl: .55,
+             idle: 650, red: 2400, gears: 10, f: 2.4, h: 6, g: .9, pop: .4 },
+  // A two-stroke single, fires every turn: thin, angry, all top end.
+  kart:    { fire: [0, 360], amp: [1, .93], w: .1, refl: .55,
+             idle: 3200, red: 15000, gears: 1, f: 5, h: 2, g: .2 },
+  // An inline-four diesel: low, slow, and the knock on top of every stroke.
+  van:     { fire: even(4), amp: [1, .86, .94, .8], w: .07, refl: .5,
+             idle: 750, red: 4300, gears: 5, f: 2.6, h: 5, g: .4 },
+  // A cross-plane V8, lazy.
+  pickup:  { fire: even(8), amp: [1, .55, .6, 1, .55, .95, 1, .6], w: .3, refl: .4,
+             idle: 650, red: 5200, gears: 4, f: 2.2, h: 1.5, g: .3, pop: 0.6 },
+  // A cross-plane V8, big and lumpy: the banks further apart, the pulses fatter.
+  muscle:  { fire: [0, 92, 178, 272, 360, 448, 540, 632], amp: [1, .45, .5, 1, .45, .95, 1, .5],
+             w: .34, refl: .45, idle: 750, red: 6800, gears: 4, f: 2.4, h: 1.5, g: .5, pop: 1 },
+  // A straight six from the sixties: even and smooth, a hard edge on it.
+  sixties: { fire: even(6), amp: [1, .96, .98, .94, 1, .95], w: .22, refl: .3,
+             idle: 900, red: 7800, gears: 4, f: 3.2, h: 3, g: .4, pop: 0.6 },
+  // A flat six: two banks alternating, a howl that gets cleaner as it revs.
+  gt:      { fire: even(6), amp: [1, .72, 1, .72, 1, .72], w: .4, refl: .25,
+             idle: 1000, red: 9200, gears: 6, f: 3.6, h: 2, g: .7, pop: 0.7 },
+  // A turbo four: flat bark underneath, the turbo whistling on top.
+  rally:   { fire: even(4), amp: [1, .9, .97, .88], w: .25, refl: .3,
+             idle: 1000, red: 8000, gears: 6, f: 2.6, h: 9, g: 1.8, pop: 0.9 },
+  // A V10: ten even pulses, a higher, smoother shriek.
+  proto:   { fire: even(10), amp: [1, .8, 1, .8, 1, .8, 1, .8, 1, .8], w: .45, refl: .2,
+             idle: 1600, red: 10500, gears: 6, f: 3.2, h: 3, g: .5, pop: 0.5 },
+  // A flat-plane V8 revving to 18,000: the banks alternate, so it screams.
+  // A V8 at full noise: hard, short pulses, banks well out of step and the
+  // firing a touch irregular, so it rasps and rumbles under the scream. It
+  // used to rev to 15,500 with a whine on top, which at those pitches is an
+  // electric motor, not an engine.
+  f1:      { fire: [0, 91, 179, 271, 361, 449, 541, 629],
+             amp: [1, .56, .93, .52, .97, .6, .9, .55], w: .14, refl: .55,
+             idle: 1800, red: 9000, gears: 7, f: 2.2, h: 1, g: .12, pop: 0.6 },
+};
+const engineOf = (m) => ENGINES[m] || ENGINES.classic;
+
+// One PeriodicWave per engine per context, built the first time it is heard.
+// Returns the wave and the gain that brings it to a sawtooth's loudness, since
+// a train of narrow pulses is much quieter than its peak.
+const WAVES = new WeakMap();
+function waveOf(ctx, model) {
+  let m = WAVES.get(ctx);
+  if (!m) WAVES.set(ctx, m = new Map());
+  const key = ENGINES[model] ? model : 'classic';
+  if (m.has(key)) return m.get(key);
+  const E = ENGINES[key], N = 2048, H = 180, x = new Float32Array(N);
+  const gap = 720 / E.fire.length;
+  const pulse = (t, w) => (t >= 0 && t < w ? Math.sin(Math.PI * t / w) ** 2 : 0);
+  for (let i = 0; i < N; i++) {
+    const deg = i / N * 720;
+    for (let c = 0; c < E.fire.length; c++) {
+      const t = (((deg - E.fire[c]) % 720) + 720) % 720 / gap;
+      x[i] += E.amp[c] * (pulse(t, E.w) - E.refl * pulse(t - E.w * 1.3, E.w * 1.6));
+    }
+  }
+  let mean = 0; for (const v of x) mean += v / N;
+  let peak = 0, rms = 0;
+  for (let i = 0; i < N; i++) { x[i] -= mean; peak = Math.max(peak, Math.abs(x[i])); }
+  for (let i = 0; i < N; i++) { x[i] /= peak; rms += x[i] * x[i] / N; }
+  const re = new Float32Array(H + 1), im = new Float32Array(H + 1);
+  for (let k = 1; k <= H; k++) {
+    let a = 0, b = 0;
+    for (let i = 0; i < N; i++) { const ph = 2 * Math.PI * k * i / N; a += x[i] * Math.cos(ph); b += x[i] * Math.sin(ph); }
+    re[k] = 2 * a / N; im[k] = 2 * b / N;
+  }
+  const out = { wave: ctx.createPeriodicWave(re, im, { disableNormalization: true }),
+                gain: Math.min(3, 0.58 / Math.sqrt(rms)) };
+  m.set(key, out);
+  return out;
+}
+
+// Which gear the box is in at this speed.
+const gearOf = (E, speedFrac) => Math.min(E.gears - 1, Math.floor(Math.min(1, speedFrac) * E.gears));
+
+// Where the needle is: up through the gears with speed, dropping back on
+// each shift, with a little more on the throttle.
+function engineRpm(E, speedFrac, throttle) {
+  const x = Math.min(1, speedFrac) * E.gears;
+  const gear = gearOf(E, speedFrac), within = x - gear;
+  const lo = gear === 0 ? 0 : 0.5;
+  const n = lo + (1 - lo) * within * 0.92 + (throttle ? 0.08 : 0);
+  return E.idle + (E.red - E.idle) * Math.min(1, n);
+}
 const SLEEP_TC = 0.35;    // a hidden tab is not a resting car - see `sleep`
 
 /** Throttle, movement above a crawl, or air. Anything else is a parked car. */
@@ -77,6 +197,7 @@ function isDriving(throttle, speedFrac, air) {
 export class Sound {
   constructor() {
     this.ctx = null;
+    this.model = 'classic';
     this.enabled = true;
     // Off until asked for, unlike the sound. The engine is what the game
     // sounds like and music over the top of it is a preference, so it is one
@@ -135,17 +256,19 @@ export class Sound {
     this.engGain.connect(this.engFilter).connect(this.sfx);
 
     this.osc = [];
-    for (const detune of [0, 7, -11]) {
+    this.oscMix = ctx.createGain();
+    this.oscMix.connect(this.engGain);
+    for (const detune of [0, 5, -7]) {
       const o = ctx.createOscillator();
-      o.type = 'sawtooth';
       o.frequency.value = 60;
       o.detune.value = detune;
       const g = ctx.createGain();
       g.gain.value = detune === 0 ? 0.6 : 0.28;
-      o.connect(g).connect(this.engGain);
+      o.connect(g).connect(this.oscMix);
       o.start();
       this.osc.push(o);
     }
+    this.setModel(this.model);
     // load whine, an octave and a fifth up
     this.whine = ctx.createOscillator();
     this.whine.type = 'triangle';
@@ -280,8 +403,20 @@ export class Sound {
    * was doing when the tab went away.
    */
   wake() {
-    if (!this.ready) return;
+    if (!this.ready || this.hushed) return;
     this.rivalBus.gain.setTargetAtTime(RIVAL_BUS, this.ctx.currentTime, 0.05);
+  }
+
+  /**
+   * Paused, or the window is not the one in front. The car is silent rather
+   * than holding the last thing it was doing: the per-frame calls are ignored
+   * while hushed, and the same fade as a hidden tab takes it down. The music
+   * is not touched; that is its own switch.
+   */
+  hush(on) {
+    if (on === !!this.hushed) return;
+    this.hushed = on;
+    if (on) this.sleep(); else this.wake();
   }
 
   /** The two volume sliders in settings, 0 to 1. Muting still wins. */
@@ -355,8 +490,18 @@ export class Sound {
   }
 
   /** Called every frame with the car's state. */
-  engine(speedFrac, throttle, slip, airborne) {
-    if (!this.ready) return;
+  /** Which body you are driving, for which engine you hear. */
+  setModel(model) {
+    this.model = model;
+    if (!this.osc) return;
+    const W = waveOf(this.ctx, model);
+    for (const o of this.osc) o.setPeriodicWave(W.wave);
+    this.oscMix.gain.value = W.gain;
+  }
+
+  engine(speedFrac, throttle, slip, airborne, load = 0, boost = 0) {
+    if (!this.ready || this.hushed) return;
+    const E = engineOf(this.model);
     const t = this.ctx.currentTime;
     const set = (p, v, tc = 0.06) => p.setTargetAtTime(v, t, tc);
     // Stopped, nobody's foot down, wheels on the ground: the one state that is
@@ -364,16 +509,44 @@ export class Sound {
     const on = isDriving(throttle, speedFrac, airborne);
     const gTc = on ? (this.engQuiet ? WAKE_TC : 0.09) : IDLE_TC;
     this.engQuiet = !on;
-    const rpm = 58 + speedFrac * 210 + (throttle ? 22 : 0);
-    for (const o of this.osc) set(o.frequency, rpm, 0.05);
+    // A slide lets the revs flare a little, the way wheelspin does.
+    // On a boost pad the engine is wrung out: higher, louder, brighter.
+    const rpm = engineRpm(E, speedFrac, throttle) *
+      (1 + Math.min(0.06, slip * 0.05) + 0.08 * boost);
+    const fire = rpm / 120 * E.fire.length;
+    // `load` is the hill, -1 down to 1 up: climbing works the engine harder,
+    // so it is louder and brighter; going down it is coasting. Subtle on
+    // purpose, it should be felt rather than noticed.
+    const work = (1 + 0.22 * load) * (1 + 0.4 * boost);
+    // A shift: the engine cuts for a beat under throttle, and barks.
+    const gear = gearOf(E, speedFrac);
+    if (on && this.gear != null && gear > this.gear && throttle) {
+      this.shiftUntil = t + 0.085;
+      if (E.pop) this._burst({ freq: 140 + E.fire.length * 12, q: 0.9, type: 'lowpass',
+                               dur: 0.07, gain: 0.11 * E.pop });
+    }
+    this.gear = gear;
+    // Lifting off at speed: the overrun crackle, a few pops in the pipe.
+    if (on && E.pop && this.wasThrottle && !throttle && speedFrac > 0.35) {
+      const n = 2 + Math.floor(Math.random() * 3 * E.pop);
+      for (let i = 0; i < n; i++) {
+        this._burst({ freq: 300 + Math.random() * 500, q: 1.2, dur: 0.035,
+                      gain: (0.05 + Math.random() * 0.06) * E.pop,
+                      delay: 0.06 + i * (0.06 + Math.random() * 0.1) });
+      }
+    }
+    this.wasThrottle = !!throttle;
+    const cut = t < (this.shiftUntil || 0) ? 0.3 : 1;
+    for (const o of this.osc) set(o.frequency, rpm / 120, 0.05);
     set(this.engFilter.frequency,
-        on ? 620 + speedFrac * 2400 + (throttle ? 500 : 0) : IDLE_HZ, on ? 0.08 : IDLE_TC);
-    set(this.engGain.gain, on ? (airborne ? 0.08 : 0.15 + throttle * 0.1) : 0, gTc);
-    set(this.whine.frequency, rpm * 3.02, 0.05);
+        on ? (300 + fire * E.f * (throttle ? 1.5 : 1)) * work : IDLE_HZ, on ? 0.08 : IDLE_TC);
+    set(this.engGain.gain, on ? (airborne ? 0.08 : (0.15 + throttle * 0.1) * work) * cut : 0,
+        cut < 1 ? 0.012 : gTc);
+    set(this.whine.frequency, fire * E.h, 0.05);
     // Half the time constant, so the top of the car is gone while the bottom
     // of it is still going.
     set(this.whineGain.gain,
-        on ? (throttle ? 0.034 : 0.009) * (0.4 + speedFrac) : 0,
+        on ? (throttle ? 0.034 : 0.009) * (0.4 + speedFrac) * E.g : 0,
         on ? 0.1 : IDLE_TC * 0.5);
     set(this.tyreGain.gain, airborne ? 0 : Math.min(0.3, slip * 0.34), 0.05);
     set(this.tyreFilter.frequency, 1300 + slip * 1400, 0.08);
@@ -397,9 +570,9 @@ export class Sound {
     o.stop(t + dur + 0.02);
   }
 
-  _burst({ dur = 0.14, gain = 0.3, freq = 2200, q = 1.1, type = 'bandpass' }) {
+  _burst({ dur = 0.14, gain = 0.3, freq = 2200, q = 1.1, type = 'bandpass', delay = 0 }) {
     if (!this.ready) return;
-    const ctx = this.ctx, t = ctx.currentTime;
+    const ctx = this.ctx, t = ctx.currentTime + delay;
     const s = ctx.createBufferSource();
     s.buffer = whiteNoise(ctx, Math.max(0.2, dur + 0.05));
     const f = ctx.createBiquadFilter();
@@ -430,7 +603,7 @@ export class Sound {
    * it is wide open, and it falls away with the boost rather than stopping.
    */
   draft(charge, boostFrac) {
-    if (!this.ready) return;
+    if (!this.ready || this.hushed) return;
     const t = this.ctx.currentTime;
     const set = (p, v, tc = 0.09) => p.setTargetAtTime(v, t, tc);
     const boosting = boostFrac > 0;
@@ -442,7 +615,7 @@ export class Sound {
 
   /** The reentry roar, 0 to 1. Written every frame on a track that has it. */
   reentry(k) {
-    if (!this.ready) return;
+    if (!this.ready || this.hushed) return;
     const t = this.ctx.currentTime;
     // A little flutter on top, so it reads as fire rather than as wind.
     const flicker = 0.85 + Math.random() * 0.3;
@@ -540,7 +713,7 @@ export class Sound {
    * spends its voices on the cars close enough to be worth hearing.
    */
   rivals(list) {
-    if (!this.ready) return;
+    if (!this.ready || this.hushed) return;
     const t = this.ctx.currentTime;
     const seen = new Set();
     for (const r of (list || []).slice(0, MAX_RIVAL_VOICES)) {
@@ -1154,15 +1327,18 @@ class RivalVoice {
     this.engFilter.frequency.value = 900;
     this.engFilter.Q.value = 1.1;
     this.engGain.connect(this.engFilter).connect(p);
+    this.oscMix = ctx.createGain();
+    this.oscMix.connect(this.engGain);
+    this.model = undefined;
     this.osc = [];
-    for (const detune of [0, 9]) {
+    for (const detune of [0, 6]) {
       const o = ctx.createOscillator();
       o.type = 'sawtooth';
       o.frequency.value = 60;
       o.detune.value = detune;
       const g = ctx.createGain();
       g.gain.value = detune === 0 ? 0.6 : 0.3;
-      o.connect(g).connect(this.engGain);
+      o.connect(g).connect(this.oscMix);
       o.start();
       this.osc.push(o);
     }
@@ -1208,9 +1384,16 @@ class RivalVoice {
     const on = isDriving(r.throttle, sf, r.air);
     const gTc = on ? (this.quiet ? WAKE_TC : 0.09) : IDLE_TC;
     this.quiet = !on;
-    const rpm = 58 + sf * 210 + (r.throttle ? 22 : 0);
-    for (const o of this.osc) set(o.frequency, rpm, 0.05);
-    set(this.engFilter.frequency, on ? 620 + sf * 2400 : IDLE_HZ, on ? 0.08 : IDLE_TC);
+    if (this.model !== r.model) {
+      this.model = r.model;
+      const W = waveOf(this.ctx, r.model);
+      for (const o of this.osc) o.setPeriodicWave(W.wave);
+      this.oscMix.gain.value = W.gain;
+    }
+    const E = engineOf(r.model);
+    const rpm = engineRpm(E, sf, r.throttle);
+    for (const o of this.osc) set(o.frequency, rpm / 120, 0.05);
+    set(this.engFilter.frequency, on ? 300 + rpm / 120 * E.fire.length * E.f : IDLE_HZ, on ? 0.08 : IDLE_TC);
     set(this.engGain.gain, on ? (r.air ? 0.1 : 0.17 + (r.throttle ? 0.09 : 0)) : 0, gTc);
     set(this.tyreGain.gain, r.drift && !r.air ? 0.2 : 0, 0.06);
 

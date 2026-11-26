@@ -105,7 +105,11 @@ AudioContext.prototype.createBiquadFilter = function () {
 AudioContext.prototype.createOscillator = function () {
   const n = new Node('osc');
   n.frequency = new Param(0); n.detune = new Param(0); n.type = '';
+  n.setPeriodicWave = function (w) { n.wave = w; n.type = 'custom'; };
   return n;
+};
+AudioContext.prototype.createPeriodicWave = function (re, im) {
+  return {re: re, im: im};
 };
 AudioContext.prototype.createBufferSource = function () {
   const n = new Node('bufsrc'); n.buffer = null; n.loop = false; return n;

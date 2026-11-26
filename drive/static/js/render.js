@@ -87,6 +87,8 @@ function liveryOf(spec) {
     // record's badge green for anybody who has not gone looking for the picker.
     badgeColor: spec.badge_color ? new THREE.Color(spec.badge_color) : null,
     badge: spec.badge || 'none',
+    // Which body, out of `CAR_BODIES`. Anything unknown is the classic car.
+    model: spec.model || 'classic',
   };
 }
 
@@ -140,11 +142,56 @@ const FINISH = {
   // an afternoon. Deleting these would repaint every car in every race recorded
   // before today, which is the same rule that keeps a replay's livery stored with
   // it rather than looked up.
+  // **The four earned ones, each different in a way flat shading keeps.** Chrome
+  // is nearly silver with your colour only as a tint, and a hard white
+  // highlight. Rusted is dull and browned. Glow lights itself, so a face in
+  // shadow stays bright, which on a night track reads as neon. Radiant shifts
+  // hue face by face with the angle you see it at, so the facets flash colours
+  // as the car turns: the one finish the low-poly look helps rather than hides.
+  chrome:   { mat: { shininess: 240, specular: 0xffffff },
+              paint: { lighten: 0.5, desat: 0.72 } },
+  rusted:   { mat: { shininess: 3, specular: 0x0c0c0c },
+              paint: { desat: 0.6, tint: 0x8a4320, amt: 0.84, darken: 0.1 } },
+  glow:     { mat: { shininess: 60, specular: 0x555a60 }, glow: 1.25,
+              paint: { saturate: 0.45 } },
+  radiant:  { mat: { shininess: 140, specular: 0xffffff }, irid: true },
   metallic: { mat: { shininess: 190, specular: 0xcfd4dc },
               paint: { lighten: 0.10, desat: 0.38 } },
   pearl:    { mat: { shininess: 120, specular: 0xf2e6ff },
               paint: { lighten: 0.22, tint: 0xc9b6ff, amt: 0.30 } },
 };
+
+// One soft round spot, white in the middle to nothing at the edge, shared by
+// every glowing car and tinted per car by its material colour.
+let _glowTex = null;
+function glowTexture() {
+  if (_glowTex) return _glowTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const x = c.getContext('2d');
+  const g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.45, 'rgba(255,255,255,0.55)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g;
+  x.fillRect(0, 0, 64, 64);
+  _glowTex = new THREE.CanvasTexture(c);
+  return _glowTex;
+}
+
+// The radiant finish: after lighting, each face's colour is pushed round
+// the hue wheel by how edge-on it is to the camera. Flat shading gives one
+// normal per face, so it is one colour per facet, which is the look.
+function iridesce(m) {
+  m.onBeforeCompile = (sh) => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>', `
+      float iriF = 1.0 - abs(dot(normal, normalize(vViewPosition)));
+      vec3 iriS = 0.5 + 0.5 * cos(6.2831 * (iriF * 1.1 + vec3(0.0, 0.33, 0.67)));
+      outgoingLight = mix(outgoingLight, outgoingLight * iriS * 1.9, 0.75);
+      #include <opaque_fragment>`);
+  };
+  m.customProgramCacheKey = () => 'radiant';
+}
 
 const _paint = new THREE.Color();
 const WHITE = new THREE.Color(0xffffff);
@@ -297,7 +344,86 @@ function linear(hex) {
  * written into the attribute and costs nothing. A texture would have been the
  * only other way, in a renderer whose entire look is that it has none.
  */
-function decalMesh(L) {
+/**
+ * The three decal surfaces of a lofted body, in the shape `decalMesh` already
+ * draws with: `deck`/`roof` take x in the classic car's units (0.94 is the edge
+ * of its bonnet, 0.76 of its roof) and scale them to the loft's width at each
+ * z; `flank` lies between the sill and the shoulder. All three follow the
+ * surface from station to station, so a stripe goes over a sloping bonnet and
+ * down a fastback rather than floating off it.
+ */
+function loftDecals(buf, K, LIFT) {
+  const at = (list, z, f) => {
+    if (z <= list[0][0]) return f(list[0]);
+    for (let i = 0; i + 1 < list.length; i++) {
+      const a = list[i], b = list[i + 1];
+      if (z <= b[0]) {
+        const t = (z - a[0]) / (b[0] - a[0] || 1), A = f(a), B = f(b);
+        return A.map((v, k) => v + (B[k] - v) * t);
+      }
+    }
+    return f(list[list.length - 1]);
+  };
+  const cuts = (list, z0, z1) =>
+    [z0, ...list.map((s) => s[0]).filter((z) => z > z0 && z < z1), z1];
+  const face = (a, b, c, d, color, dir) => {
+    for (const [p, q, r] of [[a, b, c], [a, c, d]]) {
+      const ux = q[0] - p[0], uy = q[1] - p[1], uz = q[2] - p[2];
+      const vx = r[0] - p[0], vy = r[1] - p[1], vz = r[2] - p[2];
+      const n = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx];
+      if (n[0] * dir[0] + n[1] * dir[1] + n[2] * dir[2] >= 0) buf.tri(p, q, r, color);
+      else buf.tri(p, r, q, color);
+    }
+  };
+  const B = K.body, C = K.cabin;
+  const top = (z) => at(B, z, (s) => [s[9], s[10]]);
+  const deck = (x0, x1, z0, z1, color) => {
+    z0 = Math.max(z0, K.nose); z1 = Math.min(z1, K.tail);
+    if (z1 <= z0) return;
+    const zs = cuts(B, z0, z1);
+    const P = (x, z) => { const [y, w] = top(z); return [x / 0.94 * w * 0.96, y + LIFT, z]; };
+    for (let i = 0; i + 1 < zs.length; i++) {
+      face(P(x0, zs[i]), P(x1, zs[i]), P(x1, zs[i + 1]), P(x0, zs[i + 1]), color, [0, 1, 0]);
+    }
+  };
+  const roof = (x0, x1, z0, z1, color) => {
+    for (let i = 0; i + 1 < C.length; i++) {
+      if (C[i][5][0] === 'g') continue;
+      const a = Math.max(z0, C[i][0]), b = Math.min(z1, C[i + 1][0]);
+      if (b - a < 0.02) continue;
+      const seg = [C[i], C[i + 1]];
+      const P = (x, z) => {
+        const [y, w] = at(seg, z, (c) => [c[3], c[4]]);
+        return [x / 0.76 * w * 0.94, y + LIFT, z];
+      };
+      face(P(x0, a), P(x1, a), P(x1, b), P(x0, b), color, [0, 1, 0]);
+    }
+  };
+  const flank = (z0, z1, _y0, _y1, color) => {
+    let spans = [[Math.max(z0, K.fz0), Math.min(z1, K.fz1)]];
+    for (const [g0, g1] of K.gaps) {
+      spans = spans.flatMap(([a, b]) => [[a, Math.min(b, g0)], [Math.max(a, g1), b]]);
+    }
+    const P = (z, t, sx) => {
+      const [x1, y1, xb, yb] = at(B, z, (s) => [s[4], s[3], s[6], s[5]]);
+      const u = 0.12 + 0.76 * t;
+      return [sx * (x1 + (xb - x1) * u + LIFT * 1.5), y1 + (yb - y1) * u, z];
+    };
+    for (const [a, b] of spans) {
+      if (b - a <= 0.05) continue;
+      const zs = cuts(B, a, b);
+      for (let i = 0; i + 1 < zs.length; i++) {
+        for (const sx of [1, -1]) {
+          face(P(zs[i], 0, sx), P(zs[i], 1, sx), P(zs[i + 1], 1, sx), P(zs[i + 1], 0, sx),
+               color, [sx, 0, 0]);
+        }
+      }
+    }
+  };
+  return { deck, roof, flank, badgeY: (z) => top(z)[0] + 2 * LIFT };
+}
+
+function decalMesh(L, K = CLASSIC_PANEL) {
   const striped = L.livery && L.livery !== 'none';
   const badged = L.badge && L.badge !== 'none';
   if (!striped && !badged) return null;
@@ -313,9 +439,12 @@ function decalMesh(L) {
   // does, and the roof starts at -0.15 because the front of the cabin became a
   // raked windscreen. Written out, the roof stripes hung half a unit past the
   // front of the roof, floating in the air over the screen.
-  const DECK = 0.555 + LIFT, ROOF = 1.03 + LIFT;
-  const NOSE = -1.7, TAIL = 1.7;            // the bonnet, end to end
-  const RF = -0.15, RB = 0.9;               // the roof, front and back
+  const DECK = K.deck + LIFT, ROOF = K.roof + LIFT;
+  const NOSE = K.nose, TAIL = K.tail;       // the bonnet, end to end
+  const RF = K.rf, RB = K.rb;               // the roof, front and back
+  // Every x below was written for the classic car's 0.94 deck and 0.76 roof, so
+  // another body scales them to its own panels. Exactly 1 on the classic car.
+  const KD = K.dw / 0.94, KR = K.rw / 0.76;
   // **The third panel: the car's sides.** Added because two of the liveries can
   // only be themselves with it. A hoop that stops at the roofline is not a hoop,
   // and a car painted in halves along a line nobody can see from beside it is
@@ -324,23 +453,28 @@ function decalMesh(L) {
   // `FX` is the flank plane, `FY0`/`FY1` its top and bottom. Inset a little
   // inside the `lower` box's own 0.005..0.555 so a decal cannot hang over the
   // edge onto the underside or up over the deck, where it would read as a fold.
-  const FX = 0.95 + LIFT;
-  const FY0 = 0.03, FY1 = 0.53;
+  const FX = K.fx + LIFT;
+  const FY0 = K.fy0, FY1 = K.fy1;
   // The middle of the car, derived rather than typed so it follows the bonnet.
   // `halves` splits here, which is the only split worth calling halves: at the
   // windscreen's foot it was 28% of the car, and the name is a claim about
   // proportion. The stretch from here forward to the cabin passes under the
   // screen and the cabin and simply is not seen, which is what happens to every
   // full-length stripe already.
-  const MID = (NOSE + TAIL) / 2;
+  const MID = K.mid == null ? (NOSE + TAIL) / 2 : K.mid;
   // Wound anticlockwise seen from above, so `computeVertexNormals` gives these
   // an upward normal. The obvious order is the other one and it is silently
   // wrong: the decal still draws, and it is lit from underneath, so a bright
   // stripe comes out as a dark smear on the one surface the sun is hitting.
-  const deck = (x0, x1, z0, z1, color) => buf.quad(
-    [x0, DECK, z0], [x0, DECK, z1], [x1, DECK, z1], [x1, DECK, z0], color);
-  const roof = (x0, x1, z0, z1, color) => buf.quad(
-    [x0, ROOF, z0], [x0, ROOF, z1], [x1, ROOF, z1], [x1, ROOF, z0], color);
+  let deck = (x0, x1, z0, z1, color) => {
+    x0 *= KD; x1 *= KD; z1 = Math.min(z1, TAIL);
+    if (z1 > z0) buf.quad([x0, DECK, z0], [x0, DECK, z1], [x1, DECK, z1], [x1, DECK, z0], color);
+  };
+  let roof = (x0, x1, z0, z1, color) => {
+    if (!K.rw) return;                      // an open car has no roof to paint
+    x0 *= KR; x1 *= KR;
+    buf.quad([x0, ROOF, z0], [x0, ROOF, z1], [x1, ROOF, z1], [x1, ROOF, z0], color);
+  };
   /**
    * Both sides at once, wound so each one's normal points *out of* the car.
    *
@@ -351,14 +485,25 @@ function decalMesh(L) {
    * decal draws, and one side of the car is a bright stripe while the other is a
    * dark smear.
    */
-  const flank = (z0, z1, y0, y1, color) => {
+  const side = (z0, z1, y0, y1, color) => {
     buf.quad([FX, y0, z0], [FX, y1, z0], [FX, y1, z1], [FX, y0, z1], color);
     buf.quad([-FX, y0, z1], [-FX, y1, z1], [-FX, y1, z0], [-FX, y0, z0], color);
+  };
+  // Clipped to the body's own side and cut round any wheel standing in it; the
+  // classic car has neither, so it is the one quad it always was.
+  let flank = (z0, z1, y0, y1, color) => {
+    let spans = [[Math.max(z0, K.fz0), Math.min(z1, K.fz1)]];
+    for (const [g0, g1] of K.gaps) {
+      spans = spans.flatMap(([a, b]) => [[a, Math.min(b, g0)], [Math.max(a, g1), b]]);
+    }
+    for (const [a, b] of spans) if (b - a > 0.05) side(a, b, y0, y1, color);
   };
 
   // Wrapped, because a badge with no livery still wants a buffer - the whole
   // point of folding them together is that either one alone is enough to be worth
   // a mesh, and neither costs a second one.
+  let badgeY = DECK + LIFT;
+  if (K.loft) ({ deck, roof, flank, badgeY } = loftDecals(buf, K, LIFT));
   if (striped) {
     switch (L.livery) {
       case 'centre':
@@ -382,7 +527,7 @@ function decalMesh(L) {
       // that z because the cabin is standing on it, which is what a real hoop does
       // too.
       case 'hoop': {
-        const H0 = 0.2, H1 = 0.6;
+        const H0 = K.hoop - 0.2, H1 = K.hoop + 0.2;
         roof(-0.76, 0.76, H0, H1, S); flank(H0, H1, FY0, FY1, S); break;
       }
       // The front half of the car in the second colour, **sides included**. It used
@@ -433,9 +578,9 @@ function decalMesh(L) {
     // A hundredth again is invisible from any angle and is the whole fix. The
     // ordering is not arbitrary either - a badge is a thing bolted onto the
     // paint, so it belongs on top of the paint.
-    badgeShape(buf, L.badge, DECK + LIFT,
+    badgeShape(buf, L.badge, badgeY, K.bz, K.bk,
                linear(L.badgeColor ? L.badgeColor.getHex()
-                                   : (own == null ? RECORD_GREEN : own)));
+                                   : (own == null ? RECORD_GREEN : own)), K.bface);
   }
   // A livery or badge value this renderer has never heard of - a client that has
   // not reloaded since the vocabulary grew - draws nothing rather than an empty
@@ -479,7 +624,10 @@ const TAU = Math.PI * 2;
  * shapes made of arcs and fans is a lot of chances to get an order backwards for
  * no gain. Describing the corners is the interesting part; their order is not.
  */
-function badgeShape(buf, badge, y, C) {
+// `face`, when a body has one ([z, y]), stands the badge upright on a front face
+// at that z and height instead of laying it on the bonnet: the box truck's
+// bonnet is a short slope, and its grille is where a badge goes on a truck.
+function badgeShape(buf, badge, y, bz, bk, C, face = null) {
   // Icon space is **as the badge is read**, and both axes are mapped for that
   // rather than one. A badge on a bonnet is read from in front of the car, and the
   // front camera sits at negative z looking toward +z - so its screen-right is
@@ -491,14 +639,19 @@ function badgeShape(buf, badge, y, C) {
   //
   // So: in here, +u is right and +v is up, *from the reading position*. Anything
   // added later can be described the way it would be drawn on paper.
-  const P = ([u, v]) => [-u, y, BADGE_Z + v * STRETCH];
+  const P = ([u, v]) => {
+    if (face) return [-u * bk, face[1] + v * bk, face[0]];
+    const z = bz + v * STRETCH * bk;
+    return [-u * bk, typeof y === 'function' ? y(z) : y, z];
+  };
   const tri2 = (a, b, c, color) => {
     const A = P(a), B = P(b), D = P(c);
     // The y of (B-A) x (D-A), in **world** space rather than in icon space. That
     // matters: icon-space handedness depends on which way `P` maps v, so the
     // icon-space test silently inverted the moment the badges were turned round to
     // face the front of the car, and every one of them would have gone dark.
-    const ny = (B[2] - A[2]) * (D[0] - A[0]) - (B[0] - A[0]) * (D[2] - A[2]);
+    const ny = face ? (B[1] - A[1]) * (D[0] - A[0]) - (B[0] - A[0]) * (D[1] - A[1])
+                    : (B[2] - A[2]) * (D[0] - A[0]) - (B[0] - A[0]) * (D[2] - A[2]);
     const col = color == null ? C : color;
     if (ny >= 0) buf.tri(A, B, D, col);
     else buf.tri(A, D, B, col);
@@ -750,6 +903,912 @@ function badgeShape(buf, badge, y, C) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The bodies
+// ---------------------------------------------------------------------------
+// **Every car is drawn and none of them is simulated.** The physics car is the
+// same 3.4-long box under all of them (`tuning.py`), and contact is two 1.25
+// spheres along it, so a body may fill about 3.9 x 2.4 before rivals visibly
+// sink into each other ahead of the bump. Nothing here may be read by `Car`.
+//
+// A body is **lofted**: a list of cross-sections down the car, joined face to
+// face. A body station is `[z, y0,w0, y1,w1, yb,wb, yf,wf, yt,wt]` - five
+// points up the right-hand side, mirrored: the bottom corner, the top of the
+// sill, the shoulder (the widest line), the crown of the wing, and the edge of
+// the bonnet or deck. Over a wheel the sill is pulled in under the tyre and the
+// shoulder pushed out over it, which is what makes an arch with the tyre in it
+// rather than a block with a wheel stuck through it. A crown higher than the
+// deck between them is a bonnet sitting down between its wings.
+//
+// The greenhouse is a second loft on top, `[z, yB,wB, yT,wT, flags]`, whose
+// two flag letters say what the segment *to the next station* is made of, top
+// then sides: `g` glass, `r` the roof colour, `b` the body colour. So a
+// windscreen is a `gg` segment, a roof `rg`, a van's cargo box `rb`.
+//
+// `parts` are the small things - wings, splitters, mirrors, lamps - as convex
+// side-profile prisms `[material, [[z, y]...], hw, cx]`, a pair at +-cx when
+// cx is given. -z is the nose and y = 0 the road, as for the classic car.
+const CLASSIC_PANEL = {
+  deck: 0.555, roof: 1.03, nose: -1.7, tail: 1.7, rf: -0.15, rb: 0.9,
+  dw: 0.94, rw: 0.76, fx: 0.95, fy0: 0.03, fy1: 0.53, hoop: 0.4, mid: null,
+  fz0: -Infinity, fz1: Infinity, gaps: [], bz: BADGE_Z, bk: 1,
+};
+
+function car(spec) {
+  const wheels = spec.wheels.flatMap((w) =>
+    [[w.zf, true], [w.zr, false]].filter(([z]) => z != null)
+      .map(([z, front]) => ({ r: w.r, w: w.w, x: w.x, z, front })));
+  const panel = Object.assign({ fz0: -Infinity, fz1: Infinity, mid: 0, bk: 1,
+    deck: 0, roof: 0, rf: 0, rb: 0, dw: 1, rw: 0, fx: 1, fy0: 0, fy1: 0 }, spec.panel);
+  if (spec.body) {
+    // A lofted car: its liveries are laid on the loft itself (`decalMesh`).
+    const cab = spec.cabin || [];
+    const painted = cab.slice(0, -1).filter((c) => c[5][0] !== 'g').map((c) => c[0]);
+    Object.assign(panel, { loft: true, body: spec.body, cabin: cab,
+      rw: cab.length ? 1 : 0,
+      rf: cab.length ? cab[0][0] : 0, rb: cab.length ? cab[cab.length - 1][0] : 0,
+      fz0: spec.body[0][0] + 0.1, fz1: spec.body[spec.body.length - 1][0] - 0.1 });
+    if (panel.hoop == null) {
+      panel.hoop = painted.length ? (Math.min(...painted) + Math.max(...painted)) / 2 + 0.2 : 0;
+    }
+    // Every tyre sits in an arch, and a flank stripe stops either side of it.
+    panel.gaps = (spec.panel && spec.panel.gaps) ||
+      wheels.map((w) => [w.z - w.r - 0.14, w.z + w.r + 0.14]).sort((a, b) => a[0] - b[0]);
+  } else {
+    if (panel.hoop == null) panel.hoop = (panel.rf + panel.rb) / 2;
+    panel.gaps = wheels.filter((w) => w.x - w.w / 2 < panel.fx + 0.02)
+      .map((w) => [w.z - w.r - 0.05, w.z + w.r + 0.05]).sort((a, b) => a[0] - b[0]);
+  }
+  return Object.assign({ shadow: 1.65, bubble: 2.1, bubbleY: 0.6, plate: 2.5 },
+                       spec, { wheels, panel });
+}
+
+// Front lamps, a pair on a face at `z` (negative), proud by 0.015.
+const headPair = (z, y0, y1, cx, hw) =>
+  ['lamp', [[z - 0.015, y0], [z - 0.015, y1], [z + 0.03, y1], [z + 0.03, y0]], hw, cx];
+const brakePair = (z, y0, y1, cx, hw) =>
+  ['brake', [[z - 0.03, y0], [z - 0.03, y1], [z + 0.015, y1], [z + 0.015, y0]], hw, cx];
+// A flat box in profile, z0..z1 by y0..y1.
+const slab = (z0, z1, y0, y1) => [[z0, y0], [z0, y1], [z1, y1], [z1, y0]];
+// A door mirror: a stalk and a head, the head leaning back.
+const mirrors = (z, y, x, mat = 'body') => [
+  ['dark', slab(z + 0.04, z + 0.1, y - 0.06, y + 0.04), 0.06, x - 0.04],
+  [mat, [[z, y + 0.03], [z + 0.02, y + 0.14], [z + 0.15, y + 0.13], [z + 0.15, y + 0.03]], 0.07, x + 0.06],
+];
+
+// Station shorthands. An arch over a wheel of radius `r` at hub height `h`,
+// tyre outer face at `x`: the sill tucked in under the tyre and the wing
+// flared out over it, its lip just clear of the tread.
+const arch = (z, r, x, yf, wf, yt, wt, lip = 0) => {
+  const yb = 2 * r + 0.06 + lip;
+  return [z, r * 1.1, x - 0.36, 2 * r + lip, x - 0.34, yb, x + 0.03,
+          Math.max(yf, yb + 0.04), wf, yt, wt];
+};
+// A closed wheel pod, a prototype's: the wall comes down outboard of the tyre
+// to `y`, so only the bottom of the wheel shows - which is how a Le Mans car
+// carries them. The tyre's outer face is at 1.2; the wall at 1.24.
+const pod = (z, y, yb, yf, yt, wt) =>
+  [z, y, 0.82, y, 1.24, yb, 1.24, yf, 1.06, yt, wt];
+// The two ends of an arch, where the wing comes back down toward the sill.
+const archEnd = (z, r, x, yf, wf, yt, wt) => {
+  const yb = 2 * r - 0.06;
+  return [z, r * 0.8, x - 0.36, r * 1.5, x - 0.34, yb, x + 0.02,
+          Math.max(yf, yb + 0.04), wf, yt, wt];
+};
+
+// A round wheel opening cut into a smooth, unflared side: a run of stations
+// across the wheel whose lower edge follows a semicircle over it, so the hole
+// is an arch and not a slot. `base` is the station the side is everywhere
+// else; only its bottom is lifted.
+const roundArch = (zc, r, base) => [-1, -0.8, -0.5, 0, 0.5, 0.8, 1].map((u) => {
+  const d = u * (r + 0.07);
+  const y = r + Math.sqrt(Math.max(0, (r + 0.07) ** 2 - d * d)) * 0.92;
+  const st = base.slice();
+  st[0] = zc + d; st[1] = y; st[2] = base[4] - 0.3; st[3] = y + 0.02;
+  st[5] = Math.max(base[5], y + 0.04);
+  return st;
+});
+
+// The Beetle's roof, worked out rather than typed: one half-ellipse from the
+// windscreen to the tail, its peak over the doors, with height and width both
+// following the same curve so the dome is smooth instead of creased where a
+// hand-typed section changed its mind. The windows are bands in it.
+const beetleDome = () => {
+  const peak = 0.1, front = 0.95, back = 1.82;
+  const zs = [-0.85, -0.78, -0.68, -0.55, -0.4, -0.2, 0.02, 0.1, 0.18, 0.4, 0.58,
+              0.72, 0.9, 1.1, 1.3, 1.55, 1.75, 1.92];
+  return zs.map((z) => {
+    // In front an ellipse, which stands the windscreen up; behind a cosine,
+    // which keeps a slope all the way to the tail instead of ending in a wall.
+    const t = Math.min(1, z < peak ? (peak - z) / front : (z - peak) / back);
+    const h = z < peak ? Math.sqrt(Math.max(0, 1 - t * t)) : Math.cos(t * Math.PI / 2);
+    const yB = z > 0.7 ? 0.9 - (z - 0.7) * 0.32 : 0.88 + Math.min(0.02, (z + 0.85) * 0.05);
+    const yT = Math.max(yB + 0.02, 0.9 + 0.62 * h);
+    const wB = z > 1.2 ? 0.84 - (z - 1.2) * 0.45 : 0.84;
+    const wT = Math.min(wB - 0.04, 0.4 + 0.2 * h);
+    // Windscreen, door window, pillar, quarter window, then painted all the
+    // way down: the small rear window is its own pane on the slope (a part on
+    // the Beetle's entry), narrower than the roof, as the real one is.
+    const f = z < -0.4 ? 'gb' : z < 0.02 ? 'rg' : z < 0.1 ? 'rb' : z < 0.58 ? 'rg'
+      : z < 0.72 ? 'rb' : 'bb';
+    return [z, yB, wB, yT, wT, f];
+  });
+};
+
+// A box truck's cab, its side flat and its arch a square hole in it, and its
+// box, whose floor clears the rear wheels so they show underneath.
+const vanCab = (z, top, arch = false) =>
+  [z, arch ? 0.78 : 0.28, arch ? 0.6 : 0.9, arch ? 0.8 : 0.36, 0.94,
+   top - 0.14, 0.95, top - 0.03, 0.94, top, 0.88];
+const vanBox = (z) => [z, 0.78, 0.96, 0.8, 1.0, 2.08, 1.0, 2.14, 0.98, 2.16, 0.94];
+
+const CAR_BODIES = {
+  // Rear-engined GT, a 911 GT3 more than anything: the round-shouldered
+  // fastback, the wings standing proud of a low bonnet, swan-neck wing.
+  gt: car({
+    eye: [0.99, 0.22],
+    wheels: [{ r: 0.36, w: 0.32, x: 1.0, zf: -1.2 }, { r: 0.37, w: 0.36, x: 1.02, zr: 1.25 }],
+    body: [
+      [-1.94, 0.16, 0.78, 0.2, 0.86, 0.3, 0.9, 0.36, 0.84, 0.36, 0.66],
+      [-1.82, 0.11, 0.9, 0.18, 0.98, 0.38, 1.04, 0.5, 1.0, 0.46, 0.74],
+      archEnd(-1.62, 0.36, 1.18, 0.7, 1.06, 0.54, 0.72),
+      arch(-1.38, 0.36, 1.18, 0.8, 1.06, 0.6, 0.7),
+      arch(-1.02, 0.36, 1.18, 0.81, 1.04, 0.64, 0.7),
+      archEnd(-0.8, 0.36, 1.18, 0.78, 1.0, 0.68, 0.72),
+      [-0.62, 0.14, 0.94, 0.26, 1.03, 0.56, 1.07, 0.68, 0.98, 0.7, 0.8],
+      [0.6, 0.14, 0.96, 0.26, 1.05, 0.58, 1.1, 0.7, 1.02, 0.72, 0.82],
+      archEnd(0.84, 0.37, 1.22, 0.8, 1.08, 0.74, 0.86),
+      arch(1.08, 0.37, 1.22, 0.86, 1.1, 0.76, 0.86),
+      arch(1.44, 0.37, 1.22, 0.84, 1.08, 0.76, 0.86),
+      archEnd(1.66, 0.37, 1.22, 0.78, 1.06, 0.74, 0.86),
+      [1.84, 0.16, 0.96, 0.26, 1.04, 0.54, 1.06, 0.68, 0.98, 0.7, 0.84],
+      [1.94, 0.22, 0.9, 0.28, 0.96, 0.48, 0.98, 0.62, 0.92, 0.64, 0.8],
+    ],
+    cabin: [
+      [-0.62, 0.68, 0.8, 0.68, 0.78, 'gg'],
+      [-0.08, 0.7, 0.82, 1.12, 0.64, 'rg'],
+      [0.5, 0.71, 0.84, 1.12, 0.66, 'gg'],
+      [1.15, 0.73, 0.86, 0.86, 0.78, 'bb'],
+      [1.7, 0.74, 0.84, 0.76, 0.8, 'bb'],
+    ],
+    parts: [
+      ['dark', slab(-2.0, -1.6, 0.08, 0.13), 1.0],
+      ...mirrors(-0.5, 0.7, 0.9),
+      ['dark', [[1.58, 1.08], [1.58, 1.14], [1.98, 1.16], [1.98, 1.1]], 1.04],
+      ['dark', [[1.62, 0.74], [1.72, 1.12], [1.8, 1.12], [1.74, 0.74]], 0.03, 0.42],
+      ['dark', slab(1.82, 1.98, 0.96, 1.2), 0.02, 1.06],
+      ['dark', slab(0.28, 0.64, 0.34, 0.5), 0.02, 1.08],
+      ['dark', slab(1.9, 1.99, 0.18, 0.26), 0.07, 0.22],
+      ['dark', slab(-1.96, -1.84, 0.2, 0.3), 0.34],
+      ['lamp', [[-1.78, 0.5], [-1.72, 0.66], [-1.6, 0.7], [-1.62, 0.5]], 0.13, 0.92],
+      ['brake', slab(1.93, 1.96, 0.52, 0.58), 0.86],
+    ],
+    panel: { nose: -1.82, tail: 1.9, bz: -1.2, bk: 0.9, mid: 0.1 },
+  }),
+
+  // A Group B / WRC hatch: short, tall, square-backed, box-flared arches, a
+  // scoop on the roof, a wing on the tailgate, a light pod on the bumper.
+  rally: car({
+    eye: [1.25, 0.11],
+    wheels: [{ r: 0.38, w: 0.32, x: 0.98, zf: -1.12, zr: 1.12 }],
+    body: [
+      [-1.8, 0.24, 0.86, 0.3, 0.94, 0.52, 0.98, 0.62, 0.92, 0.62, 0.8],
+      [-1.66, 0.2, 0.92, 0.3, 1.0, 0.62, 1.04, 0.74, 0.98, 0.72, 0.84],
+      archEnd(-1.56, 0.38, 1.16, 0.8, 1.06, 0.75, 0.84),
+      arch(-1.3, 0.38, 1.16, 0.86, 1.08, 0.77, 0.84, 0.04),
+      arch(-0.94, 0.38, 1.16, 0.86, 1.08, 0.79, 0.84, 0.04),
+      archEnd(-0.68, 0.38, 1.16, 0.84, 1.04, 0.8, 0.84),
+      [-0.58, 0.2, 0.94, 0.3, 1.02, 0.66, 1.06, 0.8, 0.98, 0.82, 0.86],
+      [0.58, 0.2, 0.94, 0.3, 1.02, 0.66, 1.06, 0.8, 0.98, 0.82, 0.86],
+      archEnd(0.68, 0.38, 1.16, 0.84, 1.04, 0.82, 0.86),
+      arch(0.94, 0.38, 1.16, 0.86, 1.08, 0.82, 0.86, 0.04),
+      arch(1.3, 0.38, 1.16, 0.86, 1.08, 0.82, 0.86, 0.04),
+      archEnd(1.56, 0.38, 1.16, 0.84, 1.04, 0.82, 0.86),
+      [1.68, 0.2, 0.94, 0.3, 1.02, 0.62, 1.05, 0.78, 0.98, 0.8, 0.86],
+      [1.8, 0.24, 0.9, 0.3, 0.96, 0.56, 0.98, 0.74, 0.92, 0.76, 0.84],
+    ],
+    cabin: [
+      [-0.58, 0.8, 0.86, 0.8, 0.84, 'gg'],
+      [0.0, 0.82, 0.86, 1.38, 0.74, 'rg'],
+      [1.5, 0.8, 0.88, 1.38, 0.76, 'gg'],
+      [1.76, 0.76, 0.86, 0.8, 0.84, 'gg'],
+    ],
+    parts: [
+      ['dark', [[0.1, 1.37], [0.12, 1.47], [0.46, 1.47], [0.58, 1.37]], 0.22],
+      ['dark', [[1.38, 1.36], [1.38, 1.42], [1.86, 1.4], [1.86, 1.34]], 0.82],
+      ['dark', slab(1.6, 1.66, 0.04, 0.4), 0.15, 0.98],
+      // The Delta S4's face: a black band right across the nose with four
+      // round lamps in a row, over a black air dam.
+      ['glass', slab(-1.85, -1.79, 0.42, 0.6), 0.84],
+      ['glass', slab(-1.9, -1.76, 0.14, 0.32), 0.94],
+      ['dark', slab(1.76, 1.88, 0.18, 0.4), 1.0],
+      ...mirrors(-0.5, 0.82, 0.94, 'dark'),
+      ['dark', slab(1.82, 1.92, 0.22, 0.3), 0.06, 0.6],
+      headPair(-1.85, 0.45, 0.57, 0.64, 0.085),
+      headPair(-1.85, 0.45, 0.57, 0.41, 0.085),
+      brakePair(1.8, 0.5, 0.7, 0.74, 0.12),
+    ],
+    panel: { nose: -1.64, tail: 1.78, bz: -1.12, bk: 0.85, mid: 0 },
+    shadow: 1.55, plate: 2.8, bubbleY: 0.7,
+  }),
+
+  // A '69 fastback: long flat hood, straight sides, hips over the back wheels,
+  // chrome bumpers, a ducktail and the tail lamps across the whole back.
+  muscle: car({
+    eye: [1.02, 0.03],
+    wheels: [{ r: 0.38, w: 0.34, x: 0.96, zf: -1.12 }, { r: 0.38, w: 0.36, x: 1.0, zr: 1.28 }],
+    body: [
+      [-1.94, 0.18, 0.96, 0.26, 1.02, 0.58, 1.04, 0.66, 0.98, 0.68, 0.86],
+      [-1.84, 0.16, 0.98, 0.26, 1.04, 0.6, 1.06, 0.7, 1.0, 0.7, 0.86],
+      archEnd(-1.66, 0.38, 1.18, 0.76, 1.06, 0.74, 0.86),
+      arch(-1.36, 0.38, 1.2, 0.86, 1.06, 0.8, 0.84),
+      arch(-0.88, 0.38, 1.2, 0.86, 1.06, 0.8, 0.84),
+      archEnd(-0.56, 0.38, 1.18, 0.76, 1.04, 0.74, 0.86),
+      [-0.46, 0.16, 0.98, 0.26, 1.06, 0.62, 1.08, 0.72, 1.02, 0.72, 0.88],
+      [0.7, 0.16, 0.98, 0.26, 1.06, 0.62, 1.1, 0.74, 1.04, 0.72, 0.88],
+      archEnd(0.86, 0.38, 1.2, 0.8, 1.1, 0.74, 0.88),
+      arch(1.1, 0.38, 1.2, 0.88, 1.1, 0.8, 0.86),
+      arch(1.46, 0.38, 1.2, 0.88, 1.1, 0.8, 0.86),
+      archEnd(1.7, 0.38, 1.2, 0.78, 1.08, 0.74, 0.88),
+      [1.84, 0.16, 0.98, 0.26, 1.06, 0.6, 1.08, 0.72, 1.02, 0.72, 0.9],
+      [1.94, 0.2, 0.96, 0.26, 1.02, 0.56, 1.04, 0.7, 0.98, 0.72, 0.88],
+    ],
+    cabin: [
+      [-0.38, 0.7, 0.86, 0.7, 0.84, 'gg'],
+      [0.08, 0.72, 0.88, 1.15, 0.74, 'rg'],
+      [1.02, 0.74, 0.9, 1.13, 0.76, 'gg'],
+      [1.62, 0.74, 0.9, 0.78, 0.86, 'gg'],
+    ],
+    parts: [
+      ['dark', [[1.66, 0.72], [1.66, 0.8], [1.95, 0.84], [1.95, 0.72]], 0.94],
+      ['dark', slab(-2.0, -1.93, 0.2, 0.32), 1.04],
+      ['dark', slab(1.93, 2.0, 0.2, 0.32), 1.04],
+      ['dark', slab(-1.96, -1.92, 0.38, 0.6), 0.84],
+      ...mirrors(-0.3, 0.72, 0.94),
+      ['dark', slab(1.92, 2.0, 0.12, 0.2), 0.06, 0.62],
+      headPair(-1.96, 0.44, 0.56, 0.7, 0.1),
+      headPair(-1.96, 0.44, 0.56, 0.44, 0.08),
+      // The tail: a black panel the width of the car with three upright
+      // lamps a side in it, the way a '69 fastback wears them.
+      ['dark', slab(1.93, 1.955, 0.4, 0.64), 0.86],
+      brakePair(1.955, 0.44, 0.6, 0.76, 0.055),
+      brakePair(1.955, 0.44, 0.6, 0.6, 0.055),
+      brakePair(1.955, 0.44, 0.6, 0.44, 0.055),
+    ],
+    panel: { nose: -1.8, tail: 1.9, bz: -1.18, bk: 0.95, mid: 0 },
+  }),
+
+  // A sixties endurance racer, GT40 and 250 GTO between them: everything round,
+  // the wings standing up either side of a low bonnet, a bubble of a cabin and
+  // a cut-off Kamm tail.
+  sixties: car({
+    eye: [0.88, 0.19],
+    wheels: [{ r: 0.37, w: 0.3, x: 0.95, zf: -1.15, zr: 1.2 }],
+    body: [
+      [-1.88, 0.22, 0.56, 0.25, 0.66, 0.32, 0.72, 0.38, 0.62, 0.38, 0.44],
+      [-1.78, 0.15, 0.78, 0.2, 0.88, 0.4, 0.95, 0.5, 0.88, 0.48, 0.62],
+      archEnd(-1.56, 0.37, 1.11, 0.68, 1.0, 0.54, 0.66),
+      arch(-1.33, 0.37, 1.11, 0.8, 1.0, 0.57, 0.64),
+      arch(-0.97, 0.37, 1.11, 0.8, 1.0, 0.6, 0.64),
+      archEnd(-0.74, 0.37, 1.11, 0.74, 0.98, 0.62, 0.68),
+      [-0.62, 0.14, 0.88, 0.24, 0.98, 0.52, 1.02, 0.66, 0.94, 0.64, 0.76],
+      [0.66, 0.14, 0.9, 0.24, 1.0, 0.54, 1.04, 0.68, 0.96, 0.66, 0.78],
+      archEnd(0.79, 0.37, 1.12, 0.76, 1.02, 0.66, 0.74),
+      arch(1.02, 0.37, 1.12, 0.84, 1.03, 0.66, 0.72),
+      arch(1.38, 0.37, 1.12, 0.84, 1.03, 0.66, 0.72),
+      archEnd(1.6, 0.37, 1.12, 0.76, 1.0, 0.66, 0.74),
+      [1.76, 0.16, 0.84, 0.24, 0.94, 0.48, 0.98, 0.62, 0.88, 0.64, 0.72],
+      [1.86, 0.22, 0.72, 0.28, 0.8, 0.42, 0.84, 0.56, 0.76, 0.58, 0.62],
+    ],
+    cabin: [
+      [-0.55, 0.63, 0.74, 0.63, 0.72, 'gg'],
+      [-0.05, 0.65, 0.76, 1.0, 0.56, 'rg'],
+      [0.5, 0.66, 0.78, 1.0, 0.58, 'gg'],
+      [1.3, 0.66, 0.76, 0.72, 0.7, 'bb'],
+      [1.8, 0.62, 0.74, 0.62, 0.72, 'bb'],
+    ],
+    parts: [
+      ['dark', slab(-1.92, -1.84, 0.2, 0.27), 0.62],
+      ['dark', slab(1.84, 1.92, 0.22, 0.29), 0.7],
+      ['dark', slab(0.2, 0.5, 0.36, 0.5), 0.02, 1.02],
+      ...mirrors(-0.42, 0.64, 0.84),
+      ['dark', slab(1.85, 1.95, 0.16, 0.24), 0.05, 0.3],
+      ['lamp', [[-1.72, 0.42], [-1.66, 0.6], [-1.54, 0.64], [-1.56, 0.42]], 0.11, 0.8],
+      brakePair(1.86, 0.36, 0.46, 0.62, 0.07),
+      brakePair(1.86, 0.36, 0.46, 0.42, 0.07),
+    ],
+    panel: { nose: -1.76, tail: 1.84, bz: -1.18, bk: 0.82, mid: 0 },
+    shadow: 1.55,
+  }),
+
+  // A modern Le Mans hypercar: a low tub between two long wheel pods, a
+  // canopy, a shark fin running into a full-width wing.
+  proto: car({
+    eye: [0.85, 0.36],
+    wheels: [{ r: 0.38, w: 0.24, x: 1.08, zf: -1.2, zr: 1.25 }],
+    body: [
+      [-1.96, 0.1, 0.96, 0.14, 1.04, 0.2, 1.08, 0.26, 1.0, 0.22, 0.72],
+      [-1.84, 0.1, 1.0, 0.16, 1.08, 0.3, 1.12, 0.44, 1.02, 0.28, 0.66],
+      pod(-1.68, 0.3, 0.68, 0.76, 0.34, 0.6),
+      pod(-1.44, 0.3, 0.8, 0.86, 0.43, 0.58),
+      pod(-0.96, 0.3, 0.8, 0.86, 0.44, 0.58),
+      pod(-0.7, 0.3, 0.74, 0.8, 0.42, 0.58),
+      [-0.58, 0.12, 0.96, 0.2, 1.04, 0.48, 1.08, 0.64, 1.0, 0.44, 0.58],
+      [0.66, 0.12, 0.98, 0.2, 1.06, 0.5, 1.1, 0.66, 1.02, 0.46, 0.6],
+      pod(0.86, 0.3, 0.76, 0.82, 0.46, 0.6),
+      pod(1.08, 0.3, 0.82, 0.88, 0.46, 0.6),
+      pod(1.42, 0.3, 0.82, 0.88, 0.46, 0.6),
+      pod(1.7, 0.3, 0.76, 0.82, 0.46, 0.6),
+      [1.94, 0.12, 0.98, 0.2, 1.06, 0.48, 1.1, 0.66, 1.0, 0.46, 0.64],
+    ],
+    cabin: [
+      [-0.82, 0.42, 0.5, 0.42, 0.48, 'gg'],
+      [-0.25, 0.43, 0.54, 0.98, 0.4, 'rg'],
+      [0.3, 0.45, 0.56, 0.98, 0.42, 'bb'],
+      [1.2, 0.46, 0.56, 0.54, 0.46, 'bb'],
+    ],
+    parts: [
+      ['body', [[0.3, 0.96], [0.3, 1.02], [1.84, 1.16], [1.84, 0.46]], 0.025],
+      ['dark', [[1.62, 1.06], [1.62, 1.13], [1.99, 1.17], [1.99, 1.1]], 1.04],
+      ['dark', slab(1.6, 1.99, 0.62, 1.2), 0.02, 1.04],
+      ['dark', slab(-2.0, -1.5, 0.05, 0.1), 1.1],
+      ['dark', slab(0.0, 0.5, 0.24, 0.42), 0.02, 1.1],
+      ...mirrors(-0.66, 0.44, 0.62),
+      headPair(-1.96, 0.15, 0.2, 0.7, 0.26),
+      // The tail: a black panel, a full-width light strip across its top with
+      // its ends turned down into a C each side, and a diffuser's fins under it.
+      ['glass', slab(1.94, 1.955, 0.24, 0.6), 0.94],
+      ['brake', slab(1.95, 1.975, 0.5, 0.56), 0.92],
+      ['brake', slab(1.95, 1.975, 0.3, 0.56), 0.04, 0.88],
+      ...[0.2, 0.45, 0.7].map((x) => ['dark', slab(1.7, 1.97, 0.08, 0.26), 0.015, x]),
+    ],
+    panel: { nose: -1.8, tail: 1.9, bz: -1.36, bk: 0.72, mid: 0 },
+    plate: 2.35, bubbleY: 0.5,
+  }),
+
+  // A current Formula car: needle nose, sidepods with a coke-bottle waist, an
+  // airbox over the driver's head, the halo, a floor, and wings both ends.
+  f1: car({
+    eye: [0.92, -0.15],
+    wheels: [{ r: 0.38, w: 0.34, x: 1.0, zf: -1.12 }, { r: 0.43, w: 0.42, x: 0.98, zr: 1.3 }],
+    body: [
+      [-1.9, 0.14, 0.08, 0.18, 0.12, 0.24, 0.13, 0.28, 0.1, 0.28, 0.06],
+      [-1.4, 0.14, 0.13, 0.19, 0.19, 0.34, 0.21, 0.4, 0.17, 0.41, 0.12],
+      [-0.72, 0.12, 0.2, 0.18, 0.27, 0.46, 0.31, 0.54, 0.27, 0.55, 0.2],
+      [-0.34, 0.1, 0.28, 0.16, 0.6, 0.44, 0.64, 0.52, 0.4, 0.58, 0.24],
+      [0.4, 0.1, 0.3, 0.16, 0.66, 0.42, 0.7, 0.52, 0.42, 0.6, 0.24],
+      [1.2, 0.1, 0.22, 0.14, 0.34, 0.3, 0.36, 0.4, 0.28, 0.46, 0.18],
+      [1.62, 0.12, 0.14, 0.16, 0.18, 0.28, 0.2, 0.34, 0.16, 0.38, 0.12],
+    ],
+    cabin: [
+      [-0.06, 0.56, 0.22, 0.56, 0.2, 'rb'],
+      [0.12, 0.57, 0.22, 1.0, 0.15, 'rb'],
+      [0.46, 0.59, 0.22, 0.98, 0.13, 'rb'],
+      [1.55, 0.38, 0.14, 0.42, 0.08, 'rb'],
+    ],
+    parts: [
+      ['dark', slab(-0.66, -0.06, 0.5, 0.58), 0.18],
+      ['cabin', [[-0.42, 0.56], [-0.42, 0.78], [-0.36, 0.84], [-0.16, 0.84], [-0.12, 0.56]], 0.13],
+      ['dark', slab(-0.5, 0.0, 0.84, 0.88), 0.025, 0.2],
+      ['dark', [[-0.66, 0.52], [-0.58, 0.88], [-0.5, 0.88], [-0.56, 0.52]], 0.035],
+      ['dark', slab(-0.6, 1.6, 0.05, 0.1), 0.86],
+      ['dark', slab(-2.0, -1.6, 0.06, 0.12), 1.12],
+      ['dark', [[-1.86, 0.12], [-1.86, 0.17], [-1.62, 0.2], [-1.62, 0.15]], 1.0],
+      ['dark', slab(-2.0, -1.6, 0.06, 0.32), 0.02, 1.13],
+      ['dark', [[1.58, 0.94], [1.58, 1.04], [1.96, 1.08], [1.96, 0.98]], 0.74],
+      ['dark', [[1.62, 0.78], [1.62, 0.84], [1.94, 0.86], [1.94, 0.8]], 0.74],
+      ['dark', slab(1.52, 1.98, 0.4, 1.12), 0.02, 0.76],
+      ...mirrors(-0.3, 0.5, 0.36, 'dark'),
+      // The suspension: an upper and a lower arm to each wheel, so the wheels
+      // hang off the car rather than float beside it.
+      ['dark', slab(-1.17, -1.07, 0.27, 0.31), 0.92],
+      ['dark', slab(-1.15, -1.09, 0.44, 0.47), 0.92],
+      ['dark', [[-1.14, 0.3], [-1.12, 0.36], [-0.86, 0.56], [-0.88, 0.5]], 0.03, 0.55],
+      ['dark', slab(1.24, 1.36, 0.3, 0.34), 0.86],
+      ['dark', slab(1.27, 1.33, 0.48, 0.51), 0.86],
+      brakePair(1.62, 0.26, 0.38, 0, 0.07),
+    ],
+    panel: { nose: -1.86, tail: 1.58, bz: -1.38, bk: 0.38, mid: 0.2, hoop: 0.5 },
+    shadow: 1.7, plate: 2.35, bubbleY: 0.5,
+  }),
+
+  // A pickup on its tyres: square nose and grille, a cab, an open bed.
+  pickup: car({
+    eye: [1.38, 0.45],
+    wheels: [{ r: 0.43, w: 0.34, x: 1.0, zf: -1.22, zr: 1.22 }],
+    body: [
+      [-1.94, 0.3, 0.94, 0.36, 1.0, 0.76, 1.02, 0.88, 0.98, 0.9, 0.88],
+      [-1.8, 0.28, 0.96, 0.36, 1.02, 0.8, 1.04, 0.92, 1.0, 0.92, 0.88],
+      archEnd(-1.66, 0.43, 1.18, 0.94, 1.04, 0.92, 0.88),
+      arch(-1.4, 0.43, 1.18, 0.98, 1.04, 0.93, 0.88, 0.04),
+      arch(-1.04, 0.43, 1.18, 0.98, 1.04, 0.94, 0.88, 0.04),
+      archEnd(-0.78, 0.43, 1.18, 0.96, 1.02, 0.94, 0.88),
+      [-0.66, 0.28, 0.96, 0.36, 1.03, 0.8, 1.05, 0.94, 1.0, 0.94, 0.9],
+      [0.38, 0.28, 0.96, 0.36, 1.03, 0.8, 1.05, 0.94, 1.0, 0.94, 0.9],
+      archEnd(0.78, 0.43, 1.18, 0.96, 1.02, 0.94, 0.9),
+      arch(1.04, 0.43, 1.18, 0.98, 1.04, 0.94, 0.9, 0.04),
+      arch(1.4, 0.43, 1.18, 0.98, 1.04, 0.94, 0.9, 0.04),
+      archEnd(1.66, 0.43, 1.18, 0.96, 1.02, 0.94, 0.9),
+      [1.8, 0.28, 0.96, 0.36, 1.02, 0.8, 1.04, 0.94, 1.0, 0.94, 0.9],
+      [1.94, 0.3, 0.94, 0.36, 1.0, 0.8, 1.02, 0.92, 0.98, 0.92, 0.88],
+    ],
+    cabin: [
+      [-0.72, 0.92, 0.9, 0.92, 0.88, 'gg'],
+      [-0.4, 0.93, 0.9, 1.52, 0.84, 'rg'],
+      [0.32, 0.93, 0.9, 1.52, 0.84, 'gg'],
+      [0.4, 0.93, 0.9, 1.44, 0.86, 'gg'],
+    ],
+    parts: [
+      ['body', slab(0.42, 1.94, 0.92, 1.18), 0.06, 0.92],
+      ['body', slab(1.84, 1.94, 0.92, 1.18), 0.92],
+      ['body', slab(0.42, 0.52, 0.92, 1.18), 0.92],
+      ['dark', slab(0.52, 1.84, 0.92, 0.96), 0.86],
+      ['dark', slab(-0.38, -0.18, 1.52, 1.58), 0.72],
+      ['dark', slab(-1.98, -1.93, 0.42, 0.84), 0.74],
+      ['dark', slab(-2.0, -1.92, 0.26, 0.42), 1.02],
+      ['dark', slab(1.92, 2.0, 0.28, 0.42), 1.02],
+      ...mirrors(-0.66, 0.94, 1.0, 'dark'),
+      ['dark', slab(1.9, 2.0, 0.24, 0.3), 0.05, 0.6],
+      headPair(-1.94, 0.62, 0.78, 0.84, 0.11),
+      brakePair(1.94, 0.62, 0.94, 0.95, 0.05),
+    ],
+    panel: { nose: -1.8, tail: 0.36, bz: -1.26, bk: 1.0, mid: 0, hoop: 0.1 },
+    shadow: 1.75, plate: 3.0, bubble: 2.25, bubbleY: 0.8,
+  }),
+
+  // A Beetle: a round front lid falling to the bumper between two separate
+  // fenders, running boards, the domed cabin, the engine lid sloping off the
+  // back, the lamps out on the fenders.
+  beetle: car({
+    rim: 0.8,
+    bulge: 0.14,
+    eye: [1.28, 0.5],
+    wheels: [{ r: 0.38, w: 0.3, x: 0.95, zf: -1.25, zr: 1.28 }],
+    body: [
+      [-1.96, 0.3, 0.4, 0.34, 0.56, 0.44, 0.64, 0.52, 0.56, 0.54, 0.36],
+      [-1.86, 0.24, 0.56, 0.28, 0.74, 0.48, 0.82, 0.62, 0.72, 0.66, 0.5],
+      archEnd(-1.68, 0.38, 1.1, 0.74, 0.92, 0.74, 0.58),
+      arch(-1.44, 0.38, 1.12, 0.84, 0.96, 0.8, 0.64),
+      arch(-1.06, 0.38, 1.12, 0.86, 0.96, 0.85, 0.7),
+      archEnd(-0.82, 0.38, 1.1, 0.86, 0.92, 0.88, 0.76),
+      [-0.72, 0.2, 0.82, 0.28, 0.92, 0.5, 0.94, 0.84, 0.88, 0.88, 0.82],
+      [0.7, 0.2, 0.82, 0.28, 0.92, 0.5, 0.94, 0.84, 0.88, 0.9, 0.82],
+      archEnd(0.82, 0.38, 1.1, 0.86, 0.92, 0.88, 0.78),
+      arch(1.08, 0.38, 1.12, 0.86, 0.96, 0.84, 0.7),
+      arch(1.48, 0.38, 1.12, 0.82, 0.96, 0.74, 0.62),
+      archEnd(1.72, 0.38, 1.1, 0.72, 0.92, 0.64, 0.52),
+      [1.86, 0.24, 0.6, 0.3, 0.76, 0.48, 0.82, 0.58, 0.7, 0.6, 0.48],
+      [1.96, 0.3, 0.4, 0.34, 0.56, 0.44, 0.64, 0.5, 0.56, 0.52, 0.36],
+    ],
+    cabin: beetleDome(),
+    parts: [
+      // The rear window: a small pane laid on the slope of the dome, about
+      // half its width, rather than a band across the whole roof.
+      ['glass', [[0.72, 1.448], [1.12, 1.31], [1.12, 1.29], [0.72, 1.428]], 0.27],
+      ['dark', slab(-2.0, -1.92, 0.3, 0.38), 1.0],
+      ['dark', slab(1.92, 2.0, 0.3, 0.38), 1.0],
+      ['lamp', [[-1.74, 0.62], [-1.7, 0.78], [-1.62, 0.8], [-1.64, 0.62]], 0.1, 0.86],
+      brakePair(1.78, 0.58, 0.72, 0.86, 0.06),
+      // Overriders on the rear bumper and the plate lamp's hood over the plate.
+      ['dark', slab(1.86, 2.0, 0.26, 0.48), 0.05, 0.5],
+      ['dark', slab(1.83, 1.9, 0.5, 0.56), 0.2],
+      ...mirrors(-0.66, 0.9, 0.86),
+    ],
+    panel: { nose: -1.84, tail: -0.8, bz: -1.4, bk: 0.6, mid: 0 },
+    shadow: 1.6,
+  }),
+
+  // A bubble car, the BMW Isetta: as tall as it is wide, an egg in profile,
+  // the whole front a door with the windscreen in it and the handle across it,
+  // headlamps in pods bolted onto the sides of the body, and the back drawn in
+  // hard to rear wheels that sit close together (48cm apart on the real car).
+  bubble: car({
+    rim: 0.72,
+    bulge: 0.2,
+    eye: [1.45, 1.28],
+    wheels: [{ r: 0.3, w: 0.22, x: 0.86, zf: -0.95 }, { r: 0.3, w: 0.2, x: 0.58, zr: 1.0 }],
+    // Plain round cut-outs for the wheels rather than flared arches, and the
+    // painted body up to half the car's height, as on the real thing.
+    body: [
+      [-1.62, 0.3, 0.5, 0.34, 0.7, 0.46, 0.8, 0.56, 0.74, 0.58, 0.64],
+      [-1.52, 0.22, 0.7, 0.26, 0.88, 0.5, 0.95, 0.62, 0.92, 0.66, 0.84],
+      [-1.42, 0.2, 0.8, 0.26, 0.94, 0.52, 0.98, 0.8, 0.94, 0.86, 0.86],
+      ...roundArch(-0.95, 0.3, [0, 0.16, 0.8, 0.2, 0.95, 0.5, 0.98, 0.82, 0.94, 0.88, 0.87]),
+      [-0.5, 0.16, 0.8, 0.2, 0.94, 0.5, 0.98, 0.84, 0.94, 0.9, 0.88],
+      [0.6, 0.16, 0.7, 0.2, 0.84, 0.5, 0.88, 0.84, 0.84, 0.9, 0.8],
+      ...roundArch(1.0, 0.3, [0, 0.16, 0.6, 0.2, 0.8, 0.5, 0.84, 0.82, 0.78, 0.88, 0.72]),
+      [1.4, 0.2, 0.5, 0.26, 0.68, 0.46, 0.72, 0.7, 0.66, 0.78, 0.58],
+      [1.52, 0.26, 0.4, 0.3, 0.56, 0.44, 0.6, 0.62, 0.54, 0.7, 0.46],
+      [1.62, 0.32, 0.28, 0.36, 0.42, 0.46, 0.46, 0.56, 0.4, 0.6, 0.34],
+    ],
+    // The front is the door: one tall rounded face from the bumper to the
+    // roof, the windscreen in its top half. Then a long side window running
+    // from just behind the door nearly to the back, a short quarter, and the
+    // roof curving down to the tail.
+    cabin: [
+      [-1.62, 0.58, 0.64, 0.62, 0.62, 'bb'],
+      [-1.56, 0.62, 0.8, 0.98, 0.74, 'bb'],
+      [-1.48, 0.7, 0.86, 1.3, 0.72, 'gb'],
+      [-1.32, 0.82, 0.9, 1.6, 0.68, 'gb'],
+      [-1.08, 0.88, 0.92, 1.78, 0.64, 'rg'],
+      [-0.6, 0.9, 0.9, 1.86, 0.62, 'rg'],
+      [0.0, 0.9, 0.86, 1.84, 0.6, 'rg'],
+      [0.4, 0.9, 0.8, 1.74, 0.58, 'rb'],
+      [0.62, 0.9, 0.78, 1.6, 0.56, 'gb'],
+      [0.9, 0.88, 0.72, 1.34, 0.52, 'bb'],
+      [1.2, 0.84, 0.62, 1.02, 0.46, 'bb'],
+      [1.5, 0.76, 0.5, 0.82, 0.4, 'bb'],
+    ],
+    parts: [
+      // The headlamp pods, bolted onto the sides of the nose, and their lenses.
+      ['body', [[-1.52, 0.64], [-1.52, 0.8], [-1.3, 0.83], [-1.2, 0.74], [-1.3, 0.64]], 0.09, 0.98],
+      ['lamp', slab(-1.535, -1.515, 0.67, 0.78), 0.065, 0.98],
+      ['dark', slab(-1.72, -1.64, 0.3, 0.38), 0.7],
+      ['dark', slab(1.58, 1.66, 0.3, 0.38), 0.44],
+      // The door handle across the front, on the door below the screen.
+      ['dark', slab(-1.59, -1.55, 0.8, 0.84), 0.2],
+      brakePair(1.61, 0.48, 0.58, 0.3, 0.05),
+      ...mirrors(-1.2, 0.98, 0.94),
+    ],
+    panel: { nose: -1.52, tail: -1.4, bz: -1.48, bk: 0.22, mid: 0,
+             bface: [-1.635, 0.58] },
+    shadow: 1.35, bubble: 2.0, bubbleY: 0.9,
+  }),
+
+  // A monster truck: a pickup shell way up on giant tyres, the axles, frame
+  // and shocks all out in the open under it, a tube bumper each end.
+  monster: car({
+    eye: [2.2, 0.38],
+    wheels: [{ r: 0.62, w: 0.5, x: 0.95, zf: -1.25, zr: 1.25 }],
+    body: [
+      [-1.9, 1.36, 0.7, 1.4, 0.8, 1.66, 0.84, 1.78, 0.8, 1.8, 0.7],
+      [-1.78, 1.28, 0.8, 1.32, 0.86, 1.68, 0.88, 1.82, 0.86, 1.86, 0.78],
+      [-0.6, 1.28, 0.82, 1.32, 0.88, 1.7, 0.9, 1.84, 0.88, 1.88, 0.8],
+      [1.8, 1.28, 0.82, 1.32, 0.88, 1.7, 0.9, 1.84, 0.88, 1.86, 0.8],
+      [1.92, 1.32, 0.74, 1.36, 0.82, 1.66, 0.86, 1.8, 0.82, 1.82, 0.74],
+    ],
+    cabin: [
+      [-0.62, 1.86, 0.84, 1.88, 0.82, 'gb'],
+      [-0.32, 1.87, 0.84, 2.34, 0.76, 'rg'],
+      [0.36, 1.87, 0.84, 2.34, 0.76, 'gb'],
+      [0.42, 1.87, 0.84, 2.26, 0.78, 'gg'],
+    ],
+    parts: [
+      ['dark', slab(-1.72, 1.72, 0.66, 0.84), 0.1, 0.48],
+      ['dark', slab(-1.31, -1.19, 0.56, 0.68), 0.7],
+      ['dark', slab(1.19, 1.31, 0.56, 0.68), 0.7],
+      ...[-1.5, -1.0, 1.0, 1.5].map((z) => ['dark', slab(z - 0.04, z + 0.04, 0.66, 1.3), 0.05, 0.6]),
+      ['dark', slab(-2.0, -1.9, 1.08, 1.2), 0.74],
+      ['dark', slab(1.9, 2.0, 1.08, 1.2), 0.74],
+      ['body', slab(0.42, 1.92, 1.86, 2.04), 0.06, 0.84],
+      ['body', slab(1.82, 1.92, 1.86, 2.04), 0.84],
+      ['body', slab(0.42, 0.5, 1.86, 2.04), 0.84],
+      ['dark', slab(0.5, 1.82, 1.86, 1.9), 0.78],
+      ['lamp', slab(-0.3, -0.22, 2.34, 2.4), 0.56],
+      headPair(-1.9, 1.5, 1.62, 0.6, 0.1),
+      brakePair(1.92, 1.5, 1.68, 0.7, 0.06),
+      ...mirrors(-0.5, 1.9, 0.86, 'dark'),
+    ],
+    panel: { nose: -1.78, tail: -0.62, bz: -1.2, bk: 0.6, mid: 0 },
+    shadow: 1.75, bubble: 2.7, bubbleY: 1.4, plate: 3.5,
+  }),
+
+  // A big rig: a long-nose tractor unit with no trailer. The hood, the tall
+  // cab and its sleeper, chimney stacks behind it, and the fifth wheel out on
+  // the frame over two rear axles.
+  bigrig: car({
+    eye: [1.95, 0.32],
+    wheels: [{ r: 0.42, w: 0.3, x: 0.86, zf: -1.3 }, { r: 0.42, w: 0.4, x: 0.82, zr: 0.86 },
+             { r: 0.42, w: 0.4, x: 0.82, zr: 1.5 }],
+    body: [
+      [-1.96, 0.42, 0.7, 0.46, 0.8, 1.2, 0.82, 1.36, 0.78, 1.4, 0.66],
+      [-1.86, 0.4, 0.76, 0.44, 0.84, 1.24, 0.86, 1.4, 0.84, 1.44, 0.72],
+      archEnd(-1.78, 0.42, 1.06, 1.3, 0.86, 1.45, 0.74),
+      arch(-1.52, 0.42, 1.06, 1.32, 0.86, 1.46, 0.74),
+      arch(-1.08, 0.42, 1.06, 1.34, 0.86, 1.48, 0.74),
+      archEnd(-0.82, 0.42, 1.06, 1.36, 0.86, 1.49, 0.76),
+      [-0.72, 0.38, 0.8, 0.44, 0.86, 1.24, 0.88, 1.44, 0.86, 1.5, 0.76],
+      [-0.5, 0.38, 0.84, 0.44, 0.9, 1.3, 0.92, 1.5, 0.9, 1.52, 0.86],
+      [0.52, 0.38, 0.84, 0.44, 0.9, 1.3, 0.92, 1.5, 0.9, 1.52, 0.86],
+      [0.56, 0.42, 0.8, 0.46, 0.86, 1.28, 0.88, 1.48, 0.86, 1.5, 0.82],
+    ],
+    cabin: [
+      [-0.5, 1.5, 0.86, 1.52, 0.84, 'gb'],
+      [-0.3, 1.52, 0.86, 2.1, 0.8, 'rg'],
+      [0.1, 1.52, 0.86, 2.12, 0.8, 'rb'],
+      [0.14, 1.52, 0.86, 2.38, 0.8, 'rb'],
+      [0.54, 1.52, 0.86, 2.38, 0.8, 'bb'],
+    ],
+    parts: [
+      ['dark', slab(-1.99, -1.95, 0.6, 1.34), 0.5],
+      ...[0.74, 0.88, 1.02, 1.16].map((y) => ['body', slab(-1.99, -1.97, y, y + 0.04), 0.48]),
+      ['dark', slab(-2.0, -1.9, 0.34, 0.56), 0.98],
+      headPair(-1.96, 0.9, 1.04, 0.7, 0.1),
+      ['dark', slab(0.56, 0.64, 1.2, 2.56), 0.05, 0.8],
+      ['dark', slab(0.5, 1.9, 0.5, 0.7), 0.1, 0.45],
+      // The deck plate behind the cab and the fifth wheel on it.
+      ['dark', slab(0.56, 0.92, 0.7, 0.74), 0.44],
+      ['glass', slab(0.92, 1.46, 0.7, 0.8), 0.4],
+      ['glass', slab(1.28, 1.48, 0.79, 0.81), 0.06],
+      // Cab extenders down the back of the sleeper, and its little window.
+      ['body', slab(0.54, 0.76, 1.28, 2.36), 0.03, 0.83],
+      ['glass', slab(0.54, 0.56, 1.88, 2.1), 0.28],
+      // A quarter fender over each rear axle.
+      ...[0.86, 1.5].map((z) => ['body', [[z - 0.5, 0.84], [z - 0.36, 0.98], [z + 0.36, 0.98],
+                                          [z + 0.5, 0.84]], 0.21, 0.82]),
+      // Black flaps behind the wheels (the glass material: near-black, and no
+      // extra mesh), and the light bar across the frame.
+      ['glass', slab(1.93, 1.96, 0.16, 0.66), 0.17, 0.82],
+      ['dark', slab(1.88, 1.97, 0.56, 0.74), 0.86],
+      brakePair(1.97, 0.58, 0.72, 0.7, 0.1),
+      ...[0, 0.12].map((x) => ['brake', slab(1.94, 1.985, 0.62, 0.68), 0.03, x]),
+      ...mirrors(-0.42, 1.6, 0.92, 'dark'),
+    ],
+    panel: { nose: -1.86, tail: -0.62, bz: -1.3, bk: 0.5, mid: 0,
+             bface: [-1.997, 1.0], gaps: [[-1.86, -0.74]] },
+    shadow: 1.8, bubble: 2.7, bubbleY: 1.3, plate: 3.4,
+  }),
+
+  // A rental box truck, a U-Haul more than anything: a short-nosed cab, a tall
+  // box behind it with the overhang over the cab roof, and the back wheels out
+  // in the open under the box on the chassis rails.
+  van: car({
+    eye: [1.42, 1.19],
+    wheels: [{ r: 0.36, w: 0.26, x: 0.84, zf: -1.3 }, { r: 0.36, w: 0.4, x: 0.8, zr: 1.08 }],
+    body: [
+      [-1.96, 0.3, 0.84, 0.36, 0.9, 0.62, 0.92, 0.78, 0.88, 0.82, 0.78],
+      [-1.86, 0.28, 0.88, 0.36, 0.94, 0.72, 0.95, 0.9, 0.93, 0.96, 0.82],
+      vanCab(-1.74, 1.0), vanCab(-1.72, 1.0, true), vanCab(-0.88, 1.12, true),
+      vanCab(-0.86, 1.12), vanCab(-0.57, 1.12),
+      vanBox(-0.55), vanBox(1.9),
+      [1.96, 0.8, 0.94, 0.82, 0.98, 2.06, 0.98, 2.12, 0.96, 2.14, 0.92],
+    ],
+    cabin: [
+      [-1.46, 1.04, 0.9, 1.06, 0.88, 'gg'],
+      [-1.12, 1.08, 0.92, 1.56, 0.84, 'rg'],
+      [-0.56, 1.12, 0.92, 1.56, 0.86, 'rb'],
+    ],
+    parts: [
+      // The box's overhang over the cab, raked at the front.
+      ['body', [[-0.55, 1.6], [-1.02, 1.6], [-1.16, 1.72], [-1.16, 2.04], [-1.04, 2.15], [-0.55, 2.16]], 0.97],
+      ['dark', slab(-0.55, 1.84, 0.42, 0.78), 0.1, 0.5],
+      ['dark', slab(1.56, 1.6, 0.16, 0.66), 0.26, 0.82],
+      ['dark', slab(-0.4, 0.3, 0.46, 0.72), 0.24, 0.72],
+      // The step bumper, right under the box.
+      ['dark', slab(1.84, 2.0, 0.56, 0.74), 0.94],
+      ['dark', slab(-2.0, -1.9, 0.2, 0.36), 0.96],
+      ['dark', slab(-1.985, -1.94, 0.42, 0.74), 0.42],
+      // The roll-up door: its two edges, the ribs across it, the handle.
+      ['dark', slab(1.962, 1.976, 0.82, 2.06), 0.016, 0.84],
+      ...[1.0, 1.2, 1.4, 1.6, 1.8].map((y) => ['dark', slab(1.962, 1.972, y, y + 0.018), 0.82]),
+      ['dark', slab(1.962, 1.99, 0.88, 0.92), 0.14],
+      ...mirrors(-1.36, 1.14, 1.0, 'dark'),
+      headPair(-1.96, 0.6, 0.76, 0.66, 0.12),
+      brakePair(1.96, 0.86, 1.3, 0.92, 0.035),
+    ],
+    panel: { nose: -1.86, tail: -1.5, bz: -1.8, bk: 0.4, mid: 0.3, hoop: 0.6,
+             bface: [-1.992, 0.58], gaps: [[-1.8, -0.8]] },
+    shadow: 1.8, bubble: 2.4, bubbleY: 1.1, plate: 3.3,
+  }),
+
+  // A kart. It is in the same hitbox as everything else, so it is the car that
+  // looks most off the road when it is not.
+  kart: car({
+    eye: [1.0, 0.0],
+    wheels: [{ r: 0.24, w: 0.24, x: 0.8, zf: -0.78 }, { r: 0.27, w: 0.3, x: 0.8, zr: 0.86 }],
+    body: [
+      [-1.34, 0.1, 0.4, 0.13, 0.48, 0.22, 0.52, 0.28, 0.48, 0.28, 0.38],
+      [-1.16, 0.09, 0.5, 0.14, 0.56, 0.3, 0.6, 0.38, 0.56, 0.38, 0.44],
+      [-0.86, 0.09, 0.44, 0.14, 0.48, 0.32, 0.5, 0.42, 0.46, 0.42, 0.36],
+      [-0.6, 0.09, 0.3, 0.14, 0.34, 0.3, 0.36, 0.38, 0.32, 0.38, 0.24],
+    ],
+    parts: [
+      ['dark', slab(-1.0, 1.1, 0.08, 0.13), 0.5],
+      ['dark', slab(-0.9, 1.05, 0.1, 0.15), 0.03, 0.66],
+      ['body', [[-0.46, 0.12], [-0.42, 0.28], [-0.3, 0.32], [0.42, 0.32], [0.56, 0.12]], 0.12, 0.62],
+      ['dark', [[0.02, 0.13], [0.1, 0.66], [0.38, 0.66], [0.44, 0.13]], 0.26],
+      ['dark', [[-0.24, 0.3], [-0.16, 0.82], [0.12, 0.84], [0.2, 0.3]], 0.2],
+      ['dark', [[-0.36, 0.4], [-0.3, 0.6], [-0.18, 0.62], [-0.18, 0.5]], 0.05, 0.22],
+      ['cabin', [[-0.18, 0.84], [-0.16, 1.06], [-0.08, 1.14], [0.08, 1.14], [0.16, 1.06], [0.16, 0.84]], 0.15],
+      ['glass', slab(-0.19, -0.12, 0.92, 1.03), 0.12],
+      ['dark', [[-0.5, 0.46], [-0.44, 0.62], [-0.4, 0.62], [-0.46, 0.46]], 0.15],
+      ['dark', slab(0.5, 0.86, 0.14, 0.42), 0.12, 0.3],
+      ['dark', slab(0.86, 1.2, 0.3, 0.36), 0.04, 0.3],
+      ['dark', slab(1.12, 1.3, 0.12, 0.22), 0.86],
+      brakePair(1.3, 0.13, 0.21, 0.45, 0.1),
+    ],
+    panel: { nose: -1.3, tail: -0.62, bz: -0.96, bk: 0.42, mid: -0.3, hoop: -1.0 },
+    shadow: 1.15, bubble: 1.5, bubbleY: 0.5, plate: 1.9,
+  }),
+};
+
+/** One triangle, wound so it faces away from `ref` (a point inside the solid). */
+function orientTri(buf, a, b, c, ref) {
+  const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+  const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+  const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+  if (nx * (a[0] - ref[0]) + ny * (a[1] - ref[1]) + nz * (a[2] - ref[2]) >= 0) {
+    buf.tri(a, b, c, 0xffffff);
+  } else {
+    buf.tri(a, c, b, 0xffffff);
+  }
+}
+
+// A body station's ring: five points up the right side, then the same down the
+// left. Edge 1 (and its mirror, 7) is the flank; edge 4 is the deck.
+function bodyRing(s) {
+  const R = [[s[2], s[1]], [s[4], s[3]], [s[6], s[5]], [s[8], s[7]], [s[10], s[9]]];
+  return R.concat(R.slice().reverse().map(([x, y]) => [-x, y]));
+}
+// A greenhouse station's ring: right side, top, left side, and the bottom, which
+// is buried in the body and never drawn.
+function cabinRing(c) {
+  return [[c[2], c[1]], [c[4], c[3]], [-c[4], c[3]], [-c[2], c[1]]];
+}
+
+// A cabin ring with a roof rim and, optionally, rounded sides. Each side is
+// broken at fraction `g` of the way up, so the glass is a band with painted
+// roof above it rather than running to the roof edge; `bulge` pushes the side
+// out in a curve between bottom and top, so a round car's cabin is round in
+// section instead of a trapezoid with flat sides. `kinds` names each edge -
+// window band, rim, roof or the (unbuilt) bottom - for whoever paints it.
+const cabinShape = (g, bulge = 0) => {
+  const fr = bulge ? [0.35, g] : [g];
+  const ring = (c) => {
+    const h = c[3] - c[1];
+    const right = [[c[2], c[1]]];
+    for (const t of fr) {
+      right.push([c[2] + (c[4] - c[2]) * t + bulge * h * Math.sin(Math.PI * t), c[1] + h * t]);
+    }
+    right.push([c[4], c[3]]);
+    return right.concat(right.slice().reverse().map(([x, y]) => [-x, y]));
+  };
+  const side = fr.map((_, k) => (k === 0 ? 0 : fr[k - 1]) < g ? 'side' : 'band')
+    .concat(['band']);
+  const kinds = side.concat(['top'], side.slice().reverse(), ['bottom']);
+  return { ring, kinds };
+};
+
+/**
+ * Join a list of stations face to face. `pick(edge, segment)` names the buffer
+ * each face goes in, or null to leave it out; the two end caps are edge -1,
+ * segments 0 and -1. Every face is wound away from the loft's own axis, which
+ * holds for anything star-shaped about it - a bonnet sitting down between its
+ * wings included, which a convex test would get wrong.
+ */
+function loft(stations, ringOf, pick) {
+  const rings = stations.map((st) => ringOf(st).map(([x, y]) => [x, y, st[0]]));
+  const n = rings[0].length;
+  const mid = (R) => [0, R.reduce((t, p) => t + p[1], 0) / R.length, R[0][2]];
+  for (let i = 0; i + 1 < rings.length; i++) {
+    const A = rings[i], B = rings[i + 1], ca = mid(A), cb = mid(B);
+    const ref = [0, (ca[1] + cb[1]) / 2, (ca[2] + cb[2]) / 2];
+    for (let k = 0; k < n; k++) {
+      const buf = pick(k, i);
+      if (!buf) continue;
+      const k2 = (k + 1) % n;
+      // The ring runs anticlockwise, so an edge's outward side is its own
+      // direction turned clockwise. Asked of the edge rather than of a centre,
+      // because a bonnet between its wings is concave and a centre gets it
+      // backwards there - that drew the bonnets hollow.
+      const dx = A[k2][0] - A[k][0] + B[k2][0] - B[k][0];
+      const dy = A[k2][1] - A[k][1] + B[k2][1] - B[k][1];
+      const P = (dx * dx + dy * dy > 1e-8)
+        ? [A[k][0] - dy, A[k][1] + dx, A[k][2]] : ref;
+      orientTri(buf, A[k], A[k2], B[k2], P);
+      orientTri(buf, A[k], B[k2], B[k], P);
+    }
+  }
+  const L = rings.length;
+  for (const [R, O, seg] of [[rings[0], rings[1], 0], [rings[L - 1], rings[L - 2], -1]]) {
+    const buf = pick(-1, seg);
+    if (!buf) continue;
+    const c = mid(R), ref = mid(O);
+    for (let k = 0; k < n; k++) orientTri(buf, c, R[k], R[(k + 1) % n], ref);
+  }
+}
+
+/** One convex side-profile polygon, extruded across x. See `CAR_BODIES`. */
+function prism(buf, pts, hw, cx) {
+  let cz = 0, cy = 0;
+  for (const [z, y] of pts) { cz += z; cy += y; }
+  cz /= pts.length; cy /= pts.length;
+  const face = (a, b, c) => {
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+    const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    if (nx * (a[0] - cx) + ny * (a[1] - cy) + nz * (a[2] - cz) >= 0) buf.tri(a, b, c, 0xffffff);
+    else buf.tri(a, c, b, 0xffffff);
+  };
+  const n = pts.length;
+  const P = (i, s) => [cx + s * hw, pts[i][1], pts[i][0]];
+  for (const s of [-1, 1]) for (let i = 1; i < n - 1; i++) face(P(0, s), P(i, s), P(i + 1, s));
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    face(P(i, -1), P(i, 1), P(j, 1)); face(P(i, -1), P(j, 1), P(j, -1));
+  }
+}
+
+/**
+ * Everything but the decals, for a car out of `CAR_BODIES`: one merged mesh per
+ * material, then the wheels. The cabin shares the body's mesh when the roof is
+ * not its own colour, which is the one-material case the classic car has too.
+ */
+function buildBody(view, M, L, m) {
+  const solid = view._solid, ghost = m.ghost;
+  const bufs = {};
+  const B = (k) => {
+    const key = k === 'cabin' && m.cabin === m.body ? 'body' : k;
+    return bufs[key] || (bufs[key] = new MeshBuf());
+  };
+  if (M.body) loft(M.body, bodyRing, () => B('body'));
+  if (M.cabin) {
+    const C = M.cabin;
+    const rim = M.rim != null;
+    const shape = rim ? cabinShape(M.rim, M.bulge || 0) : null;
+    loft(C, rim ? shape.ring : cabinRing, (k, i) => {
+      const kind = rim ? shape.kinds[k] : ['side', 'top', 'side', 'bottom'][k];
+      if (kind === 'bottom') return null;
+      const f = C[i === -1 ? C.length - 2 : i][5];
+      const top = kind === 'top', band = kind === 'band';
+      // The rim is never glass: over a side window it is roof, and beside a
+      // windscreen or a rear window it is the pillar - glass there ran the
+      // screen straight into the side windows.
+      const ch = band ? (f[0] === 'r' ? 'r' : 'b') : top ? f[0] : f[1];
+      return B(ch === 'g' ? 'glass' : ch === 'r' ? 'cabin' : 'body');
+    });
+  }
+  for (const [k, pts, hw, cx] of M.parts) {
+    const buf = B(k);
+    if (cx) { prism(buf, pts, hw, cx); prism(buf, pts, hw, -cx); }
+    else prism(buf, pts, hw, 0);
+  }
+  const basic = (c) => {
+    const mm = new THREE.MeshBasicMaterial({ color: c, transparent: ghost, opacity: solid });
+    view._mats.push(mm);
+    return mm;
+  };
+  const brake = bufs.brake ? basic(BRAKE_OFF) : null;
+  const mats = { body: m.body, cabin: m.cabin, dark: m.dark, glass: m.glass,
+                 lamp: bufs.lamp ? basic(0xffeccc) : null, brake };
+  for (const k of Object.keys(bufs)) view.body.add(bufs[k].toMesh(mats[k]));
+  view.brakeMats = brake ? [brake] : [];
+
+  const hasRim = !!L.rimStyle && (L.rimStyle !== 'stock' || L.rimSet);
+  const rimGeo = hasRim ? rimGeometry(L.rimStyle) : null;
+  const rimMat = hasRim ? m.mat(L.rim, { side: THREE.DoubleSide }, true) : null;
+  view.wheels = [];
+  view.steered = [];
+  const geos = {};
+  for (const W of M.wheels) {
+    const gk = W.r + '|' + W.w;
+    let geo = geos[gk];
+    if (!geo) {
+      geo = geos[gk] = new THREE.CylinderGeometry(W.r, W.r, W.w, 14);
+      geo.rotateZ(Math.PI / 2);
+    }
+    const z = W.z, front = W.front;
+    {
+      for (const s of [-1, 1]) {
+        const hub = new THREE.Group();
+        hub.position.set(s * W.x, W.r - 0.02, z);
+        const w = new THREE.Mesh(geo, m.tyre);
+        hub.add(w);
+        if (rimGeo) {
+          const r = new THREE.Mesh(rimGeo, rimMat);
+          r.position.x = s * (W.w / 2 + 0.005);
+          r.rotation.y = s < 0 ? Math.PI : 0;
+          r.scale.set(1, W.r / 0.42, W.r / 0.42);
+          w.add(r);
+        }
+        view.body.add(hub);
+        view.wheels.push(w);
+        if (front) view.steered.push(hub);
+      }
+    }
+  }
+}
+
 export class CarView {
   constructor(scene, livery, opts = {}) {
     this.group = new THREE.Group();
@@ -779,8 +1838,10 @@ export class CarView {
       const opt = Object.assign({ color: c, flatShading: true,
                                   transparent: ghost, opacity: this._solid },
                                 (spec && spec.mat) || {}, extra);
+      if (spec && spec.glow) opt.emissive = new THREE.Color(c).multiplyScalar(spec.glow);
       const m = spec ? new THREE.MeshPhongMaterial(opt)
                      : new THREE.MeshLambertMaterial(opt);
+      if (spec && spec.irid) iridesce(m);
       this._mats.push(m);
       return m;
     };
@@ -810,6 +1871,14 @@ export class CarView {
     // face rather than proud of it. The overhang goes with the bumper, which
     // leaves the front about as short as the rear already was - the car reads as
     // symmetrical now rather than as a long nose with no tail.
+    const M = CAR_BODIES[L.model];
+    this.model = M ? L.model : 'classic';
+    // Where the driver's eye is in this body, for the in-car view.
+    this.eye = M ? M.eye : null;
+    if (M) {
+      buildBody(this, M, L, { body: bodyMat, cabin: cabinMat, dark: darkMat,
+                              glass: glassMat, tyre: tyreMat, mat, ghost });
+    } else {
     const lower = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.55, 3.4), bodyMat);
     lower.position.y = 0.28;
     this.body.add(lower);
@@ -922,21 +1991,48 @@ export class CarView {
     // is a colour ramp baked straight into the vertices rather than a texture the
     // rest of this renderer does not have; and it is what makes a badge free,
     // where it used to be a whole draw call for a shape the size of a hand.
-    const deco = decalMesh(L);
+    }
+    const deco = decalMesh(L, M ? M.panel : undefined);
     if (deco) {
       const decoMat = mat(0xffffff, { vertexColors: true }, true);
       const m = deco.toMesh(decoMat);
       this.body.add(m);
     }
+    this._plateY = M ? M.plate : 2.5;
+    this._bubbleR = M ? M.bubble : 1.85;
+    this._bubbleY = M ? M.bubbleY : 0.55;
 
     // contact shadow: one dark disc laid on the surface under the car
     this._shadowOpacity = ghost ? 0.1 : 0.24;
     this.shadow = new THREE.Mesh(
-      new THREE.CircleGeometry(1.5, 14),
+      new THREE.CircleGeometry(M ? M.shadow : 1.5, 14),
       new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true,
                                     opacity: this._shadowOpacity, depthWrite: false }));
     this.shadow.rotation.x = -Math.PI / 2;
     scene.add(this.shadow);
+    // A glow finish gives off light: a slightly larger see-through copy of the
+    // painted shell that adds light around the car's outline, and a soft halo
+    // that always faces the camera. The paint itself is lit from inside
+    // (`glow` in FINISH), so the shading cannot dim it either.
+    if (!ghost && L.finish === 'glow') {
+      const tint = new THREE.Color(L.body);
+      const hull = new THREE.MeshBasicMaterial({ color: tint, side: THREE.BackSide,
+        transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false });
+      for (const m of [...this.body.children]) {
+        if (m.material !== bodyMat && m.material !== cabinMat) continue;
+        const shell = new THREE.Mesh(m.geometry, hull);
+        shell.scale.set(1.06, 1.08, 1.04);
+        shell.position.y = -0.04;
+        this.body.add(shell);
+      }
+      const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: tint,
+        transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false }));
+      // Kept clear of the road: a flat disc facing the camera that dips below
+      // the surface gets cut off by it into a half circle.
+      halo.scale.set(6.2, 2.5, 1);
+      halo.position.y = 1.3;
+      this.body.add(halo);
+    }
 
     // Brake lights. Two panels on the tail, unlit material so they read as
     // emissive without a second light in the scene: dark red at rest, full red
@@ -948,6 +2044,7 @@ export class CarView {
     // it is gone: the handbrake counts as braking, so a slide meant the lamps
     // changed colour rather than coming on, and a car that goes yellow every
     // time it steps out reads as a fault rather than as a driver.
+    if (!M) {
     this.brakeMats = [];
     for (const s of [-1, 1]) {
       const m = new THREE.MeshBasicMaterial({
@@ -957,6 +2054,7 @@ export class CarView {
       this.body.add(lamp);
       this.brakeMats.push(m);
       this._mats.push(m);
+    }
     }
     // **The nameplate is the car's colour and nothing else.** It used to turn the
     // record green for anybody wearing the laurel, which was worth it while the
@@ -1007,7 +2105,7 @@ export class CarView {
     const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true,
                                                            depthTest: false }));
     spr.scale.set(4.2, 1.05, 1);
-    spr.position.set(0, 2.5, 0);
+    spr.position.set(0, this._plateY || 2.5, 0);
     this.group.add(spr);
     this.label = spr;
   }
@@ -1078,10 +2176,10 @@ export class CarView {
     if (!this.bubble) {
       if (!on) return;
       this.bubble = new THREE.Mesh(
-        new THREE.IcosahedronGeometry(1.85, 1),
+        new THREE.IcosahedronGeometry(this._bubbleR || 1.85, 1),
         new THREE.MeshBasicMaterial({ color: 0x8fe0ff, transparent: true, opacity: 0.22,
                                       side: THREE.DoubleSide, depthWrite: false }));
-      this.bubble.position.y = 0.55;
+      this.bubble.position.y = this._bubbleY || 0.55;
       this.group.add(this.bubble);
     }
     this.bubble.material.color.setHex(hue);
@@ -2945,7 +4043,12 @@ export class Renderer {
     // does not move when you look back out of it, so the driver's does not.
     const want = new THREE.Vector3().copy(car.pos);
     if (first) {
-      want.addScaledVector(this.camFwd, EYE_FWD).addScaledVector(this.camUp, EYE_UP);
+      // Each body has its own seat (`eye` on its entry in CAR_BODIES), just
+      // behind its own windscreen at head height. Further back than that and
+      // the bottom of the screen looks through the (invisible from inside)
+      // cabin floor at the road, a strip of road under the bonnet.
+      const [eu, ef] = opts.eye || [EYE_UP, EYE_FWD];
+      want.addScaledVector(this.camFwd, ef).addScaledVector(this.camUp, eu);
     } else {
       want.addScaledVector(this.camFwd, -back * dir).addScaledVector(this.camUp, up);
     }
