@@ -36,7 +36,7 @@ jobs:
       - id: q
         run: |
           SLUGS="${{ inputs.slug }}"
-          [ -n "$SLUGS" ] || SLUGS="$(python3 drive/tools/shoot_daily.py --queue ${{ inputs.count || 1 }})"
+          [ -n "$SLUGS" ] || SLUGS="$(python3 drive/tools/shoot_daily.py --queue ${{ inputs.count || 2 }})"
           echo "filming: ${SLUGS:-nothing, caught up}"
           echo "slugs=$(printf '%s\n' $SLUGS | jq -Rsc 'split("\n") | map(select(. != ""))')" >> "$GITHUB_OUTPUT"
 
