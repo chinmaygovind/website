@@ -21,8 +21,13 @@ over a rule that actually wants three is worse than no text at all.
   (`Sound.hush`) while paused, in the garage, or when the window loses focus.
 - **Four earned finishes** past matte and gloss, each different in a way flat
   shading keeps (`FINISH` in render.js): rusted (drive 20,000 km), chrome,
-  glow and radiant (hold 10, 25, 50 track records; kept once earned, in
-  `KEPT`). Radiant is a fragment-shader hue shift by viewing angle, one
+  glow and radiant (set 25, 50, 100 track records). **Records set, not held**:
+  `DriveStats.record_tracks` is every pool track the account has ever held the
+  record on, added by `_note_record` the moment a lap goes on the board and
+  never removed, so a record somebody later beats still counts. It was
+  backfilled once from lap timestamps (`tools/backfill_records.py`, which can
+  miss a record held with a lap later improved on); records held now are the
+  floor. Radiant is a fragment-shader hue shift by viewing angle, one
   colour per facet. Bots only ever get matte or gloss (`BOT_FINISHES`), which
   also keeps every bot's existing paint.
 - **`bface: [z, y]`** on a body's panel stands its badge upright on a front

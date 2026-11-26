@@ -18,6 +18,7 @@ And running under all of it, the one that matters most:
 be wrong in some interesting way before it is allowed to repaint somebody's car.
 """
 
+import json
 import os
 import sys
 
@@ -637,3 +638,37 @@ def test_the_first_look_announces_cars_and_nothing_older():
     out, seen = garage.unlocks({"ribbon", "laurel", "kart", "monster"}, None)
     assert [u["id"] for u in out] == ["kart", "monster"]
     assert seen == {"ribbon", "laurel", "kart", "monster"}
+
+
+def test_record_finishes_count_records_ever_set(env):
+    """Chrome, Glow and Radiant count the tracks you have ever held the record
+    on, so a record somebody later took off you still counts - with what you
+    hold right now as the floor, for records older than the column."""
+    uid = _user(env)
+    slugs = [t["slug"] for t in tracks_mod.TRACKS]
+    with env.app.app_context():
+        _stats(env, uid, golds=0)
+        st = env.User.query.get(uid).drive
+        st.record_tracks = json.dumps((slugs * 4)[:24])
+        env.db.session.commit()
+        got = garage.earned(env.User.query.get(uid), holders={}, leaders=set())
+        assert "chrome" not in got
+        got = garage.earned(env.User.query.get(uid), holders={uid: 25}, leaders=set())
+        assert "chrome" in got and "glow" not in got
+
+
+def test_a_lap_that_takes_the_record_is_remembered(env):
+    """The record joins `record_tracks` when the lap goes on the board, and
+    stays there after somebody else beats it."""
+    a, b = _user(env, "alice"), _user(env, "bob")
+    slug = tracks_mod.TRACKS[0]["slug"]
+    with env.app.app_context():
+        _stats(env, a, golds=0)
+        _stats(env, b, golds=0)
+        _time(env, b, slug, 50000)
+        _time(env, a, slug, 40000)
+        env._note_record(a, slug, 40000)
+        env._note_record(b, slug, 50000)
+        env.db.session.commit()
+        assert json.loads(env.DriveStats.query.get(a).record_tracks) == [slug]
+        assert json.loads(env.DriveStats.query.get(b).record_tracks or "[]") == []

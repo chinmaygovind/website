@@ -205,6 +205,11 @@ class DriveStats(db.Model):
     golds        = db.Column(db.Integer, default=0)
     silvers      = db.Column(db.Integer, default=0)
     bronzes      = db.Column(db.Integer, default=0)
+    # Every pool track this account has held the record on, at any point, as a
+    # JSON list of slugs. Only ever grows: a record taken off you still counts
+    # toward the record finishes. Backfilled from lap timestamps by
+    # `tools/backfill_records.py`; exact from the day it was added.
+    record_tracks = db.Column(db.Text, default="[]")
 
     user = db.relationship("User", backref=db.backref("drive", uselist=False,
                                                       cascade="all, delete-orphan"))
@@ -904,6 +909,7 @@ class DriveItemStat(db.Model):
 
 _ADDED = {
     "drive_garage": [("seen_json", "TEXT")],
+    "drive_stats": [("record_tracks", "TEXT DEFAULT '[]'")],
     "drive_players": [
         ("is_bot", "BOOLEAN DEFAULT 0"),
         ("bot_level", "VARCHAR(10)"),

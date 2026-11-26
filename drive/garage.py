@@ -402,11 +402,11 @@ GATES = {
     "rusted":     {"slot": "finish", "value": "rusted",
                    "text": "Drive 20,000 km", "done": "driving 20,000 km"},
     "chrome":     {"slot": "finish", "value": "chrome",
-                   "text": "Hold 10 track records", "done": "holding 10 track records"},
+                   "text": "Set 25 track records", "done": "setting 25 track records"},
     "glow":       {"slot": "finish", "value": "glow",
-                   "text": "Hold 25 track records", "done": "holding 25 track records"},
+                   "text": "Set 50 track records", "done": "setting 50 track records"},
     "radiant":    {"slot": "finish", "value": "radiant",
-                   "text": "Hold 50 track records", "done": "holding 50 track records"},
+                   "text": "Set 100 track records", "done": "setting 100 track records"},
     # The three long chases, by distance: nobody had driven 25,000 km when
     # these were set (the most was under 15,000).
     "monster":   {"slot": "model", "value": "monster",
@@ -433,7 +433,7 @@ KART_KM, PICKUP_KM, BEETLE_KM, SIXTIES_KM = 100, 1000, 2500, 5000
 BUBBLE_TRACKS = 8
 VAN_TRACKS, MUSCLE_GOLDS, PROTO_GOLDS = 5, 10, 15
 MONSTER_KM, BIGRIG_KM, F1_KM = 10000, 15000, 25000
-RUSTED_KM, CHROME_RECORDS, GLOW_RECORDS, RADIANT_RECORDS = 20000, 10, 25, 50
+RUSTED_KM, CHROME_RECORDS, GLOW_RECORDS, RADIANT_RECORDS = 20000, 25, 50, 100
 CHECKERS_TRACKS, PODIUM_KM = 10, 500
 
 
@@ -622,7 +622,16 @@ def _counts(user, holders, leaders):
     golds = _golds(user)
     finished = _tracks_finished(user)
     km = int(_stat(user, "distance", 0.0) // 1000)
-    records = holders.get(user.id, 0) if isinstance(holders, dict) else 0
+    # Records ever set, not just the ones still held: the tracks this account
+    # has held the record on (`record_tracks`), floored by what it holds now
+    # in case a record predates the column.
+    held = holders.get(user.id, 0) if isinstance(holders, dict) else 0
+    ever = _stat(user, "record_tracks", "[]")
+    try:
+        ever = len(json.loads(ever)) if isinstance(ever, str) else 0
+    except Exception:
+        ever = 0
+    records = max(ever, held)
     return {
         "shield":    (min(golds, 3), 3),
         "pinstripe": (min(golds, n), n),

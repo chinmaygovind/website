@@ -2618,6 +2618,31 @@ REEL_WORKFLOW = ("https://api.github.com/repos/chinmaygovind/website/actions/"
 _reel_asked = [0.0]
 
 
+def _note_record(user_id, slug, time_ms):
+    """Remember that this account has held the record on this track.
+
+    Called the moment a lap goes on a board. If nobody else has a lap as fast,
+    it is the record, and the track joins the account's `record_tracks` - which
+    only grows, so the record finishes count every record ever set, not just
+    the ones still held. Pool tracks only, like `records_held`.
+    """
+    if slug not in tracks_mod.BY_SLUG:
+        return
+    faster = DriveTime.query.filter(DriveTime.track == slug, DriveTime.user_id != user_id,
+                                    DriveTime.time_ms <= time_ms).count()
+    if faster:
+        return
+    st = DriveStats.query.get(user_id)
+    if st is None:
+        return
+    try:
+        have = set(json_mod.loads(st.record_tracks or "[]"))
+    except Exception:
+        have = set()
+    if slug not in have:
+        st.record_tracks = json_mod.dumps(sorted(have | {slug}))
+
+
 def _maybe_wr_reel(slug, time_ms):
     """A lap that has just gone on a pool track's board as its record starts the
     world-record reel straight away, rather than at GitHub's next ten-minute
@@ -2687,6 +2712,7 @@ def _apply_check(c):
     # When it was driven, not when it was judged: a lap at 11:59pm checked at
     # 12:01am belongs to the day it was driven on.
     _note_daily(c.user_id, c.track, c.time_ms, c.queued_at)
+    _note_record(c.user_id, c.track, c.time_ms)
     _maybe_wr_reel(c.track, c.time_ms)
 
 
@@ -2984,6 +3010,8 @@ def api_run():
         _count_medal(st, medal)
     _floor_starts(user.id, track["slug"], row.runs or 0)
     _note_daily(user.id, track["slug"], time_ms)
+    if improved:
+        _note_record(user.id, track["slug"], time_ms)
     db.session.commit()
     if improved:
         _maybe_wr_reel(track["slug"], time_ms)
