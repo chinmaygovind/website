@@ -726,7 +726,7 @@ def test_a_lap_chased_off_the_board_is_never_saved_as_your_setting():
     """
     body = _body("setGhostMode")
     m = re.search(r"if \(([^)]*)\)\s*\{\s*rememberPref\("
-                  r"'drive\.ghost', ([^)]+)\)", body)
+                  r"ghostKey\([^)]*\), ([^)]+)\)", body)
     assert m, "the drive.ghost write is no longer a guarded one-liner; re-read this"
     cond, value = m.group(1), m.group(2)
     assert "mode !== 'run'" in cond, \
@@ -765,7 +765,8 @@ def _pref_ctx(cfg):
     ctx = jsrt.quickjs.Context()
     ctx.eval(PREF_STUB)
     ctx.eval("var CFG = %s;" % json.dumps(cfg))
-    for fn in ("accountPref", "lsGet", "rememberPref", "postPrefs",
+    ctx.eval("var trackCard = (slug) => (CFG.cards || []).find((c) => c.slug === slug);")
+    for fn in ("accountPref", "lsGet", "rememberPref", "postPrefs", "ghostKey",
                "adoptLocalPrefs", "storedGhostMode", "storedFlag", "rememberFlag"):
         ctx.eval(_fn(fn))
     ctx.eval("var ACCOUNT_PREFS = " + re.search(
@@ -1816,3 +1817,19 @@ def test_the_unlock_popup_names_things_what_the_garage_calls_them():
     for gate, g in garage.GATES.items():
         assert garage.UNLOCK_NAME[gate] == title[g["value"]], gate
         assert g["slot"] in garage.UNLOCK_KIND, gate
+
+
+def test_todays_daily_keeps_its_own_ghost_setting():
+    """Other ghosts are sealed on today's daily, so a `wr` chosen everywhere else
+    means no ghost there - it has its own setting, defaulting to your best lap,
+    and choosing on it leaves the everywhere-else one alone."""
+    ctx = _pref_ctx({"mode": "solo", "loggedIn": False, "prefs": None,
+                     "cards": [{"slug": "daily-9", "today": True},
+                               {"slug": "daily-8", "today": False}]})
+    ctx.eval("store['drive.ghost'] = 'wr';")
+    assert ctx.eval("storedGhostMode('daily-9')") == "me"
+    assert ctx.eval("storedGhostMode('daily-8')") == "wr"
+    assert ctx.eval("storedGhostMode('sunrise')") == "wr"
+    ctx.eval("rememberPref(ghostKey('daily-9'), 'off');")
+    assert ctx.eval("storedGhostMode('daily-9')") == "off"
+    assert ctx.eval("storedGhostMode('sunrise')") == "wr"

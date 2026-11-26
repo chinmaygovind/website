@@ -191,6 +191,7 @@ def _garage_row(user, create=False):
 # client filters it back out of a time trial, where it cannot mean anything.
 PREF_SPEC = {
     "ghost": lambda v: v if v in ("off", "me", "wr", "pole") else None,
+    "dailyghost": lambda v: v if v in ("off", "me", "wr") else None,
     "ghostcar": lambda v: v if isinstance(v, bool) else None,
 }
 
@@ -1060,6 +1061,10 @@ def _remember_track(slug):
 
 def _last_track():
     slug = session.get("last_track")
+    # A past daily is somewhere you went once, not where Solo should drop you.
+    if slug and not any(t["slug"] == slug for t in tracks_mod.TRACKS) \
+            and slug != daily_slug() and _is_daily(slug):
+        slug = daily_slug()
     return slug if tracks_mod.get(slug) else tracks_mod.TRACKS[0]["slug"]
 
 
@@ -1079,6 +1084,14 @@ def index():
                            today=daily_slug(),
                            pbs=pbs, ranks=_my_rank_map(pbs), records=_records(),
                            name=get_effective_name(), user=get_current_user())
+
+
+def _is_daily(slug):
+    try:
+        return DriveUserTrack.query.filter(DriveUserTrack.slug == slug,
+                                           DriveUserTrack.daily_on.isnot(None)).count() > 0
+    except Exception:
+        return False
 
 
 def _daily_cards():

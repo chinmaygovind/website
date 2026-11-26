@@ -310,3 +310,22 @@ def test_discord_hears_each_new_daily_record_and_one_report(env, monkeypatch):
         A._maybe_daily_report(start + timedelta(minutes=31))
     assert len(sent) == 1 and "is finished! 2 drivers played." in sent[0], sent
     assert sent[0].index("bob") < sent[0].index("ada") and "+15" in sent[0]
+
+
+def test_solo_does_not_reopen_a_past_daily(env):
+    A = env
+    old = _daily(A, "Old Ridge", day=A.daily_date() - timedelta(days=1))
+    today = _daily(A, "New Ridge", day=A.daily_date())
+    c = A.app.test_client()
+    assert c.post("/api/last-track", json={"track": old}).get_json()["ok"]
+    with c.session_transaction() as s:
+        assert s["last_track"] == old
+    with A.app.test_request_context():
+        from flask import session
+        session["last_track"] = old
+        assert A._last_track() == today
+        session["last_track"] = today
+        assert A._last_track() == today
+        pool = tracks_mod.TRACKS[1]["slug"]
+        session["last_track"] = pool
+        assert A._last_track() == pool

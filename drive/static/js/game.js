@@ -72,7 +72,8 @@ const fmtDelta = (ms) => (ms >= 0 ? '+' : '') + (ms / 1000).toFixed(3);
 // `app.py`), and it is the whole of what is account-shaped: adding the sound
 // switch here would be one line, and is deliberately not done, because muting a
 // game is a thing about the room you are sitting in rather than about you.
-const ACCOUNT_PREFS = { 'drive.ghost': 'ghost', 'drive.ghostcar': 'ghostcar' };
+const ACCOUNT_PREFS = { 'drive.ghost': 'ghost', 'drive.ghost.daily': 'dailyghost',
+                        'drive.ghostcar': 'ghostcar' };
 
 /** What the account has chosen for a setting, or `undefined` for nothing yet. */
 function accountPref(storageKey) {
@@ -141,11 +142,23 @@ function adoptLocalPrefs() {
  * one: arriving alone on a time trial with the splits set against a session
  * that is not happening would be a setting that cannot come true.
  */
-function storedGhostMode() {
+function storedGhostMode(slug) {
   const ok = CFG.mode === 'room' ? ['off', 'me', 'pole', 'wr'] : ['off', 'me', 'wr'];
-  const acct = accountPref('drive.ghost');
-  const v = acct === undefined ? lsGet('drive.ghost') : acct;
+  const key = ghostKey(slug);
+  const acct = accountPref(key);
+  const v = acct === undefined ? lsGet(key) : acct;
   return ok.includes(v) ? v : 'me';
+}
+
+/**
+ * Today's daily keeps its own ghost setting. Everybody's ghost but yours is
+ * sealed on it until the day ends, so a `wr` chosen everywhere else is no
+ * ghost at all there - and choosing `me` there must not rewrite the `wr`
+ * you drive every other track with.
+ */
+function ghostKey(slug) {
+  const card = CFG.mode !== 'room' && slug && trackCard(slug);
+  return card && card.today ? 'drive.ghost.daily' : 'drive.ghost';
 }
 
 /** A remembered on/off, for the three switches in settings. */
@@ -672,7 +685,7 @@ function loadTrack(track, opts = {}) {
   //
   // A lap chased off the board does not survive the trip, though: `run` names a
   // specific lap on a specific track, so it cannot mean anything here.
-  if (S.ghostMode === 'run') S.ghostMode = 'me';
+  S.ghostMode = storedGhostMode(track.slug);
   // **`remember: false`, because this is the game re-applying what you already
   // chose.** Arriving and switching track both land here, so a write would mean
   // three wrong things: a request to `/api/prefs` on every page load, the `me`
@@ -2982,7 +2995,7 @@ function setGhostMode(mode, opts = {}) {
   // quietly and permanently rewrote a `wr` preference to `me`. Your setting is
   // what you chose, and only you choose it.
   if (opts.remember !== false && mode !== 'run') {
-    rememberPref('drive.ghost', mode);
+    rememberPref(ghostKey(S.track && S.track.slug), mode);
   }
   $('ghostOpts').querySelectorAll('[data-ghost]').forEach(b => {
     // "View others" is a door, not a state - it lights up only while the lap you
@@ -7861,6 +7874,14 @@ async function onFinish() {
       if (d.improved && CFG.mode !== 'room') {
         if (S.ghostMode === 'me') loadGhost('me');
         else if (S.ghostMode === 'wr' && d.is_record) loadGhost('wr');
+      } else if (d.pending && CFG.mode !== 'room') {
+        // A held lap is not on the board yet, so `/api/ghost` would hand back
+        // the lap this one just beat. Chase the one we have in hand instead.
+        const beat = S.ghostMode === 'me' ? d.pb_ms : S.ghostMode === 'wr' ? d.record_ms : 0;
+        if (beat == null || lap.time_ms < beat) {
+          useGhost(lap.ghost.slice(), GHOST_RATE, myColor(), myLivery());
+          showGhostNow();
+        }
       }
     } else {
       if (improved) { S.bestTime = lap.time_ms; localBest(lap.time_ms); }
