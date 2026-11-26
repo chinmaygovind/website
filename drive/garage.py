@@ -402,11 +402,11 @@ GATES = {
     "rusted":     {"slot": "finish", "value": "rusted",
                    "text": "Drive 20,000 km", "done": "driving 20,000 km"},
     "chrome":     {"slot": "finish", "value": "chrome",
-                   "text": "Set 25 track records", "done": "setting 25 track records"},
+                   "text": "Set 25 records", "done": "setting 25 records"},
     "glow":       {"slot": "finish", "value": "glow",
-                   "text": "Set 50 track records", "done": "setting 50 track records"},
+                   "text": "Set 50 records", "done": "setting 50 records"},
     "radiant":    {"slot": "finish", "value": "radiant",
-                   "text": "Set 100 track records", "done": "setting 100 track records"},
+                   "text": "Set 100 records", "done": "setting 100 records"},
     # The three long chases, by distance: nobody had driven 25,000 km when
     # these were set (the most was under 15,000).
     "monster":   {"slot": "model", "value": "monster",
