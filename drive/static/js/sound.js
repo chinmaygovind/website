@@ -139,6 +139,11 @@ const ENGINES = {
              idle: 1800, red: 9000, gears: 7, f: 2.2, h: 1, g: .12, pop: 0.6 },
 };
 const engineOf = (m) => ENGINES[m] || ENGINES.classic;
+// The classic car keeps the engine it had before the garage, exactly: plain
+// sawtooths on a straight speed-to-pitch line. It only gains the
+// overrun pops and the shifts.
+const isClassic = (m) => !ENGINES[m] || m === 'classic';
+const classicHz = (sf, throttle) => 58 + sf * 210 + (throttle ? 22 : 0);
 
 // One PeriodicWave per engine per context, built the first time it is heard.
 // Returns the wave and the gain that brings it to a sawtooth's loudness, since
@@ -494,9 +499,12 @@ export class Sound {
   setModel(model) {
     this.model = model;
     if (!this.osc) return;
-    const W = waveOf(this.ctx, model);
-    for (const o of this.osc) o.setPeriodicWave(W.wave);
-    this.oscMix.gain.value = W.gain;
+    const old = isClassic(model), W = old ? null : waveOf(this.ctx, model);
+    this.osc.forEach((o, i) => {
+      if (old) o.type = 'sawtooth'; else o.setPeriodicWave(W.wave);
+      o.detune.value = (old ? [0, 7, -11] : [0, 5, -7])[i];
+    });
+    this.oscMix.gain.value = old ? 1 : W.gain;
   }
 
   engine(speedFrac, throttle, slip, airborne, load = 0, boost = 0) {
@@ -519,6 +527,7 @@ export class Sound {
     // purpose, it should be felt rather than noticed.
     const work = (1 + 0.22 * load) * (1 + 0.4 * boost);
     // A shift: the engine cuts for a beat under throttle, and barks.
+    const old = isClassic(this.model);
     const gear = gearOf(E, speedFrac);
     if (on && this.gear != null && gear > this.gear && throttle) {
       this.shiftUntil = t + 0.085;
@@ -537,16 +546,18 @@ export class Sound {
     }
     this.wasThrottle = !!throttle;
     const cut = t < (this.shiftUntil || 0) ? 0.3 : 1;
-    for (const o of this.osc) set(o.frequency, rpm / 120, 0.05);
+    const hz = classicHz(speedFrac, throttle);
+    for (const o of this.osc) set(o.frequency, old ? hz : rpm / 120, 0.05);
     set(this.engFilter.frequency,
-        on ? (300 + fire * E.f * (throttle ? 1.5 : 1)) * work : IDLE_HZ, on ? 0.08 : IDLE_TC);
-    set(this.engGain.gain, on ? (airborne ? 0.08 : (0.15 + throttle * 0.1) * work) * cut : 0,
+        on ? (old ? 620 + speedFrac * 2400 + (throttle ? 500 : 0)
+                  : (300 + fire * E.f * (throttle ? 1.5 : 1)) * work) : IDLE_HZ, on ? 0.08 : IDLE_TC);
+    set(this.engGain.gain, on ? (airborne ? 0.08 : (0.15 + throttle * 0.1) * (old ? 1 : work)) * cut : 0,
         cut < 1 ? 0.012 : gTc);
-    set(this.whine.frequency, fire * E.h, 0.05);
+    set(this.whine.frequency, old ? hz * 3.02 : fire * E.h, 0.05);
     // Half the time constant, so the top of the car is gone while the bottom
     // of it is still going.
     set(this.whineGain.gain,
-        on ? (throttle ? 0.034 : 0.009) * (0.4 + speedFrac) * E.g : 0,
+        on ? (throttle ? 0.034 : 0.009) * (0.4 + speedFrac) * (old ? 1 : E.g) : 0,
         on ? 0.1 : IDLE_TC * 0.5);
     set(this.tyreGain.gain, airborne ? 0 : Math.min(0.3, slip * 0.34), 0.05);
     set(this.tyreFilter.frequency, 1300 + slip * 1400, 0.08);
@@ -1386,14 +1397,18 @@ class RivalVoice {
     this.quiet = !on;
     if (this.model !== r.model) {
       this.model = r.model;
-      const W = waveOf(this.ctx, r.model);
-      for (const o of this.osc) o.setPeriodicWave(W.wave);
-      this.oscMix.gain.value = W.gain;
+      const old = isClassic(r.model), W = old ? null : waveOf(this.ctx, r.model);
+      this.osc.forEach((o, i) => {
+        if (old) o.type = 'sawtooth'; else o.setPeriodicWave(W.wave);
+        o.detune.value = (old ? [0, 9] : [0, 6])[i];
+      });
+      this.oscMix.gain.value = old ? 1 : W.gain;
     }
-    const E = engineOf(r.model);
+    const E = engineOf(r.model), old = isClassic(r.model);
     const rpm = engineRpm(E, sf, r.throttle);
-    for (const o of this.osc) set(o.frequency, rpm / 120, 0.05);
-    set(this.engFilter.frequency, on ? 300 + rpm / 120 * E.fire.length * E.f : IDLE_HZ, on ? 0.08 : IDLE_TC);
+    for (const o of this.osc) set(o.frequency, old ? classicHz(sf, r.throttle) : rpm / 120, 0.05);
+    set(this.engFilter.frequency, on ? (old ? 620 + sf * 2400 : 300 + rpm / 120 * E.fire.length * E.f)
+                                     : IDLE_HZ, on ? 0.08 : IDLE_TC);
     set(this.engGain.gain, on ? (r.air ? 0.1 : 0.17 + (r.throttle ? 0.09 : 0)) : 0, gTc);
     set(this.tyreGain.gain, r.drift && !r.air ? 0.2 : 0, 0.06);
 
