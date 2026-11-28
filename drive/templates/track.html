@@ -108,7 +108,7 @@
     if (share) share.onclick = async () => {
       const label = share.querySelector('span');
       try {
-        await navigator.clipboard.writeText(location.origin + '/solo/' + SLUG + '?watch=' + lap.id);
+        await navigator.clipboard.writeText(location.origin + '/solo/' + SLUG + '?watch=' + lap.id + '&t=' + lap.time_ms);
         label.textContent = 'Link copied!';
       } catch (e) {
         label.textContent = 'Could not copy';

@@ -3496,7 +3496,7 @@ function showBoardRow(i) {
   const race = detail.querySelector('[data-race]');
   const watch = detail.querySelector('[data-watch]');
   const share = detail.querySelector('[data-share]');
-  if (share) share.onclick = () => shareBoardRow(row.id);
+  if (share) share.onclick = () => shareBoardRow(row);
   if (race) race.onclick = () => raceGhost(row);
   if (watch) watch.onclick = () => watchGhost(row);
 }
@@ -3558,9 +3558,7 @@ function startWatching(frames, hz, meta) {
               // What to hand somebody who wants to see this. The board's own
               // share link, which `openRequestedLap` is the other end of - a lap
               // is a row rather than a page, so this is the only address it has.
-              { share: meta.id != null
-                  ? location.origin + '/solo/' + S.track.slug + '?watch=' + meta.id
-                  : null });
+              { share: meta.id != null ? lapLink(meta.id, meta.time_ms) : null });
 }
 
 // The playback speeds, slowest first. 0.1 is for one corner's hands and 4 is for
@@ -4007,9 +4005,19 @@ function shareReplay() {
   if (w && w.share) copyLink(w.share);
 }
 
-/** A link to one lap on the board, which is where `?watch=` is answered. */
-function shareBoardRow(id) {
-  copyLink(location.origin + '/solo/' + S.track.slug + '?watch=' + id);
+/**
+ * A link to one lap on the board, which is where `?watch=` is answered.
+ *
+ * `&t=` is read by nothing. A row's id survives a PB (the row is overwritten),
+ * so without it the link to a better lap is the same URL and every chat app
+ * shows the unfurl it cached for the old time.
+ */
+function lapLink(id, ms) {
+  return location.origin + '/solo/' + S.track.slug + '?watch=' + id + (ms ? '&t=' + ms : '');
+}
+
+function shareBoardRow(row) {
+  copyLink(lapLink(row.id, row.time_ms));
 }
 
 /** T, on a replay: back to the last checkpoint the driver has been through. */

@@ -460,7 +460,7 @@ S = { track: { slug: 'bigred' }, watch: null };
 
 def _share():
     src = open(os.path.join(JS, "game.js")).read()
-    return "\n".join(_fn(src, n) for n in ("copyLink", "shareReplay", "shareBoardRow"))
+    return "\n".join(_fn(src, n) for n in ("copyLink", "shareReplay", "lapLink", "shareBoardRow"))
 
 
 class Sharer:
@@ -495,15 +495,23 @@ def test_a_lap_is_shared_as_the_link_that_opens_it(sharer):
     `openRequestedLap` is the other end of, and the only one a row has. A lap is
     a row rather than a page, so getting this wrong is a link that loads the
     track and quietly does not watch anything."""
-    sharer.run("shareBoardRow(173);")
-    assert sharer.eval("COPIED") == "https://drive.example/solo/bigred?watch=173"
+    sharer.run("shareBoardRow({ id: 173, time_ms: 71234 });")
+    assert sharer.eval("COPIED") == "https://drive.example/solo/bigred?watch=173&t=71234"
+
+
+def test_a_better_lap_on_the_same_row_is_a_new_link(sharer):
+    """A PB overwrites the row and keeps its id, so the time is what makes the
+    URL new - without it every chat app shows the unfurl cached for the old lap."""
+    sharer.run("shareBoardRow({ id: 173, time_ms: 71234 }); var A = COPIED;"
+               " shareBoardRow({ id: 173, time_ms: 70999 });")
+    assert sharer.eval("A") != sharer.eval("COPIED")
 
 
 def test_sharing_says_it_copied(sharer):
     """A copy has no feedback of its own - unlike an OS share sheet, which is
     why this is not `navigator.share` - so a silent one is indistinguishable
     from a dead button."""
-    sharer.run("shareBoardRow(173);")
+    sharer.run("shareBoardRow({ id: 173, time_ms: 71234 });")
     assert sharer.eval("TOASTED[0]") == "Link copied!"
 
 
