@@ -30,7 +30,7 @@ from models import (db, User, DriveStats, DriveTime, DriveStart, DriveRunCheck,
                     DriveGame, DrivePlayer, DriveRace, DriveRaceItems,
                     DriveGarage, DrivePrefs,
                     DriveCheatFlag, DriveUserTrack, DriveSave,
-                    DriveDailyTime, DriveDailyReport)
+                    DriveDailyTime, DriveDailyReport, DriveDailyLap)
 import portal as portal_mod
 import tracks as tracks_mod
 import tuning
@@ -2730,6 +2730,24 @@ def _apply_check(c):
     _maybe_wr_reel(c.track, c.time_ms)
 
 
+def _keep_daily_lap(user_id, slug, time_ms, ghost):
+    """Keep every finished lap of a daily on its day, for the swarm reel.
+
+    Unlike `_note_daily` this is every attempt, guests included, never only the
+    best. The caller commits.
+    """
+    # ponytail: a held lap that later fails the anti-cheat stays in the swarm;
+    # it is only ever a car in a reel, never a time on a board.
+    if slug in tracks_mod.BY_SLUG or not ghost:
+        return
+    day = daily_date()
+    if not DriveUserTrack.query.filter_by(slug=slug, daily_on=day,
+                                          status="live").first():
+        return
+    db.session.add(DriveDailyLap(day=day, track=slug, user_id=user_id,
+                                 time_ms=time_ms, ghost=runcheck.pack_ghost(ghost)))
+
+
 def _note_daily(user_id, slug, time_ms, at=None):
     """Keep a lap as the driver's result on a daily, if it was driven on its day.
 
@@ -2921,6 +2939,8 @@ def api_run():
     if user and visits.is_crawler(request.headers.get("User-Agent")):
         return jsonify({"ok": False, "error": "Laps from an automated browser "
                         "do not go on the board."}), 403
+    if not visits.is_crawler(request.headers.get("User-Agent")):
+        _keep_daily_lap(user.id if user else None, track["slug"], time_ms, ghost_frames)
     best = (DriveTime.query.filter_by(track=track["slug"])
             .order_by(DriveTime.time_ms.asc()).first())
 
@@ -2943,6 +2963,7 @@ def api_run():
                                       DriveTime.time_ms < r.time_ms).count() + 1
 
     if not user:
+        db.session.commit()          # the lap, for the swarm reel
         return jsonify({"ok": True, "stored": False, "medal": medal,
                         "guest": True, "rank": None, "run_rank": _run_rank(),
                         "record_ms": best.time_ms if best else None,

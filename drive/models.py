@@ -850,6 +850,24 @@ class DriveDailyTime(db.Model):
     user = db.relationship("User", lazy="joined")
 
 
+class DriveDailyLap(db.Model):
+    """Every finished lap of a daily on its day, ghost and all - guests too.
+
+    `drive_times` keeps one ghost per driver and `drive_daily_times` keeps none,
+    so this is the only record of the day's attempts: the swarm reel plays them
+    all at once. Written from `_keep_daily_lap` in app.py, never updated.
+    """
+    __tablename__ = "drive_daily_laps"
+
+    id      = db.Column(db.Integer, primary_key=True)
+    day     = db.Column(db.Date, nullable=False, index=True)
+    track   = db.Column(db.String(32), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    time_ms = db.Column(db.Integer, nullable=False)
+    ghost   = db.Column(db.Text, nullable=False)
+    at      = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class DriveDailyReport(db.Model):
     """A finished daily whose report has gone to Discord, so a restart after
     midnight does not post it twice. Written by `_maybe_daily_report`."""
