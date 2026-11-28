@@ -1,0 +1,1202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+</head>
+<body>
+<title>Cones to Coordinates</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<script>
+window.MathJax = { tex: { inlineMath: [['\\(', '\\)']], packages: { '[+]': ['color'] } }, loader: { load: ['[tex]/color'] }, svg: { fontCache: 'global' } };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js" defer></script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #070707; --line: #242424; --line2: #3a3a3a;
+  --fg: #f2f2f2; --dim: #8b8b8b; --faint: #4a4a4a;
+  --red: #ff2d2d; --green: #2fd67a;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+html, body { height: 100%; margin: 0; overflow: hidden; }
+body { background: var(--bg); color: var(--fg); font-family: var(--display);
+  padding-left: max(0px, env(safe-area-inset-left, 0px)); padding-right: max(0px, env(safe-area-inset-right, 0px)); }
+
+#stage { position: fixed; left: 50%; top: 50%; width: 1600px; height: 900px; overflow: hidden; background: var(--bg);
+  transform: translate(-50%, -50%) scale(var(--fit, 1)); }
+#w-photo { position: absolute; left: 0; top: 0; width: 1600px; height: 900px; object-fit: cover; opacity: 0; transition: opacity .6s ease; pointer-events: none; }
+#world { position: absolute; left: 0; top: 0; width: 1600px; height: 900px; opacity: 0; transition: opacity .5s ease; pointer-events: none; }
+#world.on { opacity: 1; }
+.slide { position: absolute; inset: 0; opacity: 0; visibility: hidden; transition: opacity .25s ease .35s, visibility 0s .6s; }
+.slide.quick { transition: opacity .2s ease, visibility 0s .2s; }
+.slide.on { opacity: 1; visibility: visible; transition: opacity .35s ease; }
+.full { position: absolute; left: 0; top: 0; width: 1600px; height: 900px; }
+.notes { display: none; }
+
+#wipe { position: absolute; top: -20%; bottom: -20%; left: 0; width: 260px; background: var(--red); transform: translateX(-400px) skewX(-14deg); z-index: 40; pointer-events: none; }
+#wipe.go { animation: wipe .6s cubic-bezier(.7, 0, .3, 1); }
+@keyframes wipe { from { transform: translateX(-400px) skewX(-14deg); } to { transform: translateX(2000px) skewX(-14deg); } }
+
+.title { position: absolute; left: 96px; top: 104px; margin: 0; font: 800 64px/1 var(--display); text-transform: uppercase; letter-spacing: .01em; white-space: nowrap; }
+.title small { font: 600 18px var(--mono); color: var(--dim); letter-spacing: .08em; margin-left: 28px; text-transform: none; vertical-align: middle; }
+.tag { font: 600 14px var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+.scrim { position: absolute; left: 0; top: 0; width: 1600px; height: 260px; background: linear-gradient(rgba(7,7,7,.92), rgba(7,7,7,.7) 55%, rgba(7,7,7,0)); opacity: 0; transition: opacity .5s; }
+.scrim.in { opacity: 1; }
+
+#rail { position: absolute; left: 96px; right: 96px; top: 40px; height: 26px; display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; z-index: 5; opacity: 0;
+  transition: opacity .3s, top .8s cubic-bezier(.65, 0, .25, 1), height .8s cubic-bezier(.65, 0, .25, 1); }
+#rail.show { opacity: 1; }
+#rail > div { position: relative; background: #151515; color: var(--faint); text-transform: uppercase; overflow: hidden;
+  clip-path: polygon(0 0, calc(100% - 0px) 0, 100% 50%, calc(100% - 0px) 100%, 0 100%, 0 50%);
+  transition: background .35s, color .35s, clip-path .8s cubic-bezier(.65, 0, .25, 1); }
+#rail > div span { position: absolute; left: 12px; top: 0; font: 600 13px/26px var(--mono); letter-spacing: .14em; white-space: nowrap;
+  transition: top .8s cubic-bezier(.65, 0, .25, 1), left .8s cubic-bezier(.65, 0, .25, 1), font-size .8s cubic-bezier(.65, 0, .25, 1), letter-spacing .8s; }
+#rail > div b, #rail > div i { position: absolute; left: 34px; opacity: 0; font-style: normal; white-space: nowrap; transition: opacity .3s; }
+#rail > div b { top: 30px; font: 800 22px var(--display); color: var(--red); }
+#rail > div i { top: 150px; font: 600 14px var(--mono); letter-spacing: .06em; text-transform: none; color: var(--dim); }
+#rail > div.done { background: #2a2a2a; color: var(--dim); }
+#rail > div.cur { background: var(--red); color: #fff; }
+#rail > div.cur b, #rail > div.cur i { color: #fff; }
+#rail.big { top: 330px; height: 200px; }
+#rail.big > div { background: #121212; color: var(--fg); clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 50%, calc(100% - 18px) 100%, 0 100%, 18px 50%); }
+#rail.big > div.cur { background: var(--red); }
+#rail.big > div:first-child { clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 50%, calc(100% - 18px) 100%, 0 100%, 0 50%); }
+#rail.big > div span { left: 34px; top: 74px; font-size: 21px; letter-spacing: .02em; }
+#rail.big > div b, #rail.big > div i { opacity: 1; transition: opacity .4s .5s; }
+#railmark { position: absolute; left: 0; top: 0; width: 172.5px; height: 100%; background: var(--red); opacity: 0;
+  transition: transform .6s cubic-bezier(.65, 0, .35, 1), opacity .25s; }
+#rail.mk > div { z-index: 1; }
+#rail.mk > div.cur { background: transparent; }
+#rail.big #railmark { opacity: 0 !important; }
+
+.photo { position: absolute; overflow: hidden; background: #000; outline: 1px solid var(--line); }
+.photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.photo canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+.tower { position: absolute; display: grid; grid-template-columns: 1fr auto auto; }
+.tower .row { display: contents; }
+.tower .row:first-child > * { border-top: 1px solid var(--line); }
+.tower span, .tower b { height: 58px; border-bottom: 1px solid var(--line); display: flex; align-items: center; transition: opacity .4s, color .3s; }
+.tower span { font: 600 15px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--dim); white-space: nowrap; }
+.tower b { padding-left: 26px; justify-content: flex-end; font: 600 28px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tower b.was { color: var(--faint); font-size: 20px; text-decoration: line-through; text-decoration-thickness: 2px; }
+.tower b.up { color: var(--green); }
+.tower .row[data-at] > * { opacity: 0; }
+.tower .row[data-at].in > * { opacity: 1; }
+.tower .row.hot span { color: var(--fg); }
+
+.step { opacity: 0; transition: opacity .45s ease; }
+.step.in { opacity: 1; }
+.eqs { position: absolute; display: flex; flex-direction: column; gap: 26px; font-size: 36px; color: var(--fg); }
+.eqs mjx-container { margin: 0 !important; text-align: left !important; }
+
+#hud { position: fixed; left: max(12px, env(safe-area-inset-left, 0px)); bottom: 10px; z-index: 50; display: flex; gap: 8px; align-items: center; font: 12px var(--mono); color: var(--dim); opacity: .35; transition: opacity .3s; }
+#hud:hover { opacity: 1; }
+#hud button { font: inherit; color: var(--fg); background: #141414; border: 1px solid var(--line); padding: 4px 8px; cursor: pointer; }
+#hud button:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+#notes { position: fixed; right: 0; top: 0; bottom: 0; width: min(440px, 100vw); z-index: 60; background: #111; color: var(--fg);
+  border-left: 1px solid var(--line); padding: 28px max(24px, env(safe-area-inset-right, 0px)) 28px 24px; overflow: auto; font: 20px/1.5 var(--display); }
+#notes h4 { margin: 0 0 14px; font: 600 12px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--red); }
+#notes p { margin: 0 0 12px; }
+@media (prefers-reduced-motion: reduce) { .slide, .slide.on, .slide.quick, .step, .tower span, .tower b, #world, #w-photo { transition: none; } #wipe.go { animation: none; } }
+</style>
+
+<div id="stage">
+  <img id="w-photo" src="frame.webp" alt="">
+  <canvas id="world"></canvas>
+  <div id="rail"><em id="railmark"></em><div><b>01</b><span>Frame</span><i>image</i></div><div><b>02</b><span>Sync</span><i>time offset</i></div><div><b>03</b><span>Detect</span><i>boxes, colors</i></div><div><b>04</b><span>Calibrate</span><i>f, k1, h, φ</i></div><div><b>05</b><span>Project</span><i>x, y meters</i></div><div><b>06</b><span>Track</span><i>cone per pass</i></div><div><b>07</b><span>Map</span><i>cone map</i></div><div><b>08</b><span>Localize</span><i>GPS offset</i></div></div>
+  <div id="wipe"></div>
+
+  <section class="slide" data-scene="title" data-steps="0" data-world="title">
+    <div style="position:absolute;left:96px;top:96px" class="tag">CIS 5810 / Group 45</div>
+    <h1 style="position:absolute;left:90px;top:250px;margin:0;font:800 150px/.88 var(--display);text-transform:uppercase">Cones to<br>Coordinates</h1>
+    <div style="position:absolute;left:96px;top:540px;font:500 30px/1.3 var(--display);color:var(--dim);width:560px">Camera perception and localization for Penn Electric Racing's driverless car</div>
+    <div style="position:absolute;left:96px;top:740px;display:flex;gap:56px">
+      <div style="font:600 30px var(--display)">Chinmay Govind</div>
+      <div style="font:600 30px var(--display)">Jeffrey Moon</div>
+    </div>
+    <div class="notes" data-who="Chinmay">This is REV 11, Penn Electric Racing's car. A driverless car on a cone course has to know where every cone is and where it is itself. We do both with one camera. In the next few minutes we will take one frame from this car and turn it into coordinates.</div>
+  </section>
+
+  <section class="slide" data-scene="track" data-steps="1">
+    <video id="v-track" src="clip.mp4" muted loop playsinline preload="auto" style="position:absolute;left:0;top:0;width:1600px;height:900px;object-fit:cover"></video>
+    <div style="position:absolute;inset:0;background:linear-gradient(rgba(7,7,7,.92),rgba(7,7,7,.75) 24%,rgba(7,7,7,0) 42%),linear-gradient(0deg,rgba(7,7,7,.7),rgba(7,7,7,0) 18%)"></div>
+    <h2 class="title">The track is only cones</h2>
+    <div class="step" data-at="1" style="position:absolute;left:96px;top:186px;font:500 34px var(--display);color:var(--fg)">Where is each one, in meters?</div>
+    <canvas class="full" id="cv-track"></canvas>
+    <div class="notes" data-who="Chinmay">This is the GoPro on our car during its May 12 endurance run. The track is marked only by cones. Blue is on the left, yellow on the right, orange at the start. There are no lane lines and no map ahead of time. [click] That leaves one question. Where is each cone, in meters?</div>
+  </section>
+
+  <section class="slide" data-scene="pipe" data-steps="1" data-rail="big">
+    <h2 class="title">The pipeline</h2>
+    <div class="step" data-at="1" style="position:absolute;left:96px;top:600px;display:flex;gap:64px;align-items:baseline">
+      <div style="font:600 64px var(--mono);font-variant-numeric:tabular-nums">5.3 ms</div>
+      <div class="tag" style="font-size:16px">per frame on a laptop GPU</div>
+    </div>
+    <div class="notes" data-who="Jeffrey">Here is the whole pipeline. A frame goes in on the left, and a cone map and a corrected position come out on the right. [click] All eight stages together take 5.3 milliseconds a frame. Now we zoom into each one, starting with the frame.</div>
+  </section>
+
+  <section class="slide" data-scene="frame" data-steps="0" data-rail="0">
+    <h2 class="title">One frame</h2>
+    <div class="photo" style="left:96px;top:208px;width:1040px;height:585px"><img src="frame.webp" alt="Onboard GoPro frame from the REV 11 car on a cone course"></div>
+    <div class="tower" style="left:1184px;top:208px;width:320px">
+      <div class="row"><span>Camera</span><b></b><b>GoPro</b></div>
+      <div class="row"><span>Mount</span><b></b><b>Roll hoop</b></div>
+      <div class="row"><span>Image</span><b></b><b>1280×720</b></div>
+      <div class="row"><span>Rate</span><b></b><b>30 fps</b></div>
+      <div class="row"><span>Run</span><b></b><b>5/12</b></div>
+    </div>
+    <div class="notes" data-who="Jeffrey">Everything starts from one frame like this one, from the GoPro on the roll hoop. We get thirty of these every second, and our job is to turn each one into numbers.</div>
+  </section>
+
+  <section class="slide" data-scene="sync" data-steps="1" data-rail="1">
+    <h2 class="title">Sync the clocks</h2>
+    <canvas class="full" id="cv-sync"></canvas>
+    <div class="tower" style="left:1184px;top:208px;width:320px">
+      <div class="row" data-at="1"><span>Offset</span><b></b><b>−95.0 s</b></div>
+      <div class="row" data-at="1"><span>Correlation</span><b></b><b>0.995</b></div>
+    </div>
+    <div class="notes" data-who="Jeffrey">The video came off YouTube, which strips the timestamps, so we do not know which moment of the car's log each frame belongs to. When the car turns, the far scenery slides sideways in the video. The IMU measures the same turn as a yaw rate. Here are both signals. [click] We slide the video along the log until they line up. The best match is a 95 second offset, with a correlation of 0.995.</div>
+  </section>
+
+  <section class="slide" data-scene="detect" data-steps="5" data-rail="2">
+    <h2 class="title">Find the cones</h2>
+    <div class="photo" style="left:96px;top:208px;width:1040px;height:585px"><img src="frame.webp" alt=""><canvas id="cv-det"></canvas></div>
+    <svg id="sv-arch" viewBox="0 0 1040 48" style="position:absolute;left:96px;top:816px;width:1040px;height:48px"></svg>
+    <canvas class="full" id="cv-det-side"></canvas>
+    <div class="tower" style="left:1184px;top:208px;width:320px">
+      <div class="row" data-at="5"><span>Recall</span><b class="was">0.75</b><b class="up">0.93</b></div>
+      <div class="row" data-at="5"><span>Color</span><b class="was">0.78</b><b class="up">0.95</b></div>
+      <div class="row" data-at="5"><span>GMAC</span><b class="was">24.8</b><b class="up">8.5</b></div>
+      <div class="row" data-at="5"><span>Time</span><b class="was">16</b><b class="up">7 ms</b></div>
+    </div>
+    <div class="notes" data-who="Jeffrey">The frame goes in at 640 by 352. [click] A ResNet-18 encoder shrinks it three times, to a quarter, an eighth and a sixteenth of the size. Each step sees a bigger area and knows more about what is in it. [click] A feature pyramid brings that knowledge back up to quarter resolution, so small far cones are not lost. [click] The heads paint a heat map for each color on a 160 by 88 grid, bright where a cone stands. [click] Each peak becomes a box with a color, and anything on our own car is thrown out. [click] Our first version found cone pixels and guessed colors and missed a quarter of the cones. This one gets recall from 0.75 to 0.93 and color from 0.78 to 0.95, at 7 milliseconds a frame.</div>
+  </section>
+
+  <section class="slide" data-scene="foot" data-steps="1" data-rail="2">
+    <h2 class="title">One number per box</h2>
+    <div class="photo" style="left:96px;top:208px;width:1040px;height:585px"><img src="frame.webp" alt=""><canvas id="cv-foot"></canvas></div>
+    <canvas class="full" id="cv-foot-axis"></canvas>
+    <div class="notes" data-who="Jeffrey">To place a cone we only need one point from its box. It is where the cone touches the ground, and the important number is its row, v. [click] Low in the frame means close. Up near the horizon means far. Chinmay will turn that into meters.</div>
+  </section>
+
+  <section class="slide" data-scene="calib" data-steps="2" data-rail="3">
+    <h2 class="title">Calibrate the camera</h2>
+    <canvas class="full" id="cv-calib"></canvas>
+    <div class="photo" style="left:864px;top:208px;width:640px;height:360px"><img src="frame.webp" alt=""><canvas id="cv-lens"></canvas></div>
+    <div class="tower" style="left:864px;top:620px;width:640px">
+      <div class="row" data-at="0"><span>Focal length</span><b></b><b>563 px</b></div>
+      <div class="row" data-at="1"><span>Lens distortion k1</span><b></b><b>0.41</b></div>
+      <div class="row" data-at="2"><span>Height</span><b></b><b>1.67 m</b></div>
+    </div>
+    <div class="notes" data-who="Chinmay">To measure anything we need the camera's focal length. We get it from turning. When the car yaws, far scenery shifts by focal length times the turn angle. So we plot pixel shift against the IMU's yaw rate, and the slope is the focal length, 563 pixels. [click] The GoPro has a wide lens that bends straight lines, so we undo that with a one-parameter radial model. [click] The camera height comes from requiring that the same cone, seen on different laps, lands in the same place.</div>
+  </section>
+
+  <section class="slide" data-scene="hzphoto" data-steps="2" data-rail="3">
+    <h2 class="title">Find the horizon</h2>
+    <div class="photo" style="left:96px;top:208px;width:1040px;height:585px"><img src="hz.webp" alt="Onboard frame from the April 9 run with six upright cones"></div>
+    <canvas class="full" id="cv-hzp"></canvas>
+    <div class="tower" style="left:1184px;top:208px;width:320px">
+      <div class="row" data-at="1"><span>Cones</span><b></b><b>6</b></div>
+      <div class="row" data-at="1"><span>Far away</span><b></b><b>0 px</b></div>
+      <div class="row" data-at="2"><span>Horizon</span><b></b><b>241 px</b></div>
+      <div class="row" data-at="2"><span>Image center</span><b></b><b>360 px</b></div>
+      <div class="row" data-at="2"><span>Pitch</span><b></b><b>12.5°</b></div>
+    </div>
+    <div class="eqs" style="left:1184px;top:540px;font-size:30px">
+      <div class="step" data-at="2">\( \varphi = \arctan \dfrac{360 - 241}{534} \)</div>
+    </div>
+    <div class="notes" data-who="Chinmay">To turn a pixel into meters we need to know where the horizon is in the image, and the camera is tilted down, so it is not the middle row. This frame from our April 9 run has six upright cones, two next to the car and four far away. [click] Slide every cone straight ahead, parallel to the car. Each one shrinks and climbs up the image, and all six lines meet at one point. A cone infinitely far away has zero height, and the row where that happens is the horizon. We never needed the camera's tilt for this. Every cone's height in pixels and the row of its base fall on one straight line, and the end of that line where the height is zero is the horizon. [click] Here that row is 241. The middle of the image is row 360, so the camera looks 119 pixels below the horizon. With a 534 pixel focal length, that is a 12.5 degree pitch.</div>
+  </section>
+
+  <section class="slide" data-scene="horizon" data-steps="2" data-rail="3">
+    <h2 class="title">Fit it from every cone</h2>
+    <canvas class="full" id="cv-hz"></canvas>
+    <div class="eqs" style="left:1100px;top:226px">
+      <div class="step" data-at="1">\( v = \color{#ff2d2d}{v_h} + \dfrac{h}{H_\mathrm{cone}}\, h_\mathrm{px} \)</div>
+    </div>
+    <div class="tower" style="left:1100px;top:400px;width:404px">
+      <div class="row" data-at="1"><span>Fit slope</span><b></b><b>5.3</b></div>
+      <div class="row" data-at="1"><span>h / cone height</span><b></b><b>5.1</b></div>
+      <div class="row" data-at="1"><span>Horizon</span><b></b><b>209 px</b></div>
+      <div class="row" data-at="1"><span>Pitch</span><b></b><b>15.0°</b></div>
+      <div class="row" data-at="2"><span>Range error</span><b class="was">6.51</b><b class="up">0.52 m</b></div>
+    </div>
+    <div class="notes" data-who="Chinmay">The horizon moves every time the car brakes or hits a bump, so we cannot fix it ahead of time, and one cone is noisy. So we use every cone in the frame. Plot each cone's box height against the row of its foot. [click] Geometry says they fall on a line, and they do. The slope is 5.3, which matches camera height over cone height. Where the line reaches zero height is the horizon, and that gives the camera's pitch, 15 degrees. [click] Fitting it on every frame took our median range error on 95 real frames from 6.5 meters to half a meter.</div>
+  </section>
+
+  <section class="slide" data-scene="pix" data-steps="3" data-rail="4" data-world="pix">
+    <div class="scrim" id="pix-scrim"></div>
+    <h2 class="title">Pixels to meters</h2>
+    <canvas class="full" id="cv-pix"></canvas>
+    <div class="step" data-at="2" style="position:absolute;left:1020px;top:0;width:580px;height:900px;background:linear-gradient(90deg,rgba(7,7,7,.86),rgba(7,7,7,.97) 60px);border-left:1px solid #242424"></div>
+    <canvas class="full" id="cv-pix2"></canvas>
+    <div class="eqs" style="left:1056px;top:196px;gap:20px;transform:scale(.94);transform-origin:left top">
+      <div class="step" data-at="2">\( \color{#ff2d2d}{\alpha} = \varphi + \arctan \dfrac{v - c_y}{f} \)</div>
+      <div class="step" data-at="2" style="font-size:48px">\( \color{#ffd400}{d} = \dfrac{h}{\tan \color{#ff2d2d}{\alpha}} \)</div>
+      <div class="step" data-at="2" style="font-size:24px;color:#8b8b8b">\( \alpha = 15.0^\circ + \arctan \dfrac{577 - 360}{563} = 36.1^\circ \)</div>
+      <div class="step" data-at="2" style="font-size:24px;color:#8b8b8b">\( d = \dfrac{1.67\ \mathrm{m}}{\tan 36.1^\circ} = 2.29\ \mathrm{m} \)</div>
+    </div>
+    <div class="notes" data-who="Chinmay">These are 3D cones, placed where our math says the real cones are, drawn from the GoPro's point of view. They land right on top of the real ones. [click] Now pull the camera out. This is our car, and every line is a ray from the GoPro down to a cone's foot. [click] Take the yellow cone. The ray leaves the camera at an angle alpha below the horizon: the camera's pitch plus the angle of that pixel. The camera is 1.67 meters up, so the distance is the height over tan alpha. That is 2.29 meters. [click] The catch is that the error grows with distance squared. At 6 meters one pixel costs 4 centimeters. At 26 meters it costs 70.</div>
+  </section>
+
+  <section class="slide" data-scene="ground" data-steps="1" data-rail="4" data-world="top">
+    <h2 class="title">Onto the ground</h2>
+    <canvas class="full" id="cv-ground"></canvas>
+    <div class="notes" data-who="Chinmay">From straight above, the frame becomes a map around the car. Each cone has a distance ahead and a side offset, in meters. [click] Close cones are accurate and far ones are not, so we only keep sightings within 6 meters.</div>
+  </section>
+
+  <section class="slide" data-scene="trk" data-steps="2" data-rail="5">
+    <h2 class="title">Track one cone</h2>
+    <canvas class="full" id="cv-trk"></canvas>
+    <div class="tower" style="left:1184px;top:208px;width:320px">
+      <div class="row"><span>Sightings</span><b></b><b id="trk-n">349</b></div>
+      <div class="row" data-at="1"><span>Passes</span><b></b><b id="trk-p">38</b></div>
+      <div class="row" data-at="1"><span>Gate</span><b></b><b>1.5 m</b></div>
+      <div class="row" data-at="1"><span>Weight</span><b></b><b>1 / r²</b></div>
+      <div class="row" data-at="2"><span>Spread</span><b></b><b id="trk-s">0.00 m</b></div>
+    </div>
+    <div class="notes" data-who="Chinmay">This is every time the car saw one blue cone during the run, placed with the GPS pose. Bigger dots were seen from closer, and they count more, because error grows with distance squared. [click] Within each pass, sightings closer than a meter and a half are the same cone, and we average them with that weighting. Each ring is one pass. [click] Then all the passes merge into one cone.</div>
+  </section>
+
+  <section class="slide" data-scene="map" data-steps="2" data-rail="6">
+    <h2 class="title">Build the map</h2>
+    <canvas class="full" id="cv-map"></canvas>
+    <div class="tower" style="left:96px;top:208px;width:420px">
+      <div class="row" id="mr0"><span>Sightings</span><b></b><b>21,669</b></div>
+      <div class="row" id="mr1" data-at="1"><span>Tracks</span><b></b><b>2,462</b></div>
+      <div class="row" id="mr2" data-at="2"><span>Cones</span><b></b><b>170</b></div>
+      <div class="row" data-at="2"><span>Duplicates</span><b class="was">119</b><b class="up">0</b></div>
+      <div class="row" data-at="2"><span>Color agree</span><b class="was">86%</b><b class="up">94%</b></div>
+    </div>
+    <div class="notes" data-who="Chinmay">Do that for the whole May 12 run. These are all twenty-one thousand sightings. [click] Each cone on each pass becomes one track, 2,462 of them. [click] Tracks within a meter merge, the color is voted, and a cone needs at least two passes to count. That leaves 170 cones and no duplicates.</div>
+  </section>
+
+  <section class="slide" data-scene="loc" data-steps="2" data-rail="7">
+    <h2 class="title">GPS drifts, cones don't</h2>
+    <canvas class="full" id="cv-loc"></canvas>
+    <div class="tower" style="left:1184px;top:208px;width:320px">
+      <div class="row" data-at="2"><span>Laps</span><b></b><b>17</b></div>
+      <div class="row" data-at="2"><span>Median</span><b class="was">0.47</b><b class="up">0.31 m</b></div>
+      <div class="row" data-at="2"><span>Worst lap</span><b class="was">0.76</b><b class="up">0.37 m</b></div>
+    </div>
+    <div class="notes" data-who="Chinmay">GPS wanders by tens of centimeters, so each lap puts the same cone in a slightly different place. Each gray line here is one lap. [click] The cones do not move. Every frame, the nearby sightings vote for the GPS offset that puts them back on their cone, and we follow that offset. [click] Here is every timed lap of the May 12 run. With GPS alone, how far a pass lands from its cone jumps around from lap to lap, up to 76 centimeters. With the cone correction it stays near 30 centimeters on every lap.</div>
+  </section>
+
+  <section class="slide" data-scene="live" data-steps="0" data-rail="all">
+    <h2 class="title">All of it, live</h2>
+    <div class="photo" style="left:96px;top:208px;width:1040px;height:585px">
+      <video id="v-live" src="clip.mp4" muted loop playsinline preload="auto" style="display:block;width:100%;height:100%;object-fit:cover"></video>
+      <canvas id="cv-live" width="2080" height="1170"></canvas>
+    </div>
+    <canvas id="cv-radar" width="640" height="1170" style="position:absolute;left:1184px;top:208px;width:320px;height:585px"></canvas>
+    <div class="notes" data-who="Jeffrey">Here is the clip from the start, with every stage running on it. Each box is the detector on that frame, each number is that cone's distance from the camera, and on the right is where each cone lands on the ground around the car. This is the same 5.3 milliseconds a frame we showed at the start.</div>
+  </section>
+
+  <section class="slide" data-scene="results" data-steps="0">
+    <h2 class="title">Results</h2>
+    <div id="board" style="position:absolute;left:96px;right:96px;top:220px"></div>
+    <div class="notes" data-who="Jeffrey">Here is where we ended up. The detector finds 93 percent of cones. Range error is half a meter, localization is 31 centimeters, and the whole pipeline takes 5.3 milliseconds a frame. Next it goes onto the car's Jetson.</div>
+  </section>
+
+  <section class="slide" data-scene="demo" data-steps="0">
+    <iframe id="demo" title="REV 11 cone mapping replay" style="position:absolute;inset:0;width:1600px;height:900px;border:0;background:#0b0f17" allow="fullscreen"></iframe>
+    <div class="notes" data-who="Chinmay">This is the whole pipeline running on the May 12 run. The GoPro feed with live detections is in the corner, and the map builds itself as the car drives. Space plays and pauses, the number keys change the camera, and you can drag to look around. PageDown or Escape goes to questions.</div>
+  </section>
+
+  <section class="slide" data-scene="end" data-steps="0" data-world="end">
+    <div style="position:absolute;inset:0;background:linear-gradient(90deg,rgba(7,7,7,.9),rgba(7,7,7,.5) 45%,rgba(7,7,7,0) 70%)"></div>
+    <h1 style="position:absolute;left:90px;top:330px;margin:0;font:800 150px/.9 var(--display);text-transform:uppercase">Questions</h1>
+    <div style="position:absolute;left:96px;top:500px;font:500 28px var(--display);color:var(--dim)">Chinmay Govind / Jeffrey Moon / Penn Electric Racing</div>
+    <div class="notes" data-who="Both">Thank you. We are happy to take questions.</div>
+  </section>
+</div>
+
+<div id="hud"><button id="b-notes" type="button">Notes</button><button id="b-snd" type="button">Sound on</button><span id="pos"></span></div>
+<aside id="notes" hidden><h4 id="n-head"></h4><div id="n-body"></div></aside>
+
+<script>
+(() => {
+  const stage = document.getElementById('stage');
+  const slides = [...document.querySelectorAll('.slide')];
+  let cur = 0, step = 0, DATA = null, DETS = [], epoch = 0;
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const fit = () => { const f = Math.min(innerWidth / 1600, innerHeight / 900); stage.style.setProperty('--fit', f); window.dispatchEvent(new CustomEvent('deck-fit', { detail: f })); };
+  addEventListener('resize', fit);
+
+  const K = { bg: '#070707', line: '#242424', line2: '#3a3a3a', fg: '#f2f2f2', dim: '#8b8b8b', faint: '#4a4a4a',
+    red: '#ff2d2d', green: '#2fd67a', cone: ['#3d8bff', '#ffd400', '#ff7a00'] };
+  const MONO = '"JetBrains Mono", Menlo, monospace';
+  const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+  const rgba = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`; };
+
+  function tween(ms, fn) {
+    const my = epoch;
+    return new Promise(res => {
+      if (reduce || ms === 0) { fn(1); return res(); }
+      const t0 = performance.now();
+      const f = now => { if (my !== epoch) return res(); const t = Math.min(1, (now - t0) / ms); fn(ease(t)); if (t < 1) requestAnimationFrame(f); else res(); };
+      requestAnimationFrame(f);
+    });
+  }
+  function ctx(id, w = 1600, h = 900) {
+    const cv = document.getElementById(id), r = 2;
+    if (cv.width !== w * r) { cv.width = w * r; cv.height = h * r; }
+    const g = cv.getContext('2d'); g.setTransform(r, 0, 0, r, 0, 0); g.clearRect(0, 0, w, h); return g;
+  }
+  function label(g, text, x, y, { color = K.dim, size = 13, align = 'left', weight = 600, track = 1.6, font = MONO } = {}) {
+    g.font = `${weight} ${size}px ${font}`; g.fillStyle = color; g.textAlign = align; g.textBaseline = 'alphabetic';
+    if ('letterSpacing' in g) g.letterSpacing = track + 'px';
+    g.fillText(text, x, y);
+    if ('letterSpacing' in g) g.letterSpacing = '0px';
+    g.textAlign = 'left';
+  }
+  const ital = (g, t, x, y, size, color, align = 'left') => label(g, t, x, y, { color, size, align, weight: 400, track: 0, font: 'Georgia, "Times New Roman", serif' });
+  function spread(items, gap, lo, hi) {
+    items.sort((a, b) => a.y - b.y);
+    for (let i = 1; i < items.length; i++) items[i].y = Math.max(items[i].y, items[i - 1].y + gap);
+    const over = items.length ? items[items.length - 1].y - hi : 0;
+    if (over > 0) items.forEach(it => it.y -= over);
+    for (let i = items.length - 2; i >= 0; i--) items[i].y = Math.min(items[i].y, items[i + 1].y - gap);
+    return items;
+  }
+  function badge(g, x, y, n, col, r = 11) { g.fillStyle = col; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); label(g, String(n), x, y + 4.5, { color: '#000', size: 13, align: 'center', track: 0 }); }
+  function nice(lo, hi, n = 5) { const raw = (hi - lo) / n, p = Math.pow(10, Math.floor(Math.log10(raw))), s = [1, 2, 2.5, 5, 10].map(k => k * p).find(k => k >= raw); const out = []; for (let v = Math.ceil(lo / s) * s; v <= hi + 1e-9; v += s) out.push(+v.toFixed(6)); return out; }
+  function axes(g, box, sx, sy, { xt, yt, xlab, ylab, xfmt = v => v, yfmt = v => v, grid = true, zeroX = false, zeroY = false }) {
+    const { x, y, w, h } = box;
+    g.lineWidth = 1;
+    if (grid) { g.strokeStyle = '#151515';
+      xt.forEach(v => { const X = sx(v); g.beginPath(); g.moveTo(X, y); g.lineTo(X, y + h); g.stroke(); });
+      yt.forEach(v => { const Y = sy(v); g.beginPath(); g.moveTo(x, Y); g.lineTo(x + w, Y); g.stroke(); }); }
+    g.strokeStyle = K.line2;
+    if (zeroY) { g.beginPath(); g.moveTo(x, sy(0)); g.lineTo(x + w, sy(0)); g.stroke(); }
+    if (zeroX) { g.beginPath(); g.moveTo(sx(0), y); g.lineTo(sx(0), y + h); g.stroke(); }
+    g.strokeStyle = K.dim; g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + h); g.lineTo(x + w, y + h); g.stroke();
+    xt.forEach(v => { const X = sx(v); g.beginPath(); g.moveTo(X, y + h); g.lineTo(X, y + h + 7); g.stroke(); label(g, String(xfmt(v)), X, y + h + 26, { align: 'center', track: 0 }); });
+    yt.forEach(v => { const Y = sy(v); g.beginPath(); g.moveTo(x - 7, Y); g.lineTo(x, Y); g.stroke(); label(g, String(yfmt(v)), x - 14, Y + 5, { align: 'right', track: 0 }); });
+    if (xlab) label(g, xlab, x + w / 2, y + h + 58, { align: 'center' });
+    if (ylab) { g.save(); g.translate(x - 74, y + h / 2); g.rotate(-Math.PI / 2); label(g, ylab, 0, 0, { align: 'center' }); g.restore(); }
+  }
+  function arrowLine(g, x1, y1, x2, y2, col, w = 1.5) {
+    g.strokeStyle = col; g.lineWidth = w; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
+    const a = Math.atan2(y2 - y1, x2 - x1); for (const [px, py, s] of [[x1, y1, -1], [x2, y2, 1]]) { g.beginPath(); g.moveTo(px - Math.sin(a) * 8, py + Math.cos(a) * 8); g.lineTo(px + Math.sin(a) * 8, py - Math.cos(a) * 8); g.stroke(); }
+  }
+
+  const F = 563, CX = 640, CY = 360, H = 1.67, VH = 208.6, SLOPE = 5.276, PHI = Math.atan((CY - VH) / F), CAMZ = 0.52;
+  const alpha = d => PHI + Math.atan((d.v - CY) / F);
+  const ground = d => { const y = (d.v - CY) / F, x = (d.u - CX) / F, down = Math.sin(PHI) + y * Math.cos(PHI), fwd = Math.cos(PHI) - y * Math.sin(PHI), lam = H / down; return { ahead: fwd * lam, side: x * lam }; };
+  const bbox = d => { const h = d.h * 1.1, w = d.h * .8; return [d.u - w / 2, d.v - h, w, h]; };
+  window.DECK = { K, CAMZ, H, PHI, F, ground, ready: null };
+
+  const fitMap = (x0, y0, w, h) => { const k = Math.min(w / 233, h / 117), ox = x0 + (w - 233 * k) / 2, oy = y0 + (h - 117 * k) / 2;
+    const f = (x, z) => [ox + (96 - z) * k, oy + (x + 55) * k]; f.k = k; return f; };
+  function drawPath(g, P, map, color, width = 1.2, frac = 1) {
+    g.strokeStyle = color; g.lineWidth = width; g.lineJoin = 'round'; g.beginPath();
+    const n = Math.floor(P.length * frac); for (let i = 0; i < n; i++) { const [X, Y] = map(P[i][0], P[i][1]); i ? g.lineTo(X, Y) : g.moveTo(X, Y); } g.stroke();
+  }
+  function scaleBar(g, x, y, k, meters, text) {
+    g.strokeStyle = K.dim; g.lineWidth = 2; g.beginPath();
+    g.moveTo(x, y); g.lineTo(x + meters * k, y); g.moveTo(x, y - 6); g.lineTo(x, y + 6); g.moveTo(x + meters * k, y - 6); g.lineTo(x + meters * k, y + 6); g.stroke();
+    label(g, text || `${meters} M`, x + meters * k + 14, y + 5);
+  }
+
+  const SFX = (() => {
+    let ac = null, out = null, verb = null, on = true;
+    try { on = localStorage.getItem('deck-sound') !== 'off'; } catch (e) {}
+    const start = () => {
+      if (ac || !window.AudioContext) return; ac = new AudioContext();
+      out = ac.createDynamicsCompressor(); out.threshold.value = -20; out.connect(ac.destination);
+      const ir = ac.createBuffer(2, ac.sampleRate * .9 | 0, ac.sampleRate);
+      for (let c = 0; c < 2; c++) { const x = ir.getChannelData(c); for (let i = 0; i < x.length; i++) x[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / x.length, 3); }
+      const cv = ac.createConvolver(), wet = ac.createGain(); cv.buffer = ir; wet.gain.value = .22; cv.connect(wet).connect(out); verb = cv;
+    };
+    const videos = () => document.querySelectorAll('video').forEach(v => { v.muted = !on; v.volume = .55; });
+    const sweep = (t, d, f0, f1, peak, q = 1.2) => {
+      const b = ac.createBuffer(1, ac.sampleRate * (d + .05) | 0, ac.sampleRate), x = b.getChannelData(0); for (let i = 0; i < x.length; i++) x[i] = Math.random() * 2 - 1;
+      const n = ac.createBufferSource(), bp = ac.createBiquadFilter(), g = ac.createGain(); n.buffer = b; bp.type = 'bandpass'; bp.Q.value = q;
+      bp.frequency.setValueAtTime(f0, t); bp.frequency.exponentialRampToValueAtTime(f1, t + d);
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + d * .45); g.gain.exponentialRampToValueAtTime(.0001, t + d);
+      n.connect(bp).connect(g); g.connect(out); g.connect(verb); n.start(t); n.stop(t + d + .05);
+    };
+    const hum = (t, f, d, peak) => { const o = ac.createOscillator(), g = ac.createGain(); o.frequency.value = f;
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + d * .3); g.gain.exponentialRampToValueAtTime(.0001, t + d);
+      o.connect(g); g.connect(out); g.connect(verb); o.start(t); o.stop(t + d + .05); };
+    const play = (name, { rate = 1, at = 0 } = {}) => {
+      if (!on || !ac) return; const t = ac.currentTime + .005 + at;
+      if (name === 'step') rate >= 1 ? sweep(t, .09, 700, 2200, .14, 1.6) : sweep(t, .09, 2000, 650, .12, 1.6);
+      else if (name === 'next') sweep(t, .24, 500, 2600, .16);
+      else if (name === 'back') sweep(t, .24, 2400, 450, .14);
+      else if (name === 'marker') sweep(t, .14, 900, 1900, .1, 6);
+      else if (name === 'tick') sweep(t, .05, 1100 * rate, 1500 * rate, .12, 9);
+      else if (name === 'end') { sweep(t, 1.4, 2800, 260, .16, .9); hum(t + .1, 110, 1.8, .05); hum(t + .1, 164.8, 1.8, .03); }
+    };
+    const whoosh = ms => { if (!on || !ac) return; const d = ms / 1000, t = ac.currentTime; sweep(t, d * .55, 200, 1300, .16); sweep(t + d * .45, d * .55, 1300, 260, .12); };
+    const toggle = () => { on = !on; try { localStorage.setItem('deck-sound', on ? 'on' : 'off'); } catch (e) {} if (on) start(); videos(); return on; };
+    const unlock = () => { start(); if (on) document.querySelectorAll('.slide.on video').forEach(v => { v.muted = false; v.volume = .55; }); };
+    addEventListener('keydown', unlock, { capture: true }); addEventListener('pointerdown', unlock, { capture: true });
+    return { play, whoosh, toggle, get on() { return on; } };
+  })();
+  window.DECK.sfx = SFX;
+
+  const scenes = {};
+  scenes.title = { go() {} };
+
+  const playFrom0 = id => { const v = document.getElementById(id); try { v.currentTime = 0; } catch (e) {} v.muted = !SFX.on; v.volume = .55; v.play().catch(() => { v.muted = true; v.play().catch(() => {}); }); return v; };
+  const stopVideos = () => document.querySelectorAll('video').forEach(v => { if (!v.closest('.slide.on')) v.pause(); });
+  scenes.track = { go(s, prev) {
+    if (prev < 0) playFrom0('v-track');
+    const g = ctx('cv-track');
+    [['LEFT', 0], ['RIGHT', 1], ['START', 2]].forEach(([t, c], i) => { const x = 1186 + i * 112; g.fillStyle = K.cone[c]; g.fillRect(x, 842, 12, 12); label(g, t, x + 22, 853, { color: K.fg }); });
+  } };
+
+  scenes.pipe = { async go(s) {
+    if (s < 1) return;
+    const my = epoch;
+    for (let i = 0; i < 8; i++) { railCells.forEach((c, j) => c.classList.toggle('cur', j === i)); SFX.play('tick', { rate: 1 + i * .07 }); await tween(160, () => {}); if (my !== epoch) return; }
+    railCells.forEach(c => c.classList.remove('cur'));
+  } };
+
+  scenes.frame = { go() {} };
+
+  scenes.sync = { async go(s, prev) {
+    if (!DATA) return;
+    const S = DATA.sync, A = { x: 200, y: 224, w: 920, h: 300 }, B = { x: 200, y: 640, w: 920, h: 150 };
+    const sx = t => A.x + t / 40 * A.w, sy = v => A.y + A.h / 2 - v / 90 * (A.h / 2);
+    const lx = L => B.x + (L - S.lags[0]) / (S.lags[S.lags.length - 1] - S.lags[0]) * B.w, ly = c => B.y + B.h - (c + .4) / 1.4 * B.h;
+    const draw = L => {
+      const g = ctx('cv-sync');
+      axes(g, A, sx, sy, { xt: [0, 10, 20, 30, 40], yt: [-80, -40, 0, 40, 80], xlab: 'TIME (S)', ylab: 'TURN RATE (PX/FRAME)', yfmt: v => v, zeroY: true });
+      g.save(); g.beginPath(); g.rect(A.x, A.y - 4, A.w, A.h + 8); g.clip();
+      g.strokeStyle = K.fg; g.lineWidth = 2; g.beginPath(); S.imu.forEach((v, i) => { const X = sx(i / 10), Y = sy(v * 2); i ? g.lineTo(X, Y) : g.moveTo(X, Y); }); g.stroke();
+      const shift = L - S.peak;
+      g.strokeStyle = K.red; g.lineWidth = 2; g.beginPath(); S.vidLong.forEach((v, i) => { const t = S.vidStart + i / 10 + shift; const X = sx(t), Y = sy(v * 2); i ? g.lineTo(X, Y) : g.moveTo(X, Y); }); g.stroke();
+      g.restore();
+      g.fillStyle = K.fg; g.fillRect(A.x + A.w - 300, A.y - 30, 14, 3); label(g, 'IMU YAW RATE', A.x + A.w - 278, A.y - 24);
+      g.fillStyle = K.red; g.fillRect(A.x + A.w - 130, A.y - 30, 14, 3); label(g, 'VIDEO', A.x + A.w - 108, A.y - 24);
+      axes(g, B, lx, ly, { xt: nice(S.lags[0], S.lags[S.lags.length - 1], 6), yt: [0, .5, 1], xlab: 'CLOCK OFFSET (S)', ylab: 'CORRELATION', yfmt: v => v.toFixed(1) });
+      g.strokeStyle = K.dim; g.lineWidth = 1.5; g.beginPath(); S.lags.forEach((l, i) => { if (l > L) return; const X = lx(l), Y = ly(S.cc[i]); i ? g.lineTo(X, Y) : g.moveTo(X, Y); }); g.stroke();
+      g.strokeStyle = K.red; g.lineWidth = 1.5; g.beginPath(); g.moveTo(lx(L), B.y); g.lineTo(lx(L), B.y + B.h); g.stroke();
+      if (Math.abs(L - S.peak) < .3) { const i = S.lags.indexOf(S.peak) >= 0 ? S.lags.indexOf(S.peak) : S.cc.indexOf(Math.max(...S.cc)); g.fillStyle = K.red; g.beginPath(); g.arc(lx(S.peak), ly(Math.max(...S.cc)), 6, 0, 7); g.fill(); }
+    };
+    const L0 = S.lags[0] + 4;
+    if (s === 0) { draw(prev === 99 ? L0 : L0); return; }
+    await tween(prev === 99 ? 0 : 2600, t => draw(lerp(L0, S.peak, t)));
+  } };
+
+  const frameImg = new Image(); frameImg.src = 'frame.webp';
+  function featureMap(gw, gh) {
+    const c = document.createElement('canvas'); c.width = gw; c.height = gh; const x = c.getContext('2d');
+    x.drawImage(frameImg, 0, 0, gw, gh); const im = x.getImageData(0, 0, gw, gh), d = im.data, L = new Float32Array(gw * gh);
+    for (let i = 0; i < gw * gh; i++) L[i] = (d[i * 4] * .3 + d[i * 4 + 1] * .59 + d[i * 4 + 2] * .11) / 255;
+    for (let y = 0; y < gh; y++) for (let xx = 0; xx < gw; xx++) {
+      const i = y * gw + xx, gx = (L[y * gw + Math.min(gw - 1, xx + 1)] - L[y * gw + Math.max(0, xx - 1)]), gy = (L[Math.min(gh - 1, y + 1) * gw + xx] - L[Math.max(0, y - 1) * gw + xx]);
+      const e = Math.min(1, Math.hypot(gx, gy) * 3.2), v = .25 * L[i] + .75 * e;
+      d[i * 4] = 20 + v * 120; d[i * 4 + 1] = 30 + v * 200; d[i * 4 + 2] = 40 + v * 215; d[i * 4 + 3] = 255; }
+    x.putImageData(im, 0, 0); return c;
+  }
+  function heatGrid(gw, gh) {
+    const c = document.createElement('canvas'); c.width = gw; c.height = gh; const x = c.getContext('2d'), im = x.createImageData(gw, gh), d = im.data, sc = gw / 1280;
+    for (let y = 0; y < gh; y++) for (let xx = 0; xx < gw; xx++) { let r = 0, g = 0, b = 0;
+      DETS.forEach(det => { const cx = det.u * sc, cy = (det.v - det.h * .5) * sc, sg = Math.max(.9, det.h * sc * .45), w = Math.exp(-((xx - cx) ** 2 + (y - cy) ** 2) / (2 * sg * sg)) * det.s / .76;
+        const col = K.cone[det.c], n = parseInt(col.slice(1), 16); r += w * (n >> 16 & 255); g += w * (n >> 8 & 255); b += w * (n & 255); });
+      const i = (y * gw + xx) * 4; d[i] = Math.min(255, r); d[i + 1] = Math.min(255, g); d[i + 2] = Math.min(255, b); d[i + 3] = 255; }
+    x.putImageData(im, 0, 0); return c;
+  }
+  scenes.detect = { async go(s, prev) {
+    if (!DATA) return;
+    if (!frameImg.complete) await new Promise(r => frameImg.onload = r);
+    const W = 1040, Hh = 585, sc = W / 1280;
+    const stages = ['Frame', 'ResNet-18', 'FPN', 'Heat maps', 'Boxes'], active = Math.min(4, s);
+    const bw = 172, gap = (1040 - stages.length * bw) / (stages.length - 1);
+    document.getElementById('sv-arch').innerHTML = stages.map((t, i) => {
+      const x = i * (bw + gap), on = i <= active, hot = i === active, ac = i < active ? K.dim : K.line2;
+      return `<rect x="${x + .5}" y=".5" width="${bw - 1}" height="47" fill="${hot ? K.red : on ? '#1c1c1c' : '#0f0f0f'}" stroke="${hot ? K.red : K.line}"/>
+        <text x="${x + 16}" y="30" fill="${hot ? '#fff' : on ? K.fg : K.faint}" font-family='${MONO}' font-weight="600" font-size="14" letter-spacing="1.8">${t.toUpperCase()}</text>
+        ${i < stages.length - 1 ? `<path d="M${x + bw + 8} 24 H${x + bw + gap - 8} M${x + bw + gap - 15} 18 L${x + bw + gap - 8} 24 L${x + bw + gap - 15} 30" fill="none" stroke="${ac}" stroke-width="1.5"/>` : ''}`;
+    }).join('');
+    const LV = [[160, 88, '1/4', 64], [80, 44, '1/8', 128], [40, 22, '1/16', 256]];
+    const maps = LV.map(([w, h]) => featureMap(w, h)), heat = heatGrid(160, 88);
+    const side = (rows, hi, titleTxt) => {
+      const g = ctx('cv-det-side'); if (!rows) return;
+      label(g, titleTxt, 1184, 224);
+      rows.forEach(([c, txt, sub], i) => { const y = 248 + i * 196, w = 280;
+        g.imageSmoothingEnabled = false; g.globalAlpha = i === hi ? 1 : .45; g.drawImage(c, 1184, y, w, w * 88 / 160);
+        g.globalAlpha = 1; g.strokeStyle = i === hi ? K.red : K.line; g.lineWidth = i === hi ? 2 : 1; g.strokeRect(1184.5, y + .5, w - 1, w * 88 / 160 - 1);
+        label(g, txt, 1184, y + w * 88 / 160 + 22, { color: i === hi ? K.fg : K.dim }); label(g, sub, 1184 + w, y + w * 88 / 160 + 22, { align: 'right' }); });
+    };
+    const main = (c, a = 1, dim = 0) => { const g = ctx('cv-det', W, Hh); if (dim) { g.fillStyle = `rgba(0,0,0,${dim})`; g.fillRect(0, 0, W, Hh); }
+      if (c) { g.globalAlpha = a; g.imageSmoothingEnabled = false; g.drawImage(c, 0, 0, W, Hh); g.globalAlpha = 1; } return g; };
+    const boxes = (g, k, mask) => {
+      const CAR = [358, 896, 452];
+      if (mask > 0) { const x0 = CAR[0] * sc, x1 = CAR[1] * sc, y0 = CAR[2] * sc;
+        g.save(); g.globalAlpha = mask; g.beginPath(); g.rect(x0, y0, x1 - x0, Hh - y0); g.clip();
+        g.fillStyle = 'rgba(255,45,45,.16)'; g.fillRect(x0, y0, x1 - x0, Hh - y0);
+        g.strokeStyle = 'rgba(255,45,45,.5)'; g.lineWidth = 1.5; for (let q = -Hh; q < x1 - x0; q += 16) { g.beginPath(); g.moveTo(x0 + q, Hh); g.lineTo(x0 + q + Hh, 0); g.stroke(); }
+        g.restore(); g.globalAlpha = mask; g.strokeStyle = K.red; g.lineWidth = 2; g.strokeRect(x0, y0, x1 - x0, Hh - y0);
+        g.fillStyle = K.red; g.fillRect(x0, y0, 150, 28); label(g, 'OWN CAR, IGNORED', x0 + 10, y0 + 19, { color: '#fff', size: 12 }); g.globalAlpha = 1; }
+      DETS.forEach(d => { const [x, y, w, h] = bbox(d), p = (1 - k) * 16; g.globalAlpha = k; g.strokeStyle = K.cone[d.c]; g.lineWidth = 2.5;
+        g.strokeRect((x - p) * sc, (y - p) * sc, (w + 2 * p) * sc, (h + 2 * p) * sc); g.globalAlpha = 1; });
+    };
+    const anim = prev >= 0 && prev !== 99 && prev < s;
+    if (s === 0) { main(null); side(null); const g = ctx('cv-det', W, Hh); g.fillStyle = 'rgba(7,7,7,.85)'; g.fillRect(W - 200, Hh - 40, 200, 40); label(g, 'INPUT 640 × 352', W - 186, Hh - 14, { color: K.fg }); return; }
+    if (s === 1) {
+      const rows = LV.map(([w, h, f, ch], i) => [maps[i], `LAYER ${i + 1}  ${f}`, `${w}×${h}×${ch}`]);
+      if (anim) { for (let i = 0; i < 3; i++) { side(rows.slice(0, i + 1), i, 'ENCODER'); await tween(650, t => main(maps[i], t)); } }
+      else { side(rows, 2, 'ENCODER'); main(maps[2]); }
+      return;
+    }
+    if (s === 2) {
+      const order = [2, 1, 0], rows = LV.map(([w, h, f], i) => [maps[i], `P${i + 1}  ${f}`, i === 0 ? '160×88×64' : `${w}×${h}`]);
+      if (anim) { for (const i of order) { side(rows, i, 'PYRAMID, MERGED UPWARD'); await tween(600, t => main(maps[i], t)); } }
+      else { side(rows, 0, 'PYRAMID, MERGED UPWARD'); main(maps[0]); }
+      return;
+    }
+    if (s === 3) {
+      side([[heat, 'HEAT MAPS, 3 COLORS', '160×88×3']], 0, 'HEADS');
+      await tween(anim ? 900 : 0, t => { const g = main(null, 1, .55 + .2 * t); g.globalCompositeOperation = 'lighter'; g.globalAlpha = t; g.imageSmoothingEnabled = false; g.drawImage(heat, 0, 0, W, Hh); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; });
+      return;
+    }
+    side(null);
+    await tween(s === 4 && anim ? 900 : 0, t => { const g = main(null); if (s === 4) { g.globalCompositeOperation = 'lighter'; g.globalAlpha = 1 - t; g.imageSmoothingEnabled = false; g.drawImage(heat, 0, 0, W, Hh); g.globalAlpha = 1; g.globalCompositeOperation = 'source-over'; }
+      boxes(g, t, s === 4 ? t : 0); });
+  } };
+
+  scenes.foot = { async go(s, prev) {
+    if (!DATA) return;
+    const X0 = 96, Y0 = 208, W = 1040, sc = W / 1280, AX = 1184;
+    const draw = t => {
+      const g = ctx('cv-foot', W, 585);
+      g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(0, 0, W, 585);
+      DETS.forEach(d => { const [x, y, w, h] = bbox(d); g.strokeStyle = rgba(K.cone[d.c], .6); g.lineWidth = 2; g.strokeRect(x * sc, y * sc, w * sc, h * sc);
+        g.fillStyle = K.fg; g.beginPath(); g.arc(d.u * sc, d.v * sc, 4.5, 0, 7); g.fill(); });
+      const a = ctx('cv-foot-axis');
+      a.strokeStyle = K.dim; a.lineWidth = 1; a.beginPath(); a.moveTo(AX, Y0); a.lineTo(AX, Y0 + 585); a.stroke();
+      for (let v = 0; v <= 720; v += 120) { const Y = Y0 + v * sc; a.beginPath(); a.moveTo(AX - 7, Y); a.lineTo(AX, Y); a.stroke(); label(a, String(v), AX - 12, Y + 5, { align: 'right', track: 0, size: 12 }); }
+      label(a, 'ROW V (PX)', AX, Y0 - 16, { align: 'center' });
+      const items = spread(DETS.map(d => ({ d, y: Y0 + d.v * sc })), 34, Y0 + 12, Y0 + 573);
+      const k = clamp(t * 1.3);
+      items.forEach(({ d, y }) => { const fy = Y0 + d.v * sc, fx = X0 + d.u * sc;
+        a.strokeStyle = 'rgba(242,242,242,.3)'; a.setLineDash([3, 5]); a.beginPath(); a.moveTo(fx + 8, fy); a.lineTo(lerp(fx + 8, AX, k), fy); a.stroke(); a.setLineDash([]);
+        if (k < 1) return;
+        a.strokeStyle = 'rgba(242,242,242,.3)'; a.beginPath(); a.moveTo(AX, fy); a.lineTo(AX + 18, y); a.lineTo(AX + 26, y); a.stroke();
+        a.fillStyle = K.cone[d.c]; a.fillRect(AX + 32, y - 6, 12, 12);
+        label(a, String(Math.round(d.v)), AX + 56, y + 6, { color: K.fg, size: 20, track: 0 }); });
+      if (s >= 1) {
+        const BX = 1420, nearY = Y0 + 572, farY = Y0 + VH * sc;
+        a.strokeStyle = K.red; a.lineWidth = 2; a.beginPath(); a.moveTo(BX, nearY - 26); a.lineTo(BX, farY + 26); a.moveTo(BX - 7, farY + 36); a.lineTo(BX, farY + 26); a.lineTo(BX + 7, farY + 36); a.stroke();
+        label(a, 'NEAR', BX, nearY - 4, { color: K.fg, align: 'center' }); label(a, 'FAR', BX, farY + 6, { color: K.fg, align: 'center' });
+      }
+    };
+    await tween(prev < 0 ? 1100 : 0, draw);
+  } };
+
+  scenes.calib = { async go(s, prev) {
+    if (!DATA) return;
+    const Fd = DATA.focal, B = { x: 200, y: 224, w: 580, h: 520 };
+    const sx = r => B.x + (r + .15) / .3 * B.w, sy = v => B.y + B.h / 2 - v / 90 * (B.h / 2);
+    const draw = t => {
+      const g = ctx('cv-calib');
+      axes(g, B, sx, sy, { xt: [-.1, -.05, 0, .05, .1], yt: [-80, -40, 0, 40, 80], xlab: 'IMU YAW RATE (RAD/FRAME)', ylab: 'SCENERY SHIFT (PX/FRAME)', xfmt: v => v.toFixed(2), zeroX: true, zeroY: true });
+      g.save(); g.beginPath(); g.rect(B.x, B.y, B.w, B.h); g.clip();
+      Fd.r.forEach((r, i) => { if (i / Fd.r.length > t * 1.5) return; g.fillStyle = 'rgba(242,242,242,.45)'; g.beginPath(); g.arc(sx(r), sy(Fd.fl[i] * 2), 2.6, 0, 7); g.fill(); });
+      const k = clamp(t * 1.5 - .5); if (k > 0) { const f = Fd.f * 2;
+ g.strokeStyle = K.red; g.lineWidth = 3; g.beginPath(); g.moveTo(sx(-.15 * k), sy(-.15 * k * f)); g.lineTo(sx(.15 * k), sy(.15 * k * f)); g.stroke();
+      } g.restore();
+      if (k > .95) { g.fillStyle = K.red; g.fillRect(sx(-.14), sy(78), 230, 32); label(g, 'SLOPE = f = 563 PX', sx(-.14) + 12, sy(78) + 21, { color: '#fff', size: 14 }); }
+    };
+    if (prev < 0) await tween(1400, draw); else draw(1);
+    const lens = t => {
+      const g = ctx('cv-lens', 640, 360); if (s < 1) return;
+      const f640 = 281.54, k1 = .4148, W2 = 320, H2 = 176, sc = 640 / 640;
+      const toImg = (X, Y) => { let xd = X, yd = Y; for (let i = 0; i < 20; i++) { const r2 = xd * xd + yd * yd; xd = X / (1 + k1 * r2); yd = Y / (1 + k1 * r2); } return [xd, yd]; };
+      g.strokeStyle = rgba(K.red, .85); g.lineWidth = 1.6;
+      const line = (pts) => { g.beginPath(); pts.forEach(([X, Y], i) => { const [xd, yd] = toImg(X, Y), u = W2 + lerp(xd, X, t) * f640, v = (H2 + 4) + lerp(yd, Y, t) * f640; i ? g.lineTo(u, v * 360 / 352) : g.moveTo(u, v * 360 / 352); }); g.stroke(); };
+      for (let i = -6; i <= 6; i++) { const X = i * .25; const pts = []; for (let j = -40; j <= 40; j++) pts.push([X, j * .03]); line(pts); }
+      for (let j = -4; j <= 4; j++) { const Y = j * .2; const pts = []; for (let i = -60; i <= 60; i++) pts.push([i * .03, Y]); line(pts); }
+    };
+    if (s === 1 && prev === 0) { lens(0); await new Promise(r => setTimeout(r, 700)); await tween(1600, lens); } else lens(s >= 1 ? 1 : 0);
+  } };
+
+  scenes.horizon = { async go(s, prev) {
+    if (!DATA) return;
+    const P = { x: 200, y: 236, w: 760, h: 540 };
+    const hx = h => P.x + h / 80 * P.w, vy = v => P.y + (v - 150) / 500 * P.h;
+    const draw = (pts, line, hz) => {
+      const g = ctx('cv-hz');
+      axes(g, P, hx, vy, { xt: [0, 20, 40, 60, 80], yt: [200, 300, 400, 500, 600], xlab: 'BOX HEIGHT (PX)', ylab: 'FOOT ROW V (PX)' });
+      if (line > 0) { g.strokeStyle = K.fg; g.lineWidth = 2.5; g.beginPath(); g.moveTo(hx(0), vy(VH)); const e = lerp(0, 80, line); g.lineTo(hx(e), vy(VH + SLOPE * e)); g.stroke(); }
+      DETS.forEach((d, i) => { const a = clamp(pts * DETS.length - i); if (!a) return; g.fillStyle = rgba(K.cone[d.c], a); g.beginPath(); g.arc(hx(d.h), vy(d.v), 8, 0, 7); g.fill(); });
+      if (hz > 0) {
+        g.globalAlpha = hz; g.strokeStyle = K.red; g.lineWidth = 2; g.setLineDash([6, 7]); g.beginPath(); g.moveTo(P.x, vy(VH)); g.lineTo(P.x + P.w, vy(VH)); g.stroke(); g.setLineDash([]);
+        g.fillStyle = K.red; g.beginPath(); g.arc(hx(0), vy(VH), 9, 0, 7); g.fill();
+        g.fillRect(P.x + P.w - 190, vy(VH) - 44, 190, 30); label(g, 'HORIZON 209 PX', P.x + P.w - 178, vy(VH) - 24, { color: '#fff', size: 14 });
+        g.globalAlpha = 1;
+      }
+    };
+    const L0 = prev >= 1 ? 1 : 0;
+    await tween(prev < 0 ? 1000 : 0, t => draw(t, L0, L0));
+    if (s >= 1 && !L0) await tween(1200, t => draw(1, t, clamp(t * 2 - 1)));
+    if (s === 0) draw(1, 0, 0);
+  } };
+
+  scenes.hzphoto = { async go(s, prev) {
+    if (!DATA?.hz) return;
+    const { dets, vh } = DATA.hz, S = 1040 / 1280, X = u => 96 + u * S, Y = v => 208 + v * S;
+    const at = (d, m) => ({ u: CX + (d.u - CX) / m, v: vh + (d.v - vh) / m, h: d.h / m });
+    const ms = [1, 1.45, 2.1, 3, 4.4, 6.5, 10, 16, 28, 60];
+    const coneAt = (g, d, col, a, fill) => { const w = d.h * .42; g.globalAlpha = a; g.beginPath(); g.moveTo(X(d.u - w), Y(d.v)); g.lineTo(X(d.u), Y(d.v - d.h)); g.lineTo(X(d.u + w), Y(d.v)); g.closePath();
+      if (fill) { g.fillStyle = col; g.fill(); } else { g.strokeStyle = col; g.lineWidth = 2; g.stroke(); } g.globalAlpha = 1; };
+    const draw = (a, b) => {
+      const g = ctx('cv-hzp');
+      dets.forEach(d => { const h = d.h * 1.1, w = d.h * .8; g.strokeStyle = rgba(K.cone[d.c], .9 - .5 * Math.max(a, b)); g.lineWidth = 2; g.strokeRect(X(d.u - w / 2), Y(d.v - h), w * S, h * S); });
+      if (a > 0) {
+        const n = a * (ms.length - 1), end = at({ u: 0, v: 0, h: 0 }, 1e9);
+        dets.forEach(d => {
+          const e = at(d, Math.pow(1e3, a));
+          g.setLineDash([5, 6]); g.strokeStyle = rgba('#f2f2f2', .45 * a); g.lineWidth = 1.5; g.beginPath(); g.moveTo(X(d.u), Y(d.v)); g.lineTo(X(e.u), Y(e.v)); g.stroke(); g.setLineDash([]);
+          ms.forEach((m, i) => { if (i > n + 1e-6) return; coneAt(g, at(d, m), K.cone[d.c], i === 0 ? .9 : .85, i > 0); });
+        });
+        if (a >= 1) { g.fillStyle = K.fg; g.beginPath(); g.arc(X(CX), Y(vh), 4, 0, 7); g.fill();
+          label(g, 'SIZE 0', X(CX) + 12, Y(vh) - 10, { color: K.fg, size: 13 }); }
+      }
+      if (b > 0) {
+        g.globalAlpha = b;
+        g.strokeStyle = K.red; g.lineWidth = 2.5; g.beginPath(); g.moveTo(96, Y(vh)); g.lineTo(96 + 1040 * b, Y(vh)); g.stroke();
+        g.setLineDash([7, 7]); g.strokeStyle = 'rgba(242,242,242,.7)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(96, Y(CY)); g.lineTo(96 + 1040 * b, Y(CY)); g.stroke(); g.setLineDash([]);
+        g.fillStyle = K.red; g.fillRect(112, Y(vh) - 34, 128, 26); label(g, 'HORIZON', 124, Y(vh) - 16, { color: '#fff', size: 13 });
+        g.fillStyle = 'rgba(7,7,7,.8)'; g.fillRect(112, Y(CY) + 8, 164, 26); label(g, 'IMAGE CENTER', 124, Y(CY) + 26, { color: K.fg, size: 13 });
+        const bx = 96 + 1040 - 34, my = (Y(vh) + Y(CY)) / 2; g.strokeStyle = K.fg; g.lineWidth = 2; g.beginPath(); g.moveTo(bx - 8, Y(vh)); g.lineTo(bx, Y(vh)); g.lineTo(bx, Y(CY)); g.lineTo(bx - 8, Y(CY)); g.stroke();
+        g.fillStyle = 'rgba(7,7,7,.8)'; g.fillRect(bx - 100, my - 14, 88, 28); label(g, Math.round(CY - vh) + ' PX', bx - 20, my + 5, { color: K.fg, size: 14, align: 'right' });
+        g.globalAlpha = 1;
+      }
+    };
+    const A = prev < 0 ? [0, 0] : [prev >= 1 ? 1 : 0, prev >= 2 ? 1 : 0], B = [s >= 1 ? 1 : 0, s >= 2 ? 1 : 0];
+    if (prev === 99) return draw(B[0], B[1]);
+    draw(A[0], A[1]);
+    if (B[0] !== A[0]) await tween(B[0] ? 2200 : 300, t => draw(lerp(A[0], B[0], t), A[1] * (1 - t)));
+    if (B[1] !== A[1]) await tween(B[1] ? 1000 : 300, t => draw(B[0], lerp(A[1], B[1], t)));
+  } };
+
+  const worldReady = new Promise(res => window.addEventListener('world-ready', res, { once: true }));
+  const carTop = new Image(); carTop.src = 'car_top.webp';
+  const yellow = () => DETS.reduce((a, d) => (d.c === 1 && (!a || d.v > a.v) ? d : a), null);
+
+  scenes.pix = { async go(s, prev) {
+    if (!DATA) return;
+    ctx('cv-pix'); ctx('cv-pix2');
+    document.getElementById('pix-scrim').classList.toggle('in', s === 0);
+    const W = window.WORLD; if (!W) { worldReady.then(() => { if (slides[cur].dataset.scene === 'pix') render(-1, false); }); return; }
+    const my = epoch;
+    await W.shot(s === 0 ? 'onboard' : 'side', prev < 0 || prev === 99 ? 0 : (s === 1 && prev === 0 ? 2600 : 0));
+    if (my !== epoch) return;
+    const P = (x, y, z) => W.project(x, y, z);
+    const yc = yellow(), gy = ground(yc), cz = CAMZ + gy.ahead;
+    const draw = (t, k, c) => {
+      const g = ctx('cv-pix'); ctx('cv-pix2'); if (s < 1 && t === 0) return;
+      const cam = P(0, H, CAMZ), gl = P(0, 0, -3), gr = P(0, 0, 30);
+      g.strokeStyle = K.line2; g.lineWidth = 2; g.beginPath(); g.moveTo(0, gl[1]); g.lineTo(1600, gr[1]); g.stroke();
+      DETS.forEach(d => { const q = ground(d), f = P(-q.side, 0, CAMZ + q.ahead);
+        g.strokeStyle = rgba(K.cone[d.c], (d !== yc ? lerp(.85, .25, k) : .85) * t); g.lineWidth = d === yc ? 2.5 : 1.5;
+        g.beginPath(); g.moveTo(cam[0], cam[1]); g.lineTo(lerp(cam[0], f[0], t), lerp(cam[1], f[1], t)); g.stroke(); });
+      g.fillStyle = K.fg; g.beginPath(); g.arc(cam[0], cam[1], 5, 0, 7); g.fill();
+      label(g, 'GOPRO', cam[0] - 14, cam[1] - 16, { color: K.fg, align: 'right' });
+      if (k <= 0) return;
+      const gnd = P(0, 0, CAMZ), foot = P(0, 0, cz), hzE = P(0, H, CAMZ + 5.2), oaE = P(0, H - 5 * Math.tan(PHI), CAMZ + 5);
+      g.globalAlpha = k;
+      g.setLineDash([7, 7]); g.strokeStyle = K.dim; g.lineWidth = 1.5; g.beginPath(); g.moveTo(cam[0], cam[1]); g.lineTo(hzE[0], hzE[1]); g.stroke();
+      g.strokeStyle = K.faint; g.beginPath(); g.moveTo(cam[0], cam[1]); g.lineTo(oaE[0], oaE[1]); g.stroke(); g.setLineDash([]);
+      label(g, 'HORIZON', hzE[0], hzE[1] - 12, { align: 'right' }); label(g, 'OPTICAL AXIS', oaE[0], oaE[1] + 22, { align: 'right' });
+      const ang = (p) => Math.atan2(p[1] - cam[1], p[0] - cam[0]), aH = ang(hzE), aO = ang(oaE), aF = ang(foot);
+      g.strokeStyle = K.fg; g.lineWidth = 1.5; g.beginPath(); g.arc(cam[0], cam[1], 150, aH, aO); g.stroke();
+      g.strokeStyle = K.red; g.lineWidth = 2.5; g.beginPath(); g.arc(cam[0], cam[1], 118, aH, aF); g.stroke();
+      const mid = (a, r) => [cam[0] + Math.cos(a) * r, cam[1] + Math.sin(a) * r];
+      const m1 = mid((aH + aO) / 2, 172), m2 = mid((aH + aF) / 2 + .06, 100);
+      ital(g, 'φ', m1[0], m1[1] + 8, 26, K.fg); ital(g, 'α', m2[0] + 4, m2[1] + 8, 28, K.red);
+      const hb = P(0, H, -1.0), hg = P(0, 0, -1.0), hx = hb[0];
+      g.setLineDash([3, 5]); g.strokeStyle = K.faint; g.lineWidth = 1; g.beginPath(); g.moveTo(cam[0], cam[1]); g.lineTo(hx - 10, cam[1]); g.stroke(); g.setLineDash([]);
+      arrowLine(g, hx, cam[1], hx, hg[1], K.fg); ital(g, 'h', hx - 16, (cam[1] + hg[1]) / 2 + 10, 34, K.fg, 'right');
+      label(g, '1.67 M', hx - 16, (cam[1] + hg[1]) / 2 + 36, { align: 'right' });
+      const dy = gnd[1] + 46; arrowLine(g, gnd[0], dy, foot[0], dy, K.cone[1]); ital(g, 'd', (gnd[0] + foot[0]) / 2, dy + 40, 36, K.cone[1], 'center');
+      label(g, '2.29 M', (gnd[0] + foot[0]) / 2 + 22, dy + 36, { color: K.cone[1] });
+      g.globalAlpha = 1;
+      if (c > 0) { const g = ctx('cv-pix2'); g.globalAlpha = c;
+        const Bx = { x: 1130, y: 660, w: 374, h: 140 }, xm = m => Bx.x + m / 30 * Bx.w, ym = e => Bx.y + Bx.h - e * Bx.h;
+        const per = m => { const a = Math.atan(H / m), b = a - PHI; return H / Math.sin(a) ** 2 * Math.cos(b) ** 2 / F; };
+        axes(g, Bx, xm, ym, { xt: [0, 10, 20, 30], yt: [0, .5, 1], xlab: 'DISTANCE (M)', yfmt: v => v.toFixed(1), grid: true });
+        label(g, 'METERS PER PIXEL', Bx.x, Bx.y - 18);
+        g.strokeStyle = K.fg; g.lineWidth = 2.5; g.beginPath(); for (let m = .5; m <= 30; m += .25) { const X = xm(m), Y = ym(Math.min(1, per(m))); m === .5 ? g.moveTo(X, Y) : g.lineTo(X, Y); } g.stroke();
+        [[6, 'start', Bx.x + 16, Bx.y + 10], [26, 'end', xm(26) - 16, Bx.y + 30]].forEach(([m, al, lx, ly]) => { const e = per(m); g.strokeStyle = K.faint; g.lineWidth = 1; g.beginPath(); g.moveTo(xm(m), ym(e)); g.lineTo(al === 'end' ? lx + 6 : xm(m), al === 'end' ? ly - 5 : ly + 6); g.stroke();
+          g.fillStyle = K.red; g.beginPath(); g.arc(xm(m), ym(e), 6, 0, 7); g.fill(); label(g, `${e.toFixed(2)} M AT ${m} M`, lx, ly, { color: K.fg, size: 14, align: al }); });
+        g.globalAlpha = 1;
+      }
+    };
+    const st = k => [k >= 1 ? 1 : 0, k >= 2 ? 1 : 0, k >= 3 ? 1 : 0], to = st(s), from = prev >= 0 && prev !== 99 && prev < s ? st(prev) : to;
+    await tween(from.some((v, i) => v !== to[i]) ? 900 : 0, t => draw(lerp(from[0], to[0], t), lerp(from[1], to[1], t), lerp(from[2], to[2], t)));
+  } };
+
+  scenes.ground = { async go(s, prev) {
+    if (!DATA) return;
+    ctx('cv-ground');
+    const W = window.WORLD; if (!W) { worldReady.then(() => { if (slides[cur].dataset.scene === 'ground') render(-1, false); }); return; }
+    const my = epoch, dur = prev === -1 && slides[cur - 1]?.dataset.scene === 'pix' && !reduce ? 3000 : 0;
+    const P = (side, ahead) => W.project(-side, 0, CAMZ + ahead);
+    const order = [...DETS].sort((a, b) => ground(a).ahead - ground(b).ahead);
+    const draw = (t, keep) => {
+      const g = ctx('cv-ground');
+      const o = P(0, 0), p1 = P(0, 1), ppm = o[1] - p1[1];
+      if (!(ppm > 0) || t <= 0) return;
+      if (carTop.complete) { const sc = ppm / 240, ra = P(0, -CAMZ); g.globalAlpha = t; g.drawImage(carTop, o[0] - 203 * sc, ra[1] - 605 * sc, 406 * sc, 760 * sc); }
+      const box = { x: P(-12, 0)[0], y: P(0, 28)[1], w: P(12, 0)[0] - P(-12, 0)[0], h: o[1] - P(0, 28)[1] };
+      g.globalAlpha = t;
+      axes(g, box, v => P(v, 0)[0], v => P(0, v)[1], { xt: [-12, -8, -4, 0, 4, 8, 12], yt: [0, 5, 10, 15, 20, 25], xlab: 'SIDE (M)', ylab: 'AHEAD (M)', grid: false });
+      g.strokeStyle = '#202020'; g.lineWidth = 1; for (let r = 5; r <= 25; r += 5) { g.beginPath(); g.arc(o[0], o[1], r * ppm, Math.PI * 1.16, Math.PI * 1.84); g.stroke(); }
+      if (keep > 0) { g.globalAlpha = t * keep; g.fillStyle = rgba(K.green, .13); g.beginPath(); g.moveTo(o[0], o[1]); g.arc(o[0], o[1], 6 * ppm, Math.PI, 2 * Math.PI); g.closePath(); g.fill();
+        g.strokeStyle = K.green; g.lineWidth = 2; g.beginPath(); g.arc(o[0], o[1], 6 * ppm, Math.PI, 2 * Math.PI); g.stroke();
+        label(g, 'KEEP, 6 M', o[0] + 6 * ppm + 10, o[1] - 8, { color: K.green }); g.globalAlpha = t; }
+      order.forEach((d, i) => { const q = ground(d), p = P(q.side, q.ahead); g.strokeStyle = 'rgba(242,242,242,.35)'; g.lineWidth = 1; g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(p[0] + 18, p[1] - 18); g.stroke(); badge(g, p[0] + 26, p[1] - 26, i + 1, K.cone[d.c]); });
+      const tx = 96, ty = 260;
+      label(g, 'CONE', tx, ty); label(g, 'AHEAD', tx + 200, ty, { align: 'right' }); label(g, 'SIDE', tx + 320, ty, { align: 'right' });
+      g.strokeStyle = K.line; g.beginPath(); g.moveTo(tx, ty + 12); g.lineTo(tx + 320, ty + 12); g.stroke();
+      order.forEach((d, i) => { const q = ground(d), y = ty + 50 + i * 46;
+        badge(g, tx + 11, y - 5, i + 1, K.cone[d.c]);
+        label(g, q.ahead.toFixed(1) + ' m', tx + 200, y, { color: K.fg, size: 20, track: 0, align: 'right' });
+        label(g, (q.side >= 0 ? '+' : '−') + Math.abs(q.side).toFixed(1) + ' m', tx + 320, y, { size: 20, track: 0, align: 'right' });
+        g.strokeStyle = '#161616'; g.beginPath(); g.moveTo(tx, y + 18); g.lineTo(tx + 320, y + 18); g.stroke(); });
+      g.globalAlpha = 1;
+    };
+    const K1 = s >= 1 ? 1 : 0;
+    if (dur) {
+      let done = false; const t0 = performance.now(), flying = W.shot('top', dur).then(() => done = true);
+      await new Promise(res => { const f = now => { if (my !== epoch) return res(); const t = (now - t0) / dur, a = clamp((t - .45) / .55); draw(a * a * (3 - 2 * a), K1); done ? res() : requestAnimationFrame(f); }; requestAnimationFrame(f); });
+      await flying; if (my === epoch) draw(1, K1);
+    } else if (prev < 0) { await W.shot('top', 0); if (my === epoch) await tween(600, t => draw(t, K1)); }
+    else if (prev === 0 && s === 1) await tween(500, k => draw(1, k));
+    else { await W.shot('top', 0); draw(1, K1); }
+  } };
+
+  scenes.trk = { async go(s, prev) {
+    if (!DATA) return;
+    const T = DATA.track, B = { x: 300, y: 224, w: 600, h: 600 }, R = 2;
+    const sx = e => B.x + (e + R) / (2 * R) * B.w, sy = n => B.y + B.h - (n + R) / (2 * R) * B.h;
+    const groups = {}; T.pts.forEach(p => (groups[p[3]] = groups[p[3]] || []).push(p));
+    const tracks = Object.values(groups).filter(a => a.length >= 3).map(a => { let W = 0, X = 0, Y = 0; a.forEach(([x, y, r]) => { const w = 1 / Math.max(r, 1) ** 2; W += w; X += w * x; Y += w * y; }); return [X / W, Y / W, W]; });
+    let MW = 0, MX = 0, MY = 0; tracks.forEach(([x, y, w]) => { MW += w; MX += w * x; MY += w * y; }); MX /= MW; MY /= MW;
+    const spreadM = Math.sqrt(tracks.reduce((a, [x, y]) => a + (x - MX) ** 2 + (y - MY) ** 2, 0) / tracks.length);
+    document.getElementById('trk-n').textContent = T.pts.length; document.getElementById('trk-p').textContent = tracks.length; document.getElementById('trk-s').textContent = spreadM.toFixed(2) + ' m';
+    const col = K.cone[T.col];
+    const draw = (a, b, c) => {
+      const g = ctx('cv-trk');
+      axes(g, B, sx, sy, { xt: [-2, -1, 0, 1, 2], yt: [-2, -1, 0, 1, 2], xlab: 'EAST (M)', ylab: 'NORTH (M)', zeroX: true, zeroY: true });
+      T.pts.forEach(([x, y, r]) => { const rad = clamp(14 / Math.max(r, 1), 1.4, 6); g.fillStyle = `rgba(242,242,242,${.12 + .5 * a * (1 - .6 * b)})`; g.beginPath(); g.arc(sx(x), sy(y), rad, 0, 7); g.fill(); });
+      if (b > 0) { g.globalAlpha = b * (1 - .5 * c); tracks.forEach(([x, y]) => { g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); g.arc(sx(lerp(x, MX, c)), sy(lerp(y, MY, c)), 7, 0, 7); g.stroke(); }); g.globalAlpha = 1; }
+      if (c > 0) { g.globalAlpha = c; g.fillStyle = col; g.beginPath(); g.arc(sx(MX), sy(MY), 14, 0, 7); g.fill();
+        g.strokeStyle = 'rgba(242,242,242,.5)'; g.lineWidth = 1; g.setLineDash([4, 5]); g.beginPath(); g.arc(sx(MX), sy(MY), 1.5 / (2 * R) * B.w, 0, 7); g.stroke(); g.setLineDash([]);
+        label(g, 'GATE 1.5 M', sx(MX) + 1.5 / (2 * R) * B.w * .72 + 8, sy(MY) - 1.5 / (2 * R) * B.w * .72, {}); g.globalAlpha = 1; }
+      const lx = B.x + B.w + 40; label(g, 'CLOSE', lx, B.y + 14); g.fillStyle = K.fg; g.beginPath(); g.arc(lx + 70, B.y + 9, 6, 0, 7); g.fill(); label(g, 'FAR', lx, B.y + 44); g.beginPath(); g.arc(lx + 70, B.y + 39, 1.5, 0, 7); g.fill();
+    };
+    const st = k => [1, k >= 1 ? 1 : 0, k >= 2 ? 1 : 0], A = prev < 0 ? [0, 0, 0] : st(clamp(prev, 0, 2)), Bs = st(s);
+    await tween(prev === 99 ? 0 : prev < 0 ? 1200 : 1100, t => draw(lerp(A[0], Bs[0], t), lerp(A[1], Bs[1], t), lerp(A[2], Bs[2], t)));
+  } };
+
+  scenes.map = { async go(s, prev) {
+    if (!DATA) return;
+    const map = fitMap(596, 208, 908, 600), cones = DATA.cones.filter(c => c[3] >= 2);
+    const layer = (g, pts, r, a) => pts.forEach(p => { const [X, Y] = map(p[0], p[1]); g.fillStyle = rgba(K.cone[p[2]], a); g.fillRect(X - r / 2, Y - r / 2, r, r); });
+    const draw = (a, b, c) => {
+      const g = ctx('cv-map');
+      drawPath(g, DATA.path, map, 'rgba(242,242,242,.1)', 1);
+      if (a > 0) layer(g, DATA.sight, 2, .5 * a);
+      if (b > 0) layer(g, DATA.tracks, 3, .85 * b);
+      if (c > 0) cones.forEach(p => { const [X, Y] = map(p[0], p[1]); g.fillStyle = rgba(K.cone[p[2]], c); g.beginPath(); g.arc(X, Y, 5, 0, 7); g.fill(); });
+      scaleBar(g, 596, 848, map.k, 25);
+    };
+    ['mr0', 'mr1', 'mr2'].forEach((id, i) => document.getElementById(id).classList.toggle('hot', i === s));
+    const st = [[1, 0, 0], [0, 1, 0], [0, 0, 1]], from = prev < 0 ? [0, 0, 0] : st[clamp(prev, 0, 2)], to = st[s];
+    await tween(prev < 0 ? 1400 : prev === 99 ? 0 : 900, t => draw(lerp(from[0], to[0], t), lerp(from[1], to[1], t), lerp(from[2], to[2], t)));
+  } };
+
+  const LOC = (() => { let x = 11; const r = () => (x = (x * 16807) % 2147483647) / 2147483647 - .5;
+    const mid = t => [150 + t * 930, 548 - Math.sin(t * Math.PI * 1.3) * 160];
+    const nrm = t => { const e = 1e-3, [x0, y0] = mid(t - e), [x1, y1] = mid(t + e), L = Math.hypot(x1 - x0, y1 - y0); return [-(y1 - y0) / L, (x1 - x0) / L]; };
+    const cones = []; for (let i = 0; i <= 7; i++) { const t = i / 7, [mx, my] = mid(t), [nx, ny] = nrm(t); cones.push([mx + nx * 62, my + ny * 62, 0], [mx - nx * 62, my - ny * 62, 1]); }
+    const laps = Array.from({ length: 6 }, () => [r() * 130, r() * 130]);
+    const pts = []; laps.forEach(o => cones.forEach(([cx, cy]) => pts.push([cx, cy, o[0] + r() * 22, o[1] + r() * 22, r() * 16, r() * 16])));
+    return { mid, cones, laps, pts }; })();
+  scenes.loc = { async go(s, prev) {
+    const Lp = DATA?.laps, B = { x: 200, y: 224, w: 880, h: 540 }, n = Lp ? Lp.gps.length : 1;
+    const sx = i => B.x + (i + .5) / n * B.w, sy = v => B.y + B.h - v / .8 * B.h;
+    const illus = (g, sp, pull) => {
+      LOC.laps.forEach(o => { const ox = o[0] * sp * (1 - pull), oy = o[1] * sp * (1 - pull); g.strokeStyle = 'rgba(242,242,242,.22)'; g.lineWidth = 1.5; g.beginPath();
+        for (let i = 0; i <= 90; i++) { const [x, y] = LOC.mid(i / 90); i ? g.lineTo(x + ox, y + oy) : g.moveTo(x + ox, y + oy); } g.stroke(); });
+      LOC.cones.forEach(([x, y, c]) => { g.strokeStyle = K.cone[c]; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 20, 0, 7); g.stroke(); });
+      LOC.pts.forEach(([x, y, ox, oy, nx, ny]) => { g.fillStyle = 'rgba(242,242,242,.75)'; g.beginPath(); g.arc(x + sp * lerp(ox, nx * .6, pull), y + sp * lerp(oy, ny * .6, pull), 3.2, 0, 7); g.fill(); });
+      const on = pull > .5; g.fillStyle = on ? K.green : '#2a2a2a'; g.fillRect(96, 826, 220, 32);
+      label(g, on ? 'CONE-CORRECTED' : 'GPS ONLY', 112, 847, { color: on ? '#000' : K.fg });
+      scaleBar(g, 360, 842, 140, .5, '0.5 M');
+    };
+    const line = (g, vals, col, frac, w) => { g.strokeStyle = col; g.lineWidth = w; g.lineJoin = 'round'; g.beginPath();
+      const m = frac * (n - 1); for (let i = 0; i <= Math.ceil(m); i++) { const k = Math.min(i, m), i0 = Math.floor(k), v = lerp(vals[i0], vals[Math.min(i0 + 1, n - 1)], k - i0); i ? g.lineTo(sx(k), sy(v)) : g.moveTo(sx(k), sy(v)); } g.stroke();
+      for (let i = 0; i <= m; i++) { g.fillStyle = col; g.beginPath(); g.arc(sx(i), sy(vals[i]), 4.5, 0, 7); g.fill(); } };
+    const chart = (g, a, fg, fc) => {
+      g.globalAlpha = a;
+      axes(g, B, sx, sy, { xt: Lp.gps.map((_, i) => i), yt: [0, .2, .4, .6, .8], xfmt: i => i + 1, yfmt: v => v.toFixed(1), xlab: 'LAP, 5/12 ENDURANCE', ylab: 'PASS TO CONE, MEDIAN (M)' });
+      line(g, Lp.gps, 'rgba(242,242,242,.75)', fg, 2);
+      if (fg >= 1) label(g, 'GPS ONLY', sx(n - 1) + 18, sy(Lp.gps[n - 1]) + 5, { color: K.fg });
+      if (fc > 0) { line(g, Lp.cones, K.green, fc, 3); if (fc >= 1) label(g, 'CONE-CORRECTED', sx(n - 1) + 18, sy(Lp.cones[n - 1]) + 5, { color: K.green }); }
+      g.globalAlpha = 1;
+    };
+    const P = k => k >= 1 ? 1 : 0;
+    if (s < 2) {
+      if (prev === 2 || prev === 99) { await tween(prev === 99 && s === 1 ? 0 : 500, t => { const g = ctx('cv-loc'); g.globalAlpha = t; illus(g, 1, P(s)); g.globalAlpha = 1; }); }
+      else { await tween(prev < 0 ? 900 : 0, t => { const g = ctx('cv-loc'); illus(g, prev < 0 ? t : 1, P(prev)); }); }
+      if (s >= 1 && prev === 0) await tween(1500, t => illus(ctx('cv-loc'), 1, t));
+      return;
+    }
+    if (!Lp) return;
+    await tween(prev === 99 ? 0 : 500, t => { const g = ctx('cv-loc'); g.globalAlpha = 1 - t; illus(g, 1, 1); g.globalAlpha = 1; });
+    await tween(prev === 99 ? 0 : 1300, t => chart(ctx('cv-loc'), 1, t, 0));
+    await tween(prev === 99 ? 0 : 1300, t => chart(ctx('cv-loc'), 1, 1, t));
+  } };
+
+  scenes.live = { go() {
+    const v = playFrom0('v-live'), my = epoch, S = 1040 / 1280, byF = new Map();
+    railCells.forEach(c => { c.classList.remove('done'); c.classList.add('cur'); });
+    (DATA?.clip || []).forEach(r => { const f = Math.round(r[0] * 30); if (!byF.has(f)) byF.set(f, []); byF.get(f).push(r); });
+    const R = { x: 0, y: 0, w: 320, h: 585 }, rs = 18, ox = R.w / 2, oy = R.h - 70;
+    const draw = () => {
+      if (my !== epoch) return;
+      const f = Math.round(v.currentTime * 30), dets = byF.get(f) || byF.get(f - 1) || [];
+      const g = document.getElementById('cv-live').getContext('2d'); g.setTransform(2, 0, 0, 2, 0, 0); g.clearRect(0, 0, 1040, 585);
+      const q = document.getElementById('cv-radar').getContext('2d'); q.setTransform(2, 0, 0, 2, 0, 0); q.clearRect(0, 0, 320, 585);
+      q.strokeStyle = '#1a1a1a'; q.lineWidth = 1;
+      for (let m = 5; m <= 25; m += 5) { const y = oy - m * rs; q.beginPath(); q.moveTo(0, y); q.lineTo(R.w, y); q.stroke(); label(q, m + ' M', 6, y - 6, { size: 11, color: K.faint, track: 0 }); }
+      q.strokeStyle = K.dim; q.strokeRect(.5, .5, R.w - 1, R.h - 1);
+      q.fillStyle = K.fg; q.beginPath(); q.moveTo(ox, oy - 14); q.lineTo(ox - 8, oy + 10); q.lineTo(ox + 8, oy + 10); q.closePath(); q.fill();
+      label(q, 'TOP VIEW', 12, R.h - 14, { size: 12 });
+      dets.forEach(([t, u, vv, h, c, sc]) => {
+        const col = K.cone[c], bw = h * .8 * S, bh = h * 1.1 * S, x = u * S - bw / 2, y = vv * S - bh;
+        g.strokeStyle = col; g.lineWidth = 2; g.strokeRect(x, y, bw, bh);
+        const gp = ground({ u, v: vv });
+        if (gp.ahead > 0 && gp.ahead < 25) {
+          label(g, gp.ahead.toFixed(1) + ' m', x + bw / 2, y - 8, { color: K.fg, size: 13, align: 'center', track: 0 });
+          const X = ox + gp.side * rs, Y = oy - gp.ahead * rs;
+          if (X > 6 && X < R.w - 6 && Y > 6) { q.fillStyle = col; q.beginPath(); q.arc(X, Y, 6, 0, 7); q.fill(); }
+        }
+      });
+      label(g, `${dets.length} ${dets.length === 1 ? 'CONE' : 'CONES'}`, 16, 570, { color: K.fg, size: 13 });
+      v.requestVideoFrameCallback ? v.requestVideoFrameCallback(draw) : requestAnimationFrame(draw);
+    };
+    draw();
+  } };
+
+  scenes.demo = { go() {
+    const f = document.getElementById('demo');
+    if (!f.src) f.src = '../final-project-demo/';
+    setTimeout(() => { if (slides[cur].dataset.scene === 'demo') f.focus(); }, 450);
+  } };
+
+  scenes.results = { go() {
+    const rows = [['Detection recall', '0.75', '0.93', ''], ['Color accuracy', '0.78', '0.95', ''], ['Range error', '6.51', '0.52', ' m'], ['Localization', '0.47', '0.31', ' m'], ['Pipeline time', '', '5.3', ' ms']];
+    const b = document.getElementById('board');
+    b.innerHTML = rows.map((r, i) => `<div style="display:grid;grid-template-columns:72px 1fr 200px 260px;align-items:center;height:104px;border-bottom:1px solid ${K.line};${i ? '' : `border-top:1px solid ${K.line};`}">
+      <div style="font:800 40px var(--display);color:${K.red}">${i + 1}</div>
+      <div style="font:800 46px var(--display);text-transform:uppercase">${r[0]}</div>
+      <div style="font:600 28px var(--mono);color:${K.faint};text-align:right;${r[1] ? 'text-decoration:line-through;text-decoration-thickness:2px' : ''}">${r[1]}</div>
+      <div class="cnt" data-to="${r[2]}" data-u="${r[3]}" style="font:600 52px var(--mono);text-align:right;color:${r[1] ? K.green : K.fg};font-variant-numeric:tabular-nums;white-space:nowrap">${r[2]}${r[3]}</div></div>`).join('');
+    b.querySelectorAll('.cnt').forEach((el, i) => { const to = +el.dataset.to, dec = (el.dataset.to.split('.')[1] || '').length;
+      tween(900 + i * 150, t => el.textContent = (to * t).toFixed(dec) + el.dataset.u).then(() => slides[cur].dataset.scene === 'results' && SFX.play('tick', { rate: .9 + i * .08 })); });
+  } };
+
+  scenes.end = { go() {} };
+
+  const rail = document.getElementById('rail'), railCells = [...rail.querySelectorAll(':scope > div')], wipe = document.getElementById('wipe'), mark = document.getElementById('railmark');
+  let lastRail;
+  function moveMark(i, slide) {
+    if (i < 0) { mark.style.opacity = 0; return; }
+    if (!slide) { mark.style.transition = 'none'; mark.style.transform = `translateX(${i * 176.5}px)`; void mark.offsetWidth; mark.style.transition = ''; }
+    else { if (String(i) !== lastRail) SFX.play('marker', { at: .05 }); mark.style.transform = `translateX(${i * 176.5}px)`; }
+    mark.style.transitionDelay = lastRail === 'big' ? '0s, .55s' : ''; mark.style.opacity = 1;
+  }
+  function render(prevStep, changed) {
+    epoch++;
+    const sl = slides[cur], r = sl.dataset.rail, big = r === 'big', ri = /^\d+$/.test(r || '') ? +r : -1;
+    if (changed && !reduce && (lastRail === undefined || r === undefined)) { wipe.classList.remove('go'); void wipe.offsetWidth; wipe.classList.add('go'); }
+    moveMark(ri, /^\d+$/.test(lastRail || '') && !reduce);
+    rail.classList.toggle('mk', ri >= 0);
+    lastRail = r;
+    slides.forEach(x => { x.classList.toggle('quick', x !== sl && !!sl.dataset.world); x.classList.toggle('on', x === sl); });
+    sl.querySelectorAll('[data-at]').forEach(e => e.classList.toggle('in', +e.dataset.at <= step));
+    rail.classList.toggle('show', r !== undefined); rail.classList.toggle('big', big);
+    railCells.forEach((c, i) => { c.style.transitionDelay = ''; c.classList.toggle('cur', i === ri); c.classList.toggle('done', ri >= 0 && i < ri); });
+    window.WORLD?.mode(sl.dataset.world || 'off', step); stopVideos();
+    if (sl.dataset.scene !== 'demo' && document.activeElement?.id === 'demo') { document.activeElement.blur(); window.focus(); }
+    document.getElementById('hud').style.visibility = sl.dataset.scene === 'demo' ? 'hidden' : '';
+    scenes[sl.dataset.scene]?.go(step, prevStep);
+    document.getElementById('pos').textContent = `${cur + 1} / ${slides.length}`;
+    const n = sl.querySelector('.notes');
+    document.getElementById('n-head').textContent = n ? `${cur + 1} / ${slides.length}   ${n.dataset.who}` : '';
+    document.getElementById('n-body').innerHTML = n ? n.textContent.split('[click]').map(p => `<p>${p.trim()}</p>`).join('') : '';
+    try { history.replaceState(null, '', '#s' + (cur + 1)); } catch (e) {}
+  }
+  window.DECK.rerender = () => render(99, false);
+  const steps = () => +slides[cur].dataset.steps;
+  function next() {
+    if (step < steps()) { step++; SFX.play('step'); render(step - 1, false); }
+    else if (cur < slides.length - 1) { cur++; step = 0; SFX.play(slides[cur].dataset.scene === 'end' ? 'end' : 'next'); render(-1, true); }
+  }
+  function prev() {
+    if (step > 0) { step--; SFX.play('step', { rate: .85 }); render(99, false); }
+    else if (cur > 0) { cur--; step = steps(); SFX.play('back'); render(99, true); }
+  }
+  addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(e.key)) { e.preventDefault(); next(); }
+    else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key)) { e.preventDefault(); prev(); }
+    else if (e.key === 'm' || e.key === 'M') { sndBtn.textContent = SFX.toggle() ? 'Sound on' : 'Sound off'; }
+    else if (e.key === 'n' || e.key === 'N') { const a = document.getElementById('notes'); a.hidden = !a.hidden; }
+    else if (e.key === 'f' || e.key === 'F') { document.documentElement.requestFullscreen?.().catch(() => {}); }
+  });
+  stage.addEventListener('click', e => { const r = stage.getBoundingClientRect(); (e.clientX - r.left) < r.width * .25 ? prev() : next(); });
+  addEventListener('message', e => { if (e.data?.deck === 'next') next(); else if (e.data?.deck === 'prev') prev(); });
+  const sndBtn = document.getElementById('b-snd'); sndBtn.textContent = SFX.on ? 'Sound on' : 'Sound off';
+  sndBtn.addEventListener('click', e => { e.stopPropagation(); sndBtn.textContent = SFX.toggle() ? 'Sound on' : 'Sound off'; });
+  document.getElementById('b-notes').addEventListener('click', () => { const a = document.getElementById('notes'); a.hidden = !a.hidden; });
+  window.addEventListener('world-ready', () => { window.WORLD.mode(slides[cur].dataset.world || 'off', step); });
+
+  const m = /^#s(\d+)$/.exec(location.hash); if (m) cur = clamp(m[1] - 1, 0, slides.length - 1);
+  const start = () => { fit(); render(-1, false); };
+  window.DECK.ready = fetch('data.json').then(r => r.json()).then(d => { DATA = d; DETS = d.dets; window.DECK.DETS = DETS; window.DECK.DATA = d; return document.fonts.ready; }).then(start).catch(start);
+})();
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+await window.DECK.ready;
+const D = window.DECK, canvas = document.getElementById('world'), photo = document.getElementById('w-photo');
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.45; renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.setClearColor(0x000000, 0);
+const size = f => { renderer.setPixelRatio(Math.min(2, (window.devicePixelRatio || 1) * f)); renderer.setSize(1600, 900, false); };
+size(Math.min(innerWidth / 1600, innerHeight / 900)); window.addEventListener('deck-fit', e => size(e.detail));
+
+const scene = new THREE.Scene();
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = .7;
+const FOG = new THREE.Fog(0x070707, 18, 60); scene.fog = FOG;
+scene.add(new THREE.HemisphereLight(0xe8eeff, 0x202020, 1.0));
+const key = new THREE.DirectionalLight(0xffffff, 2.8); key.position.set(-6, 10, 8); scene.add(key);
+for (const [x, y, z, i] of [[8, 4, -6, 2.2], [-8, 3, -6, 1.8], [0, 6, -10, 1.6], [-10, 2, 4, 1.4]]) { const l = new THREE.DirectionalLight(0xdde6ff, i); l.position.set(x, y, z); scene.add(l); }
+const red = new THREE.PointLight(0xff2d2d, 9, 9, 1.6); red.position.set(2.2, 1.4, -1.4); scene.add(red);
+
+const radial = (a = .8) => { const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d'), g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, `rgba(0,0,0,${a})`); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); };
+const glowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 256; const x = c.getContext('2d'), g = x.createRadialGradient(128, 128, 0, 128, 128, 128);
+  g.addColorStop(0, 'rgba(255,255,255,.22)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 256, 256); return new THREE.CanvasTexture(c); })();
+
+const world = new THREE.Group(); scene.add(world);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshBasicMaterial({ color: 0x070707, transparent: true }));
+floor.rotation.x = -Math.PI / 2; world.add(floor);
+const grid = new THREE.GridHelper(80, 80, 0x2a2a2a, 0x171717); grid.position.set(0, .002, 18); grid.material.transparent = true; world.add(grid);
+const glow = new THREE.Mesh(new THREE.PlaneGeometry(9, 9), new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, depthWrite: false }));
+glow.rotation.x = -Math.PI / 2; glow.position.set(0, .004, 1); world.add(glow);
+
+const car = new THREE.Group(); world.add(car); car.add(glow); car.add(red);
+const loader = new GLTFLoader(), wheels = [], WB = 1.53, TRACK = 1.17, WHEEL_R = .205;
+let wheelSpin = 0, steerK = 0;
+fetch('rev11.json').then(r => r.json()).then(j => { const bin = atob(j.glb), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  loader.parse(u.buffer, '', g => { car.add(g.scene); carModel = g.scene;
+  g.scene.traverse(o => { const q = o.position; if (Math.abs(q.y - .159) < 1e-3 && Math.abs(Math.abs(q.x) - .586) < .01 && o.children.length === 1) wheels.push(o); });
+  wheels.forEach(w => { const spin = new THREE.Group(), m = w.children[0]; w.remove(m); spin.add(m); w.add(spin); w.userData = { spin, front: w.position.z > 1, left: w.position.x > 0 }; }); carMats.length = 0; const a = carOpacity; carOpacity = -1; setCarOpacity(a);
+  const vis = [car, cones, mapCones, drive.line, bigGrid, grid, glow].map(o => [o, o.visible]); vis.forEach(([o]) => o.visible = true); car.visible = true;
+  renderer.compile(scene, camera); vis.forEach(([o, v]) => o.visible = v); setCarOpacity(a); renderNow(); }); });
+const shadow = new THREE.Mesh(new THREE.PlaneGeometry(2.3, 3.8), new THREE.MeshBasicMaterial({ map: radial(.85), transparent: true, depthWrite: false }));
+shadow.rotation.x = -Math.PI / 2; shadow.position.set(0, .006, .95); car.add(shadow);
+const mast = new THREE.Mesh(new THREE.CylinderGeometry(.012, .012, D.H - 1.19, 8), new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: .5, metalness: .6 }));
+mast.position.set(0, (D.H + 1.19) / 2, D.CAMZ); car.add(mast);
+const gopro = new THREE.Mesh(new THREE.BoxGeometry(.065, .045, .03), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: .4 }));
+gopro.position.set(0, D.H, D.CAMZ); car.add(gopro);
+
+const coneGeo = (() => { const prof = [[0, 0], [.114, 0], [.114, .025], [.1, .025], [.1, .03], [.025, .325], [0, .325]].map(([r, y]) => new THREE.Vector2(r, y));
+  const g = new THREE.LatheGeometry(prof, 32).toNonIndexed(), base = new THREE.BoxGeometry(.228, .025, .228).translate(0, .0125, 0).toNonIndexed();
+  const pos = new Float32Array([...g.attributes.position.array, ...base.attributes.position.array]), out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(pos, 3)); out.computeVertexNormals();
+  const col = new Float32Array(pos.length); for (let i = 0; i < pos.length / 3; i++) { const y = pos[i * 3 + 1], s = y > .13 && y < .19 ? 1 : 0; col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = s; }
+  out.setAttribute('stripe', new THREE.BufferAttribute(col, 3)); return out; })();
+const coneMat = hex => { const m = new THREE.MeshStandardMaterial({ color: hex, roughness: .55, transparent: true });
+  m.onBeforeCompile = sh => { sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 stripe; varying float vS;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvS = stripe.x;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vS;').replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = mix(diffuseColor.rgb, vec3(.92), step(.5, vS));'); };
+  return m; };
+const cones = new THREE.Group(); world.add(cones);
+D.DETS.forEach(d => { const q = D.ground(d), m = new THREE.Mesh(coneGeo, coneMat([0x2a6ff0, 0xffd000, 0xff6a00][d.c]));
+  m.position.set(-q.side, 0, D.CAMZ + q.ahead); cones.add(m);
+  const s = new THREE.Mesh(new THREE.PlaneGeometry(.5, .5), new THREE.MeshBasicMaterial({ map: radial(.7), transparent: true, depthWrite: false })); s.rotation.x = -Math.PI / 2; s.position.set(m.position.x, .005, m.position.z); cones.add(s); });
+
+const DATA = D.DATA;
+const mapCones = (() => {
+  const list = DATA.cones.filter(c => c[3] >= 2), mats = [0x2a6ff0, 0xffd000, 0xff6a00].map(c => coneMat(c)), group = new THREE.Group(), meshes = [];
+  [0, 1, 2].forEach(k => { const L = list.filter(c => c[2] === k), m = new THREE.InstancedMesh(coneGeo, mats[k], L.length); m.userData.list = L; group.add(m); meshes.push(m); });
+  const M = new THREE.Matrix4(), S = new THREE.Vector3(), Q = new THREE.Quaternion(), P = new THREE.Vector3();
+  group.userData.scale = -1;
+  group.userData.setScale = sc => { if (Math.abs(sc - group.userData.scale) < 1e-3) return; group.userData.scale = sc;
+    meshes.forEach(m => { m.userData.list.forEach((c, i) => { M.compose(P.set(c[0], 0, c[1]), Q, S.set(sc, sc, sc)); m.setMatrixAt(i, M); }); m.instanceMatrix.needsUpdate = true; }); };
+  group.userData.setScale(1); world.add(group); return group;
+})();
+const drive = (() => {
+  const pts = []; for (const [x, z] of DATA.path2) { const v = new THREE.Vector3(x, 0, z); if (!pts.length || v.distanceTo(pts[pts.length - 1]) > .6) pts.push(v); }
+  const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal'), N = pts.length;
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(Math.min(12000, N * 4))), new THREE.LineBasicMaterial({ color: 0x3a3a3a, transparent: true, opacity: .55 }));
+  line.position.y = .01; world.add(line);
+  const box = new THREE.Box3().setFromPoints(pts), center = box.getCenter(new THREE.Vector3());
+  return { curve, N, line, center, s: 0.14 };
+})();
+const FOG_FAR = new THREE.Fog(0x070707, 140, 520);
+const bigGrid = new THREE.GridHelper(600, 120, 0x1c1c1c, 0x121212); bigGrid.position.set(drive.center.x, .003, drive.center.z); world.add(bigGrid);
+const titleGrid = new THREE.GridHelper(600, 300, 0x262626, 0x1e1e1e); titleGrid.position.set(drive.center.x, .003, drive.center.z); titleGrid.visible = false; world.add(titleGrid);
+
+const camera = new THREE.PerspectiveCamera(30, 16 / 9, .05, 900);
+const SHOTS = {
+  onboard: () => ({ pos: new THREE.Vector3(0, D.H, D.CAMZ), target: new THREE.Vector3(0, D.H - 10 * Math.tan(D.PHI), D.CAMZ + 10), up: new THREE.Vector3(0, 1, 0), fov: 2 * Math.atan(360 / D.F) * 180 / Math.PI }),
+  side: () => ({ pos: new THREE.Vector3(-15, 1.22, 2.3), target: new THREE.Vector3(0, 1.22, 2.3), up: new THREE.Vector3(0, 1, 0), fov: 17 }),
+  top: () => ({ pos: new THREE.Vector3(13.2, 62, 18.6), target: new THREE.Vector3(13.2, 0, 18.6001), up: new THREE.Vector3(0, 0, 1), fov: 36 }),
+};
+const dummy = new THREE.PerspectiveCamera();
+const pose = p => { dummy.position.copy(p.pos); dummy.up.copy(p.up); dummy.lookAt(p.target); return { pos: p.pos.clone(), quat: dummy.quaternion.clone(), fov: p.fov }; };
+const camPose = () => ({ pos: camera.position.clone(), quat: camera.quaternion.clone(), fov: camera.fov });
+function applyPose(p) { camera.position.copy(p.pos); camera.quaternion.copy(p.quat); camera.fov = p.fov; camera.updateProjectionMatrix(); camera.updateMatrixWorld(); }
+const smooth = t => t * t * t * (t * (t * 6 - 15) + 10);
+function blend(a, b, t, lift) {
+  const pos = a.pos.clone().lerp(b.pos, t); pos.y += Math.sin(Math.PI * t) * lift;
+  const ta = Math.log(Math.tan(a.fov * Math.PI / 360)), tb = Math.log(Math.tan(b.fov * Math.PI / 360));
+  return { pos, quat: a.quat.clone().slerp(b.quat, t), fov: Math.atan(Math.exp(ta + (tb - ta) * t)) * 360 / Math.PI };
+}
+const carMats = []; let carOpacity = 1, carModel = null;
+function setCarOpacity(a) {
+  if (!carMats.length && carModel) [carModel, mast, gopro].forEach(r => r.traverse(o => { if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { m.transparent = true; m.depthWrite = true; m.needsUpdate = true; carMats.push(m); }); }));
+  if (Math.abs(a - carOpacity) < 1e-3) return; carOpacity = a;
+  carMats.forEach(m => { m.opacity = a; });
+  car.visible = a > 0;
+}
+let modeName = 'off', modeStep = 0, running = false, titleT = 0, fly = null, curShot = null, last = 0, driveT = 0, aerialK = 0, aerialGoal = 0;
+function setScene(m) {
+  const map = m === 'track' || m === 'end', onboard = m === 'onboard';
+  floor.material.opacity = onboard ? 0 : 1; grid.visible = m === 'top'; if (!fly?.gridIn) grid.material.opacity = 1; glow.visible = m === 'title';
+  mast.visible = gopro.visible = m === 'onboard' || m === 'side' || m === 'top';
+  red.visible = m === 'title'; cones.visible = m === 'onboard' || m === 'side' || m === 'top';
+  mapCones.visible = map; drive.line.visible = map; bigGrid.visible = map; titleGrid.visible = m === 'title';
+  scene.fog = onboard ? null : map ? FOG_FAR : FOG;
+  photo.style.transition = 'none'; photo.style.opacity = onboard ? 1 : 0;
+  if (!map && m !== 'title') { car.position.set(0, 0, 0); car.rotation.set(0, 0, 0); steerK = 0; wheels.forEach(w => { w.rotation.y = 0; w.userData.spin.rotation.x = 0; }); }
+  if (onboard) setCarOpacity(0); else setCarOpacity(1);
+}
+function drivePose(t) {
+  const u = ((t % 1) + 1) % 1, p = drive.curve.getPointAt(u), tan = drive.curve.getTangentAt(u);
+  return { p, tan, u };
+}
+function rollWheels(u, speed, dt) {
+  const du = 1.5 / drive.curve.getLength(), a = drive.curve.getTangentAt(Math.max(0, u - du)), b = drive.curve.getTangentAt(Math.min(1, u + du));
+  let dh = Math.atan2(b.x, b.z) - Math.atan2(a.x, a.z); dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+  steerK += (THREE.MathUtils.clamp(dh / 3, -.35, .35) - steerK) * (1 - Math.exp(-dt * 6));
+  wheelSpin += speed * dt / WHEEL_R;
+  const k = steerK;
+  wheels.forEach(w => { const d = w.userData; d.spin.rotation.x = wheelSpin;
+    if (d.front) w.rotation.y = THREE.MathUtils.clamp(Math.atan(WB * k / (1 + (d.left ? -1 : 1) * k * TRACK / 2)), -.45, .45); });
+}
+const chaseCam = { pos: new THREE.Vector3(), target: new THREE.Vector3(), init: false };
+function frame(now) {
+  if (modeName === 'off') { running = false; return; }
+  const dt = Math.min(.05, last ? (now - last) / 1000 : 0); last = now;
+  if (modeName === 'title') {
+    titleT = reduce ? .6 : titleT + dt * .12;
+    driveT += reduce ? 0 : dt * 13 / drive.curve.getLength();
+    const { p, tan, u } = drivePose(driveT), h = Math.atan2(tan.x, tan.z);
+    car.position.copy(p); car.rotation.set(0, h, 0); rollWheels(u, reduce ? 0 : 13, dt);
+    if (!chaseCam.init) { chaseCam.h = h; chaseCam.init = true; }
+    chaseCam.h += Math.atan2(Math.sin(h - chaseCam.h), Math.cos(h - chaseCam.h)) * (1 - Math.exp(-dt * 2));
+    const a = chaseCam.h + .95 + Math.sin(titleT) * .45, r = 11;
+    chaseCam.pos.copy(p).add(new THREE.Vector3(Math.sin(a) * r, 2.1, Math.cos(a) * r)); chaseCam.target.copy(p).add(new THREE.Vector3(0, .5, 0));
+    camera.clearViewOffset();
+    applyPose(pose({ pos: chaseCam.pos, target: chaseCam.target, up: new THREE.Vector3(0, 1, 0), fov: 28 }));
+    camera.setViewOffset(1600, 900, -470, -10, 1600, 900);
+  } else if (modeName === 'track' || modeName === 'end') {
+    const L = drive.curve.getLength();
+    driveT += reduce ? 0 : dt * 20 / L;
+    const { p, tan, u } = drivePose(driveT);
+    car.position.copy(p); car.rotation.set(0, Math.atan2(tan.x, tan.z), 0); rollWheels(u, reduce ? 0 : 20, dt);
+    aerialK += (aerialGoal - aerialK) * (1 - Math.exp(-dt * 1.6));
+    if (modeName === 'end') aerialK = 1;
+    const k = smooth(Math.min(1, Math.max(0, aerialK)));
+    mapCones.userData.setScale(1.3 + 3.7 * k);
+    const want = p.clone().addScaledVector(tan, -5.6).add(new THREE.Vector3(0, 1.9, 0)), look = p.clone().addScaledVector(tan, 7).add(new THREE.Vector3(0, .45, 0));
+    if (!chaseCam.init) { chaseCam.pos.copy(want); chaseCam.target.copy(look); chaseCam.init = true; }
+    const damp = 1 - Math.exp(-dt * 4); chaseCam.pos.lerp(want, damp); chaseCam.target.lerp(look, damp);
+    const ang = now / 1000 * (modeName === 'end' ? .05 : .02), c = drive.center;
+    const aPos = modeName === 'end' ? new THREE.Vector3(c.x + Math.cos(ang) * 245, 185, c.z + Math.sin(ang) * 245) : new THREE.Vector3(c.x + 150, 175, c.z + 12);
+    const aTarget = modeName === 'end' ? c.clone() : c.clone().add(new THREE.Vector3(0, 0, 4));
+    camera.clearViewOffset();
+    const A = pose({ pos: chaseCam.pos, target: chaseCam.target, up: new THREE.Vector3(0, 1, 0), fov: 40 }), B = pose({ pos: aPos, target: aTarget, up: new THREE.Vector3(0, 1, 0), fov: modeName === 'end' ? 34 : 38 });
+    applyPose(k <= 0 ? A : k >= 1 ? B : blend(A, B, k, 0));
+    if (modeName === 'end') camera.setViewOffset(1600, 900, -300, 0, 1600, 900);
+  } else if (fly) {
+    const t = Math.min(1, (now - fly.t0) / fly.dur), e = smooth(t);
+    if (fly.fade) { const f = Math.min(1, t / .35); photo.style.opacity = 1 - f; setCarOpacity(f); floor.material.opacity = f; }
+    if (fly.gridIn) grid.material.opacity = e;
+    if (fly.aim) {
+      const [A, B] = fly.aim, C = new THREE.Vector3(0, .6, 1.2), ss = (x, lo, hi) => smooth(Math.min(1, Math.max(0, (x - lo) / (hi - lo))));
+      const o = ss(t, 0, .72), w = ss(t, .5, 1), r0 = A.pos.distanceTo(C), r1 = B.pos.y - C.y;
+      const dir = A.pos.clone().sub(C).normalize().lerp(new THREE.Vector3(0, 1, 0), o).normalize();
+      const pos = C.clone().addScaledVector(dir, r0 * Math.pow(r1 / r0, o)).lerp(B.pos, w), tgt = C.clone().lerp(B.target, w);
+      const up = A.up.clone().lerp(B.up, o).normalize(), ta = Math.log(Math.tan(A.fov * Math.PI / 360)), tb = Math.log(Math.tan(B.fov * Math.PI / 360));
+      applyPose(pose({ pos, target: tgt, up, fov: Math.atan(Math.exp(ta + (tb - ta) * e)) * 360 / Math.PI }));
+    } else applyPose(blend(fly.a, fly.b, e, fly.lift));
+    if (t >= 1) { const r = fly.res; fly = null; setScene(curShot); applyPose(pose(SHOTS[curShot]())); r(); }
+  }
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+function renderNow() { if (modeName !== 'off') renderer.render(scene, camera); }
+function loop() { if (!running) { running = true; last = 0; requestAnimationFrame(frame); } }
+
+window.WORLD = {
+  mode(name, step) {
+    const prevMode = modeName; modeName = name; modeStep = step; canvas.classList.toggle('on', name !== 'off');
+    if (name === 'off') { photo.style.opacity = 0; fly?.res(); fly = null; return; }
+    if (name === 'title') { if (prevMode !== name) { setScene('title'); chaseCam.init = false; driveT = .2; } loop(); return; }
+    if (name === 'track' || name === 'end') {
+      if (prevMode !== name) { setScene(name); chaseCam.init = false; if (name === 'track') { driveT = .045; aerialK = step >= 1 ? 1 : 0; } }
+      aerialGoal = step >= 1 || name === 'end' ? 1 : 0; loop(); return;
+    }
+    loop();
+  },
+  shot(name, ms) {
+    camera.clearViewOffset();
+    const b = pose(SHOTS[name]()), from = curShot;
+    curShot = name;
+    if (fly) { fly.res(); fly = null; }
+    if (!ms || reduce || !from || modeName === 'title') { setScene(name); applyPose(b); renderNow(); return Promise.resolve(); }
+    const fade = from === 'onboard' && name !== 'onboard';
+    if (fade) { setScene(name); setCarOpacity(0); floor.material.opacity = 0; photo.style.opacity = 1; }
+    else setScene(name);
+    const a = camPose(), lift = fade ? 1.6 : Math.min(8, a.pos.distanceTo(b.pos) * .15), gridIn = name === 'top' && from !== 'top';
+    if (gridIn) grid.material.opacity = 0;
+    const aim = from === 'side' && name === 'top' ? [SHOTS[from](), SHOTS[name]()] : null;
+    loop(); D.sfx?.whoosh(ms);
+    return new Promise(res => { fly = { a, b, t0: performance.now(), dur: ms, fade, lift, gridIn, aim, res }; });
+  },
+  project(x, y, z) { const v = new THREE.Vector3(x, y, z).project(camera); return [(v.x + 1) / 2 * 1600, (1 - v.y) / 2 * 900]; },
+};
+window.dispatchEvent(new Event('world-ready'));
+</script>
+</body>
+</html>
