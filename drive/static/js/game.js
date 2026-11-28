@@ -3633,6 +3633,7 @@ function startReplay(cars, opts = {}) {
   };
   S.car.frozen = true;
   S.view.setVisible(false);
+  S.sound.setModel(built[0].view.model);
   document.body.classList.add('watching');
   renderWatchBar();
   renderRates();
@@ -3795,6 +3796,7 @@ function watchFrom(i) {
   w.at = i;
   w.cars[i].prev = null;      // its speed is measured between frames, so restart it
   w.shown = -1;
+  S.sound.setModel(w.cars[i].view.model);
   renderWatchBar();
 }
 
@@ -3805,6 +3807,7 @@ function stopWatching() {
   S.watch = null;
   S.car.frozen = false;
   S.view.setVisible(true);
+  S.sound.setModel(S.view.model);
   document.body.classList.remove('watching', 'watch-many');
   $('watchBar').style.display = 'none';
   toggleRates(false);
