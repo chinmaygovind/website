@@ -1208,17 +1208,24 @@ def test_the_play_page_carries_the_livery_on_the_first_paint(env):
     assert "#7b6cf6" in html and '"livery":"band"' in html
 
 
-def test_a_ghost_wears_its_drivers_car(env):
-    """A lap set before the garage existed has no stored livery and gets its
-    owner's current one, which is right: it is their car."""
+def test_a_ghost_wears_the_car_it_was_driven_in(env):
+    """A replay is the car the lap was set in, not whatever is in the garage
+    now. A lap from before that was stored falls back to today's car."""
     c = env.app.test_client()
     _login(c, _user(env, "quick"))
+    c.post("/api/garage", json={"body": "#7b6cf6", "rim_style": "mesh"})
     c.post("/api/run", json=_run_payload(env, "sunrise", seconds=22))
-    c.post("/api/garage", json={"body": "#17bfa8", "rim_style": "mesh"})
+    c.post("/api/garage", json={"body": "#17bfa8"})
+    got = c.get("/api/ghost/sunrise?who=wr").get_json()
+    assert got["livery"]["body"] == "#7b6cf6"
+    assert got["livery"]["rim_style"] == "mesh"
+    assert got["color"] == "#7b6cf6", "and the old field agrees with it"
+
+    with env.app.app_context():
+        env.DriveTime.query.update({"livery_json": None})
+        env.db.session.commit()
     got = c.get("/api/ghost/sunrise?who=wr").get_json()
     assert got["livery"]["body"] == "#17bfa8"
-    assert got["livery"]["rim_style"] == "mesh"
-    assert got["color"] == "#17bfa8", "and the old field agrees with it"
 
 
 def test_the_swatch_and_the_car_are_one_answer(env):

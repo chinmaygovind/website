@@ -2709,7 +2709,7 @@ def _apply_check(c):
     if row is None:
         row = DriveTime(user_id=c.user_id, track=c.track, time_ms=c.time_ms,
                         medal=medal, splits_json=c.splits_json, ghost=c.ghost,
-                        runs=1)
+                        livery_json=c.livery_json, runs=1)
         db.session.add(row)
         db.session.flush()
         _count_medal(st, medal)
@@ -2719,6 +2719,7 @@ def _apply_check(c):
         row.medal = medal
         row.splits_json = c.splits_json
         row.ghost = c.ghost
+        row.livery_json = c.livery_json
         row.updated_at = datetime.utcnow()
         _count_medal(st, medal)
     c.drive_time_id = row.id
@@ -2958,6 +2959,8 @@ def api_run():
 
     run_rank = _run_rank(exclude_user_id=user.id)
     row = DriveTime.query.filter_by(user_id=user.id, track=track["slug"]).first()
+    # The car this lap was driven in, kept with it so its replay shows that car.
+    livery_json = json_mod.dumps(_livery_for(user))
 
     # --- a lap near the top of the board is re-driven before it goes up ------
     if (run_rank <= runcheck.VERIFY_TOP_N and (row is None or time_ms < row.time_ms)
@@ -2982,7 +2985,8 @@ def api_run():
             user_id=user.id, track=track["slug"], time_ms=time_ms,
             splits_json=json_mod.dumps(splits),
             ghost=runcheck.pack_ghost(ghost_frames),
-            evidence=runcheck.pack_verify(inputs, anchors))
+            evidence=runcheck.pack_verify(inputs, anchors),
+            livery_json=livery_json)
         db.session.add(check)
         db.session.commit()
         _spawn_verifier("--check", str(check.id))
@@ -3005,7 +3009,8 @@ def api_run():
     if row is None:
         row = DriveTime(user_id=user.id, track=track["slug"], time_ms=time_ms,
                         medal=medal, splits_json=json_mod.dumps(splits),
-                        ghost=runcheck.pack_ghost(ghost_frames), runs=1)
+                        ghost=runcheck.pack_ghost(ghost_frames),
+                        livery_json=livery_json, runs=1)
         db.session.add(row)
         improved = True
     else:
@@ -3017,6 +3022,7 @@ def api_run():
             row.medal = medal
             row.splits_json = json_mod.dumps(splits)
             row.ghost = runcheck.pack_ghost(ghost_frames)
+            row.livery_json = livery_json
             row.updated_at = datetime.utcnow()
             improved = True
     if improved:
@@ -3112,11 +3118,10 @@ def api_ghost(slug):
             row = DriveTime.query.filter_by(user_id=user.id, track=slug).first()
     if not row or not _ghost_shown(row, _ghosts_sealed(slug), get_current_user()):
         return jsonify({"ok": True, "ghost": None})
-    # A ghost is somebody's lap, so it is driven in their car - and in the car
-    # they drive *now*, not the one they drove then: a livery is not recorded
-    # with a lap, and a ghost of yours turning up in last month's paint would be
-    # somebody else as far as anybody watching is concerned.
-    livery = _livery_for(row.user) if row.user else None
+    # A ghost is driven in the car it was set in. Laps from before that was
+    # kept have no livery_json and fall back to the driver's car today.
+    livery = (json_mod.loads(row.livery_json) if row.livery_json
+              else _livery_for(row.user) if row.user else None)
     return jsonify({"ok": True, "hz": runcheck.ghost_hz(row.ghost),
                     "id": row.id, "time_ms": row.time_ms, "splits": row.splits,
                     "who": (row.user.display if row.user else "?"),

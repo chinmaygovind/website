@@ -251,6 +251,9 @@ class DriveTime(db.Model):
     splits_json = db.Column(db.Text, default="[]")         # cumulative ms at each checkpoint
     # Quantised, zlib+base64 replay of the run. Raced against as the ghost car.
     ghost      = db.Column(db.Text, nullable=True)
+    # The resolved livery the lap was driven in, so a replay shows that car.
+    # NULL on laps from before it was kept; those fall back to today's car.
+    livery_json = db.Column(db.Text, nullable=True)
     runs       = db.Column(db.Integer, default=1)          # attempts on this track
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -342,6 +345,7 @@ class DriveRunCheck(db.Model):
     splits_json = db.Column(db.Text, default="[]")
     ghost       = db.Column(db.Text, nullable=True)
     evidence    = db.Column(db.Text, nullable=True)     # runcheck.pack_verify
+    livery_json = db.Column(db.Text, nullable=True)     # carried to DriveTime
     status      = db.Column(db.String(10), default="pending", index=True)
     reason      = db.Column(db.String(200), nullable=True)
     stats_json  = db.Column(db.Text, default="{}")
@@ -908,6 +912,8 @@ class DriveItemStat(db.Model):
 
 
 _ADDED = {
+    "drive_times": [("livery_json", "TEXT")],
+    "drive_run_checks": [("livery_json", "TEXT")],
     "drive_garage": [("seen_json", "TEXT")],
     "drive_stats": [("record_tracks", "TEXT DEFAULT '[]'")],
     "drive_players": [

@@ -525,7 +525,11 @@ socket ping timeout and so disconnected everybody who was driving.
   `to_dict` rule: it is one fact, and the copy on the live car dict is only as
   fresh as that driver's last connect. A ghost's livery is resolved *when it is
   asked for* (`_seat_livery`) and a **replay's** is stored *with the race* - the
-  two rules disagree on purpose, and `_store_replay` says why.
+  two rules disagree on purpose, and `_store_replay` says why. **A solo lap
+  keeps its car too** (Nov 2026): `/api/run` stores the resolved livery in
+  `drive_times.livery_json` (carried through `drive_run_checks` for a held lap),
+  and `/api/ghost` answers that, so a PB replay is the car it was set in. A lap
+  from before then has NULL there and falls back to the driver's car today.
 - **Whose colour, when nobody chose one.** There was no per-person colour at all
   before - a room handed them out by seat and solo was always red - so `color_for(username)`
   hashes one out of `garage.HASH_COLORS`, the same trick the accounts pages use
